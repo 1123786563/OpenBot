@@ -1,0 +1,91 @@
+{
+  "scope": "refinement documents only; self excluded",
+  "recorded_at": "2026-10-20T13:09:35.670028+00:00",
+  "checkpoint_sha256": "91ea2cd7d6ae48b3463ccf8852a04d623ba4a1ad5f4ed13911e1fec91399b89e",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "7e73a658bdbfa3db29b451727b894ef7b704e150e5a84caf52e2577a876a0ea2"
+    },
+    {
+      "path": "baseline.json",
+      "sha256": "98096b73d8b6d63274f92f3e4251eaf504d2fa99370e97128a901619f1ca01c0"
+    },
+    {
+      "path": "build-docs.py",
+      "sha256": "f6cf43184ddb65289d8814c99cb39832e52e35f5cb24aaf2a5b8b303729c1456"
+    },
+    {
+      "path": "code-agent-prompt.md",
+      "sha256": "d52b1c56032289d1150785395362fb4e2acd9cebedb2896484ef1566bac8b941"
+    },
+    {
+      "path": "contrast-check.json",
+      "sha256": "e8efdcc302a476ce1e58e4914d04286d53ba3289e938446e77550227799c07e8"
+    },
+    {
+      "path": "execution-ready.md",
+      "sha256": "5c58e26c29df911401c6a1dec1a1e73e94d0f6a387ed20583bd96652fc48324a"
+    },
+    {
+      "path": "gap-analysis.md",
+      "sha256": "807be32c5bb4c9529cf615c215494996aa36970b141044d8038bf8cd8d301593"
+    },
+    {
+      "path": "implementation-detail.md",
+      "sha256": "64176ba0ffbef568b4a4619581205c6f4c3389da0bac71b05a2c3e4a316db357"
+    },
+    {
+      "path": "implementation-spec.md",
+      "sha256": "a720bb712b40718ec1625e353b26412e05b740d0b3a558181955a8fc464a13d7"
+    },
+    {
+      "path": "ledger.md",
+      "sha256": "8a902a819259c6053193a59602455f2ecea51ee199539ce56c268c32c113ec2c"
+    },
+    {
+      "path": "revision-2.json",
+      "sha256": "71072a51c042cd16f5dacefe44434f6963d43fb31226e506eebd60d0a8cfc153"
+    },
+    {
+      "path": "route-acceptance.json",
+      "sha256": "14aa2ce09f60a996a0e8bb16affb5e7944244c140a652b95e4671d9958c94564"
+    },
+    {
+      "path": "route-rescan.json",
+      "sha256": "c9e83a4b11de01b8b25b88dd96c00ae2dc9e74e42578effebd8f08913376a78a"
+    },
+    {
+      "path": "source-evidence.json",
+      "sha256": "acbffa134c30e220d24c922357bdff3ac67c9acfffc0270f05ef8991b27ceb31"
+    },
+    {
+      "path": "startup-status.txt",
+      "sha256": "3365658665332dfc30bb78a364a922cdba11418aecaaeee897db6292f45a2721"
+    },
+    {
+      "path": "task-dag.md",
+      "sha256": "8fb5062d13cb4e1fd25d7fbd16da5b6b3a4bb0024037f7edd299bc30d1bf12c2"
+    },
+    {
+      "path": "tasks.json",
+      "sha256": "9de0578b51fd4542bc923a5b5e6002bb2a8bcb19a8f22e642ae508c4a960ec7e"
+    },
+    {
+      "path": "theme-contract.json",
+      "sha256": "cd15f9b1dd419d7cc6c600b6e57f670bb226a2b2ea67a0ceb43276c8d963d247"
+    },
+    {
+      "path": "validate-docs.py",
+      "sha256": "005132d63607975b315f0bb0e6dad53a3525cc0f055427fa4b472a685eeb10b4"
+    },
+    {
+      "path": "validation.json",
+      "sha256": "588ca901feaba131e1a25165764d8a90d89db65a042114823e92e2dea7f6eae9"
+    },
+    {
+      "path": "verification-plan.md",
+      "sha256": "111f2e6773b39272266b0ff6a827590d714446844fcfb63fc471cf79dcaef71c"
+    }
+  ]
+}

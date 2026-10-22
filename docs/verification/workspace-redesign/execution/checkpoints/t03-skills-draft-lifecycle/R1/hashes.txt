@@ -1,0 +1,2 @@
+7f4e8be0809b10b4e8d4f7b4da415e7e04a8f72788a2144c2e5da877e49284e4  docs/verification/workspace-redesign/execution/checkpoints/t03-skills-draft-lifecycle/R1/test.patch
+6e0fa73d7142909e30529b1a72524d5ba849ed5615dd52988fa96d935693dae5  docs/verification/workspace-redesign/execution/checkpoints/t03-skills-draft-lifecycle/R1/implementation-report.patch

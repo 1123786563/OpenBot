@@ -42,11 +42,13 @@ export function BotSubpage({
   title,
   description,
   children,
+  width = "prose",
 }: {
   agentId: string;
   title: string;
   description: string;
   children: (agent: AgentProfile) => React.ReactNode;
+  width?: "prose" | "wide";
 }) {
   const { t } = useTranslation("agents");
   const queryClient = useQueryClient();
@@ -57,11 +59,12 @@ export function BotSubpage({
   return (
     <PageShell
       backButton={{
-        label: agent.data?.name ?? t("botSubpage.titleFallback"),
+        label: agentData?.name ?? t("botSubpage.titleFallback"),
         linkProps: { params: { agentId }, to: "/bots/$agentId" },
       }}
       description={description}
       title={title}
+      width={width}
     >
       {agent.isPending ? null : agent.error ? (
         agent.error instanceof AgentUnavailableError ? (

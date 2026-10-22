@@ -1038,7 +1038,7 @@ function RouteComponent() {
                 </p>
               ) : server?.dynamicClient ? null : (
                 /* Selectable and monospaced: it is copied by hand into somebody else's console. */
-                <code className="mt-3 block select-all break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+                <code className="mt-3 block select-all break-all rounded bg-ob-muted-surface px-2 py-1 font-mono text-xs">
                   {plugins.data.redirectUri}
                 </code>
               )}

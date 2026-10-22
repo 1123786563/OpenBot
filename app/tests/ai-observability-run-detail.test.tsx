@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -15,6 +14,15 @@ import type {
   RunDetailResult,
   RunUsageReport,
 } from "../../shared/ai-observability-runs";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { ObservationRunDetailPage } from "../src/components/ai-observability/run-detail";
 // English copy: the i18n bundles initialize on import, so assertions see real sentences.
 import "@/lib/i18n";
@@ -395,8 +403,8 @@ describe("the creator guard (acceptance 3)", () => {
       router: { state: { location: { pathname: string } } };
     };
     await view.findByText("No such run");
-    // Button-as-link: it navigates, but its accessible role is button.
-    const back = view.getByRole("button", { name: "Back to run history" });
+    // Navigation is a real anchor (ButtonLink): it navigates and its accessible role is link.
+    const back = view.getByRole("link", { name: "Back to run history" });
     expect(back.getAttribute("href")).toBe("/bots/agent-1/runs");
     const user = userEvent.setup({ document: view.container.ownerDocument });
     back.focus();

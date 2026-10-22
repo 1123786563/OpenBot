@@ -105,6 +105,7 @@ export function ObservationExperimentResultsPage({
           },
         }}
         description={t("page.description")}
+        width="wide"
         title={t("results.untitled")}
       >
         <StateNotice
@@ -148,6 +149,7 @@ export function ObservationExperimentResultsPage({
         },
       }}
       description={t("page.description")}
+      width="wide"
       title={t("results.untitled")}
     >
       <PageSection
@@ -378,20 +380,30 @@ function SampleRow({
           </ItemTitle>
           <ItemDescription className="line-clamp-none">
             {/* A missing score is its own fact — unavailable, never a masked zero. */}
-            {score === null
-              ? reasonText
-              : [score.toFixed(2), reasonText].join(" · ")}
+            {score === null ? t("sample.scoreUnavailable") : score.toFixed(2)}
           </ItemDescription>
-          {judgeText === null ? null : (
-            <ItemDescription className="line-clamp-none">
-              {judgeText}
-            </ItemDescription>
-          )}
-          {sample.usage === null || sample.usage === undefined ? null : (
-            <ItemDescription className="line-clamp-none">
-              {`${t("sample.usage")}: ${JSON.stringify(sample.usage)}`}
-            </ItemDescription>
-          )}
+          <details className="mt-2 text-sm">
+            <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
+              {t("sample.showDetails")}
+            </summary>
+            <div className="mt-2 space-y-1">
+              <ItemDescription className="line-clamp-none">
+                {reasonText}
+              </ItemDescription>
+              {judgeText === null ? null : (
+                <ItemDescription className="line-clamp-none">
+                  {judgeText}
+                </ItemDescription>
+              )}
+              {sample.usage === null || sample.usage === undefined ? (
+                <ItemDescription className="line-clamp-none">
+                  {t("sample.usageUnavailable")}
+                </ItemDescription>
+              ) : (
+                <ItemDescription className="line-clamp-none">{`${t("sample.usage")}: ${JSON.stringify(sample.usage)}`}</ItemDescription>
+              )}
+            </div>
+          </details>
         </ItemContent>
       </Item>
     </>

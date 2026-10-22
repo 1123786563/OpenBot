@@ -9,7 +9,10 @@
       // localStorage throws in some privacy modes; a theme is not worth taking the app down for.
       try {
         const dark = window.localStorage.getItem("openbot-theme") === "dark";
+        // One state, three expressions: the class OpenBot's CSS reads, the attribute HeroUI's
+        // selectors read, and the browser's own color scheme. Never stored separately.
         document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
       } catch {}
     </script>

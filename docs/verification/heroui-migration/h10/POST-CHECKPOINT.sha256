@@ -1,0 +1,4 @@
+79d016aa51ecb5f82f82d7c0ff72089536ebb54b8a43fddf2355cbb12fb8235f  app/tests/zz-probe-context-menu.test.tsx
+1c40907150186d1fa8a76dd17cd59b552d318324545d59e90d6fc2cefd21f910  app/src/components/computer/demonstration-recorder.tsx
+e6ff33a5f77b075df3449cfcda8df706beb1c1dd712ae8c5746ae9d4f1c97c2b  app/tests/computer-driving-local-fields.test.tsx
+a0b4113dd58474c72427d863bc6347ee924d286baee869ef50d102de1afae559  docs/verification/heroui-migration/h10/browser/cdp-context-menu.mjs

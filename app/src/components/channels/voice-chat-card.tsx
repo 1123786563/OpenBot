@@ -19,7 +19,7 @@ export function VoiceChatCard({ call }: { call: VoiceChatEntry }) {
       "0",
     )}:${(call.durationSeconds % 60).toString().padStart(2, "0")}`;
   return (
-    <div className="rounded-xl bg-muted/60 px-3 py-2 text-sm">
+    <div className="rounded-xl bg-ob-muted-surface/60 px-3 py-2 text-sm">
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
           <IconWaveform className="size-3.5" />

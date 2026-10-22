@@ -434,7 +434,7 @@ export function ConversationView({
           {...(stopped ? { stopped } : {})}
         />
       </div>
-      <div className="max-w-2xl mx-auto w-full px-0 pb-4 shrink-0">
+      <div className="mx-auto w-full max-w-[720px] shrink-0 px-4 pb-4">
         {notice}
         <Composer
           agents={agents}

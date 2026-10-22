@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { ConsumptionRange } from "@/components/billing/consumption-table";
 import {
   isRangeKey,
   UsageCreditsView,

@@ -17,7 +17,7 @@ export function DiffBody({ diff }: { diff: CraftDiffBlock }) {
 
   return (
     <div className="overflow-hidden rounded-md border border-border">
-      <header className="flex items-center gap-1.5 border-b border-border bg-muted/30 px-2.5 py-1.5">
+      <header className="flex items-center gap-1.5 border-b border-border bg-ob-muted-surface/30 px-2.5 py-1.5">
         <IconFileDiff className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate font-mono text-xs">{diff.path}</span>
       </header>

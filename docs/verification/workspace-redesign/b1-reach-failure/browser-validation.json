@@ -1,0 +1,11 @@
+{
+  "date":"2026-10-21",
+  "route":"/bots/agent_efd707f9-b827-42a5-9296-e6f3e45c6a05/reach",
+  "readFixturesSynthetic":true,
+  "mutation":{"method":"POST","path":"/api/delivery/opentag/start","response":503,"forwardedToApi":false,"externalSlackOrTeamsCall":false,"challengeCreated":false},
+  "results":[
+    {"theme":"light","viewport":"390x844","selectedConversation":"Synthetic private conversation","error":"controlled link failure","dialogRetained":true,"focus":"Link Slack action","escapeCloses":true,"horizontalOverflow":false,"interceptedPostCount":1,"screenshot":"light-error.png"},
+    {"theme":"dark","viewport":"390x844","selectedConversation":"Synthetic private conversation","error":"controlled link failure","dialogRetained":true,"focus":"Link Slack action","escapeCloses":true,"horizontalOverflow":false,"interceptedPostCount":1,"screenshots":["dark-error.png","dark-closed.png"]}
+  ],
+  "fixtureBotMutationWrites":0
+}

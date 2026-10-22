@@ -198,7 +198,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
       {isScheduledSession &&
       scheduledRun.data &&
       isScheduledRunInFlight(scheduledRun.data) ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-4 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-ob-muted-surface/40 px-4 py-2">
           <IconClock className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-sm">
             {scheduledRun.data.status === "running"

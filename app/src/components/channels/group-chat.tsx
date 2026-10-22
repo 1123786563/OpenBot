@@ -65,7 +65,7 @@ export function GroupChat({ channelId }: { channelId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 py-6">
+        <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5 px-4 py-6">
           {messages.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Say something to {bots.map((bot) => bot.name).join(" and ")}.
@@ -95,7 +95,7 @@ export function GroupChat({ channelId }: { channelId: string }) {
         </div>
       </div>
       {/* The same column and the same compact composer as a conversation with one Bot. */}
-      <div className="mx-auto w-full max-w-2xl shrink-0 pb-4">
+      <div className="mx-auto w-full max-w-[720px] shrink-0 px-4 pb-4">
         {send.error ? (
           <p className="pb-2 text-sm text-destructive" role="alert">
             {send.error.message}

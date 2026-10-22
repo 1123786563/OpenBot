@@ -1,0 +1,8 @@
+{
+  "date": "2026-10-21",
+  "identity": "isolated authenticated admin",
+  "checks": 104,
+  "passed": 104,
+  "failures": [],
+  "excluded": "P03/P04 use channels created under the earlier dev actor; P16-P23 evidence is in matrix-summary.json"
+}

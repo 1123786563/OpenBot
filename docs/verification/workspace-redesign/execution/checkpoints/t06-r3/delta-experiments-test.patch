@@ -1,0 +1,28 @@
+--- docs/verification/workspace-redesign/execution/checkpoints/t06-r3/PRE/ai-observability-experiments.test.tsx	2026-10-21 01:32:30
++++ docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/ai-observability-experiments.test.tsx	2026-10-21 01:34:11
+@@ -466,12 +466,12 @@
+     await view.findAllByText("Upstream unavailable");
+     expect(view.queryByRole("dialog")).toBeNull();
+     expect(
+-      view.queryByRole("button", { name: "Submit experiment" }),
++      view.queryByRole("button", { name: /Run an experiment/ }),
+     ).toBeNull();
+     expect(view.queryByText("Submit experiment")).toBeNull();
+   });
+ 
+-  test("an empty dataset list keeps the empty state", async () => {
++  test("an empty dataset list keeps the empty state and entry action", async () => {
+     listHandler = () => Response.json(datasetsBody([]));
+     const view = draw();
+     await view.findByText(
+@@ -479,8 +479,8 @@
+     );
+     expect(view.queryByRole("dialog")).toBeNull();
+     expect(
+-      view.queryByRole("button", { name: "Submit experiment" }),
+-    ).toBeNull();
++      view.getByRole("button", { name: /Run an experiment/ }),
++    ).toBeTruthy();
+   });
+ });
+ 

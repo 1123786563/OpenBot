@@ -1,0 +1,107 @@
+{
+ "vw1250": {
+  "url": "/channel/channel_aeda14d4-c103-4fa2-af5a-445e61b89ae9",
+  "C": 970,
+  "panels": [
+   {
+    "w": 490,
+    "inDialog": false
+   },
+   {
+    "w": 490,
+    "inDialog": false
+   },
+   {
+    "w": 490,
+    "inDialog": false
+   }
+  ],
+  "scrollW": 1250,
+  "clientW": 1250,
+  "search": "?workshop=true"
+ },
+ "vw1242": {
+  "url": "/channel/channel_aeda14d4-c103-4fa2-af5a-445e61b89ae9",
+  "C": 962,
+  "panels": [
+   {
+    "w": 482,
+    "inDialog": false
+   },
+   {
+    "w": 482,
+    "inDialog": false
+   },
+   {
+    "w": 482,
+    "inDialog": false
+   }
+  ],
+  "scrollW": 1242,
+  "clientW": 1242,
+  "search": "?workshop=true"
+ },
+ "vw1240": {
+  "url": "/channel/channel_aeda14d4-c103-4fa2-af5a-445e61b89ae9",
+  "C": 960,
+  "panels": [
+   {
+    "w": 480,
+    "inDialog": false
+   },
+   {
+    "w": 480,
+    "inDialog": false
+   },
+   {
+    "w": 480,
+    "inDialog": false
+   }
+  ],
+  "scrollW": 1240,
+  "clientW": 1240,
+  "search": "?workshop=true"
+ },
+ "vw1238": {
+  "url": "/channel/channel_aeda14d4-c103-4fa2-af5a-445e61b89ae9",
+  "C": 958,
+  "panels": [
+   {
+    "w": 480,
+    "inDialog": true
+   },
+   {
+    "w": 479,
+    "inDialog": true
+   },
+   {
+    "w": 479,
+    "inDialog": true
+   }
+  ],
+  "scrollW": 1238,
+  "clientW": 1238,
+  "search": "?workshop=true"
+ },
+ "vw1230": {
+  "url": "/channel/channel_aeda14d4-c103-4fa2-af5a-445e61b89ae9",
+  "C": 950,
+  "panels": [
+   {
+    "w": 480,
+    "inDialog": true
+   },
+   {
+    "w": 479,
+    "inDialog": true
+   },
+   {
+    "w": 479,
+    "inDialog": true
+   }
+  ],
+  "scrollW": 1230,
+  "clientW": 1230,
+  "search": "?workshop=true"
+ }
+}

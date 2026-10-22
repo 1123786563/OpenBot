@@ -112,6 +112,7 @@
     "pending_reconciliation": "Awaiting reconciliation",
     "sync_failure": "Result sync failure"
   },
+  "exports": { "showError": "Show failure detail" },
   "sample": {
     "scoreUnavailable": "Score unavailable",
     "passedRules_one": "{{count}} rule passed",
@@ -119,6 +120,8 @@
     "failedRules_one": "{{count}} rule failed",
     "failedRules_other": "{{count}} rules failed",
     "usage": "Usage",
+    "usageUnavailable": "Usage unavailable",
+    "showDetails": "Show details",
     "judgeScored": "Judge {{score}}",
     "judgeFailed": "Judge failed"
   },

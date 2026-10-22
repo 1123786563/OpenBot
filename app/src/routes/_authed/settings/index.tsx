@@ -129,7 +129,7 @@ function RouteComponent() {
                   <span className="flex gap-1">
                     {formatHotkey(hotkey.combo).map((part) => (
                       <kbd
-                        className="rounded-md border bg-muted px-1.5 py-0.5 font-sans text-xs text-muted-foreground"
+                        className="rounded-md border bg-ob-muted-surface px-1.5 py-0.5 font-sans text-xs text-muted-foreground"
                         key={part}
                       >
                         {part}

@@ -1,0 +1,209 @@
+--- a/app/src/components/ai-observability/run-steps.tsx
++++ b/app/src/components/ai-observability/run-steps.tsx
+@@ -254,28 +254,34 @@
+           {summary !== null ? (
+             <ItemDescription>{summary}</ItemDescription>
+           ) : null}
+-          <details className="mt-2 text-sm">
+-            <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
+-              {t("detail.steps.showPayload")}
+-            </summary>
+-            <section
+-              aria-label={t("detail.steps.payloadRegion")}
+-              className="mt-2 max-w-full overflow-x-auto rounded-md border p-3"
+-            >
+-              <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+-                {[
+-                  step.input === undefined
+-                    ? null
+-                    : projectedValueText(step.input, t("marker.truncated")),
+-                  step.output === undefined
+-                    ? null
+-                    : projectedValueText(step.output, t("marker.truncated")),
+-                ]
+-                  .filter((value): value is string => value !== null)
+-                  .join("\n")}
+-              </pre>
+-            </section>
+-          </details>
++          {(() => {
++            const inputText =
++              step.input == null
++                ? null
++                : projectedValueText(step.input, t("marker.truncated"));
++            const outputText =
++              step.output == null
++                ? null
++                : projectedValueText(step.output, t("marker.truncated"));
++            const payload = [inputText, outputText]
++              .filter((value): value is string => value !== null)
++              .join("\n");
++            return payload.length > 0 ? (
++              <details className="mt-2 text-sm">
++                <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
++                  {t("detail.steps.showPayload")}
++                </summary>
++                <section
++                  aria-label={t("detail.steps.payloadRegion")}
++                  className="mt-2 max-w-full overflow-x-auto rounded-md border p-3"
++                >
++                  <pre className="whitespace-pre-wrap break-words font-mono text-xs">
++                    {payload}
++                  </pre>
++                </section>
++              </details>
++            ) : null;
++          })()}
+         </ItemContent>
+         <ItemActions>
+           <span className="text-muted-foreground text-xs">
+--- a/app/tests/ai-observability-run-steps.test.tsx
++++ b/app/tests/ai-observability-run-steps.test.tsx
+@@ -553,6 +553,30 @@
+ });
+ 
+ describe("missing and malformed data fails closed (acceptance 4)", () => {
++  test("null and omitted payloads keep the step tree renderable without empty disclosures (P17)", async () => {
++    stepsHandler = () =>
++      Response.json(
++        stepsBody([
++          step({
++            spanId: "null-payload",
++            name: "null_payload",
++            input: null,
++            output: null,
++          } as unknown as RunStep),
++          step({
++            spanId: "omitted-payload",
++            name: "omitted_payload",
++            input: { state: "omitted" },
++            output: undefined,
++          }),
++        ]),
++      );
++    const view = draw();
++    await waitFor(() => expect(stepNode(view, "null-payload")).not.toBeNull());
++    expect(stepNode(view, "omitted-payload")).not.toBeNull();
++    expect(view.queryAllByText("Show recorded content")).toHaveLength(0);
++  });
++
+   test("a malformed steps body is the unavailable fault, and the page keeps its facts", async () => {
+     stepsHandler = () => Response.json({ steps: "no" });
+     const view = draw();
+--- a/app/tests/ai-observability-experiments.test.tsx
++++ b/app/tests/ai-observability-experiments.test.tsx
+@@ -465,6 +465,10 @@
+     const view = draw();
+     await view.findAllByText("Upstream unavailable");
+     expect(view.queryByRole("dialog")).toBeNull();
++    expect(
++      view.queryByRole("button", { name: "Submit experiment" }),
++    ).toBeNull();
++    expect(view.queryByText("Submit experiment")).toBeNull();
+   });
+ 
+   test("an empty dataset list keeps the empty state", async () => {
+@@ -474,6 +478,9 @@
+       "Pick a frozen dataset version and a Bot configuration to submit the first experiment.",
+     );
+     expect(view.queryByRole("dialog")).toBeNull();
++    expect(
++      view.queryByRole("button", { name: "Submit experiment" }),
++    ).toBeNull();
+   });
+ });
+ 
+--- a/app/tests/ai-observability-exports.test.tsx
++++ b/app/tests/ai-observability-exports.test.tsx
+@@ -8,13 +8,7 @@
+   createRouter,
+   RouterProvider,
+ } from "@tanstack/react-router";
+-import {
+-  cleanup,
+-  configure,
+-  fireEvent,
+-  render,
+-  waitFor,
+-} from "@testing-library/react";
++import { cleanup, configure, render, waitFor } from "@testing-library/react";
+ import userEvent from "@testing-library/user-event";
+ import type {
+   ExportJobListItem,
+@@ -450,7 +444,8 @@
+     await view.findByText("Failed");
+     const disclosure = view.getByText("Show failure detail").closest("details");
+     expect(disclosure?.open).toBe(false);
+-    fireEvent.click(view.getByText("Show failure detail"));
++    const user = userEvent.setup({ document: view.container.ownerDocument });
++    await user.click(view.getByText("Show failure detail"));
+     expect(disclosure?.open).toBe(true);
+     expect(disclosure?.textContent).toContain("too slow to answer");
+     // A terminal job never completes, so its rows are not "pending" — the pending
+--- a/app/tests/observability-route-guards.test.tsx
++++ b/app/tests/observability-route-guards.test.tsx
+@@ -1,8 +1,36 @@
+ import "./preload";
+ import { QueryClient } from "@tanstack/react-query";
++import {
++  createMemoryHistory,
++  createRootRoute,
++  createRoute,
++  createRouter,
++  Outlet,
++} from "@tanstack/react-router";
++import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
++import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
+ import { expect, test } from "../../tests/support/bun-test-compat";
+-import { agentKeys, type AgentProfile } from "@/lib/agents/queries";
+-import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
++import type { RouterContext } from "../src/router-context";
++import { Route as ExportsRoute } from "../src/routes/_authed/_app/bots.$agentId.exports";
++
++const rootRoute = createRootRoute({ component: Outlet });
++const botsRoute = createRoute({
++  getParentRoute: () => rootRoute,
++  path: "bots",
++  component: Outlet,
++});
++const exportsRoute = ExportsRoute.update({
++  id: "/$agentId/exports",
++  path: "/$agentId/exports",
++  getParentRoute: () => botsRoute,
++} as Parameters<typeof ExportsRoute.update>[0] & {
++  id: string;
++  path: string;
++  getParentRoute: () => typeof botsRoute;
++});
++const routeTree = rootRoute.addChildren([
++  botsRoute.addChildren([exportsRoute]),
++]);
+ 
+ const clientWith = (canManage: boolean) => {
+   const queryClient = new QueryClient({
+@@ -36,3 +64,25 @@
+     expect(thrown).toBeDefined();
+   });
+ }
++
++for (const canManage of [true, false]) {
++  test(`direct exports route with canManage=${canManage} runs the production beforeLoad guard`, async () => {
++    const queryClient = clientWith(canManage);
++    const router = createRouter({
++      routeTree,
++      history: createMemoryHistory({ initialEntries: ["/"] }),
++      context: { queryClient } as RouterContext,
++    });
++    await router.navigate({ to: "/bots/bot-1/exports" });
++    if (canManage) {
++      expect(router.state.location.pathname).toBe("/bots/bot-1/exports");
++      expect(router.state.matches.at(-1)?.routeId).toBe(
++        "/bots/$agentId/exports",
++      );
++    } else {
++      // TanStack cancels the guarded match on redirect when this minimal harness has
++      // no destination page; an empty match list proves the direct route was refused.
++      expect(router.state.matches).toHaveLength(0);
++    }
++  });
++}

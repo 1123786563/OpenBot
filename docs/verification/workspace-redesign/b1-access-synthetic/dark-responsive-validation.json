@@ -1,0 +1,226 @@
+{
+  "date": "2026-10-21",
+  "route": "/bots/agent_f56d8533-8866-4872-9d62-120fd9eaf9c4/access",
+  "fixture": "private synthetic endpoint-less access reads in disposable tmpfs db",
+  "results": [
+    {
+      "viewport": "390x844",
+      "theme": "light",
+      "rootTheme": "light",
+      "checks": [
+        {
+          "text": "Your skills",
+          "visible": true
+        },
+        {
+          "text": "Granted",
+          "visible": true
+        },
+        {
+          "text": "Bots it may ask",
+          "visible": true
+        }
+      ],
+      "documentOverflow": false,
+      "screenshot": "artifacts/p13-light-390x844.png",
+      "visibleStates": [
+        "Your skills empty state",
+        "Granted none-granted state",
+        "Bot handoff roster section"
+      ],
+      "handoffOffFallbackVisible": false
+    },
+    {
+      "viewport": "390x844",
+      "theme": "dark",
+      "rootTheme": "dark",
+      "checks": [
+        {
+          "text": "Your skills",
+          "visible": true
+        },
+        {
+          "text": "Granted",
+          "visible": true
+        },
+        {
+          "text": "Bots it may ask",
+          "visible": true
+        }
+      ],
+      "documentOverflow": false,
+      "screenshot": "artifacts/p13-dark-390x844.png",
+      "visibleStates": [
+        "Your skills empty state",
+        "Granted none-granted state",
+        "Bot handoff roster section"
+      ],
+      "handoffOffFallbackVisible": false
+    },
+    {
+      "viewport": "768x1024",
+      "theme": "light",
+      "rootTheme": "light",
+      "checks": [
+        {
+          "text": "Your skills",
+          "visible": true
+        },
+        {
+          "text": "Granted",
+          "visible": true
+        },
+        {
+          "text": "Bots it may ask",
+          "visible": true
+        }
+      ],
+      "documentOverflow": false,
+      "screenshot": "artifacts/p13-light-768x1024.png",
+      "visibleStates": [
+        "Your skills empty state",
+        "Granted none-granted state",
+        "Bot handoff roster section"
+      ],
+      "handoffOffFallbackVisible": false
+    },
+    {
+      "viewport": "768x1024",
+      "theme": "dark",
+      "rootTheme": "dark",
+      "checks": [
+        {
+          "text": "Your skills",
+          "visible": true
+        },
+        {
+          "text": "Granted",
+          "visible": true
+        },
+        {
+          "text": "Bots it may ask",
+          "visible": true
+        }
+      ],
+      "documentOverflow": false,
+      "screenshot": "artifacts/p13-dark-768x1024.png",
+      "visibleStates": [
+        "Your skills empty state",
+        "Granted none-granted state",
+        "Bot handoff roster section"
+      ],
+      "handoffOffFallbackVisible": false
+    },
+    {
+      "viewport": "1280x800",
+      "theme": "light",
+      "rootTheme": "light",
+      "checks": [
+        {
+          "text": "Your skills",
+          "visible": true
+        },
+        {
+          "text": "Granted",
+          "visible": true
+        },
+        {
+          "text": "Bots it may ask",
+          "visible": true
+        }
+      ],
+      "documentOverflow": false,
+      "screenshot": "artifacts/p13-light-1280x800.png",
+      "visibleStates": [
+        "Your skills empty state",
+        "Granted none-granted state",
+        "Bot handoff roster section"
+      ],
+      "handoffOffFallbackVisible": false
+    },
+    {
+      "viewport": "1280x800",
+      "theme": "dark",
+      "rootTheme": "dark",
+      "checks": [
+        {
+          "text": "Your skills",
+          "visible": true
+        },
+        {
+          "text": "Granted",
+          "visible": true
+        },
+        {
+          "text": "Bots it may ask",
+          "visible": true
+        }
+      ],
+      "documentOverflow": false,
+      "screenshot": "artifacts/p13-dark-1280x800.png",
+      "visibleStates": [
+        "Your skills empty state",
+        "Granted none-granted state",
+        "Bot handoff roster section"
+      ],
+      "handoffOffFallbackVisible": false
+    },
+    {
+      "viewport": "1440x900",
+      "theme": "light",
+      "rootTheme": "light",
+      "checks": [
+        {
+          "text": "Your skills",
+          "visible": true
+        },
+        {
+          "text": "Granted",
+          "visible": true
+        },
+        {
+          "text": "Bots it may ask",
+          "visible": true
+        }
+      ],
+      "documentOverflow": false,
+      "screenshot": "artifacts/p13-light-1440x900.png",
+      "visibleStates": [
+        "Your skills empty state",
+        "Granted none-granted state",
+        "Bot handoff roster section"
+      ],
+      "handoffOffFallbackVisible": false
+    },
+    {
+      "viewport": "1440x900",
+      "theme": "dark",
+      "rootTheme": "dark",
+      "checks": [
+        {
+          "text": "Your skills",
+          "visible": true
+        },
+        {
+          "text": "Granted",
+          "visible": true
+        },
+        {
+          "text": "Bots it may ask",
+          "visible": true
+        }
+      ],
+      "documentOverflow": false,
+      "screenshot": "artifacts/p13-dark-1440x900.png",
+      "visibleStates": [
+        "Your skills empty state",
+        "Granted none-granted state",
+        "Bot handoff roster section"
+      ],
+      "handoffOffFallbackVisible": false
+    }
+  ],
+  "blockedMutationRequests": 16,
+  "mutationDisposition": "All non-GET app API requests were aborted by the browser route guard before reaching the disposable API; observed requests were page-load catalogue announcements, with no interaction performed.",
+  "limitation": "The actual endpoint-less fixture showed the Bot handoff roster, not the feature-disabled Handoff fallback. The fallback is covered only by the separate synthetic-read browser-validation.json run."
+}

@@ -1,0 +1,6 @@
+439e02a89ae7b81f9c06a412b5590a5f9c8d38c5b936a779abbb37c92516c8cf  app/src/components/ai-observability/run-detail.tsx
+470172dce9a055223b80f4054bae02ee1fb0c201e4705485012e594173180974  app/src/components/ai-observability/runs-list.tsx
+20f00892900ddcadb78dd70c7d3430d5164a3e237aac8cba83d3e6d4a5ea44f7  app/src/routes/_authed/admin/computers.tsx
+f7a26cbd892dd13000f0cd93e320da6fc05047d45aa5434abf68a9a6cc6c9055  app/tests/ai-observability-exports.test.tsx
+3f2715e85020f71fd2ae9bb63f3898b9433f4b1e756c51ed44f834edb0ad5147  app/tests/ai-observability-run-detail.test.tsx
+52090cae3a364dc357658f8a53acb961e66a585ff1dc7673e850f5cc59dced3a  app/tests/ai-observability-route-chain.test.tsx

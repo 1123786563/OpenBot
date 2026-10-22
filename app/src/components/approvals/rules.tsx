@@ -6,7 +6,7 @@ import {
 } from "@tabler/icons-react";
 import type { UseMutationResult } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
@@ -104,7 +104,7 @@ export function LabelSelect<T extends string>({
     <Select
       disabled={disabled}
       onValueChange={(next) => {
-        if (next !== null) onChange(next as T);
+        if (next !== null) onChange(next);
       }}
       value={value}
     >
@@ -147,12 +147,8 @@ export function RuleRow({
   // The tool is the title; the rest of what the rule matches is the line beneath, never clamped,
   // since two rules for one tool differ only there.
   const match = [
-    rule.effect !== "*"
-      ? t("ruleEffectSuffix", { effect: rule.effect })
-      : null,
-    rule.scope !== "*"
-      ? t("ruleScopeSuffix", { scope: rule.scope })
-      : null,
+    rule.effect !== "*" ? t("ruleEffectSuffix", { effect: rule.effect }) : null,
+    rule.scope !== "*" ? t("ruleScopeSuffix", { scope: rule.scope }) : null,
     rule.botId !== "*" ? t("ruleBotSuffix", { bot: rule.botId }) : null,
   ]
     .filter(Boolean)
@@ -231,6 +227,7 @@ export function RuleForm({
   const [rule, setRule] = useState<ApprovalRuleInput>(blank);
   const [open, setOpen] = useState(false);
   const id = useId();
+  const toolRefInput = useRef<HTMLInputElement>(null);
   // Closing without saving drops what was typed, so the dialog opens blank next time.
   const close = () => {
     setOpen(false);
@@ -245,6 +242,7 @@ export function RuleForm({
     <Field>
       <FieldLabel htmlFor={`${id}-${key}`}>{title}</FieldLabel>
       <Input
+        ref={key === "toolRef" ? toolRefInput : undefined}
         id={`${id}-${key}`}
         onChange={(event) => {
           // Read before the updater runs: React restores a controlled input's DOM value first.
@@ -284,7 +282,12 @@ export function RuleForm({
               onSubmit={(event) => {
                 event.preventDefault();
                 // A failed save keeps the dialog and the draft, so the person can correct it.
-                save.mutate(rule, { onSuccess: close });
+                save.mutate(rule, {
+                  onError: () => {
+                    requestAnimationFrame(() => toolRefInput.current?.focus());
+                  },
+                  onSuccess: close,
+                });
               }}
             >
               <FieldGroup>
@@ -293,9 +296,15 @@ export function RuleForm({
                   t("form.toolOrApp"),
                   "mcp/gmail/*, computer_click, host/*",
                 )}
-                {field("effect", t("form.kindOfAction"), "* , write, read, delegate")}
+                {field(
+                  "effect",
+                  t("form.kindOfAction"),
+                  "* , write, read, delegate",
+                )}
                 {field("scope", t("form.target"), t("form.targetHint"))}
-                {botField ? field("botId", t("form.bot"), t("form.botHint")) : null}
+                {botField
+                  ? field("botId", t("form.bot"), t("form.botHint"))
+                  : null}
                 <Field>
                   <FieldLabel htmlFor={`${id}-behaviour`}>
                     {t("form.behaviour")}

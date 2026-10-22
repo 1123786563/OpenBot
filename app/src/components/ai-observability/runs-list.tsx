@@ -27,6 +27,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Separator } from "@/components/ui/separator";
 import {
   observationRunsQueryOptions,
@@ -254,15 +255,14 @@ export function ObservationRunsList({ botId }: { botId: string }) {
           {/* The export status page is this page's sibling: the runs a person is looking
               at are the runs an export packages. The label lives in the admin namespace,
               the one #42 owns for export status copy. */}
-          <Button
-            render={
-              <Link params={{ agentId: botId }} to="/bots/$agentId/exports" />
-            }
+          <ButtonLink
+            params={{ agentId: botId }}
+            to="/bots/$agentId/exports"
             size="sm"
             variant="outline"
           >
             {tAdmin("exports.link")}
-          </Button>
+          </ButtonLink>
           <Button
             disabled={cursors.length <= 1 || screen.isFetching}
             onClick={() => setCursors(cursors.slice(0, -1))}
@@ -406,6 +406,7 @@ export function ObservationRunsPage({ agentId }: { agentId: string }) {
   const { t } = useTranslation("ai-observability-runs");
   return (
     <BotSubpage
+      width="wide"
       agentId={agentId}
       description={t("page.description")}
       title={t("page.title")}

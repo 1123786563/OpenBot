@@ -1,0 +1,2 @@
+9b9f609b87cfb89ec1da5fa214fd237a4d36c6408d5411b565a483413b99902b  app/src/components/approvals/rules.tsx
+97f077bf13daf5542e60c2ca28c6aa2bf10c9ba335acfdabf2e6bb5608275e47  app/tests/approvals-rules.test.tsx

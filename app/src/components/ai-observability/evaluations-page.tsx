@@ -15,6 +15,7 @@ export function ObservationEvaluationsPage({ agentId }: { agentId: string }) {
   const { t } = useTranslation("ai-observability-evaluations");
   return (
     <BotSubpage
+      width="wide"
       agentId={agentId}
       description={t("page.description")}
       title={t("page.title")}

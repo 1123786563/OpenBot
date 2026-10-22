@@ -1,0 +1,2 @@
+e03899e054a9ef1024f3b62fe90643070f74882b29141155d601af21ee93d07f  docs/verification/workspace-redesign/execution/checkpoints/t05-r2/POST/e2e-bun-suites.json
+dde11bef553d1cbdbd1a52ae384b645572cae7ff4b2ce73dccc809b3283b2f66  docs/verification/workspace-redesign/execution/checkpoints/t05-r2/delta.patch

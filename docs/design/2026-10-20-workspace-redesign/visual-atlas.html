@@ -1,0 +1,2688 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpenBot 全站视觉方案</title><style>
+:root{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;color:#ebeff7;background:#111318;font-synthesis:none;--bg:#111318;--rail:#0d1015;--surface:#191d26;--raised:#242b38;--ink:#ebeff7;--sub:#a2acbe;--line:#303949;--action:#3d6bda;--accent:#8db4ff;--ok:#69d5ac;--warn:#f0be69;--danger:#ff9ea7;--control:#68788f;color-scheme:dark}*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button,select{cursor:pointer}button,input,select{color:var(--ink);background:var(--surface);border:1px solid var(--control);border-radius:8px;padding:9px 12px}button:hover{background:var(--raised)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}::selection{background:var(--action);color:white}input{caret-color:var(--accent)}input::placeholder{color:var(--sub)}*{scrollbar-width:thin;scrollbar-color:var(--control) transparent}.light{--bg:#f5f7fa;--rail:#eef1f6;--surface:#fff;--raised:#fff;--ink:#192131;--sub:#526079;--line:#d8dfe9;--action:#315fcf;--accent:#315fcf;--ok:#16704d;--warn:#8b570b;--danger:#b32745;--control:#7a879b;color-scheme:light}.atlas{max-width:1560px;margin:auto;padding:28px;color:var(--ink);background:var(--bg)}h1{font-size:27px;line-height:1.3;letter-spacing:-.025em;margin:0 0 8px}h2{font-size:20px;margin:0 0 8px}h3{font-size:14px;margin:24px 0 10px}p{line-height:1.7;margin:6px 0;color:var(--sub)}.intro{max-width:78ch;font-size:14px}.toolbar{display:flex;flex-wrap:wrap;gap:14px;align-items:end;margin:24px 0}.toolbar label{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--sub)}.toolbar input{min-width:220px}.toolbar select{max-width:260px}.workspace>main,.index{min-width:0}.workspace{display:grid;grid-template-columns:225px minmax(0,1fr);gap:20px;align-items:start}.index{max-height:780px;overflow:auto;padding:8px;background:var(--rail);border-radius:12px}.group-label{font-size:12px;color:var(--sub);padding:17px 8px 7px}.page-link{display:flex;width:100%;gap:8px;text-align:left;border:0;border-radius:6px;background:transparent;padding:9px 8px;font-size:12px;line-height:1.45}.page-link small{color:var(--sub);font-size:10px;font-variant-numeric:tabular-nums;min-width:24px}.page-link[aria-current=page]{background:var(--surface);color:var(--accent)}.page-head{display:flex;justify-content:space-between;align-items:start;gap:12px}.page-path{font-family:ui-monospace,monospace;font-size:11px;overflow-wrap:anywhere;color:var(--sub)}.badge{display:inline-block;font-size:11px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;white-space:nowrap;color:var(--sub)}.preview-label{font-size:12px;color:var(--sub);margin:17px 0 8px}.preview-scroll{overflow-x:auto;border-radius:12px;border:1px solid var(--line);background:var(--rail);padding:0;min-width:0}.screen{display:flex;min-height:540px;background:var(--bg);font-size:12px;line-height:1.55;max-width:100%;overflow:hidden}.screen.narrow{width:390px;max-width:100%;margin:auto}.appnav{width:162px;flex-shrink:0;background:var(--rail);border-right:1px solid var(--line);padding:17px 12px;display:flex;flex-direction:column;gap:4px}.wordmark{display:flex;align-items:center;gap:7px;font-size:16px;font-weight:600;margin-bottom:20px}.brand{width:17px;height:17px;color:var(--accent)}.nav-label{padding:7px 8px;color:var(--sub);font-size:11px}.nav-label.active{background:var(--surface);color:var(--ink);border-radius:6px}.nav-bottom{margin-top:auto;padding-top:22px}.mock-search{padding:7px 9px;border:1px solid var(--control);border-radius:7px;color:var(--sub);margin-bottom:16px;font-size:11px}.mockmain{flex:1;min-width:0;padding:26px 28px}.mock-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px}.mock-title strong{font-size:20px;letter-spacing:-.02em}.mock-description{font-size:11px;color:var(--sub);margin-bottom:22px}.mock-primary{display:inline-block;background:var(--action);color:#fff;border-radius:7px;padding:7px 11px;font-size:11px;font-weight:500;white-space:nowrap}.mock-secondary{display:inline-block;border:1px solid var(--control);border-radius:7px;padding:6px 10px;color:var(--ink);font-size:11px}.surface{background:var(--surface);border-radius:10px;padding:0 14px}.row{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}.row-content{min-width:0;flex:1}.row-title{font-weight:500}.row-sub{font-size:10px;color:var(--sub);margin-top:3px;overflow-wrap:anywhere}.row-action{font-size:10px;color:var(--accent);flex-shrink:0}.section-title{font-size:11px;color:var(--sub);font-weight:500;margin:20px 0 8px}.avatar{display:flex;align-items:center;justify-content:center;background:var(--raised);color:var(--accent);border-radius:9px;width:30px;height:30px;flex-shrink:0;font-weight:600}.state{font-size:10px;color:var(--accent);white-space:nowrap}.state.ok{color:var(--ok)}.state.warn{color:var(--warn)}.state.bad{color:var(--danger)}.mockfield{border:1px solid var(--control);border-radius:7px;padding:9px 10px;color:var(--sub);margin:8px 0 13px;background:var(--bg);font-size:11px;overflow-wrap:anywhere}.toggle{display:inline-block;width:28px;height:16px;border-radius:12px;background:var(--action);position:relative;flex-shrink:0}.toggle:after{content:"";position:absolute;right:3px;top:3px;width:10px;height:10px;border-radius:50%;background:white}.mocktable{width:100%;border-collapse:collapse;text-align:left;font-size:11px}.mocktable th{font-size:10px;color:var(--sub);font-weight:500;padding:10px 8px;border-bottom:1px solid var(--line)}.mocktable td{padding:13px 8px;border-bottom:1px solid var(--line)}.mocktable tr:last-child td{border:0}.tablewrap{overflow:auto;background:var(--surface);border-radius:10px}.sample-note{font-size:10px;color:var(--sub);margin-top:12px}.chat-body{max-width:620px;margin:30px auto 0}.person{display:flex;gap:10px;margin:20px 0}.bubble{background:var(--surface);padding:12px 15px;border-radius:10px}.tool-row{padding:9px 12px;background:var(--surface);margin:3px 0;font-size:11px}.artifact{display:flex;align-items:center;gap:12px;padding:16px;background:var(--surface);border-radius:10px;margin:16px 0}.composer{margin-top:38px;border:1px solid var(--control);border-radius:12px;padding:16px 14px;color:var(--sub);background:var(--surface)}.composer-footer{display:flex;justify-content:space-between;align-items:center;margin-top:22px}.context{width:210px;flex-shrink:0;padding:20px 15px;background:var(--surface);border-left:1px solid var(--line)}.context h3{margin-top:8px}.sessionnav{width:140px;padding:18px 10px;border-right:1px solid var(--line);background:var(--rail);flex-shrink:0}.sessionnav strong{display:block;margin:0 8px 20px}.screen.craftscreen .appnav{width:55px;padding:16px 7px}.screen.craftscreen .appnav .nav-label{font-size:9px;padding:7px 3px}.screen.craftscreen .wordmark{font-size:0;justify-content:center}.screen.craftscreen .mock-search{display:none}.screen.craftscreen .mockmain{padding:20px 16px}.output{width:240px;flex-shrink:0;border-left:1px solid var(--line);padding:17px 15px;background:var(--surface)}.tabs{display:flex;gap:13px;font-size:11px;color:var(--sub);padding-bottom:12px;border-bottom:1px solid var(--line)}.tab-active{color:var(--accent)}.document{background:var(--bg);padding:20px 15px;margin-top:18px;border-radius:8px}.document strong{font-size:15px}.document p{font-size:11px}.resourcegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.resource{background:var(--surface);border-radius:10px;padding:17px}.resource p{font-size:11px}.resource-icon{margin-bottom:14px;color:var(--accent)}.flowmain{max-width:420px;width:100%;padding:40px 28px;margin:auto}.flowmain .mock-title{margin-top:34px}.flowmain .mock-description{margin-bottom:25px}.notice{background:var(--surface);padding:24px;border-radius:10px;margin:24px 0}.notice strong{display:block;font-size:15px;margin-bottom:8px}.notice p{font-size:12px}.notice .mock-secondary{margin-top:12px}.narrow .appnav,.narrow .context,.narrow .sessionnav,.narrow .output{display:none}.narrow .mockmain{padding:20px 16px}.narrow .mock-title strong{font-size:19px}.narrow .mock-title{flex-wrap:wrap}.narrow .flowmain{padding:28px 20px}.narrow .resourcegrid{grid-template-columns:1fr}.mobilebar{display:none}.narrow .mobilebar{display:block;padding-bottom:14px;color:var(--sub);font-size:11px}.details{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:22px}.details h3{margin-top:0}.details ol,.details ul{margin:0;padding-left:18px;line-height:1.9;font-size:13px;color:var(--sub)}.details p{font-size:13px}.constraints{grid-column:1/-1;padding:16px 18px;background:var(--surface);border-radius:10px;font-size:13px}.footer{margin-top:24px;border-top:1px solid var(--line);padding-top:16px;font-size:12px;color:var(--sub)}@media(max-width:900px){.atlas{padding:18px}.workspace{grid-template-columns:1fr}.index{max-height:180px;display:flex;gap:5px;overflow:auto}.group-label{display:none}.page-link{min-width:150px;max-width:190px;align-items:center}.screen:not(.narrow) .appnav{width:130px}.screen:not(.narrow) .context{width:170px}.screen:not(.narrow){min-width:800px}.details{gap:18px}.toolbar{gap:10px}.toolbar select{max-width:210px}}@media(max-width:520px){h1{font-size:23px}.details{grid-template-columns:1fr}.toolbar label{flex:1;min-width:130px}.toolbar input,.toolbar select{min-width:0;width:100%;max-width:none}.page-head{flex-wrap:wrap}.atlas{padding:14px}.preview-scroll{padding:0}.constraints{grid-column:auto}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style></head><body><div class="atlas"><h1>OpenBot 全站视觉方案</h1><p class="intro">76 个页面，共用一套现代科技工作台语言。选择页面查看结构示意、内容顺序、操作、状态与窄屏方案。下方为设计评审稿，所有数值与内容均为示例，未连接业务服务。</p><div class="toolbar"><label>查找页面<input id="search" type="search" placeholder="名称、路由或页面 ID"></label><label>页面空间<select id="scope"><option value="">全部空间</option><option>日常工作区</option><option>个人设置</option><option>管理后台</option><option>独立流程</option></select></label><label>主题<select id="theme"><option value="dark">石墨暗色</option><option value="light">冷灰亮色</option></select></label><label>布局示意<select id="viewport"><option value="desktop">桌面布局</option><option value="mobile">窄屏主区 · 390px</option></select></label><label>状态示意<select id="state"><option value="normal">正常内容</option><option value="loading">首次加载</option><option value="empty">空内容</option><option value="error">异常</option><option value="permission">无权限</option></select></label></div><div class="workspace"><nav id="index" class="index" aria-label="页面方案索引"></nav><main><div class="page-head"><div><h2 id="page-title"></h2><div id="page-path" class="page-path"></div></div><span id="template" class="badge"></span></div><div class="preview-label">布局与视觉层次示意 · 原生 HTML 绘制，非运行中的 HeroUI 页面</div><div class="preview-scroll"><div id="screen" class="screen" aria-label="页面布局示意"></div></div><div class="details"><section><h3>内容顺序</h3><ol id="sections"></ol></section><section><h3>主要操作与页面状态</h3><ul id="actions"></ul><p id="states"></p></section><section><h3>窄屏处理</h3><p id="mobile"></p></section><section><h3>代码位置与范围</h3><p id="source" class="page-path"></p><p id="changes"></p></section><div id="note" class="constraints"></div></div></main></div><div class="footer" id="footer"></div></div><script>
+const DATA={
+  "title": "OpenBot 全站改造说明与视觉方案",
+  "date": "2026-10-20",
+  "status": "设计提案，未实施",
+  "base": "203d0f0244b2f898218fa12027089c631e8448d9",
+  "pages": [
+    {
+      "path": "/",
+      "title": "开始协作",
+      "template": "home",
+      "sections": [
+        "新对话标题与简短指引",
+        "主输入区：文字、附件、同事选择",
+        "探索 AI 同事横向列表"
+      ],
+      "actions": [
+        "发送消息",
+        "选择同事"
+      ],
+      "states": [
+        "无可用 Bot",
+        "发送中",
+        "发送失败保留草稿"
+      ],
+      "mobile": "探索区改为可横滑列表，输入区保留触控空间。",
+      "change": "VL",
+      "note": "主输入是首要焦点；首页不添加无来源的任务统计或推荐内容。",
+      "source": "app/src/routes/_authed/_app/index.tsx",
+      "id": "P01",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/channel/new",
+      "title": "新对话",
+      "template": "chat",
+      "sections": [
+        "收件人选择：一个或多个 Bot",
+        "会话预览与创建中反馈",
+        "底部输入区与附件"
+      ],
+      "actions": [
+        "选择收件人",
+        "发送首条消息"
+      ],
+      "states": [
+        "Bot 不可访问",
+        "名册加载失败",
+        "首条发送中",
+        "创建失败"
+      ],
+      "mobile": "收件人换行排列，输入区保持可见；不预先创建空频道。",
+      "change": "VL",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/channel/new.tsx",
+      "id": "P02",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/channel/$channelId",
+      "title": "会话",
+      "template": "chat",
+      "sections": [
+        "顶部：会话名称与电脑/工作坊/资料入口",
+        "暂停与待处理状态",
+        "消息时间线与工具过程",
+        "底部 Composer",
+        "按需右栏：电脑、工作坊、Bot 资料"
+      ],
+      "actions": [
+        "发送/停止/重试",
+        "打开上下文面板"
+      ],
+      "states": [
+        "加载/不存在",
+        "流式响应",
+        "暂停",
+        "等待输入",
+        "附件失败"
+      ],
+      "mobile": "主对话优先，右栏转全宽 Sheet；输入法与软键盘不遮挡发送。",
+      "change": "VL",
+      "note": "右栏仍是三种互斥视图；保留搜索参数、返回关闭、输入法与滚动锚点契约。",
+      "source": "app/src/routes/_authed/_app/channel/$channelId.tsx",
+      "id": "P03",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/group/$channelId",
+      "title": "群聊协作",
+      "template": "chat",
+      "sections": [
+        "标题与成员入口",
+        "成员及暂停状态",
+        "多 Bot 消息时间线",
+        "输入与附件"
+      ],
+      "actions": [
+        "查看成员",
+        "发送消息"
+      ],
+      "states": [
+        "成员不可用",
+        "Bot 暂停",
+        "多成员发言",
+        "发送失败"
+      ],
+      "mobile": "头像与名称同行，成员详情按需展开；消息不压成多列。",
+      "change": "VL",
+      "note": "不添加单 Bot 专用电脑/资料面板。",
+      "source": "app/src/routes/_authed/_app/group/$channelId.tsx",
+      "id": "P04",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bot",
+      "title": "Bot 直接对话",
+      "template": "chat",
+      "sections": [
+        "Bot 标题与新对话入口",
+        "CopilotChat 消息与输入",
+        "电脑画面详情面板"
+      ],
+      "actions": [
+        "开始新对话",
+        "打开电脑"
+      ],
+      "states": [
+        "显式 Bot 不存在",
+        "会话加载失败",
+        "工作中"
+      ],
+      "mobile": "复用聊天的单主区与 Sheet 规则。",
+      "change": "V",
+      "note": "保留独立入口语义，不静默重定向至频道。",
+      "source": "app/src/routes/_authed/_app/bot.tsx",
+      "id": "P05",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots",
+      "title": "AI 同事",
+      "template": "list",
+      "sections": [
+        "标题与创建按钮",
+        "需要你处理",
+        "置顶",
+        "自己的 Bot",
+        "共享 Bot",
+        "已隐藏：折叠列表"
+      ],
+      "actions": [
+        "创建 Bot",
+        "打开 Bot 详情",
+        "展开隐藏项"
+      ],
+      "states": [
+        "没有自己的 Bot",
+        "没有共享 Bot",
+        "名册失败",
+        "有待办",
+        "暂停"
+      ],
+      "mobile": "行列表保留，摘要允许两行，状态与操作不挤占名称。",
+      "change": "VL",
+      "note": "保留现有分组与优先级；不用卡片网格替代需要快速扫描的列表。",
+      "source": "app/src/routes/_authed/_app/bots.index.tsx",
+      "id": "P06",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId",
+      "title": "Bot 工作详情",
+      "template": "profile",
+      "sections": [
+        "身份：头像、名称、职责",
+        "需要你处理与建议",
+        "启用/通知状态",
+        "进行中活动",
+        "计划中与已完成",
+        "配置入口",
+        "个人管理与危险操作"
+      ],
+      "actions": [
+        "打开对话",
+        "处理待办",
+        "启用/暂停",
+        "进入配置"
+      ],
+      "states": [
+        "无待办",
+        "已暂停",
+        "无活动",
+        "不可访问",
+        "部分状态加载失败"
+      ],
+      "mobile": "纵向排列，待办置前；次要管理入口折叠，危险操作独立。",
+      "change": "VL",
+      "note": "状态与活动优先，配置其次；不新增无数据支撑的绩效指标。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.index.tsx",
+      "id": "P07",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/responsibilities",
+      "title": "职责",
+      "template": "config",
+      "sections": [
+        "返回 Bot 与职责说明",
+        "职责列表：目标与启用状态",
+        "新建/编辑职责弹窗"
+      ],
+      "actions": [
+        "新建职责",
+        "编辑职责",
+        "启停职责"
+      ],
+      "states": [
+        "空列表",
+        "保存中",
+        "保存失败"
+      ],
+      "mobile": "弹窗适应整屏并保留底部提交，长目标自动换行。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.responsibilities.tsx",
+      "id": "P08",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/reach",
+      "title": "联系与投递",
+      "template": "config",
+      "sections": [
+        "返回 Bot",
+        "现有投递绑定列表",
+        "渠道与目标配置",
+        "验证/保存反馈"
+      ],
+      "actions": [
+        "配置联系渠道",
+        "修改投递目标"
+      ],
+      "states": [
+        "无绑定",
+        "渠道不可用",
+        "验证失败"
+      ],
+      "mobile": "字段单列，目标长地址换行。",
+      "change": "V",
+      "note": "复用 ReachingYou 现有字段与操作，不推导新的渠道能力。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.reach.tsx",
+      "id": "P09",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/memory",
+      "title": "Bot 记忆来源",
+      "template": "config",
+      "sections": [
+        "返回 Bot",
+        "个人记忆入口",
+        "记忆来源",
+        "主动研究设置"
+      ],
+      "actions": [
+        "管理来源",
+        "设置主动研究",
+        "打开个人记忆"
+      ],
+      "states": [
+        "无来源",
+        "停用",
+        "配置保存失败"
+      ],
+      "mobile": "来源与范围说明不截断，配置保持单列。",
+      "change": "V",
+      "note": "明确 Bot 来源与用户已确认的个人记忆是不同对象。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.memory.tsx",
+      "id": "P10",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/approvals",
+      "title": "Bot 审批规则",
+      "template": "config",
+      "sections": [
+        "返回 Bot 与作用范围",
+        "当前 Bot 规则列表",
+        "规则编辑与操作"
+      ],
+      "actions": [
+        "添加/编辑规则",
+        "删除规则"
+      ],
+      "states": [
+        "无规则",
+        "继承的约束",
+        "保存失败"
+      ],
+      "mobile": "规则条件分行展示，作用对象保持可见。",
+      "change": "V",
+      "note": "不把规则配置页改成虚构的全局待办收件箱。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.approvals.tsx",
+      "id": "P11",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/routines",
+      "title": "Bot 例行任务",
+      "template": "list",
+      "sections": [
+        "返回 Bot",
+        "当前 Bot 例行任务",
+        "调度与运行状态",
+        "已有编辑操作"
+      ],
+      "actions": [
+        "管理例行任务",
+        "查看运行"
+      ],
+      "states": [
+        "空任务",
+        "运行中",
+        "失败",
+        "跳过",
+        "等待"
+      ],
+      "mobile": "任务名、调度与状态分层；次要操作放菜单。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.routines.tsx",
+      "id": "P12",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/access",
+      "title": "能力与授权",
+      "template": "config",
+      "sections": [
+        "返回 Bot",
+        "技能能力",
+        "连接器与已授予访问",
+        "交接配置"
+      ],
+      "actions": [
+        "管理技能",
+        "管理授权",
+        "配置交接"
+      ],
+      "states": [
+        "无能力",
+        "共享应用受限",
+        "授权失效"
+      ],
+      "mobile": "每种能力单独分组，范围说明保持完整。",
+      "change": "V",
+      "note": "不把部署可连接、个人已授权和 Bot 已授予访问混成一个开关。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.access.tsx",
+      "id": "P13",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/sharing",
+      "title": "共享与发布",
+      "template": "config",
+      "sections": [
+        "返回 Bot",
+        "当前可见范围",
+        "发布/共享配置",
+        "影响说明"
+      ],
+      "actions": [
+        "修改共享范围",
+        "管理发布"
+      ],
+      "states": [
+        "本人/共享成员/管理员视角",
+        "无管理权限",
+        "保存失败"
+      ],
+      "mobile": "共享范围先于操作，长成员信息换行。",
+      "change": "V",
+      "note": "个人资源与团队发布继续遵守原权限。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.sharing.tsx",
+      "id": "P14",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/setup",
+      "title": "Bot 基础设置",
+      "template": "config",
+      "sections": [
+        "返回 Bot",
+        "身份字段",
+        "连接信息",
+        "回调凭据与现有维护入口"
+      ],
+      "actions": [
+        "编辑身份",
+        "修改连接",
+        "管理回调凭据"
+      ],
+      "states": [
+        "只读权限",
+        "保存中",
+        "连接异常"
+      ],
+      "mobile": "单列字段，敏感值保持现有掩码与操作方式。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.setup.tsx",
+      "id": "P15",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/runs",
+      "title": "运行记录",
+      "template": "records",
+      "sections": [
+        "返回 Bot",
+        "可用性与采集状态",
+        "已有状态/时间等筛选",
+        "运行列表",
+        "分页"
+      ],
+      "actions": [
+        "选择运行",
+        "切换筛选"
+      ],
+      "states": [
+        "禁用/未配置",
+        "同步中",
+        "上游故障",
+        "空结果",
+        "加载失败"
+      ],
+      "mobile": "记录改为摘要行；ID 可复制的能力以实际已有入口为准。",
+      "change": "VL",
+      "note": "同步中不表现为失败，未知数量不显示为 0。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.runs.tsx",
+      "id": "P16",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/runs/$bindingId",
+      "title": "运行详情",
+      "template": "run",
+      "sections": [
+        "返回 Bot 与运行身份",
+        "概览与状态",
+        "可用性",
+        "引用",
+        "元数据",
+        "执行步骤"
+      ],
+      "actions": [
+        "查看已有引用",
+        "展开步骤"
+      ],
+      "states": [
+        "部分同步",
+        "引用缺失",
+        "上游不可达",
+        "无步骤"
+      ],
+      "mobile": "概览单列，步骤长内容折叠；禁止整页横向滚动。",
+      "change": "VL",
+      "note": "保留当前按步骤分组的事实，不虚构完整 Trace 瀑布图。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx",
+      "id": "P17",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/datasets",
+      "title": "数据集",
+      "template": "records",
+      "sections": [
+        "返回 Bot",
+        "数据集列表与版本信息",
+        "现有数据集入口"
+      ],
+      "actions": [
+        "打开数据集"
+      ],
+      "states": [
+        "空列表",
+        "同步中",
+        "不可用"
+      ],
+      "mobile": "名称与版本同组显示，辅助字段后移。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.datasets.tsx",
+      "id": "P18",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/evaluations",
+      "title": "评估",
+      "template": "records",
+      "sections": [
+        "返回 Bot",
+        "数据集区域",
+        "实验区域",
+        "现有结果与比较入口"
+      ],
+      "actions": [
+        "打开数据集",
+        "打开实验结果",
+        "比较实验"
+      ],
+      "states": [
+        "无数据集",
+        "无实验",
+        "服务不可用"
+      ],
+      "mobile": "两区上下排列，筛选按内容换行。",
+      "change": "V",
+      "note": "数据集页与评估页复用列表但保留各自路由。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx",
+      "id": "P19",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/evaluations/$datasetId",
+      "title": "数据集详情",
+      "template": "records",
+      "sections": [
+        "返回链与数据集身份",
+        "版本选择与版本信息",
+        "现有版本内容与可用性反馈"
+      ],
+      "actions": [
+        "选择版本",
+        "查看数据集内容"
+      ],
+      "states": [
+        "无版本",
+        "版本不可用",
+        "获取失败"
+      ],
+      "mobile": "版本控件占满可用宽度，结构化内容局部滚动。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.$datasetId.tsx",
+      "id": "P20",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/evaluations/experiments/$experimentId/$executionId",
+      "title": "实验执行结果",
+      "template": "records",
+      "sections": [
+        "实验与执行身份",
+        "执行状态",
+        "汇总结果",
+        "样本结果列表"
+      ],
+      "actions": [
+        "查看样本",
+        "使用现有执行操作"
+      ],
+      "states": [
+        "执行中",
+        "部分样本缺失",
+        "失败",
+        "无样本"
+      ],
+      "mobile": "样本摘要先行，明细按需展开；指标不强制多列。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiments.$experimentId.$executionId.tsx",
+      "id": "P21",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/evaluations/experiment-comparisons",
+      "title": "实验比较",
+      "template": "compare",
+      "sections": [
+        "比较对象输入/选择",
+        "两侧实验身份",
+        "兼容性说明",
+        "指标差异",
+        "退化样本"
+      ],
+      "actions": [
+        "选择比较对象",
+        "执行比较",
+        "查看差异"
+      ],
+      "states": [
+        "未选择",
+        "不兼容",
+        "无可比较结果",
+        "部分缺失"
+      ],
+      "mobile": "窄屏左右实验改为上下；同一指标的基线与候选相邻。",
+      "change": "VL",
+      "note": "数值差异必须标明方向、单位与缺失，不能只用红绿表达结论。",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiment-comparisons.tsx",
+      "id": "P22",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/bots/$agentId/exports",
+      "title": "导出任务",
+      "template": "records",
+      "sections": [
+        "返回 Bot",
+        "可用性说明",
+        "导出任务与状态",
+        "已有下载/操作入口"
+      ],
+      "actions": [
+        "查看任务",
+        "下载可用导出"
+      ],
+      "states": [
+        "排队",
+        "运行",
+        "成功",
+        "失败",
+        "产物不可用"
+      ],
+      "mobile": "任务状态与操作同组，错误原因可展开。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.exports.tsx",
+      "id": "P23",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/skills",
+      "title": "技能",
+      "template": "editor",
+      "sections": [
+        "标题与范围说明",
+        "个人技能列表",
+        "工作区技能列表",
+        "右侧新建/编辑"
+      ],
+      "actions": [
+        "新建技能",
+        "编辑技能"
+      ],
+      "states": [
+        "无个人技能",
+        "无共享技能",
+        "只读",
+        "保存失败"
+      ],
+      "mobile": "编辑转 Sheet，长指令有独立滚动，不遮挡提交。",
+      "change": "VL",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/skills.tsx",
+      "id": "P24",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/routines",
+      "title": "例行任务",
+      "template": "list",
+      "sections": [
+        "标题说明",
+        "跨 Bot 例行任务列表",
+        "Bot 身份、调度、最近运行状态"
+      ],
+      "actions": [
+        "管理任务",
+        "查看现有运行"
+      ],
+      "states": [
+        "空列表",
+        "运行中",
+        "失败",
+        "跳过",
+        "等待"
+      ],
+      "mobile": "每项明确所属 Bot，避免与 Craft 任务混淆。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/routines.tsx",
+      "id": "P25",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/craft",
+      "title": "Craft 会话",
+      "template": "craft-home",
+      "sections": [
+        "全局导航",
+        "Craft 会话列表与创建",
+        "选择/创建会话提示"
+      ],
+      "actions": [
+        "创建会话",
+        "选择会话",
+        "打开计划任务"
+      ],
+      "states": [
+        "无会话",
+        "会话加载失败",
+        "创建失败"
+      ],
+      "mobile": "默认显示会话列表，选择后进入对话；不自动创建会话。",
+      "change": "VL",
+      "note": "",
+      "source": "app/src/routes/_authed/_app/craft/index.tsx",
+      "id": "P26",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/craft/$sessionId",
+      "title": "Craft 创作",
+      "template": "craft",
+      "sections": [
+        "可收起的全局导航",
+        "Craft 会话列表",
+        "标题与沙箱状态",
+        "对话、工具调用与输入",
+        "输出：预览/文件/产物"
+      ],
+      "actions": [
+        "发送/停止",
+        "切换输出",
+        "管理会话"
+      ],
+      "states": [
+        "沙箱启动/失败",
+        "生成中",
+        "预览未就绪",
+        "无文件",
+        "会话丢失"
+      ],
+      "mobile": "小于 768px 使用对话/输出视图切换；会话列表按需打开。",
+      "change": "VL",
+      "note": "建议 1024–1279px 输出按需展开；不擅自新增拖拽分栏或后台能力。",
+      "source": "app/src/routes/_authed/_app/craft/$sessionId.tsx",
+      "id": "P27",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/craft/tasks",
+      "title": "Craft 计划任务",
+      "template": "editor",
+      "sections": [
+        "Craft 会话导航",
+        "计划任务列表",
+        "调度/启停/最近运行/下次时间",
+        "新建/编辑面板"
+      ],
+      "actions": [
+        "新建任务",
+        "编辑任务"
+      ],
+      "states": [
+        "空列表",
+        "已暂停",
+        "最近失败",
+        "保存失败"
+      ],
+      "mobile": "列表优先，编辑 Sheet；时间必须附带时区上下文。",
+      "change": "VL",
+      "note": "与 Bot routines、工作坊 schedules 保持独立领域入口。",
+      "source": "app/src/routes/_authed/_app/craft/tasks.tsx",
+      "id": "P28",
+      "scope": "日常工作区"
+    },
+    {
+      "path": "/settings",
+      "title": "通用设置",
+      "template": "config",
+      "sections": [
+        "主题与语言",
+        "消息列表偏好",
+        "常驻指令",
+        "快捷键"
+      ],
+      "actions": [
+        "切换偏好",
+        "编辑常驻指令"
+      ],
+      "states": [
+        "保存中",
+        "保存失败",
+        "长文本"
+      ],
+      "mobile": "设置标签在上、控件在下；键位标签不挤压说明。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/index.tsx",
+      "id": "P29",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/notifications",
+      "title": "通知与设备",
+      "template": "config",
+      "sections": [
+        "更新投递路由",
+        "原生设备",
+        "最近投递记录"
+      ],
+      "actions": [
+        "管理路由",
+        "管理现有设备入口"
+      ],
+      "states": [
+        "无设备",
+        "权限未授予",
+        "投递失败",
+        "无记录"
+      ],
+      "mobile": "投递目标和结果保持相邻，日志细节展开。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/notifications.tsx",
+      "id": "P30",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/approvals",
+      "title": "个人审批设置",
+      "template": "config",
+      "sections": [
+        "执行前确认偏好",
+        "所有 Bot 通用规则",
+        "其他 Bot 规则"
+      ],
+      "actions": [
+        "修改确认偏好",
+        "维护规则"
+      ],
+      "states": [
+        "无规则",
+        "保存失败",
+        "只读约束"
+      ],
+      "mobile": "优先显示规则适用范围，复杂条件换行。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/approvals.tsx",
+      "id": "P31",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/memory",
+      "title": "个人记忆",
+      "template": "list",
+      "sections": [
+        "页面说明与添加事实",
+        "已确认记忆列表",
+        "现有来源与维护入口"
+      ],
+      "actions": [
+        "记住事实",
+        "管理已有记忆"
+      ],
+      "states": [
+        "无记忆",
+        "保存失败",
+        "删除确认"
+      ],
+      "mobile": "记忆正文可读，来源和操作放次行。",
+      "change": "V",
+      "note": "用户已确认事实与候选建议不混合为同一已知事实。",
+      "source": "app/src/routes/_authed/settings/memory.tsx",
+      "id": "P32",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/connected-accounts",
+      "title": "已连接账号",
+      "template": "list",
+      "sections": [
+        "服务搜索",
+        "个人账号",
+        "共享账号",
+        "已关联账号",
+        "GitHub 来源",
+        "团队 Bot 同意记录"
+      ],
+      "actions": [
+        "连接/管理账号",
+        "查看授权"
+      ],
+      "states": [
+        "无结果",
+        "连接失效",
+        "团队共享",
+        "不同接入分支"
+      ],
+      "mobile": "搜索全宽，服务名/身份/状态分层。",
+      "change": "VL",
+      "note": "服务可用与用户本人已连接必须显示为不同状态。",
+      "source": "app/src/routes/_authed/settings/connected-accounts/index.tsx",
+      "id": "P33",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/connected-accounts/$key",
+      "title": "账号详情",
+      "template": "config",
+      "sections": [
+        "返回服务列表",
+        "服务身份与账号模式",
+        "连接状态与操作",
+        "已授予访问与连接信息"
+      ],
+      "actions": [
+        "连接/重新连接",
+        "撤销连接"
+      ],
+      "states": [
+        "共享只读",
+        "本人未连接",
+        "权限不足",
+        "服务不存在"
+      ],
+      "mobile": "主操作明确作用于哪个账号；长授权说明不截断。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/connected-accounts/$key.tsx",
+      "id": "P34",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/model-access",
+      "title": "模型访问授权",
+      "template": "config",
+      "sections": [
+        "模型选择",
+        "已有授权列表",
+        "绑定码输入",
+        "预览 Bot 与范围",
+        "确认后的授权结果",
+        "说明"
+      ],
+      "actions": [
+        "输入绑定码",
+        "预览并确认授权",
+        "管理已有授权"
+      ],
+      "states": [
+        "绑定码无效/过期",
+        "预览中",
+        "确认失败",
+        "已授权"
+      ],
+      "mobile": "输入、预览和确认连续单列，确认对象始终可见。",
+      "change": "VL",
+      "note": "管理员登记 Bot 不等于用户授予模型访问；不自动确认。",
+      "source": "app/src/routes/_authed/settings/model-access.tsx",
+      "id": "P35",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/passwords",
+      "title": "保存的登录信息",
+      "template": "list",
+      "sections": [
+        "功能状态说明",
+        "站点/账号列表",
+        "删除操作"
+      ],
+      "actions": [
+        "删除登录信息"
+      ],
+      "states": [
+        "功能禁用",
+        "无登录信息",
+        "删除中/失败"
+      ],
+      "mobile": "显示站点和账号，不在列表暴露密码。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/passwords.tsx",
+      "id": "P36",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/components-gallery",
+      "title": "组件画廊",
+      "template": "gallery",
+      "sections": [
+        "标题说明",
+        "组件预览集合",
+        "组件名称与类型"
+      ],
+      "actions": [
+        "打开组件预览"
+      ],
+      "states": [
+        "空目录",
+        "加载失败"
+      ],
+      "mobile": "两列逐步变单列，预览尺寸受限且不抢滚动。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/components-gallery/index.tsx",
+      "id": "P37",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/components-gallery/$name",
+      "title": "组件预览",
+      "template": "preview",
+      "sections": [
+        "返回画廊",
+        "组件标题",
+        "预览区域",
+        "组件类型与调用信息"
+      ],
+      "actions": [
+        "查看组件"
+      ],
+      "states": [
+        "组件不存在",
+        "预览加载/失败"
+      ],
+      "mobile": "预览横向内容只在内部滚动，元信息在下。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/components-gallery/$name.tsx",
+      "id": "P38",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/usage",
+      "title": "套餐与积分",
+      "template": "billing",
+      "sections": [
+        "当前订阅",
+        "个人积分账户",
+        "可用购买入口",
+        "奖励积分与有效期",
+        "消费范围选择与明细"
+      ],
+      "actions": [
+        "使用已有购买/升级入口",
+        "筛选消费"
+      ],
+      "states": [
+        "未启用计费",
+        "无订阅",
+        "无消费",
+        "查询失败",
+        "购买中"
+      ],
+      "mobile": "账户摘要纵向排列，消费表转摘要行或局部横滚。",
+      "change": "VL",
+      "note": "公司与个人账户不可合并展示成一个余额；不增加虚构用量图。",
+      "source": "app/src/routes/_authed/settings/usage.tsx",
+      "id": "P39",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/orders",
+      "title": "订单与积分来源",
+      "template": "records",
+      "sections": [
+        "订单列表",
+        "订阅状态",
+        "积分发放来源与有效期"
+      ],
+      "actions": [
+        "翻页/查看现有订单信息"
+      ],
+      "states": [
+        "无订单",
+        "无订阅",
+        "无发放",
+        "加载失败"
+      ],
+      "mobile": "订单金额、状态、时间优先；来源说明可展开。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/orders.tsx",
+      "id": "P40",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/settings/invoices",
+      "title": "账单",
+      "template": "records",
+      "sections": [
+        "时间范围与刷新",
+        "账单列表",
+        "分页",
+        "详情弹窗与下载"
+      ],
+      "actions": [
+        "筛选账单",
+        "打开详情",
+        "下载"
+      ],
+      "states": [
+        "未启用",
+        "空账单",
+        "刷新中",
+        "下载不可用"
+      ],
+      "mobile": "详情单列，金额/币种/状态保留，下载入口不隐藏。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/settings/invoices.tsx",
+      "id": "P41",
+      "scope": "个人设置"
+    },
+    {
+      "path": "/admin",
+      "title": "管理概览",
+      "template": "directory",
+      "sections": [
+        "返回应用入口",
+        "连接与治理入口组",
+        "能力与资源入口组",
+        "人员与身份入口组",
+        "历史入口组"
+      ],
+      "actions": [
+        "进入配置模块"
+      ],
+      "states": [
+        "非管理员重定向",
+        "配置状态未知"
+      ],
+      "mobile": "分组目录保持单列或两列；不新增指标占位。",
+      "change": "V",
+      "note": "维持目录型首页，不在没有聚合接口时改为统计仪表盘。",
+      "source": "app/src/routes/_authed/admin/index.tsx",
+      "id": "P42",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/credentials",
+      "title": "模型凭据",
+      "template": "config",
+      "sections": [
+        "凭据说明与添加表单",
+        "已有凭据列表",
+        "现有维护操作"
+      ],
+      "actions": [
+        "添加凭据",
+        "管理现有凭据"
+      ],
+      "states": [
+        "未配置",
+        "保存失败",
+        "凭据无效"
+      ],
+      "mobile": "表单单列，敏感值只按已有安全契约展示。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/credentials.tsx",
+      "id": "P43",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/bot-services",
+      "title": "Bot 服务",
+      "template": "list",
+      "sections": [
+        "标题与注册入口",
+        "服务身份/地址/启用状态",
+        "注册/编辑弹窗"
+      ],
+      "actions": [
+        "注册服务",
+        "编辑服务"
+      ],
+      "states": [
+        "空列表",
+        "保存失败",
+        "停用"
+      ],
+      "mobile": "地址换行，注册弹窗在小屏单列。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/bot-services.tsx",
+      "id": "P44",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/gateway",
+      "title": "模型网关",
+      "template": "config",
+      "sections": [
+        "就绪状态及阻塞原因",
+        "地址配置",
+        "限流配置",
+        "凭据配置"
+      ],
+      "actions": [
+        "保存现有配置",
+        "执行已有检查"
+      ],
+      "states": [
+        "未配置",
+        "就绪",
+        "连接失败",
+        "认证失败",
+        "保存中"
+      ],
+      "mobile": "状态解释在表单前，错误贴近对应字段。",
+      "change": "VL",
+      "note": "地址、限流和凭据分组；不把连接成功等同于业务调用一定成功。",
+      "source": "app/src/routes/_authed/admin/gateway.tsx",
+      "id": "P45",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/model-catalog",
+      "title": "模型目录",
+      "template": "list",
+      "sections": [
+        "同步配置与操作",
+        "目录可用状态",
+        "模型列表与现有开放配置"
+      ],
+      "actions": [
+        "同步模型",
+        "修改已支持配置"
+      ],
+      "states": [
+        "未同步",
+        "同步中",
+        "同步失败",
+        "空目录"
+      ],
+      "mobile": "模型名称与能力摘要同行，技术 ID 次行。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/model-catalog.tsx",
+      "id": "P46",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/boundaries",
+      "title": "执行边界",
+      "template": "config",
+      "sections": [
+        "边界作用说明",
+        "现有策略配置",
+        "试运行输入",
+        "决定与原因"
+      ],
+      "actions": [
+        "配置策略",
+        "执行试运行"
+      ],
+      "states": [
+        "允许",
+        "拒绝",
+        "输入无效",
+        "试运行失败"
+      ],
+      "mobile": "输入→结果上下排列，拒绝原因完整可读。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/boundaries.tsx",
+      "id": "P47",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/approvals",
+      "title": "团队审批",
+      "template": "config",
+      "sections": [
+        "团队作用范围",
+        "审批策略设置",
+        "规则列表"
+      ],
+      "actions": [
+        "修改团队策略",
+        "维护规则"
+      ],
+      "states": [
+        "无规则",
+        "权限不足",
+        "保存失败"
+      ],
+      "mobile": "团队与个人设置标记清楚，规则条件换行。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/approvals.tsx",
+      "id": "P48",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/computers",
+      "title": "电脑与目录访问",
+      "template": "config",
+      "sections": [
+        "主机目录设置",
+        "电脑列表与状态",
+        "按电脑/用户的目录授权"
+      ],
+      "actions": [
+        "管理主机目录",
+        "维护目录授权"
+      ],
+      "states": [
+        "无电脑",
+        "目录不可用",
+        "授权失败"
+      ],
+      "mobile": "目录长路径局部滚动或换行，状态使用文字。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/computers.tsx",
+      "id": "P49",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/plugins",
+      "title": "连接器",
+      "template": "list",
+      "sections": [
+        "连接器列表",
+        "服务标识与可用状态",
+        "详情入口",
+        "现有集成入口"
+      ],
+      "actions": [
+        "打开连接器",
+        "打开集成配置"
+      ],
+      "states": [
+        "未配置",
+        "停用",
+        "读取失败",
+        "空列表"
+      ],
+      "mobile": "服务身份和配置状态优先，长描述换行。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/plugins/index.tsx",
+      "id": "P50",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/plugins/$key",
+      "title": "连接器详情",
+      "template": "config",
+      "sections": [
+        "服务身份与状态",
+        "启用开关",
+        "账号模式",
+        "共享账号状态",
+        "Bot 授权",
+        "工具配置入口"
+      ],
+      "actions": [
+        "启停服务",
+        "配置账号模式",
+        "管理 Bot/工具授权"
+      ],
+      "states": [
+        "个人/共享模式",
+        "共享连接不可读",
+        "未连接",
+        "权限不足"
+      ],
+      "mobile": "服务状态在前，账号模式说明紧贴控件。",
+      "change": "V",
+      "note": "模式改变的影响必须在原确认流程内展示。",
+      "source": "app/src/routes/_authed/admin/plugins/$key.tsx",
+      "id": "P51",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/plugins/$key/bots/$agentId",
+      "title": "连接器的 Bot 授权",
+      "template": "config",
+      "sections": [
+        "返回连接器",
+        "Bot 与服务身份",
+        "共享使用审批",
+        "现有授权字段"
+      ],
+      "actions": [
+        "修改共享使用授权"
+      ],
+      "states": [
+        "未批准",
+        "已批准",
+        "审批字段无效",
+        "保存失败"
+      ],
+      "mobile": "确认操作前保留 Bot 和连接器名称。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/plugins/$key_.bots.$agentId.tsx",
+      "id": "P52",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/plugins/$key/tools/$tool",
+      "title": "工具权限",
+      "template": "config",
+      "sections": [
+        "返回连接器",
+        "工具名称与说明",
+        "启用与授权规则"
+      ],
+      "actions": [
+        "启停工具",
+        "修改规则"
+      ],
+      "states": [
+        "未知工具",
+        "禁用",
+        "无权限",
+        "保存失败"
+      ],
+      "mobile": "长工具名换行，规则与解释相邻。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/plugins/$key_.tools.$tool.tsx",
+      "id": "P53",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/plugins/composio",
+      "title": "Composio 接入",
+      "template": "config",
+      "sections": [
+        "接入说明",
+        "现有配置字段",
+        "可用集成列表"
+      ],
+      "actions": [
+        "保存现有接入配置",
+        "管理集成"
+      ],
+      "states": [
+        "未配置",
+        "不可用",
+        "空集成",
+        "保存失败"
+      ],
+      "mobile": "字段单列，回调与密钥说明允许换行。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/plugins/composio.tsx",
+      "id": "P54",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/plugins/open-connector",
+      "title": "Open Connector 接入",
+      "template": "config",
+      "sections": [
+        "接入说明",
+        "现有配置字段",
+        "连接器列表"
+      ],
+      "actions": [
+        "保存现有接入配置",
+        "管理连接器"
+      ],
+      "states": [
+        "未配置",
+        "加载失败",
+        "空列表"
+      ],
+      "mobile": "与 Composio 保持结构一致，保留各自字段差异。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/plugins/open-connector.tsx",
+      "id": "P55",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/skills",
+      "title": "部署技能",
+      "template": "editor",
+      "sections": [
+        "部署级作用说明",
+        "已安装技能",
+        "编写技能弹窗：标识、标题、摘要、指令"
+      ],
+      "actions": [
+        "编写技能",
+        "执行已有技能维护"
+      ],
+      "states": [
+        "无技能",
+        "标识冲突/非法",
+        "保存失败"
+      ],
+      "mobile": "长指令独立滚动，提交按钮可见。",
+      "change": "V",
+      "note": "与个人技能使用同一视觉，明确部署级范围。",
+      "source": "app/src/routes/_authed/admin/skills.tsx",
+      "id": "P56",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/market",
+      "title": "能力市场",
+      "template": "gallery",
+      "sections": [
+        "专家/技能/连接器 Tab",
+        "已有专家与发现区域",
+        "资源卡片",
+        "资源详情弹窗"
+      ],
+      "actions": [
+        "切换分类",
+        "查看资源",
+        "执行已有安装/创建入口"
+      ],
+      "states": [
+        "目录加载失败",
+        "空分类",
+        "已拥有",
+        "操作中"
+      ],
+      "mobile": "分类栏可横滑，资源网格降为单列；详情可滚动。",
+      "change": "VL",
+      "note": "移除旧 Wb 视觉差异；不新增排行榜、评分、价格或推荐结论。",
+      "source": "app/src/routes/_authed/admin/market.tsx",
+      "id": "P57",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/knowledge",
+      "title": "知识库",
+      "template": "list",
+      "sections": [
+        "知识库标题与新建",
+        "名称、描述等现有字段",
+        "打开详情与删除确认"
+      ],
+      "actions": [
+        "新建知识库",
+        "打开知识库",
+        "删除"
+      ],
+      "states": [
+        "空知识库",
+        "创建失败",
+        "删除确认"
+      ],
+      "mobile": "列表摘要两行，删除置次要动作。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/knowledge.index.tsx",
+      "id": "P58",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/knowledge/$kbId",
+      "title": "知识库详情",
+      "template": "knowledge",
+      "sections": [
+        "返回列表与知识库身份",
+        "添加文档",
+        "上传任务状态",
+        "文档筛选/排序与列表",
+        "检索测试输入与结果"
+      ],
+      "actions": [
+        "添加文档",
+        "管理文档",
+        "测试检索"
+      ],
+      "states": [
+        "上传/处理中/失败",
+        "无文档",
+        "无检索结果",
+        "删除确认"
+      ],
+      "mobile": "上传、文档和测试依次排列；宽屏检索测试可放辅助列。",
+      "change": "VL",
+      "note": "不新增切片可视化或命中率指标；结果仅展示现有检索字段。",
+      "source": "app/src/routes/_authed/admin/knowledge.$kbId.tsx",
+      "id": "P59",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/learning",
+      "title": "学习配置",
+      "template": "config",
+      "sections": [
+        "学习设置",
+        "目标字段",
+        "容器配置"
+      ],
+      "actions": [
+        "保存现有学习参数"
+      ],
+      "states": [
+        "禁用",
+        "字段无效",
+        "容器未就绪",
+        "保存失败"
+      ],
+      "mobile": "目标与容器字段分组，长配置自动换行。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/learning.tsx",
+      "id": "P60",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/components",
+      "title": "UI 组件管理",
+      "template": "gallery",
+      "sections": [
+        "组件目录",
+        "预览与类型",
+        "详情入口"
+      ],
+      "actions": [
+        "打开组件"
+      ],
+      "states": [
+        "空组件",
+        "加载失败"
+      ],
+      "mobile": "预览网格逐级降列。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/components/index.tsx",
+      "id": "P61",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/components/$name",
+      "title": "UI 组件详情",
+      "template": "preview",
+      "sections": [
+        "返回目录",
+        "组件预览",
+        "元信息",
+        "启用/配置 Sheet"
+      ],
+      "actions": [
+        "打开配置",
+        "修改现有组件配置"
+      ],
+      "states": [
+        "组件不存在",
+        "预览失败",
+        "配置错误",
+        "只读"
+      ],
+      "mobile": "预览在上、信息在下，配置转全宽 Sheet。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/components/$name.tsx",
+      "id": "P62",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/playground",
+      "title": "生成 UI 试验台",
+      "template": "playground",
+      "sections": [
+        "组件/活动配置输入",
+        "代码字段",
+        "运行操作与结果",
+        "生成 UI 预览"
+      ],
+      "actions": [
+        "编辑输入",
+        "运行预览"
+      ],
+      "states": [
+        "输入非法",
+        "渲染失败",
+        "无预览"
+      ],
+      "mobile": "编辑/预览切换，保留草稿；代码区域内部横滚。",
+      "change": "VL",
+      "note": "不在重设计中扩大代码执行或网络权限。",
+      "source": "app/src/routes/_authed/admin/playground.tsx",
+      "id": "P63",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/people",
+      "title": "人员与访问",
+      "template": "list",
+      "sections": [
+        "人员范围说明",
+        "现有人员相关输入",
+        "人员列表",
+        "角色/访问开关"
+      ],
+      "actions": [
+        "执行已有角色与访问操作"
+      ],
+      "states": [
+        "空列表",
+        "无权限",
+        "保存中",
+        "保存失败"
+      ],
+      "mobile": "姓名、身份与角色同行，操作放次行。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/people.tsx",
+      "id": "P64",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/billing",
+      "title": "积分与计费管理",
+      "template": "config",
+      "sections": [
+        "管理员积分发放表单",
+        "计费清理说明与执行"
+      ],
+      "actions": [
+        "发放积分",
+        "执行计费清理"
+      ],
+      "states": [
+        "账户/金额无效",
+        "执行中",
+        "执行失败",
+        "执行结果"
+      ],
+      "mobile": "发放与清理分隔，确认对象/金额/影响保持可见。",
+      "change": "V",
+      "note": "保持幂等提交与原确认步骤；不新增自动清理策略。",
+      "source": "app/src/routes/_authed/admin/billing.tsx",
+      "id": "P65",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/identity-providers",
+      "title": "身份提供方",
+      "template": "config",
+      "sections": [
+        "提供方列表",
+        "现有连接配置",
+        "实体/元数据信息"
+      ],
+      "actions": [
+        "维护提供方配置"
+      ],
+      "states": [
+        "未配置",
+        "元数据无效",
+        "保存失败"
+      ],
+      "mobile": "元数据在代码容器内滚动，常规字段单列。",
+      "change": "V",
+      "note": "",
+      "source": "app/src/routes/_authed/admin/identity-providers.tsx",
+      "id": "P66",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/audit",
+      "title": "审计记录",
+      "template": "records",
+      "sections": [
+        "标题与已有翻页操作",
+        "动作/发起人/目标/时间记录",
+        "可读取的事件细节"
+      ],
+      "actions": [
+        "翻页",
+        "查看已有事件信息"
+      ],
+      "states": [
+        "无事件",
+        "查询失败",
+        "未知目标"
+      ],
+      "mobile": "先展示决定、动作、时间；长事件信息按需展开。",
+      "change": "VL",
+      "note": "不凭设计稿添加后端尚未提供的筛选条件。",
+      "source": "app/src/routes/_authed/admin/audit.tsx",
+      "id": "P67",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/enterprise",
+      "title": "企业配置",
+      "template": "config",
+      "sections": [
+        "企业能力与管理设置",
+        "模型/计费路径",
+        "用量与记录动作",
+        "清理与覆盖配置"
+      ],
+      "actions": [
+        "修改现有策略",
+        "执行现有维护操作"
+      ],
+      "states": [
+        "能力未启用",
+        "只读",
+        "保存失败",
+        "维护失败"
+      ],
+      "mobile": "按职责分组；复杂配置弹窗单列。",
+      "change": "V",
+      "note": "当前主导航未列出此入口，导航调整另列 I-02。",
+      "source": "app/src/routes/_authed/admin/enterprise.tsx",
+      "id": "P68",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/observability",
+      "title": "可观测性汇总",
+      "template": "records",
+      "sections": [
+        "时间范围",
+        "采集就绪与健康",
+        "当前管理范围说明",
+        "Bot 运行与导出汇总"
+      ],
+      "actions": [
+        "切换时间范围",
+        "使用已有明细入口"
+      ],
+      "states": [
+        "禁用/未配置",
+        "能力缺失",
+        "同步中",
+        "上游故障",
+        "空范围"
+      ],
+      "mobile": "健康与范围说明置前，Bot 汇总逐行展开。",
+      "change": "VL",
+      "note": "与 /admin/ai-observability 同组件；不生成超出管理范围的全局总数。",
+      "source": "app/src/routes/_authed/admin/observability.tsx",
+      "id": "P69",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/admin/ai-observability",
+      "title": "可观测性汇总（兼容地址）",
+      "template": "records",
+      "sections": [
+        "时间范围",
+        "采集就绪与健康",
+        "当前管理范围说明",
+        "Bot 运行与导出汇总"
+      ],
+      "actions": [
+        "切换时间范围",
+        "使用已有明细入口"
+      ],
+      "states": [
+        "禁用/未配置",
+        "能力缺失",
+        "同步中",
+        "上游故障",
+        "空范围"
+      ],
+      "mobile": "健康与范围说明置前，Bot 汇总逐行展开。",
+      "change": "V",
+      "note": "保留现有双路由渲染，不在本次视觉方案中改重定向。",
+      "source": "app/src/routes/_authed/admin/ai-observability.tsx",
+      "id": "P70",
+      "scope": "管理后台"
+    },
+    {
+      "path": "/sign",
+      "title": "登录",
+      "template": "flow",
+      "sections": [
+        "品牌与简短说明",
+        "已有身份提供方按钮",
+        "SSO 输入",
+        "错误反馈"
+      ],
+      "actions": [
+        "使用已配置身份方式登录"
+      ],
+      "states": [
+        "无提供方",
+        "跳转中",
+        "登录失败"
+      ],
+      "mobile": "单列居中，按钮触控区域至少 44px。",
+      "change": "V",
+      "note": "不新增账号密码注册或未配置的登录提供方。",
+      "source": "app/src/routes/sign.tsx",
+      "id": "P71",
+      "scope": "独立流程"
+    },
+    {
+      "path": "/onboarding",
+      "title": "首次引导",
+      "template": "flow",
+      "sections": [
+        "欢迎与初始交互",
+        "电脑能力说明",
+        "Bot 名册介绍",
+        "步骤与前进/返回"
+      ],
+      "actions": [
+        "继续",
+        "返回",
+        "完成现有引导"
+      ],
+      "states": [
+        "提交中",
+        "失败",
+        "已完成转首页"
+      ],
+      "mobile": "步骤主体单列，底部操作不被键盘遮挡。",
+      "change": "VL",
+      "note": "保留现有步骤内容，不虚构强制接入或自动授权。",
+      "source": "app/src/routes/_authed/onboarding.tsx",
+      "id": "P72",
+      "scope": "独立流程"
+    },
+    {
+      "path": "/sign-in/$requestId",
+      "title": "为 Bot 登录服务",
+      "template": "flow",
+      "sections": [
+        "请求来源与目标说明",
+        "已有私人登录字段",
+        "提交状态"
+      ],
+      "actions": [
+        "提交当前登录请求"
+      ],
+      "states": [
+        "无效/过期请求",
+        "提交中",
+        "提交失败",
+        "成功"
+      ],
+      "mobile": "短表单聚焦，错误贴近字段。",
+      "change": "V",
+      "note": "与平台登录视觉同源，但必须明确本次登录目标；不暴露敏感信息。",
+      "source": "app/src/routes/_authed/sign-in/$requestId.tsx",
+      "id": "P73",
+      "scope": "独立流程"
+    },
+    {
+      "path": "/tenant/selection",
+      "title": "选择公司与团队",
+      "template": "flow",
+      "sections": [
+        "当前选择说明",
+        "公司选择",
+        "团队选择",
+        "访问状态与现有恢复动作"
+      ],
+      "actions": [
+        "选择公司",
+        "选择团队",
+        "执行已有重试"
+      ],
+      "states": [
+        "无公司",
+        "无团队",
+        "成员资格撤销",
+        "加载失败"
+      ],
+      "mobile": "两个选择器上下排列，切换后旧团队状态清晰更新。",
+      "change": "V",
+      "note": "公司和团队为两个层级，不使用模糊的单一工作空间选择。",
+      "source": "app/src/routes/_authed/tenant/selection.tsx",
+      "id": "P74",
+      "scope": "独立流程"
+    },
+    {
+      "path": "/tenant/channels",
+      "title": "租户频道记录",
+      "template": "records",
+      "sections": [
+        "租户/成员选择",
+        "频道列表",
+        "选中频道详情"
+      ],
+      "actions": [
+        "选择范围",
+        "查看频道"
+      ],
+      "states": [
+        "无范围",
+        "无频道",
+        "无记录",
+        "权限失败"
+      ],
+      "mobile": "选择器在前，详情下移；技术标识单独换行。",
+      "change": "VL",
+      "note": "管理范围保持原查询契约。",
+      "source": "app/src/routes/_authed/tenant/channels.tsx",
+      "id": "P75",
+      "scope": "独立流程"
+    },
+    {
+      "path": "/share/$token",
+      "title": "公开分享",
+      "template": "share",
+      "sections": [
+        "只读分享标题与来源",
+        "产物/内容预览",
+        "已有说明与举报入口"
+      ],
+      "actions": [
+        "浏览分享",
+        "举报"
+      ],
+      "states": [
+        "失效/撤销/不存在",
+        "预览失败"
+      ],
+      "mobile": "预览容器自适应，长内容内部滚动。",
+      "change": "V",
+      "note": "不展示内部侧栏、隐私配置、内部调试信息或未授权下载。",
+      "source": "app/src/routes/share.$token.tsx",
+      "id": "P76",
+      "scope": "独立流程"
+    }
+  ],
+  "routes": [
+    {
+      "route_id": "/_authed/_app/agents/",
+      "url": "/agents",
+      "source": "app/src/routes/_authed/_app/agents/index.tsx",
+      "kind": "redirect",
+      "design": "COMPAT"
+    },
+    {
+      "route_id": "/_authed/_app/approvals",
+      "url": "/approvals",
+      "source": "app/src/routes/_authed/_app/approvals.tsx",
+      "kind": "redirect",
+      "design": "COMPAT"
+    },
+    {
+      "route_id": "/_authed/_app/bot",
+      "url": "/bot",
+      "source": "app/src/routes/_authed/_app/bot.tsx",
+      "kind": "page",
+      "design": "/bot"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/access",
+      "url": "/bots/$agentId/access",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.access.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/access"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/approvals",
+      "url": "/bots/$agentId/approvals",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.approvals.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/approvals"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/datasets",
+      "url": "/bots/$agentId/datasets",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.datasets.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/datasets"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/evaluations/$datasetId",
+      "url": "/bots/$agentId/evaluations/$datasetId",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.$datasetId.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/evaluations/$datasetId"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/evaluations/experiment-comparisons",
+      "url": "/bots/$agentId/evaluations/experiment-comparisons",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiment-comparisons.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/evaluations/experiment-comparisons"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/evaluations/experiments/$experimentId/$executionId",
+      "url": "/bots/$agentId/evaluations/experiments/$experimentId/$executionId",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiments.$experimentId.$executionId.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/evaluations/experiments/$experimentId/$executionId"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/evaluations",
+      "url": "/bots/$agentId/evaluations",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/evaluations"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/exports",
+      "url": "/bots/$agentId/exports",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.exports.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/exports"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/",
+      "url": "/bots/$agentId",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.index.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/memory",
+      "url": "/bots/$agentId/memory",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.memory.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/memory"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/reach",
+      "url": "/bots/$agentId/reach",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.reach.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/reach"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/responsibilities",
+      "url": "/bots/$agentId/responsibilities",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.responsibilities.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/responsibilities"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/routines",
+      "url": "/bots/$agentId/routines",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.routines.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/routines"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/runs/$bindingId",
+      "url": "/bots/$agentId/runs/$bindingId",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/runs/$bindingId"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/runs",
+      "url": "/bots/$agentId/runs",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.runs.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/runs"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/setup",
+      "url": "/bots/$agentId/setup",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.setup.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/setup"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/sharing",
+      "url": "/bots/$agentId/sharing",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.sharing.tsx",
+      "kind": "page",
+      "design": "/bots/$agentId/sharing"
+    },
+    {
+      "route_id": "/_authed/_app/bots/",
+      "url": "/bots",
+      "source": "app/src/routes/_authed/_app/bots.index.tsx",
+      "kind": "page",
+      "design": "/bots"
+    },
+    {
+      "route_id": "/_authed/_app/channel/$channelId",
+      "url": "/channel/$channelId",
+      "source": "app/src/routes/_authed/_app/channel/$channelId.tsx",
+      "kind": "page",
+      "design": "/channel/$channelId"
+    },
+    {
+      "route_id": "/_authed/_app/channel/new",
+      "url": "/channel/new",
+      "source": "app/src/routes/_authed/_app/channel/new.tsx",
+      "kind": "page",
+      "design": "/channel/new"
+    },
+    {
+      "route_id": "/_authed/_app/craft/$sessionId",
+      "url": "/craft/$sessionId",
+      "source": "app/src/routes/_authed/_app/craft/$sessionId.tsx",
+      "kind": "page",
+      "design": "/craft/$sessionId"
+    },
+    {
+      "route_id": "/_authed/_app/craft/",
+      "url": "/craft",
+      "source": "app/src/routes/_authed/_app/craft/index.tsx",
+      "kind": "page",
+      "design": "/craft"
+    },
+    {
+      "route_id": "/_authed/_app/craft/tasks",
+      "url": "/craft/tasks",
+      "source": "app/src/routes/_authed/_app/craft/tasks.tsx",
+      "kind": "page",
+      "design": "/craft/tasks"
+    },
+    {
+      "route_id": "/_authed/_app/group/$channelId",
+      "url": "/group/$channelId",
+      "source": "app/src/routes/_authed/_app/group/$channelId.tsx",
+      "kind": "page",
+      "design": "/group/$channelId"
+    },
+    {
+      "route_id": "/_authed/_app/group/new",
+      "url": "/group/new",
+      "source": "app/src/routes/_authed/_app/group/new.tsx",
+      "kind": "redirect",
+      "design": "COMPAT"
+    },
+    {
+      "route_id": "/_authed/_app/",
+      "url": "/",
+      "source": "app/src/routes/_authed/_app/index.tsx",
+      "kind": "page",
+      "design": "/"
+    },
+    {
+      "route_id": "/_authed/_app/memory",
+      "url": "/memory",
+      "source": "app/src/routes/_authed/_app/memory.tsx",
+      "kind": "redirect",
+      "design": "COMPAT"
+    },
+    {
+      "route_id": "/_authed/_app/reachability",
+      "url": "/reachability",
+      "source": "app/src/routes/_authed/_app/reachability.tsx",
+      "kind": "redirect",
+      "design": "COMPAT"
+    },
+    {
+      "route_id": "/_authed/_app/responsibilities",
+      "url": "/responsibilities",
+      "source": "app/src/routes/_authed/_app/responsibilities.tsx",
+      "kind": "redirect",
+      "design": "COMPAT"
+    },
+    {
+      "route_id": "/_authed/_app/routines",
+      "url": "/routines",
+      "source": "app/src/routes/_authed/_app/routines.tsx",
+      "kind": "page",
+      "design": "/routines"
+    },
+    {
+      "route_id": "/_authed/_app/skills",
+      "url": "/skills",
+      "source": "app/src/routes/_authed/_app/skills.tsx",
+      "kind": "page",
+      "design": "/skills"
+    },
+    {
+      "route_id": "/_authed/_app/team-bots",
+      "url": "/team-bots",
+      "source": "app/src/routes/_authed/_app/team-bots.tsx",
+      "kind": "redirect",
+      "design": "COMPAT"
+    },
+    {
+      "route_id": "/_authed/_app",
+      "url": "/",
+      "source": "app/src/routes/_authed/_app.tsx",
+      "kind": "layout",
+      "design": "SHELL"
+    },
+    {
+      "route_id": "/_authed/admin/ai-observability",
+      "url": "/admin/ai-observability",
+      "source": "app/src/routes/_authed/admin/ai-observability.tsx",
+      "kind": "page",
+      "design": "/admin/ai-observability"
+    },
+    {
+      "route_id": "/_authed/admin/approvals",
+      "url": "/admin/approvals",
+      "source": "app/src/routes/_authed/admin/approvals.tsx",
+      "kind": "page",
+      "design": "/admin/approvals"
+    },
+    {
+      "route_id": "/_authed/admin/audit",
+      "url": "/admin/audit",
+      "source": "app/src/routes/_authed/admin/audit.tsx",
+      "kind": "page",
+      "design": "/admin/audit"
+    },
+    {
+      "route_id": "/_authed/admin/billing",
+      "url": "/admin/billing",
+      "source": "app/src/routes/_authed/admin/billing.tsx",
+      "kind": "page",
+      "design": "/admin/billing"
+    },
+    {
+      "route_id": "/_authed/admin/bot-services",
+      "url": "/admin/bot-services",
+      "source": "app/src/routes/_authed/admin/bot-services.tsx",
+      "kind": "page",
+      "design": "/admin/bot-services"
+    },
+    {
+      "route_id": "/_authed/admin/boundaries",
+      "url": "/admin/boundaries",
+      "source": "app/src/routes/_authed/admin/boundaries.tsx",
+      "kind": "page",
+      "design": "/admin/boundaries"
+    },
+    {
+      "route_id": "/_authed/admin/components/$name",
+      "url": "/admin/components/$name",
+      "source": "app/src/routes/_authed/admin/components/$name.tsx",
+      "kind": "page",
+      "design": "/admin/components/$name"
+    },
+    {
+      "route_id": "/_authed/admin/components/",
+      "url": "/admin/components",
+      "source": "app/src/routes/_authed/admin/components/index.tsx",
+      "kind": "page",
+      "design": "/admin/components"
+    },
+    {
+      "route_id": "/_authed/admin/computers",
+      "url": "/admin/computers",
+      "source": "app/src/routes/_authed/admin/computers.tsx",
+      "kind": "page",
+      "design": "/admin/computers"
+    },
+    {
+      "route_id": "/_authed/admin/credentials",
+      "url": "/admin/credentials",
+      "source": "app/src/routes/_authed/admin/credentials.tsx",
+      "kind": "page",
+      "design": "/admin/credentials"
+    },
+    {
+      "route_id": "/_authed/admin/enterprise",
+      "url": "/admin/enterprise",
+      "source": "app/src/routes/_authed/admin/enterprise.tsx",
+      "kind": "page",
+      "design": "/admin/enterprise"
+    },
+    {
+      "route_id": "/_authed/admin/gateway",
+      "url": "/admin/gateway",
+      "source": "app/src/routes/_authed/admin/gateway.tsx",
+      "kind": "page",
+      "design": "/admin/gateway"
+    },
+    {
+      "route_id": "/_authed/admin/identity-providers",
+      "url": "/admin/identity-providers",
+      "source": "app/src/routes/_authed/admin/identity-providers.tsx",
+      "kind": "page",
+      "design": "/admin/identity-providers"
+    },
+    {
+      "route_id": "/_authed/admin/",
+      "url": "/admin",
+      "source": "app/src/routes/_authed/admin/index.tsx",
+      "kind": "page",
+      "design": "/admin"
+    },
+    {
+      "route_id": "/_authed/admin/knowledge/$kbId",
+      "url": "/admin/knowledge/$kbId",
+      "source": "app/src/routes/_authed/admin/knowledge.$kbId.tsx",
+      "kind": "page",
+      "design": "/admin/knowledge/$kbId"
+    },
+    {
+      "route_id": "/_authed/admin/knowledge/",
+      "url": "/admin/knowledge",
+      "source": "app/src/routes/_authed/admin/knowledge.index.tsx",
+      "kind": "page",
+      "design": "/admin/knowledge"
+    },
+    {
+      "route_id": "/_authed/admin/learning",
+      "url": "/admin/learning",
+      "source": "app/src/routes/_authed/admin/learning.tsx",
+      "kind": "page",
+      "design": "/admin/learning"
+    },
+    {
+      "route_id": "/_authed/admin/market",
+      "url": "/admin/market",
+      "source": "app/src/routes/_authed/admin/market.tsx",
+      "kind": "page",
+      "design": "/admin/market"
+    },
+    {
+      "route_id": "/_authed/admin/model-catalog",
+      "url": "/admin/model-catalog",
+      "source": "app/src/routes/_authed/admin/model-catalog.tsx",
+      "kind": "page",
+      "design": "/admin/model-catalog"
+    },
+    {
+      "route_id": "/_authed/admin/observability",
+      "url": "/admin/observability",
+      "source": "app/src/routes/_authed/admin/observability.tsx",
+      "kind": "page",
+      "design": "/admin/observability"
+    },
+    {
+      "route_id": "/_authed/admin/people",
+      "url": "/admin/people",
+      "source": "app/src/routes/_authed/admin/people.tsx",
+      "kind": "page",
+      "design": "/admin/people"
+    },
+    {
+      "route_id": "/_authed/admin/playground",
+      "url": "/admin/playground",
+      "source": "app/src/routes/_authed/admin/playground.tsx",
+      "kind": "page",
+      "design": "/admin/playground"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/$key",
+      "url": "/admin/plugins/$key",
+      "source": "app/src/routes/_authed/admin/plugins/$key.tsx",
+      "kind": "page",
+      "design": "/admin/plugins/$key"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/$key_/bots/$agentId",
+      "url": "/admin/plugins/$key/bots/$agentId",
+      "source": "app/src/routes/_authed/admin/plugins/$key_.bots.$agentId.tsx",
+      "kind": "page",
+      "design": "/admin/plugins/$key/bots/$agentId"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/$key_/tools/$tool",
+      "url": "/admin/plugins/$key/tools/$tool",
+      "source": "app/src/routes/_authed/admin/plugins/$key_.tools.$tool.tsx",
+      "kind": "page",
+      "design": "/admin/plugins/$key/tools/$tool"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/composio",
+      "url": "/admin/plugins/composio",
+      "source": "app/src/routes/_authed/admin/plugins/composio.tsx",
+      "kind": "page",
+      "design": "/admin/plugins/composio"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/",
+      "url": "/admin/plugins",
+      "source": "app/src/routes/_authed/admin/plugins/index.tsx",
+      "kind": "page",
+      "design": "/admin/plugins"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/open-connector",
+      "url": "/admin/plugins/open-connector",
+      "source": "app/src/routes/_authed/admin/plugins/open-connector.tsx",
+      "kind": "page",
+      "design": "/admin/plugins/open-connector"
+    },
+    {
+      "route_id": "/_authed/admin",
+      "url": "/admin",
+      "source": "app/src/routes/_authed/admin/route.tsx",
+      "kind": "layout",
+      "design": "SHELL"
+    },
+    {
+      "route_id": "/_authed/admin/skills",
+      "url": "/admin/skills",
+      "source": "app/src/routes/_authed/admin/skills.tsx",
+      "kind": "page",
+      "design": "/admin/skills"
+    },
+    {
+      "route_id": "/_authed/onboarding",
+      "url": "/onboarding",
+      "source": "app/src/routes/_authed/onboarding.tsx",
+      "kind": "page",
+      "design": "/onboarding"
+    },
+    {
+      "route_id": "/_authed/settings/approvals",
+      "url": "/settings/approvals",
+      "source": "app/src/routes/_authed/settings/approvals.tsx",
+      "kind": "page",
+      "design": "/settings/approvals"
+    },
+    {
+      "route_id": "/_authed/settings/components-gallery/$name",
+      "url": "/settings/components-gallery/$name",
+      "source": "app/src/routes/_authed/settings/components-gallery/$name.tsx",
+      "kind": "page",
+      "design": "/settings/components-gallery/$name"
+    },
+    {
+      "route_id": "/_authed/settings/components-gallery/",
+      "url": "/settings/components-gallery",
+      "source": "app/src/routes/_authed/settings/components-gallery/index.tsx",
+      "kind": "page",
+      "design": "/settings/components-gallery"
+    },
+    {
+      "route_id": "/_authed/settings/connected-accounts/$key",
+      "url": "/settings/connected-accounts/$key",
+      "source": "app/src/routes/_authed/settings/connected-accounts/$key.tsx",
+      "kind": "page",
+      "design": "/settings/connected-accounts/$key"
+    },
+    {
+      "route_id": "/_authed/settings/connected-accounts/",
+      "url": "/settings/connected-accounts",
+      "source": "app/src/routes/_authed/settings/connected-accounts/index.tsx",
+      "kind": "page",
+      "design": "/settings/connected-accounts"
+    },
+    {
+      "route_id": "/_authed/settings/",
+      "url": "/settings",
+      "source": "app/src/routes/_authed/settings/index.tsx",
+      "kind": "page",
+      "design": "/settings"
+    },
+    {
+      "route_id": "/_authed/settings/invoices",
+      "url": "/settings/invoices",
+      "source": "app/src/routes/_authed/settings/invoices.tsx",
+      "kind": "page",
+      "design": "/settings/invoices"
+    },
+    {
+      "route_id": "/_authed/settings/memory",
+      "url": "/settings/memory",
+      "source": "app/src/routes/_authed/settings/memory.tsx",
+      "kind": "page",
+      "design": "/settings/memory"
+    },
+    {
+      "route_id": "/_authed/settings/model-access",
+      "url": "/settings/model-access",
+      "source": "app/src/routes/_authed/settings/model-access.tsx",
+      "kind": "page",
+      "design": "/settings/model-access"
+    },
+    {
+      "route_id": "/_authed/settings/notifications",
+      "url": "/settings/notifications",
+      "source": "app/src/routes/_authed/settings/notifications.tsx",
+      "kind": "page",
+      "design": "/settings/notifications"
+    },
+    {
+      "route_id": "/_authed/settings/orders",
+      "url": "/settings/orders",
+      "source": "app/src/routes/_authed/settings/orders.tsx",
+      "kind": "page",
+      "design": "/settings/orders"
+    },
+    {
+      "route_id": "/_authed/settings/passwords",
+      "url": "/settings/passwords",
+      "source": "app/src/routes/_authed/settings/passwords.tsx",
+      "kind": "page",
+      "design": "/settings/passwords"
+    },
+    {
+      "route_id": "/_authed/settings",
+      "url": "/settings",
+      "source": "app/src/routes/_authed/settings/route.tsx",
+      "kind": "layout",
+      "design": "SHELL"
+    },
+    {
+      "route_id": "/_authed/settings/usage",
+      "url": "/settings/usage",
+      "source": "app/src/routes/_authed/settings/usage.tsx",
+      "kind": "page",
+      "design": "/settings/usage"
+    },
+    {
+      "route_id": "/_authed/sign-in/$requestId",
+      "url": "/sign-in/$requestId",
+      "source": "app/src/routes/_authed/sign-in/$requestId.tsx",
+      "kind": "page",
+      "design": "/sign-in/$requestId"
+    },
+    {
+      "route_id": "/_authed/tenant/channels",
+      "url": "/tenant/channels",
+      "source": "app/src/routes/_authed/tenant/channels.tsx",
+      "kind": "page",
+      "design": "/tenant/channels"
+    },
+    {
+      "route_id": "/_authed/tenant/selection",
+      "url": "/tenant/selection",
+      "source": "app/src/routes/_authed/tenant/selection.tsx",
+      "kind": "page",
+      "design": "/tenant/selection"
+    },
+    {
+      "route_id": "/_authed",
+      "url": "/",
+      "source": "app/src/routes/_authed.tsx",
+      "kind": "layout",
+      "design": "SHELL"
+    },
+    {
+      "route_id": "/share/$token",
+      "url": "/share/$token",
+      "source": "app/src/routes/share.$token.tsx",
+      "kind": "page",
+      "design": "/share/$token"
+    },
+    {
+      "route_id": "/sign",
+      "url": "/sign",
+      "source": "app/src/routes/sign.tsx",
+      "kind": "page",
+      "design": "/sign"
+    }
+  ],
+  "redirects": {
+    "/agents": "按 new/agent 参数 → /bots?new=true、/bots/$agentId 或 /bots",
+    "/approvals": "/settings/approvals",
+    "/memory": "/settings/memory",
+    "/reachability": "/settings/notifications",
+    "/responsibilities": "/bots",
+    "/group/new": "/channel/new",
+    "/team-bots": "/bots"
+  }
+};
+const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icon='<svg class="brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m9 9 6 3-6 3z"/></svg>';
+let current=DATA.pages.find(p=>p.path==='/bots');
+const pill=(text,kind='')=>`<span class="state ${kind}">${esc(text)}</span>`;
+const primary=t=>`<span class="mock-primary">${esc(t)}</span>`;
+const row=(title,sub='',right='',avatar='')=>`<div class="row">${avatar?`<span class="avatar">${esc(avatar)}</span>`:''}<div class="row-content"><div class="row-title">${esc(title)}</div>${sub?`<div class="row-sub">${esc(sub)}</div>`:''}</div>${right?`<div class="row-action">${right}</div>`:''}</div>`;
+const section=(title,body)=>`<div class="section-title">${esc(title)}</div><div class="surface">${body}</div>`;
+const field=(label,value)=>`<div class="section-title">${esc(label)}</div><div class="mockfield">${esc(value)}</div>`;
+function nav(p,compact=false){let items=p.scope==='管理后台'?['返回应用','管理概览','模型网关','模型目录','连接器','知识库','人员','审计']:p.scope==='个人设置'?['返回应用','通用','通知','审批','个人记忆','已连接账号','模型访问','套餐与积分','订单','账单']:['产品周报整理','竞品研究','知识库问答'];return `<aside class="appnav"><div class="wordmark">${icon}OpenBot</div><div class="mock-search">搜索</div>${items.map((x,i)=>`<div class="nav-label ${p.title.includes(x)||p.path==='/bots'&&x==='Bots'?'active':''}">${esc(compact?x.slice(0,2):x)}</div>`).join('')}${p.scope==='日常工作区'?'<div class="nav-bottom"><div class="nav-label">Bots</div><div class="nav-label">技能</div><div class="nav-label">Craft</div><div class="nav-label">个人设置</div></div>':''}</aside>`}
+function header(p){return `<div class="mobilebar">导航 / ${esc(p.scope)}</div><div class="mock-title"><strong>${esc(p.title.replace('（兼容地址）',''))}</strong>${['/bots','/skills','/admin/knowledge','/admin/bot-services','/settings/memory'].includes(p.path)?primary(p.actions[0].split('/')[0]):''}</div><div class="mock-description">${esc(p.scope)} · ${esc(p.sections[0])}</div>`}
+function simpleSection(p,s,i){let body;if(/配置|设置|偏好|开关/.test(s))body=row(s,'沿用当前配置字段与作用范围','<span class="toggle"></span>');else if(/说明|身份|范围|状态/.test(s))body=row(s,'信息完整呈现，未知数据与不可用状态分别表达',pill('示例'));else body=row(s,'保留当前页面提供的内容与操作','查看');return section(s,body)}
+function records(p){let heads=['记录','状态','时间'],rows=[['示例记录 A','已完成','10:24'],['示例记录 B','同步中','10:18'],['示例记录 C','已完成','09:42']];if(p.path.includes('invoice')||p.path.includes('orders')){heads=['单号','金额 / 币种','状态'];rows=[['DEMO-001','¥ 128.00 CNY','示例：已支付'],['DEMO-002','¥ 64.00 CNY','示例：处理中']]}else if(p.path.includes('audit')){heads=['动作 / 决定','目标','时间'];rows=[['读取文档 · 允许','产品资料','10:24'],['访问目录 · 拒绝','受限目录','10:18']]}else if(p.path.includes('datasets')){heads=['数据集','版本','状态'];rows=[['产品问答样本','v2','示例：可用'],['知识检索样本','v1','示例：可用']]}return `<div class="mockfield">${esc(p.sections[1]||'当前范围')} · 示例内容</div><div class="tablewrap"><table class="mocktable"><thead><tr>${heads.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((x,i)=>`<td>${i===r.length-1?pill(x):esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${p.sections.slice(2).map((s,i)=>simpleSection(p,s,i)).join('')}`}
+function chat(p){return `<div class="chat-body"><div class="person"><span class="avatar">林</span><div class="bubble">帮我整理本周的产品进展。</div></div><div class="person"><span class="avatar">R</span><div><strong>Research Assistant</strong><p>我会汇总项目资料，整理关键进展与待办。</p></div></div><div class="tool-row">${pill('已完成','ok')} · 检索项目资料</div><div class="tool-row">${pill('等待确认','warn')} · 审阅周报草稿</div><div class="artifact"><span class="avatar">文</span><div><strong>产品周报 · 草稿</strong><div class="row-sub">示例产物 · 可从现有入口预览</div></div></div><div class="composer">继续交代任务，或 @ 选择同事<div class="composer-footer"><span>附件 · 当前模型</span>${primary('发送')}</div></div></div>`}
+function specialized(p){
+if(p.path==='/bots')return section('需要你处理',row('Research Assistant','资料访问需要你确认',pill('待处理','warn'),'R'))+section('置顶',row('Knowledge','公司知识库问答', '查看','K'))+section('我的 Bot',row('General Assistant','处理日常问题与工作', '查看','G'))+section('与我共享',row('团队助手','由团队发布','查看','团'))+section('已隐藏',row('已隐藏的 Bot','按需展开恢复','展开'));
+if(p.template==='profile')return `<div class="person"><span class="avatar">R</span><div><strong>Research Assistant</strong><div class="row-sub">信息检索与报告整理</div></div></div>`+section('需要你处理',row('访问项目资料','查看动作、目标与影响后确认',pill('待确认','warn')))+section('当前状态',row('启用此 Bot','可随时暂停','<span class="toggle"></span>')+row('通知','仅需要我时通知','修改'))+section('进行中',row('产品资料整理','等待你的决策',pill('等待确认','warn')))+section('计划中 / 已完成',row('周报例行任务','展示现有调度与活动事实','查看'))+section('此 Bot 的设置',row('职责、联系与记忆','逐项进入配置','查看')+row('审批、能力与授权','保留原有权限','查看'));
+if(p.template==='home')return `<div class="chat-body"><h3 style="font-size:23px;margin:55px 0 12px">今天想和谁一起工作？</h3><p>从一条消息开始</p><div class="composer">输入问题或交代任务<div class="composer-footer"><span>附件 · 选择同事</span>${primary('发送')}</div></div><h3>探索 AI 同事</h3><div class="resourcegrid"><div class="resource"><strong>General Assistant</strong><p>日常工作与问题</p></div><div class="resource"><strong>Knowledge</strong><p>查询公司知识</p></div></div></div>`;
+if(p.template==='chat')return (p.path==='/channel/new'?field('收件人','Research Assistant · 可继续选择同事'):'')+chat(p);
+if(p.template==='craft')return chat(p);
+if(p.template==='craft-home')return `<div class="notice" style="margin-top:90px"><strong>选择一个 Craft 会话</strong><p>从已有会话继续，或创建新会话。</p>${primary('创建会话')}</div>`;
+if(p.template==='knowledge')return `<div class="mockfield">添加文档 · 沿用文件 / 内容输入</div>`+section('上传任务',row('产品说明.pdf','示例文件',pill('已完成','ok')))+`<div class="mockfield">筛选文档 · 排序</div><div class="tablewrap"><table class="mocktable"><thead><tr><th>文档</th><th>状态</th><th>更新</th></tr></thead><tbody><tr><td>产品需求说明.pdf</td><td>${pill('可用','ok')}</td><td>10:24</td></tr><tr><td>发布记录.md</td><td>${pill('处理中')}</td><td>10:18</td></tr></tbody></table></div>`+field('检索测试','输入问题，验证已有检索结果')+section('检索结果示意',row('产品需求说明','显示来源与现有检索文本','查看'));
+if(p.template==='run')return section('运行概览',row('DEMO-RUN-001','示例记录 · Research Assistant',pill('已完成','ok')))+section('可用性与引用',row('采集状态','只显示当前数据支持的结论',pill('可用','ok'))+row('关联会话','产品资料整理','查看'))+section('元数据',row('模型 / 发起人 / 时间','局部使用等宽数字，缺失明确标记','展开'))+section('执行步骤',row('检索资料','示例步骤',pill('已完成','ok'))+row('整理结果','步骤详情按需展开',pill('已完成','ok')));
+if(p.template==='compare')return field('比较对象','基线实验 / 候选实验')+section('兼容性',row('比较前检查','确认版本与口径一致',pill('示例：可比较','ok')))+`<div class="resourcegrid"><div class="resource"><strong>基线实验</strong><p>同一版本与样本口径</p></div><div class="resource"><strong>候选实验</strong><p>同一版本与样本口径</p></div></div>`+section('差异与退化样本',row('有数据时显示数值与单位','缺失值不视为零','查看'));
+if(p.template==='billing')return section('账户与订阅',row('个人积分账户','示例数据 · 与公司账户分别记录','查看')+row('当前订阅','按已启用能力呈现','管理'))+section('积分来源',row('奖励积分','显示来源与到期时间','查看'))+`<h3>消费明细</h3><div class="tablewrap"><table class="mocktable"><thead><tr><th>时间</th><th>Bot</th><th>积分</th></tr></thead><tbody><tr><td>10:24</td><td>Research Assistant</td><td>示例 12.00</td></tr><tr><td>09:42</td><td>Knowledge</td><td>示例 3.50</td></tr></tbody></table></div>`;
+if(p.path==='/settings/model-access')return field('模型选择','选择当前可用模型')+section('已有授权',row('Research Assistant','以本人身份调用已授权模型','管理'))+field('一次性绑定码','输入绑定码后预览')+section('确认授权对象',row('Research Assistant','核对 Bot、有效期与范围','预览'))+`<p class="row-sub">示例流程：预览之后由本人确认，不自动授予权限。</p>`;
+if(p.path==='/settings')return section('通用',row('主题','保留个人偏好','深色 / 浅色')+row('语言','支持中英文','简体中文')+row('消息列表','选择摘要展示方式','修改'))+section('常驻指令',row('给所有 Bot 的说明','点击进入现有编辑流程','编辑'))+section('快捷键',row('新建对话','按现有快捷键配置呈现','查看'));
+if(p.path==='/admin/gateway')return section('就绪状态',row('网关配置','示例状态',pill('配置就绪','ok')))+field('网关地址','https://gateway.example.test')+section('限流配置',row('请求限制','使用当前字段与单位','配置'))+field('凭据','•••••••• · 沿用既有掩码契约');
+if(p.template==='gallery')return `<div class="tabs"><span class="tab-active">${p.path.includes('market')?'专家':'预览'}</span><span>${p.path.includes('market')?'技能':'类型'}</span><span>${p.path.includes('market')?'连接器':'详情'}</span></div><div class="resourcegrid">${['Research Assistant','Knowledge','文档整理','GitHub'].map((x,i)=>`<div class="resource"><div class="resource-icon">${icon}</div><strong>${x}</strong><p>示例资源 · 现有能力说明</p><span class="mock-secondary">查看详情</span></div>`).join('')}</div>`;
+if(p.template==='preview'||p.template==='share'||p.template==='playground')return (p.template==='playground'?field('配置 / 代码输入','保留现有编辑器与执行方式'):'')+`<div class="document"><strong>内容预览</strong><p>真实预览由当前页面组件提供。</p><p>此区域表示内容尺度和留白，不替代业务产物。</p></div>`+p.sections.slice(1).map((s,i)=>simpleSection(p,s,i)).join('');
+if(p.template==='records')return records(p);
+if(p.template==='flow')return p.sections.map((s,i)=>i===0?`<p>${esc(s)}</p>`:field(s,p.path==='/tenant/selection'?(i===1?'产品示例公司':i===2?'产品团队':'按现有门禁显示'):'沿用现有流程内容')).join('')+primary(p.actions[0]);
+return p.sections.filter(s=>!/^(返回|标题|页面说明|品牌|全局导航|Craft 会话导航)/.test(s)).map((s,i)=>simpleSection(p,s,i)).join('');}
+function render(){const p=current,mobile=$('viewport').value==='mobile',state=$('state').value;document.documentElement.classList.toggle('light',$('theme').value==='light');$('page-title').textContent=p.id+' · '+p.title;$('page-path').textContent=p.path;$('template').textContent=p.template+' · '+p.change;$('sections').innerHTML=p.sections.map(s=>`<li>${esc(s)}</li>`).join('');$('actions').innerHTML=p.actions.map(a=>`<li>${esc(a)}</li>`).join('');$('states').textContent='目标状态：'+p.states.join('、');$('mobile').textContent=p.mobile;$('source').textContent=p.source;$('changes').textContent='V：视觉统一；L：布局/局部交互提案。I 导航增强在总方案中独立评审。';$('note').textContent=p.note||'保留现有路由、权限、字段和数据契约。操作能力以当前实现为上限。';$('footer').textContent=`设计范围：${DATA.pages.length} 个页面 / ${DATA.routes.length} 个路由声明（另有 4 个布局、7 个跳转）。当前筛选只影响索引。示意稿不代表产品功能已实现。`;
+const flow=['flow','share'].includes(p.template),craft=p.template.startsWith('craft');let body=specialized(p);if(state!=='normal'){const messages={loading:['正在加载','保留布局节奏。示意稿不模拟真实等待或网络请求。'],empty:['当前没有内容','此状态仅在业务语义允许时使用；未配置、无权限和故障必须分别说明。'],error:['当前内容未能获取','说明受影响的范围；保留已有内容，并使用当前页面提供的恢复入口。'],permission:['当前没有访问权限','保留作用范围说明；不展示未授权数据或可执行的管理操作。']};body=`<div class="notice"><strong>${messages[state][0]}</strong><p>${messages[state][1]}</p><p>该页特定状态：${esc(p.states.join('、'))}</p></div>`}
+$('screen').className='screen'+(mobile?' narrow':'')+(p.template==='craft'?' craftscreen':'');$('screen').innerHTML=(flow?'':nav(p,p.template==='craft'))+(craft?'<aside class="sessionnav"><strong>Craft</strong><div class="mock-secondary">新建会话</div><div class="nav-label active">产品原型</div><div class="nav-label">周报整理</div><div class="nav-label">计划任务</div></aside>':'')+`<div class="${flow?'flowmain':'mockmain'}">${flow?`<div class="wordmark">${icon}OpenBot</div>`:''}${header(p)}${body}<div class="sample-note">设计示意 · 示例数据 · ${esc(p.id)}</div></div>`+(p.template==='craft'?'<aside class="output"><div class="tabs"><span class="tab-active">预览</span><span>文件</span><span>产物</span></div><div class="document"><strong>产品周报</strong><p>本周进展</p><p>整理项目中的重要变化，保留来源与待确认事项。</p><h3>下一步</h3><p>根据确认结果继续处理。</p></div></aside>':'');
+if(!mobile&&p.path==='/channel/$channelId'&&state==='normal')$('screen').insertAdjacentHTML('beforeend','<aside class="context"><h3>工作坊</h3><div class="tabs"><span class="tab-active">过程</span><span>文件</span><span>产物</span></div><p>六个现有 Tab，空间不足时滚动或切换。</p>'+row('当前过程','等待你确认',pill('待确认','warn'))+'</aside>');
+const links=document.querySelectorAll('.page-link');links.forEach(b=>{if(b.dataset.id===p.id)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});}
+function index(){const q=$('search').value.trim().toLowerCase(),scope=$('scope').value;let last='',html='';const list=DATA.pages.filter(p=>(!scope||p.scope===scope)&&(!q||(p.id+p.title+p.path).toLowerCase().includes(q)));for(const p of list){if(p.scope!==last){html+=`<div class="group-label">${esc(p.scope)}</div>`;last=p.scope}html+=`<button class="page-link" data-id="${p.id}" ${p.id===current.id?'aria-current="page"':''}><small>${p.id}</small>${esc(p.title)}</button>`}$('index').innerHTML=html||'<p style="padding:12px">没有匹配的页面。</p>';document.querySelectorAll('.page-link').forEach(b=>b.addEventListener('click',()=>{current=DATA.pages.find(p=>p.id===b.dataset.id);render()}));}
+$('search').addEventListener('input',index);$('scope').addEventListener('change',index);['theme','viewport','state'].forEach(id=>$(id).addEventListener('change',render));index();render();
+</script></body></html>

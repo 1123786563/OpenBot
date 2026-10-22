@@ -1,8 +1,25 @@
 import { cva, type VariantProps } from "class-variance-authority";
-import { useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useId,
+  useMemo,
+} from "react";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+
+/**
+ * A Field owns the error element's id, so `FieldError` never has to invent one and no call site
+ * has to hand-wire the pair: when the field is invalid the group references the message with
+ * `aria-describedby`, and the message itself is a `role="alert"` region. The control keeps
+ * owning its own `aria-invalid` / `aria-describedby`, as the call sites that need it already do.
+ */
+const FieldContext = createContext<{ errorId: string } | null>(null);
+
+function isInvalid(value: unknown): boolean {
+  return value === true || value === "true";
+}
 
 function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
   return (
@@ -66,19 +83,38 @@ const fieldVariants = cva(
   },
 );
 
+type FieldProps = React.ComponentProps<"div"> &
+  VariantProps<typeof fieldVariants> & {
+    /** Call sites spell the invalid state as a DOM attribute; read it to wire the error id. */
+    "data-invalid"?: boolean | "true" | "false";
+  };
+
 function Field({
   className,
   orientation = "vertical",
   ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof fieldVariants>) {
+}: FieldProps) {
+  const errorId = `${useId()}-error`;
+  const invalid = isInvalid(props["data-invalid"]);
+  const context = useMemo(() => ({ errorId }), [errorId]);
+  const describedBy = props["aria-describedby"];
+
   return (
-    <div
-      role="group"
-      data-slot="field"
-      data-orientation={orientation}
-      className={cn(fieldVariants({ orientation }), className)}
-      {...props}
-    />
+    <FieldContext.Provider value={context}>
+      <div
+        role="group"
+        data-slot="field"
+        data-orientation={orientation}
+        data-invalid={invalid || undefined}
+        className={cn(fieldVariants({ orientation }), className)}
+        {...props}
+        aria-describedby={
+          invalid
+            ? [describedBy, errorId].filter(Boolean).join(" ")
+            : describedBy
+        }
+      />
+    </FieldContext.Provider>
   );
 }
 
@@ -103,7 +139,7 @@ function FieldLabel({
     <Label
       data-slot="field-label"
       className={cn(
-        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-brand/30 has-data-checked:bg-brand/5 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-brand/20 dark:has-data-checked:bg-brand/10",
+        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:text-[var(--ob-disabled-foreground)] has-data-checked:border-brand/30 has-data-checked:bg-brand/5 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-brand/20 dark:has-data-checked:bg-brand/10",
         "has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col",
         className,
       )}
@@ -117,7 +153,7 @@ function FieldTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="field-label"
       className={cn(
-        "flex w-fit items-center gap-2 text-sm font-medium group-data-[disabled=true]/field:opacity-50",
+        "flex w-fit items-center gap-2 text-sm font-medium group-data-[disabled=true]/field:text-[var(--ob-disabled-foreground)]",
         className,
       )}
       {...props}
@@ -174,10 +210,12 @@ function FieldError({
   className,
   children,
   errors,
+  id,
   ...props
 }: React.ComponentProps<"div"> & {
   errors?: Array<{ message?: string } | undefined>;
 }) {
+  const field = useContext(FieldContext);
   const content = useMemo(() => {
     if (children) {
       return children;
@@ -211,6 +249,7 @@ function FieldError({
 
   return (
     <div
+      id={id ?? field?.errorId}
       role="alert"
       data-slot="field-error"
       className={cn("text-sm font-normal text-destructive", className)}

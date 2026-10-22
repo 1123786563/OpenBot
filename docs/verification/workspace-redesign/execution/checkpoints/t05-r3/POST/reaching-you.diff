@@ -1,0 +1,73 @@
+--- docs/verification/workspace-redesign/execution/checkpoints/t05-r3/PRE/files/app/src/components/delivery/reaching-you.tsx	2026-10-21 02:04:35
++++ docs/verification/workspace-redesign/execution/checkpoints/t05-r3/POST/files/app/src/components/delivery/reaching-you.tsx	2026-10-21 02:13:25
+@@ -314,6 +314,11 @@
+           available={reach.data.available}
+           botName={botName}
+           challengeId={challengeId}
++          pendingChannelId={
++            pendingSms && pendingSms.agentId === fixedBot
++              ? pendingSms.channelId
++              : ""
++          }
+           fixedBot={fixedBot}
+           linked={heldLink(connecting)}
+           onChallenge={(id, agentId, channelId) => {
+@@ -344,6 +349,7 @@
+   fixedBot,
+   botName,
+   challengeId,
++  pendingChannelId,
+   linked,
+   onChallenge,
+   onLinked,
+@@ -354,6 +360,7 @@
+   fixedBot: string | undefined;
+   botName: (id: string) => string;
+   challengeId: string;
++  pendingChannelId: string;
+   /** The link message this platform last answered with, while it still works. */
+   linked: HeldLink | undefined;
+   onChallenge: (id: string, agentId: string, channelId: string) => void;
+@@ -364,7 +371,9 @@
+   const formId = useId();
+   const channels = useInfiniteQuery(channelListQueryOptions());
+   // Reopened with a link message still held, the dialog shows the conversation it links.
+-  const [channelId, setChannelId] = useState(linked?.channelId ?? "");
++  const [channelId, setChannelId] = useState(
++    linked?.channelId ?? (transport === "sms" ? pendingChannelId : ""),
++  );
+   const [pickedBot, setAgentId] = useState(linked?.agentId ?? "");
+   const agentId = fixedBot ?? pickedBot;
+   const [phone, setPhone] = useState("");
+@@ -396,6 +405,8 @@
+     ) ?? [];
+   const selected = channels.data?.find((channel) => channel.id === channelId);
+   const chosen = !!agentId && !!channelId;
++  const selectedChallengeId =
++    transport === "sms" && channelId === pendingChannelId ? challengeId : "";
+   const error = channels.error ?? link.error ?? sms.error ?? confirm.error;
+ 
+   return (
+@@ -507,19 +518,19 @@
+                       disabled={!chosen || !available.sms || sms.isPending}
+                       size="sm"
+                       type="submit"
+-                      variant={challengeId ? "outline" : "default"}
++                      variant={selectedChallengeId ? "outline" : "default"}
+                     >
+                       {t("reachability.connect.sendCode")}
+                     </Button>
+                   </div>
+                 </Field>
+               </form>
+-              {challengeId ? (
++              {selectedChallengeId ? (
+                 <form
+                   onSubmit={(event) => {
+                     event.preventDefault();
+                     confirm.mutate(
+-                      { challengeId, code },
++                      { challengeId: selectedChallengeId, code },
+                       {
+                         onSuccess: () => {
+                           onChallenge("", agentId, channelId);

@@ -1,7 +1,5 @@
-import { mergeProps } from "@base-ui/react/merge-props";
-import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
-import type * as React from "react";
+import * as React from "react";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
@@ -34,13 +32,13 @@ function ItemSeparator({
 }
 
 const itemVariants = cva(
-  "group/item flex w-full flex-wrap items-center rounded-lg border dark:border-transparent text-sm transition-colors duration-100 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 [a]:transition-colors [a]:hover:bg-muted",
+  "group/item flex w-full flex-wrap items-center rounded-lg border dark:border-transparent text-sm transition-colors duration-100 outline-none focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 [a]:transition-colors [a]:hover:bg-ob-hover",
   {
     variants: {
       variant: {
         default: "border-transparent",
         outline: "border-border",
-        muted: "border-transparent bg-muted/50",
+        muted: "border-transparent bg-ob-muted-surface/50",
       },
       size: {
         default: "gap-2.5 px-3 py-2.5",
@@ -55,28 +53,107 @@ const itemVariants = cva(
   },
 );
 
+type PropsRecord = Record<string, unknown>;
+type EventHandler = (...args: unknown[]) => void;
+
+const EVENT_PROP = /^on[A-Z]/;
+
+/**
+ * Merge the props Item resolves (slot data attributes, variant classes, forwarded props) with the
+ * props already on a `render` element. Base UI's `mergeProps` did this implicitly; stating it here
+ * keeps the contract visible: the element's props win, classes and styles are combined, and two
+ * handlers on the same event both run — the element's first, then Item's.
+ */
+function mergeItemProps(resolved: PropsRecord, element: PropsRecord): PropsRecord {
+  const merged: PropsRecord = { ...resolved, ...element };
+  for (const key of new Set([
+    ...Object.keys(resolved),
+    ...Object.keys(element),
+  ])) {
+    const ours = resolved[key];
+    const theirs = element[key];
+    if (key === "className") {
+      merged[key] = cn(theirs as string | undefined, ours as string | undefined);
+    } else if (key === "style") {
+      merged[key] = {
+        ...(theirs as React.CSSProperties | undefined),
+        ...(ours as React.CSSProperties | undefined),
+      };
+    } else if (
+      EVENT_PROP.test(key) &&
+      typeof ours === "function" &&
+      typeof theirs === "function"
+    ) {
+      merged[key] = (...args: unknown[]) => {
+        (theirs as EventHandler)(...args);
+        (ours as EventHandler)(...args);
+      };
+    }
+  }
+  return merged;
+}
+
+type ItemRenderState = {
+  slot: "item";
+  variant: NonNullable<VariantProps<typeof itemVariants>["variant"]>;
+  size: NonNullable<VariantProps<typeof itemVariants>["size"]>;
+};
+
+type ItemRenderFunction = (
+  props: React.HTMLAttributes<Element>,
+  state: ItemRenderState,
+) => React.ReactNode;
+
+type ItemProps = React.ComponentProps<"div"> &
+  VariantProps<typeof itemVariants> & {
+    /**
+     * Draw the row as another element, usually the `<button>` that makes a whole row actionable.
+     * Item contributes only its layout classes and slot data attributes; the rendered element
+     * keeps its own semantics, so there is never an interactive control nested in another one.
+     *
+     * Both forms Base UI accepted still work, without Base UI: an element is cloned with the
+     * explicit merge in `mergeItemProps`, and a function receives the resolved props and state.
+     */
+    render?: React.ReactElement | ItemRenderFunction;
+  };
+
 function Item({
   className,
   variant = "default",
   size = "default",
   render,
   ...props
-}: useRender.ComponentProps<"div"> & VariantProps<typeof itemVariants>) {
-  return useRender({
-    defaultTagName: "div",
-    props: mergeProps<"div">(
-      {
-        className: cn(itemVariants({ variant, size, className })),
-      },
-      props,
+}: ItemProps) {
+  const resolvedVariant = variant ?? "default";
+  const resolvedSize = size ?? "default";
+  const resolvedProps = {
+    "data-slot": "item",
+    "data-variant": resolvedVariant,
+    "data-size": resolvedSize,
+    ...props,
+    className: cn(
+      itemVariants({ variant: resolvedVariant, size: resolvedSize }),
+      className,
     ),
-    render,
-    state: {
-      slot: "item",
-      variant,
-      size,
-    },
-  });
+  };
+  const state: ItemRenderState = {
+    slot: "item",
+    variant: resolvedVariant,
+    size: resolvedSize,
+  };
+
+  if (typeof render === "function") {
+    return render(resolvedProps, state);
+  }
+
+  if (render) {
+    return React.cloneElement(
+      render as React.ReactElement<PropsRecord>,
+      mergeItemProps(resolvedProps, render.props as PropsRecord),
+    );
+  }
+
+  return <div {...resolvedProps} />;
 }
 
 const itemMediaVariants = cva(

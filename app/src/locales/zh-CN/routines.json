@@ -44,6 +44,7 @@
   "due": "待运行",
   "next": "下次 {{when}}",
   "actions": {
+    "moreActions": "更多操作",
     "runNow": "立即运行",
     "runNowAria": "立即运行计划为 {{schedule}} 的例行任务",
     "runNowTitle": "会真实立即运行：Bot 会执行任务并在频道中发布。",

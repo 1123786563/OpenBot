@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-21",
+  "page": "P10 Bot memory Add source",
+  "botId": "agent_023d30c3-2e68-4bd4-a4ab-e2bba67c9fcc",
+  "fixtureResponseSynthetic": true,
+  "noSourceSubmitted": true,
+  "results": [
+    {
+      "theme": "light",
+      "viewport": "390x844",
+      "dialogTheme": "light",
+      "selectPortal": {
+        "background": "rgb(255, 255, 255)",
+        "foreground": "rgb(25, 33, 49)",
+        "theme": "light"
+      },
+      "optionVisible": true,
+      "listCalls": 1,
+      "firstEscape": {
+        "mainDialogRemains": true,
+        "focusReturnedToSelect": true
+      },
+      "secondEscapeClosedDialog": true,
+      "focusReturnedToAddTrigger": true,
+      "noHorizontalOverflow": true,
+      "addPostCount": 0
+    },
+    {
+      "theme": "dark",
+      "viewport": "390x844",
+      "dialogTheme": "dark",
+      "selectPortal": {
+        "background": "rgb(36, 43, 56)",
+        "foreground": "rgb(235, 239, 247)",
+        "theme": "dark"
+      },
+      "optionVisible": true,
+      "listCalls": 1,
+      "firstEscape": {
+        "mainDialogRemains": true,
+        "focusReturnedToSelect": true
+      },
+      "secondEscapeClosedDialog": true,
+      "focusReturnedToAddTrigger": true,
+      "noHorizontalOverflow": true,
+      "addPostCount": 0
+    }
+  ]
+}

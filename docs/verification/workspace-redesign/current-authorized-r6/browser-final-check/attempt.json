@@ -1,0 +1,14 @@
+{
+  "target": "http://127.0.0.1:3011/",
+  "finalUrl": "chrome-error://chromewebdata/",
+  "navigation": [
+    "http://127.0.0.1:3011/",
+    "http://127.0.0.1:3011/",
+    "http://127.0.0.1:3011/sign",
+    "null/"
+  ],
+  "externalOriginsAttempted": [
+    "https://accounts.google.com/o/oauth2/v2/auth"
+  ],
+  "interpretation": "No page-level acceptance: unauthenticated route redirected to sign-in; that page attempted its configured external OAuth provider. External navigation was blocked before any request left localhost. Existing user Chrome profile was not used."
+}

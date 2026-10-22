@@ -176,7 +176,7 @@ function EventLine({ event }: { event: WorkshopStreamEvent }) {
       );
     case "tool_call":
       return (
-        <p className="rounded-md bg-muted/50 px-2 py-1 text-xs">
+        <p className="rounded-md bg-ob-muted-surface/50 px-2 py-1 text-xs">
           <span className="font-medium">{t("turn.tool")}</span>{" "}
           <code className="rounded bg-background px-1">
             {event.tool || "?"}

@@ -1,0 +1,390 @@
+--- a/app/src/components/bot-profile/manage.tsx
++++ b/app/src/components/bot-profile/manage.tsx
+@@ -85,7 +85,9 @@
+     <Dialog onOpenChange={onOpenChange} open={open}>
+       <DialogContent>
+         <DialogHeader>
+-          <DialogTitle>{t("manage.reset.title", { name: agent.name })}</DialogTitle>
++          <DialogTitle>
++            {t("manage.reset.title", { name: agent.name })}
++          </DialogTitle>
+           <DialogDescription>
+             {t("manage.reset.description", { name: agent.name })}
+           </DialogDescription>
+@@ -137,7 +139,9 @@
+             size="sm"
+             variant="outline"
+           >
+-            {reset.isSuccess ? t("manage.reset.close") : t("manage.reset.cancel")}
++            {reset.isSuccess
++              ? t("manage.reset.close")
++              : t("manage.reset.cancel")}
+           </Button>
+           {reset.isSuccess ? null : (
+             <Button
+@@ -186,136 +190,144 @@
+   const assigned = agent.assignedToMe === true;
+ 
+   return (
+-    <PageSection title={t("manage.title")}>
+-      {error ? (
+-        <p className="mt-4 text-destructive text-sm" role="alert">
+-          {error.message}
+-        </p>
+-      ) : null}
+-      <PageRows>
+-        <Item size="sm">
+-          <ItemMedia variant="icon">
+-            <IconPin />
+-          </ItemMedia>
+-          <ItemContent>
+-            <ItemTitle>{t("manage.pinned")}</ItemTitle>
+-            <ItemDescription>
+-              {assigned
+-                ? t("manage.assignedPinned")
+-                : agent.pinned
+-                  ? t("manage.pinnedDescription")
+-                  : t("manage.pinDescription")}
+-            </ItemDescription>
+-          </ItemContent>
+-          <ItemActions>
+-            <Switch
+-              aria-label={t("manage.pinned")}
+-              checked={agent.pinned || assigned}
+-              disabled={assigned || setPinned.isPending}
+-              onCheckedChange={(pinned) =>
+-                setPinned.mutate({ agentId: agent.id, pinned })
+-              }
+-            />
+-          </ItemActions>
+-        </Item>
+-        <Separator />
+-        <Item size="sm">
+-          <ItemMedia variant="icon">
+-            <IconEyeOff />
+-          </ItemMedia>
+-          <ItemContent>
+-            <ItemTitle>{t("manage.hidden")}</ItemTitle>
+-            <ItemDescription>
+-              {assigned
+-                ? t("manage.assignedHidden")
+-                : agent.hidden
+-                  ? t("manage.hiddenDescription")
+-                  : t("manage.hideDescription")}
+-            </ItemDescription>
+-          </ItemContent>
+-          <ItemActions>
+-            <Switch
+-              aria-label={t("manage.hidden")}
+-              checked={agent.hidden}
+-              disabled={assigned || setHidden.isPending}
+-              onCheckedChange={async (hidden) => {
+-                await setHidden.mutateAsync({ agentId: agent.id, hidden });
+-                if (hidden) onHidden();
+-              }}
+-            />
+-          </ItemActions>
+-        </Item>
+-        <Separator />
+-        <Item
+-          render={
+-            <button
+-              disabled={duplicate.isPending}
+-              onClick={async () =>
+-                onDuplicated((await duplicate.mutateAsync(agent.id)).id)
+-              }
+-              type="button"
+-            />
+-          }
+-          size="sm"
+-        >
+-          <ItemMedia variant="icon">
+-            <IconCopy />
+-          </ItemMedia>
+-          <ItemContent>
+-            <ItemTitle>{t("manage.duplicate")}</ItemTitle>
+-            <ItemDescription>
+-              {t("manage.duplicateDescription")}
+-            </ItemDescription>
+-          </ItemContent>
+-        </Item>
+-        <Separator />
+-        <Item
+-          render={<button onClick={() => setResetOpen(true)} type="button" />}
+-          size="sm"
+-        >
+-          <ItemMedia variant="icon">
+-            <IconRefresh />
+-          </ItemMedia>
+-          <ItemContent>
+-            <ItemTitle>{t("manage.resetEntry.title")}</ItemTitle>
+-            <ItemDescription>
+-              {t("manage.resetEntry.description")}
+-            </ItemDescription>
+-          </ItemContent>
+-          <ItemActions>
+-            <IconChevronRight className="size-4 text-muted-foreground" />
+-          </ItemActions>
+-        </Item>
+-        {agent.canManage ? (
+-          <>
+-            <Separator />
++    <>
++      <PageSection title={t("manage.title")}>
++        {error ? (
++          <p className="mt-4 text-destructive text-sm" role="alert">
++            {error.message}
++          </p>
++        ) : null}
++        <PageRows>
++          <Item size="sm">
++            <ItemMedia variant="icon">
++              <IconPin />
++            </ItemMedia>
++            <ItemContent>
++              <ItemTitle>{t("manage.pinned")}</ItemTitle>
++              <ItemDescription>
++                {assigned
++                  ? t("manage.assignedPinned")
++                  : agent.pinned
++                    ? t("manage.pinnedDescription")
++                    : t("manage.pinDescription")}
++              </ItemDescription>
++            </ItemContent>
++            <ItemActions>
++              <Switch
++                aria-label={t("manage.pinned")}
++                checked={agent.pinned || assigned}
++                disabled={assigned || setPinned.isPending}
++                onCheckedChange={(pinned) =>
++                  setPinned.mutate({ agentId: agent.id, pinned })
++                }
++              />
++            </ItemActions>
++          </Item>
++          <Separator />
++          <Item size="sm">
++            <ItemMedia variant="icon">
++              <IconEyeOff />
++            </ItemMedia>
++            <ItemContent>
++              <ItemTitle>{t("manage.hidden")}</ItemTitle>
++              <ItemDescription>
++                {assigned
++                  ? t("manage.assignedHidden")
++                  : agent.hidden
++                    ? t("manage.hiddenDescription")
++                    : t("manage.hideDescription")}
++              </ItemDescription>
++            </ItemContent>
++            <ItemActions>
++              <Switch
++                aria-label={t("manage.hidden")}
++                checked={agent.hidden}
++                disabled={assigned || setHidden.isPending}
++                onCheckedChange={async (hidden) => {
++                  await setHidden.mutateAsync({ agentId: agent.id, hidden });
++                  if (hidden) onHidden();
++                }}
++              />
++            </ItemActions>
++          </Item>
++          <Separator />
++          <Item
++            render={
++              <button
++                disabled={duplicate.isPending}
++                onClick={async () =>
++                  onDuplicated((await duplicate.mutateAsync(agent.id)).id)
++                }
++                type="button"
++              />
++            }
++            size="sm"
++          >
++            <ItemMedia variant="icon">
++              <IconCopy />
++            </ItemMedia>
++            <ItemContent>
++              <ItemTitle>{t("manage.duplicate")}</ItemTitle>
++              <ItemDescription>
++                {t("manage.duplicateDescription")}
++              </ItemDescription>
++            </ItemContent>
++          </Item>
++          <Separator />
++          <Item
++            render={<button onClick={() => setResetOpen(true)} type="button" />}
++            size="sm"
++          >
++            <ItemMedia variant="icon">
++              <IconRefresh />
++            </ItemMedia>
++            <ItemContent>
++              <ItemTitle>{t("manage.resetEntry.title")}</ItemTitle>
++              <ItemDescription>
++                {t("manage.resetEntry.description")}
++              </ItemDescription>
++            </ItemContent>
++            <ItemActions>
++              <IconChevronRight className="size-4 text-muted-foreground" />
++            </ItemActions>
++          </Item>
++        </PageRows>
++      </PageSection>
++      {agent.canManage ? (
++        <PageSection title={t("manage.deleteTitle", { name: agent.name })}>
++          <PageRows>
+             <Item
++              className="min-h-16"
+               render={
+                 <button onClick={() => setDeleteOpen(true)} type="button" />
+               }
+               size="sm"
+             >
+               <ItemMedia variant="icon">
+-                <IconTrash />
++                <IconTrash className="text-destructive" />
+               </ItemMedia>
+               <ItemContent>
+-                <ItemTitle>{t("manage.delete")}</ItemTitle>
++                <ItemTitle className="text-destructive">
++                  {t("manage.delete")}
++                </ItemTitle>
+                 <ItemDescription>
+                   {t("manage.deleteForEveryone")}
+                 </ItemDescription>
+               </ItemContent>
+-              <ItemActions>
++              <ItemActions className="min-h-11 shrink-0">
+                 <IconChevronRight className="size-4 text-muted-foreground" />
+               </ItemActions>
+             </Item>
+-          </>
+-        ) : null}
+-      </PageRows>
++          </PageRows>
++        </PageSection>
++      ) : null}
+       <ResetDialog agent={agent} onOpenChange={setResetOpen} open={resetOpen} />
+       <Dialog onOpenChange={setDeleteOpen} open={deleteOpen}>
+         <DialogContent>
+           <DialogHeader>
+-            <DialogTitle>{t("manage.deleteTitle", { name: agent.name })}</DialogTitle>
++            <DialogTitle>
++              {t("manage.deleteTitle", { name: agent.name })}
++            </DialogTitle>
+             <DialogDescription>{t("manage.cannotBeUndone")}</DialogDescription>
+           </DialogHeader>
+           {remove.error ? (
+@@ -347,6 +359,6 @@
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
+-    </PageSection>
++    </>
+   );
+ }
+--- a/app/src/components/bot-profile/profile.tsx
++++ b/app/src/components/bot-profile/profile.tsx
+@@ -86,11 +86,16 @@
+ 
+   return (
+     <>
+-      <div className="mt-6 flex items-center gap-3">
+-        <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={40} />
++      <div className="mt-6 flex min-w-0 items-center gap-3">
++        <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={32} />
+         <div className="min-w-0">
+-          <p className="truncate font-medium">{agent.title}</p>
+-          <p className="line-clamp-2 text-muted-foreground text-sm">
++          <p className="line-clamp-2 break-words font-semibold text-base">
++            {agent.name}
++          </p>
++          <p className="line-clamp-2 break-words text-muted-foreground text-sm">
++            {agent.title}
++          </p>
++          <p className="line-clamp-2 break-words text-muted-foreground text-sm">
+             {agent.roleDescription}
+           </p>
+         </div>
+--- a/app/src/components/bots/bot-roster.tsx
++++ b/app/src/components/bots/bot-roster.tsx
+@@ -1,8 +1,8 @@
+-import { useTranslation } from "react-i18next";
+ import { IconChevronRight } from "@tabler/icons-react";
+ import { useQuery } from "@tanstack/react-query";
+ import { Link } from "@tanstack/react-router";
+ import { Fragment, useState } from "react";
++import { useTranslation } from "react-i18next";
+ import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+ import {
+   attentionSummary,
+@@ -150,6 +150,7 @@
+           <Fragment key={agent.id}>
+             {index > 0 ? <Separator /> : null}
+             <Item
++              className="min-h-16 gap-3 px-4 py-3"
+               render={
+                 <Link params={{ agentId: agent.id }} to="/bots/$agentId" />
+               }
+@@ -162,11 +163,15 @@
+                   size={28}
+                 />
+               </ItemMedia>
+-              <ItemContent>
+-                <ItemTitle>{agent.name}</ItemTitle>
+-                <ItemDescription>{summary || agent.title}</ItemDescription>
++              <ItemContent className="min-w-0">
++                <ItemTitle className="line-clamp-2 break-words">
++                  {agent.name}
++                </ItemTitle>
++                <ItemDescription className="line-clamp-2 break-words">
++                  {summary || agent.title}
++                </ItemDescription>
+               </ItemContent>
+-              <ItemActions>
++              <ItemActions className="min-h-11 shrink-0">
+                 {state && needsInput(state) > 0 ? (
+                   <span className="rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums">
+                     {needsInput(state)}
+--- a/app/tests/bot-manage.test.tsx
++++ b/app/tests/bot-manage.test.tsx
+@@ -1,10 +1,17 @@
+ import "./preload";
+-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+ import { ManageSection } from "@/components/bot-profile/manage";
+ import type { AgentProfile } from "@/lib/agents/queries";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  expect,
++  mock,
++  test,
++} from "../../tests/support/e2e-compat";
+ import { settleReactWork } from "./settle-react-work";
+ 
+ /**
+@@ -83,6 +90,18 @@
+   expect(view.getByText("Duplicate")).toBeTruthy();
+ });
+ 
++test("the dangerous delete action has its own section after everyday management", () => {
++  const view = draw(BOT);
++  const sections = [...view.container.querySelectorAll("section")];
++  const headings = sections.map(
++    (section) => section.querySelector("h2")?.textContent,
++  );
++  expect(headings[0]).toBe("Manage");
++  expect(headings[1]).toContain("Delete");
++  expect(sections[0]?.querySelector("button[aria-label^='Delete']")).toBeNull();
++  expect(sections[1]?.querySelector("button")).toBeTruthy();
++});
++
+ test("hiding a Bot takes the person back to the roster", async () => {
+   serving();
+   const onHidden = mock(() => {});

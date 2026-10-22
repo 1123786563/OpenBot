@@ -63,16 +63,44 @@ import { queryClient } from "@/query-client";
  * type it into, with no way to confirm the code they had just been sent.
  */
 const PENDING_SMS = "openbot.reachability.pendingSms";
-function readPending(): string {
+type PendingSms = {
+  version: 1;
+  challengeId: string;
+  agentId: string;
+  channelId: string;
+};
+function readPending(): PendingSms | null {
   try {
-    return sessionStorage.getItem(PENDING_SMS) ?? "";
+    const raw = sessionStorage.getItem(PENDING_SMS);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "version" in parsed &&
+      parsed.version === 1 &&
+      "challengeId" in parsed &&
+      typeof parsed.challengeId === "string" &&
+      "agentId" in parsed &&
+      typeof parsed.agentId === "string" &&
+      "channelId" in parsed &&
+      typeof parsed.channelId === "string"
+    )
+      return parsed as PendingSms;
+    sessionStorage.removeItem(PENDING_SMS);
+    return null;
   } catch {
-    return "";
+    try {
+      sessionStorage.removeItem(PENDING_SMS);
+    } catch {
+      /* storage unavailable */
+    }
+    return null;
   }
 }
-function writePending(id: string) {
+function writePending(pending: PendingSms | null) {
   try {
-    if (id) sessionStorage.setItem(PENDING_SMS, id);
+    if (pending) sessionStorage.setItem(PENDING_SMS, JSON.stringify(pending));
     else sessionStorage.removeItem(PENDING_SMS);
   } catch {
     /* A browser that keeps nothing still confirms within the visit. */
@@ -126,8 +154,12 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
   // People read Bots by name; the id is what the list used to show.
   const botName = (id: string) =>
     bots.data?.find((bot) => bot.id === id)?.name ?? id;
-  const [challengeId, setChallengeId] = useState(readPending);
-  useEffect(() => writePending(challengeId), [challengeId]);
+  const [pendingSms, setPendingSms] = useState(readPending);
+  const challengeId =
+    pendingSms && pendingSms.agentId === fixedBot ? pendingSms.challengeId : "";
+  useEffect(() => {
+    if (pendingSms && pendingSms.agentId === fixedBot) writePending(pendingSms);
+  }, [fixedBot, pendingSms]);
   const [connecting, setConnecting] = useState<Transport | null>(null);
   /*
    * The last link message per platform, held here rather than in the dialog: the dialog unmounts
@@ -282,9 +314,19 @@ export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
           available={reach.data.available}
           botName={botName}
           challengeId={challengeId}
+          pendingChannelId={
+            pendingSms && pendingSms.agentId === fixedBot
+              ? pendingSms.channelId
+              : ""
+          }
           fixedBot={fixedBot}
           linked={heldLink(connecting)}
-          onChallenge={setChallengeId}
+          onChallenge={(id, agentId, channelId) => {
+            setPendingSms(
+              id ? { version: 1, challengeId: id, agentId, channelId } : null,
+            );
+            if (!id) writePending(null);
+          }}
           onClose={() => setConnecting(null)}
           onLinked={(link) =>
             setLinks((prior) => ({ ...prior, [link.platform]: link }))
@@ -307,6 +349,7 @@ function ConnectDialog({
   fixedBot,
   botName,
   challengeId,
+  pendingChannelId,
   linked,
   onChallenge,
   onLinked,
@@ -317,9 +360,10 @@ function ConnectDialog({
   fixedBot: string | undefined;
   botName: (id: string) => string;
   challengeId: string;
+  pendingChannelId: string;
   /** The link message this platform last answered with, while it still works. */
   linked: HeldLink | undefined;
-  onChallenge: (id: string) => void;
+  onChallenge: (id: string, agentId: string, channelId: string) => void;
   onLinked: (link: HeldLink) => void;
   onClose: () => void;
 }) {
@@ -327,7 +371,9 @@ function ConnectDialog({
   const formId = useId();
   const channels = useInfiniteQuery(channelListQueryOptions());
   // Reopened with a link message still held, the dialog shows the conversation it links.
-  const [channelId, setChannelId] = useState(linked?.channelId ?? "");
+  const [channelId, setChannelId] = useState(
+    linked?.channelId ?? (transport === "sms" ? pendingChannelId : ""),
+  );
   const [pickedBot, setAgentId] = useState(linked?.agentId ?? "");
   const agentId = fixedBot ?? pickedBot;
   const [phone, setPhone] = useState("");
@@ -359,6 +405,8 @@ function ConnectDialog({
     ) ?? [];
   const selected = channels.data?.find((channel) => channel.id === channelId);
   const chosen = !!agentId && !!channelId;
+  const selectedChallengeId =
+    transport === "sms" && channelId === pendingChannelId ? challengeId : "";
   const error = channels.error ?? link.error ?? sms.error ?? confirm.error;
 
   return (
@@ -448,7 +496,7 @@ function ConnectDialog({
                   event.preventDefault();
                   sms.mutate(
                     { channelId, agentId, phone },
-                    { onSuccess: onChallenge },
+                    { onSuccess: (id) => onChallenge(id, agentId, channelId) },
                   );
                 }}
               >
@@ -470,22 +518,22 @@ function ConnectDialog({
                       disabled={!chosen || !available.sms || sms.isPending}
                       size="sm"
                       type="submit"
-                      variant={challengeId ? "outline" : "default"}
+                      variant={selectedChallengeId ? "outline" : "default"}
                     >
                       {t("reachability.connect.sendCode")}
                     </Button>
                   </div>
                 </Field>
               </form>
-              {challengeId ? (
+              {selectedChallengeId ? (
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
                     confirm.mutate(
-                      { challengeId, code },
+                      { challengeId: selectedChallengeId, code },
                       {
                         onSuccess: () => {
-                          onChallenge("");
+                          onChallenge("", agentId, channelId);
                           setCode("");
                           onClose();
                         },

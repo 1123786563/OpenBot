@@ -1,11 +1,11 @@
 import { IconPlus } from "@tabler/icons-react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { CreateAgentDialog } from "@/components/agents/create-agent-dialog";
 import { BotRoster } from "@/components/bots/bot-roster";
 import { PageShell } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 
 /** Creating a Bot is a search-parameter state, so the roster stays mounted and Back closes it. */
 export const Route = createFileRoute("/_authed/_app/bots/")({
@@ -20,15 +20,10 @@ function BotsPage() {
   return (
     <PageShell
       action={
-        <Button
-          render={(props) => (
-            <Link {...props} search={{ new: true }} to="/bots" />
-          )}
-          size="lg"
-        >
+        <ButtonLink search={{ new: true }} to="/bots" size="lg">
           <IconPlus />
           {t("pages.bots.newBot")}
-        </Button>
+        </ButtonLink>
       }
       description={t("pages.bots.description")}
       title={t("pages.bots.title")}

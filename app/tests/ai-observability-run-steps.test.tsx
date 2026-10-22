@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -9,12 +8,21 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type {
   RunDetailResult,
   RunStep,
   RunUsageReport,
 } from "../../shared/ai-observability-runs";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { ObservationRunDetailPage } from "../src/components/ai-observability/run-detail";
 // English copy: the i18n bundles initialize on import, so assertions see real sentences.
 import "@/lib/i18n";
@@ -534,10 +542,81 @@ describe("retrieval steps show the query and the hit summary (acceptance 3)", ()
     const view = draw();
     await waitFor(() => expect(pageText(view)).toContain("partial"));
     expect(pageText(view)).toContain("Truncated");
+    const disclosure = view
+      .getByText("Show recorded content")
+      .closest("details");
+    expect(disclosure?.open).toBe(false);
+    fireEvent.click(view.getByText("Show recorded content"));
+    expect(disclosure?.open).toBe(true);
+    expect(disclosure?.textContent).toContain("partial · Truncated");
   });
 });
 
 describe("missing and malformed data fails closed (acceptance 4)", () => {
+  test("a projected empty string is disclosed while null, missing and omitted values stay absent (P17)", async () => {
+    stepsHandler = () =>
+      Response.json(
+        stepsBody([
+          step({
+            spanId: "empty-payload",
+            name: "empty_payload",
+            output: { state: "projected", value: "" },
+          }),
+          step({
+            spanId: "null-payload",
+            name: "null_payload",
+            input: null,
+            output: null,
+          } as unknown as RunStep),
+          step({ spanId: "missing-payload", name: "missing_payload" }),
+          step({
+            spanId: "omitted-payload",
+            name: "omitted_payload",
+            input: { state: "omitted", reason: "unhandled_free_text" },
+            output: undefined,
+          }),
+        ]),
+      );
+    const view = draw();
+    await waitFor(() => expect(stepNode(view, "empty-payload")).not.toBeNull());
+
+    const emptyNode = stepNode(view, "empty-payload");
+    const disclosure = emptyNode?.querySelector("details");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.textContent).toContain("(empty value)");
+    expect(stepNode(view, "null-payload")?.querySelector("details")).toBeNull();
+    expect(
+      stepNode(view, "missing-payload")?.querySelector("details"),
+    ).toBeNull();
+    expect(
+      stepNode(view, "omitted-payload")?.querySelector("details"),
+    ).toBeNull();
+  });
+
+  test("null and omitted payloads keep the step tree renderable without empty disclosures (P17)", async () => {
+    stepsHandler = () =>
+      Response.json(
+        stepsBody([
+          step({
+            spanId: "null-payload",
+            name: "null_payload",
+            input: null,
+            output: null,
+          } as unknown as RunStep),
+          step({
+            spanId: "omitted-payload",
+            name: "omitted_payload",
+            input: { state: "omitted", reason: "unhandled_free_text" },
+            output: undefined,
+          }),
+        ]),
+      );
+    const view = draw();
+    await waitFor(() => expect(stepNode(view, "null-payload")).not.toBeNull());
+    expect(stepNode(view, "omitted-payload")).not.toBeNull();
+    expect(view.queryAllByText("Show recorded content")).toHaveLength(0);
+  });
+
   test("a malformed steps body is the unavailable fault, and the page keeps its facts", async () => {
     stepsHandler = () => Response.json({ steps: "no" });
     const view = draw();

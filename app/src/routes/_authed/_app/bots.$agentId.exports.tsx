@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ObservationExportsPage } from "@/components/ai-observability/exports-status";
+import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
 
 /**
  * The creator's export status page (#42): this Bot's export jobs and the file each
@@ -8,6 +9,8 @@ import { ObservationExportsPage } from "@/components/ai-observability/exports-st
  * every load, so a typed-in address to someone else's Bot answers forbidden.
  */
 export const Route = createFileRoute("/_authed/_app/bots/$agentId/exports")({
+  beforeLoad: ({ context, params }) =>
+    requireBotObservabilityAccess(context.queryClient, params.agentId),
   component: ExportsPage,
 });
 

@@ -1,0 +1,10 @@
+--- docs/verification/workspace-redesign/execution/checkpoints/t06-r3/PRE/files/app/src/locales/en/ai-observability-runs.json	2026-10-21 01:35:53
++++ docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/en-ai-observability-runs.json	2026-10-21 01:34:11
+@@ -86,6 +86,7 @@
+     "steps": {
+       "showPayload": "Show recorded content",
+       "payloadRegion": "Recorded step content",
++      "emptyValue": "(empty value)",
+       "kind": {
+         "model": "Model call",
+         "tool": "Tool call",

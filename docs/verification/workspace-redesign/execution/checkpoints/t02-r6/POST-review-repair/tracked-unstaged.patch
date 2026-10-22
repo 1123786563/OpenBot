@@ -1,0 +1,44 @@
+diff --git a/app/src/components/ui/context-menu.tsx b/app/src/components/ui/context-menu.tsx
+index 5f30181d7..200f51770 100644
+--- a/app/src/components/ui/context-menu.tsx
++++ b/app/src/components/ui/context-menu.tsx
+@@ -166,6 +166,7 @@ function ContextMenuTrigger({
+   onTouchMove,
+   onTouchEnd,
+   onTouchCancel,
++  role,
+   ...props
+ }: ContextMenuTriggerProps) {
+   const { requestOpen, disabled, triggerRef } = useContextMenuRoot();
+@@ -187,13 +188,14 @@ function ContextMenuTrigger({
+   useEffect(() => cancelLongPress, [cancelLongPress]);
+ 
+   return (
++    // biome-ignore lint/a11y/noStaticElementInteractions: this wrapper is presentational; it delegates interaction to its child.
+     <div
+       {...props}
+       ref={(node) => {
+         triggerRef.current = node;
+       }}
+       className={cn("select-none", className)}
+-      role="group"
++      role={role ?? "presentation"}
+       data-slot="context-menu-trigger"
+       style={{ WebkitTouchCallout: "none", ...style }}
+       onContextMenu={(event) => {
+diff --git a/docs/plans/reports/T02-R6-impl.md b/docs/plans/reports/T02-R6-impl.md
+index 37380f782..683d97717 100644
+--- a/docs/plans/reports/T02-R6-impl.md
++++ b/docs/plans/reports/T02-R6-impl.md
+@@ -33,3 +33,11 @@ Exit: 1. Output: 4 files checked; 6 errors. Findings: `button.tsx` import orderi
+ ## Self-review
+ 
+ Reviewed the four-file diff. Changes are confined to import/format compliance and effect/interaction semantics flagged by Biome. The callback dependency is stable via `useCallback`; the dialog listener correctly rebinds when the close callback changes. The trigger's `role="group"` keeps the element non-interactive while providing an explicit role. No tests or unrelated source files were edited. No commit was made. Remaining concern: the required focused test command is not fully green due to two `heroui-spike` failures; these failures were not investigated or changed because they are outside this static-check-only repair's scope.
++
++## Review repair note
++
++Applied the reviewer-requested accessibility correction in `context-menu.tsx`: the wrapper now uses `role={role ?? "presentation"}` after destructuring `role` from caller props, so caller-provided roles are retained and cannot be overwritten by the props spread. Biome still flags a presentational event wrapper under `noStaticElementInteractions`, so a targeted suppression documents that this wrapper delegates interaction to its child and is intentionally presentational.
++
++- `bunx biome check app/src/components/ui/context-menu.tsx` — exit 0, one file checked, no fixes applied. Output: `docs/verification/workspace-redesign/t02-r6/repair-biome.txt`.
++- `bunx e2e run --config e2e.unit.config.ts app/tests/zz-probe-context-menu.test.tsx` — exit 0; one file, 8 passed, 0 failed, skipped, interrupted, or flaky. Output: `docs/verification/workspace-redesign/t02-r6/repair-context-menu-e2e.txt`; structured report `.e2e/unit/report.json`.
++- Final `context-menu.tsx` SHA-256: `4b04a2801604d011a66298c54ba41d382d423fb46be24fa649dc1813b14df317`.

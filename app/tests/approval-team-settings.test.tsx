@@ -119,8 +119,14 @@ test("an administrator sets the team-wide controls", async () => {
   const view = draw();
   await view.findByText("Team settings");
   const user = userEvent.setup({ document });
+  /*
+   * The trigger is addressed by its accessible name, not by a `combobox` role: HeroUI
+   * Select.Trigger renders a plain button with aria-haspopup="listbox" and drops the
+   * role="combobox" the ui/select wrapper forwards (interface change request recorded;
+   * come back to the role query if the wrapper regains the attribute).
+   */
   await user.click(
-    view.getByRole("combobox", {
+    view.getByRole("button", {
       name: "Commands on members' computers, at most",
     }),
   );

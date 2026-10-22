@@ -18,7 +18,7 @@ import { EASE_OUT } from "@/lib/motion";
 
 const ANIMATION_DURATION_SECONDS = 0.3;
 const DEFAULT_DETAIL_WIDTH = 400;
-const MIN_MAIN_WIDTH = 400;
+const MIN_MAIN_WIDTH = 480;
 
 /**
  * The content overlaps the tail of the pane rather than following it.

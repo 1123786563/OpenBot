@@ -1,0 +1,197 @@
+{
+  "schemaVersion": "report-1",
+  "run": {
+    "id": "01a15989-b06a-7aa7-a92d-7a1ff15728c4",
+    "specVersion": "0.1",
+    "runner": {
+      "name": "e2e",
+      "version": "0.20.0"
+    },
+    "status": "passed",
+    "exitCode": 0,
+    "startedAt": "2026-10-20T13:39:18.456Z",
+    "finishedAt": "2026-10-20T13:39:20.731Z",
+    "project": {
+      "id": "openbot-workspace-redesign-t01-probe",
+      "configDigest": "25803d65c37f08c337dc2d2d974f5df7dafa2e454466fa18e1657542792340f9"
+    },
+    "environment": {
+      "ci": false,
+      "trustNoticeShown": false,
+      "os": "darwin 27.0.0",
+      "arch": "arm64",
+      "runtime": "node v22.22.3"
+    },
+    "vcs": {
+      "commit": "203d0f0244b2f898218fa12027089c631e8448d9",
+      "branch": "feat/heroui-v3-migration",
+      "dirty": true
+    },
+    "targets": [
+      {
+        "id": "web",
+        "index": 0,
+        "platform": "web",
+        "baseOrigin": "http://localhost:3011",
+        "environment": "test",
+        "engine": {
+          "name": "web",
+          "version": "0.14.0",
+          "spiVersion": 1
+        },
+        "capabilities": [
+          "actions",
+          "artifacts",
+          "browser",
+          "keyboard",
+          "location",
+          "observation",
+          "pointer",
+          "state"
+        ],
+        "artifactCapabilities": [
+          "screenshot",
+          "video"
+        ],
+        "stateCapability": true
+      }
+    ],
+    "serialGroups": [],
+    "results": [
+      {
+        "id": "a4781c41eca0a639df807634cd3657f42d48f64433248aa6da1db4078ecdbd72",
+        "testId": "browser-probe.e2e.ts::T01%20rendered%20theme%20probe%20on%20the%20current%20local%20app",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "T01 rendered theme probe on the current local app"
+        ],
+        "file": "browser-probe.e2e.ts",
+        "source": {
+          "file": "browser-probe.e2e.ts",
+          "line": 3,
+          "column": 1
+        },
+        "targetId": "web",
+        "platform": "web",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a15989-b250-7f47-93c3-f7068ff6f949",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-10-20T13:39:18.737Z",
+            "durationMs": 1971,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "environment": {
+              "browser": "chromium 153.0.8010.12",
+              "user agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36"
+            },
+            "steps": [
+              {
+                "id": "01a15989-b250-7f47-93c3-f7068ff6f949:0",
+                "index": 0,
+                "kind": "resource",
+                "api": "browser.goto",
+                "label": "http://localhost:3011/",
+                "status": "passed",
+                "startedAt": "2026-10-20T13:39:18.823Z",
+                "durationMs": 1875,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "browser-probe.e2e.ts",
+                  "line": 6,
+                  "column": 17
+                }
+              },
+              {
+                "id": "01a15989-b250-7f47-93c3-f7068ff6f949:1",
+                "index": 1,
+                "kind": "resource",
+                "api": "browser.evaluate",
+                "label": "",
+                "status": "passed",
+                "startedAt": "2026-10-20T13:39:20.699Z",
+                "durationMs": 3,
+                "events": [],
+                "artifacts": [],
+                "source": {
+                  "file": "browser-probe.e2e.ts",
+                  "line": 7,
+                  "column": 32
+                }
+              }
+            ],
+            "appLog": [
+              {
+                "source": "network",
+                "level": "error",
+                "text": "GET http://localhost:8400/live.js?token=a26f45ed-9f05-4533-82f3-f056630b0cb4 net::ERR_CONNECTION_REFUSED",
+                "at": "2026-10-20T13:39:18.868Z",
+                "step": 0
+              },
+              {
+                "source": "console",
+                "level": "info",
+                "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold (at http://localhost:3011/node_modules/.vite/deps/react-dom_client.js?v=a5431d8f:20103)",
+                "at": "2026-10-20T13:39:18.980Z",
+                "step": 0
+              },
+              {
+                "source": "console",
+                "level": "warning",
+                "text": "[tanstack-router] These exports from \"/Users/wuyongjun/trea/OpenBot/.worktrees/heroui-migration/app/src/routes/_authed/admin/learning.tsx\" will not be code-split and will increase your bundle size: - LearningPage For the best optimization, these items should either have their export statements remo…",
+                "at": "2026-10-20T13:39:19.011Z",
+                "step": 0
+              },
+              {
+                "source": "network",
+                "level": "warning",
+                "text": "GET http://localhost:3011/api/me 401 Unauthorized",
+                "at": "2026-10-20T13:39:19.032Z",
+                "step": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "errors": [],
+    "summary": {
+      "discovered": 1,
+      "selected": 1,
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "interrupted": 0,
+      "flaky": 0,
+      "skipped": 0
+    },
+    "limits": {
+      "maxAgentContextBytes": 16384,
+      "maxLedgerBytes": 8192,
+      "maxObservationBytes": 262144,
+      "maxEventsPerStep": 1000,
+      "maxModelTokensPerCall": 64000
+    },
+    "usage": {
+      "discoveredResults": 1,
+      "maxAgentContextBytes": 0,
+      "maxLedgerBytes": 0,
+      "maxObservationBytes": 0,
+      "artifactBytes": 0,
+      "downloads": 0,
+      "events": 0,
+      "modelTokens": 0,
+      "maxModelCallsInStep": 0,
+      "maxActionStepsInStep": 0
+    }
+  }
+}

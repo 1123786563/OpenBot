@@ -1,0 +1,17 @@
+--- docs/verification/workspace-redesign/execution/checkpoints/t02-r3/PRE/button-native.test.tsx	2026-10-21 01:52:30
++++ docs/verification/workspace-redesign/execution/checkpoints/t02-r3/POST/button-native.test.tsx	2026-10-21 01:53:27
+@@ -51,7 +51,13 @@
+ test("a button with no `render` is still a native button", () => {
+   let receivedRef: HTMLButtonElement | null = null;
+   const { complaints, element } = drawing(
+-    <Button ref={(node) => (receivedRef = node)}>Save</Button>,
++    <Button
++      ref={(node) => {
++        receivedRef = node;
++      }}
++    >
++      Save
++    </Button>,
+   );
+ 
+   expect(complaints).toEqual([]);

@@ -1,5 +1,4 @@
 import { IconBolt, IconRefresh } from "@tabler/icons-react";
-import { Link } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -18,7 +17,7 @@ import {
   WbStatsRow,
   WbTag,
 } from "@/components/market/wb";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import type { MarketSkill } from "@/lib/marketplace/queries";
 import type { PluginSkill } from "@/lib/plugins/queries";
@@ -151,21 +150,16 @@ export function SkillDialogWb({
                   </WbPrimaryButton>
                 )
               ) : kind === "mine" ? (
-                <Button
+                <ButtonLink
                   onClick={(event) => event.stopPropagation()}
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      search={{ edit: skill.slug }}
-                      to="/skills"
-                    />
-                  )}
+                  search={{ edit: skill.slug }}
+                  to="/skills"
                   size="sm"
                   variant="outline"
                   className="h-8 rounded-lg px-4"
                 >
                   {t("wb.edit")}
-                </Button>
+                </ButtonLink>
               ) : null}
               <WbTag>
                 <code className="font-mono text-foreground/60">
@@ -372,14 +366,13 @@ export function SkillsPane({
             hint={t("wb.empty.mineHint")}
             title={t("wb.empty.skillsMine")}
             action={
-              <Button
-                render={(props) => (
-                  <Link {...props} search={{ new: true }} to="/skills" />
-                )}
+              <ButtonLink
+                search={{ new: true }}
+                to="/skills"
                 size="sm"
               >
                 {t("wb.addSkill")}
-              </Button>
+              </ButtonLink>
             }
           />
         ) : (
@@ -387,20 +380,15 @@ export function SkillsPane({
             {mineSkills.map((skill) => (
               <SkillCard
                 action={
-                  <Button
+                  <ButtonLink
                     onClick={(event) => event.stopPropagation()}
-                    render={(props) => (
-                      <Link
-                        {...props}
-                        search={{ edit: skill.slug }}
-                        to="/skills"
-                      />
-                    )}
+                    search={{ edit: skill.slug }}
+                    to="/skills"
                     size="xs"
                     variant="ghost"
                   >
                     {t("wb.edit")}
-                  </Button>
+                  </ButtonLink>
                 }
                 footer={
                   <>

@@ -177,7 +177,7 @@ export function ProposedBotCard({
        * hides the second half of an instruction that will run on somebody's behalf from the one
        * person being asked to agree to it; a scroller keeps every character reachable.
        */}
-      <p className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+      <p className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-ob-muted-surface/40 px-3 py-2 text-sm">
         {values.roleDescription}
       </p>
 

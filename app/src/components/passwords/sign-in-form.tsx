@@ -10,6 +10,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -231,15 +232,14 @@ export function SignInForm({ requestId }: { requestId: string }) {
         description={t("signInForm.takeOverDescription")}
       >
         <div className="flex flex-wrap gap-2">
-          <Button
+          <ButtonLink
             size="sm"
             variant="outline"
-            render={
-              <Link to="/bot" search={{ agent: data.botId, watch: true }} />
-            }
+            to="/bot"
+            search={{ agent: data.botId, watch: true }}
           >
             {t("signInForm.openBrowser")}
-          </Button>
+          </ButtonLink>
           <Button
             size="sm"
             disabled={busy}

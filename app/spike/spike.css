@@ -1,0 +1,4 @@
+/*
+ * H01 spike-only rules (empty on purpose). The production stylesheet is imported from
+ * main.tsx exactly as the app does, so the page runs under the real final CSS contract.
+ */

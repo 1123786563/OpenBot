@@ -1,0 +1,18 @@
+--- PRE/e2e-bun-suites.json
++++ POST/e2e-bun-suites.json
+@@ -687,6 +687,7 @@
+     "app/tests/bot-settings-rows.test.tsx",
+     "app/tests/bot-setup.test.tsx",
+     "app/tests/bot-sharing.test.tsx",
++    "app/tests/bot-subpage.test.tsx",
+     "app/tests/boundaries-read-failure.test.tsx",
+     "app/tests/brokered-account-row.test.tsx",
+     "app/tests/build-cache.test.ts",
+@@ -734,6 +735,7 @@
+     "app/tests/proposed-skill-card.test.tsx",
+     "app/tests/root-drop-guard.test.tsx",
+     "app/tests/router.test.ts",
++    "app/tests/routines-list.test.tsx",
+     "app/tests/serve.test.ts",
+     "app/tests/sign-in-card.test.tsx",
+     "app/tests/skills-read-failure.test.tsx",

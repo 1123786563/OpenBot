@@ -1,0 +1,158 @@
+{
+  "tokensLight": {
+    "accent": "#f4f5f5",
+    "muted": "#f2f2f2",
+    "primary": "#171717",
+    "legacyButtonBg": "rgb(23, 23, 23)",
+    "heroButtonBg": "rgb(244, 245, 245)",
+    "heroButtonFg": "rgb(23, 23, 23)",
+    "legacyInputBorder": "rgb(217, 217, 217)",
+    "heroInputBorder": "rgba(0, 0, 0, 0)",
+    "heroInputBg": "oklch(1 0 0)"
+  },
+  "scrollBefore": {
+    "bodyOverflow": "visible",
+    "bodyStyleOverflow": "",
+    "htmlOverflow": "visible",
+    "bodyPaddingRight": "0px",
+    "scrollHeight": 932
+  },
+  "scrollOpen": {
+    "bodyOverflow": "visible",
+    "bodyStyleOverflow": "",
+    "htmlOverflow": "hidden",
+    "bodyPaddingRight": "0px",
+    "scrollHeight": 932
+  },
+  "selectOptions": [
+    "Alpha",
+    "Beta",
+    "Gamma"
+  ],
+  "selectValueAfter": "Alpha",
+  "modalClosed": true,
+  "focusAfterModal": "open-modal",
+  "scrollAfter": {
+    "bodyOverflow": "visible",
+    "bodyStyleOverflow": "",
+    "htmlOverflow": "visible",
+    "bodyPaddingRight": "0px",
+    "scrollHeight": 932
+  },
+  "nestedOpen": [
+    "Outer",
+    "Inner"
+  ],
+  "afterFirstEscape": [
+    "Outer"
+  ],
+  "afterSecondEscape": [],
+  "focusAfterNested": "open-outer",
+  "drawerBox": {
+    "x": 1080,
+    "y": 0,
+    "width": 360,
+    "height": 900
+  },
+  "drawerClosed": true,
+  "focusAfterDrawer": "open-drawer",
+  "contextMenuPointer": {
+    "requested": {
+      "x": 166,
+      "y": 696
+    },
+    "menuBox": {
+      "x": 166,
+      "y": 661.25,
+      "width": 56.0390625,
+      "height": 104.625
+    }
+  },
+  "contextMenuClosed": true,
+  "focusAfterContextMenu": "ctx-target",
+  "contextMenuKeyboard": {
+    "targetBox": {
+      "x": 46,
+      "y": 655.75,
+      "width": 240,
+      "height": 62
+    },
+    "menuBox": {
+      "x": 54,
+      "y": 628.67236328125,
+      "width": 56.740318298339844,
+      "height": 105.9342041015625
+    }
+  },
+  "focusAfterKeyboardMenu": "ctx-target",
+  "imeEvents": [
+    {
+      "name": "composition-start"
+    },
+    {
+      "name": "enter-while-composing",
+      "detail": {
+        "guarded": true
+      }
+    },
+    {
+      "name": "composition-end"
+    },
+    {
+      "name": "enter-sent",
+      "detail": {
+        "value": ""
+      }
+    }
+  ],
+  "tokensDark": {
+    "bodyBg": "rgb(20, 20, 20)",
+    "accent": "#2f2f33",
+    "muted": "#2a2a2a",
+    "legacyButtonBg": "rgb(245, 245, 245)",
+    "heroButtonBg": "rgb(47, 47, 51)",
+    "heroButtonFg": "rgb(242, 242, 242)"
+  },
+  "events": [
+    {
+      "name": "mounted"
+    },
+    {
+      "name": "mounted"
+    },
+    {
+      "name": "select-change",
+      "detail": {
+        "key": 101,
+        "type": "number"
+      }
+    },
+    {
+      "name": "context-menu-close"
+    },
+    {
+      "name": "context-menu-close"
+    },
+    {
+      "name": "composition-start"
+    },
+    {
+      "name": "enter-while-composing",
+      "detail": {
+        "guarded": true
+      }
+    },
+    {
+      "name": "composition-end"
+    },
+    {
+      "name": "enter-sent",
+      "detail": {
+        "value": ""
+      }
+    }
+  ],
+  "consoleErrors": [
+    "console: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}

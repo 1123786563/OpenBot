@@ -1,10 +1,17 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { ManageSection } from "@/components/bot-profile/manage";
 import type { AgentProfile } from "@/lib/agents/queries";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/e2e-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -81,6 +88,18 @@ test("someone who cannot manage the Bot is not offered Delete", () => {
   const view = draw({ ...BOT, canManage: false, mine: false });
   expect(view.queryByText("Delete")).toBeNull();
   expect(view.getByText("Duplicate")).toBeTruthy();
+});
+
+test("the dangerous delete action has its own section after everyday management", () => {
+  const view = draw(BOT);
+  const sections = [...view.container.querySelectorAll("section")];
+  const headings = sections.map(
+    (section) => section.querySelector("h2")?.textContent,
+  );
+  expect(headings[0]).toBe("Manage");
+  expect(headings[1]).toContain("Delete");
+  expect(sections[0]?.querySelector("button[aria-label^='Delete']")).toBeNull();
+  expect(sections[1]?.querySelector("button")).toBeTruthy();
 });
 
 test("hiding a Bot takes the person back to the roster", async () => {

@@ -1,0 +1,22 @@
+{
+  "recorded_at": "2026-10-20T13:09:34.153821+00:00",
+  "scope": "documentation refinement only; production not implemented",
+  "previous_document_checkpoint": "2d729e1fe068e5e44e4efcba55ff9482c2e1a7b979e7d03e84cfad0a3b08c586",
+  "added_files": [
+    "code-agent-prompt.md",
+    "implementation-detail.md"
+  ],
+  "updated_files": [
+    "README.md",
+    "build-docs.py",
+    "execution-ready.md",
+    "implementation-spec.md",
+    "ledger.md",
+    "task-dag.md",
+    "tasks.json",
+    "validation.json"
+  ],
+  "detail": "implementation-detail.md",
+  "handoff_prompt": "code-agent-prompt.md",
+  "prompt_scope": "B1 recommendation pending user scope selection; no execution in this turn"
+}

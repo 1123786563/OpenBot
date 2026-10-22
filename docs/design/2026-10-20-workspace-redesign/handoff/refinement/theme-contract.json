@@ -1,0 +1,357 @@
+{
+  "status": "待用户审阅",
+  "value_owner": "app/src/styles/tokens.css @layer ob-tokens",
+  "native_mapping_owner": "app/src/styles/heroui-theme.css @layer ob-theme",
+  "legacy_owner": "app/src/styles/legacy-ui-bridge.css @layer ob-legacy",
+  "existing_tokens": 39,
+  "tokens": [
+    {
+      "name": "--ob-canvas",
+      "light": "#F5F7FA",
+      "dark": "#111318",
+      "existing": true
+    },
+    {
+      "name": "--ob-surface",
+      "light": "#FFFFFF",
+      "dark": "#191D26",
+      "existing": true
+    },
+    {
+      "name": "--ob-overlay",
+      "light": "#FFFFFF",
+      "dark": "#242B38",
+      "existing": true
+    },
+    {
+      "name": "--ob-foreground",
+      "light": "#192131",
+      "dark": "#EBEFF7",
+      "existing": true
+    },
+    {
+      "name": "--ob-hover-surface",
+      "light": "#EEF1F6",
+      "dark": "#242B38",
+      "existing": true
+    },
+    {
+      "name": "--ob-hover-surface-foreground",
+      "light": "var(--ob-foreground)",
+      "dark": "var(--ob-foreground)",
+      "existing": true
+    },
+    {
+      "name": "--ob-muted-surface",
+      "light": "var(--ob-hover-surface)",
+      "dark": "var(--ob-hover-surface)",
+      "existing": true
+    },
+    {
+      "name": "--ob-muted-text",
+      "light": "#526079",
+      "dark": "#A2ACBE",
+      "existing": true
+    },
+    {
+      "name": "--ob-action",
+      "light": "#315FCF",
+      "dark": "#3D6BDA",
+      "existing": true
+    },
+    {
+      "name": "--ob-action-foreground",
+      "light": "#FFFFFF",
+      "dark": "#FFFFFF",
+      "existing": true
+    },
+    {
+      "name": "--ob-action-hover",
+      "light": "#2853BD",
+      "dark": "#345FC7",
+      "existing": true
+    },
+    {
+      "name": "--ob-secondary-surface",
+      "light": "var(--ob-muted-surface)",
+      "dark": "var(--ob-muted-surface)",
+      "existing": true
+    },
+    {
+      "name": "--ob-secondary-foreground",
+      "light": "var(--ob-foreground)",
+      "dark": "var(--ob-foreground)",
+      "existing": true
+    },
+    {
+      "name": "--ob-brand",
+      "light": "var(--ob-action)",
+      "dark": "var(--ob-action)",
+      "existing": true
+    },
+    {
+      "name": "--ob-brand-foreground",
+      "light": "var(--ob-action-foreground)",
+      "dark": "var(--ob-action-foreground)",
+      "existing": true
+    },
+    {
+      "name": "--ob-danger",
+      "light": "#B32745",
+      "dark": "#FF9EA7",
+      "existing": true
+    },
+    {
+      "name": "--ob-danger-foreground",
+      "light": "#FFFFFF",
+      "dark": "#30141B",
+      "existing": true
+    },
+    {
+      "name": "--ob-danger-soft",
+      "light": "color-mix(in srgb, var(--ob-danger) 10%, var(--ob-surface))",
+      "dark": "color-mix(in srgb, var(--ob-danger) 10%, var(--ob-surface))",
+      "existing": true
+    },
+    {
+      "name": "--ob-success",
+      "light": "#16704D",
+      "dark": "#69D5AC",
+      "existing": true
+    },
+    {
+      "name": "--ob-success-foreground",
+      "light": "#FFFFFF",
+      "dark": "#10231B",
+      "existing": true
+    },
+    {
+      "name": "--ob-border",
+      "light": "#D8DFE9",
+      "dark": "#303949",
+      "existing": true
+    },
+    {
+      "name": "--ob-field-border",
+      "light": "var(--ob-control-border)",
+      "dark": "var(--ob-control-border)",
+      "existing": true
+    },
+    {
+      "name": "--ob-field-background",
+      "light": "var(--ob-surface)",
+      "dark": "var(--ob-surface)",
+      "existing": true
+    },
+    {
+      "name": "--ob-focus",
+      "light": "#315FCF",
+      "dark": "#8DB4FF",
+      "existing": true
+    },
+    {
+      "name": "--ob-sidebar",
+      "light": "#EEF1F6",
+      "dark": "#0D1015",
+      "existing": true
+    },
+    {
+      "name": "--ob-sidebar-foreground",
+      "light": "var(--ob-foreground)",
+      "dark": "var(--ob-foreground)",
+      "existing": true
+    },
+    {
+      "name": "--ob-sidebar-primary",
+      "light": "var(--ob-accent-text)",
+      "dark": "var(--ob-accent-text)",
+      "existing": true
+    },
+    {
+      "name": "--ob-sidebar-primary-foreground",
+      "light": "var(--ob-foreground)",
+      "dark": "var(--ob-foreground)",
+      "existing": true
+    },
+    {
+      "name": "--ob-sidebar-accent",
+      "light": "#E2E8F2",
+      "dark": "#242B38",
+      "existing": true
+    },
+    {
+      "name": "--ob-sidebar-accent-foreground",
+      "light": "var(--ob-foreground)",
+      "dark": "var(--ob-foreground)",
+      "existing": true
+    },
+    {
+      "name": "--ob-sidebar-border",
+      "light": "var(--ob-border)",
+      "dark": "var(--ob-border)",
+      "existing": true
+    },
+    {
+      "name": "--ob-sidebar-ring",
+      "light": "var(--ob-focus)",
+      "dark": "var(--ob-focus)",
+      "existing": true
+    },
+    {
+      "name": "--ob-chart-1",
+      "light": "#315FCF",
+      "dark": "#8DB4FF",
+      "existing": true
+    },
+    {
+      "name": "--ob-chart-2",
+      "light": "#8B570B",
+      "dark": "#F0BE69",
+      "existing": true
+    },
+    {
+      "name": "--ob-chart-3",
+      "light": "#16704D",
+      "dark": "#69D5AC",
+      "existing": true
+    },
+    {
+      "name": "--ob-chart-4",
+      "light": "#7040AD",
+      "dark": "#C3A2F2",
+      "existing": true
+    },
+    {
+      "name": "--ob-chart-5",
+      "light": "#A02C76",
+      "dark": "#F09ACB",
+      "existing": true
+    },
+    {
+      "name": "--ob-radius",
+      "light": "8px",
+      "dark": "8px",
+      "existing": true
+    },
+    {
+      "name": "--ob-shadow-card",
+      "light": "none",
+      "dark": "none",
+      "existing": true
+    },
+    {
+      "name": "--ob-control-border",
+      "light": "#7A879B",
+      "dark": "#68788F",
+      "existing": false
+    },
+    {
+      "name": "--ob-accent-text",
+      "light": "#315FCF",
+      "dark": "#8DB4FF",
+      "existing": false
+    },
+    {
+      "name": "--ob-warning",
+      "light": "#8B570B",
+      "dark": "#F0BE69",
+      "existing": false
+    },
+    {
+      "name": "--ob-warning-foreground",
+      "light": "#FFFFFF",
+      "dark": "#2A1D08",
+      "existing": false
+    },
+    {
+      "name": "--ob-warning-soft",
+      "light": "color-mix(in srgb, var(--ob-warning) 10%, var(--ob-surface))",
+      "dark": "color-mix(in srgb, var(--ob-warning) 10%, var(--ob-surface))",
+      "existing": false
+    },
+    {
+      "name": "--ob-success-soft",
+      "light": "color-mix(in srgb, var(--ob-success) 10%, var(--ob-surface))",
+      "dark": "color-mix(in srgb, var(--ob-success) 10%, var(--ob-surface))",
+      "existing": false
+    },
+    {
+      "name": "--ob-disabled-background",
+      "light": "var(--ob-muted-surface)",
+      "dark": "var(--ob-muted-surface)",
+      "existing": false
+    },
+    {
+      "name": "--ob-disabled-foreground",
+      "light": "var(--ob-muted-text)",
+      "dark": "var(--ob-muted-text)",
+      "existing": false
+    },
+    {
+      "name": "--ob-shadow-overlay",
+      "light": "0 8px 24px rgb(25 33 49 / .12)",
+      "dark": "none",
+      "existing": false
+    },
+    {
+      "name": "--ob-backdrop",
+      "light": "rgba(0,0,0,.24)",
+      "dark": "rgba(0,0,0,.60)",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-app-sidebar",
+      "light": "280px",
+      "dark": "280px",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-config-sidebar",
+      "light": "256px",
+      "dark": "256px",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-rail",
+      "light": "64px",
+      "dark": "64px",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-prose",
+      "light": "672px",
+      "dark": "672px",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-wide",
+      "light": "1024px",
+      "dark": "1024px",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-chat",
+      "light": "720px",
+      "dark": "720px",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-main-min",
+      "light": "480px",
+      "dark": "480px",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-craft-session",
+      "light": "224px",
+      "dark": "224px",
+      "existing": false
+    },
+    {
+      "name": "--ob-layout-craft-output",
+      "light": "420px",
+      "dark": "420px",
+      "existing": false
+    }
+  ]
+}

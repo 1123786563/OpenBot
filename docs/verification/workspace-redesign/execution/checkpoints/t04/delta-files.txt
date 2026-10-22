@@ -1,0 +1,4 @@
+app/src/components/bot-profile/manage.tsx
+app/src/components/bot-profile/profile.tsx
+app/src/components/bots/bot-roster.tsx
+app/tests/bot-manage.test.tsx

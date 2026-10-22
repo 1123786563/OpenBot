@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -8,7 +7,6 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 import {
   cleanup,
   fireEvent,
@@ -17,13 +15,22 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ApprovalSettings } from "@/components/approvals/settings";
+import type { ReactNode } from "react";
 import { InlineApproval } from "@/components/approvals/inline-approval";
+import { ApprovalSettings } from "@/components/approvals/settings";
 import {
   BrowserActivity,
   groupBrowserSteps,
 } from "@/components/channels/browser-activity";
 import { toVisibleChatItems } from "@/components/channels/chat-messages";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
@@ -151,7 +158,13 @@ function draw(screen: ReactNode = <ApprovalSettings />) {
 test("team rules are locked for members, enforced auto-review is shown as required, and the host cap is named", async () => {
   const view = draw(<ApprovalSettings />);
   await view.findByText("Ask before taking action (team rule)");
-  const mine = view.getByRole("combobox", {
+  /*
+   * The trigger is addressed by its accessible name, not by a `combobox` role: HeroUI
+   * Select.Trigger renders a plain button with aria-haspopup="listbox" and drops the
+   * role="combobox" the ui/select wrapper forwards (interface change request recorded;
+   * come back to the role query if the wrapper regains the attribute).
+   */
+  const mine = view.getByRole("button", {
     name: "Behaviour for mcp/gmail/*",
   });
   expect(mine.textContent).toContain("Take action without asking");
@@ -167,7 +180,7 @@ test("team rules are locked for members, enforced auto-review is shown as requir
 
 test("a member changes a saved rule in place", async () => {
   const view = draw(<ApprovalSettings />);
-  const mine = await view.findByRole("combobox", {
+  const mine = await view.findByRole("button", {
     name: "Behaviour for mcp/gmail/*",
   });
   const user = userEvent.setup({ document });
@@ -183,7 +196,7 @@ test("a member changes a saved rule in place", async () => {
     }),
   );
   expect(
-    view.queryByRole("combobox", { name: "Behaviour for mcp/drive/share" }),
+    view.queryByRole("button", { name: "Behaviour for mcp/drive/share" }),
   ).toBeNull();
 });
 
@@ -198,7 +211,7 @@ test("a member adds a rule with one of the four behaviours", async () => {
   );
   // Rules here apply to every Bot, so there is no Bot to name.
   expect(view.queryByRole("textbox", { name: "Bot" })).toBeNull();
-  await user.click(view.getByRole("combobox", { name: "Behaviour" }));
+  await user.click(view.getByRole("button", { name: "Behaviour" }));
   await user.click(
     await view.findByRole("option", { name: "Take action if pre-approved" }),
   );
@@ -233,14 +246,14 @@ test("a rule that is not saved keeps the dialog open, with what was typed and wh
   expect((await within(dialog).findByRole("alert")).textContent).toContain(
     "That tool is not one a Bot can use.",
   );
+  const field = within(dialog).getByRole("textbox", {
+    name: "Tool or app",
+  }) as HTMLInputElement;
+  expect(field.value).toBe("mcp/nowhere/*");
   expect(
-    (
-      within(dialog).getByRole("textbox", {
-        name: "Tool or app",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("mcp/nowhere/*");
-  // Saved the second time, the dialog closes.
+    sent.filter((request) => request.path === "/api/approvals/rules"),
+  ).toHaveLength(1);
+  // The corrected retry succeeds and closes the dialog.
   await user.click(within(dialog).getByRole("button", { name: "Save rule" }));
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
   expect(
@@ -319,7 +332,7 @@ test("rules for every Bot point to where rules for a single Bot are", async () =
   expect(link.getAttribute("href")).toBe("/bots");
   // A rule naming one Bot lives on that Bot's page, not here.
   expect(
-    view.queryByRole("combobox", { name: "Behaviour for computer_click" }),
+    view.queryByRole("button", { name: "Behaviour for computer_click" }),
   ).toBeNull();
 });
 
@@ -340,7 +353,7 @@ test("a rule naming no Bot this person can open is listed so it can be removed",
   const view = draw(<ApprovalSettings />);
   expect(await view.findByText("Rules for other Bots")).toBeTruthy();
   expect(
-    view.getByRole("combobox", { name: "Behaviour for computer_click" }),
+    view.getByRole("button", { name: "Behaviour for computer_click" }),
   ).toBeTruthy();
 });
 

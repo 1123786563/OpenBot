@@ -3,7 +3,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { observationScreenFault } from "@/components/ai-observability/state-notice";
+import {
+  observationScreenFault,
+  StateNotice,
+} from "@/components/ai-observability/state-notice";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -101,9 +104,24 @@ export function ObservationExperimentsSection({ botId }: { botId: string }) {
   const { t } = useTranslation("ai-observability-evaluations");
   const screen = useQuery(observationDatasetsQueryOptions(botId));
 
-  // Pending renders nothing (the page's other sections hold the frame); a fault draws
-  // no entry, because the datasets read is the submission's own precondition.
-  if (screen.isPending || screen.error) return null;
+  // Pending renders nothing (the page's other sections hold the frame); a failed
+  // precondition keeps its own visible state instead of making this section disappear.
+  if (screen.isPending) return null;
+  const fault = observationScreenFault(screen);
+  if (fault !== null) {
+    return (
+      <PageSection
+        description={t("submit.rowDescription")}
+        title={t("submit.rowTitle")}
+      >
+        <StateNotice
+          className="mt-6"
+          description={t(`availability.${fault}.description`)}
+          title={t(`availability.${fault}.title`)}
+        />
+      </PageSection>
+    );
+  }
   const answer = screen.data;
   if (answer === undefined || answer.view !== "list") return null;
 

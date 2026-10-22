@@ -1,0 +1,528 @@
+--- PRE/app/src/components/bot-profile/bot-subpage.tsx
++++ POST/app/src/components/bot-profile/bot-subpage.tsx
+@@ -23,22 +23,31 @@
+ }) {
+   const { t } = useTranslation("agents");
+   const agent = useQuery(agentQueryOptions(agentId));
++  const agentData = agent.data;
+   return (
+     <PageShell
+       backButton={{
+-        label: agent.data?.name ?? t("botSubpage.titleFallback"),
++        label: agentData?.name ?? t("botSubpage.titleFallback"),
+         linkProps: { params: { agentId }, to: "/bots/$agentId" },
+       }}
+       description={description}
+       title={title}
+     >
+-      {agent.isPending ? null : agent.error ? (
++      {!agentData && !agent.isPending ? (
+         <p className="mt-6 text-destructive text-sm" role="alert">
+           {t("botSubpage.unreachable")}
+         </p>
+-      ) : (
+-        children(agent.data)
+-      )}
++      ) : null}
++      {agentData ? (
++        <>
++          {agent.error ? (
++            <p className="mt-6 text-destructive text-sm" role="alert">
++              {t("botSubpage.unreachable")}
++            </p>
++          ) : null}
++          {children(agentData)}
++        </>
++      ) : null}
+     </PageShell>
+   );
+ }
+--- PRE/app/src/components/delivery/reaching-you.tsx
++++ POST/app/src/components/delivery/reaching-you.tsx
+@@ -63,16 +63,44 @@
+  * type it into, with no way to confirm the code they had just been sent.
+  */
+ const PENDING_SMS = "openbot.reachability.pendingSms";
+-function readPending(): string {
++type PendingSms = {
++  version: 1;
++  challengeId: string;
++  agentId: string;
++  channelId: string;
++};
++function readPending(): PendingSms | null {
+   try {
+-    return sessionStorage.getItem(PENDING_SMS) ?? "";
++    const raw = sessionStorage.getItem(PENDING_SMS);
++    if (!raw) return null;
++    const parsed: unknown = JSON.parse(raw);
++    if (
++      typeof parsed === "object" &&
++      parsed !== null &&
++      "version" in parsed &&
++      parsed.version === 1 &&
++      "challengeId" in parsed &&
++      typeof parsed.challengeId === "string" &&
++      "agentId" in parsed &&
++      typeof parsed.agentId === "string" &&
++      "channelId" in parsed &&
++      typeof parsed.channelId === "string"
++    )
++      return parsed as PendingSms;
++    sessionStorage.removeItem(PENDING_SMS);
++    return null;
+   } catch {
+-    return "";
++    try {
++      sessionStorage.removeItem(PENDING_SMS);
++    } catch {
++      /* storage unavailable */
++    }
++    return null;
+   }
+ }
+-function writePending(id: string) {
++function writePending(pending: PendingSms | null) {
+   try {
+-    if (id) sessionStorage.setItem(PENDING_SMS, id);
++    if (pending) sessionStorage.setItem(PENDING_SMS, JSON.stringify(pending));
+     else sessionStorage.removeItem(PENDING_SMS);
+   } catch {
+     /* A browser that keeps nothing still confirms within the visit. */
+@@ -126,8 +154,12 @@
+   // People read Bots by name; the id is what the list used to show.
+   const botName = (id: string) =>
+     bots.data?.find((bot) => bot.id === id)?.name ?? id;
+-  const [challengeId, setChallengeId] = useState(readPending);
+-  useEffect(() => writePending(challengeId), [challengeId]);
++  const [pendingSms, setPendingSms] = useState(readPending);
++  const challengeId =
++    pendingSms && pendingSms.agentId === fixedBot ? pendingSms.challengeId : "";
++  useEffect(() => {
++    if (pendingSms && pendingSms.agentId === fixedBot) writePending(pendingSms);
++  }, [fixedBot, pendingSms]);
+   const [connecting, setConnecting] = useState<Transport | null>(null);
+   /*
+    * The last link message per platform, held here rather than in the dialog: the dialog unmounts
+@@ -284,7 +316,12 @@
+           challengeId={challengeId}
+           fixedBot={fixedBot}
+           linked={heldLink(connecting)}
+-          onChallenge={setChallengeId}
++          onChallenge={(id, agentId, channelId) => {
++            setPendingSms(
++              id ? { version: 1, challengeId: id, agentId, channelId } : null,
++            );
++            if (!id) writePending(null);
++          }}
+           onClose={() => setConnecting(null)}
+           onLinked={(link) =>
+             setLinks((prior) => ({ ...prior, [link.platform]: link }))
+@@ -319,7 +356,7 @@
+   challengeId: string;
+   /** The link message this platform last answered with, while it still works. */
+   linked: HeldLink | undefined;
+-  onChallenge: (id: string) => void;
++  onChallenge: (id: string, agentId: string, channelId: string) => void;
+   onLinked: (link: HeldLink) => void;
+   onClose: () => void;
+ }) {
+@@ -448,7 +485,7 @@
+                   event.preventDefault();
+                   sms.mutate(
+                     { channelId, agentId, phone },
+-                    { onSuccess: onChallenge },
++                    { onSuccess: (id) => onChallenge(id, agentId, channelId) },
+                   );
+                 }}
+               >
+@@ -485,7 +522,7 @@
+                       { challengeId, code },
+                       {
+                         onSuccess: () => {
+-                          onChallenge("");
++                          onChallenge("", agentId, channelId);
+                           setCode("");
+                           onClose();
+                         },
+--- PRE/app/src/components/routines/routines-list.tsx
++++ POST/app/src/components/routines/routines-list.tsx
+@@ -25,6 +25,12 @@
+   DialogHeader,
+   DialogTitle,
+ } from "@/components/ui/dialog";
++import {
++  DropdownMenu,
++  DropdownMenuContent,
++  DropdownMenuItem,
++  DropdownMenuTrigger,
++} from "@/components/ui/dropdown-menu";
+ import {
+   Item,
+   ItemActions,
+@@ -422,38 +428,36 @@
+                         <IconPlayerPlay />
+                         {t("actions.runNow")}
+                       </Button>
+-                      <Button
+-                        aria-expanded={historyId === routine.id}
+-                        aria-label={t("actions.historyAria", {
+-                          schedule: routine.schedule,
+-                        })}
+-                        onClick={() =>
+-                          setHistoryId(
+-                            historyId === routine.id ? null : routine.id,
+-                          )
+-                        }
+-                        size="sm"
+-                        type="button"
+-                        variant="ghost"
+-                      >
+-                        <IconHistory />
+-                        {t("actions.history")}
+-                      </Button>
+-                      <Button
+-                        aria-label={t("actions.deleteAria", {
+-                          schedule: routine.schedule,
+-                        })}
+-                        onClick={() => {
+-                          deleteRoutine.reset();
+-                          setConfirmingId(routine.id);
+-                        }}
+-                        size="sm"
+-                        type="button"
+-                        variant="ghost"
+-                      >
+-                        <IconTrash />
+-                        {t("actions.delete")}
+-                      </Button>
++                      <DropdownMenu>
++                        <DropdownMenuTrigger
++                          aria-label={t("actions.moreActions")}
++                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-ob-hover hover:text-ob-hover-foreground"
++                          type="button"
++                        >
++                          <span aria-hidden="true">⋯</span>
++                        </DropdownMenuTrigger>
++                        <DropdownMenuContent align="end">
++                          <DropdownMenuItem
++                            onClick={() =>
++                              setHistoryId(
++                                historyId === routine.id ? null : routine.id,
++                              )
++                            }
++                          >
++                            <IconHistory />
++                            {t("actions.history")}
++                          </DropdownMenuItem>
++                          <DropdownMenuItem
++                            onClick={() => {
++                              deleteRoutine.reset();
++                              setConfirmingId(routine.id);
++                            }}
++                          >
++                            <IconTrash />
++                            {t("actions.delete")}
++                          </DropdownMenuItem>
++                        </DropdownMenuContent>
++                      </DropdownMenu>
+                     </div>
+                   </ItemFooter>
+                   {historyId === routine.id ? (
+--- PRE/app/src/locales/en/routines.json
++++ POST/app/src/locales/en/routines.json
+@@ -44,6 +44,7 @@
+   "due": "Due",
+   "next": "Next {{when}}",
+   "actions": {
++    "moreActions": "More actions",
+     "runNow": "Run now",
+     "runNowAria": "Run the routine scheduled {{schedule}} now",
+     "runNowTitle": "Runs it for real, now: the Bot does the work and posts in the channel.",
+--- PRE/app/src/locales/zh-CN/routines.json
++++ POST/app/src/locales/zh-CN/routines.json
+@@ -44,6 +44,7 @@
+   "due": "待运行",
+   "next": "下次 {{when}}",
+   "actions": {
++    "moreActions": "更多操作",
+     "runNow": "立即运行",
+     "runNowAria": "立即运行计划为 {{schedule}} 的例行任务",
+     "runNowTitle": "会真实立即运行：Bot 会执行任务并在频道中发布。",
+--- PRE/app/tests/bot-reaching-you.test.tsx
++++ POST/app/tests/bot-reaching-you.test.tsx
+@@ -97,13 +97,13 @@
+   }) as unknown as typeof fetch;
+ }
+ 
+-function draw() {
++function draw(agentId = "expenses") {
+   const client = new QueryClient({
+     defaultOptions: { queries: { retry: false } },
+   });
+   return render(
+     <QueryClientProvider client={client}>
+-      <ReachingYou agentId="expenses" />
++      <ReachingYou agentId={agentId} />
+     </QueryClientProvider>,
+   );
+ }
+@@ -256,6 +256,14 @@
+       },
+     }),
+   );
++  expect(
++    JSON.parse(sessionStorage.getItem("openbot.reachability.pendingSms")!),
++  ).toEqual({
++    version: 1,
++    challengeId: "challenge-1",
++    agentId: "expenses",
++    channelId: "channel-expenses",
++  });
+   await user.type(await view.findByLabelText("Verification code"), "123456");
+   await user.click(view.getByRole("button", { name: "Confirm phone" }));
+   await waitFor(() =>
+@@ -265,3 +273,23 @@
+     }),
+   );
+ });
++
++test("a pending SMS challenge stays with its Bot while navigating A to B to A", async () => {
++  serving(true);
++  sessionStorage.setItem(
++    "openbot.reachability.pendingSms",
++    JSON.stringify({
++      version: 1,
++      challengeId: "challenge-1",
++      agentId: "expenses",
++      channelId: "channel-expenses",
++    }),
++  );
++  const other = draw("knowledge");
++  await other.findByRole("button", { name: "Disconnect" });
++  expect(other.queryByText(/verification code is on its way/i)).toBeNull();
++  cleanup();
++  const original = draw("expenses");
++  await original.findByRole("button", { name: "Disconnect" });
++  expect(original.getByText(/code is on its way/i)).toBeTruthy();
++});
+--- PRE/app/tests/bot-subpage.test.tsx
++++ POST/app/tests/bot-subpage.test.tsx
+@@ -0,0 +1,116 @@
++import "./preload";
++import { GlobalRegistrator } from "@happy-dom/global-registrator";
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
++import {
++  createMemoryHistory,
++  createRootRoute,
++  createRouter,
++  RouterProvider,
++} from "@tanstack/react-router";
++import { cleanup, render, waitFor } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { useState } from "react";
++import { BotSubpage } from "@/components/bot-profile/bot-subpage";
++import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  expect,
++  test,
++} from "../../tests/support/bun-test-compat";
++import { settleReactWork } from "./settle-react-work";
++
++beforeAll(() => GlobalRegistrator.register());
++afterEach(cleanup);
++afterAll(async () => {
++  await settleReactWork();
++  GlobalRegistrator.unregister();
++});
++
++const originalFetch = global.fetch;
++afterEach(() => {
++  global.fetch = originalFetch;
++});
++
++const BOT: AgentProfile = {
++  id: "expenses",
++  name: "Expenses",
++  title: "Finance",
++  roleDescription: "Receipts.",
++  avatarSeed: "e",
++  visibility: "private",
++  endpoint: null,
++  builtIn: true,
++  hasAuth: false,
++  hasCallbackToken: false,
++  hidden: false,
++  pinned: false,
++  systemOwned: false,
++  canManage: true,
++  mine: true,
++};
++
++function StatefulChild() {
++  const [value, setValue] = useState("");
++  return (
++    <label>
++      Local note
++      <input
++        aria-label="Local note"
++        onChange={(event) => setValue(event.currentTarget.value)}
++        value={value}
++      />
++      <output aria-label="Local note state">{value}</output>
++    </label>
++  );
++}
++
++test("keeps mounted child state visible when a background Bot refresh fails", async () => {
++  let requestCount = 0;
++  global.fetch = (async () => {
++    requestCount += 1;
++    return requestCount === 1
++      ? Response.json({ agent: BOT })
++      : new Response(null, { status: 503 });
++  }) as unknown as typeof fetch;
++
++  const client = new QueryClient({
++    defaultOptions: { queries: { retry: false } },
++  });
++  const router = createRouter({
++    history: createMemoryHistory({ initialEntries: ["/"] }),
++    routeTree: createRootRoute({
++      component: () => (
++        <BotSubpage
++          agentId="expenses"
++          description="Manage finance workflows."
++          title="Responsibilities"
++        >
++          {() => <StatefulChild />}
++        </BotSubpage>
++      ),
++    }),
++  });
++  const view = render(
++    <QueryClientProvider client={client}>
++      <RouterProvider router={router as never} />
++    </QueryClientProvider>,
++  );
++
++  const input = await view.findByRole("textbox", { name: "Local note" });
++  const user = userEvent.setup({ document: view.container.ownerDocument });
++  await user.type(input, "Keep this draft");
++  expect(view.getByLabelText("Local note state").textContent).toBe(
++    "Keep this draft",
++  );
++  expect((input as HTMLInputElement).value).toBe("Keep this draft");
++
++  await client.invalidateQueries({ queryKey: agentKeys.detail("expenses") });
++
++  await waitFor(() => expect(requestCount).toBe(2));
++  expect(await view.findByRole("alert")).toBeTruthy();
++  expect(view.getByRole("heading", { name: "Responsibilities" })).toBeTruthy();
++  expect(view.getByRole("textbox", { name: "Local note" })).toBe(input);
++  expect((input as HTMLInputElement).value).toBe("Keep this draft");
++});
+--- PRE/app/tests/routines-list.test.tsx
++++ POST/app/tests/routines-list.test.tsx
+@@ -0,0 +1,85 @@
++import "./preload";
++import { GlobalRegistrator } from "@happy-dom/global-registrator";
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
++import {
++  createMemoryHistory,
++  createRootRoute,
++  createRouter,
++  RouterProvider,
++} from "@tanstack/react-router";
++import { cleanup, render, waitFor } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { RoutinesList } from "@/components/routines/routines-list";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  expect,
++  test,
++} from "../../tests/support/bun-test-compat";
++import { settleReactWork } from "./settle-react-work";
++
++beforeAll(() => GlobalRegistrator.register());
++afterEach(cleanup);
++afterAll(async () => {
++  await settleReactWork();
++  GlobalRegistrator.unregister();
++});
++
++const originalFetch = global.fetch;
++afterEach(() => {
++  global.fetch = originalFetch;
++});
++
++test("routine history and delete are available from the secondary actions menu", async () => {
++  global.fetch = (async (input: RequestInfo | URL) => {
++    const url = String(input);
++    if (url === "/api/routines") {
++      return Response.json({
++        routines: [
++          {
++            id: "routine-1",
++            agentId: "bot-1",
++            schedule: "Every day",
++            timezone: "UTC",
++            instruction: "Send the daily report",
++            channel: { id: "channel-1", name: "Reports", gone: false },
++            enabled: true,
++            nextRunAt: "2030-01-01T00:00:00.000Z",
++            lastRun: null,
++          },
++        ],
++        sweep: { lastSweptAt: new Date().toISOString(), working: true },
++      });
++    }
++    if (url.includes("/runs")) return Response.json({ runs: [] });
++    return Response.json({ ok: true });
++  }) as typeof fetch;
++  const client = new QueryClient({
++    defaultOptions: { queries: { retry: false } },
++  });
++  const router = createRouter({
++    history: createMemoryHistory({ initialEntries: ["/"] }),
++    routeTree: createRootRoute({ component: () => <RoutinesList /> }),
++  });
++  const view = render(
++    <QueryClientProvider client={client}>
++      <RouterProvider router={router as never} />
++    </QueryClientProvider>,
++  );
++  const user = userEvent.setup({ document });
++  expect(
++    await view.findByRole("button", {
++      name: "Run the routine scheduled Every day now",
++    }),
++  ).toBeTruthy();
++  const trigger = view.getByRole("button", { name: "More actions" });
++  await user.click(trigger);
++  await user.click(await view.findByRole("menuitem", { name: "History" }));
++  await waitFor(() => expect(view.getByText("No runs yet.")).toBeTruthy());
++  await user.click(trigger);
++  await user.click(await view.findByRole("menuitem", { name: "Delete" }));
++  expect(
++    await view.findByRole("dialog", { name: 'Delete "Every day"?' }),
++  ).toBeTruthy();
++});
+--- PRE/docs/verification/e2e-bun-suites.json
++++ POST/docs/verification/e2e-bun-suites.json
+@@ -66,7 +66,9 @@
+         "app/tests/bot-route-default-agent.test.tsx",
+         "app/tests/bot-settings-rows.test.tsx",
+         "app/tests/bot-setup.test.tsx",
+-        "app/tests/bot-sharing.test.tsx"
++        "app/tests/bot-sharing.test.tsx",
++        "app/tests/bot-subpage.test.tsx",
++        "app/tests/routines-list.test.tsx"
+       ]
+     },
+     {

@@ -1,0 +1,17 @@
+[
+  {
+    "path": "app/src/routes/_authed/_app/craft/tasks.tsx",
+    "sha256": "a8546e8520c1d6f7deb26a0f240cc3b7951afc18e59e1bb0de1ee356dcefc845",
+    "bytes": 5312
+  },
+  {
+    "path": "app/src/components/craft/scheduled-task-editor.tsx",
+    "sha256": "f2650f8a7b3ce0689712bf8cd99260311eff2aa1d277a1179b22fb6acd4e4815",
+    "bytes": 23541
+  },
+  {
+    "path": "app/tests/detail-panel.test.tsx",
+    "sha256": "1f0b70388eeecc16777f1a034338ce2d1a322550602f9fe081ebf87e129b66ad",
+    "bytes": 15900
+  }
+]

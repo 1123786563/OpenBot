@@ -1,5 +1,4 @@
 import "../preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,6 +10,14 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { client } from "../../src/lib/client";
 import {
   type ChannelPage,
@@ -564,8 +571,8 @@ test("while the listing is in flight the page shows a skeleton and no selector",
       view.container.querySelector('[data-slot="table-skeleton"]'),
     ).toBeTruthy();
   });
-  expect(view.queryByRole("combobox", { name: "Select a company" })).toBeNull();
-  expect(view.queryByRole("combobox", { name: "Select a team" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Select a company" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Select a team" })).toBeNull();
 });
 
 test("a failed listing says so and retries into a working page", async () => {
@@ -586,7 +593,7 @@ test("a failed listing says so and retries into a working page", async () => {
   await user.click(await view.findByRole("button", { name: "Retry" }));
 
   expect(
-    await view.findByRole("combobox", { name: "Select a company" }),
+    await view.findByRole("button", { name: "Select a company" }),
   ).toBeTruthy();
 });
 
@@ -596,19 +603,27 @@ test("with no eligibility the page shows the empty guidance and no selector at a
 
   expect(await view.findByText("No company membership yet")).toBeTruthy();
   expect(view.getByText(/Ask your company administrator/)).toBeTruthy();
-  expect(view.queryByRole("combobox", { name: "Select a company" })).toBeNull();
-  expect(view.queryByRole("combobox", { name: "Select a team" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Select a company" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Select a team" })).toBeNull();
 });
 
 test("eligible but nothing chosen: both selectors sit at their placeholders, no scope is named", async () => {
   serve({ listing: { status: 200, body: LISTING } });
   const { view } = drawPage(freshClient());
 
-  const company = await view.findByRole("combobox", {
+  /*
+   * Both triggers are addressed by their accessible name, not by a `combobox` role: HeroUI
+   * Select.Trigger renders a plain button with aria-haspopup="listbox" and drops the
+   * role="combobox" the ui/select wrapper forwards (the same interface change request the
+   * settings-domain suites record; come back to the role query if the wrapper regains the
+   * attribute). The name still comes from the route's own aria-label, so the query is exactly
+   * as specific as it was.
+   */
+  const company = await view.findByRole("button", {
     name: "Select a company",
   });
   expect(company.textContent).toContain("Pick a company");
-  const team = view.getByRole("combobox", { name: "Select a team" });
+  const team = view.getByRole("button", { name: "Select a team" });
   expect(team.textContent).toContain("Pick a team");
   // Not the first company, not any default team, not a stale summary.
   expect(company.textContent).not.toContain("Acme Inc");
@@ -620,11 +635,11 @@ test("a stored selection that is still eligible is restored and shown", async ()
   serve({ listing: { status: 200, body: LISTING } });
   const { view } = drawPage(freshClient());
 
-  const company = await view.findByRole("combobox", {
+  const company = await view.findByRole("button", {
     name: "Select a company",
   });
   expect(company.textContent).toContain("Acme Inc");
-  const team = view.getByRole("combobox", { name: "Select a team" });
+  const team = view.getByRole("button", { name: "Select a team" });
   expect(team.textContent).toContain("Finance");
   expect(view.getByText(/Working in/).textContent).toContain("Acme Inc");
   expect(view.getByText(/Working in/).textContent).toContain("Finance");
@@ -663,7 +678,7 @@ test("a stored selection whose team has vanished renders the revoked state, neve
   await user.click(await view.findByRole("button", { name: "Check again" }));
   // The re-check still refuses to choose for you; the selector is there for an explicit pick.
   expect(
-    await view.findByRole("combobox", { name: "Select a company" }),
+    await view.findByRole("button", { name: "Select a company" }),
   ).toBeTruthy();
   expect(
     view.getByText("Your access to that company or team has been revoked"),
@@ -676,21 +691,21 @@ test("a cross-company user sees each of their companies with its own teams", asy
   const user = userEvent.setup({ document });
 
   await user.click(
-    await view.findByRole("combobox", { name: "Select a company" }),
+    await view.findByRole("button", { name: "Select a company" }),
   );
   await user.click(await view.findByRole("option", { name: "Acme Inc" }));
-  await user.click(view.getByRole("combobox", { name: "Select a team" }));
+  await user.click(view.getByRole("button", { name: "Select a team" }));
   await user.click(await view.findByRole("option", { name: "Finance" }));
   expect(view.getByText(/Working in/).textContent).toContain("Finance");
 
   // The second company is offered too, and keeps its own team.
-  await user.click(view.getByRole("combobox", { name: "Select a company" }));
+  await user.click(view.getByRole("button", { name: "Select a company" }));
   await user.click(await view.findByRole("option", { name: "Globex" }));
   // Choosing a company alone never picks a team for you.
   expect(
-    view.getByRole("combobox", { name: "Select a team" }).textContent,
+    view.getByRole("button", { name: "Select a team" }).textContent,
   ).toContain("Pick a team");
-  await user.click(view.getByRole("combobox", { name: "Select a team" }));
+  await user.click(view.getByRole("button", { name: "Select a team" }));
   await user.click(await view.findByRole("option", { name: "Operations" }));
   expect(view.getByText(/Working in/).textContent).toContain("Globex");
   expect(view.getByText(/Working in/).textContent).toContain("Operations");
@@ -703,7 +718,7 @@ test("completing a selection moves the URL, the storage, and the shared generati
   const user = userEvent.setup({ document });
 
   await user.click(
-    await view.findByRole("combobox", { name: "Select a company" }),
+    await view.findByRole("button", { name: "Select a company" }),
   );
   await user.click(await view.findByRole("option", { name: "Acme Inc" }));
   await waitFor(() =>
@@ -714,7 +729,7 @@ test("completing a selection moves the URL, the storage, and the shared generati
   // The half-choice cleared any stored team: a company alone is not a scope.
   expect(readStoredSelection("u-1")).toBeNull();
 
-  await user.click(view.getByRole("combobox", { name: "Select a team" }));
+  await user.click(view.getByRole("button", { name: "Select a team" }));
   await user.click(await view.findByRole("option", { name: "Finance" }));
 
   await waitFor(() =>
@@ -736,7 +751,7 @@ test("a deep link to a scope that is still eligible opens selected", async () =>
     freshClient(),
     "/tenant/selection?company=acme&team=acme-sales",
   );
-  const company = await view.findByRole("combobox", {
+  const company = await view.findByRole("button", {
     name: "Select a company",
   });
   expect(company.textContent).toContain("Acme Inc");
@@ -758,10 +773,10 @@ test("a deep link to a scope that is gone opens revoked, never re-homed", async 
   // And no eligible scope was substituted: the picker still names the revoked company, raw —
   // the honest face of "this selection is revoked", never a quiet re-homing onto another scope.
   expect(
-    view.getByRole("combobox", { name: "Select a company" }).textContent,
+    view.getByRole("button", { name: "Select a company" }).textContent,
   ).toContain("initech");
   expect(
-    view.getByRole("combobox", { name: "Select a company" }).textContent,
+    view.getByRole("button", { name: "Select a company" }).textContent,
   ).not.toContain("Acme Inc");
 });
 

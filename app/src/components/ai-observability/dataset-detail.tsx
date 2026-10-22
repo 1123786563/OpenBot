@@ -56,6 +56,7 @@ export function ObservationDatasetDetailPage({
         },
       }}
       description={t("page.description")}
+      width="wide"
       /* A pending read keeps the title blank rather than flashing the placeholder
        * (T21-rev F5): the honest name arrives with the data, and an empty title is
        * not a claim. A fault answers with the placeholder — the page it names is

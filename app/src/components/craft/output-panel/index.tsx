@@ -35,8 +35,8 @@ export function OutputPanel({ sessionId }: { sessionId: string }) {
             key={id}
             type="button"
             className={cn(
-              "flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/40",
-              tab === id && "bg-muted/50 text-foreground",
+              "flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-ob-muted-surface/40",
+              tab === id && "bg-ob-muted-surface/50 text-foreground",
             )}
             onClick={() => setTab(id)}
           >

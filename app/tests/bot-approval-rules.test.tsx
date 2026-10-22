@@ -96,14 +96,20 @@ function draw() {
 test("only this Bot's own rules can be changed, and the team rules that reach it are shown locked", async () => {
   serving();
   const view = draw();
+  /*
+   * The trigger is addressed by its accessible name, not by a `combobox` role: HeroUI
+   * Select.Trigger renders a plain button with aria-haspopup="listbox" and drops the
+   * role="combobox" the ui/select wrapper forwards (interface change request recorded;
+   * come back to the role query if the wrapper regains the attribute).
+   */
   expect(
-    await view.findByRole("combobox", { name: "Behaviour for mcp/gmail/*" }),
+    await view.findByRole("button", { name: "Behaviour for mcp/gmail/*" }),
   ).toBeTruthy();
   expect(
-    view.queryByRole("combobox", { name: "Behaviour for mcp/drive/*" }),
+    view.queryByRole("button", { name: "Behaviour for mcp/drive/*" }),
   ).toBeNull();
   expect(
-    view.queryByRole("combobox", { name: "Behaviour for mcp/slack/*" }),
+    view.queryByRole("button", { name: "Behaviour for mcp/slack/*" }),
   ).toBeNull();
   expect(view.getByText("mcp/drive/share")).toBeTruthy();
   expect(view.getByText(/^computer_click/)).toBeTruthy();
@@ -149,6 +155,6 @@ test("a personal rule whose Bot is a pattern matching this Bot is shown and can 
   }) as unknown as typeof fetch;
   const view = draw();
   expect(
-    await view.findByRole("combobox", { name: "Behaviour for mcp/linear/*" }),
+    await view.findByRole("button", { name: "Behaviour for mcp/linear/*" }),
   ).toBeTruthy();
 });

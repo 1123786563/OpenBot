@@ -1,9 +1,12 @@
+import { I18nProvider, RouterProvider as AriaRouterProvider } from "@heroui/react/rac";
 import {
   createRootRouteWithContext,
   Navigate,
   Outlet,
+  useRouter,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLanguageSync } from "@/lib/i18n/language-sync";
@@ -120,13 +123,32 @@ export function useUnclaimedDropGuard() {
 function RootComponent() {
   useUnclaimedDropGuard();
   useLanguageSync();
+  const { i18n } = useTranslation();
+  const router = useRouter();
   return (
     <div className="min-h-dvh w-full antialiased">
-      <ThemeProvider>
-        <TooltipProvider>
-          <Outlet />
-        </TooltipProvider>
-      </ThemeProvider>
+      {/*
+       * React Aria's locale and navigation integrations, configured once for the app.
+       *
+       * Locale: HeroUI's controls come from React Aria, which carries its own strings (date
+       * segments, select "no results", …). Left unset it would say en-US while the surrounding
+       * page speaks zh-CN.
+       *
+       * Navigation: HeroUI components that draw a link go through React Aria's router hook.
+       * TanStack's `history.push` takes a plain string, so it accepts the synthetic href without
+       * widening the app's typed-route union or adding a second router dependency. Modifier-key
+       * and new-tab clicks never reach this callback — React Aria only calls it for client-side
+       * navigation it is allowed to take over.
+       */}
+      <I18nProvider locale={i18n.resolvedLanguage ?? i18n.language}>
+        <AriaRouterProvider navigate={(href) => router.history.push(href)}>
+          <ThemeProvider>
+            <TooltipProvider>
+              <Outlet />
+            </TooltipProvider>
+          </ThemeProvider>
+        </AriaRouterProvider>
+      </I18nProvider>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { z } from "zod";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -29,6 +29,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
@@ -150,16 +151,15 @@ function SkillsPage() {
 
         <PageSection
           action={
-            <Button
-              render={(props) => (
-                <Link search={{ new: true }} to="/skills" {...props} />
-              )}
+            <ButtonLink
+              search={{ new: true }}
+              to="/skills"
               size="sm"
               variant="ghost"
             >
               <IconPlus />
               {t("newSkill")}
-            </Button>
+            </ButtonLink>
           }
           title={t("yourSkills")}
         >

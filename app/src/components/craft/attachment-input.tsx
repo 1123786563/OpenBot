@@ -147,7 +147,7 @@ export function AttachmentTray({
       {chips.map((chip) => (
         <li
           key={chip.id}
-          className="flex max-w-full items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs"
+          className="flex max-w-full items-center gap-1 rounded-md border border-border bg-ob-muted-surface px-2 py-1 text-xs"
           title={chip.error ?? chip.result?.path ?? chip.file.name}
         >
           <span className="max-w-48 truncate">

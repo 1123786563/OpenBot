@@ -1,0 +1,18 @@
+--- docs/verification/workspace-redesign/execution/checkpoints/t06-r3/PRE/run-steps.tsx	2026-10-21 01:32:30
++++ docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/run-steps.tsx	2026-10-21 01:34:11
+@@ -263,10 +263,14 @@
+               step.output == null
+                 ? null
+                 : projectedValueText(step.output, t("marker.truncated"));
++            const hasPayload = inputText !== null || outputText !== null;
+             const payload = [inputText, outputText]
+               .filter((value): value is string => value !== null)
++              .map((value) =>
++                value.length === 0 ? t("detail.steps.emptyValue") : value,
++              )
+               .join("\n");
+-            return payload.length > 0 ? (
++            return hasPayload ? (
+               <details className="mt-2 text-sm">
+                 <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
+                   {t("detail.steps.showPayload")}

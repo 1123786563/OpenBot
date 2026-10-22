@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-21",
+  "identity": "isolated authenticated admin",
+  "checks": 8,
+  "passed": 8,
+  "failures": [],
+  "results": [
+    {
+      "theme": "light",
+      "viewport": "390x844",
+      "retained": true,
+      "error": true,
+      "overflow": false,
+      "darkMatches": true,
+      "url": "http://127.0.0.1:3011/channel/channel_6f28e9e0-355d-409b-977f-5490b257a07b"
+    },
+    {
+      "theme": "light",
+      "viewport": "768x1024",
+      "retained": true,
+      "error": true,
+      "overflow": false,
+      "darkMatches": true,
+      "url": "http://127.0.0.1:3011/channel/channel_80cb9574-bba7-4398-9066-8074bdacb00b"
+    },
+    {
+      "theme": "light",
+      "viewport": "1280x800",
+      "retained": true,
+      "error": true,
+      "overflow": false,
+      "darkMatches": true,
+      "url": "http://127.0.0.1:3011/channel/channel_1aa6e038-4d06-4b48-bb95-6fa9555114be"
+    },
+    {
+      "theme": "light",
+      "viewport": "1440x900",
+      "retained": true,
+      "error": true,
+      "overflow": false,
+      "darkMatches": true,
+      "url": "http://127.0.0.1:3011/channel/channel_4f80d98e-486c-4631-8e89-4b46feacf93f"
+    },
+    {
+      "theme": "dark",
+      "viewport": "390x844",
+      "retained": true,
+      "error": true,
+      "overflow": false,
+      "darkMatches": true,
+      "url": "http://127.0.0.1:3011/channel/channel_2a57a24f-1297-4c44-9cde-287c2cacd889"
+    },
+    {
+      "theme": "dark",
+      "viewport": "768x1024",
+      "retained": true,
+      "error": true,
+      "overflow": false,
+      "darkMatches": true,
+      "url": "http://127.0.0.1:3011/channel/channel_b9e31453-6457-49bf-84a6-52f6cb37cd54"
+    },
+    {
+      "theme": "dark",
+      "viewport": "1280x800",
+      "retained": true,
+      "error": true,
+      "overflow": false,
+      "darkMatches": true,
+      "url": "http://127.0.0.1:3011/channel/channel_a33a5210-9c81-4612-a946-240986349f4d"
+    },
+    {
+      "theme": "dark",
+      "viewport": "1440x900",
+      "retained": true,
+      "error": true,
+      "overflow": false,
+      "darkMatches": true,
+      "url": "http://127.0.0.1:3011/channel/channel_d6791783-30dc-43c7-a49b-5162bb400a57"
+    }
+  ]
+}

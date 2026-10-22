@@ -21,7 +21,7 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { SettingsItemBackground } from "@/components/settings/background";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import {
   Dialog,
   DialogBody,

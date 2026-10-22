@@ -1,0 +1,107 @@
+[
+  {
+    "path": "app/src/components/bot-profile/bot-subpage.tsx",
+    "bytes": 1618,
+    "sha256": "0863362539b2fe52a9805973aca3767d7c6553fac47f3c0ec5156a89c78aa2d7"
+  },
+  {
+    "path": "app/src/components/ai-observability/runs-list.tsx",
+    "bytes": 13572,
+    "sha256": "0267af5d5d73e9109e3f99d231a2ff5d9058413d2c0045ba1c553564a87b45ac"
+  },
+  {
+    "path": "app/src/components/ai-observability/run-detail.tsx",
+    "bytes": 11221,
+    "sha256": "22d92fed41ee773c8e26a92227f1f5635778b4cf77cd29ccf85be59e44fd3180"
+  },
+  {
+    "path": "app/src/components/ai-observability/run-steps.tsx",
+    "bytes": 12273,
+    "sha256": "b4acb076bcb75087693d5b87b38fb9d9c6ec51102d4f446e8ff7d106961f3f2e"
+  },
+  {
+    "path": "app/src/components/ai-observability/evaluations-page.tsx",
+    "bytes": 1258,
+    "sha256": "be39834e2308d62559459dd7ed051b194b4a873a986a82e8b31f30c10bdf91b4"
+  },
+  {
+    "path": "app/src/components/ai-observability/experiments-section.tsx",
+    "bytes": 18219,
+    "sha256": "5f84e55296aa4081c702ae4029ae491c7cf1540ecc0ccf2932b381f68159ea0a"
+  },
+  {
+    "path": "app/src/components/ai-observability/experiment-results.tsx",
+    "bytes": 14711,
+    "sha256": "3fc3e191072c3afc192d32fe5b67700df20f8ef65856567ef1e748ffe52bc816"
+  },
+  {
+    "path": "app/src/components/ai-observability/exports-status.tsx",
+    "bytes": 7936,
+    "sha256": "5bacaeb2444350198f945f9ac1246abbb829ad6f2017d2f72ded4fa0517e5212"
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.exports.tsx",
+    "bytes": 925,
+    "sha256": "6a0782c049dadb68fe66de2e185b45ce571dbfc23839b6c5f3f78d867dc3aae5"
+  },
+  {
+    "path": "app/src/locales/en/ai-observability-runs.json",
+    "bytes": 5623,
+    "sha256": "7d6ddabd3201b24a0d7414e0b71d97ae3406d0bbb3c0d84b41e23ab4455bc390"
+  },
+  {
+    "path": "app/src/locales/zh-CN/ai-observability-runs.json",
+    "bytes": 5424,
+    "sha256": "09c7f387ec8f12aab349a04e6e98e3f71bacd843ad082dcacc64ace9d1b65dd8"
+  },
+  {
+    "path": "app/src/locales/en/ai-observability-evaluations.json",
+    "bytes": 9370,
+    "sha256": "8249d2d47c73ba7bfd2482b4d8b8eee7c9181b9fce413b5d561b4ff0645109cd"
+  },
+  {
+    "path": "app/src/locales/zh-CN/ai-observability-evaluations.json",
+    "bytes": 8820,
+    "sha256": "5d434990814c9feb192b19bb626f040c0f55303c508d08851cf378e93658160a"
+  },
+  {
+    "path": "app/tests/observability-route-guards.test.tsx",
+    "bytes": 1166,
+    "sha256": "c613176422d85c5e1625ec4bae2154afbc13bd7b2b1c02df47f989e8191fcb2d"
+  },
+  {
+    "path": "app/tests/ai-observability-runs-list.test.tsx",
+    "bytes": 24411,
+    "sha256": "f7fea3520d88b25feaa8de06c02e844525d8cb552b765cc9a02d530cd865ace3"
+  },
+  {
+    "path": "app/tests/ai-observability-run-detail.test.tsx",
+    "bytes": 22835,
+    "sha256": "3f2715e85020f71fd2ae9bb63f3898b9433f4b1e756c51ed44f834edb0ad5147"
+  },
+  {
+    "path": "app/tests/ai-observability-run-steps.test.tsx",
+    "bytes": 23389,
+    "sha256": "83bd10cd4d2a06fac859cc6ac68230898a1f5327c34fddb23570597994188f47"
+  },
+  {
+    "path": "app/tests/ai-observability-routes.test.tsx",
+    "bytes": 4582,
+    "sha256": "56ace2ad654183f0ee1c7fbabd9a970b4f71b54bdeee8d406b3c079c30552b1c"
+  },
+  {
+    "path": "app/tests/ai-observability-experiments.test.tsx",
+    "bytes": 49565,
+    "sha256": "cff68bb0887ba3e021a2596cdcbe7cef78005f8a046a6ea53952424fa1cd04ae"
+  },
+  {
+    "path": "app/tests/ai-observability-exports.test.tsx",
+    "bytes": 27309,
+    "sha256": "69b35844d05ebe8814f5f2ec20e008a06b350a8354433ad4a408fb858f58831d"
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.datasets.tsx",
+    "bytes": 1172,
+    "sha256": "f4310dcf1ed5a6c7dbcea9d64b39b3963b5b7040ba8c0f447fd9e94e7e0e0a1d"
+  }
+]

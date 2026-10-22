@@ -1,0 +1,449 @@
+{
+  "route_files": 88,
+  "declarations": 87,
+  "counts": {
+    "page": 76,
+    "layout": 4,
+    "redirect": 7
+  },
+  "added_vs_cache": [],
+  "removed_vs_cache": [],
+  "kind_mismatch": [],
+  "routes": [
+    {
+      "route_id": "/_authed/_app/agents/",
+      "source": "app/src/routes/_authed/_app/agents/index.tsx",
+      "kind": "redirect"
+    },
+    {
+      "route_id": "/_authed/_app/approvals",
+      "source": "app/src/routes/_authed/_app/approvals.tsx",
+      "kind": "redirect"
+    },
+    {
+      "route_id": "/_authed/_app/bot",
+      "source": "app/src/routes/_authed/_app/bot.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/access",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.access.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/approvals",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.approvals.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/datasets",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.datasets.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/evaluations/$datasetId",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.$datasetId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/evaluations/experiment-comparisons",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiment-comparisons.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/evaluations/experiments/$experimentId/$executionId",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiments.$experimentId.$executionId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/evaluations",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/exports",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.exports.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/memory",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.memory.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/reach",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.reach.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/responsibilities",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.responsibilities.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/routines",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.routines.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/runs/$bindingId",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/runs",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.runs.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/setup",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.setup.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/$agentId/sharing",
+      "source": "app/src/routes/_authed/_app/bots.$agentId.sharing.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/bots/",
+      "source": "app/src/routes/_authed/_app/bots.index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/channel/$channelId",
+      "source": "app/src/routes/_authed/_app/channel/$channelId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/channel/new",
+      "source": "app/src/routes/_authed/_app/channel/new.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/craft/$sessionId",
+      "source": "app/src/routes/_authed/_app/craft/$sessionId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/craft/",
+      "source": "app/src/routes/_authed/_app/craft/index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/craft/tasks",
+      "source": "app/src/routes/_authed/_app/craft/tasks.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/group/$channelId",
+      "source": "app/src/routes/_authed/_app/group/$channelId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/group/new",
+      "source": "app/src/routes/_authed/_app/group/new.tsx",
+      "kind": "redirect"
+    },
+    {
+      "route_id": "/_authed/_app/",
+      "source": "app/src/routes/_authed/_app/index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/memory",
+      "source": "app/src/routes/_authed/_app/memory.tsx",
+      "kind": "redirect"
+    },
+    {
+      "route_id": "/_authed/_app/reachability",
+      "source": "app/src/routes/_authed/_app/reachability.tsx",
+      "kind": "redirect"
+    },
+    {
+      "route_id": "/_authed/_app/responsibilities",
+      "source": "app/src/routes/_authed/_app/responsibilities.tsx",
+      "kind": "redirect"
+    },
+    {
+      "route_id": "/_authed/_app/routines",
+      "source": "app/src/routes/_authed/_app/routines.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/skills",
+      "source": "app/src/routes/_authed/_app/skills.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/_app/team-bots",
+      "source": "app/src/routes/_authed/_app/team-bots.tsx",
+      "kind": "redirect"
+    },
+    {
+      "route_id": "/_authed/_app",
+      "source": "app/src/routes/_authed/_app.tsx",
+      "kind": "layout"
+    },
+    {
+      "route_id": "/_authed/admin/ai-observability",
+      "source": "app/src/routes/_authed/admin/ai-observability.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/approvals",
+      "source": "app/src/routes/_authed/admin/approvals.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/audit",
+      "source": "app/src/routes/_authed/admin/audit.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/billing",
+      "source": "app/src/routes/_authed/admin/billing.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/bot-services",
+      "source": "app/src/routes/_authed/admin/bot-services.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/boundaries",
+      "source": "app/src/routes/_authed/admin/boundaries.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/components/$name",
+      "source": "app/src/routes/_authed/admin/components/$name.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/components/",
+      "source": "app/src/routes/_authed/admin/components/index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/computers",
+      "source": "app/src/routes/_authed/admin/computers.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/credentials",
+      "source": "app/src/routes/_authed/admin/credentials.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/enterprise",
+      "source": "app/src/routes/_authed/admin/enterprise.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/gateway",
+      "source": "app/src/routes/_authed/admin/gateway.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/identity-providers",
+      "source": "app/src/routes/_authed/admin/identity-providers.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/",
+      "source": "app/src/routes/_authed/admin/index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/knowledge/$kbId",
+      "source": "app/src/routes/_authed/admin/knowledge.$kbId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/knowledge/",
+      "source": "app/src/routes/_authed/admin/knowledge.index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/learning",
+      "source": "app/src/routes/_authed/admin/learning.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/market",
+      "source": "app/src/routes/_authed/admin/market.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/model-catalog",
+      "source": "app/src/routes/_authed/admin/model-catalog.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/observability",
+      "source": "app/src/routes/_authed/admin/observability.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/people",
+      "source": "app/src/routes/_authed/admin/people.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/playground",
+      "source": "app/src/routes/_authed/admin/playground.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/$key",
+      "source": "app/src/routes/_authed/admin/plugins/$key.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/$key_/bots/$agentId",
+      "source": "app/src/routes/_authed/admin/plugins/$key_.bots.$agentId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/$key_/tools/$tool",
+      "source": "app/src/routes/_authed/admin/plugins/$key_.tools.$tool.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/composio",
+      "source": "app/src/routes/_authed/admin/plugins/composio.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/",
+      "source": "app/src/routes/_authed/admin/plugins/index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin/plugins/open-connector",
+      "source": "app/src/routes/_authed/admin/plugins/open-connector.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/admin",
+      "source": "app/src/routes/_authed/admin/route.tsx",
+      "kind": "layout"
+    },
+    {
+      "route_id": "/_authed/admin/skills",
+      "source": "app/src/routes/_authed/admin/skills.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/onboarding",
+      "source": "app/src/routes/_authed/onboarding.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/approvals",
+      "source": "app/src/routes/_authed/settings/approvals.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/components-gallery/$name",
+      "source": "app/src/routes/_authed/settings/components-gallery/$name.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/components-gallery/",
+      "source": "app/src/routes/_authed/settings/components-gallery/index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/connected-accounts/$key",
+      "source": "app/src/routes/_authed/settings/connected-accounts/$key.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/connected-accounts/",
+      "source": "app/src/routes/_authed/settings/connected-accounts/index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/",
+      "source": "app/src/routes/_authed/settings/index.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/invoices",
+      "source": "app/src/routes/_authed/settings/invoices.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/memory",
+      "source": "app/src/routes/_authed/settings/memory.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/model-access",
+      "source": "app/src/routes/_authed/settings/model-access.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/notifications",
+      "source": "app/src/routes/_authed/settings/notifications.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/orders",
+      "source": "app/src/routes/_authed/settings/orders.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings/passwords",
+      "source": "app/src/routes/_authed/settings/passwords.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/settings",
+      "source": "app/src/routes/_authed/settings/route.tsx",
+      "kind": "layout"
+    },
+    {
+      "route_id": "/_authed/settings/usage",
+      "source": "app/src/routes/_authed/settings/usage.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/sign-in/$requestId",
+      "source": "app/src/routes/_authed/sign-in/$requestId.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/tenant/channels",
+      "source": "app/src/routes/_authed/tenant/channels.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed/tenant/selection",
+      "source": "app/src/routes/_authed/tenant/selection.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/_authed",
+      "source": "app/src/routes/_authed.tsx",
+      "kind": "layout"
+    },
+    {
+      "route_id": "/share/$token",
+      "source": "app/src/routes/share.$token.tsx",
+      "kind": "page"
+    },
+    {
+      "route_id": "/sign",
+      "source": "app/src/routes/sign.tsx",
+      "kind": "page"
+    }
+  ]
+}

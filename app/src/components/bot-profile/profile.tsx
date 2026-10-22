@@ -86,11 +86,14 @@ export function BotProfile({
 
   return (
     <>
-      <div className="mt-6 flex items-center gap-3">
-        <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={40} />
+      <div className="mt-6 flex min-w-0 items-center gap-3">
+        <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={32} />
         <div className="min-w-0">
-          <p className="truncate font-medium">{agent.title}</p>
-          <p className="line-clamp-2 text-muted-foreground text-sm">
+          <p className="break-words font-semibold text-base">{agent.name}</p>
+          <p className="break-words text-muted-foreground text-sm">
+            {agent.title}
+          </p>
+          <p className="break-words text-muted-foreground text-sm">
             {agent.roleDescription}
           </p>
         </div>
@@ -158,15 +161,18 @@ export function BotProfile({
                   // The label map, so the closed trigger says "Everything" rather than the raw value.
                   items={notifyLabels}
                   onValueChange={(next) => {
-                    if (next === lifecycle.data.notify) return;
+                    // null is the Select's "nothing chosen" (dismiss); the saved answer stays.
+                    if (next === null || next === lifecycle.data.notify) return;
                     notify.mutate({
                       agentId: agent.id,
-                      notify: next as BotNotify,
+                      notify: next,
                     });
                   }}
                   value={lifecycle.data.notify}
                 >
-                  <SelectTrigger aria-label={t("botProfile.notifications.title")}>
+                  <SelectTrigger
+                    aria-label={t("botProfile.notifications.title")}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -187,7 +193,9 @@ export function BotProfile({
                     <IconBell />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{t("botProfile.browserNotifications.title")}</ItemTitle>
+                    <ItemTitle>
+                      {t("botProfile.browserNotifications.title")}
+                    </ItemTitle>
                     <ItemDescription>
                       {t("botProfile.browserNotifications.off")}
                     </ItemDescription>
@@ -219,7 +227,9 @@ export function BotProfile({
                 <IconMessage />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>{t("botProfile.message.title", { name: agent.name })}</ItemTitle>
+                <ItemTitle>
+                  {t("botProfile.message.title", { name: agent.name })}
+                </ItemTitle>
                 <ItemDescription>
                   {t("botProfile.message.description")}
                 </ItemDescription>

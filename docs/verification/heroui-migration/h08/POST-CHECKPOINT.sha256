@@ -1,0 +1,10 @@
+c5fd3a43b2efbd5c5dbb05b7d1b08a8e2922e6434f2c9c09580dc16133689d38  app/src/components/billing/credit-bar.tsx
+fecc534241bf12867363b181a2ad5d6d880457939089ac6b7e6b4c709fc1dbd4  app/src/components/billing/credit-grant-list.tsx
+1ee8d5cc2b5f892ce52814e7ac7c30004e32df9e4d1604f785c1419daefff907  app/src/components/billing/invoice-status.tsx
+6f5c39826ba0bbc2476cba42e9b6b59d8b49d8af4f7461030e265040854cb1a3  app/src/components/billing/qr-code.tsx
+680c59b56ab124da101b883e4ebdd2e44eb35fae64e8b09f534504fda8330b95  app/src/components/billing/upgrade-dialog.tsx
+08998723f1a9857542e435d7ba5493ec7ad2c2e3f9aca0b505417ae644cd3789  app/src/routes/_authed/admin/billing.tsx
+6f7b5e87c3c8bb6ac15804bdb63b45a93761f799bd88c1fdee5655b073498a7b  app/src/routes/_authed/settings/usage.tsx
+# [W7-F1 refresh 2026-10-20] H14 touched upgrade-dialog.tsx (useOptionalChain equivalent transform
+# on a BASE-inherent warning; useExhaustiveDependencies 2 kept per H08 judgment). Current hash:
+3f16e415cafc943f53a08f736d27ea63f9196042bd9a6ad23849210498233fa1  app/src/components/billing/upgrade-dialog.tsx

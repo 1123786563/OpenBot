@@ -44,6 +44,7 @@
   "due": "Due",
   "next": "Next {{when}}",
   "actions": {
+    "moreActions": "More actions",
     "runNow": "Run now",
     "runNowAria": "Run the routine scheduled {{schedule}} now",
     "runNowTitle": "Runs it for real, now: the Bot does the work and posts in the channel.",

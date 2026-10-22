@@ -258,7 +258,7 @@ export function LinkedAccountsSection() {
               <div className="grid gap-3 text-sm">
                 <p>{issued.instruction}</p>
                 <div className="flex items-center gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded bg-muted px-2 py-1">
+                  <code className="min-w-0 flex-1 break-all rounded bg-ob-muted-surface px-2 py-1">
                     link {issued.code}
                   </code>
                   <Button

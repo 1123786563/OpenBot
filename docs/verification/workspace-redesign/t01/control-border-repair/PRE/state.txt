@@ -1,0 +1,1048 @@
+203d0f0244b2f898218fa12027089c631e8448d9
+ M app/DESIGN.md
+ M app/index.html
+ M app/package.json
+ M app/src/components/agents/agent-card.tsx
+ M app/src/components/agents/agent-profile.tsx
+ M app/src/components/agents/proposed-bot.tsx
+ M app/src/components/ai-observability/dataset-detail.tsx
+ M app/src/components/ai-observability/evaluations-page.tsx
+ M app/src/components/ai-observability/experiment-comparison.tsx
+ M app/src/components/ai-observability/experiment-results.tsx
+ M app/src/components/ai-observability/experiments-section.tsx
+ M app/src/components/ai-observability/exports-status.tsx
+ M app/src/components/ai-observability/run-detail.tsx
+ M app/src/components/ai-observability/run-steps.tsx
+ M app/src/components/ai-observability/runs-list.tsx
+ M app/src/components/app-sidebar/app-sidebar.tsx
+ M app/src/components/approvals/rules.tsx
+ M app/src/components/approvals/waiting.tsx
+ M app/src/components/billing/credit-bar.tsx
+ M app/src/components/billing/credit-grant-list.tsx
+ M app/src/components/billing/invoice-status.tsx
+ M app/src/components/billing/qr-code.tsx
+ M app/src/components/billing/upgrade-dialog.tsx
+ M app/src/components/bot-profile/bot-subpage.tsx
+ M app/src/components/bot-profile/manage.tsx
+ M app/src/components/bot-profile/profile.tsx
+ M app/src/components/bot-profile/setup.tsx
+ M app/src/components/bot-profile/sharing.tsx
+ M app/src/components/bots/bot-roster.tsx
+ M app/src/components/channels/chat-transcript.tsx
+ M app/src/components/channels/composer/attachment-strip.tsx
+ M app/src/components/channels/conversation-view.tsx
+ M app/src/components/channels/group-chat.tsx
+ M app/src/components/channels/recipient-field.tsx
+ M app/src/components/channels/voice-call-widget.tsx
+ M app/src/components/channels/voice-chat-card.tsx
+ M app/src/components/channels/workshop-artifacts.tsx
+ M app/src/components/channels/workshop-schedules.tsx
+ M app/src/components/channels/workshop-share.tsx
+ M app/src/components/channels/workshop-turn.tsx
+ M app/src/components/computer/computer-view.tsx
+ M app/src/components/computer/demonstration-recorder.tsx
+ M app/src/components/computer/desktop-illustration.tsx
+ M app/src/components/craft/attachment-input.tsx
+ M app/src/components/craft/chat-panel.tsx
+ M app/src/components/craft/message/text.tsx
+ M app/src/components/craft/message/thinking.tsx
+ M app/src/components/craft/message/tool-call.tsx
+ M app/src/components/craft/message/transcript-entry.tsx
+ M app/src/components/craft/output-panel/artifacts-tab.tsx
+ M app/src/components/craft/output-panel/index.tsx
+ M app/src/components/craft/output-panel/preview-tab.tsx
+ M app/src/components/craft/scheduled-task-editor.tsx
+ M app/src/components/craft/session-sidebar.tsx
+ M app/src/components/craft/subagent-view.tsx
+ M app/src/components/craft/tool-cards/diff-body.tsx
+ M app/src/components/delivery/reaching-you.tsx
+ M app/src/components/gallery/decisions.tsx
+ M app/src/components/gallery/form.tsx
+ M app/src/components/gallery/table.tsx
+ M app/src/components/knowledge/upload-tasks-panel.tsx
+ M app/src/components/layout/detail-panel.tsx
+ M app/src/components/layout/page-shell.tsx
+ M app/src/components/layout/row-mark.tsx
+ M app/src/components/layout/self-host-banner.tsx
+ M app/src/components/layout/sidebar-shell.tsx
+ M app/src/components/market/connectors-pane.tsx
+ M app/src/components/market/experts-pane.tsx
+ M app/src/components/market/skills-pane.tsx
+ M app/src/components/market/wb.tsx
+ M app/src/components/passwords/sign-in-form.tsx
+ M app/src/components/plugins/shared-approval-fields.tsx
+ M app/src/components/responsibilities/new-responsibility-dialog.tsx
+ M app/src/components/responsibilities/triggers.tsx
+ M app/src/components/routines/routines-list.tsx
+ M app/src/components/settings/linked-accounts.tsx
+ M app/src/components/skills/edit-skill.tsx
+ M app/src/components/skills/new-skill.tsx
+ M app/src/components/skills/proposed-skill.tsx
+ M app/src/components/skills/skill-fields.tsx
+ M app/src/components/theme-provider.tsx
+ M app/src/components/ui/bubble.tsx
+ M app/src/components/ui/button.tsx
+ M app/src/components/ui/checkbox.tsx
+ M app/src/components/ui/combobox.tsx
+ M app/src/components/ui/context-menu.tsx
+ M app/src/components/ui/dialog.tsx
+ M app/src/components/ui/dropdown-menu.tsx
+ M app/src/components/ui/empty.tsx
+ M app/src/components/ui/field.tsx
+ M app/src/components/ui/input-group.tsx
+ M app/src/components/ui/input.tsx
+ M app/src/components/ui/item.tsx
+ M app/src/components/ui/label.tsx
+ M app/src/components/ui/message-scroller.tsx
+ M app/src/components/ui/message.tsx
+ M app/src/components/ui/questionnaire.tsx
+ M app/src/components/ui/select.tsx
+ M app/src/components/ui/separator.tsx
+ M app/src/components/ui/sheet.tsx
+ M app/src/components/ui/sidebar.tsx
+ M app/src/components/ui/skeleton.tsx
+ M app/src/components/ui/switch.tsx
+ M app/src/components/ui/textarea.tsx
+ M app/src/components/ui/tooltip.tsx
+ M app/src/lib/markdown.tsx
+ M app/src/lib/theme.ts
+ M app/src/locales/en/ai-observability-evaluations.json
+ M app/src/locales/en/ai-observability-runs.json
+ M app/src/locales/en/routines.json
+ M app/src/locales/zh-CN/ai-observability-evaluations.json
+ M app/src/locales/zh-CN/ai-observability-runs.json
+ M app/src/locales/zh-CN/routines.json
+ M app/src/routes/__root.tsx
+ M app/src/routes/_authed/_app.tsx
+ M app/src/routes/_authed/_app/bots.$agentId.datasets.tsx
+ M app/src/routes/_authed/_app/bots.$agentId.exports.tsx
+ M app/src/routes/_authed/_app/bots.index.tsx
+ M app/src/routes/_authed/_app/channel/new.tsx
+ M app/src/routes/_authed/_app/craft/tasks.tsx
+ M app/src/routes/_authed/_app/index.tsx
+ M app/src/routes/_authed/_app/skills.tsx
+ M app/src/routes/_authed/admin/billing.tsx
+ M app/src/routes/_authed/admin/bot-services.tsx
+ M app/src/routes/_authed/admin/components/$name.tsx
+ M app/src/routes/_authed/admin/computers.tsx
+ M app/src/routes/_authed/admin/credentials.tsx
+ M app/src/routes/_authed/admin/gateway.tsx
+ M app/src/routes/_authed/admin/knowledge.$kbId.tsx
+ M app/src/routes/_authed/admin/knowledge.index.tsx
+ M app/src/routes/_authed/admin/learning.tsx
+ M app/src/routes/_authed/admin/model-catalog.tsx
+ M app/src/routes/_authed/admin/plugins/$key.tsx
+ M app/src/routes/_authed/admin/route.tsx
+ M app/src/routes/_authed/settings/components-gallery/$name.tsx
+ M app/src/routes/_authed/settings/connected-accounts/index.tsx
+ M app/src/routes/_authed/settings/index.tsx
+ M app/src/routes/_authed/settings/route.tsx
+ M app/src/routes/_authed/settings/usage.tsx
+ M app/src/styles.css
+ M app/tests/ai-observability-experiments.test.tsx
+ M app/tests/ai-observability-exports.test.tsx
+ M app/tests/ai-observability-route-chain.test.tsx
+ M app/tests/ai-observability-run-detail.test.tsx
+ M app/tests/ai-observability-run-steps.test.tsx
+ M app/tests/approval-team-settings.test.tsx
+ M app/tests/approvals-rules.test.tsx
+ M app/tests/bot-approval-rules.test.tsx
+ M app/tests/bot-manage.test.tsx
+ M app/tests/bot-memory.test.tsx
+ M app/tests/bot-profile-active.test.tsx
+ M app/tests/bot-reaching-you.test.tsx
+ M app/tests/bot-responsibilities.test.tsx
+ M app/tests/bot-setup.test.tsx
+ M app/tests/bot-sharing.test.tsx
+ M app/tests/button-native.test.tsx
+ M app/tests/composing-enter.test.tsx
+ M app/tests/computer-driving-local-fields.test.tsx
+ M app/tests/detail-panel.test.tsx
+ M app/tests/gallery-components.test.tsx
+ M app/tests/item-disabled.test.tsx
+ M app/tests/learning-admin.test.tsx
+ M app/tests/multitenancy/selection.test.tsx
+ M app/tests/observability-route-guards.test.tsx
+ M app/tests/preload.ts
+ M app/tests/sidebar-shortcut-layouts.test.tsx
+ M app/tests/theme-preference.test.ts
+ M app/tests/user-preferences.test.tsx
+ M bun.lock
+ M docs/specs/2026-10-19-heroui-ui-migration-design.md
+ M docs/verification/e2e-bun-suites.json
+?? .e2e-p15-validation/
+?? .e2e-p28-validation/
+?? .tmp-t05-r3/
+?? agent-mastra/bun.lock
+?? app/spike.html
+?? app/spike/
+?? app/src/components/ui/router-link.tsx
+?? app/src/styles/
+?? app/tests/bot-subpage.test.tsx
+?? app/tests/heroui-spike.test.tsx
+?? app/tests/routines-list.test.tsx
+?? app/tests/skills-draft-lifecycle.test.tsx
+?? app/tests/zz-probe-context-menu.test.tsx
+?? app/vite.spike.config.ts
+?? docs/design/
+?? docs/plans/2026-10-19-heroui-v3-migration-execution.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-ledger.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t01-repair-01.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t01-repair-02.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t02-repair-01.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t02-repair-02.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t02-repair-03.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t03-repair-01.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t03-repair-02.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t03-repair-03.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t04-repair-01.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t05-repair-01.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t05-repair-02.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t05-repair-03.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t05-repair-04.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t05-repair-05.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t06-repair-01.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t06-repair-02.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t06-repair-03.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t06-repair-04.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t06-repair-05.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t07-repair-01.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t07-repair-02.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t07.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t08-repair-01.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t08-repair-02.md
+?? docs/plans/2026-10-20-workspace-redesign-b1-t08.md
+?? docs/plans/2026-10-20-workspace-redesign-b1.md
+?? docs/plans/2026-10-21-t01-control-border-cascade.md
+?? docs/plans/2026-10-21-t03-skills-draft-lifecycle.md
+?? docs/plans/2026-10-21-workspace-redesign-p11-error-focus.md
+?? docs/plans/2026-10-21-workspace-redesign-p14-error-focus.md
+?? docs/plans/2026-10-21-workspace-redesign-p15-error-focus.md
+?? docs/plans/2026-10-21-workspace-redesign-p15-textarea-review-fix.md
+?? docs/plans/2026-10-21-workspace-redesign-p28-detailpanel-fill.md
+?? docs/plans/reports/
+?? docs/plans/task-briefs/
+?? docs/verification/heroui-migration/
+?? docs/verification/workspace-redesign/
+diff --git a/app/src/styles.css b/app/src/styles.css
+index 421bb42d..8191ab06 100644
+--- a/app/src/styles.css
++++ b/app/src/styles.css
+@@ -1,168 +1,95 @@
++/*
++ * Layer order, declared before any import so it is fixed for the whole bundle:
++ *
++ *   theme, base, components, utilities  — Tailwind + HeroUI, in their own order
++ *   ob-tokens                          — OpenBot semantic values (`--ob-*`, both themes)
++ *   ob-theme                           — HeroUI's published variables mapped onto them
++ *   ob-legacy                          — the pre-migration shadcn names, deletion planned
++ *   ob-app                             — app-level rules that used to be unlayered
++ *
++ * App declarations sit in layers ABOVE Tailwind's utilities rather than in no layer at all. An
++ * unlayered rule outranks every layered one regardless of specificity, so an unlayered `input`
++ * selector silently defeats `.text-sm`; that exact bug is still explained below. Layer order is
++ * also why the theme bridge wins over HeroUI's `@layer base` defaults without `!important`.
++ */
++@layer theme,
++  base,
++  components,
++  utilities,
++  ob-tokens,
++  ob-theme,
++  ob-legacy,
++  ob-app;
++
+ @import "tailwindcss";
++/*
++ * HeroUI, component by component.
++ *
++ * The full `@heroui/styles` entry ships every component's CSS (2.4 MB of source): it grew the
++ * main stylesheet from 41 KB to 78 KB gzip, 74% over the A09 budget. Only these eight components
++ * are HeroUI in H02; each later ticket adds its own imports as it migrates a wrapper. Shared
++ * primitives (theme variables, base, utilities, variants) are always required.
++ */
++@import "@heroui/styles/base";
++@import "@heroui/styles/base/scrollbar.css";
++@import "@heroui/styles/themes/default";
++@import "@heroui/styles/components/button.css" layer(components);
++@import "@heroui/styles/components/checkbox.css" layer(components);
++@import "@heroui/styles/components/input.css" layer(components);
++@import "@heroui/styles/components/label.css" layer(components);
++@import "@heroui/styles/components/separator.css" layer(components);
++@import "@heroui/styles/components/skeleton.css" layer(components);
++@import "@heroui/styles/components/switch.css" layer(components);
++@import "@heroui/styles/components/textarea.css" layer(components);
++/* H03: overlay + collection components. Explicit layer so app utilities still win. */
++@import "@heroui/styles/components/modal.css" layer(components);
++@import "@heroui/styles/components/close-button.css" layer(components);
++@import "@heroui/styles/components/select.css" layer(components);
++@import "@heroui/styles/components/list-box.css" layer(components);
++@import "@heroui/styles/components/popover.css" layer(components);
++@import "@heroui/styles/components/combo-box.css" layer(components);
++@import "@heroui/styles/components/dropdown.css" layer(components);
++@import "@heroui/styles/components/menu.css" layer(components);
++@import "@heroui/styles/components/menu-item.css" layer(components);
++@import "@heroui/styles/components/menu-section.css" layer(components);
++@import "@heroui/styles/components/surface.css" layer(components);
++@import "@heroui/styles/components/tooltip.css" layer(components);
++@import "@heroui/styles/components/drawer.css" layer(components);
++@import "@heroui/styles/components/description.css" layer(components);
++@import "@heroui/styles/components/field-error.css" layer(components);
++@import "@heroui/styles/utilities";
++@import "@heroui/styles/variants";
+ @import "tw-animate-css";
+ @import "shadcn/tailwind.css";
+-/* Composer chips/dropdown. Reads the shadcn tokens declared below, so it themes itself. */
+-@import "prompt-area/tailwind.css";
+ @import "@fontsource-variable/inter";
+ 
++@import "./styles/tokens.css";
++@import "./styles/heroui-theme.css";
++@import "./styles/legacy-ui-bridge.css";
++
+ /*
+  * Streamdown draws a Bot's prose, and Tailwind only ships classes it can see used. Its markup lives
+  * in a dependency, so without this the transcript renders unstyled markdown — correct HTML with none
+  * of the spacing that makes it readable. The path is relative to this file.
++ *
++ * Prompt Area is scanned directly for the same reason and for one more: the package's own
++ * `prompt-area/tailwind.css` preset also declares FALLBACK `:root` tokens. Importing it would put
++ * unlayered `--background`, `--primary` and friends back on the document, where they beat every
++ * layered OpenBot value. Its class scanning is the only part the app needs, so the `@source`
++ * replaces the preset and the token bridge in `styles/` stays authoritative.
+  */
+ @source "../node_modules/streamdown/dist/*.js";
++@source "../node_modules/prompt-area/dist/*.js";
+ 
+ @custom-variant dark (&:is(.dark *));
+ 
+-html {
+-  font-size: 15px;
+-}
+-
+-:root {
+-  color-scheme: light;
+-  /*
+-   * WorkBuddy's own palette, extracted from its desktop bundle (renderer/assets/tokens-*.css) and
+-   * confirmed against the running app: it is a WHITE-dominant application — near-white panes on a
+-   * #f2f2f2 list ground, white cards raised by hairlines and a whisper of shadow, teal brand
+-   * (#00c29a) reserved for identity marks, black-90 primary buttons, an 8px control radius. Token
+-   * NAMES are unchanged from the shadcn contract so every existing utility keeps working.
+-   *
+-   * Layer map: --primary is the interactive layer (black buttons like WorkBuddy's own), --brand is
+-   * the teal identity layer (unread dots, running marks, chart-1), and destructive/success stay
+-   * semantic. WorkBuddy puts blue #1470b4 on hyperlinks and teal on brand text; OpenBot's "link"
+-   * buttons are actions, so they ride --primary like WorkBuddy's own text buttons.
+-   */
+-  --background: #ffffff;
+-  --foreground: #171717;
+-  --card: #ffffff;
+-  --card-foreground: #171717;
+-  --popover: #ffffff;
+-  --popover-foreground: #171717;
+-  --primary: #171717;
+-  --primary-foreground: #ffffff;
+-  --secondary: #f2f2f2;
+-  --secondary-foreground: #404040;
+-  --muted: #f2f2f2;
+-  --muted-foreground: #5c5c5c;
+-  --accent: #f4f5f5;
+-  --accent-foreground: #171717;
+-  --destructive: #b42c3f;
+-  --success: #0a7d47;
+-  --brand: #00c29a;
+-  /*
+-   * The glyph on a brand-teal fill (checked checkbox/switch/radio thumbs). Ink, not white: white on
+-   * #00c29a measures 2.29:1 (WCAG 1.4.11 fails at 3:1), ink measures 7.84:1. Same value in dark —
+-   * ink on the lifted #3dd9b6 is 10.07:1.
+-   */
+-  --brand-foreground: #171717;
+-  --border: #ebebeb;
+-  --input: #d9d9d9;
+-  --ring: #171717;
+-  /*
+-   * Chart colors sit ON the white card and carry data, so they must clear 3:1 (WCAG 1.4.11).
+-   * The vivid brand-adjacent hues failed it (teal 2.29, green 2.44, orange 2.18); these are the
+-   * same hues deepened to pass — teal #00987d 3.63:1, green #0c9455 3.90:1, orange #c96a00
+-   * 3.79:1. `--brand` stays the vivid teal: an unread dot is an identity mark with an sr-only
+-   * label, not a data series on white.
+-   */
+-  --chart-1: #00987d;
+-  --chart-2: #4a90d9;
+-  --chart-3: #0c9455;
+-  --chart-4: #c96a00;
+-  --chart-5: #9d7bfa;
+-  --radius: 0.6rem;
+-  --shadow-card: 0 4px 12px rgb(0 0 0 / 3%);
+-  --sidebar: #f2f2f2;
+-  --sidebar-foreground: #171717;
+-  --sidebar-primary: #171717;
+-  --sidebar-primary-foreground: #ffffff;
+-  --sidebar-accent: #e6e6e6;
+-  --sidebar-accent-foreground: #171717;
+-  --sidebar-border: #e6e6e6;
+-  --sidebar-ring: #171717;
+-}
+-
+-.dark {
+-  color-scheme: dark;
+-  /*
+-   * WorkBuddy dark: a near-black canvas (#141414 home secondary) with #1f1f1f panels and #242424
+-   * cards, white primary buttons, and white at 10-16% for hairlines. Brand teal lifts to a mint
+-   * tone to hold contrast against the dark ground, mirroring WorkBuddy's brand-3/brand-5 ladder.
+-   */
+-  --background: #141414;
+-  --foreground: #f2f2f2;
+-  --card: #222222;
+-  --card-foreground: #f2f2f2;
+-  --popover: #242424;
+-  --popover-foreground: #f2f2f2;
+-  --primary: #f5f5f5;
+-  --primary-foreground: #171717;
+-  --secondary: #2a2a2a;
+-  --secondary-foreground: #f2f2f2;
+-  --muted: #2a2a2a;
+-  --muted-foreground: #a1a1a1;
+-  --accent: #2f2f33;
+-  --accent-foreground: #f2f2f2;
+-  --destructive: #f09595;
+-  --success: #5dcaa5;
+-  --brand: #3dd9b6;
+-  --brand-foreground: #171717;
+-  --border: rgba(255, 255, 255, 0.12);
+-  --input: rgba(255, 255, 255, 0.16);
+-  --ring: #f5f5f5;
+-  --chart-1: #3dd9b6;
+-  --chart-2: #85b7eb;
+-  --chart-3: #5dcaa5;
+-  --chart-4: #ffa760;
+-  --chart-5: #b79df5;
+-  --shadow-card: 0 4px 12px rgb(0 0 0 / 20%);
+-  --sidebar: #1f1f1f;
+-  --sidebar-foreground: #f2f2f2;
+-  --sidebar-primary: #f5f5f5;
+-  --sidebar-primary-foreground: #171717;
+-  --sidebar-accent: #333333;
+-  --sidebar-accent-foreground: #f2f2f2;
+-  --sidebar-border: rgba(255, 255, 255, 0.12);
+-  --sidebar-ring: #f5f5f5;
+-}
+-
+-* {
+-  box-sizing: border-box;
+-}
+-
+-body {
+-  margin: 0;
+-  position: relative;
+-  min-width: 20rem;
+-  min-height: 100vh;
+-  background: var(--background);
+-  color: var(--foreground);
+-  /*
+-   * zh-CN is a first-class locale. Inter carries no CJK glyphs, so without explicit CJK faces the
+-   * browser's own fallback order decides (Windows lands on YaHei only after Segoe UI misses),
+-   * and the 600/500/400 weight hierarchy renders unevenly across the mix. Named faces keep the
+-   * CJK fallback deterministic per platform; Linux without them lands on Noto Sans CJK via
+-   * ui-sans-serif, which honors weights properly.
+-   */
+-  font-family:
+-    "Inter Variable", Inter, "PingFang SC", "HarmonyOS Sans SC",
+-    "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+-}
+-
+ /*
+- * THERE IS DELIBERATELY NO `button, input, textarea, select { font: inherit }` HERE.
+- *
+- * Form controls do need it — Chrome otherwise draws them in its own ~13.3px system font — and
+- * Tailwind's Preflight already does exactly that, inside `@layer base`, where a utility can still
+- * override it. A second copy written here would sit in NO layer, and an unlayered rule outranks
+- * every layered one no matter how specific: a bare `input` selector beats `.text-sm`. That is not a
+- * specificity fight anybody wins, because layers are resolved before specificity is even consulted.
++ * The shadcn/OpenBot palette, as Tailwind utilities.
+  *
+- * One was here, and it silently disabled every `text-*` on every button, input, textarea and select
+- * in the app. Nothing looked broken; the sizes were simply never applied, and the labels — which are
+- * not in that selector list — rendered a size smaller than the fields they belonged to.
++ * HeroUI owns `--accent` as the action fill and `--muted` as muted text; both are mapped by
++ * heroui-theme.css. The old shadcn `--input` alias is retained only for legacy stroke utilities.
++ * All other legacy names are aliases for `--ob-*` in `legacy-ui-bridge.css`.
+  */
+-
+ @theme inline {
+   --font-heading: var(--font-sans);
+   --font-sans:
+@@ -202,6 +129,33 @@ body {
+   --color-card: var(--card);
+   --color-foreground: var(--foreground);
+   --color-background: var(--background);
++
++  /* OpenBot's own vocabulary, so new code never has to borrow HeroUI's names. */
++  --color-ob-canvas: var(--ob-canvas);
++  --color-ob-surface: var(--ob-surface);
++  --color-ob-foreground: var(--ob-foreground);
++  --color-ob-action: var(--ob-action);
++  --color-ob-action-foreground: var(--ob-action-foreground);
++  --color-ob-hover: var(--ob-hover-surface);
++  --color-ob-hover-foreground: var(--ob-hover-surface-foreground);
++  --color-ob-muted-surface: var(--ob-muted-surface);
++  --color-ob-muted-text: var(--ob-muted-text);
++  --color-ob-brand: var(--ob-brand);
++  --color-ob-brand-foreground: var(--ob-brand-foreground);
++  --color-ob-danger: var(--ob-danger);
++  --color-ob-danger-foreground: var(--ob-danger-foreground);
++  --color-ob-danger-soft: var(--ob-danger-soft);
++  --color-ob-success: var(--ob-success);
++  --color-ob-success-foreground: var(--ob-success-foreground);
++  --color-ob-success-soft: var(--ob-success-soft);
++  --color-ob-warning: var(--ob-warning);
++  --color-ob-warning-foreground: var(--ob-warning-foreground);
++  --color-ob-warning-soft: var(--ob-warning-soft);
++  --color-ob-control-border: var(--ob-control-border);
++  --color-ob-accent-text: var(--ob-accent-text);
++  --color-ob-disabled-background: var(--ob-disabled-background);
++  --color-ob-disabled-foreground: var(--ob-disabled-foreground);
++
+   --radius-sm: calc(var(--radius) * 0.6);
+   --radius-md: calc(var(--radius) * 0.8);
+   --radius-lg: var(--radius);
+@@ -210,27 +164,63 @@ body {
+   --radius-3xl: calc(var(--radius) * 2.2);
+   --radius-4xl: calc(var(--radius) * 2.6);
+   /*
+-   * The Display tier (20px at the 15px root) as a named utility, so the page-title size lives in
++   * The Display tier (21.3px at the 16px root) as a named utility, so the page-title size lives in
+    * exactly one place — same spirit as the radius ladder deriving off --radius.
+    */
+   --text-display: 1.333rem;
+-  /* WorkBuddy's resting card shadow (`0 4px 12px #00000008`), as the `shadow-card` utility. */
+-  --shadow-card: var(--shadow-card);
++  /* Workspace card shadow from the semantic theme contract. */
++  --shadow-card: var(--ob-shadow-card);
+   /* The hover lift for an interactive card; the market's lifted variant of the resting card shadow. */
+   --shadow-card-hover: 0 8px 24px rgb(0 0 0 / 8%);
+ }
+ 
+-@layer base {
+-  * {
+-    @apply border-border outline-ring/60;
++/*
++ * The theme state is one state. `.dark` is the class the app has always toggled; `[data-theme]` is
++ * set from the same boolean by `lib/theme.ts` and by the pre-paint script in `index.html`, so
++ * HeroUI's own `[data-theme="dark"]` selectors agree with the app rather than guessing.
++ */
++@layer ob-app {
++  :root {
++    color-scheme: light;
+   }
+-  body {
+-    @apply bg-background text-foreground;
++
++  .dark,
++  [data-theme="dark"] {
++    color-scheme: dark;
+   }
++
+   html {
+-    @apply font-sans;
++    font-size: 16px;
++  }
++
++  body {
++    margin: 0;
++    position: relative;
++    min-width: 20rem;
++    min-height: 100vh;
++    background: var(--background);
++    color: var(--foreground);
++    /*
++     * zh-CN is a first-class locale. Inter carries no CJK glyphs, so without explicit CJK faces the
++     * browser's own fallback order decides (Windows lands on YaHei only after Segoe UI misses),
++     * and the 600/500/400 weight hierarchy renders unevenly across the mix. Named faces keep the
++     * CJK fallback deterministic per platform; Linux without them lands on Noto Sans CJK via
++     * ui-sans-serif, which honors weights properly.
++     */
++    font-family:
++      "Inter Variable", Inter, "PingFang SC", "HarmonyOS Sans SC",
++      "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+   }
+ 
++  /*
++   * THERE IS DELIBERATELY NO `button, input, textarea, select { font: inherit }` HERE.
++   *
++   * Form controls do need it — Chrome otherwise draws them in its own ~13.3px system font — and
++   * Tailwind's Preflight already does exactly that, inside `@layer base`, where a utility can still
++   * override it. A second copy written here would sit above the utilities and silently disable
++   * every `text-*` on every button, input, textarea and select in the app.
++   */
++
+   ::-webkit-scrollbar {
+     width: 5px;
+   }
+@@ -250,6 +240,22 @@ body {
+   }
+ }
+ 
++/*
++ * The global border baseline — the one piece of the old `@layer base` block that must NOT move up
++ * into `ob-app` with the rules above. Tailwind v4 defaults a bare `border` utility to
++ * `currentColor`, so without this every `border` written without an explicit colour (~112 files in
++ * `app/src`) inherits its text colour instead of the theme's `--border`. It stays in `@layer base`
++ * because that layer sits below the utilities layer and HeroUI's layer(components): an explicit
++ * `border-*`/`outline-*` utility and every HeroUI component style keep winning. The same `*`
++ * selector in `ob-app` would outrank both and suppress explicit border colours app-wide — the
++ * exact failure mode the `font: inherit` note above warns about.
++ */
++@layer base {
++  * {
++    @apply border-border outline-ring/60;
++  }
++}
++
+ /*
+  * A tool line that is still running.
+  *
+@@ -258,91 +264,75 @@ body {
+  * colour so it reads the same in either theme. Only `background-position` animates, which the
+  * compositor handles without laying the text out again on every frame.
+  */
+-.tool-line-running {
+-  background-image: linear-gradient(
+-    100deg,
+-    currentColor 40%,
+-    color-mix(in oklab, currentColor 25%, transparent) 50%,
+-    currentColor 60%
+-  );
+-  background-size: 250% 100%;
+-  background-position: 100% 0;
+-  background-clip: text;
+-  -webkit-background-clip: text;
+-  /*
+-   * THE GLYPH FILL, NOT `color`. This was `color: transparent`, which blanked the gradient too —
+-   * `currentColor` resolves against this element's own `color` — so nothing was ever drawn. This
+-   * rule is unlayered and beats the `text-*` utility it is given, so the reduced-motion branch
+-   * below, which puts `color` back, was the only place the text was readable.
+-   */
+-  -webkit-text-fill-color: transparent;
+-  animation: tool-line-sweep 1.6s linear infinite;
+-}
++@layer ob-app {
++  .tool-line-running {
++    background-image: linear-gradient(
++      100deg,
++      currentColor 40%,
++      color-mix(in oklab, currentColor 25%, transparent) 50%,
++      currentColor 60%
++    );
++    background-size: 250% 100%;
++    background-position: 100% 0;
++    background-clip: text;
++    -webkit-background-clip: text;
++    /*
++     * THE GLYPH FILL, NOT `color`. This was `color: transparent`, which blanked the gradient too —
++     * `currentColor` resolves against this element's own `color` — so nothing was ever drawn. This
++     * rule is in a layer now, but the reduced-motion branch below still restores `color` for the
++     * same reason.
++     */
++    -webkit-text-fill-color: transparent;
++    animation: tool-line-sweep 1.6s linear infinite;
++  }
+ 
+-@keyframes tool-line-sweep {
+-  to {
+-    background-position: -150% 0;
++  @keyframes tool-line-sweep {
++    to {
++      background-position: -150% 0;
++    }
+   }
+-}
+ 
+-/* Preserve running-state text without shimmer for reduced-motion users. */
+-@media (prefers-reduced-motion: reduce) {
+-  .tool-line-running {
+-    animation: none;
+-    background-image: none;
+-    color: inherit;
++  /* Preserve running-state text without shimmer for reduced-motion users. */
++  @media (prefers-reduced-motion: reduce) {
++    .tool-line-running {
++      animation: none;
++      background-image: none;
++      color: inherit;
++    }
+   }
+-}
+ 
+-.tool-line[open] .tool-line-chevron {
+-  transform: rotate(90deg);
+-}
++  .tool-line[open] .tool-line-chevron {
++    transform: rotate(90deg);
++  }
+ 
+-/*
+- * Row descriptions wrap on sense rather than on width.
+- *
+- * Here rather than on the `ItemDescription` primitive, which is where this started. The reason was
+- * that the primitive was vendored and the next `shadcn add item` would silently remove anything put
+- * inside it; the primitives are the repository's own now, so that is no longer true. It stays here
+- * because it belongs with the other layout rules rather than inside one primitive.
+- *
+- * The primitive already emits the attribute this selects, so nothing has to be edited for it to
+- * apply, and nothing upstream can take it away.
+- */
+-[data-slot="item-description"] {
+-  text-wrap: pretty;
+-}
++  /*
++   * Row descriptions wrap on sense rather than on width.
++   *
++   * The primitive already emits the attribute this selects, so nothing has to be edited for it to
++   * apply. It stays with the other layout rules rather than inside one primitive.
++   */
++  [data-slot="item-description"] {
++    text-wrap: pretty;
++  }
+ 
+-/*
+- * A generated interface is never allowed to occupy nothing.
+- *
+- * The SDK sizes the frame it draws into from a single measurement taken inside the sandbox, and it
+- * writes the result as an inline height on the frame's own container. Two races in that code make
+- * the number wrong, and both were reproduced against @copilotkit/react-core 1.69.0:
+- *
+- *   - The measurement is queued alongside the expressions that build the interface. When it runs
+- *     first the body it measures is still empty, the container is set to `height: 0px`, and because
+- *     the container also clips, the interface is invisible. Nothing retries: the measurement is
+- *     one-shot and its listener is removed after the first reply.
+- *   - The effect that measures bails out when the sandbox has not finished loading, and its only
+- *     dependency is "generation finished". An interface restored from thread history is already
+- *     finished on its first render, while the sandbox is still being imported, so the effect bails
+- *     and never runs again.
+- *
+- * A floor is the smallest thing that removes the failure that matters. `min-height` clamps above an
+- * inline `height`, so a collapsed measurement can no longer render nothing, and a measurement that
+- * came back correct and larger is left alone. The reader gets an interface that is present and may
+- * be cut off, instead of a turn that looks like the Bot said nothing at all.
+- *
+- * Selected through the frame rather than through a class of ours because both chat surfaces render
+- * this container and only one of them is ours: the packaged chat builds it too, and a rule that
+- * needed our wrapper would fix the transcript and leave the other surface broken. `websandbox__frame`
+- * is the class the sandbox library puts on the frame it creates.
+- *
+- * DELETE THIS WHEN THE SDK IS FIXED. It compensates for someone else's arithmetic, so it should not
+- * outlive the bug: once the measurement re-runs on sandbox-ready and after the queue drains, this
+- * rule can only make small interfaces taller than they asked to be.
+- */
+-:where(div:has(> iframe.websandbox__frame)) {
+-  min-height: 200px;
++  /*
++   * A generated interface is never allowed to occupy nothing.
++   *
++   * The SDK sizes the frame it draws into from a single measurement taken inside the sandbox, and it
++   * writes the result as an inline height on the frame's own container. Two races in that code make
++   * the number wrong, reproduced against @copilotkit/react-core 1.69.0: the measurement can run
++   * before the sandbox body exists (collapsing the container to `height: 0px`, with nothing to
++   * retry it), and the effect that measures bails when a restored thread is already "finished"
++   * while the sandbox is still loading. A floor clamps above an inline `height`, so a collapsed
++   * measurement can no longer render nothing while a correct, larger one is left alone.
++   *
++   * Selected through the frame rather than a class of ours because both chat surfaces render this
++   * container and only one of them is ours. `websandbox__frame` is the class the sandbox library
++   * puts on the frame it creates.
++   *
++   * DELETE THIS WHEN THE SDK IS FIXED.
++   */
++  :where(div:has(> iframe.websandbox__frame)) {
++    min-height: 200px;
++  }
+ }
+diff --git a/app/tests/button-native.test.tsx b/app/tests/button-native.test.tsx
+index 141f9a6b..f2c6845b 100644
+--- a/app/tests/button-native.test.tsx
++++ b/app/tests/button-native.test.tsx
+@@ -1,22 +1,33 @@
+ import "./preload";
+-import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "../../tests/support/e2e-compat";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
+-import { cleanup, render } from "@testing-library/react";
+-import type { ReactElement } from "react";
++import {
++  createMemoryHistory,
++  createRootRoute,
++  createRouter,
++  RouterContextProvider,
++} from "@tanstack/react-router";
++import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
++import type { ComponentPropsWithoutRef, ReactElement } from "react";
+ import { Button } from "@/components/ui/button";
++import { Input } from "@/components/ui/input";
++import { ButtonLink } from "@/components/ui/router-link";
++import { Textarea } from "@/components/ui/textarea";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  expect,
++  spyOn,
++  test,
++} from "../../tests/support/e2e-compat";
+ 
+ beforeAll(() => GlobalRegistrator.register());
+ afterEach(cleanup);
+ afterAll(() => GlobalRegistrator.unregister());
+ 
+ /**
+- * Base UI reports a button drawn as the wrong element through `console.error`, from an effect, so
+- * the only way to assert the app renders quietly is to collect what a render logs.
+- *
+- * The DOM assertions below carry the real weight. Base UI remembers every message it has already
+- * printed for the life of the process, so an empty log is evidence only as long as nothing earlier
+- * said the same thing. `role` and `type` on the rendered element say what `nativeButton` resolved to
+- * no matter what else has run.
++ * Collects what a render logs. The DOM assertions below carry the weight; the log is only evidence
++ * that the wrapper did not complain about the element it drew.
+  */
+ function drawing(element: ReactElement) {
+   const logged: string[] = [];
+@@ -38,44 +49,165 @@ function drawing(element: ReactElement) {
+ }
+ 
+ test("a button with no `render` is still a native button", () => {
+-  const { complaints, element } = drawing(<Button>Save</Button>);
++  let receivedRef: HTMLButtonElement | null = null;
++  const { complaints, element } = drawing(
++    <Button
++      ref={(node) => {
++        receivedRef = node;
++      }}
++    >
++      Save
++    </Button>,
++  );
+ 
+   expect(complaints).toEqual([]);
+   expect(element.tagName).toBe("BUTTON");
++  expect(receivedRef).toBe(element);
+   expect(element.getAttribute("type")).toBe("button");
+   expect(element.getAttribute("role")).toBeNull();
+ });
+ 
+-test("a button drawn as a link takes button semantics rather than `type`", () => {
++test("the public button keeps every variant and size while exposing the redesigned states", () => {
++  const variants = [
++    "default",
++    "outline",
++    "secondary",
++    "ghost",
++    "destructive",
++    "link",
++  ] as const;
++  const sizes = [
++    "default",
++    "xs",
++    "sm",
++    "lg",
++    "icon",
++    "icon-xs",
++    "icon-sm",
++    "icon-lg",
++  ] as const;
++
++  for (const variant of variants) {
++    const { element } = drawing(<Button variant={variant}>Action</Button>);
++    expect(element.getAttribute("data-variant")).toBe(variant);
++    expect(element.className).toContain("focus-visible:outline-2");
++    expect(element.className).toContain("pointer-coarse:min-h-11");
++    cleanup();
++  }
++
++  for (const size of sizes) {
++    const { element } = drawing(<Button size={size}>Action</Button>);
++    expect(element.getAttribute("data-size")).toBe(size);
++    cleanup();
++  }
++
++  const { element: outline } = drawing(
++    <Button variant="outline">Cancel</Button>,
++  );
++  expect(outline.className).toContain("border-[var(--ob-control-border)]");
++  const { element: link } = drawing(<Button variant="link">Learn more</Button>);
++  expect(link.className).toContain("text-[var(--ob-accent-text)]");
++});
++
++test("public text fields retain their native props and use stable field state classes", () => {
++  const inputView = render(
++    <Input
++      aria-label="Email"
++      aria-invalid
++      type="email"
++      defaultValue="a@b.co"
++    />,
++  );
++  const input = inputView.getByRole("textbox", { name: "Email" });
++  expect((input as HTMLInputElement).type).toBe("email");
++  expect((input as HTMLInputElement).defaultValue).toBe("a@b.co");
++  expect(input.className).toContain("bg-[var(--ob-field-background)]");
++  expect(input.className).toContain("border-[var(--ob-control-border)]");
++  expect(input.className).toContain(
++    "aria-invalid:bg-[var(--ob-field-background)]",
++  );
++  inputView.unmount();
++
++  const textareaView = render(
++    <Textarea aria-label="Notes" defaultValue="draft" />,
++  );
++  const textarea = textareaView.getByRole("textbox", { name: "Notes" });
++  expect((textarea as HTMLTextAreaElement).defaultValue).toBe("draft");
++  expect(textarea.className).toContain("min-h-24");
++  expect(textarea.className).toContain("focus-visible:outline-2");
++});
++
++/**
++ * The app's call sites say `disabled`; React Aria says `isDisabled`. The adapter owns that mapping,
++ * and `disabled` must never be forwarded as an unknown prop.
++ */
++test("`disabled` maps to React Aria's `isDisabled`", () => {
++  const { element } = drawing(<Button disabled>Save</Button>);
++
++  expect(element.tagName).toBe("BUTTON");
++  expect((element as HTMLButtonElement).disabled).toBe(true);
++  expect(element.hasAttribute("isDisabled")).toBe(false);
++  expect(element.hasAttribute("isdisabled")).toBe(false);
++});
++
++/**
++ * The compatibility bridge for call sites that still pass `render={<Link />}`: the element becomes
++ * a React Aria render function, its own props survive, and its class/handlers merge with the
++ * button's rather than replacing them.
++ */
++test("a render element keeps its own props and the button plumbing", () => {
++  const fired: string[] = [];
+   const { complaints, element } = drawing(
+-    <Button render={<a href="/settings" />}>Settings</Button>,
++    <Button
++      className="tracking-wide"
++      onDoubleClick={() => fired.push("button")}
++      render={
++        <a
++          className="uppercase"
++          href="/settings"
++          onDoubleClick={() => fired.push("link")}
++        />
++      }
++    >
++      Settings
++    </Button>,
+   );
+ 
+   expect(complaints).toEqual([]);
+   expect(element.tagName).toBe("A");
+-  expect(element.getAttribute("role")).toBe("button");
+-  expect(element.getAttribute("type")).toBeNull();
++  expect(element.getAttribute("href")).toBe("/settings");
++  // React Aria expects the render target to be the button it replaces; an anchor stays an anchor
++  // (no button role), which is exactly why link buttons move to `ButtonLink`.
++  expect(element.getAttribute("role")).toBeNull();
++  expect(element.className).toContain("tracking-wide");
++  expect(element.className).toContain("uppercase");
++
++  fireEvent.doubleClick(element);
++  expect(fired).toEqual(["button", "link"]);
+ });
+ 
+ /**
+- * The shape `PageShell`'s back button and the sidebar's links use: a function, because a router
+- * `Link` takes its own props alongside the ones Base UI merges in.
++ * React Aria's own function form still works. The cast is only for the DOM prop types: `render`
++ * hands a function the props it would have given the `<button>`, and the test draws an anchor.
+  */
+-test("a button drawn as a link through the function form does the same", () => {
++test("a render function still draws the element it returns", () => {
+   const { complaints, element } = drawing(
+-    <Button render={(props) => <a href="/agents" {...props} />}>Agents</Button>,
++    <Button
++      render={(props) => (
++        <a href="/agents" {...(props as ComponentPropsWithoutRef<"a">)} />
++      )}
++    >
++      Agents
++    </Button>,
+   );
+ 
+   expect(complaints).toEqual([]);
+   expect(element.tagName).toBe("A");
+-  expect(element.getAttribute("role")).toBe("button");
++  expect(element.getAttribute("href")).toBe("/agents");
++  expect(element.getAttribute("role")).toBeNull();
+ });
+ 
+-/**
+- * `render` that draws a real button is the case the default cannot see, so a call site says so —
+- * `combobox.tsx` is the one that does.
+- */
+-test("a call site drawing a real button can say so", () => {
++test("a call site drawing a real button can still say so", () => {
+   const { complaints, element } = drawing(
+     <Button nativeButton render={<button type="button" />}>
+       Open
+@@ -86,3 +218,58 @@ test("a call site drawing a real button can say so", () => {
+   expect(element.tagName).toBe("BUTTON");
+   expect(element.getAttribute("role")).toBeNull();
+ });
++
++/**
++ * `ButtonLink` is the destination for every router link button: a real anchor with the button
++ * classes, no button role, and nothing nested.
++ */
++test("ButtonLink draws a real anchor for a router route", async () => {
++  const router = createRouter({
++    history: createMemoryHistory({ initialEntries: ["/"] }),
++    routeTree: createRootRoute({
++      component: () => (
++        <ButtonLink to="/" variant="outline">
++          Agents
++        </ButtonLink>
++      ),
++    }),
++  });
++  await router.load();
++
++  const { container } = render(
++    <RouterContextProvider router={router as never}>
++      <ButtonLink to="/" variant="outline">
++        Agents
++      </ButtonLink>
++    </RouterContextProvider>,
++  );
++
++  const link = await waitFor(() => {
++    const anchor = container.querySelector("a");
++    expect(anchor).not.toBeNull();
++    return anchor as HTMLAnchorElement;
++  });
++
++  expect(link.tagName).toBe("A");
++  expect(link.getAttribute("href")).toBe("/");
++  expect(link.getAttribute("role")).toBeNull();
++  expect(link.querySelector("button")).toBeNull();
++  expect(link.querySelector("a")).toBeNull();
++  expect(link.className).toContain("border-[var(--ob-control-border)]");
++});
++
++test("ButtonLink treats `href` as an external anchor", () => {
++  const { container } = render(
++    <ButtonLink href="https://example.com/docs" target="_blank">
++      Docs
++    </ButtonLink>,
++  );
++
++  const link = container.firstElementChild as HTMLAnchorElement;
++  expect(link.tagName).toBe("A");
++  expect(link.getAttribute("href")).toBe("https://example.com/docs");
++  expect(link.getAttribute("target")).toBe("_blank");
++  expect(link.getAttribute("role")).toBeNull();
++  expect(link.querySelector("button")).toBeNull();
++  expect(link.querySelector("a")).toBeNull();
++});

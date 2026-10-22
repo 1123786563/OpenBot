@@ -5,6 +5,13 @@ import { useTranslation } from "react-i18next";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import {
   type Demonstration,
@@ -49,6 +56,13 @@ const SCHEDULES = [
   { label: "demonstration.schedules.mondayAt9", cron: "0 9 * * 1" },
   { label: "demonstration.schedules.everyHour", cron: "0 * * * *" },
 ] as const;
+
+/**
+ * BASE's own `<option value="">`: the schedule reports in this Bot's only conversation. The empty
+ * string is the state itself (the schedule payload omits `channelId` for it), and the item stays
+ * in the list so a channel can be un-picked — the select is a two-way choice, not a placeholder.
+ */
+const ONLY_CONVERSATION = "";
 
 /** Save the demonstrated path as a routine that reruns the published skill. */
 function ScheduleSkill({
@@ -107,19 +121,29 @@ function ScheduleSkill({
     >
       <label htmlFor={`${id}-when`} className="grid gap-1">
         {t("demonstration.whenItRuns", { timezone })}
-        <select
-          id={`${id}-when`}
-          className="h-8 rounded-md border bg-background px-2"
+        <Select
+          onValueChange={(value) => {
+            // The null guard is the migration contract (H05/H06): React Aria reports an empty
+            // selection as null, and the draft keeps its previous schedule rather than a
+            // stringified absence.
+            if (value !== null) setCron(value);
+          }}
           value={cron}
-          onChange={(event) => setCron(event.target.value)}
         >
-          {SCHEDULES.map((option) => (
-            <option key={option.cron} value={option.cron}>
-              {t(option.label)}
-            </option>
-          ))}
-          <option value="custom">{t("demonstration.customCron")}</option>
-        </select>
+          <SelectTrigger className="w-full" id={`${id}-when`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SCHEDULES.map((option) => (
+              <SelectItem key={option.cron} value={option.cron}>
+                {t(option.label)}
+              </SelectItem>
+            ))}
+            <SelectItem value="custom">
+              {t("demonstration.customCron")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </label>
       {cron === "custom" && (
         <label htmlFor={`${id}-cron`} className="grid gap-1">
@@ -136,19 +160,37 @@ function ScheduleSkill({
       )}
       <label htmlFor={`${id}-channel`} className="grid gap-1">
         {t("demonstration.reportIn")}
-        <select
-          id={`${id}-channel`}
-          className="h-8 rounded-md border bg-background px-2"
+        <Select
+          items={{
+            [ONLY_CONVERSATION]: t("demonstration.onlyConversation"),
+            ...Object.fromEntries(
+              botChannels.map((channel) => [channel.id, channel.name]),
+            ),
+          }}
+          onValueChange={(value) => {
+            // The H05/H06 null guard means one thing only: closing the list without choosing
+            // keeps the schedule as it was. "" is not that — it is BASE's own
+            // `<option value="">` ("report in this Bot's only conversation"), a real item that
+            // stays selectable after a channel was picked, so the choice remains two-way.
+            if (value === null) return;
+            setChannelId(value);
+          }}
           value={channelId}
-          onChange={(event) => setChannelId(event.target.value)}
         >
-          <option value="">{t("demonstration.onlyConversation")}</option>
-          {botChannels.map((channel) => (
-            <option key={channel.id} value={channel.id}>
-              {channel.name}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full" id={`${id}-channel`}>
+            <SelectValue placeholder={t("demonstration.onlyConversation")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ONLY_CONVERSATION}>
+              {t("demonstration.onlyConversation")}
+            </SelectItem>
+            {botChannels.map((channel) => (
+              <SelectItem key={channel.id} value={channel.id}>
+                {channel.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </label>
       <label htmlFor={`${id}-inputs`} className="grid gap-1">
         {t("demonstration.inputsLabel")}

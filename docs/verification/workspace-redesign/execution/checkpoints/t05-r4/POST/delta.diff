@@ -1,0 +1,46 @@
+--- docs/verification/workspace-redesign/execution/checkpoints/t05-r4/PRE/files/app/tests/bot-reaching-you.test.tsx	2026-10-21 02:16:51
++++ docs/verification/workspace-redesign/execution/checkpoints/t05-r4/POST/files/app/tests/bot-reaching-you.test.tsx	2026-10-21 02:17:49
+@@ -297,19 +297,34 @@
+ 
+ test("a pending SMS challenge stays with its conversation while switching A to B to A", async () => {
+   serving(true);
+-  sessionStorage.setItem(
+-    "openbot.reachability.pendingSms",
+-    JSON.stringify({
+-      version: 1,
+-      challengeId: "challenge-1",
+-      agentId: "expenses",
+-      channelId: "channel-expenses",
+-    }),
+-  );
+   const view = draw();
+   await view.findByRole("button", { name: "Disconnect" });
+   const user = userEvent.setup({ document });
+   await user.click(view.getByRole("button", { name: /^Connect a phone/ }));
++  await chooseConversation(view, user, "Finance desk");
++  await user.type(view.getByLabelText("Phone number"), "+15551234567");
++  await user.click(
++    view.getByRole("button", { name: "Send verification code" }),
++  );
++  await waitFor(() =>
++    expect(writes).toContainEqual({
++      request: "POST /api/delivery/sms/start",
++      body: {
++        channelId: "channel-expenses",
++        agentId: "expenses",
++        phone: "+15551234567",
++      },
++    }),
++  );
++  expect(
++    JSON.parse(sessionStorage.getItem("openbot.reachability.pendingSms")!),
++  ).toEqual({
++    version: 1,
++    challengeId: "challenge-1",
++    agentId: "expenses",
++    channelId: "channel-expenses",
++  });
++
+   const chooser = view.getByRole("button", { name: /^Conversation/ });
+   expect(chooser.textContent).toMatch(/Finance desk/);
+   expect(view.getByLabelText("Verification code")).toBeTruthy();

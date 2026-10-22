@@ -139,7 +139,7 @@ function ComputersPage() {
           />
         </p>
       ) : isolation === "per-bot" ? (
-        <p className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-muted-foreground text-sm">
+        <p className="mt-4 rounded-md border border-border bg-ob-muted-surface/40 px-3 py-2 text-muted-foreground text-sm">
           {t("computers.isolation.perBot")}
         </p>
       ) : null}

@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   describeApproval,
   type SharedUseApproval,
@@ -69,16 +70,17 @@ export function SharedApprovalFields({
           {option.label}
         </label>
       ))}
-      <label className="flex items-center gap-2">
-        <input
-          checked={value.outsideInput}
-          onChange={(event) =>
-            onChange({ ...value, outsideInput: event.target.checked })
-          }
-          type="checkbox"
-        />
+      {/* The app checkbox, not a bare input: the same RAC base as the sign-in form
+          remember-me, so pointer, keyboard and the hidden input stay one path. */}
+      <Checkbox
+        checked={value.outsideInput}
+        className="text-sm"
+        onCheckedChange={(checked) =>
+          onChange({ ...value, outsideInput: checked })
+        }
+      >
         {t("sharedApproval.outsideInput")}
-      </label>
+      </Checkbox>
     </fieldset>
   );
 }

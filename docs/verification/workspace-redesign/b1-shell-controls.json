@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-21",
+  "page": "P01 shell",
+  "identity": "disposable tmpfs admin",
+  "start": {
+    "stored": null,
+    "states": [
+      "expanded"
+    ]
+  },
+  "collapsed": {
+    "stored": "collapsed",
+    "states": [
+      "collapsed"
+    ],
+    "toggleVisible": 1
+  },
+  "expanded": {
+    "stored": "expanded",
+    "states": [
+      "expanded"
+    ]
+  },
+  "afterResize": {
+    "stored": "expanded",
+    "states": [
+      "expanded"
+    ]
+  },
+  "afterReload": {
+    "stored": "expanded",
+    "states": [
+      "expanded"
+    ]
+  },
+  "mobile": {
+    "toggle": 1,
+    "open": 1,
+    "noOverflow": true,
+    "closed": true,
+    "focusReturned": true
+  }
+}

@@ -120,6 +120,7 @@ export function ObservationExperimentComparisonPage({
       }}
       description={t("page.description")}
       title={t("comparison.untitled")}
+      width="wide"
     >
       {children}
     </PageShell>

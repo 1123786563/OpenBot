@@ -4,6 +4,13 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   createWorkshopShare,
   revokeWorkshopShare,
   type WorkshopShareScope,
@@ -88,37 +95,63 @@ export function WorkshopShareView({
           >
             {t("share.scopeLabel")}
           </label>
-          <select
-            id="share-scope"
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          <Select
             value={scope}
-            onChange={(event) =>
-              setScope(event.target.value as WorkshopShareScope)
-            }
+            onValueChange={(value) => {
+              // The null guard is the migration contract (H05/H06/H10): React Aria reports an
+              // empty selection as null, and the mint form keeps its previous scope rather
+              // than a stringified absence.
+              if (value !== null) setScope(value);
+            }}
             disabled={create.isPending}
           >
-            <option value="preview">{t("share.scope.preview")}</option>
-            <option value="preview_download">
-              {t("share.scope.previewDownload")}
-            </option>
-          </select>
+            <SelectTrigger id="share-scope" size="sm" className="h-8 text-xs">
+              <SelectValue>
+                {scope === "preview"
+                  ? t("share.scope.preview")
+                  : t("share.scope.previewDownload")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="preview">
+                {t("share.scope.preview")}
+              </SelectItem>
+              <SelectItem value="preview_download">
+                {t("share.scope.previewDownload")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <label
             className="ml-2 text-xs text-muted-foreground"
             htmlFor="share-days"
           >
             {t("share.daysLabel")}
           </label>
-          <select
-            id="share-days"
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          <Select
             value={days}
-            onChange={(event) => setDays(Number(event.target.value))}
+            onValueChange={(value) => {
+              // Null guard as above, and the days are NUMBER keys: ui/select keeps the
+              // domain value round-trip exact (7/30/0 — 0 is "never expires"), so the
+              // native select's Number(event.target.value) stringify is gone, not kept.
+              if (value !== null) setDays(value);
+            }}
             disabled={create.isPending}
           >
-            <option value={7}>{t("share.days.7")}</option>
-            <option value={30}>{t("share.days.30")}</option>
-            <option value={0}>{t("share.days.forever")}</option>
-          </select>
+            <SelectTrigger id="share-days" size="sm" className="h-8 text-xs">
+              <SelectValue>
+                {days === 7
+                  ? t("share.days.7")
+                  : days === 30
+                    ? t("share.days.30")
+                    : t("share.days.forever")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={7}>{t("share.days.7")}</SelectItem>
+              <SelectItem value={30}>{t("share.days.30")}</SelectItem>
+              <SelectItem value={0}>{t("share.days.forever")}</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             size="sm"
             variant="outline"
@@ -147,7 +180,7 @@ export function WorkshopShareView({
             {t("share.minted.once")}
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded bg-muted/60 px-2 py-1 text-xs">
+            <code className="min-w-0 flex-1 truncate rounded bg-ob-muted-surface/60 px-2 py-1 text-xs">
               {minted.shareUrl}
             </code>
             <Button

@@ -252,9 +252,40 @@ function StepNode({ node }: { node: StepNodeModel }) {
             {meta.join(" · ")}
           </ItemDescription>
           {summary !== null ? (
-            // The payload preview is a summary, so it clamps; the record keeps the whole.
             <ItemDescription>{summary}</ItemDescription>
           ) : null}
+          {(() => {
+            const inputText =
+              step.input == null
+                ? null
+                : projectedValueText(step.input, t("marker.truncated"));
+            const outputText =
+              step.output == null
+                ? null
+                : projectedValueText(step.output, t("marker.truncated"));
+            const hasPayload = inputText !== null || outputText !== null;
+            const payload = [inputText, outputText]
+              .filter((value): value is string => value !== null)
+              .map((value) =>
+                value.length === 0 ? t("detail.steps.emptyValue") : value,
+              )
+              .join("\n");
+            return hasPayload ? (
+              <details className="mt-2 text-sm">
+                <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
+                  {t("detail.steps.showPayload")}
+                </summary>
+                <section
+                  aria-label={t("detail.steps.payloadRegion")}
+                  className="mt-2 max-w-full overflow-x-auto rounded-md border p-3"
+                >
+                  <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                    {payload}
+                  </pre>
+                </section>
+              </details>
+            ) : null;
+          })()}
         </ItemContent>
         <ItemActions>
           <span className="text-muted-foreground text-xs">

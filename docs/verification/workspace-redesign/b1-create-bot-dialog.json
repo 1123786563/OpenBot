@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-21",
+  "identity": "disposable tmpfs admin",
+  "dataSaved": false,
+  "results": [
+    {
+      "theme": "light",
+      "viewport": "390x844",
+      "steps": [
+        {
+          "step": "1",
+          "background": "rgb(255, 255, 255)",
+          "foreground": "rgb(25, 33, 49)",
+          "selectMenuCount": 0,
+          "radioCount": 0
+        },
+        {
+          "step": "1",
+          "background": "rgb(255, 255, 255)",
+          "foreground": "rgb(25, 33, 49)",
+          "selectMenuCount": 0,
+          "radioCount": 2
+        },
+        {
+          "step": "1",
+          "background": "rgb(255, 255, 255)",
+          "foreground": "rgb(25, 33, 49)",
+          "selectMenuCount": 0,
+          "radioCount": 2
+        }
+      ],
+      "escapeClosed": true,
+      "focusReturned": true,
+      "noOverflow": true
+    },
+    {
+      "theme": "dark",
+      "viewport": "390x844",
+      "steps": [
+        {
+          "step": "1",
+          "background": "rgb(36, 43, 56)",
+          "foreground": "rgb(235, 239, 247)",
+          "selectMenuCount": 0,
+          "radioCount": 0
+        },
+        {
+          "step": "1",
+          "background": "rgb(36, 43, 56)",
+          "foreground": "rgb(235, 239, 247)",
+          "selectMenuCount": 0,
+          "radioCount": 2
+        },
+        {
+          "step": "1",
+          "background": "rgb(36, 43, 56)",
+          "foreground": "rgb(235, 239, 247)",
+          "selectMenuCount": 0,
+          "radioCount": 2
+        }
+      ],
+      "escapeClosed": true,
+      "focusReturned": true,
+      "noOverflow": true
+    }
+  ]
+}

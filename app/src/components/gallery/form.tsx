@@ -3,6 +3,13 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { Badge, GalleryFrame } from "./frame";
@@ -218,7 +225,14 @@ function FormEntry({
     setErrors(problems);
     if (problems.size) {
       const firstId = problems.keys().next().value;
-      const control = firstId ? form.elements.namedItem(firstId) : null;
+      /*
+       * Every control the form draws carries the field's id — the select's trigger included, which
+       * a form-elements lookup cannot reach now that the select is a React Aria Select and draws
+       * no named element inside the form.
+       */
+      const control = firstId
+        ? document.getElementById(`${prefix}-${firstId}`)
+        : null;
       if (control instanceof HTMLElement) control.focus();
       return;
     }
@@ -333,18 +347,34 @@ function FormEntry({
                     onChange={(event) => change(event.target.value)}
                   />
                 ) : field.type === "select" ? (
-                  <select
-                    {...shared}
-                    className="h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
-                    onChange={(event) => change(event.target.value)}
+                  <Select
+                    disabled={sending || !respond}
+                    onValueChange={(value) => {
+                      // null is Select's "no selection" (dismissed popover); keep the held answer.
+                      if (value === null) return;
+                      change(value);
+                    }}
+                    required={field.required}
+                    value={values.get(field.id) || null}
                   >
-                    <option value="">{t("gallery.form.chooseOption")}</option>
-                    {field.options?.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger
+                      aria-describedby={shared["aria-describedby"]}
+                      aria-invalid={Boolean(error)}
+                      className="w-full"
+                      id={id}
+                    >
+                      <SelectValue
+                        placeholder={t("gallery.form.chooseOption")}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {field.options?.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : (
                   <Input
                     {...shared}

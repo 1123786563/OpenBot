@@ -1,0 +1,10 @@
+{
+  "date": "2026-10-21",
+  "route": "/bots/agent_f56d8533-8866-4872-9d62-120fd9eaf9c4/access",
+  "role": "non-admin account, not owner of private fixture",
+  "finalUrl": "http://127.0.0.1:3011/bots/agent_f56d8533-8866-4872-9d62-120fd9eaf9c4/access",
+  "body": "Skip to content\n\nSelf-host OpenBot for your organization.\n\nTalk to an engineer\nBot\nSkills and access\n\nThe skills, apps and other Bots this Bot may use.\n\nThis Bot is not one you can reach.",
+  "botNameVisible": false,
+  "documentOverflow": false,
+  "blockedNonGetRequests": 2
+}

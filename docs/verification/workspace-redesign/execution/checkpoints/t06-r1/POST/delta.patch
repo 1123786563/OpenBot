@@ -1,0 +1,391 @@
+--- PRE/app/src/components/bot-profile/bot-subpage.tsx
++++ POST/app/src/components/bot-profile/bot-subpage.tsx
+@@ -15,11 +15,13 @@
+   title,
+   description,
+   children,
++  width = "prose",
+ }: {
+   agentId: string;
+   title: string;
+   description: string;
+   children: (agent: AgentProfile) => React.ReactNode;
++  width?: "prose" | "wide";
+ }) {
+   const { t } = useTranslation("agents");
+   const agent = useQuery(agentQueryOptions(agentId));
+@@ -32,6 +34,7 @@
+       }}
+       description={description}
+       title={title}
++      width={width}
+     >
+       {!agentData && !agent.isPending ? (
+         <p className="mt-6 text-destructive text-sm" role="alert">
+--- PRE/app/src/components/ai-observability/runs-list.tsx
++++ POST/app/src/components/ai-observability/runs-list.tsx
+@@ -406,6 +406,7 @@
+   const { t } = useTranslation("ai-observability-runs");
+   return (
+     <BotSubpage
++      width="wide"
+       agentId={agentId}
+       description={t("page.description")}
+       title={t("page.title")}
+--- PRE/app/src/components/ai-observability/run-detail.tsx
++++ POST/app/src/components/ai-observability/run-detail.tsx
+@@ -327,6 +327,7 @@
+   const { t } = useTranslation("ai-observability-runs");
+   return (
+     <BotSubpage
++      width="wide"
+       agentId={agentId}
+       description={t("detail.description")}
+       title={t("detail.title")}
+--- PRE/app/src/components/ai-observability/run-steps.tsx
++++ POST/app/src/components/ai-observability/run-steps.tsx
+@@ -252,9 +252,30 @@
+             {meta.join(" · ")}
+           </ItemDescription>
+           {summary !== null ? (
+-            // The payload preview is a summary, so it clamps; the record keeps the whole.
+             <ItemDescription>{summary}</ItemDescription>
+           ) : null}
++          <details className="mt-2 text-sm">
++            <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
++              {t("detail.steps.showPayload")}
++            </summary>
++            <section
++              aria-label={t("detail.steps.payloadRegion")}
++              className="mt-2 max-w-full overflow-x-auto rounded-md border p-3"
++            >
++              <pre className="whitespace-pre-wrap break-words font-mono text-xs">
++                {[
++                  step.input === undefined
++                    ? null
++                    : projectedValueText(step.input, t("marker.truncated")),
++                  step.output === undefined
++                    ? null
++                    : projectedValueText(step.output, t("marker.truncated")),
++                ]
++                  .filter((value): value is string => value !== null)
++                  .join("\n")}
++              </pre>
++            </section>
++          </details>
+         </ItemContent>
+         <ItemActions>
+           <span className="text-muted-foreground text-xs">
+--- PRE/app/src/components/ai-observability/evaluations-page.tsx
++++ POST/app/src/components/ai-observability/evaluations-page.tsx
+@@ -15,6 +15,7 @@
+   const { t } = useTranslation("ai-observability-evaluations");
+   return (
+     <BotSubpage
++      width="wide"
+       agentId={agentId}
+       description={t("page.description")}
+       title={t("page.title")}
+--- PRE/app/src/components/ai-observability/experiment-results.tsx
++++ POST/app/src/components/ai-observability/experiment-results.tsx
+@@ -380,20 +380,30 @@
+           </ItemTitle>
+           <ItemDescription className="line-clamp-none">
+             {/* A missing score is its own fact — unavailable, never a masked zero. */}
+-            {score === null
+-              ? reasonText
+-              : [score.toFixed(2), reasonText].join(" · ")}
++            {score === null ? t("sample.scoreUnavailable") : score.toFixed(2)}
+           </ItemDescription>
+-          {judgeText === null ? null : (
+-            <ItemDescription className="line-clamp-none">
+-              {judgeText}
+-            </ItemDescription>
+-          )}
+-          {sample.usage === null || sample.usage === undefined ? null : (
+-            <ItemDescription className="line-clamp-none">
+-              {`${t("sample.usage")}: ${JSON.stringify(sample.usage)}`}
+-            </ItemDescription>
+-          )}
++          <details className="mt-2 text-sm">
++            <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
++              {t("sample.showDetails")}
++            </summary>
++            <div className="mt-2 space-y-1">
++              <ItemDescription className="line-clamp-none">
++                {reasonText}
++              </ItemDescription>
++              {judgeText === null ? null : (
++                <ItemDescription className="line-clamp-none">
++                  {judgeText}
++                </ItemDescription>
++              )}
++              {sample.usage === null || sample.usage === undefined ? (
++                <ItemDescription className="line-clamp-none">
++                  {t("sample.usageUnavailable")}
++                </ItemDescription>
++              ) : (
++                <ItemDescription className="line-clamp-none">{`${t("sample.usage")}: ${JSON.stringify(sample.usage)}`}</ItemDescription>
++              )}
++            </div>
++          </details>
+         </ItemContent>
+       </Item>
+     </>
+--- PRE/app/src/components/ai-observability/exports-status.tsx
++++ POST/app/src/components/ai-observability/exports-status.tsx
+@@ -66,6 +66,7 @@
+   const { t } = useTranslation("ai-observability-admin");
+   return (
+     <BotSubpage
++      width="wide"
+       agentId={agentId}
+       description={t("exports.page.description")}
+       title={t("exports.page.title")}
+@@ -199,13 +200,18 @@
+               .join(" · ")}
+           </ItemDescription>
+           {job.state === "failed" && job.errorCode !== null ? (
+-            <ItemDescription className="line-clamp-none">
+-              {job.errorCode === "CAPABILITY_MISSING"
+-                ? t("availability.disabled.description")
+-                : t(`exports.errorCodes.${job.errorCode}`, {
+-                    defaultValue: job.errorCode,
+-                  })}
+-            </ItemDescription>
++            <details className="mt-2 text-sm">
++              <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
++                {t("exports.showError", { ns: "ai-observability-evaluations" })}
++              </summary>
++              <ItemDescription className="mt-2 line-clamp-none">
++                {job.errorCode === "CAPABILITY_MISSING"
++                  ? t("availability.disabled.description")
++                  : t(`exports.errorCodes.${job.errorCode}`, {
++                      defaultValue: job.errorCode,
++                    })}
++              </ItemDescription>
++            </details>
+           ) : null}
+         </ItemContent>
+         <ItemActions>
+--- PRE/app/src/routes/_authed/_app/bots.$agentId.exports.tsx
++++ POST/app/src/routes/_authed/_app/bots.$agentId.exports.tsx
+@@ -1,5 +1,6 @@
+ import { createFileRoute } from "@tanstack/react-router";
+ import { ObservationExportsPage } from "@/components/ai-observability/exports-status";
++import { requireBotObservabilityAccess } from "@/lib/observability/route-guard";
+ 
+ /**
+  * The creator's export status page (#42): this Bot's export jobs and the file each
+@@ -8,6 +9,8 @@
+  * every load, so a typed-in address to someone else's Bot answers forbidden.
+  */
+ export const Route = createFileRoute("/_authed/_app/bots/$agentId/exports")({
++  beforeLoad: ({ context, params }) =>
++    requireBotObservabilityAccess(context.queryClient, params.agentId),
+   component: ExportsPage,
+ });
+ 
+--- PRE/app/src/locales/en/ai-observability-runs.json
++++ POST/app/src/locales/en/ai-observability-runs.json
+@@ -84,6 +84,8 @@
+     },
+     "metadataEmpty": "No metadata was projected for this run.",
+     "steps": {
++      "showPayload": "Show recorded content",
++      "payloadRegion": "Recorded step content",
+       "kind": {
+         "model": "Model call",
+         "tool": "Tool call",
+--- PRE/app/src/locales/zh-CN/ai-observability-runs.json
++++ POST/app/src/locales/zh-CN/ai-observability-runs.json
+@@ -84,6 +84,8 @@
+     },
+     "metadataEmpty": "该运行没有可投影的元数据。",
+     "steps": {
++      "showPayload": "查看记录内容",
++      "payloadRegion": "记录步骤内容",
+       "kind": {
+         "model": "模型调用",
+         "tool": "工具调用",
+--- PRE/app/src/locales/en/ai-observability-evaluations.json
++++ POST/app/src/locales/en/ai-observability-evaluations.json
+@@ -112,6 +112,7 @@
+     "pending_reconciliation": "Awaiting reconciliation",
+     "sync_failure": "Result sync failure"
+   },
++  "exports": { "showError": "Show failure detail" },
+   "sample": {
+     "scoreUnavailable": "Score unavailable",
+     "passedRules_one": "{{count}} rule passed",
+@@ -119,6 +120,8 @@
+     "failedRules_one": "{{count}} rule failed",
+     "failedRules_other": "{{count}} rules failed",
+     "usage": "Usage",
++    "usageUnavailable": "Usage unavailable",
++    "showDetails": "Show details",
+     "judgeScored": "Judge {{score}}",
+     "judgeFailed": "Judge failed"
+   },
+--- PRE/app/src/locales/zh-CN/ai-observability-evaluations.json
++++ POST/app/src/locales/zh-CN/ai-observability-evaluations.json
+@@ -112,6 +112,7 @@
+     "pending_reconciliation": "等待对账",
+     "sync_failure": "结果同步故障"
+   },
++  "exports": { "showError": "查看失败详情" },
+   "sample": {
+     "scoreUnavailable": "无评分",
+     "passedRules_one": "{{count}} 条规则通过",
+--- PRE/app/tests/ai-observability-run-steps.test.tsx
++++ POST/app/tests/ai-observability-run-steps.test.tsx
+@@ -1,5 +1,4 @@
+ import "./preload";
+-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import {
+@@ -9,12 +8,21 @@
+   createRouter,
+   RouterProvider,
+ } from "@tanstack/react-router";
+-import { cleanup, render, waitFor } from "@testing-library/react";
++import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+ import type {
+   RunDetailResult,
+   RunStep,
+   RunUsageReport,
+ } from "../../shared/ai-observability-runs";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  beforeEach,
++  describe,
++  expect,
++  test,
++} from "../../tests/support/bun-test-compat";
+ import { ObservationRunDetailPage } from "../src/components/ai-observability/run-detail";
+ // English copy: the i18n bundles initialize on import, so assertions see real sentences.
+ import "@/lib/i18n";
+@@ -534,6 +542,13 @@
+     const view = draw();
+     await waitFor(() => expect(pageText(view)).toContain("partial"));
+     expect(pageText(view)).toContain("Truncated");
++    const disclosure = view
++      .getByText("Show recorded content")
++      .closest("details");
++    expect(disclosure?.open).toBe(false);
++    fireEvent.click(view.getByText("Show recorded content"));
++    expect(disclosure?.open).toBe(true);
++    expect(disclosure?.textContent).toContain("partial · Truncated");
+   });
+ });
+ 
+--- PRE/app/tests/ai-observability-experiments.test.tsx
++++ POST/app/tests/ai-observability-experiments.test.tsx
+@@ -1,5 +1,4 @@
+ import "./preload";
+-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
+ import { QueryClientProvider } from "@tanstack/react-query";
+ import {
+@@ -16,6 +15,15 @@
+   ExperimentSubmitInput,
+   SubmittedExperimentResult,
+ } from "../../shared/ai-observability-experiments";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  beforeEach,
++  describe,
++  expect,
++  test,
++} from "../../tests/support/bun-test-compat";
+ import { ObservationEvaluationsPage } from "../src/components/ai-observability/evaluations-page";
+ import { ObservationExperimentResultsPage } from "../src/components/ai-observability/experiment-results";
+ // English copy: the i18n bundles initialize on import, so assertions see real sentences.
+@@ -451,6 +459,24 @@
+   return { user, dialog };
+ }
+ 
++describe("dataset read availability (P19)", () => {
++  test("a dataset read failure is unavailable and offers no submit action", async () => {
++    listHandler = () => new Response(null, { status: 502 });
++    const view = draw();
++    await view.findAllByText("Upstream unavailable");
++    expect(view.queryByRole("dialog")).toBeNull();
++  });
++
++  test("an empty dataset list keeps the empty state", async () => {
++    listHandler = () => Response.json(datasetsBody([]));
++    const view = draw();
++    await view.findByText(
++      "Pick a frozen dataset version and a Bot configuration to submit the first experiment.",
++    );
++    expect(view.queryByRole("dialog")).toBeNull();
++  });
++});
++
+ describe("submitting an experiment freezes the T22 contract (acceptance 1)", () => {
+   test("the dialog offers this Bot's datasets and frozen versions, and submits the seven-field configuration", async () => {
+     listHandler = () => Response.json(datasetsBody([datasetRow()]));
+@@ -753,7 +779,14 @@
+       });
+     const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+     await waitFor(() => expect(pageText(view)).toContain("Judge 0.82"));
+-    expect(pageText(view)).toContain("It agrees with the reference answer.");
++    const disclosure = view.getAllByText("Show details")[0]?.closest("details");
++    expect(disclosure?.open).toBe(false);
++    const user = userEvent.setup({ document: view.container.ownerDocument });
++    await user.click(view.getAllByText("Show details")[0]!);
++    expect(disclosure?.open).toBe(true);
++    expect(disclosure?.textContent).toContain(
++      "It agrees with the reference answer.",
++    );
+   });
+ 
+   test("a failed judge record renders its own code, never a guessed score (T27-rn L-3)", async () => {
+--- PRE/app/tests/ai-observability-exports.test.tsx
++++ POST/app/tests/ai-observability-exports.test.tsx
+@@ -8,7 +8,13 @@
+   createRouter,
+   RouterProvider,
+ } from "@tanstack/react-router";
+-import { cleanup, configure, render, waitFor } from "@testing-library/react";
++import {
++  cleanup,
++  configure,
++  fireEvent,
++  render,
++  waitFor,
++} from "@testing-library/react";
+ import userEvent from "@testing-library/user-event";
+ import type {
+   ExportJobListItem,
+@@ -442,9 +448,11 @@
+       );
+     const view = draw();
+     await view.findByText("Failed");
+-    expect(pageText(view)).toContain(
+-      "The observability store was too slow to answer.",
+-    );
++    const disclosure = view.getByText("Show failure detail").closest("details");
++    expect(disclosure?.open).toBe(false);
++    fireEvent.click(view.getByText("Show failure detail"));
++    expect(disclosure?.open).toBe(true);
++    expect(disclosure?.textContent).toContain("too slow to answer");
+     // A terminal job never completes, so its rows are not "pending" — the pending
+     // word is reserved for jobs that can still produce them (OCR round 1 medium).
+     expect(pageText(view)).not.toContain("rows pending");
+--- PRE/app/src/routes/_authed/_app/bots.$agentId.datasets.tsx
++++ POST/app/src/routes/_authed/_app/bots.$agentId.datasets.tsx
+@@ -21,6 +21,7 @@
+   return (
+     <BotSubpage
+       agentId={agentId}
++      width="wide"
+       description={t("page.description")}
+       title={t("page.title")}
+     >

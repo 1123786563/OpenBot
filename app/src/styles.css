@@ -1,168 +1,95 @@
+/*
+ * Layer order, declared before any import so it is fixed for the whole bundle:
+ *
+ *   theme, base, components, utilities  — Tailwind + HeroUI, in their own order
+ *   ob-tokens                          — OpenBot semantic values (`--ob-*`, both themes)
+ *   ob-theme                           — HeroUI's published variables mapped onto them
+ *   ob-legacy                          — the pre-migration shadcn names, deletion planned
+ *   ob-app                             — app-level rules that used to be unlayered
+ *
+ * App declarations sit in layers ABOVE Tailwind's utilities rather than in no layer at all. An
+ * unlayered rule outranks every layered one regardless of specificity, so an unlayered `input`
+ * selector silently defeats `.text-sm`; that exact bug is still explained below. Layer order is
+ * also why the theme bridge wins over HeroUI's `@layer base` defaults without `!important`.
+ */
+@layer theme,
+  base,
+  components,
+  utilities,
+  ob-tokens,
+  ob-theme,
+  ob-legacy,
+  ob-app;
+
 @import "tailwindcss";
+/*
+ * HeroUI, component by component.
+ *
+ * The full `@heroui/styles` entry ships every component's CSS (2.4 MB of source): it grew the
+ * main stylesheet from 41 KB to 78 KB gzip, 74% over the A09 budget. Only these eight components
+ * are HeroUI in H02; each later ticket adds its own imports as it migrates a wrapper. Shared
+ * primitives (theme variables, base, utilities, variants) are always required.
+ */
+@import "@heroui/styles/base" layer(base);
+@import "@heroui/styles/base/scrollbar.css";
+@import "@heroui/styles/themes/default";
+@import "@heroui/styles/components/button.css" layer(components);
+@import "@heroui/styles/components/checkbox.css" layer(components);
+@import "@heroui/styles/components/input.css" layer(components);
+@import "@heroui/styles/components/label.css" layer(components);
+@import "@heroui/styles/components/separator.css" layer(components);
+@import "@heroui/styles/components/skeleton.css" layer(components);
+@import "@heroui/styles/components/switch.css" layer(components);
+@import "@heroui/styles/components/textarea.css" layer(components);
+/* H03: overlay + collection components. Explicit layer so app utilities still win. */
+@import "@heroui/styles/components/modal.css" layer(components);
+@import "@heroui/styles/components/close-button.css" layer(components);
+@import "@heroui/styles/components/select.css" layer(components);
+@import "@heroui/styles/components/list-box.css" layer(components);
+@import "@heroui/styles/components/popover.css" layer(components);
+@import "@heroui/styles/components/combo-box.css" layer(components);
+@import "@heroui/styles/components/dropdown.css" layer(components);
+@import "@heroui/styles/components/menu.css" layer(components);
+@import "@heroui/styles/components/menu-item.css" layer(components);
+@import "@heroui/styles/components/menu-section.css" layer(components);
+@import "@heroui/styles/components/surface.css" layer(components);
+@import "@heroui/styles/components/tooltip.css" layer(components);
+@import "@heroui/styles/components/drawer.css" layer(components);
+@import "@heroui/styles/components/description.css" layer(components);
+@import "@heroui/styles/components/field-error.css" layer(components);
+@import "@heroui/styles/utilities";
+@import "@heroui/styles/variants";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-/* Composer chips/dropdown. Reads the shadcn tokens declared below, so it themes itself. */
-@import "prompt-area/tailwind.css";
 @import "@fontsource-variable/inter";
+
+@import "./styles/tokens.css";
+@import "./styles/heroui-theme.css";
+@import "./styles/legacy-ui-bridge.css";
 
 /*
  * Streamdown draws a Bot's prose, and Tailwind only ships classes it can see used. Its markup lives
  * in a dependency, so without this the transcript renders unstyled markdown — correct HTML with none
  * of the spacing that makes it readable. The path is relative to this file.
+ *
+ * Prompt Area is scanned directly for the same reason and for one more: the package's own
+ * `prompt-area/tailwind.css` preset also declares FALLBACK `:root` tokens. Importing it would put
+ * unlayered `--background`, `--primary` and friends back on the document, where they beat every
+ * layered OpenBot value. Its class scanning is the only part the app needs, so the `@source`
+ * replaces the preset and the token bridge in `styles/` stays authoritative.
  */
 @source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/prompt-area/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
 
-html {
-  font-size: 15px;
-}
-
-:root {
-  color-scheme: light;
-  /*
-   * WorkBuddy's own palette, extracted from its desktop bundle (renderer/assets/tokens-*.css) and
-   * confirmed against the running app: it is a WHITE-dominant application — near-white panes on a
-   * #f2f2f2 list ground, white cards raised by hairlines and a whisper of shadow, teal brand
-   * (#00c29a) reserved for identity marks, black-90 primary buttons, an 8px control radius. Token
-   * NAMES are unchanged from the shadcn contract so every existing utility keeps working.
-   *
-   * Layer map: --primary is the interactive layer (black buttons like WorkBuddy's own), --brand is
-   * the teal identity layer (unread dots, running marks, chart-1), and destructive/success stay
-   * semantic. WorkBuddy puts blue #1470b4 on hyperlinks and teal on brand text; OpenBot's "link"
-   * buttons are actions, so they ride --primary like WorkBuddy's own text buttons.
-   */
-  --background: #ffffff;
-  --foreground: #171717;
-  --card: #ffffff;
-  --card-foreground: #171717;
-  --popover: #ffffff;
-  --popover-foreground: #171717;
-  --primary: #171717;
-  --primary-foreground: #ffffff;
-  --secondary: #f2f2f2;
-  --secondary-foreground: #404040;
-  --muted: #f2f2f2;
-  --muted-foreground: #5c5c5c;
-  --accent: #f4f5f5;
-  --accent-foreground: #171717;
-  --destructive: #b42c3f;
-  --success: #0a7d47;
-  --brand: #00c29a;
-  /*
-   * The glyph on a brand-teal fill (checked checkbox/switch/radio thumbs). Ink, not white: white on
-   * #00c29a measures 2.29:1 (WCAG 1.4.11 fails at 3:1), ink measures 7.84:1. Same value in dark —
-   * ink on the lifted #3dd9b6 is 10.07:1.
-   */
-  --brand-foreground: #171717;
-  --border: #ebebeb;
-  --input: #d9d9d9;
-  --ring: #171717;
-  /*
-   * Chart colors sit ON the white card and carry data, so they must clear 3:1 (WCAG 1.4.11).
-   * The vivid brand-adjacent hues failed it (teal 2.29, green 2.44, orange 2.18); these are the
-   * same hues deepened to pass — teal #00987d 3.63:1, green #0c9455 3.90:1, orange #c96a00
-   * 3.79:1. `--brand` stays the vivid teal: an unread dot is an identity mark with an sr-only
-   * label, not a data series on white.
-   */
-  --chart-1: #00987d;
-  --chart-2: #4a90d9;
-  --chart-3: #0c9455;
-  --chart-4: #c96a00;
-  --chart-5: #9d7bfa;
-  --radius: 0.6rem;
-  --shadow-card: 0 4px 12px rgb(0 0 0 / 3%);
-  --sidebar: #f2f2f2;
-  --sidebar-foreground: #171717;
-  --sidebar-primary: #171717;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e6e6e6;
-  --sidebar-accent-foreground: #171717;
-  --sidebar-border: #e6e6e6;
-  --sidebar-ring: #171717;
-}
-
-.dark {
-  color-scheme: dark;
-  /*
-   * WorkBuddy dark: a near-black canvas (#141414 home secondary) with #1f1f1f panels and #242424
-   * cards, white primary buttons, and white at 10-16% for hairlines. Brand teal lifts to a mint
-   * tone to hold contrast against the dark ground, mirroring WorkBuddy's brand-3/brand-5 ladder.
-   */
-  --background: #141414;
-  --foreground: #f2f2f2;
-  --card: #222222;
-  --card-foreground: #f2f2f2;
-  --popover: #242424;
-  --popover-foreground: #f2f2f2;
-  --primary: #f5f5f5;
-  --primary-foreground: #171717;
-  --secondary: #2a2a2a;
-  --secondary-foreground: #f2f2f2;
-  --muted: #2a2a2a;
-  --muted-foreground: #a1a1a1;
-  --accent: #2f2f33;
-  --accent-foreground: #f2f2f2;
-  --destructive: #f09595;
-  --success: #5dcaa5;
-  --brand: #3dd9b6;
-  --brand-foreground: #171717;
-  --border: rgba(255, 255, 255, 0.12);
-  --input: rgba(255, 255, 255, 0.16);
-  --ring: #f5f5f5;
-  --chart-1: #3dd9b6;
-  --chart-2: #85b7eb;
-  --chart-3: #5dcaa5;
-  --chart-4: #ffa760;
-  --chart-5: #b79df5;
-  --shadow-card: 0 4px 12px rgb(0 0 0 / 20%);
-  --sidebar: #1f1f1f;
-  --sidebar-foreground: #f2f2f2;
-  --sidebar-primary: #f5f5f5;
-  --sidebar-primary-foreground: #171717;
-  --sidebar-accent: #333333;
-  --sidebar-accent-foreground: #f2f2f2;
-  --sidebar-border: rgba(255, 255, 255, 0.12);
-  --sidebar-ring: #f5f5f5;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  position: relative;
-  min-width: 20rem;
-  min-height: 100vh;
-  background: var(--background);
-  color: var(--foreground);
-  /*
-   * zh-CN is a first-class locale. Inter carries no CJK glyphs, so without explicit CJK faces the
-   * browser's own fallback order decides (Windows lands on YaHei only after Segoe UI misses),
-   * and the 600/500/400 weight hierarchy renders unevenly across the mix. Named faces keep the
-   * CJK fallback deterministic per platform; Linux without them lands on Noto Sans CJK via
-   * ui-sans-serif, which honors weights properly.
-   */
-  font-family:
-    "Inter Variable", Inter, "PingFang SC", "HarmonyOS Sans SC",
-    "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
-}
-
 /*
- * THERE IS DELIBERATELY NO `button, input, textarea, select { font: inherit }` HERE.
+ * The shadcn/OpenBot palette, as Tailwind utilities.
  *
- * Form controls do need it — Chrome otherwise draws them in its own ~13.3px system font — and
- * Tailwind's Preflight already does exactly that, inside `@layer base`, where a utility can still
- * override it. A second copy written here would sit in NO layer, and an unlayered rule outranks
- * every layered one no matter how specific: a bare `input` selector beats `.text-sm`. That is not a
- * specificity fight anybody wins, because layers are resolved before specificity is even consulted.
- *
- * One was here, and it silently disabled every `text-*` on every button, input, textarea and select
- * in the app. Nothing looked broken; the sizes were simply never applied, and the labels — which are
- * not in that selector list — rendered a size smaller than the fields they belonged to.
+ * HeroUI owns `--accent` as the action fill and `--muted` as muted text; both are mapped by
+ * heroui-theme.css. The old shadcn `--input` alias is retained only for legacy stroke utilities.
+ * All other legacy names are aliases for `--ob-*` in `legacy-ui-bridge.css`.
  */
-
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans:
@@ -202,6 +129,33 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+
+  /* OpenBot's own vocabulary, so new code never has to borrow HeroUI's names. */
+  --color-ob-canvas: var(--ob-canvas);
+  --color-ob-surface: var(--ob-surface);
+  --color-ob-foreground: var(--ob-foreground);
+  --color-ob-action: var(--ob-action);
+  --color-ob-action-foreground: var(--ob-action-foreground);
+  --color-ob-hover: var(--ob-hover-surface);
+  --color-ob-hover-foreground: var(--ob-hover-surface-foreground);
+  --color-ob-muted-surface: var(--ob-muted-surface);
+  --color-ob-muted-text: var(--ob-muted-text);
+  --color-ob-brand: var(--ob-brand);
+  --color-ob-brand-foreground: var(--ob-brand-foreground);
+  --color-ob-danger: var(--ob-danger);
+  --color-ob-danger-foreground: var(--ob-danger-foreground);
+  --color-ob-danger-soft: var(--ob-danger-soft);
+  --color-ob-success: var(--ob-success);
+  --color-ob-success-foreground: var(--ob-success-foreground);
+  --color-ob-success-soft: var(--ob-success-soft);
+  --color-ob-warning: var(--ob-warning);
+  --color-ob-warning-foreground: var(--ob-warning-foreground);
+  --color-ob-warning-soft: var(--ob-warning-soft);
+  --color-ob-control-border: var(--ob-control-border);
+  --color-ob-accent-text: var(--ob-accent-text);
+  --color-ob-disabled-background: var(--ob-disabled-background);
+  --color-ob-disabled-foreground: var(--ob-disabled-foreground);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -210,26 +164,62 @@ body {
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
   /*
-   * The Display tier (20px at the 15px root) as a named utility, so the page-title size lives in
+   * The Display tier (21.3px at the 16px root) as a named utility, so the page-title size lives in
    * exactly one place — same spirit as the radius ladder deriving off --radius.
    */
   --text-display: 1.333rem;
-  /* WorkBuddy's resting card shadow (`0 4px 12px #00000008`), as the `shadow-card` utility. */
-  --shadow-card: var(--shadow-card);
+  /* Workspace card shadow from the semantic theme contract. */
+  --shadow-card: var(--ob-shadow-card);
   /* The hover lift for an interactive card; the market's lifted variant of the resting card shadow. */
   --shadow-card-hover: 0 8px 24px rgb(0 0 0 / 8%);
 }
 
-@layer base {
-  * {
-    @apply border-border outline-ring/60;
+/*
+ * The theme state is one state. `.dark` is the class the app has always toggled; `[data-theme]` is
+ * set from the same boolean by `lib/theme.ts` and by the pre-paint script in `index.html`, so
+ * HeroUI's own `[data-theme="dark"]` selectors agree with the app rather than guessing.
+ */
+@layer ob-app {
+  :root {
+    color-scheme: light;
   }
-  body {
-    @apply bg-background text-foreground;
+
+  .dark,
+  [data-theme="dark"] {
+    color-scheme: dark;
   }
+
   html {
-    @apply font-sans;
+    font-size: 16px;
   }
+
+  body {
+    margin: 0;
+    position: relative;
+    min-width: 20rem;
+    min-height: 100vh;
+    background: var(--background);
+    color: var(--foreground);
+    /*
+     * zh-CN is a first-class locale. Inter carries no CJK glyphs, so without explicit CJK faces the
+     * browser's own fallback order decides (Windows lands on YaHei only after Segoe UI misses),
+     * and the 600/500/400 weight hierarchy renders unevenly across the mix. Named faces keep the
+     * CJK fallback deterministic per platform; Linux without them lands on Noto Sans CJK via
+     * ui-sans-serif, which honors weights properly.
+     */
+    font-family:
+      "Inter Variable", Inter, "PingFang SC", "HarmonyOS Sans SC",
+      "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  /*
+   * THERE IS DELIBERATELY NO `button, input, textarea, select { font: inherit }` HERE.
+   *
+   * Form controls do need it — Chrome otherwise draws them in its own ~13.3px system font — and
+   * Tailwind's Preflight already does exactly that, inside `@layer base`, where a utility can still
+   * override it. A second copy written here would sit above the utilities and silently disable
+   * every `text-*` on every button, input, textarea and select in the app.
+   */
 
   ::-webkit-scrollbar {
     width: 5px;
@@ -251,6 +241,22 @@ body {
 }
 
 /*
+ * The global border baseline — the one piece of the old `@layer base` block that must NOT move up
+ * into `ob-app` with the rules above. Tailwind v4 defaults a bare `border` utility to
+ * `currentColor`, so without this every `border` written without an explicit colour (~112 files in
+ * `app/src`) inherits its text colour instead of the theme's `--border`. It stays in `@layer base`
+ * because that layer sits below the utilities layer and HeroUI's layer(components): an explicit
+ * `border-*`/`outline-*` utility and every HeroUI component style keep winning. The same `*`
+ * selector in `ob-app` would outrank both and suppress explicit border colours app-wide — the
+ * exact failure mode the `font: inherit` note above warns about.
+ */
+@layer base {
+  * {
+    @apply border-border outline-ring/60;
+  }
+}
+
+/*
  * A tool line that is still running.
  *
  * A light band sweeps left to right across the words. `background-clip: text` with a transparent
@@ -258,91 +264,75 @@ body {
  * colour so it reads the same in either theme. Only `background-position` animates, which the
  * compositor handles without laying the text out again on every frame.
  */
-.tool-line-running {
-  background-image: linear-gradient(
-    100deg,
-    currentColor 40%,
-    color-mix(in oklab, currentColor 25%, transparent) 50%,
-    currentColor 60%
-  );
-  background-size: 250% 100%;
-  background-position: 100% 0;
-  background-clip: text;
-  -webkit-background-clip: text;
-  /*
-   * THE GLYPH FILL, NOT `color`. This was `color: transparent`, which blanked the gradient too —
-   * `currentColor` resolves against this element's own `color` — so nothing was ever drawn. This
-   * rule is unlayered and beats the `text-*` utility it is given, so the reduced-motion branch
-   * below, which puts `color` back, was the only place the text was readable.
-   */
-  -webkit-text-fill-color: transparent;
-  animation: tool-line-sweep 1.6s linear infinite;
-}
-
-@keyframes tool-line-sweep {
-  to {
-    background-position: -150% 0;
-  }
-}
-
-/* Preserve running-state text without shimmer for reduced-motion users. */
-@media (prefers-reduced-motion: reduce) {
+@layer ob-app {
   .tool-line-running {
-    animation: none;
-    background-image: none;
-    color: inherit;
+    background-image: linear-gradient(
+      100deg,
+      currentColor 40%,
+      color-mix(in oklab, currentColor 25%, transparent) 50%,
+      currentColor 60%
+    );
+    background-size: 250% 100%;
+    background-position: 100% 0;
+    background-clip: text;
+    -webkit-background-clip: text;
+    /*
+     * THE GLYPH FILL, NOT `color`. This was `color: transparent`, which blanked the gradient too —
+     * `currentColor` resolves against this element's own `color` — so nothing was ever drawn. This
+     * rule is in a layer now, but the reduced-motion branch below still restores `color` for the
+     * same reason.
+     */
+    -webkit-text-fill-color: transparent;
+    animation: tool-line-sweep 1.6s linear infinite;
   }
-}
 
-.tool-line[open] .tool-line-chevron {
-  transform: rotate(90deg);
-}
+  @keyframes tool-line-sweep {
+    to {
+      background-position: -150% 0;
+    }
+  }
 
-/*
- * Row descriptions wrap on sense rather than on width.
- *
- * Here rather than on the `ItemDescription` primitive, which is where this started. The reason was
- * that the primitive was vendored and the next `shadcn add item` would silently remove anything put
- * inside it; the primitives are the repository's own now, so that is no longer true. It stays here
- * because it belongs with the other layout rules rather than inside one primitive.
- *
- * The primitive already emits the attribute this selects, so nothing has to be edited for it to
- * apply, and nothing upstream can take it away.
- */
-[data-slot="item-description"] {
-  text-wrap: pretty;
-}
+  /* Preserve running-state text without shimmer for reduced-motion users. */
+  @media (prefers-reduced-motion: reduce) {
+    .tool-line-running {
+      animation: none;
+      background-image: none;
+      color: inherit;
+    }
+  }
 
-/*
- * A generated interface is never allowed to occupy nothing.
- *
- * The SDK sizes the frame it draws into from a single measurement taken inside the sandbox, and it
- * writes the result as an inline height on the frame's own container. Two races in that code make
- * the number wrong, and both were reproduced against @copilotkit/react-core 1.69.0:
- *
- *   - The measurement is queued alongside the expressions that build the interface. When it runs
- *     first the body it measures is still empty, the container is set to `height: 0px`, and because
- *     the container also clips, the interface is invisible. Nothing retries: the measurement is
- *     one-shot and its listener is removed after the first reply.
- *   - The effect that measures bails out when the sandbox has not finished loading, and its only
- *     dependency is "generation finished". An interface restored from thread history is already
- *     finished on its first render, while the sandbox is still being imported, so the effect bails
- *     and never runs again.
- *
- * A floor is the smallest thing that removes the failure that matters. `min-height` clamps above an
- * inline `height`, so a collapsed measurement can no longer render nothing, and a measurement that
- * came back correct and larger is left alone. The reader gets an interface that is present and may
- * be cut off, instead of a turn that looks like the Bot said nothing at all.
- *
- * Selected through the frame rather than through a class of ours because both chat surfaces render
- * this container and only one of them is ours: the packaged chat builds it too, and a rule that
- * needed our wrapper would fix the transcript and leave the other surface broken. `websandbox__frame`
- * is the class the sandbox library puts on the frame it creates.
- *
- * DELETE THIS WHEN THE SDK IS FIXED. It compensates for someone else's arithmetic, so it should not
- * outlive the bug: once the measurement re-runs on sandbox-ready and after the queue drains, this
- * rule can only make small interfaces taller than they asked to be.
- */
-:where(div:has(> iframe.websandbox__frame)) {
-  min-height: 200px;
+  .tool-line[open] .tool-line-chevron {
+    transform: rotate(90deg);
+  }
+
+  /*
+   * Row descriptions wrap on sense rather than on width.
+   *
+   * The primitive already emits the attribute this selects, so nothing has to be edited for it to
+   * apply. It stays with the other layout rules rather than inside one primitive.
+   */
+  [data-slot="item-description"] {
+    text-wrap: pretty;
+  }
+
+  /*
+   * A generated interface is never allowed to occupy nothing.
+   *
+   * The SDK sizes the frame it draws into from a single measurement taken inside the sandbox, and it
+   * writes the result as an inline height on the frame's own container. Two races in that code make
+   * the number wrong, reproduced against @copilotkit/react-core 1.69.0: the measurement can run
+   * before the sandbox body exists (collapsing the container to `height: 0px`, with nothing to
+   * retry it), and the effect that measures bails when a restored thread is already "finished"
+   * while the sandbox is still loading. A floor clamps above an inline `height`, so a collapsed
+   * measurement can no longer render nothing while a correct, larger one is left alone.
+   *
+   * Selected through the frame rather than a class of ours because both chat surfaces render this
+   * container and only one of them is ours. `websandbox__frame` is the class the sandbox library
+   * puts on the frame it creates.
+   *
+   * DELETE THIS WHEN THE SDK IS FIXED.
+   */
+  :where(div:has(> iframe.websandbox__frame)) {
+    min-height: 200px;
+  }
 }

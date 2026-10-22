@@ -1,0 +1,3 @@
+# P14 Initial Finding
+
+Route: `/bots/agent_efd707f9-b827-42a5-9296-e6f3e45c6a05/sharing`, authenticated disposable admin, tmpfs database. The fixture Bot is private, owned by the test admin, and has no endpoint. A synthetic PUT 503 was returned for `/api/team-bots/<id>/publication`, not forwarded. One request only; no publication was created. Dialog remained open with alert `controlled publication failure`; active element was BODY; Escape twice did not close. Browser viewport was 390×844; no horizontal overflow. First evidence screenshots in `artifacts/`. Fixture creation itself was the only actual DB write (private test Bot), made solely for this browser check.

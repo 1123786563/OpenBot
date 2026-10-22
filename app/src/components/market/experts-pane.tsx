@@ -5,7 +5,6 @@ import {
   IconPlus,
   IconSparkles,
 } from "@tabler/icons-react";
-import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import {
@@ -23,6 +22,7 @@ import {
   WbTag,
 } from "@/components/market/wb";
 import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import type { AgentProfile } from "@/lib/agents/queries";
 import type { MarketExpert } from "@/lib/marketplace/queries";
@@ -296,16 +296,15 @@ export function AgentDialogWb({
               ) : null}
             </div>
             <div className="mt-2.5">
-              <Button
-                render={(props) => (
-                  <Link {...props} search={{ agent: agent.id }} to="/agents" />
-                )}
+              <ButtonLink
+                search={{ agent: agent.id }}
+                to="/agents"
                 size="sm"
                 className="h-8 rounded-lg px-4"
               >
                 <IconMessage className="size-4" />
                 {t("wb.summon")}
-              </Button>
+              </ButtonLink>
             </div>
           </div>
         </div>
@@ -398,20 +397,15 @@ export function TemplateDialogWb({
             </div>
             <div className="mt-2.5 flex items-center gap-2">
               {canChat ? (
-                <Button
-                  render={(props) => (
-                    <Link
-                      {...props}
-                      search={{ agent: expert.agentId ?? undefined }}
-                      to="/agents"
-                    />
-                  )}
+                <ButtonLink
+                  search={{ agent: expert.agentId ?? undefined }}
+                  to="/agents"
                   size="sm"
                   className="h-8 rounded-lg px-4"
                 >
                   <IconMessage className="size-4" />
                   {t("wb.summon")}
-                </Button>
+                </ButtonLink>
               ) : (
                 <WbPrimaryButton
                   className="h-8 px-4"

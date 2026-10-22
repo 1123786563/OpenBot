@@ -1,0 +1,348 @@
+### app/src/styles/heroui-theme.css
+--- PRE-R1/app/src/styles/heroui-theme.css
++++ POST-R1/app/src/styles/heroui-theme.css
+@@ -41,7 +41,11 @@
+     --accent-hover: var(--ob-action-hover);
+     --accent-soft: color-mix(in srgb, var(--ob-action) 10%, var(--ob-surface));
+     --accent-soft-foreground: var(--ob-accent-text);
+-    --accent-soft-hover: color-mix(in srgb, var(--ob-action) 16%, var(--ob-surface));
++    --accent-soft-hover: color-mix(
++      in srgb,
++      var(--ob-action) 16%,
++      var(--ob-surface)
++    );
+ 
+     --field-background: var(--ob-field-background);
+     --field-foreground: var(--ob-foreground);
+@@ -58,22 +62,46 @@
+ 
+     --success: var(--ob-success);
+     --success-foreground: var(--ob-success-foreground);
+-    --success-hover: color-mix(in srgb, var(--ob-success) 90%, var(--ob-success-foreground));
++    --success-hover: color-mix(
++      in srgb,
++      var(--ob-success) 90%,
++      var(--ob-success-foreground)
++    );
+     --success-soft: var(--ob-success-soft);
+     --success-soft-foreground: var(--ob-success);
+-    --success-soft-hover: color-mix(in srgb, var(--ob-success) 16%, var(--ob-surface));
++    --success-soft-hover: color-mix(
++      in srgb,
++      var(--ob-success) 16%,
++      var(--ob-surface)
++    );
+     --warning: var(--ob-warning);
+     --warning-foreground: var(--ob-warning-foreground);
+-    --warning-hover: color-mix(in srgb, var(--ob-warning) 90%, var(--ob-warning-foreground));
++    --warning-hover: color-mix(
++      in srgb,
++      var(--ob-warning) 90%,
++      var(--ob-warning-foreground)
++    );
+     --warning-soft: var(--ob-warning-soft);
+     --warning-soft-foreground: var(--ob-warning);
+-    --warning-soft-hover: color-mix(in srgb, var(--ob-warning) 16%, var(--ob-surface));
++    --warning-soft-hover: color-mix(
++      in srgb,
++      var(--ob-warning) 16%,
++      var(--ob-surface)
++    );
+     --danger: var(--ob-danger);
+     --danger-foreground: var(--ob-danger-foreground);
+-    --danger-hover: color-mix(in srgb, var(--ob-danger) 90%, var(--ob-danger-foreground));
++    --danger-hover: color-mix(
++      in srgb,
++      var(--ob-danger) 90%,
++      var(--ob-danger-foreground)
++    );
+     --danger-soft: var(--ob-danger-soft);
+     --danger-soft-foreground: var(--ob-danger);
+-    --danger-soft-hover: color-mix(in srgb, var(--ob-danger) 16%, var(--ob-surface));
++    --danger-soft-hover: color-mix(
++      in srgb,
++      var(--ob-danger) 16%,
++      var(--ob-surface)
++    );
+ 
+     --segment: var(--ob-surface);
+     --segment-foreground: var(--ob-foreground);
+@@ -132,7 +160,11 @@
+     --accent-hover: var(--ob-action-hover);
+     --accent-soft: color-mix(in srgb, var(--ob-action) 10%, var(--ob-surface));
+     --accent-soft-foreground: var(--ob-accent-text);
+-    --accent-soft-hover: color-mix(in srgb, var(--ob-action) 16%, var(--ob-surface));
++    --accent-soft-hover: color-mix(
++      in srgb,
++      var(--ob-action) 16%,
++      var(--ob-surface)
++    );
+ 
+     --field-background: var(--ob-field-background);
+     --field-foreground: var(--ob-foreground);
+@@ -149,22 +181,46 @@
+ 
+     --success: var(--ob-success);
+     --success-foreground: var(--ob-success-foreground);
+-    --success-hover: color-mix(in srgb, var(--ob-success) 90%, var(--ob-success-foreground));
++    --success-hover: color-mix(
++      in srgb,
++      var(--ob-success) 90%,
++      var(--ob-success-foreground)
++    );
+     --success-soft: var(--ob-success-soft);
+     --success-soft-foreground: var(--ob-success);
+-    --success-soft-hover: color-mix(in srgb, var(--ob-success) 16%, var(--ob-surface));
++    --success-soft-hover: color-mix(
++      in srgb,
++      var(--ob-success) 16%,
++      var(--ob-surface)
++    );
+     --warning: var(--ob-warning);
+     --warning-foreground: var(--ob-warning-foreground);
+-    --warning-hover: color-mix(in srgb, var(--ob-warning) 90%, var(--ob-warning-foreground));
++    --warning-hover: color-mix(
++      in srgb,
++      var(--ob-warning) 90%,
++      var(--ob-warning-foreground)
++    );
+     --warning-soft: var(--ob-warning-soft);
+     --warning-soft-foreground: var(--ob-warning);
+-    --warning-soft-hover: color-mix(in srgb, var(--ob-warning) 16%, var(--ob-surface));
++    --warning-soft-hover: color-mix(
++      in srgb,
++      var(--ob-warning) 16%,
++      var(--ob-surface)
++    );
+     --danger: var(--ob-danger);
+     --danger-foreground: var(--ob-danger-foreground);
+-    --danger-hover: color-mix(in srgb, var(--ob-danger) 90%, var(--ob-danger-foreground));
++    --danger-hover: color-mix(
++      in srgb,
++      var(--ob-danger) 90%,
++      var(--ob-danger-foreground)
++    );
+     --danger-soft: var(--ob-danger-soft);
+     --danger-soft-foreground: var(--ob-danger);
+-    --danger-soft-hover: color-mix(in srgb, var(--ob-danger) 16%, var(--ob-surface));
++    --danger-soft-hover: color-mix(
++      in srgb,
++      var(--ob-danger) 16%,
++      var(--ob-surface)
++    );
+ 
+     --segment: var(--ob-surface);
+     --segment-foreground: var(--ob-foreground);
+@@ -189,3 +245,17 @@
+     --skeleton-animation: shimmer;
+   }
+ }
++
++@media (prefers-reduced-motion: reduce) {
++  :root,
++  [data-theme="light"],
++  .dark,
++  [data-theme="dark"] {
++    --skeleton-animation: none;
++  }
++
++  .skeleton--shimmer::before,
++  .skeleton--shimmer::after {
++    animation: none;
++  }
++}
+### app/src/styles/tokens.css
+--- PRE-R1/app/src/styles/tokens.css
++++ POST-R1/app/src/styles/tokens.css
+@@ -11,55 +11,67 @@
+   :root,
+   [data-theme="light"] {
+     color-scheme: light;
+-    --ob-canvas: #F5F7FA;
+-    --ob-surface: #FFFFFF;
+-    --ob-overlay: #FFFFFF;
++    --ob-canvas: #f5f7fa;
++    --ob-surface: #ffffff;
++    --ob-overlay: #ffffff;
+     --ob-foreground: #192131;
+-    --ob-hover-surface: #EEF1F6;
++    --ob-hover-surface: #eef1f6;
+     --ob-hover-surface-foreground: var(--ob-foreground);
+     --ob-muted-surface: var(--ob-hover-surface);
+     --ob-muted-text: #526079;
+-    --ob-action: #315FCF;
+-    --ob-action-foreground: #FFFFFF;
+-    --ob-action-hover: #2853BD;
++    --ob-action: #315fcf;
++    --ob-action-foreground: #ffffff;
++    --ob-action-hover: #2853bd;
+     --ob-secondary-surface: var(--ob-muted-surface);
+     --ob-secondary-foreground: var(--ob-foreground);
+     --ob-brand: var(--ob-action);
+     --ob-brand-foreground: var(--ob-action-foreground);
+-    --ob-danger: #B32745;
+-    --ob-danger-foreground: #FFFFFF;
+-    --ob-danger-soft: color-mix(in srgb, var(--ob-danger) 10%, var(--ob-surface));
+-    --ob-success: #16704D;
+-    --ob-success-foreground: #FFFFFF;
+-    --ob-border: #D8DFE9;
++    --ob-danger: #b32745;
++    --ob-danger-foreground: #ffffff;
++    --ob-danger-soft: color-mix(
++      in srgb,
++      var(--ob-danger) 10%,
++      var(--ob-surface)
++    );
++    --ob-success: #16704d;
++    --ob-success-foreground: #ffffff;
++    --ob-border: #d8dfe9;
+     --ob-field-border: var(--ob-control-border);
+     --ob-field-background: var(--ob-surface);
+-    --ob-focus: #315FCF;
+-    --ob-sidebar: #EEF1F6;
++    --ob-focus: #315fcf;
++    --ob-sidebar: #eef1f6;
+     --ob-sidebar-foreground: var(--ob-foreground);
+     --ob-sidebar-primary: var(--ob-accent-text);
+     --ob-sidebar-primary-foreground: var(--ob-foreground);
+-    --ob-sidebar-accent: #E2E8F2;
++    --ob-sidebar-accent: #e2e8f2;
+     --ob-sidebar-accent-foreground: var(--ob-foreground);
+     --ob-sidebar-border: var(--ob-border);
+     --ob-sidebar-ring: var(--ob-focus);
+-    --ob-chart-1: #315FCF;
+-    --ob-chart-2: #8B570B;
+-    --ob-chart-3: #16704D;
+-    --ob-chart-4: #7040AD;
+-    --ob-chart-5: #A02C76;
++    --ob-chart-1: #315fcf;
++    --ob-chart-2: #8b570b;
++    --ob-chart-3: #16704d;
++    --ob-chart-4: #7040ad;
++    --ob-chart-5: #a02c76;
+     --ob-radius: 8px;
+     --ob-shadow-card: none;
+-    --ob-control-border: #7A879B;
+-    --ob-accent-text: #315FCF;
+-    --ob-warning: #8B570B;
+-    --ob-warning-foreground: #FFFFFF;
+-    --ob-warning-soft: color-mix(in srgb, var(--ob-warning) 10%, var(--ob-surface));
+-    --ob-success-soft: color-mix(in srgb, var(--ob-success) 10%, var(--ob-surface));
++    --ob-control-border: #7a879b;
++    --ob-accent-text: #315fcf;
++    --ob-warning: #8b570b;
++    --ob-warning-foreground: #ffffff;
++    --ob-warning-soft: color-mix(
++      in srgb,
++      var(--ob-warning) 10%,
++      var(--ob-surface)
++    );
++    --ob-success-soft: color-mix(
++      in srgb,
++      var(--ob-success) 10%,
++      var(--ob-surface)
++    );
+     --ob-disabled-background: var(--ob-muted-surface);
+     --ob-disabled-foreground: var(--ob-muted-text);
+-    --ob-shadow-overlay: 0 8px 24px rgb(25 33 49 / .12);
+-    --ob-backdrop: rgba(0,0,0,.24);
++    --ob-shadow-overlay: 0 8px 24px rgb(25 33 49 / 0.12);
++    --ob-backdrop: rgba(0, 0, 0, 0.24);
+     --ob-layout-app-sidebar: 280px;
+     --ob-layout-config-sidebar: 256px;
+     --ob-layout-rail: 64px;
+@@ -75,54 +87,66 @@
+   [data-theme="dark"] {
+     color-scheme: dark;
+     --ob-canvas: #111318;
+-    --ob-surface: #191D26;
+-    --ob-overlay: #242B38;
+-    --ob-foreground: #EBEFF7;
+-    --ob-hover-surface: #242B38;
++    --ob-surface: #191d26;
++    --ob-overlay: #242b38;
++    --ob-foreground: #ebeff7;
++    --ob-hover-surface: #242b38;
+     --ob-hover-surface-foreground: var(--ob-foreground);
+     --ob-muted-surface: var(--ob-hover-surface);
+-    --ob-muted-text: #A2ACBE;
+-    --ob-action: #3D6BDA;
+-    --ob-action-foreground: #FFFFFF;
+-    --ob-action-hover: #345FC7;
++    --ob-muted-text: #a2acbe;
++    --ob-action: #3d6bda;
++    --ob-action-foreground: #ffffff;
++    --ob-action-hover: #345fc7;
+     --ob-secondary-surface: var(--ob-muted-surface);
+     --ob-secondary-foreground: var(--ob-foreground);
+     --ob-brand: var(--ob-action);
+     --ob-brand-foreground: var(--ob-action-foreground);
+-    --ob-danger: #FF9EA7;
+-    --ob-danger-foreground: #30141B;
+-    --ob-danger-soft: color-mix(in srgb, var(--ob-danger) 10%, var(--ob-surface));
+-    --ob-success: #69D5AC;
+-    --ob-success-foreground: #10231B;
++    --ob-danger: #ff9ea7;
++    --ob-danger-foreground: #30141b;
++    --ob-danger-soft: color-mix(
++      in srgb,
++      var(--ob-danger) 10%,
++      var(--ob-surface)
++    );
++    --ob-success: #69d5ac;
++    --ob-success-foreground: #10231b;
+     --ob-border: #303949;
+     --ob-field-border: var(--ob-control-border);
+     --ob-field-background: var(--ob-surface);
+-    --ob-focus: #8DB4FF;
+-    --ob-sidebar: #0D1015;
++    --ob-focus: #8db4ff;
++    --ob-sidebar: #0d1015;
+     --ob-sidebar-foreground: var(--ob-foreground);
+     --ob-sidebar-primary: var(--ob-accent-text);
+     --ob-sidebar-primary-foreground: var(--ob-foreground);
+-    --ob-sidebar-accent: #242B38;
++    --ob-sidebar-accent: #242b38;
+     --ob-sidebar-accent-foreground: var(--ob-foreground);
+     --ob-sidebar-border: var(--ob-border);
+     --ob-sidebar-ring: var(--ob-focus);
+-    --ob-chart-1: #8DB4FF;
+-    --ob-chart-2: #F0BE69;
+-    --ob-chart-3: #69D5AC;
+-    --ob-chart-4: #C3A2F2;
+-    --ob-chart-5: #F09ACB;
++    --ob-chart-1: #8db4ff;
++    --ob-chart-2: #f0be69;
++    --ob-chart-3: #69d5ac;
++    --ob-chart-4: #c3a2f2;
++    --ob-chart-5: #f09acb;
+     --ob-radius: 8px;
+     --ob-shadow-card: none;
+-    --ob-control-border: #68788F;
+-    --ob-accent-text: #8DB4FF;
+-    --ob-warning: #F0BE69;
+-    --ob-warning-foreground: #2A1D08;
+-    --ob-warning-soft: color-mix(in srgb, var(--ob-warning) 10%, var(--ob-surface));
+-    --ob-success-soft: color-mix(in srgb, var(--ob-success) 10%, var(--ob-surface));
++    --ob-control-border: #68788f;
++    --ob-accent-text: #8db4ff;
++    --ob-warning: #f0be69;
++    --ob-warning-foreground: #2a1d08;
++    --ob-warning-soft: color-mix(
++      in srgb,
++      var(--ob-warning) 10%,
++      var(--ob-surface)
++    );
++    --ob-success-soft: color-mix(
++      in srgb,
++      var(--ob-success) 10%,
++      var(--ob-surface)
++    );
+     --ob-disabled-background: var(--ob-muted-surface);
+     --ob-disabled-foreground: var(--ob-muted-text);
+     --ob-shadow-overlay: none;
+-    --ob-backdrop: rgba(0,0,0,.60);
++    --ob-backdrop: rgba(0, 0, 0, 0.6);
+     --ob-layout-app-sidebar: 280px;
+     --ob-layout-config-sidebar: 256px;
+     --ob-layout-rail: 64px;

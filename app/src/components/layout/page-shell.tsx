@@ -1,8 +1,7 @@
 import { IconChevronLeft } from "@tabler/icons-react";
-import { Link, type LinkProps } from "@tanstack/react-router";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
-import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/router-link";
 import { SidebarToggle, useSidebarToggleVisible } from "./sidebar-toggle";
 
 /**
@@ -53,7 +52,7 @@ export function PageShell({
   title: string;
   width?: ShellWidth;
   backButton?: {
-    linkProps: LinkProps;
+    linkProps: import("@tanstack/react-router").LinkProps;
     label: string;
   };
 }) {
@@ -81,13 +80,10 @@ export function PageShell({
         <div className="max-w-7xl w-full h-14 flex items-center gap-1 px-6">
           {showToggle ? <SidebarToggle /> : null}
           {!!backButton && (
-            <Button
-              variant="ghost"
-              render={(props) => <Link {...backButton.linkProps} {...props} />}
-            >
+            <ButtonLink variant="ghost" {...backButton.linkProps}>
               <IconChevronLeft />
               {backButton.label}
-            </Button>
+            </ButtonLink>
           )}
         </div>
       ) : null}
@@ -197,7 +193,7 @@ export function PageRows({
      * inside a card of divided rows painted a hover as a floating pill: a middle row has no corners,
      * and the first and last cannot be concentric with the card while sitting a border inside it.
      *
-     * The card itself is WorkBuddy's recipe: 16px radius (rounded-2xl at this root) and its resting
+     * The card itself follows the 12px workspace card radius and its resting
      * shadow — `0 4px 12px` at 3% black — so a white card reads as raised off the gray canvas
      * without the border doing all the work. Dark mode drops the shadow: surface lightness steps
      * already do the separating there.

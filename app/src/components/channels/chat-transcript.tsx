@@ -156,12 +156,12 @@ function RestoringTranscript() {
     // One announcement, with every bar hidden from it: nine empty shapes read aloud is worse.
     <div aria-label={t("transcript.loadingAria")} role="status">
       <div aria-hidden="true" className="flex justify-end pb-7">
-        <Skeleton className="h-10 w-64 rounded-xl bg-muted/40 motion-reduce:animate-none" />
+        <Skeleton className="h-10 w-64 rounded-xl bg-ob-muted-surface/40 motion-reduce:animate-none" />
       </div>
       <div aria-hidden="true" className="flex flex-col gap-3">
         {RESTORING_ANSWER_LINES.map((line) => (
           <Skeleton
-            className={`h-4 bg-muted/40 motion-reduce:animate-none ${line.width}`}
+            className={`h-4 bg-ob-muted-surface/40 motion-reduce:animate-none ${line.width}`}
             key={line.id}
           />
         ))}
@@ -1060,7 +1060,7 @@ function SentAttachmentTile({ attachment }: { attachment: SentAttachment }) {
 
   if (modality === "document") {
     return (
-      <div className="flex h-32 w-44 flex-col justify-between rounded-xl border border-border bg-muted/40 p-3">
+      <div className="flex h-32 w-44 flex-col justify-between rounded-xl border border-border bg-ob-muted-surface/40 p-3">
         <IconFile className="size-6 text-muted-foreground" />
         <div className="min-w-0">
           {/* `title` because the tile is fixed-width and a long name is cut, not wrapped. */}
@@ -1218,34 +1218,35 @@ function AttachmentLightbox({
         // tab to a raw image file is not the promise this makes. `block` so the tile is not sitting
         // on a text baseline with a stray gap under it.
         className="block cursor-zoom-in overflow-hidden rounded-xl"
-        render={
+        render={(props) => (
           <button
+            {...props}
             aria-label={t("transcript.openAttachment", { name: label })}
             type="button"
           />
-        }
+        )}
       >
         {children}
       </DialogTrigger>
       <DialogContent
         /*
-         * THE CARD IS STRIPPED OFF AND THE POPUP IS MADE FULL-SCREEN, and the second half is not
-         * cosmetic. `DialogContent` centres itself with `-translate-x-1/2 -translate-y-1/2`, and a
-         * transform on an ancestor is what `position: fixed` resolves against — so a close button
-         * "fixed to the viewport" inside it landed 72px down and 30px in from the corner instead of
-         * at it. Measured, not guessed. A popup that already IS the viewport has no transform, and
-         * `absolute` in it means the corner it looks like it means.
+         * THE CARD IS STRIPPED OFF AND THE SURFACE IS MADE FULL-SCREEN. `size="full"` is HeroUI's
+         * full-viewport dialog (no container padding, no radius, no shadow), which is what this
+         * needs: the picture as the only lit thing against the dark backdrop. Doing it through the
+         * size variant rather than a pile of `inset-0 …` overrides also avoids the old bug where a
+         * `-translate-*` on the popup became the containing block for the "viewport-fixed" close
+         * button and pushed it 72px down and 30px in from the corner.
          *
-         * Centring by flex rather than by width also lets the picture keep its own shape: as a
-         * stretched flex child it was drawn 1012px wide for a 644px image, letterboxed inside a box
-         * far bigger than itself.
+         * `justify-center` keeps the picture in the middle instead of stretched to the surface, and
+         * `bg-transparent!` lets the 80% backdrop through (the component CSS is imported unlayered).
          */
-        className="inset-0 top-0 left-0 h-full max-h-none w-full max-w-none translate-x-0 translate-y-0 items-center justify-center rounded-none border-0 bg-transparent p-0 shadow-none"
+        className="items-center justify-center bg-transparent!"
         onClick={(event) => {
           if (event.target === event.currentTarget) setOpen(false);
         }}
-        overlayClassName="bg-black/80 supports-backdrop-filter:backdrop-blur-sm"
+        overlayClassName="bg-black/80! supports-backdrop-filter:backdrop-blur-sm"
         showCloseButton={false}
+        size="full"
       >
         {/* Named for a screen reader; the picture carries the same name in its alt text. */}
         <DialogTitle className="sr-only">{label}</DialogTitle>
@@ -1662,7 +1663,7 @@ export function ChatTranscript({
         <MessageScrollerViewport ref={viewportRef}>
           <MessageScrollerContent
             aria-busy={busy}
-            className="mx-auto w-full max-w-2xl px-4 py-6"
+            className="mx-auto w-full max-w-[720px] px-4 py-6"
             spacerClassName="order-2"
           >
             {/*

@@ -1,0 +1,26 @@
+{
+  "recorded_at": "2026-10-20T13:09:35.644323+00:00",
+  "scope": "documentation only",
+  "route_counts": {
+    "pages": 76,
+    "layouts": 4,
+    "redirects": 7
+  },
+  "tasks": 21,
+  "unique_owned_files": 270,
+  "baseline_files_verified_unchanged": 9360,
+  "new_outside_scope_files": [],
+  "broken_links": [],
+  "contrast_pairs": 88,
+  "errors": [],
+  "result": "pass",
+  "not_run": [
+    "production implementation",
+    "typecheck",
+    "build",
+    "native/driven suites",
+    "production browser",
+    "independent code review",
+    "OCR"
+  ]
+}

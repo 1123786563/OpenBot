@@ -1,0 +1,37 @@
+[
+  {
+    "path": "app/src/components/bot-profile/bot-subpage.tsx",
+    "bytes": 1545,
+    "sha256": "d93bf21e48d1539d10f0b53976c2dbd41ad4f9b7e540d256e758b9bd7e81ce2a"
+  },
+  {
+    "path": "app/src/components/delivery/reaching-you.tsx",
+    "bytes": 21663,
+    "sha256": "725843713e096d69b17a969bc5d81e2eea0c2473b6d8a3cd23465c3b71b200ec"
+  },
+  {
+    "path": "app/src/components/routines/routines-list.tsx",
+    "bytes": 20244,
+    "sha256": "7bec18a8a9c3272fcaa9b10540c940fbab5ca90a777bac4b7940f9a4b81a376f"
+  },
+  {
+    "path": "app/src/locales/en/routines.json",
+    "bytes": 8930,
+    "sha256": "4ac71711a17ec637144c456633f0e5c06121505895ddece510f0ebbe114c37a2"
+  },
+  {
+    "path": "app/src/locales/zh-CN/routines.json",
+    "bytes": 9174,
+    "sha256": "b54c57c986ff6b4cf71545ff90450c050f59f8554aaf5536400bca414bf3671e"
+  },
+  {
+    "path": "app/tests/bot-reaching-you.test.tsx",
+    "bytes": 9888,
+    "sha256": "f4876c67b9b7b997168743f96440397d4519e3a325dc3362a02562df145f0277"
+  },
+  {
+    "path": "app/tests/routines-list.test.tsx",
+    "bytes": 2793,
+    "sha256": "3bb505de3f85b82c83588903af31c9b0c257c549cf4de6aee4ca39c3bfbe01a6"
+  }
+]

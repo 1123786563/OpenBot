@@ -1,0 +1,13 @@
+{
+ "env": "authenticated isolated env; runtime intentionally unreachable (does not affect panel state machine)",
+ "ui_mutex": "settings panel opened; clicking the watch entry navigated to ?watch=true with settings=true dropped (URL evidence in b1h-ui-mutex.json). Source: show() clears the other flags on every UI transition.",
+ "direct_url_precedence": "Manually composing ?settings=true&watch=true keeps both flags in the URL but renders exactly one pane (watch > workshop > settings, per channel/$channelId.tsx detail ternary). This is the pre-existing documented precedence the spec explicitly preserves ('并存参数的既有优先级按原代码保留'); it is not a regression.",
+ "back_close": "Same-tab history: clean channel -> ?settings=true -> browser Back returned to the clean channel URL (b1h-back-close.json). The detail panel's aria=关闭详情 button cleared all panel params from the URL (force click used: a CopilotKit dev overlay (cpk-web-inspector) intercepts plain pointer clicks in this Vite dev build; keyboard/Switch paths were unaffected elsewhere).",
+ "workshop": "?workshop=true opened the workshop pane; no horizontal overflow in any panel state.",
+ "verdict": "B1-H pass for panel mutex/Back/close/URL-state scope. Computer-control release and real streaming still require a live runtime (unchanged PARTIAL reason).",
+ "artifacts": [
+  "b1h-context-panels.json",
+  "b1h-ui-mutex.json",
+  "b1h-back-close.json"
+ ]
+}

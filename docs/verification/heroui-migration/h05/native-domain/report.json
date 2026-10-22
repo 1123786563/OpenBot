@@ -1,0 +1,45 @@
+{
+ "schemaVersion": "report-1",
+ "run": {
+  "id": "01a157b5-726f-703f-bbfb-921d48a2c5c2",
+  "status": "passed",
+  "exitCode": 0,
+  "finishedAt": "2026-10-20T05:07:58.640Z",
+  "summary": {
+   "discovered": 7971,
+   "selected": 3,
+   "executed": 3,
+   "passed": 3,
+   "failed": 0,
+   "interrupted": 0,
+   "flaky": 0,
+   "skipped": 0
+  },
+  "results": [
+   {
+    "testId": "app/tests/credential-form.test.ts::requires%20credential%20type%2C%20provider%2C%20key%20ID%2C%20and%20secret",
+    "file": "app/tests/credential-form.test.ts",
+    "status": "passed",
+    "titlePath": [
+     "requires credential type, provider, key ID, and secret"
+    ]
+   },
+   {
+    "testId": "app/tests/model-billing-paths.test.tsx::both%20billing%20paths%20are%20named%2C%20and%20the%20credit%20path%20is%20the%20active%20one%20when%20reported",
+    "file": "app/tests/model-billing-paths.test.tsx",
+    "status": "passed",
+    "titlePath": [
+     "both billing paths are named, and the credit path is the active one when reported"
+    ]
+   },
+   {
+    "testId": "app/tests/model-billing-paths.test.tsx::the%20subscription%20harness%20path%20is%20the%20active%20one%20when%20the%20server%20reports%20it",
+    "file": "app/tests/model-billing-paths.test.tsx",
+    "status": "passed",
+    "titlePath": [
+     "the subscription harness path is the active one when the server reports it"
+    ]
+   }
+  ]
+ }
+}

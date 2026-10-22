@@ -1,0 +1,103 @@
+{
+  "assertions": [
+    {
+      "theme": "light",
+      "viewport": [
+        390,
+        844
+      ],
+      "pageTextConfirmed": true,
+      "ownedBotNameVisible": true,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "route": "http://127.0.0.1:3011/bots/agent_984f3ee6-a185-4dde-8d58-8321a1788e98/runs/not-a-real-run"
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        768,
+        1024
+      ],
+      "pageTextConfirmed": true,
+      "ownedBotNameVisible": true,
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "route": "http://127.0.0.1:3011/bots/agent_984f3ee6-a185-4dde-8d58-8321a1788e98/runs/not-a-real-run"
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        1280,
+        800
+      ],
+      "pageTextConfirmed": true,
+      "ownedBotNameVisible": true,
+      "scrollWidth": 1280,
+      "clientWidth": 1280,
+      "route": "http://127.0.0.1:3011/bots/agent_984f3ee6-a185-4dde-8d58-8321a1788e98/runs/not-a-real-run"
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "pageTextConfirmed": true,
+      "ownedBotNameVisible": true,
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "route": "http://127.0.0.1:3011/bots/agent_984f3ee6-a185-4dde-8d58-8321a1788e98/runs/not-a-real-run"
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        390,
+        844
+      ],
+      "pageTextConfirmed": true,
+      "ownedBotNameVisible": true,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "route": "http://127.0.0.1:3011/bots/agent_984f3ee6-a185-4dde-8d58-8321a1788e98/runs/not-a-real-run"
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        768,
+        1024
+      ],
+      "pageTextConfirmed": true,
+      "ownedBotNameVisible": true,
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "route": "http://127.0.0.1:3011/bots/agent_984f3ee6-a185-4dde-8d58-8321a1788e98/runs/not-a-real-run"
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        1280,
+        800
+      ],
+      "pageTextConfirmed": true,
+      "ownedBotNameVisible": true,
+      "scrollWidth": 1280,
+      "clientWidth": 1280,
+      "route": "http://127.0.0.1:3011/bots/agent_984f3ee6-a185-4dde-8d58-8321a1788e98/runs/not-a-real-run"
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        1440,
+        900
+      ],
+      "pageTextConfirmed": true,
+      "ownedBotNameVisible": true,
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "route": "http://127.0.0.1:3011/bots/agent_984f3ee6-a185-4dde-8d58-8321a1788e98/runs/not-a-real-run"
+    }
+  ],
+  "passed": 8,
+  "total": 8,
+  "limitation": "Route uses a placeholder run id because no real binding exists. The deployment returns capability_missing before a valid run detail can be observed; these checks prove only the disabled capability fallback and responsive rendering."
+}

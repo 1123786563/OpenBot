@@ -1,0 +1,62 @@
+
+ RUN  e2e v0.20.0 /Users/wuyongjun/trea/OpenBot/.worktrees/heroui-migration
+      run 01a163ee-7fc3-7875-866b-146f7cb455bb · targets: node
+
+stdout | runner
+{"level":30,"time":1792677948605,"service":"server","type":"openmuse-mail-placeholder-action-ids","ids":["gmail.list","gmail.search","gmail.thread","gmail.attachment.get","gmail.attachment.bytes"],"msg":"openmuse-mail-placeholder-action-ids"}
+{"level":40,"time":1792677948634,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792677948970,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792677948981,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792677948993,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792677949008,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792677953464,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":40,"time":1792677953486,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+{"level":30,"time":1792677953756,"service":"server","type":"openmuse-calendar-placeholder-action-id","id":"gcalendar.list","msg":"openmuse-calendar-placeholder-action-id"}
+{"level":30,"time":1792677954289,"service":"server","type":"openmuse-reviewed-action-placeholder-ids","ids":{"gmail.send":"gmail.send","gcalendar.create":"gcalendar.create","gcalendar.update":"gcalendar.update","gcalendar.delete":"gcalendar.delete","gcalendar.get":"gcalendar.get"},"msg":"openmuse-reviewed-action-placeholder-ids"}
+{"level":40,"time":1792677955683,"service":"server","msg":"KEY_ENCRYPTION_KEY is the example key from .env.example, which is public. Fine locally. Generate a real one before deploying: openssl rand -base64 32"}
+ℹ skipped server/tests/billing-period-fulfillment.integration.test.ts, which no positional selected and which failed to collect: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'
+stderr | |node| app/tests/zz-probe-context-menu.test.tsx > right click opens at the pointer and the anchor follows
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+stderr | |node| app/tests/zz-probe-context-menu.test.tsx > Shift+F10 opens and focuses the menu
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+stderr | |node| app/tests/zz-probe-context-menu.test.tsx > item activation runs once and requests the close
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+stderr | |node| app/tests/zz-probe-context-menu.test.tsx > disabled item does nothing
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+stderr | |node| app/tests/zz-probe-context-menu.test.tsx > checkbox toggles once and keeps the menu open
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+stderr | |node| app/tests/zz-probe-context-menu.test.tsx > radio selects the domain value once
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+stderr | |node| app/tests/zz-probe-context-menu.test.tsx > Escape while the menu has focus requests the close
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+stderr | |node| app/tests/zz-probe-context-menu.test.tsx > touch long press opens after the delay and a drag cancels it
+An aria-label or aria-labelledby prop is required for accessibility.
+An aria-label or aria-labelledby prop is required for accessibility.
+ ✓ |node| app/tests/zz-probe-context-menu.test.tsx (8 tests) 1.47s
+   ✓ right click opens at the pointer and the anchor follows 106ms
+   ✓ Shift+F10 opens and focuses the menu 44ms
+   ✓ item activation runs once and requests the close 35ms
+   ✓ disabled item does nothing 21ms
+   ✓ checkbox toggles once and keeps the menu open 46ms
+   ✓ radio selects the domain value once 36ms
+   ✓ Escape while the menu has focus requests the close 34ms
+   ✓ touch long press opens after the delay and a drag cancels it 1.14s
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  22:05:56
+   Duration  5.13s
+

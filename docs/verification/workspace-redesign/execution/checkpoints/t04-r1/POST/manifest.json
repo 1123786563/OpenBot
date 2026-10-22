@@ -1,0 +1,12 @@
+[
+  {
+    "path": "app/src/components/bot-profile/profile.tsx",
+    "sha256": "28d24ba4e25439ad78f9ac7100d2f0994ddeb4ea3bd3f3b73acbb3ab33ab7c5f",
+    "bytes": 9058
+  },
+  {
+    "path": "app/tests/bot-profile-active.test.tsx",
+    "sha256": "ec0f82ca603ccff739a83f84d9f5364006d0ae3ae37bfa199033addeced7e67f",
+    "bytes": 4717
+  }
+]

@@ -13,17 +13,7 @@ import {
 import { ConversationView } from "@/components/channels/conversation-view";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import { SidebarToggle } from "@/components/layout/sidebar-toggle";
-import {
-  Combobox,
-  ComboboxChip,
-  ComboboxChips,
-  ComboboxChipsInput,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxItem,
-  ComboboxList,
-  useComboboxAnchor,
-} from "@/components/ui/combobox";
+import { Combobox } from "@/components/ui/combobox";
 import { defaultAgentProfile } from "@/lib/agents/default-agent";
 import {
   type AgentProfile,
@@ -109,7 +99,7 @@ function RouteComponent() {
   /** Bots picked in the To: field, in the order they will answer; the URL's Bot until one is picked. */
   const [picked, setPicked] = useState<AgentProfile[] | null>(null);
   const selected = picked ?? (chosen ? [chosen] : []);
-  const anchor = useComboboxAnchor();
+  const roster = profiles ?? [];
   const recipients: Recipient[] = selected.map((profile) => ({
     id: profile.id,
     name: profile.name,
@@ -129,75 +119,40 @@ function RouteComponent() {
         <span className="text-sm text-muted-foreground">
           {t("recipient.to")}
         </span>
+        {/* React Aria combobox adapter (multi-select). ESC only dismisses the list — it never
+         * clears the selection, so the old Base UI reason:"escape-key" guard simply never fires. */}
         <Combobox
-          // Do not auto-open when the recipient came from the URL; the field is already answered.
-          defaultOpen={!chosen && !loadError && !waitingForUrlAgent}
-          autoHighlight
-          multiple
-          items={profiles ?? []}
-          isItemEqualToValue={(item: AgentProfile, value: AgentProfile) =>
-            item.id === value.id
-          }
-          itemToStringLabel={(item: AgentProfile) => item.name}
-          itemToStringValue={(item: AgentProfile) => item.id}
-          onValueChange={(next: AgentProfile[], details) => {
-            const kept = toFieldChange(selected, next, details.reason);
+          className="flex-1"
+          items={roster}
+          getKey={(profile) => profile.id}
+          itemLabel={(profile) => profile.name}
+          itemSecondary={(profile) => (
+            <span className="truncate text-muted-foreground ml-1">{profile.title}</span>
+          )}
+          chipMedia={(profile) => <ChannelAvatar participantIds={[profile.id]} size={16} />}
+          selected={selected}
+          onSelectedChange={(ids) => {
+            const idSet = new Set(ids);
+            const next = roster.filter((profile) => idSet.has(profile.id));
+            const ordered = ids
+              .map((id) => next.find((profile) => profile.id === id))
+              .filter((profile): profile is AgentProfile => profile !== undefined);
+            // toFieldChange caps the tail (kept above the pick-order synthesis) and keeps the
+            // escape branch documented in compose-state; RAC never produces that reason.
+            const kept = toFieldChange(selected, ordered, "select");
             setPicked(kept);
-            // The first Bot stays in the URL so a reload keeps the conversation's recipient; the
-            // rest of a group lives in the page. Not a separate navigation history entry.
+            // The first Bot stays in the URL so a reload keeps the conversation's recipient.
             void navigate({
               replace: true,
               search: kept[0] ? { agent: kept[0].id } : {},
             });
           }}
-          value={selected}
-        >
-          <ComboboxChips
-            ref={anchor}
-            className="flex-1 border-none bg-transparent! focus-within:ring-0 dark:bg-transparent!"
-          >
-            {selected.map((profile) => (
-              <ComboboxChip
-                className="gap-1.5 pl-1"
-                key={profile.id}
-                removeLabel={`Remove ${profile.name}`}
-              >
-                <ChannelAvatar participantIds={[profile.id]} size={16} />
-                {profile.name}
-              </ComboboxChip>
-            ))}
-            <ComboboxChipsInput
-              // The popup opening is not enough on its own: typing filters through this input, so
-              // the caret starts here whenever the recipient question is still open. A recipient
-              // from the URL means the composer takes focus instead.
-              autoFocus={!chosen}
-              placeholder={
-                selected.length
-                  ? "Add another Bot for a group…"
-                  : "Choose a Bot…"
-              }
-            />
-          </ComboboxChips>
-          {/* Allow max-w to constrain the popup even though its anchor is full-width. */}
-          <ComboboxContent
-            anchor={anchor}
-            className="min-w-0 max-w-lg"
-            sideOffset={12}
-          >
-            <ComboboxEmpty>No Bots found.</ComboboxEmpty>
-            <ComboboxList>
-              {(item: AgentProfile) => (
-                <ComboboxItem key={item.id} value={item} className="h-10">
-                  <ChannelAvatar participantIds={[item.id]} size={24} />
-                  {item.name}
-                  <span className="truncate text-muted-foreground ml-1">
-                    {item.title}
-                  </span>
-                </ComboboxItem>
-              )}
-            </ComboboxList>
-          </ComboboxContent>
-        </Combobox>
+          emptyText="No Bots found."
+          placeholder={
+            selected.length ? "Add another Bot for a group…" : "Choose a Bot…"
+          }
+          defaultOpen={!chosen && !loadError && !waitingForUrlAgent}
+        />
       </div>
       <ConversationView
         // Choosing a coworker answers the "To:" field, so the message is what remains: the caret

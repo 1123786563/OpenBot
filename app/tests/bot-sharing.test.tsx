@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -13,6 +12,13 @@ import userEvent from "@testing-library/user-event";
 import { SharingSections } from "@/components/bot-profile/sharing";
 import type { AgentProfile } from "@/lib/agents/queries";
 import type { TeamBot, TeamBotsData } from "@/lib/team-bots";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -73,9 +79,11 @@ const PUBLISHED: TeamBot = {
 const AUDIENCES = ["team", "people"] as const;
 
 const writes: { url: string; method: string; body: unknown }[] = [];
+let refusePublication = false;
 
 function serving(data: TeamBotsData, role: "admin" | "user") {
   writes.length = 0;
+  refusePublication = false;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (init?.method && init.method !== "GET") {
@@ -84,6 +92,13 @@ function serving(data: TeamBotsData, role: "admin" | "user") {
         method: init.method,
         body: init.body ? JSON.parse(String(init.body)) : undefined,
       });
+      if (refusePublication && url.includes("/publication")) {
+        refusePublication = false;
+        return Response.json(
+          { error: "The team list is unavailable." },
+          { status: 503 },
+        );
+      }
       return Response.json({});
     }
     if (url.includes("/api/team-bots"))
@@ -141,7 +156,13 @@ test("publishing to specific people sends them and their groups", async () => {
   const view = draw(BOT);
   const user = userEvent.setup({ document });
   await user.click(await view.findByRole("button", { name: /Audience/ }));
-  await user.click(view.getByRole("combobox", { name: /^Published to/ }));
+  /*
+   * The trigger is addressed by its accessible name, not by a `combobox` role: HeroUI
+   * Select.Trigger renders a plain button with aria-haspopup="listbox" and drops the
+   * role="combobox" the ui/select wrapper forwards (interface change request recorded;
+   * come back to the role query if the wrapper regains the attribute).
+   */
+  await user.click(view.getByRole("button", { name: /^Published to/ }));
   await user.click(
     await view.findByRole("option", { name: "Specific people or groups" }),
   );
@@ -165,6 +186,39 @@ test("publishing to specific people sends them and their groups", async () => {
       },
     }),
   );
+});
+
+test("a rejected publication keeps the audience draft and explains the failure", async () => {
+  serving(
+    {
+      teamBots: [],
+      publishable: [{ id: "expenses", name: "Expenses", title: "Finance" }],
+    },
+    "user",
+  );
+  refusePublication = true;
+  const view = draw(BOT);
+  const user = userEvent.setup({ document });
+  await user.click(await view.findByRole("button", { name: /Audience/ }));
+  await user.click(view.getByRole("button", { name: /^Published to/ }));
+  await user.click(
+    await view.findByRole("option", { name: "Specific people or groups" }),
+  );
+  await user.type(view.getByLabelText("People, by email"), "keep@example.test");
+  await user.type(view.getByLabelText("Groups"), "finance");
+  fireEvent.submit(
+    (view.getByRole("button", { name: "Publish to team" }) as HTMLButtonElement)
+      .form as HTMLFormElement,
+  );
+  expect(await view.findByRole("alert")).toBeTruthy();
+  expect(
+    (view.getByLabelText("People, by email") as HTMLInputElement).value,
+  ).toBe("keep@example.test");
+  expect((view.getByLabelText("Groups") as HTMLInputElement).value).toBe(
+    "finance",
+  );
+  expect(view.getByRole("dialog")).toBeTruthy();
+  expect(writes).toHaveLength(1);
 });
 
 test("a published Bot of yours can be updated, unpublished and its link copied", async () => {

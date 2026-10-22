@@ -323,7 +323,7 @@ function RouteComponent() {
               available: accounts.length,
             })}
           </p>
-          <InputGroup className="mt-3 h-9 border-transparent bg-muted/60 shadow-none dark:bg-muted/60">
+          <InputGroup className="mt-3 h-9 border-transparent bg-ob-muted-surface/60 shadow-none dark:bg-ob-muted-surface/60">
             <InputGroupAddon>
               <IconSearch aria-hidden="true" className="size-4" />
             </InputGroupAddon>
@@ -386,7 +386,7 @@ function RouteComponent() {
                               {t("connectedAccounts.connected")}
                             </span>
                           ) : (
-                            <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium">
+                            <span className="rounded-full bg-ob-muted-surface px-3 py-1 text-xs font-medium">
                               {t("connectedAccounts.connect")}
                             </span>
                           )}

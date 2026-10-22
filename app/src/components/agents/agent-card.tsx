@@ -1,9 +1,8 @@
 import { IconArrowRight } from "@tabler/icons-react";
-import { Link } from "@tanstack/react-router";
 import Avatar from "boring-avatars";
 import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import type { AgentProfile } from "@/lib/agents/queries";
 
 export function AgentCard({
@@ -52,15 +51,16 @@ export function AgentCard({
       </div>
       <div className="mt-auto flex shrink-0 items-center justify-between pt-2">
         {/* Extend the details link across the card without nesting interactive elements. */}
-        <Button
+        <ButtonLink
           variant="ghost"
           size="xs"
           aria-label={t("card.viewDetails", { name: agent.name })}
           className="-ml-2 text-muted-foreground after:absolute after:inset-0"
-          render={<Link params={{ agentId: agent.id }} to="/bots/$agentId" />}
+          params={{ agentId: agent.id }}
+          to="/bots/$agentId"
         >
           {t("card.details")}
-        </Button>
+        </ButtonLink>
         <IconArrowRight
           aria-hidden="true"
           className="size-4 text-muted-foreground"

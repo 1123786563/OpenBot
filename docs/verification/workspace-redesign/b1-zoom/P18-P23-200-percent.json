@@ -1,0 +1,207 @@
+{
+  "zoom": {
+    "zoom": "200%",
+    "controls": 1
+  },
+  "window": [
+    1440,
+    900
+  ],
+  "results": [
+    {
+      "page": "P18",
+      "path": "/datasets",
+      "theme": "light",
+      "marker": "还没有评测集版本",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "light",
+      "passed": true
+    },
+    {
+      "page": "P18",
+      "path": "/datasets",
+      "theme": "dark",
+      "marker": "还没有评测集版本",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "dark",
+      "passed": true
+    },
+    {
+      "page": "P19",
+      "path": "/evaluations",
+      "theme": "light",
+      "marker": "运行一个实验",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "light",
+      "passed": true
+    },
+    {
+      "page": "P19",
+      "path": "/evaluations",
+      "theme": "dark",
+      "marker": "运行一个实验",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "dark",
+      "passed": true
+    },
+    {
+      "page": "P20",
+      "path": "/evaluations/nonexistent-dataset",
+      "theme": "light",
+      "marker": "你无权管理这个评测集",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "light",
+      "passed": true
+    },
+    {
+      "page": "P20",
+      "path": "/evaluations/nonexistent-dataset",
+      "theme": "dark",
+      "marker": "你无权管理这个评测集",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "dark",
+      "passed": true
+    },
+    {
+      "page": "P21",
+      "path": "/evaluations/experiments/nonexistent-experiment/nonexistent-execution",
+      "theme": "light",
+      "marker": "没有这个实验",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "light",
+      "passed": true
+    },
+    {
+      "page": "P21",
+      "path": "/evaluations/experiments/nonexistent-experiment/nonexistent-execution",
+      "theme": "dark",
+      "marker": "没有这个实验",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "dark",
+      "passed": true
+    },
+    {
+      "page": "P22",
+      "path": "/evaluations/experiment-comparisons",
+      "theme": "light",
+      "marker": "评测",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "light",
+      "passed": true
+    },
+    {
+      "page": "P22",
+      "path": "/evaluations/experiment-comparisons",
+      "theme": "dark",
+      "marker": "评测",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "dark",
+      "passed": true
+    },
+    {
+      "page": "P23",
+      "path": "/exports",
+      "theme": "light",
+      "marker": "还没有导出",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "light",
+      "passed": true
+    },
+    {
+      "page": "P23",
+      "path": "/exports",
+      "theme": "dark",
+      "marker": "还没有导出",
+      "markerVisible": true,
+      "noOverflow": true,
+      "zoomViewport": [
+        720,
+        406
+      ],
+      "dpr": 4,
+      "visualViewportScale": 1,
+      "rootTheme": "dark",
+      "passed": true
+    }
+  ],
+  "passed": 12,
+  "total": 12,
+  "caveat": "P20/P21 use non-existent nested ids and cover only scoped refusal states; other states are current isolated-fixture empty/disabled states."
+}

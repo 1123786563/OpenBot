@@ -22,7 +22,7 @@ export function MessageThinking({
     <div className="rounded-md border border-border">
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted/40"
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-ob-muted-surface/40"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
