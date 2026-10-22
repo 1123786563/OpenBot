@@ -8,16 +8,17 @@
  * whoever wrote last. `recoverStale` relies on the same guards to settle a dead runner's turn
  * exactly once even when two replicas notice the same heartbeat going quiet.
  */
-import { and, asc, desc, eq, gt, isNotNull, lt, ne, sql } from "drizzle-orm";
+
 import { randomBytes } from "node:crypto";
+import { and, asc, desc, eq, gt, isNotNull, lt, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   workshopArtifacts,
+  workshopScheduleRuns,
+  workshopSchedules,
   workshopSessions,
   workshopTurnEvents,
   workshopTurns,
-  workshopSchedules,
-  workshopScheduleRuns,
 } from "../db/schema/workshop";
 
 /** `ws-…`, distinguishable from the runs (`cr-…`) they may be joined to. */
@@ -56,9 +57,7 @@ export type WorkshopStore = {
 
   // ── schedules (B16/B17) ─────────────────────────────────────────────────────
   /** Every schedule for a session, newest first; the panel's list. */
-  listSchedules(
-    sessionId: string,
-  ): Promise<
+  listSchedules(sessionId: string): Promise<
     Array<{
       id: string;
       prompt: string;
@@ -293,7 +292,9 @@ export function createWorkshopStore(db: Database): WorkshopStore {
       const rows = await db
         .update(workshopTurns)
         .set({ status: "running", runnerHeartbeatAt: at ?? new Date() })
-        .where(and(eq(workshopTurns.id, turnId), eq(workshopTurns.status, "queued")))
+        .where(
+          and(eq(workshopTurns.id, turnId), eq(workshopTurns.status, "queued")),
+        )
         .returning({ id: workshopTurns.id });
       return rows.length > 0;
     },
@@ -302,7 +303,12 @@ export function createWorkshopStore(db: Database): WorkshopStore {
       await db
         .update(workshopTurns)
         .set({ runnerHeartbeatAt: at ?? new Date() })
-        .where(and(eq(workshopTurns.id, turnId), eq(workshopTurns.status, "running")));
+        .where(
+          and(
+            eq(workshopTurns.id, turnId),
+            eq(workshopTurns.status, "running"),
+          ),
+        );
     },
 
     async markSucceeded(turnId, patch, at) {
@@ -313,7 +319,12 @@ export function createWorkshopStore(db: Database): WorkshopStore {
           usage: patch.usage ?? {},
           finishedAt: at ?? new Date(),
         })
-        .where(and(eq(workshopTurns.id, turnId), eq(workshopTurns.status, "running")))
+        .where(
+          and(
+            eq(workshopTurns.id, turnId),
+            eq(workshopTurns.status, "running"),
+          ),
+        )
         .returning({ id: workshopTurns.id });
       return rows.length > 0;
     },
@@ -407,7 +418,12 @@ export function createWorkshopStore(db: Database): WorkshopStore {
       return db
         .select()
         .from(workshopTurnEvents)
-        .where(and(eq(workshopTurnEvents.turnId, turnId), gt(workshopTurnEvents.seq, seq)))
+        .where(
+          and(
+            eq(workshopTurnEvents.turnId, turnId),
+            gt(workshopTurnEvents.seq, seq),
+          ),
+        )
         .orderBy(asc(workshopTurnEvents.seq))
         .limit(limit);
     },
@@ -489,7 +505,11 @@ export function createWorkshopStore(db: Database): WorkshopStore {
         status: "enabled",
         // The jsonb column wants a shape, the route hands a validated one; the cast is the
         // store's promise that the writer normalized before this call (B17's parsePreapproval).
-        preapproved: input.preapproved as { paths: string[]; tools: string[]; maxTurnsPerRun: number } | null,
+        preapproved: input.preapproved as {
+          paths: string[];
+          tools: string[];
+          maxTurnsPerRun: number;
+        } | null,
         nextRunAt: input.nextRunAt,
       });
     },

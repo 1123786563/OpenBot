@@ -44,12 +44,12 @@ import {
   enterpriseMemberships,
   enterprisePrincipals,
 } from "../db/schema/enterprise-tenancy";
-import { genericPersonalPreferences } from "../db/schema/hindsight-preferences";
 import {
   hindsightMigrationMap,
   hindsightMigrationQuarantine,
   hindsightMigrationRuns,
 } from "../db/schema/hindsight-legacy-migration";
+import { genericPersonalPreferences } from "../db/schema/hindsight-preferences";
 import {
   hindsightMemoryGrants,
   sourceBoundMemories,
@@ -118,7 +118,9 @@ export function createLegacyMemoryMigrator(
    * ACTIVE membership names — or why that is not provable. Never a guess: two active
    * memberships answer ambiguous, not "the first one"; a global user id never names a tenant.
    */
-  async function attributionOf(ownerUserId: string): Promise<
+  async function attributionOf(
+    ownerUserId: string,
+  ): Promise<
     | { proven: true; tenantId: string; principalId: string }
     | { proven: false; reason: QuarantineReason }
   > {
@@ -161,7 +163,11 @@ export function createLegacyMemoryMigrator(
      * whole-table default.
      */
     async run(
-      input: { runId?: string; limit?: number; owners?: readonly string[] } = {},
+      input: {
+        runId?: string;
+        limit?: number;
+        owners?: readonly string[];
+      } = {},
     ): Promise<MigrationRunReport> {
       const runId = input.runId ?? randomUUID();
       const limit = input.limit ?? DEFAULT_PASS_LIMIT;
@@ -316,10 +322,9 @@ export function createLegacyMemoryMigrator(
         .from(hindsightMigrationQuarantine)
         .where(
           input.owners?.length
-            ? inArray(
-                hindsightMigrationQuarantine.ownerUserId,
-                [...input.owners],
-              )
+            ? inArray(hindsightMigrationQuarantine.ownerUserId, [
+                ...input.owners,
+              ])
             : undefined,
         );
       const byReason: Record<string, number> = {};
@@ -629,4 +634,6 @@ export function createLegacyMemoryMigrator(
   }
 }
 
-export type LegacyMemoryMigrator = ReturnType<typeof createLegacyMemoryMigrator>;
+export type LegacyMemoryMigrator = ReturnType<
+  typeof createLegacyMemoryMigrator
+>;

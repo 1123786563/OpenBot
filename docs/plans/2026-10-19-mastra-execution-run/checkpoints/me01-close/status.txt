@@ -1,0 +1,11 @@
+ M archive/verification/e2e-file-audit.json
+ M docs/verification/e2e-bun-suites.json
+ M server/src/mastra/compatibility.ts
+ M server/tests/enterprise/mastra-compatibility.test.ts
+?? docs/adr/0010-mastra-execution-openbot-governance.md
+?? docs/plans/2026-10-19-mastra-execution-run/
+?? docs/specs/2026-10-19-mastra-agent-execution-migration-design.md
+?? docs/tickets/mastra-agent-execution/
+?? server/tests/mastra-agent-resume-process.test.ts
+?? server/tests/support/me01-child.ts
+?? server/tests/support/me01-fixture.ts

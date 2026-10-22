@@ -22,6 +22,7 @@ import type {
   ComputerUpdate,
 } from "./provider";
 import type { ComputerStatus } from "./schema";
+
 const log = getLogger("server");
 
 const SERVICE_ACCOUNT = "/var/run/secrets/kubernetes.io/serviceaccount";

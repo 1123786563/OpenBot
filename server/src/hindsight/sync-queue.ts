@@ -49,8 +49,8 @@ import {
   teamBankFor,
   userBankFor,
 } from "./bank-scope";
-import type { PreferenceRecallServiceConfig } from "./preference-recall";
 import type { HindsightBudgetGate } from "./budget-gate";
+import type { PreferenceRecallServiceConfig } from "./preference-recall";
 import {
   bankGrantForRestriction,
   type SourceBoundAuthorizationStore,
@@ -373,10 +373,7 @@ export function createHindsightSyncQueue(
     bankId: string,
     documentId: string,
     content: string,
-  ): Promise<
-    | { ok: true }
-    | { ok: false; reason: string; reached: boolean }
-  > {
+  ): Promise<{ ok: true } | { ok: false; reason: string; reached: boolean }> {
     const token = mintBankScopeAssertion(grant, {
       secret: config.assertionSecret,
       ttlMs: ASSERTION_TTL_MS,

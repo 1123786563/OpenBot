@@ -4,9 +4,9 @@ import type { OpenMuseCalendarClient } from "../openmuse-calendar/client";
 import type { OpenMuseGoogleOAuth } from "../openmuse-connectors/google-oauth";
 import { OpenMuseVendorUnavailableError } from "../openmuse-connectors/google-oauth";
 import {
-  readCurrentEtag,
   type ReviewedActionExecution,
   type ReviewedActionExecutor,
+  readCurrentEtag,
   settleDialFailure,
   vendorDetailOf,
 } from "./executor";

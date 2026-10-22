@@ -1,13 +1,17 @@
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { ChannelStore } from "../channels/routes";
+import { PROVIDER_BY_CONNECTION_KIND } from "../openmuse-connectors/google-oauth";
 import type { OpenMuseNotificationStore } from "../openmuse-notifications/store";
 import type { OpenMuseGoalStore } from "../openmuse-personal/goals";
 import type { OpenMuseIdeaStore } from "../openmuse-personal/ideas";
 import type { OpenMuseMemoryStore } from "../openmuse-personal/memories";
-import { PROVIDER_BY_CONNECTION_KIND } from "../openmuse-connectors/google-oauth";
 import type { OpenMuseReviewedActionService } from "../openmuse-reviewed-actions/service";
 import type { OpenMuseTaskStore } from "../openmuse-tasks/store";
-import { MODULE_GAP, MODULE_GAP_ERROR, OPENMUSE_ACCOUNT_DELETION_KIND } from "./manifest";
+import {
+  MODULE_GAP,
+  MODULE_GAP_ERROR,
+  OPENMUSE_ACCOUNT_DELETION_KIND,
+} from "./manifest";
 import { OPENMUSE_FILE_METADATA_KIND } from "./purge";
 import { sanitizeLastError } from "./retention";
 import type {
@@ -182,8 +186,7 @@ export function createOpenMuseRelationalPurger(deps: {
           state: row.state,
           ...(row.lastError
             ? {
-                lastError:
-                  sanitizeLastError(row.lastError) ?? row.lastError,
+                lastError: sanitizeLastError(row.lastError) ?? row.lastError,
               }
             : {}),
         })),

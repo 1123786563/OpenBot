@@ -4,7 +4,6 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
-import { isPositiveInt32TokenCount } from "./output-ceiling";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   enterpriseModelBudgetReservations,
@@ -21,6 +20,7 @@ import type {
 import { createConversationStore } from "../conversations/store";
 import { runCeilingIdempotencyKey } from "../models/budget";
 import type { DataDatabase } from "../tenancy/connections";
+import { isPositiveInt32TokenCount } from "./output-ceiling";
 import { hasActiveAttemptLease } from "./store";
 
 type Transaction = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];

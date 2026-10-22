@@ -34,15 +34,12 @@ import {
 } from "./customer-provision";
 import type { GatewayEndpointConfig } from "./endpoint-config";
 import { gatewayEndpointControls } from "./endpoint-config";
+import { outstandingGatewayKeyDriftReasons } from "./key-drift";
 import {
   resolveVirtualKeyTtlMinutes,
   virtualKeyTtlMinutesProblem,
 } from "./key-expiry";
-import { outstandingGatewayKeyDriftReasons } from "./key-drift";
-import {
-  GatewayKeyRenewalError,
-  type RenewedGatewayKey,
-} from "./key-renewal";
+import { GatewayKeyRenewalError, type RenewedGatewayKey } from "./key-renewal";
 import { GatewayNotReadyError } from "./readiness";
 
 /*
@@ -288,7 +285,9 @@ export function createGatewayKeyIssuer(
     // one clock reading taken before the create, so the remote key, the local record, the
     // answer and the audit all name the same instant.
     const issuedAt = (deps.now ?? defaultNow)();
-    const expiresAt = new Date(issuedAt.getTime() + deps.keyTtlMinutes * 60_000);
+    const expiresAt = new Date(
+      issuedAt.getTime() + deps.keyTtlMinutes * 60_000,
+    );
     const issued = await deps.database.transaction(async (tx) => {
       const [row] = await tx
         .select()
@@ -964,8 +963,7 @@ export function createKeyIssuanceRoutes(
       if (error instanceof GatewayNotReadyError) {
         return context.json(
           {
-            error:
-              "The model gateway is not ready, so key renewal is refused.",
+            error: "The model gateway is not ready, so key renewal is refused.",
             code: "gateway_not_ready",
           },
           503,

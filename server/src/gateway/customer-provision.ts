@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
-import { payerKey, type PayerRef } from "../billing/payer";
+import { type PayerRef, payerKey } from "../billing/payer";
 import type { Database } from "../db/client";
 import { gatewayCustomers } from "../db/schema/gateway";
 import type { GatewayCustomerProvisionResult } from "./customer";
@@ -112,10 +112,7 @@ export class GatewayProvisionOutcomeUnknownError extends Error {
  */
 export class GatewayProvisionRefusedError extends Error {
   readonly code = "gateway_provision_refused";
-  constructor(
-    message: string,
-    options?: { cause?: unknown },
-  ) {
+  constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = "GatewayProvisionRefusedError";
   }
@@ -167,7 +164,9 @@ export type GatewayCustomerProvisioning = {
    */
   provisionCustomer: (ref: PayerRef) => Promise<ProvisionResult>;
   /** The local mapping as it stands, or null. Reads only; no gate, no remote calls. */
-  readCustomerMapping: (ref: PayerRef) => Promise<GatewayCustomerMapping | null>;
+  readCustomerMapping: (
+    ref: PayerRef,
+  ) => Promise<GatewayCustomerMapping | null>;
 };
 
 export type GatewayCustomerProvisioningDeps = {
@@ -232,7 +231,10 @@ export function createGatewayCustomerProvisioning(
     return row;
   };
 
-  const markState = async (rowId: string, state: "recoverable" | "confirmed") => {
+  const markState = async (
+    rowId: string,
+    state: "recoverable" | "confirmed",
+  ) => {
     await database
       .update(gatewayCustomers)
       .set({ provisionState: state })
@@ -457,6 +459,6 @@ export function createGatewayCustomerProvisioning(
   };
 }
 
+export type { GatewayCustomerProvisionResult };
 /** Re-export so callers of this module can classify the seam's failures too. */
 export { GatewayCustomerProvisionError };
-export type { GatewayCustomerProvisionResult };

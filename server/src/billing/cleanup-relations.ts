@@ -1,10 +1,10 @@
 import { sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
-  classifyCleanup,
-  isReservationInFlight,
   type CleanupClassification,
   type CleanupRecordClass,
+  classifyCleanup,
+  isReservationInFlight,
 } from "./cleanup-classification";
 
 /*
@@ -48,7 +48,10 @@ import {
  */
 
 /** The statuses that mean "the subscription still exists at the payment gateway". */
-export const EXTERNAL_LIVE_SUBSCRIPTION_STATUSES = ["active", "incomplete"] as const;
+export const EXTERNAL_LIVE_SUBSCRIPTION_STATUSES = [
+  "active",
+  "incomplete",
+] as const;
 
 /** Why a candidate was pulled from the cleanup set; every removal cites exactly one. */
 export type RemovalReason =
@@ -66,7 +69,10 @@ export type ProtectionKind =
   | "attribution_kept";
 
 /** How deleting the candidate would touch the row. */
-export type ImpactEffect = "cascade_delete" | "set_null_mutate" | "delete_blocked";
+export type ImpactEffect =
+  | "cascade_delete"
+  | "set_null_mutate"
+  | "delete_blocked";
 
 /** The classification verdict of a probed row; `unclassified` rows default to protected. */
 export type RowClass = CleanupRecordClass | "unclassified";
@@ -136,7 +142,12 @@ export type CandidateRelationEvaluation = {
   /** Rows that would vanish with this record (transitive CASCADE closure). */
   cascadeDeletionScope: ScopeRow[];
   /** Rows a SET NULL edge would mutate (evidence pointer nulled), not delete. */
-  setNullMutationScope: { table: string; recordId: string; column: string; class: RowClass }[];
+  setNullMutationScope: {
+    table: string;
+    recordId: string;
+    column: string;
+    class: RowClass;
+  }[];
   /** Rows whose RESTRICT/NO ACTION reference makes the deletion impossible while they stand. */
   blockedBy: ScopeRow[];
   /** The touched rows that must survive — non-empty exactly when the candidate is pulled. */
@@ -274,7 +285,14 @@ const TABLE_SPECS: Record<string, TableSpec> = {
   },
   payment_orders: {
     idColumn: "id",
-    columns: ["id", "status", "provider", "plan_code", "amount_cents", "created_at"],
+    columns: [
+      "id",
+      "status",
+      "provider",
+      "plan_code",
+      "amount_cents",
+      "created_at",
+    ],
   },
   payment_events: { idColumn: "id", columns: ["id", "order_id"] },
   usage_outbox: {
@@ -309,20 +327,98 @@ const DECLARED_EDGES: {
   parentColumn: string;
   onDelete: RelationFkEdge["onDelete"];
 }[] = [
-  { childTable: "payer_accounts", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "billing_subscriptions", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_grants", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_ledger", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_ledger", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "set_null" },
-  { childTable: "credit_reservations", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "credit_reservations", childColumn: "ledger_id", parentTable: "credit_ledger", parentColumn: "id", onDelete: "set_null" },
-  { childTable: "credit_reservation_allocations", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
-  { childTable: "credit_reservation_allocations", childColumn: "grant_id", parentTable: "credit_grants", parentColumn: "id", onDelete: "cascade" },
-  { childTable: "credit_charge_remainders", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
-  { childTable: "payment_events", childColumn: "order_id", parentTable: "payment_orders", parentColumn: "id", onDelete: "cascade" },
-  { childTable: "credit_reservation_attribution", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
+  {
+    childTable: "payer_accounts",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_subscriptions",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_grants",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_ledger",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_ledger",
+    childColumn: "grant_id",
+    parentTable: "credit_grants",
+    parentColumn: "id",
+    onDelete: "set_null",
+  },
+  {
+    childTable: "credit_reservations",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_reservations",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "set_null",
+  },
+  {
+    childTable: "credit_reservation_allocations",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_reservation_allocations",
+    childColumn: "grant_id",
+    parentTable: "credit_grants",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_charge_remainders",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "payment_events",
+    childColumn: "order_id",
+    parentTable: "payment_orders",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "credit_reservation_attribution",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
   // 0147 (#276): 08.1's recovery item, the same one-hop shape as the attribution row above.
-  { childTable: "credit_recovery_items", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
+  {
+    childTable: "credit_recovery_items",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
 ];
 
 const ON_DELETE_BY_CODE: Record<string, RelationFkEdge["onDelete"]> = {
@@ -403,9 +499,7 @@ export async function evaluateCleanupRelations(
   // The classification's tables must all be tables this module knows how to probe; a
   // classification covering an unknown table means the two contracts have drifted.
   const classifiedTables = new Set(classification.records.map((r) => r.table));
-  const unknown = [...classifiedTables].filter(
-    (table) => !TABLE_SPECS[table],
-  );
+  const unknown = [...classifiedTables].filter((table) => !TABLE_SPECS[table]);
   if (unknown.length > 0) {
     throw new Error(
       `classification covers tables this evaluation cannot probe: [${unknown.join(", ")}] — reconcile the two contracts before evaluating relations.`,
@@ -585,7 +679,9 @@ export async function evaluateCleanupRelations(
         row: found[0],
       });
     }
-    const candidateByKey = new Map(candidates.map((c) => [rowKey(c.table, c.recordId), c]));
+    const candidateByKey = new Map(
+      candidates.map((c) => [rowKey(c.table, c.recordId), c]),
+    );
 
     const classOf = (row: ProbeRow): RowClass =>
       recordClassByKey.get(rowKey(row.table, row.recordId)) ?? "unclassified";
@@ -597,7 +693,9 @@ export async function evaluateCleanupRelations(
       }
       if (row.table === "credit_reservation_allocations") {
         return isReservationInFlight(
-          reservationStatus.get(allocationReservation.get(row.recordId) ?? "") ?? "",
+          reservationStatus.get(
+            allocationReservation.get(row.recordId) ?? "",
+          ) ?? "",
         );
       }
       return false;
@@ -613,7 +711,8 @@ export async function evaluateCleanupRelations(
         const row = frontier.pop();
         if (!row) break;
         for (const edge of edges) {
-          if (edge.parentTable !== row.table || edge.onDelete !== "cascade") continue;
+          if (edge.parentTable !== row.table || edge.onDelete !== "cascade")
+            continue;
           const parentValue = row.cols[edge.parentColumn];
           if (parentValue === null || parentValue === undefined) continue;
           for (const childRow of await probeRows(
@@ -635,7 +734,11 @@ export async function evaluateCleanupRelations(
       const mutations: { row: ProbeRow; column: string }[] = [];
       for (const deleted of [root, ...closure]) {
         for (const edge of edges) {
-          if (edge.parentTable !== deleted.table || edge.onDelete !== "set_null") continue;
+          if (
+            edge.parentTable !== deleted.table ||
+            edge.onDelete !== "set_null"
+          )
+            continue;
           const parentValue = deleted.cols[edge.parentColumn];
           if (parentValue === null || parentValue === undefined) continue;
           for (const childRow of await probeRows(
@@ -737,7 +840,8 @@ export async function evaluateCleanupRelations(
     const mappingKeptIds = new Set<string>();
     for (const candidate of candidates) {
       if (candidate.table !== "payer_accounts") continue;
-      const key = candidate.externalCustomerId ?? candidate.row.cols.external_customer_id;
+      const key =
+        candidate.externalCustomerId ?? candidate.row.cols.external_customer_id;
       if (!key) continue;
       const kept = classification.records.filter(
         (record) =>
@@ -763,7 +867,8 @@ export async function evaluateCleanupRelations(
           : "external_payment_order_open";
       }
       if (mappingKeptIds.has(key)) return "attribution_kept";
-      if (KEEP_CLASSES.has(classOf(row)) || isLiveInFlight(row)) return "retained";
+      if (KEEP_CLASSES.has(classOf(row)) || isLiveInFlight(row))
+        return "retained";
       return null;
     };
 
@@ -901,7 +1006,9 @@ export async function evaluateCleanupRelations(
       }
 
       // The cascade reach, and the impact the protected rows turn it into.
-      const { closure, mutations, blocked } = await deletionReach(candidate.row);
+      const { closure, mutations, blocked } = await deletionReach(
+        candidate.row,
+      );
       const retainedImpact: RetainedImpact[] = [];
       for (const row of closure) {
         const protection = protectionOf(row);
@@ -956,7 +1063,9 @@ export async function evaluateCleanupRelations(
           status: row.status,
           planCode: row.plan_code,
         }))
-        .sort((a, b) => (a.externalSubscriptionId < b.externalSubscriptionId ? -1 : 1));
+        .sort((a, b) =>
+          a.externalSubscriptionId < b.externalSubscriptionId ? -1 : 1,
+        );
 
       // The verdict, in the ticket's order: external anchors first, then the cascade rule,
       // then the mapping-evidence rule, then blocked deletions.
@@ -989,7 +1098,9 @@ export async function evaluateCleanupRelations(
         );
         evidence = `payer_accounts ${candidate.recordId} is the attribution evidence the kept records of key ${keptKey} cite (${kept
           .map((record) => `${record.table}/${record.recordId}`)
-          .join(", ")}); deleting it would leave the kept quarantine unexplicable (Q29)`;
+          .join(
+            ", ",
+          )}); deleting it would leave the kept quarantine unexplicable (Q29)`;
       } else {
         evidence = `deleting ${candidate.table} ${candidate.recordId} reaches only cleanable rows: ${closure.length} in the cascade scope, ${mutations.length} SET NULL mutations of cleanable rows, ${blocked.length} blocked references — no protected row touched`;
         if (incomingReferences.length > 0) {
@@ -1056,7 +1167,8 @@ export async function evaluateCleanupRelations(
     let outboxLinkMatched = 0;
     for (const key of candidateOutboxKeys) {
       if (
-        (await probeRows(tx, "billing_customers", "external_id", key)).length > 0
+        (await probeRows(tx, "billing_customers", "external_id", key)).length >
+        0
       ) {
         outboxLinkMatched += 1;
       }
@@ -1166,8 +1278,9 @@ export async function evaluateCleanupRelations(
           status: orderRow.status,
           createdAt: orderRow.created_at.toISOString(),
           evidence:
-            anchorEvidenceByKey.get(rowKey(candidate.table, candidate.recordId)) ??
-            "pending at the payment channel: held for manual confirmation",
+            anchorEvidenceByKey.get(
+              rowKey(candidate.table, candidate.recordId),
+            ) ?? "pending at the payment channel: held for manual confirmation",
         };
       })
       .sort((a, b) => (a.orderId < b.orderId ? -1 : 1));
@@ -1189,7 +1302,9 @@ export async function evaluateCleanupRelations(
           TABLE_ORDER.indexOf(a.childTable as (typeof TABLE_ORDER)[number]) -
             TABLE_ORDER.indexOf(b.childTable as (typeof TABLE_ORDER)[number]) ||
           TABLE_ORDER.indexOf(a.parentTable as (typeof TABLE_ORDER)[number]) -
-            TABLE_ORDER.indexOf(b.parentTable as (typeof TABLE_ORDER)[number]) ||
+            TABLE_ORDER.indexOf(
+              b.parentTable as (typeof TABLE_ORDER)[number],
+            ) ||
           (a.childColumn < b.childColumn ? -1 : 1),
       ),
       observedLinks,
@@ -1232,8 +1347,14 @@ if (import.meta.main) {
   const { createDatabase } = await import("../db/client");
   const databaseInstance = createDatabase(databaseUrl);
   try {
-    const classification = await classifyCleanup(databaseInstance, registryInput);
-    const manifest = await evaluateCleanupRelations(databaseInstance, classification);
+    const classification = await classifyCleanup(
+      databaseInstance,
+      registryInput,
+    );
+    const manifest = await evaluateCleanupRelations(
+      databaseInstance,
+      classification,
+    );
     process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
   } finally {
     await databaseInstance.$client.end();

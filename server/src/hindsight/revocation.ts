@@ -35,11 +35,11 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { genericPersonalPreferences } from "../db/schema/hindsight-preferences";
 import {
   derivedJudgmentCandidates,
   derivedJudgmentEvidence,
 } from "../db/schema/hindsight-judgments";
+import { genericPersonalPreferences } from "../db/schema/hindsight-preferences";
 import { hindsightRevocations } from "../db/schema/hindsight-revocations";
 import {
   hindsightMemoryGrants,
@@ -380,11 +380,7 @@ export function createRevocationService(
         );
         attempted = attempted || outcome.attempted;
         if (!outcome.confirmed) outstanding++;
-        await noteOutcome(
-          input.tenantId,
-          input.documentId,
-          outcome,
-        );
+        await noteOutcome(input.tenantId, input.documentId, outcome);
       }
       return {
         stoppedUsingAt,
@@ -433,7 +429,10 @@ export function createRevocationService(
               : undefined,
           ),
         )
-        .orderBy(asc(hindsightRevocations.blockedAt), asc(hindsightRevocations.id))
+        .orderBy(
+          asc(hindsightRevocations.blockedAt),
+          asc(hindsightRevocations.id),
+        )
         .limit(limit)
         .offset(input.offset ?? 0);
       let confirmed = 0;
@@ -458,9 +457,7 @@ export function createRevocationService(
      * fed rows and dependent judgments tombstoned, new documents the restore introduced
      * added to the ledger). Idempotent: an unchanged database re-applies nothing.
      */
-    async replayRevocations(
-      input: { tenantId?: string } = {},
-    ): Promise<{
+    async replayRevocations(input: { tenantId?: string } = {}): Promise<{
       memoryRows: number;
       reappliedMemoryBlocks: number;
       authorizationTargets: number;
@@ -580,9 +577,7 @@ export function createRevocationService(
           targetId: hindsightRevocations.targetId,
         })
         .from(hindsightRevocations)
-        .where(
-          and(ne(hindsightRevocations.kind, "memory"), tenantFilter),
-        );
+        .where(and(ne(hindsightRevocations.kind, "memory"), tenantFilter));
       let reappliedAuthorizationBlocks = 0;
       for (const target of authorizationRows) {
         const blocked = await applyAuthorizationBlock(

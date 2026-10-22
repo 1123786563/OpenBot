@@ -124,7 +124,10 @@ export interface UsageEvent {
   /** 用量面（llm/code_run/voice/dictation…），裸标识。 */
   readonly source: string;
   readonly account: UsageEventAccountBinding;
-  readonly meters: ReadonlyArray<{ readonly name: string; readonly value: number }>;
+  readonly meters: ReadonlyArray<{
+    readonly name: string;
+    readonly value: number;
+  }>;
   readonly occurredAt: string;
   /** 自由正文（错误路径/异常文本）——发射前经 redactUsageEvent。 */
   readonly detail?: string;
@@ -194,7 +197,9 @@ export function createUsageEventRecorder(sink: UsageEventSink): {
 export function redactUsageEvent<T extends UsageEvent>(event: T): T {
   return {
     ...event,
-    ...(event.detail !== undefined ? { detail: scrubCommand(event.detail) } : {}),
+    ...(event.detail !== undefined
+      ? { detail: scrubCommand(event.detail) }
+      : {}),
     ...(event.error !== undefined
       ? {
           error: {

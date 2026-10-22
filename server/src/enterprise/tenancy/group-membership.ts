@@ -188,9 +188,11 @@ export interface GroupMembershipService {
     agentId: string,
   ): Promise<GroupExecution>;
   /** 群读取：成员门（自身 grant active）；返回成员数与在场席位。 */
-  readGroup(scope: PlatformScope, groupId: string): Promise<
-    | ({ readonly outcome: "allow" } & GroupView)
-    | ResourceNotFoundVerdict
+  readGroup(
+    scope: PlatformScope,
+    groupId: string,
+  ): Promise<
+    ({ readonly outcome: "allow" } & GroupView) | ResourceNotFoundVerdict
   >;
 }
 
@@ -314,10 +316,7 @@ export function createGroupMembershipService(channels: {
             enterpriseWorkspaceMemberships.workspaceId,
             enterpriseResources.workspaceId,
           ),
-          eq(
-            enterpriseWorkspaceMemberships.principalId,
-            scope.principalId,
-          ),
+          eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
         ),
       )
       .leftJoin(
@@ -370,9 +369,7 @@ export function createGroupMembershipService(channels: {
           sql`${enterpriseResources.visibility} = 'workspace'`,
         ),
       );
-    return seatRows
-      .map((row) => row.id.slice(groupId.length + 1))
-      .sort();
+    return seatRows.map((row) => row.id.slice(groupId.length + 1)).sort();
   };
 
   return {
@@ -581,10 +578,7 @@ export function createGroupMembershipService(channels: {
             visibility: "workspace",
           })
           .onConflictDoUpdate({
-            target: [
-              enterpriseResources.tenantId,
-              enterpriseResources.id,
-            ],
+            target: [enterpriseResources.tenantId, enterpriseResources.id],
             set: { visibility: "workspace" },
           });
         return deepFreeze({

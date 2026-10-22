@@ -6,6 +6,7 @@ import { PluginRefusedError } from "../plugins/store";
 import type { MemoryIngestion } from "./ingestion";
 import type { MemoryStore } from "./store";
 import { MemoryNotFoundError, MemoryRefusedError } from "./types";
+
 const log = getLogger("server");
 
 export function createMemoryRoutes(

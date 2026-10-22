@@ -17,6 +17,7 @@
 import postgres from "postgres";
 import { getLogger } from "../../../shared/logger";
 import { ACTION_POLICY_TOPIC, type PolicyStore } from "./policy-store";
+
 const log = getLogger("server");
 
 export type PolicyListener = { stop: () => Promise<void> };

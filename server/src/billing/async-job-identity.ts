@@ -75,7 +75,9 @@ export type AsyncJobView = {
  * from, so two surfaces can never disagree about what a job row says (17.3's sweep reuses
  * it for the unconfirmed walk).
  */
-export function asyncJobViewOf(row: typeof asyncJobs.$inferSelect): AsyncJobView {
+export function asyncJobViewOf(
+  row: typeof asyncJobs.$inferSelect,
+): AsyncJobView {
   return {
     jobId: row.jobId,
     submitIdempotencyKey: row.submitIdempotencyKey,
@@ -211,10 +213,7 @@ export async function attachAsyncJobProviderId(
       dispatchedAt: now(),
     })
     .where(
-      and(
-        eq(asyncJobs.jobId, input.jobId),
-        isNull(asyncJobs.providerJobId),
-      ),
+      and(eq(asyncJobs.jobId, input.jobId), isNull(asyncJobs.providerJobId)),
     )
     .returning();
   if (updated === undefined) {
@@ -229,7 +228,11 @@ export async function attachAsyncJobProviderId(
       current !== undefined &&
       current.providerJobId === input.providerJobId
     ) {
-      return { status: "attached", job: asyncJobViewOf(current), alreadyKnown: false };
+      return {
+        status: "attached",
+        job: asyncJobViewOf(current),
+        alreadyKnown: false,
+      };
     }
     return {
       status: "refused",
@@ -237,5 +240,9 @@ export async function attachAsyncJobProviderId(
       detail: { jobId: input.jobId },
     };
   }
-  return { status: "attached", job: asyncJobViewOf(updated), alreadyKnown: false };
+  return {
+    status: "attached",
+    job: asyncJobViewOf(updated),
+    alreadyKnown: false,
+  };
 }

@@ -1,8 +1,8 @@
-import { computerAccessCheck } from "../agents/computer-access";
 import { getLogger } from "../../../shared/logger";
-import { ComputerCapacityError } from "./capacity";
+import { computerAccessCheck } from "../agents/computer-access";
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { AgentActor } from "../agents/profile-types";
+import { ComputerCapacityError } from "./capacity";
 import { streamPathBotId } from "./stream-path";
 
 const log = getLogger("server");

@@ -197,8 +197,11 @@ export function createOpenMuseCalendarRoutes(deps: {
     } | null = null;
     // The inbound cursor's own keyset position, replayed onto the outbound
     // cursor when a truncation ships an empty page (M10).
-    let resumePosition: { start: string; id: string; calendarId: string } | null =
-      null;
+    let resumePosition: {
+      start: string;
+      id: string;
+      calendarId: string;
+    } | null = null;
     if (rawCursor !== undefined && rawCursor !== "") {
       const decoded = decodeCalendarCursor(rawCursor);
       if (
@@ -224,7 +227,11 @@ export function createOpenMuseCalendarRoutes(deps: {
       // M10: the inbound position itself, kept for a truncation that ships
       // an EMPTY page — the resume cursor then re-states it rather than
       // leaving the client positionless.
-      resumePosition = { start: decoded.start, id: decoded.id, calendarId: decoded.calendarId };
+      resumePosition = {
+        start: decoded.start,
+        id: decoded.id,
+        calendarId: decoded.calendarId,
+      };
     }
 
     /*
@@ -327,12 +334,11 @@ export function createOpenMuseCalendarRoutes(deps: {
      * truncation flag alone stays honest.
      */
     const mustResume = hasSurplus || capped;
-    const position =
-      !mustResume
-        ? null
-        : last !== undefined
-          ? { start: last.start, id: last.id, calendarId: last.calendarId }
-          : resumePosition;
+    const position = !mustResume
+      ? null
+      : last !== undefined
+        ? { start: last.start, id: last.id, calendarId: last.calendarId }
+        : resumePosition;
     return context.json({
       events: page,
       truncated: truncated || stoppedShort || capped,

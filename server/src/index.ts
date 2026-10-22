@@ -23,6 +23,7 @@ import {
   headlessTurnRefusal,
   installEnterpriseControls,
 } from "./admin/controls";
+import { createEnterpriseStore } from "./admin/settings-store";
 import {
   CoworkerUnavailableError,
   createActorAgentResolver,
@@ -47,6 +48,7 @@ import {
 import {
   configureBotLifecycle,
   createBotLifecycleStore,
+  guardBotTurn,
 } from "./agents/lifecycle";
 import { createBotReset } from "./agents/lifecycle-reset";
 import {
@@ -60,6 +62,8 @@ import { createRuntimeAgentLoader } from "./agents/runtime-agents";
 import {
   createWakeUpRunner,
   createWakeUpStore,
+  WAKE_UP_KIND,
+  wakeUpInstruction,
   wakeUpTools,
 } from "./agents/wake-up";
 import { createRunBindingStore } from "./ai-observability/bindings";
@@ -136,16 +140,9 @@ import { createIdentityProviderStore } from "./auth/identity-provider-store";
 import { createOrganizationAuth } from "./auth/organization";
 import { organizationUserStore } from "./auth/organization-store";
 import type { OpenBotRole } from "./auth/roles";
+import { createCompanyFinanceVisibilityService } from "./billing/company-finance-visibility";
 import { CREDIT_SCALE, createCredits } from "./billing/credits";
 import { createCreditWriter } from "./billing/credits-writer";
-import { createPlanRenewalGrantor } from "./billing/plan-renewals";
-import {
-  CreditInsufficientError,
-  currentPayerBinding,
-  ensureDeploymentPayerBinding,
-  resolveConsumptionPayerBinding,
-} from "./billing/payer-binding";
-import { currentWorkbenchScope } from "./billing/workbench-payer";
 import {
   countChatInputTokens,
   fitChatInputRequest,
@@ -158,11 +155,18 @@ import {
   startUsageDeliverySweeps,
 } from "./billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "./billing/outbound";
+import {
+  CreditInsufficientError,
+  currentPayerBinding,
+  ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
+} from "./billing/payer-binding";
 import { createAlipayProvider } from "./billing/payments/alipay";
 import { startPaymentSweeps } from "./billing/payments/maintenance";
 import { createPaymentService } from "./billing/payments/service";
 import { createPaymentStore } from "./billing/payments/store";
 import { createWechatProvider } from "./billing/payments/wechat";
+import { createPlanRenewalGrantor } from "./billing/plan-renewals";
 import { createReconciler } from "./billing/reconcile";
 import { createRecoveryRetry } from "./billing/recovery-retry";
 import { createRecoveryScanner } from "./billing/recovery-scan";
@@ -187,7 +191,10 @@ import {
   UsageOutboxConflictError,
 } from "./billing/usage-outbox";
 import { createWebhookVerifier } from "./billing/webhook-signature";
+import { currentWorkbenchScope } from "./billing/workbench-payer";
+import { createBotServiceRegistry } from "./bot-services/registry";
 import {
+  authorizeAttachmentForSendInTransaction,
   loadAttachmentForTurn,
   markAttachmentsSent,
 } from "./channels/attachments";
@@ -236,10 +243,12 @@ import { createSnapshotStore } from "./computer/snapshot-store";
 import { createStreamAuthorizer } from "./computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "./config";
 import {
+  billingMethodForModel,
   CreditGateFailureError,
   CreditPolicyUnconfiguredError,
   type IdentifyActor,
   type IdentifyUser,
+  type ModelBillingAuditEvent,
   ModelNotPricedError,
   ModelUsageSettlementError,
   mountCopilotRuntime,
@@ -247,12 +256,12 @@ import {
   runtimeModelForEnvironment,
   setBuiltinModelSpanObserver,
   setBuiltinToolStepObserver,
+  setMastraContinuations,
+  setMastraPersonalMemoryContext,
+  setModelBillingAudit,
   setModelUsageGate,
   setWorkbenchGatewayModel,
   type ToolSelection,
-  setModelBillingAudit,
-  type ModelBillingAuditEvent,
-  billingMethodForModel,
 } from "./copilot";
 import { builtinSkillFilesFor } from "./craft/builtin-skills";
 import { loadCraftConfig } from "./craft/config";
@@ -261,25 +270,25 @@ import {
   personalUnconnectedApps,
 } from "./craft/managed-content";
 import { resolveCraftMcpServers } from "./craft/mcp-servers";
-import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
-import { createPreviewTickets } from "./craft/preview-ticket";
-import { createSandboxGateway } from "./craft/sandbox-gateway";
 import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "./craft/opencode-config";
+import { createPreviewOrigin, samePreviewOrigin } from "./craft/preview-origin";
+import { createPreviewTickets } from "./craft/preview-ticket";
 import {
   type CraftRoutesFactory,
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "./craft/routes";
+import { createSandboxGateway } from "./craft/sandbox-gateway";
 import { createCraftStore } from "./craft/store";
 import {
   createPreviewProxy,
   type PreviewWebappHmrDeps,
   resolvePreviewWebappHmrUpgrade,
-  type WebappHmrSocketData,
   resolveWebappHmrUpgrade,
+  type WebappHmrSocketData,
   webappHmrIsAppPath,
   webappHmrSessionIdFromPath,
   webappHmrSocketHandlers,
@@ -292,28 +301,18 @@ import {
   encryptSecret,
   resolveModelApiKey,
 } from "./credentials";
-import {
-  createGatewayAdminCredentialService,
-  gatewayAdminCredentialControls,
-  installGatewayAdminCredentialService,
-} from "./gateway/admin-credential";
-import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
-import {
-  createGatewayVirtualKeyStateClient,
-  startGatewayKeyStateSyncScheduler,
-} from "./gateway/key-state-sync";
-import { gatewayEndpointControls } from "./gateway/endpoint-config";
-import { assertGatewayReadyForBilling } from "./gateway/readiness";
-import { createEnterpriseStore } from "./admin/settings-store";
 import { createDatabase } from "./db/client";
 import {
   channelAgents,
   channelMemberships,
   channels,
   intelligenceChannelMappings,
+  responsibilities,
+  responsibilityEvents,
   responsibilityRuns,
   routineRuns,
   sessions,
+  workItems,
 } from "./db/schema";
 import { createDeliveryRouter, DELIVERY_WORK_KINDS } from "./delivery/router";
 import {
@@ -325,10 +324,31 @@ import type { DeliveryScope } from "./delivery/types";
 import { DeliveryRefusedError } from "./delivery/types";
 import { createDemonstrationRecorder } from "./demonstrations/recording";
 import { createDemonstrationStore } from "./demonstrations/store";
+import type { PlatformScope, RunnerRequestLease } from "./enterprise/contracts";
 import { createUnavailableConversationRoutes } from "./enterprise/conversations/routes";
-import { createEnterpriseConversationEntryRoutes } from "./enterprise/tenancy/assembly-enterprise";
 import { createConversationService } from "./enterprise/conversations/service";
-import { createProductionRunnerComposition } from "./enterprise/runs/runner";
+import {
+  createGovernedModelExecution,
+  type GovernedModelExecution,
+} from "./enterprise/runs/governed-execution";
+import { isPositiveInt32TokenCount } from "./enterprise/runs/output-ceiling";
+import {
+  createProductionRunnerComposition,
+  runWithBoundModelRoute,
+} from "./enterprise/runs/runner";
+import { createEnterpriseConversationEntryRoutes } from "./enterprise/tenancy/assembly-enterprise";
+import {
+  createBillingManagementService,
+  exportTenantAuditEvents,
+  queryTenantAuditEvents,
+  recordTenantAuditEvent,
+} from "./enterprise/tenancy/audit-domains";
+import {
+  createCompanyAdminRoutes,
+  createUnavailableCompanyAdminRoutes,
+} from "./enterprise/tenancy/company-admin-routes";
+import { createCompanyCapabilitiesService } from "./enterprise/tenancy/company-capabilities";
+import { createCompanyConfigReader } from "./enterprise/tenancy/company-config";
 import {
   verifyDataDatabase,
   verifyDirectoryDatabase,
@@ -339,20 +359,18 @@ import {
   createCredentialLeaseService,
 } from "./enterprise/tenancy/credential-lease";
 import {
-  createSharedApprovalAdminService,
-  createSharedApprovalService,
-} from "./enterprise/tenancy/shared-approvals";
-import {
   createCredentialOwnershipAdminService,
   createCredentialOwnershipDecisionService,
   type SecretVault,
 } from "./enterprise/tenancy/credential-ownership";
 import { createDeploymentEntryContextFactory } from "./enterprise/tenancy/entry-context";
+import { createLearningDemonstrationService } from "./enterprise/tenancy/learning-demonstrations";
 import {
   createResourceInventoryService,
   type ResourceInventoryService,
 } from "./enterprise/tenancy/not-found-semantics";
 import { createOAuthStateService } from "./enterprise/tenancy/oauth-state";
+import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
 import {
   createPersonalShareAdminService,
   createPersonalShareDecisionService,
@@ -361,6 +379,11 @@ import {
   createPluginCatalogAdminService,
   createPluginCatalogDecisionService,
 } from "./enterprise/tenancy/plugin-catalog";
+import {
+  createSharedApprovalAdminService,
+  createSharedApprovalService,
+} from "./enterprise/tenancy/shared-approvals";
+import { createCompanySsoScimConfigService } from "./enterprise/tenancy/sso-scim-config";
 import {
   applyStartupVerdict,
   runMultitenancyStartupChecks,
@@ -386,25 +409,43 @@ import {
   createWorkspaceScopeLister,
 } from "./enterprise/tenancy/workspace-admin";
 import {
-  createCompanyAdminRoutes,
-  createUnavailableCompanyAdminRoutes,
-} from "./enterprise/tenancy/company-admin-routes";
-import { createCompanyCapabilitiesService } from "./enterprise/tenancy/company-capabilities";
-import { createCompanyConfigReader } from "./enterprise/tenancy/company-config";
-import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
-import { createCompanySsoScimConfigService } from "./enterprise/tenancy/sso-scim-config";
-import { createLearningDemonstrationService } from "./enterprise/tenancy/learning-demonstrations";
-import {
-  createBillingManagementService,
-  exportTenantAuditEvents,
-  queryTenantAuditEvents,
-  recordTenantAuditEvent,
-} from "./enterprise/tenancy/audit-domains";
-import { createCompanyFinanceVisibilityService } from "./billing/company-finance-visibility";
-import {
   createUnavailableWorkspaceScopeRoutes,
   createWorkspaceScopeRoutes,
 } from "./enterprise/tenancy/workspace-scope-routes";
+import {
+  createGatewayAdminCredentialService,
+  gatewayAdminCredentialControls,
+  installGatewayAdminCredentialService,
+} from "./gateway/admin-credential";
+import { startGatewayCatalogSyncScheduler } from "./gateway/catalog-sync";
+import { gatewayEndpointControls } from "./gateway/endpoint-config";
+import {
+  createGatewayVirtualKeyStateClient,
+  startGatewayKeyStateSyncScheduler,
+} from "./gateway/key-state-sync";
+import { assertGatewayReadyForBilling } from "./gateway/readiness";
+import {
+  createDegradedRecallFacade,
+  createDrizzleDegradedPreferenceSearch,
+  createDrizzleDegradedSourceBoundSearch,
+} from "./hindsight/degraded-recall";
+import { createDrizzlePauseControls } from "./hindsight/pause-controls";
+import {
+  createPersonalMemoryContext,
+  renderPersonalMemoryContext,
+} from "./hindsight/personal-memory-context";
+import {
+  createDrizzlePreferenceRecords,
+  createPreferenceRecallService,
+  preferenceRecallConfigFromEnv,
+} from "./hindsight/preference-recall";
+import { createRestoreRecoveryService } from "./hindsight/restore-recovery";
+import { createRevocationService } from "./hindsight/revocation";
+import {
+  createDrizzleSourceBoundAuthorizations,
+  createDrizzleSourceBoundRecords,
+  createSourceBoundRecallService,
+} from "./hindsight/scoped-recall";
 import {
   createHostAccessBroker,
   HostAccessRefusedError,
@@ -414,7 +455,6 @@ import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
-import { createBotServiceRegistry } from "./bot-services/registry";
 import {
   createIntelligenceClient,
   observeIntelligenceAuthentication,
@@ -435,18 +475,46 @@ import {
 import { clearLearningRevisionFallback } from "./learning/runtime";
 import { createLearningSettingsStore } from "./learning/settings";
 import { createMarketplaceStore } from "./marketplace/store";
+import {
+  createMastraContinuationInstall,
+  type MastraContinuationInstall,
+  MastraContinuationRefusal,
+  type MastraResumeDriver,
+} from "./mastra/approvals";
+import { createMastraComputerTools } from "./mastra/computer-scope";
+import { createMastraContinuationStore } from "./mastra/continuation-store";
+import { createMastraConversationRuntime } from "./mastra/conversation-runtime";
+import { TOOL_LOOP_MAX_STEPS } from "./mastra/execution";
+import type {
+  ClaimedContinuation,
+  ExecutionBinding,
+  MastraSuspensionFact,
+  ResumeDecision,
+} from "./mastra/execution-contracts";
+import type { GovernedTurnRunnerDeps } from "./mastra/headless";
+import {
+  assertResumeBindingCurrent,
+  createGenerationCurrentGate,
+  createGovernedTurnRunner,
+  GOVERNED_HEADLESS_REFUSALS,
+  GovernedHeadlessRefusal,
+  settleResumedRun,
+} from "./mastra/headless";
 import { PostgresTenantStorageRegistry } from "./mastra/postgres-registry";
 import {
   RegistryTenantStorageLookup,
   type TenantCredentialStore,
 } from "./mastra/provisioning";
+import type { MastraResumeLoop } from "./mastra/resume-driver";
+import { createMastraResumeDriver } from "./mastra/resume-driver";
 import { createTenantMastraStorage } from "./mastra/tenant-storage";
+import { createMastraTools } from "./mastra/tools";
 import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
-import { officialModelMetadataLookup } from "./model-availability-check";
 import { OPENMUSE_TEMPLATE_KEY } from "./mobile-bff/openmuse-bot";
+import { officialModelMetadataLookup } from "./model-availability-check";
 import { currentRunObservationScope } from "./observation-run-scope";
 import { createActivityFeed } from "./openmuse-activity/feed";
 import { createOpenMuseActivityRoutes } from "./openmuse-activity/routes";
@@ -557,6 +625,7 @@ import {
 } from "./plugins/shared-use-store";
 import { createPluginStore } from "./plugins/store";
 import {
+  type GrantedTool,
   grantedSkills,
   grantedTools,
   REFUSAL_MARKER,
@@ -1066,6 +1135,9 @@ const enterpriseCapabilities = await (async () => {
       scopes,
       entry,
       conversations: createConversationService({ data, mastraStorage }),
+      // ME06 (#478): the tenant-restricted engine storage the continuation
+      // install's storageFor resolves suspension snapshots through.
+      mastraStorage,
     };
   } catch (error) {
     console.error("Enterprise conversation service unavailable", error);
@@ -1185,12 +1257,13 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
           enterpriseCapabilities.directory,
           enterpriseCapabilities.data,
         ),
-        admin: operator && companyAdminAuthorizer !== null
-          ? {
-              authorizer: companyAdminAuthorizer,
-              service: createWorkspaceAdminService(operator),
-            }
-          : undefined,
+        admin:
+          operator && companyAdminAuthorizer !== null
+            ? {
+                authorizer: companyAdminAuthorizer,
+                service: createWorkspaceAdminService(operator),
+              }
+            : undefined,
         companyAdmin: companyAdminRoutes,
       });
     })()
@@ -2900,19 +2973,20 @@ const computerToolsForTurn = async ({
   });
 };
 
-const routineRunner = createRoutineRunner({
-  routineStore,
-  channelStore,
-  runTurn: createTurnRunner({
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
-    components: { store: componentStore, auditStore: bootAuditStore },
-    buildAgentFor,
-    toolsForTurn: computerToolsForTurn,
-    learningContainerForThread: (input) =>
-      copilotRuntime.learning?.containerForThread(input) ??
-      Promise.resolve(undefined),
-  }),
+/*
+ * The LEGACY headless turn pair, kept for the engines that have not moved to
+ * the governed admission (ME09 moved the routine firing; responsibility and
+ * approval continuations are their own tickets). Selected per assembly below.
+ */
+const legacyRoutineTurn = createTurnRunner({
+  intelligence: routineIntelligence,
+  runner: routineAgentRunner,
+  components: { store: componentStore, auditStore: bootAuditStore },
+  buildAgentFor,
+  toolsForTurn: computerToolsForTurn,
+  learningContainerForThread: (input) =>
+    copilotRuntime.learning?.containerForThread(input) ??
+    Promise.resolve(undefined),
 });
 
 /**
@@ -2972,6 +3046,23 @@ const actorAgentResolver = createActorAgentResolver({
  * keyEncryptionKey stands in as the route/capability HMAC secret until the governed ModelGateway
  * slice names a dedicated one; both are deployment-owned secrets and never leave this process.
  */
+/**
+ * The deployment's effective model selection, named once (ME09) so the
+ * browser Runner and the governed headless turn read the SAME selection —
+ * one route per admission, minted from the tenant package and the
+ * environment, never from a client field.
+ */
+const productionModelSelection = () => ({
+  route: {
+    model: runtimeModel,
+    credentialSecretRef: tenantPackage.model.credentialSecretRef,
+  },
+  nativeBaseUrl:
+    runtimeModel.provider === "anthropic"
+      ? process.env.ANTHROPIC_BASE_URL
+      : process.env.OPENAI_BASE_URL,
+});
+
 const enterpriseRunner = enterpriseCapabilities
   ? createProductionRunnerComposition({
       data: enterpriseCapabilities.data,
@@ -2979,16 +3070,7 @@ const enterpriseRunner = enterpriseCapabilities
       conversations: enterpriseCapabilities.conversations,
       identifyActor,
       resolver: actorAgentResolver,
-      modelSelection: () => ({
-        route: {
-          model: runtimeModel,
-          credentialSecretRef: tenantPackage.model.credentialSecretRef,
-        },
-        nativeBaseUrl:
-          runtimeModel.provider === "anthropic"
-            ? process.env.ANTHROPIC_BASE_URL
-            : process.env.OPENAI_BASE_URL,
-      }),
+      modelSelection: productionModelSelection,
       modelCapabilitySecret: config.keyEncryptionKey,
       // The governed gateway dial resolves the admitted route's api key
       // through the same encrypted credential store every other surface uses.
@@ -2996,6 +3078,1001 @@ const enterpriseRunner = enterpriseCapabilities
       credentialReader: credentialStore,
     })
   : undefined;
+
+/*
+ * ME06 (#478): the durable-continuation production assembly — the review
+ * fence ME05 left open ("setMastraContinuations has no production caller")
+ * closes here, so a client-participation suspension is a REAL, visible
+ * waiting state: the real continuation ledger over this deployment's
+ * database, the tenant-restricted engine storage its snapshots live in, and
+ * the six-gate resume entry the participation route drives. Nothing changes
+ * for the legacy engine (the Mastra path only runs where the server-side
+ * selector admits it), and no client field can reach any of it.
+ *
+ * ME09: the resumed loop's GOVERNED model re-binding is WIRED (the
+ * MASTRA_RESUME_LOOP_MODEL_UNWIRED fail-closed placeholder is gone). The
+ * drive re-activates the run's lease through the runs service — the minimal
+ * runs-service surface the brief's "run re-activation" names, refused for a
+ * terminal run and for a live request owner — then re-binds the resumed
+ * loop's model to a governed carrier minted against the SAME run identities,
+ * the run's OWN admitted route ref and its ceiling. Nothing here dials a
+ * provider directly, mints outside the gateway, or spends outside the
+ * reservation made at admission: capability issuance still checks the run's
+ * remaining budget, and the drive's tools probe the live lease before every
+ * NEW external call.
+ */
+const mastraContinuationStore = enterpriseCapabilities
+  ? createMastraContinuationStore({
+      database,
+      secret: config.keyEncryptionKey,
+    })
+  : undefined;
+let mastraContinuationInstall: MastraContinuationInstall | undefined;
+/** ME09: the governed resume drive (undefined without enterprise capabilities). */
+let governedResumeDriver: MastraResumeDriver | undefined;
+/**
+ * The fail-closed stand-in: an install built without the governed drive (a
+ * non-enterprise assembly) refuses every resume instead of resuming without
+ * governance. The enterprise assembly above always replaces it.
+ */
+const ungovernedResumeDriver: MastraResumeDriver = {
+  resume: () => {
+    throw new MastraContinuationRefusal(
+      "MASTRA_RESUME_LOOP_UNGOVERNED",
+      "MASTRA_RESUME_LOOP_UNGOVERNED: no governed resume drive is wired; the suspension stays waiting instead of resuming outside governance.",
+    );
+  },
+};
+
+/**
+ * ME09: the tenant-restricted engine storage one binding's suspension
+ * snapshots live in — hoisted to the assembly scope so both the continuation
+ * install and the governed resume drive read the SAME resolver.
+ */
+const storageForBinding = async (binding: ExecutionBinding) => {
+  if (!enterpriseCapabilities || !binding.threadId) return undefined;
+  const mastraBinding =
+    await enterpriseCapabilities.conversations.resolveMastraBinding(
+      binding.scope,
+      binding.threadId,
+    );
+  return enterpriseCapabilities.mastraStorage.getStore(
+    binding.scope,
+    mastraBinding,
+  );
+};
+
+/*
+ * ME09: the governed resume drive. The wrapper owns the run lifecycle around
+ * the inner (ME05/ME06) drive: it re-activates the suspension's lease, hands
+ * the drive a governed loop whose model dials through the run's OWN route at
+ * its OWN ceiling, and settles the run terminal under the SAME lease when the
+ * drive finishes — or releases it when the drive paused again. A drive that
+ * throws releases the lease and leaves the run suspended: the continuation's
+ * receipt evidence governs any later re-apply, exactly the orchestrator's
+ * contract, and a failed drive must not terminalize the run out from under it.
+ */
+const resumeDriveState = new WeakMap<
+  ClaimedContinuation,
+  {
+    scope: PlatformScope;
+    lease: RunnerRequestLease;
+    modelRouteRef: string;
+    maximumTokens: number;
+    /** ME10: what the run already settled — the resumed ledger's seed. */
+    settledTokens: number;
+    /**
+     * Fix round 1: the governed carrier `governedResumeSurface` builds for
+     * THIS drive, surfaced back to the wrapper — its settlement ledger is
+     * what decides the run's terminal settlement after the drive finishes.
+     * Null until the surface ran (a drive that never reached its loop).
+     */
+    carrier: GovernedModelExecution | null;
+  }
+>();
+if (enterpriseRunner && enterpriseCapabilities) {
+  const governedResumeSurface = async (
+    claim: ClaimedContinuation,
+    state: {
+      scope: PlatformScope;
+      lease: RunnerRequestLease;
+      modelRouteRef: string;
+      maximumTokens: number;
+      settledTokens: number;
+      carrier: GovernedModelExecution | null;
+    },
+  ): Promise<MastraResumeLoop> => {
+    // state.scope is the caller's trusted scope (ME10); the re-derived
+    // binding scope never reaches a runs-service face.
+    const scope = state.scope;
+    const botId = claim.binding.botId;
+    // The resumed loop dials through the governed gateway: a carrier bound to
+    // the SAME run identities, the run's OWN admitted route ref (never a
+    // caller-supplied route) and its ceiling. Capability issuance keeps
+    // checking the run's remaining budget — the re-activation minted no new
+    // reservation, it only re-armed the lease the budget is spent under.
+    const carrier = createGovernedModelExecution({
+      scope,
+      agentId: botId,
+      routeRef: state.modelRouteRef,
+      ceiling: state.maximumTokens,
+      // ME10: the ledger starts where the park left off — the resumed
+      // dials ask for the run's REMAINING budget, never the ceiling again.
+      alreadySettledTokens: state.settledTokens,
+      runs: enterpriseRunner.runs,
+      catalog: enterpriseRunner.modelRoutes,
+      currentRouteForAgent: (forAgentId) => {
+        const current = productionModelSelection();
+        return Promise.resolve({
+          agentId: forAgentId,
+          route: current.route,
+          ...(current.nativeBaseUrl !== undefined
+            ? { nativeBaseUrl: current.nativeBaseUrl }
+            : {}),
+        });
+      },
+      modelCapabilitySecret: config.keyEncryptionKey,
+      encryptionKey: config.keyEncryptionKey,
+      credentialReader: credentialStore,
+    });
+    carrier.bind({
+      runId: claim.binding.runId,
+      attemptId: claim.binding.attemptId,
+      generation: claim.binding.generation,
+    });
+    // Fix round 1: surface the carrier to the wrapper — its settlement ledger
+    // is the evidence the run's terminal settlement answers to (the gate the
+    // governed headless turn and the browser relay both apply at finish).
+    state.carrier = carrier;
+    const tools = await grantedTools({
+      store: pluginStore,
+      botId,
+      actorId: scope.actorId,
+      initiator: PERSON_INITIATOR,
+      credentialActorFor: teamBots.credentialActorFor(scope.actorId, botId),
+    });
+    const actor = await actorFor(scope.actorId);
+    const registered = await loadAgentsForActor(actor);
+    const bot = registered.find((candidate) => candidate.id === botId);
+    if (bot?.type !== "built_in") {
+      throw new MastraContinuationRefusal(
+        "MASTRA_RESUME_BOT_GONE",
+        "MASTRA_RESUME_BOT_GONE: the Bot this suspension belongs to is no longer registered for its owner.",
+      );
+    }
+    return {
+      model: carrier.governedModel.model,
+      // ME10: the run's OWN admitted ceiling rides every resumed dial — the
+      // governed adapter refuses an un-ceilinged model call.
+      maxOutputTokens: state.maximumTokens,
+      tools: createMastraTools(tools, {
+        // The drive's live-lease probe (AC6): every NEW external call in the
+        // resumed loop renews through the runs service' own fencing; a lost
+        // lease blocks the call by name.
+        leaseCurrent: async () => {
+          try {
+            state.lease = await enterpriseRunner.runs.renewRequestLease(
+              scope,
+              state.lease,
+            );
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        // ME10 (F4): the resumed loop's approval binding — a re-park during
+        // the resumed drive opens its request against THIS run, the same
+        // durable parking the original turn used, so the next decision
+        // resumes the exact new continuation.
+        approvalBinding: {
+          runId: claim.binding.runId,
+          threadId: claim.binding.threadId ?? "",
+          initiator: PERSON_INITIATOR,
+        },
+      }),
+      instructions: [bot.systemPrompt],
+      maxSteps: TOOL_LOOP_MAX_STEPS,
+    };
+  };
+  const innerResumeDriver = createMastraResumeDriver({
+    storageFor: storageForBinding,
+    loopFor: (claim) => {
+      const state = resumeDriveState.get(claim);
+      if (!state) {
+        throw new MastraContinuationRefusal(
+          "MASTRA_RESUME_LOOP_UNBOUND",
+          "MASTRA_RESUME_LOOP_UNBOUND: the drive's governed loop was requested before the run's lease was re-activated.",
+        );
+      }
+      return governedResumeSurface(claim, state);
+    },
+  });
+  governedResumeDriver = {
+    async resume(input) {
+      const { claim } = input;
+      // ME10: the CALLER'S trusted scope, not the re-derived binding scope —
+      // a store record's scope is a re-derivation, and the runs service
+      // answers only to scopes this process's resolver issued. The
+      // orchestrator has already verified this scope field-wise against the
+      // binding (same person, tenant, workspace, principal).
+      const scope = input.scope;
+      // THE RUN RE-ACTIVATION: only a run still waiting at its CURRENT
+      // attempt re-arms; a terminal run and a live request owner refuse.
+      const reactivated = await enterpriseRunner.runs.reactivateSuspensionLease(
+        scope,
+        claim.binding.runId,
+      );
+      // Fix round 1: ONE definition of the binding-currency gate (extracted
+      // to headless.ts) — the re-armed attempt must be the one the
+      // continuation binds.
+      assertResumeBindingCurrent(reactivated, claim.binding);
+      const state = {
+        scope,
+        lease: reactivated.lease,
+        modelRouteRef: reactivated.modelRouteRef,
+        maximumTokens: reactivated.maximumTokens,
+        settledTokens: reactivated.settledTokens,
+        carrier: null as GovernedModelExecution | null,
+      };
+      resumeDriveState.set(claim, state);
+      try {
+        const driven = await innerResumeDriver.resume(input);
+        const outcome = typeof driven === "string" ? driven : driven.outcome;
+        if (outcome === "re_suspended") {
+          // The drive paused again: the replacement continuation waits, the
+          // run stays in its waiting status, and the lease goes back so the
+          // next decision can re-arm it.
+          await enterpriseRunner.runs
+            .releaseRequestLease(scope, state.lease)
+            .catch(() => undefined);
+        } else {
+          // Fix round 1 — THE SETTLEMENT GATE: the engine finishing is never
+          // success on its own (spec §5). The surfaced carrier's settlement
+          // ledger decides, exactly like the governed headless turn's finish
+          // path: clean usage completes the run under the SAME lease; an
+          // unverified settlement fails it with the classified code; an
+          // un-settleable lease isolates the run by name. The gate throws on
+          // every non-success path, so a refused resume can never surface as
+          // a silent "resumed"/"declined".
+          await settleResumedRun(enterpriseRunner.runs, {
+            scope,
+            lease: state.lease,
+            carrier: state.carrier,
+            outcome,
+          });
+        }
+        return driven;
+      } catch (cause) {
+        await enterpriseRunner.runs
+          .releaseRequestLease(scope, state.lease)
+          .catch(() => undefined);
+        throw cause;
+      }
+    },
+  };
+}
+if (mastraContinuationStore && enterpriseCapabilities && enterpriseRunner) {
+  mastraContinuationInstall = createMastraContinuationInstall({
+    store: mastraContinuationStore,
+    storageFor: storageForBinding,
+    // ME06: the frontend bridges suspend themselves (the engine's
+    // `suspend()` surface); mounting the durable approval pause on granted
+    // tools is the approvals-integration slice's assembly (ME09).
+    durableToolNames: [],
+    // ME09: KIND-AWARE re-verification. An `approval` wait checks the
+    // plugin grant ledger — the ledger that granted the server-executed
+    // call. A `frontend_tool` wait checks the participation surface's own
+    // revocable authority: the Bot must still exist for this actor and be
+    // unpaused (the actor's membership itself is re-verified field-wise by
+    // the store before this gate runs), so a revoked or paused participant
+    // cannot resume a waiting participation call.
+    toolGrantCurrent: async ({ scope, botId, toolName, kind }) => {
+      if (kind === "frontend_tool") {
+        try {
+          await guardBotTurn({ ownerUserId: scope.actorId, agentId: botId });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      const tools = await grantedTools({
+        store: pluginStore,
+        botId,
+        actorId: scope.actorId,
+        initiator: PERSON_INITIATOR,
+        credentialActorFor: teamBots.credentialActorFor(scope.actorId, botId),
+      });
+      return tools.some((tool) => tool.name === toolName);
+    },
+    // ME09: the composed gate is ONE definition (createGenerationCurrentGate)
+    // shared with the governed headless turn and its production tests.
+    generationCurrent: createGenerationCurrentGate(enterpriseRunner.runs),
+    driver: governedResumeDriver ?? ungovernedResumeDriver,
+  });
+  setMastraContinuations(mastraContinuationInstall);
+}
+
+/*
+ * ME09 (#481)/ME10 (#482): the governed headless turn — the unattended
+ * firing that runs through the SAME controlled Mastra execution the web chat
+ * runs, admitted and settled by the SAME runs service, with the OpenBot
+ * request lease as the only lock and no Intelligence socket anywhere on the
+ * path.
+ *
+ * THE SERVER-SIDE ENGINE SELECTOR. Which turn an entry runs is decided HERE,
+ * at the assembly — never by a client field and never by the queue: a
+ * deployment with the enterprise capabilities runs its unattended entries
+ * (ME09 routines; ME10 responsibility, delivery, wake-up and approval
+ * continuations) through governed turns; a deployment without them keeps the
+ * legacy turns unchanged. Each entry's scope/budget are rebuilt inside its
+ * turn from its own persistent record and the trusted directory; missing
+ * configuration is a named refusal, never a guessed default.
+ *
+ * THE SHARED UNATTENDED SCOPE RESOLVER. One resolver serves every governed
+ * headless entry: the identity comes from the entry's own trusted record
+ * (the users-table owner), bound per call — never from a queue payload.
+ * Tenant/workspace are NOT selectable here: the conversation row for the
+ * record's own thread decides them, so a forged tenant/owner string cannot
+ * aim a turn anywhere. The "schedule" entrypoint marks the unattended
+ * execution face every one of these entries runs under.
+ */
+const scheduleActorIdentities = new WeakMap<Request, string>();
+const scheduleScopes = enterpriseCapabilities
+  ? createScopeResolver(enterpriseCapabilities.directory, {
+      data: enterpriseCapabilities.data,
+      authenticate: async (request) => {
+        const actorId = scheduleActorIdentities.get(request);
+        return actorId ? { actorId, entrypoint: "schedule" as const } : null;
+      },
+      selectTenant: () => null,
+      selectWorkspace: () => null,
+    })
+  : undefined;
+const governedHeadlessScopeFor = async (input: {
+  ownerUserId: string;
+  threadId: string;
+}): Promise<PlatformScope> => {
+  if (!scheduleScopes) {
+    throw new Error(
+      "ROUTINE_SCOPE_UNRESOLVED: the enterprise directory is not wired; an unattended turn cannot prove its owner's scope.",
+    );
+  }
+  // A fresh Request per call carries only the owner this file read from the
+  // entry's scheduling record; the resolver's membership checks do the rest.
+  // AC2: this re-resolution is the eligibility re-verification — a member
+  // revoked between scheduling and firing throws HERE, from the directory's
+  // own answer, and the turn never runs under a scanned or stale identity.
+  const request = new Request(
+    "https://routine-schedule.openbot.invalid/firing",
+  );
+  scheduleActorIdentities.set(request, input.ownerUserId);
+  return scheduleScopes.resolveForThread(request, input.threadId);
+};
+
+/*
+ * ME10 (#482): the shared governed headless surface — the ONE server-side
+ * assembly every governed headless turn runs with. ME09 built it for the
+ * routine firing; the four background entries of this ticket (responsibility
+ * advance, delivery, wake-up, approval continuation) are THIN assemblies over
+ * the same base, each adding only its own record authority and its own extra
+ * tools. Everything security-relevant stays in one definition: the Use-Bots /
+ * allowlist refusal, the paused-Bot guard, the directory re-signed scope's
+ * granted tools (grant → policy → credential → audit), the scoped computer
+ * face, the learned skills, the personal-memory block and the durable
+ * continuations composition.
+ */
+const governedHeadlessSurfaceFor =
+  (
+    extraTools?: (input: {
+      scope: PlatformScope;
+      agentId: string;
+      initiator: AuditInitiator;
+      threadId: string;
+      routineId: string;
+    }) => Promise<GrantedTool[]>,
+  ) =>
+  async (input: {
+    scope: PlatformScope;
+    agentId: string;
+    initiator: AuditInitiator;
+    threadId: string;
+    binding: ExecutionBinding;
+    routineId: string;
+  }) => {
+    const { scope, agentId, initiator, threadId, binding } = input;
+    // "Use Bots" and the model allowlist, which a browser run meets at the
+    // HTTP gate — the same check the legacy headless turn runs per turn.
+    const refused = await headlessTurnRefusal({
+      ownerUserId: scope.actorId,
+      agentId,
+    });
+    if (refused) {
+      const error = new Error(refused);
+      error.name = "CapabilityRefusedError";
+      throw error;
+    }
+    // Paused Bots do not start (agents/lifecycle).
+    await guardBotTurn({ ownerUserId: scope.actorId, agentId });
+    const actor = await actorFor(scope.actorId);
+    const registered = await loadAgentsForActor(actor);
+    const bot = registered.find((candidate) => candidate.id === agentId);
+    if (bot?.type !== "built_in") {
+      const error = new Error(
+        `That Bot is no longer registered, so this turn has nothing to run: ${agentId}.`,
+      );
+      error.name = "RoutineBotNotRegistered";
+      throw error;
+    }
+    // The granted connector tools, resolved for this owner exactly as the
+    // browser run resolves them (grant → policy → credential → audit stay
+    // inside the granted path).
+    const tools = await restrictToolsForRun(
+      initiator,
+      () =>
+        grantedTools({
+          store: pluginStore,
+          botId: agentId,
+          actorId: scope.actorId,
+          initiator,
+          credentialActorFor: teamBots.credentialActorFor(
+            scope.actorId,
+            agentId,
+          ),
+        }),
+      proactiveReadOnlyRefs,
+    )();
+    // ME06 convergence: the headless computer face mounts through the
+    // scoped assembly (computer-scope.ts) — the environment address
+    // carries every scope segment, the raw global bot id is refused by
+    // name, and a Team Bot's teammate rule stays with the profile gate.
+    // The legacy HeadlessTool execute shape is narrowed onto the granted
+    // contract: one string answer per call, the initiator carried on the
+    // tool itself.
+    const computerTools =
+      computerGateway &&
+      (await agentProfileStore
+        .get(actor, agentId)
+        .then((profile) => !!profile && canUseComputer(profile, actor))
+        .catch(() => false))
+        ? createMastraComputerTools(
+            { scope, botId: agentId },
+            {
+              gateway: computerGateway,
+              auditStore: bootAuditStore,
+              initiator,
+              ...(signInService ? { signIn: signInService } : {}),
+            },
+          ).map((tool) => ({
+            name: tool.definition.name,
+            ref: `computer/${tool.definition.name}`,
+            initiator,
+            description: tool.definition.description,
+            parameters: tool.definition.parameters,
+            execute: async (args: unknown): Promise<string> => {
+              // The legacy computer execute carries a per-call context
+              // (the toolCallId + the stop signal) for its own audit. The
+              // run-level stop wire is the governed wrapper's guard — it
+              // refuses the whole call before execute when the run is
+              // stopped — so this per-call signal is the call-scoped
+              // backstop, matching the legacy granted-tool shape.
+              const result = await tool.execute(args, {
+                toolCallId: crypto.randomUUID(),
+                signal: new AbortController().signal,
+              });
+              return typeof result === "string"
+                ? result
+                : JSON.stringify(result ?? null);
+            },
+          }))
+        : [];
+    // The entry's own tools (ME10: the responsibility engine's goal tools),
+    // mounted through the same granted shape and name rules as everything
+    // else on this surface.
+    const entryTools = extraTools
+      ? await extraTools({
+          scope,
+          agentId,
+          initiator,
+          threadId,
+          routineId: input.routineId,
+        })
+      : [];
+    // The learned skills, acquired once per run through the SAME seam the
+    // legacy engine's middleware uses; absent means learning is off.
+    const learnedSkills = await copilotRuntime.learning?.acquire(agentId);
+    // ME07 (AC3): the personal-memory block, from the SAME #395 authority
+    // the browser engine path consumes. Unwired (no Hindsight env), no
+    // block is built — the safe direction.
+    const personalMemoryContext = headlessPersonalMemoryContext
+      ? await headlessPersonalMemoryContext(scope, agentId).catch(() =>
+          Promise.reject(
+            new Error(
+              "MASTRA_HEADLESS_MEMORY_UNAVAILABLE: the personal-memory read failed; the turn fails instead of running without the context it was configured to carry.",
+            ),
+          ),
+        )
+      : undefined;
+    // The durable-continuation context, composed with THIS run's binding —
+    // the exact composition the browser engine path applies — so a
+    // suspension on the headless path saves its recovery data BEFORE any
+    // waiting state can publish (never "engine waiting, no recovery data").
+    const install = mastraContinuationInstall;
+    return {
+      instructions: [bot.systemPrompt],
+      tools: [...tools, ...computerTools, ...entryTools],
+      ...(learnedSkills ? { learnedSkills } : {}),
+      ...(personalMemoryContext ? { personalMemoryContext } : {}),
+      ...(install
+        ? {
+            continuations: {
+              storage: install.storageFor(binding),
+              durableToolNames: install.durableToolNames,
+              onSuspension: (suspension: MastraSuspensionFact) =>
+                install
+                  .saveSuspension(binding, suspension)
+                  .then(() => undefined),
+            },
+          }
+        : {}),
+    };
+  };
+
+/**
+ * ME10 (AC3): the personal-memory block the governed headless turns carry —
+ * assigned by the ME07 chain below when the deployment declares the
+ * Hindsight connection env. Declared before the surfaces so a turn never
+ * reads it before boot finished wiring it; the surfaces run per turn, long
+ * after that.
+ */
+let headlessPersonalMemoryContext:
+  | ((scope: PlatformScope, botId: string) => Promise<string>)
+  | undefined;
+
+/** The governed routine surface: the shared face, no extra tools. */
+const governedRoutineSurfaceFor = enterpriseRunner
+  ? governedHeadlessSurfaceFor()
+  : undefined;
+
+/**
+ * The governed headless turn for ONE entry: the shared ME09 base (runs
+ * admission + model-route binding, events ledger, expert versions, the ONE
+ * explicit unattended budget, the governed carrier, the conversation
+ * runtime) with the entry's own record authority and surface. This is the
+ * selector contract's governed arm — every unattended entry on this file
+ * picks between THIS and its legacy turn by the SAME predicate
+ * (enterprise capabilities present), and the choice is made here, server
+ * side, never by a client field or a queue payload.
+ */
+const governedHeadlessTurnFor = (entry: {
+  schedulingRecordFor: GovernedTurnRunnerDeps["schedulingRecordFor"];
+  surfaceFor: GovernedTurnRunnerDeps["surfaceFor"];
+}) =>
+  enterpriseRunner && enterpriseCapabilities
+    ? createGovernedTurnRunner({
+        schedulingRecordFor: entry.schedulingRecordFor,
+        scopeFor: governedHeadlessScopeFor,
+        // The governed admission binds the SAME request-local model-route
+        // facts the browser admission binds — resolved here, server-side,
+        // for the duration of the `start` call only.
+        runs: {
+          ...enterpriseRunner.runs,
+          start: (scope, admission) =>
+            runWithBoundModelRoute(
+              {
+                tenantId: scope.tenantId,
+                workspaceId: scope.workspaceId,
+                principalId: scope.principalId,
+                actorId: scope.actorId,
+                threadId: admission.input.threadId,
+                agentId: admission.agentId,
+                routeRef: admission.routeRef,
+                maximumTokens: admission.input.forwardedProps
+                  .maxOutputTokens as number,
+              },
+              () => enterpriseRunner.runs.start(scope, admission),
+            ),
+        },
+        conversations: enterpriseCapabilities.conversations,
+        events: enterpriseRunner.events,
+        expertVersionFor: ({ scope, definition }) =>
+          enterpriseRunner.expertVersions.putOrGet(scope, definition),
+        modelRouteFor: async ({ scope, agentId }) => {
+          // AC2: the EXPLICIT unattended budget. A deployment declares it
+          // (env, positive int32 token count); an unset or malformed value
+          // refuses the turn with the named reason — never a guessed default
+          // company, never an unlimited ceiling. This ONE ceiling is the
+          // budget source every governed headless entry shares.
+          const ceiling = Number(
+            process.env.OPENBOT_ROUTINE_RUN_OUTPUT_TOKENS ?? "",
+          );
+          if (!isPositiveInt32TokenCount(ceiling)) return null;
+          const selection = productionModelSelection();
+          const route = await enterpriseRunner.modelRoutes.put(scope, {
+            agentId,
+            route: selection.route,
+            ...(selection.nativeBaseUrl !== undefined
+              ? { nativeBaseUrl: selection.nativeBaseUrl }
+              : {}),
+          });
+          return { routeRef: route.routeRef, maximumTokens: ceiling };
+        },
+        governedExecutionFor: ({ scope, agentId, routeRef, ceiling }) =>
+          createGovernedModelExecution({
+            scope,
+            agentId,
+            routeRef,
+            ceiling,
+            runs: enterpriseRunner.runs,
+            catalog: enterpriseRunner.modelRoutes,
+            currentRouteForAgent: (forAgentId) => {
+              const current = productionModelSelection();
+              return Promise.resolve({
+                agentId: forAgentId,
+                route: current.route,
+                ...(current.nativeBaseUrl !== undefined
+                  ? { nativeBaseUrl: current.nativeBaseUrl }
+                  : {}),
+              });
+            },
+            modelCapabilitySecret: config.keyEncryptionKey,
+            encryptionKey: config.keyEncryptionKey,
+            credentialReader: credentialStore,
+          }),
+        surfaceFor: entry.surfaceFor,
+        runtime: createMastraConversationRuntime({
+          conversations: enterpriseCapabilities.conversations,
+          storage: enterpriseCapabilities.mastraStorage,
+          authorizeAttachment: (turn, attachmentId) =>
+            enterpriseCapabilities.data.transaction((tx) =>
+              authorizeAttachmentForSendInTransaction(tx, turn, attachmentId),
+            ),
+        }),
+      })
+    : undefined;
+
+const governedRoutineTurn =
+  enterpriseRunner && governedRoutineSurfaceFor
+    ? governedHeadlessTurnFor({
+        schedulingRecordFor: async (routineId) => {
+          // The record is the authority; the thread is the owner's own
+          // thread for the record's channel — the SAME resolution the legacy
+          // runner applies, so both engines answer "which conversation" from
+          // one source. A gone channel reads as a gone record.
+          const record = await routineStore.recordForFiring(routineId);
+          if (!record) return null;
+          const channel = await channelStore.get(
+            { id: record.ownerUserId, role: "user" },
+            record.channelId,
+          );
+          if (!channel) return null;
+          return {
+            agentId: record.agentId,
+            threadId: channel.threadId,
+            instruction: record.instruction,
+            enabled: record.enabled,
+          };
+        },
+        surfaceFor: governedRoutineSurfaceFor,
+      })
+    : undefined;
+
+/*
+ * The routine runner, on the engine the assembly selected (above). One
+ * createRoutineRunner either way — the firing ledger, the fatigue rule and
+ * the channel notification are engine-independent.
+ */
+const routineRunner = createRoutineRunner({
+  routineStore,
+  channelStore,
+  runTurn: governedRoutineTurn ?? legacyRoutineTurn,
+});
+
+/*
+ * ME10 (#482) — ENTRY 1: 职责推进 (the responsibility advance). The SAME
+ * governed headless turn a routine firing runs, keyed to the RESPONSIBILITY
+ * RUN as the durable record: the engine's dispatch queue carries only the
+ * run id, the record adapter re-reads the run + goal + event rows at the
+ * moment of running (a deleted goal, a settled run or a changed conversation
+ * refuses by name before anything is admitted), and the instruction is the
+ * SAME server-composed goal turn the legacy engine sent — goal, criteria,
+ * progress, the triggering event under its untrusted envelope. The intent
+ * key is `routine-adv:<runId>:<runId>`: one advance per responsibility run,
+ * stable across queue redelivery. Budget, scope re-signing, granted tools,
+ * the scoped computer face, learning, memory and the continuations install
+ * are the shared governed base; the entry adds only its own goal tools.
+ */
+const governedResponsibilitySurfaceFor = enterpriseRunner
+  ? governedHeadlessSurfaceFor(
+      async ({ scope, agentId, initiator, routineId }) => {
+        // The goal's channel, resolved through the run the trail names (the
+        // same two-hop read the record adapter applies).
+        const [goal] = await database
+          .select({ channelId: responsibilities.channelId })
+          .from(responsibilityRuns)
+          .innerJoin(
+            responsibilities,
+            eq(responsibilityRuns.responsibilityId, responsibilities.id),
+          )
+          .where(eq(responsibilityRuns.id, routineId))
+          .limit(1);
+        return responsibilityTools({
+          store: responsibilityStore,
+          engine: responsibilityEngine,
+          ownerUserId: scope.actorId,
+          agentId,
+          channelId: goal?.channelId ?? "",
+          responsibilityRunId: routineId,
+        }).map((tool) => ({
+          name: tool.name,
+          ref: `responsibility/${tool.name}`,
+          initiator,
+          description: tool.description,
+          // The granted mount carries the tool's own Zod schema: the
+          // governed wrapper validates the model's arguments against it
+          // before anything executes (the JSON-schema conversion is the
+          // legacy runner's wire shape, not the governed one).
+          parameters: tool.parameters,
+          execute: (args: unknown) => tool.execute(args),
+        }));
+      },
+    )
+  : undefined;
+const governedResponsibilityTurn =
+  enterpriseRunner && governedResponsibilitySurfaceFor
+    ? governedHeadlessTurnFor({
+        schedulingRecordFor: async (runId) => {
+          // The responsibility run row is the record: goal, channel and the
+          // triggering event are re-read NOW, never trusted from dispatch.
+          const [row] = await database
+            .select({
+              responsibilityId: responsibilityRuns.responsibilityId,
+              runStatus: responsibilityRuns.status,
+              goalStatus: responsibilities.status,
+              ownerUserId: responsibilities.ownerUserId,
+              agentId: responsibilities.agentId,
+              channelId: responsibilities.channelId,
+              threadId: responsibilities.threadId,
+              instruction: responsibilities.instruction,
+              successCriteria: responsibilities.successCriteria,
+              progress: responsibilities.progress,
+              eventSource: responsibilityEvents.source,
+              eventType: responsibilityEvents.type,
+              eventPayload: responsibilityEvents.payload,
+            })
+            .from(responsibilityRuns)
+            .innerJoin(
+              responsibilities,
+              eq(responsibilityRuns.responsibilityId, responsibilities.id),
+            )
+            .innerJoin(
+              responsibilityEvents,
+              eq(responsibilityRuns.eventId, responsibilityEvents.id),
+            )
+            .where(eq(responsibilityRuns.id, runId))
+            .limit(1);
+          if (!row) return null;
+          const channel = await channelStore.get(
+            { id: row.ownerUserId, role: "user" },
+            row.channelId,
+          );
+          // A conversation that no longer resolves (or no longer matches the
+          // goal's own thread) is a gone record: nothing may fire into it.
+          if (!channel || channel.threadId !== row.threadId) return null;
+          return {
+            agentId: row.agentId,
+            threadId: channel.threadId,
+            instruction: buildResponsibilityTurn({
+              instruction: row.instruction,
+              successCriteria: row.successCriteria,
+              progress: row.progress,
+              trigger: { source: row.eventSource, type: row.eventType },
+              eventData: markUntrusted(
+                JSON.stringify(row.eventPayload ?? {}),
+                `${row.eventSource} event`,
+              ),
+              responsibilityId: row.responsibilityId,
+            }),
+            // A run the engine is not actively driving (queued, settled,
+            // waiting) has no advance to claim; the engine's own dispatch
+            // gates the re-run, this refuses the stale one.
+            enabled: row.goalStatus === "active" && row.runStatus === "running",
+            frame: "none",
+          };
+        },
+        surfaceFor: governedResponsibilitySurfaceFor,
+      })
+    : undefined;
+
+/*
+ * ME10 (#482) — ENTRY 2: 消息投递 (message delivery). An inbound message from
+ * Slack/SMS/push routed to the person's Bot runs through the SAME governed
+ * turn: the delivery INBOX row is the durable record (the router's queue
+ * carries the row id), the text is the person's own message (unframed), and
+ * the intent key is `routine-adv:delivery:<inboxId>:<inboxId>` — a queue
+ * redelivery converges on the first advance at the runs service, so the
+ * person's message is answered once whatever the retry count. The router's
+ * own visible-result faces (input/reply activity, delivery notifications,
+ * the inbox row state) are engine-independent and unchanged.
+ */
+const governedDeliveryTurn =
+  enterpriseRunner && enterpriseCapabilities
+    ? governedHeadlessTurnFor({
+        schedulingRecordFor: async (routineId) => {
+          const inboxId = routineId.startsWith("delivery:")
+            ? routineId.slice("delivery:".length)
+            : routineId;
+          const row = await deliveryStore.inbox(inboxId);
+          if (!row) return null;
+          return {
+            agentId: row.agentId,
+            threadId: row.threadId,
+            instruction: row.text,
+            // A terminal inbox row is a closed delivery; a queued/running
+            // one is the live advance this turn is. (Dup convergence for a
+            // redelivery happens at the runs service, on the intent key.)
+            enabled: !["failed", "opted_out"].includes(row.state),
+            frame: "none",
+          };
+        },
+        surfaceFor: governedHeadlessSurfaceFor(),
+      })
+    : undefined;
+
+/*
+ * ME10 (#482) — ENTRY 3: 唤醒 (wake-up). A Bot's own scheduled follow-up runs
+ * through the SAME governed turn: the work item is the durable record, the
+ * reason/instruction are re-read from it at the moment of running, and the
+ * intent key is `routine-adv:follow-up:<itemKey>:<itemKey>` — the queue never
+ * hands one follow-up out twice with a second intent. The caps, the settle
+ * ledger and the notification face stay in agents/wake-up.ts unchanged.
+ */
+const governedWakeUpSurfaceFor = enterpriseRunner
+  ? governedHeadlessSurfaceFor()
+  : undefined;
+const governedWakeUpTurn =
+  enterpriseRunner && governedWakeUpSurfaceFor
+    ? governedHeadlessTurnFor({
+        schedulingRecordFor: async (routineId) => {
+          const key = routineId.startsWith("follow-up:")
+            ? routineId.slice("follow-up:".length)
+            : routineId;
+          const [row] = await database
+            .select({
+              payload: workItems.payload,
+              finishedAt: workItems.finishedAt,
+            })
+            .from(workItems)
+            .where(
+              and(eq(workItems.kind, WAKE_UP_KIND), eq(workItems.key, key)),
+            )
+            .limit(1);
+          if (!row) return null;
+          const payload = row.payload as {
+            ownerUserId?: string;
+            agentId?: string;
+            channelId?: string;
+            reason?: string;
+            instruction?: string;
+          };
+          if (!payload?.ownerUserId || !payload.agentId) return null;
+          const actor = await actorFor(payload.ownerUserId);
+          const channel =
+            (payload.channelId
+              ? await channelStore.get(actor, payload.channelId)
+              : null) ?? (await channelStore.direct(actor, payload.agentId));
+          return {
+            agentId: payload.agentId,
+            threadId: channel.threadId,
+            instruction: wakeUpInstruction({
+              ...(payload as {
+                ownerUserId: string;
+                agentId: string;
+                reason: string;
+                dueAt: string;
+                scheduledAt: string;
+              }),
+            }),
+            enabled: !row.finishedAt,
+            frame: "none",
+          };
+        },
+        surfaceFor: governedWakeUpSurfaceFor,
+      })
+    : undefined;
+
+/*
+ * ME07 (#479): the Mastra engine's personal-memory context — the #395 single
+ * authority consumed on the execution path. The chain below is built from the
+ * SAME seam modules over the deployment's own database (the recall services,
+ * the degraded facade, the authorization store, the pause switches and the
+ * restore gate are the production instances, not test stand-ins), and the
+ * loader hands the engine path ONLY the rendered block: renderPersonalMemory
+ * Context's untrusted-data discipline rides verbatim, and no bank id or
+ * selectable scope ever crosses to the Agent or the client. Web and headless
+ * runs share this one assembly face — the loader is asked per run with the
+ * admission's trusted scope and Bot id, never a wire field.
+ *
+ * A deployment that has not declared the Hindsight connection env has no
+ * Hindsight chain to consume: the loader stays unwired and the engine path
+ * assembles no memory block — the safe direction (no memory, never wrong
+ * memory). A DECLARED but malformed connection refuses to boot (the readers
+ * throw): a half-declared chain must not silently degrade into pretending
+ * there is nothing to consume. The recall services here serve the query
+ * path's construction only; the context mode this loader calls reads the
+ * authority rows directly through the same predicates, so an outage of the
+ * Hindsight service cannot empty the block or resurrect anything — exactly
+ * the #385/#395 discipline.
+ */
+if (
+  process.env.HINDSIGHT_API_URL?.trim() &&
+  process.env.HINDSIGHT_API_TOKEN?.trim() &&
+  process.env.HINDSIGHT_BANK_ASSERTION_SECRET?.trim()
+) {
+  const hindsightServiceConfig = preferenceRecallConfigFromEnv(process.env);
+  const hindsightPause = createDrizzlePauseControls(database);
+  const hindsightAuthorizations =
+    createDrizzleSourceBoundAuthorizations(database);
+  const hindsightPreferenceSearch =
+    createDrizzleDegradedPreferenceSearch(database);
+  const hindsightSourceBoundSearch =
+    createDrizzleDegradedSourceBoundSearch(database);
+  const hindsightRevocations = createRevocationService(
+    database,
+    hindsightServiceConfig,
+  );
+  const hindsightRecovery = createRestoreRecoveryService(
+    database,
+    hindsightRevocations,
+  );
+  const hindsightPreferences = createPreferenceRecallService(
+    createDrizzlePreferenceRecords(database),
+    hindsightServiceConfig,
+    { pause: hindsightPause, recovery: hindsightRecovery.gate },
+  );
+  const hindsightSourceBound = createSourceBoundRecallService(
+    createDrizzleSourceBoundRecords(database),
+    hindsightAuthorizations,
+    hindsightServiceConfig,
+    { pause: hindsightPause, recovery: hindsightRecovery.gate },
+  );
+  const personalMemoryContext = createPersonalMemoryContext({
+    recall: createDegradedRecallFacade(
+      hindsightPreferences,
+      hindsightSourceBound,
+      hindsightPreferenceSearch,
+      hindsightSourceBoundSearch,
+      hindsightAuthorizations,
+    ),
+    preferenceSearch: hindsightPreferenceSearch,
+    sourceBoundSearch: hindsightSourceBoundSearch,
+    authorizations: hindsightAuthorizations,
+    pause: hindsightPause,
+    recovery: hindsightRecovery.gate,
+  });
+  setMastraPersonalMemoryContext(async (scope, botId) =>
+    renderPersonalMemoryContext(
+      (await personalMemoryContext.personalMemoryContext(scope, botId))
+        .memories,
+    ),
+  );
+  // ME10 (AC3): the SAME authority serves the governed headless turns —
+  // one loader, the same rendered block, no parallel memory path.
+  headlessPersonalMemoryContext = async (scope, botId) =>
+    renderPersonalMemoryContext(
+      (await personalMemoryContext.personalMemoryContext(scope, botId))
+        .memories,
+    );
+}
+
+const mastraContinuationRouteDeps =
+  mastraContinuationStore && enterpriseCapabilities && mastraContinuationInstall
+    ? {
+        install: mastraContinuationInstall,
+        store: mastraContinuationStore,
+        resolveScope: (request: Request) =>
+          enterpriseCapabilities.scopes.resolve(request),
+      }
+    : undefined;
 
 const copilotRuntime = mountCopilotRuntime(
   config,
@@ -3028,6 +4105,47 @@ const responsibilityEngine: ResponsibilityEngine = createResponsibilityEngine({
       channelId: context.channelId,
       responsibilityRunId: context.runId,
     });
+    // ME10 (#482): the entry selector. The enterprise assembly runs the
+    // responsibility advance through the SAME governed turn a routine
+    // firing runs (record = the run row, intent = the run id); without the
+    // enterprise capabilities the legacy headless turn below is unchanged.
+    if (governedResponsibilityTurn) {
+      if (context.continuation) {
+        // A waiting row parked by the LEGACY engine cannot be resumed by
+        // the governed turn — its continuation snapshot is the legacy
+        // engine's state, and replaying it as a fresh chat would both lose
+        // the person's answer and re-run the plan. Fail this dispatch with
+        // that name; the disposition of pre-cutover pauses is the
+        // migration ticket's contract, not a silent re-run.
+        const error = new Error(
+          "RESPONSIBILITY_LEGACY_CONTINUATION_UNSUPPORTED: this waiting run was parked by the legacy engine; its continuation cannot be resumed by the governed turn.",
+        );
+        error.name = "GovernedHeadlessRefusal";
+        throw error;
+      }
+      return governedResponsibilityTurn({
+        ownerUserId: context.ownerUserId,
+        // The run row IS the record and the intent: the governed turn
+        // re-reads it by this id and derives one advance intent per run.
+        routineId: context.runId,
+        runId: context.runId,
+        agentId: context.agentId,
+        threadId: context.threadId,
+        initiator,
+        signal: context.signal,
+        instruction: buildResponsibilityTurn({
+          instruction: context.instruction,
+          successCriteria: context.successCriteria,
+          progress: context.progress,
+          trigger: context.event,
+          eventData: markUntrusted(
+            JSON.stringify(context.event.payload),
+            `${context.event.source} event`,
+          ),
+          responsibilityId: context.responsibilityId,
+        }),
+      });
+    }
     const runner = createTurnRunner({
       intelligence: routineIntelligence,
       runner: routineAgentRunner,
@@ -3251,6 +4369,237 @@ const approvalContinuationRunner = createTurnRunner({
     copilotRuntime.learning?.containerForThread(input) ??
     Promise.resolve(undefined),
 });
+/*
+ * ME10 (#482) — ENTRY 4: 审批续跑 (the approval continuation) on the
+ * governed path. A suspension parked by a governed headless turn carries the
+ * ME05 ledger row (F4); the person's decision must resume THAT EXACT
+ * continuation — the six-gate orchestrator re-verifies identity, ownership,
+ * generation, decision/argument compatibility, engine fingerprint and the
+ * tool grant, then the governed resume driver re-activates the run's lease
+ * (reactivateSuspensionLease) and drives the parked engine step — never a
+ * new chat that re-runs the plan.
+ *
+ * Returns true when THIS request was a governed parking and is fully
+ * handled (driven, or closed truthfully); false falls through to the legacy
+ * resume, which stays the path for parkings the legacy engine made.
+ */
+const governedApprovalContinuationDrive =
+  mastraContinuationInstall && mastraContinuationStore && enterpriseRunner
+    ? async (ownerUserId: string, approvalId: string): Promise<boolean> => {
+        const request = await approvalService.store.get(
+          ownerUserId,
+          approvalId,
+        );
+        if (request.status === "pending" || request.status === "completed")
+          return false;
+        const snapshot = request.action.continuation;
+        const engineMark = (
+          snapshot as { state?: { engine?: unknown } } | undefined
+        )?.state;
+        if (
+          !snapshot ||
+          !engineMark ||
+          engineMark.engine !== "mastra" ||
+          !snapshot.threadId
+        ) {
+          return false;
+        }
+        // The ONE answer channel, resolved the same way the legacy continue
+        // resolves it (the conversation's mapped channel), for the surfaces
+        // below.
+        const sourceFor = async () => {
+          const [source] = await database
+            .select({ channelId: intelligenceChannelMappings.channelId })
+            .from(intelligenceChannelMappings)
+            .where(
+              and(
+                eq(intelligenceChannelMappings.userId, ownerUserId),
+                eq(intelligenceChannelMappings.threadId, snapshot.threadId),
+              ),
+            )
+            .limit(1);
+          return source;
+        };
+        const surface = async (text: string, error?: string) => {
+          // Only the process that saves the answer continues (the store's
+          // single-winner rule): a lost save means another replica is
+          // surfacing the same decision.
+          const saved = await approvalService.store.saveResult(
+            ownerUserId,
+            approvalId,
+            error ? { content: text, error } : { content: text },
+          );
+          if (!saved) return;
+          await approvalService.store.finish(ownerUserId, approvalId);
+          if (!text) return;
+          const source = await sourceFor();
+          if (source) {
+            const actor = await actorFor(ownerUserId);
+            await channelStore.recordActivity(
+              actor,
+              source.channelId,
+              {
+                text,
+                agentId: request.action.botId,
+                at: new Date(),
+              },
+              { id: `approval:${approvalId}` },
+            );
+            await deliveryNotifications(
+              {
+                ownerUserId,
+                channelId: source.channelId,
+                agentId: request.action.botId,
+                threadId: snapshot.threadId,
+              },
+              { id: `approval:${approvalId}`, text, kind: "reply" },
+            );
+          }
+        };
+        // AC2: the current scope, re-signed from the directory NOW. The
+        // resume re-verifies the parked binding field-wise (a revoked or
+        // moved member refuses) and the six gates re-verify the rest.
+        const scope = await governedHeadlessScopeFor({
+          ownerUserId,
+          threadId: snapshot.threadId,
+        });
+        // F6: this scope's dead suspensions — runs whose reactivation window
+        // has passed and which no driver can ever re-arm — settle truthfully
+        // here (named failure, user-visible), so the waiting ledgers hold
+        // only rows a driver can still reach. Runs still inside the window —
+        // an approval the person has not decided yet — stay waiting.
+        await enterpriseRunner.runs
+          .disposeUnresumableSuspensions?.(scope)
+          .catch(() => 0);
+        // AC5: THE EXACT continuation — the waiting row this run parked on,
+        // named by the engine call id the ask was raised under. No scan, no
+        // guess, never a new chat.
+        const rows = await mastraContinuationStore.listContinuations(scope);
+        const record = rows.find(
+          (candidate) =>
+            candidate.payload.kind === "approval" &&
+            candidate.payload.toolCallId === snapshot.toolCallId,
+        );
+        if (!record) {
+          // A decided ask whose park is gone: the save-before-waiting
+          // contract means the run failed rather than wait — close the
+          // request truthfully instead of replaying anything.
+          await surface(
+            "The parked turn behind this approval is no longer waiting, so the decision could not be applied. Nothing was executed.",
+            "MASTRA_APPROVAL_CONTINUATION_GONE",
+          );
+          return true;
+        }
+        if (record.status === "finished") {
+          await surface(
+            "This decision was already applied to the parked turn.",
+          );
+          return true;
+        }
+        if (record.status === "claimed") {
+          // Another drive holds the claim; a stale one expires back to
+          // waiting. Release the work item and let the sweep retry.
+          throw new Error(
+            "MASTRA_APPROVAL_CONTINUATION_CLAIMED: another drive is applying this decision.",
+          );
+        }
+        const decision: ResumeDecision =
+          request.status === "denied"
+            ? {
+                kind: "declined",
+                approvalId,
+                reason:
+                  request.result?.error ??
+                  request.result?.content ??
+                  "Declined by the person.",
+              }
+            : {
+                kind: "approved",
+                approvalId,
+                // The parked row's own digest: the decision is applied to
+                // the exact call that was announced and saved, and the
+                // store's argument gate binds the drive to it.
+                argsDigest: record.payload.argsDigest,
+              };
+        const result = await mastraContinuationInstall.resume({
+          scope,
+          ref: record.ref,
+          decision,
+        });
+        if (result.kind === "already_applied") {
+          await surface(
+            "This decision was already applied to the parked turn.",
+          );
+          return true;
+        }
+        if (result.kind === "reused_receipt") {
+          await surface(
+            "This decision was already applied — the approved action's recorded result was reused, nothing ran twice.",
+          );
+          return true;
+        }
+        if (result.kind === "pending_unknown") {
+          await surface(
+            "The approved action was started but its outcome could not be proven. It was not repeated. Check whether it happened before asking the Bot again.",
+            "MASTRA_APPROVAL_PENDING_UNKNOWN",
+          );
+          await settleWaitingResponsibilityRun(
+            ownerUserId,
+            snapshot.toolCallId,
+            {
+              status: "failed",
+              error:
+                "The approved action's outcome could not be proven; nothing was repeated.",
+            },
+          );
+          return true;
+        }
+        const answer = result.answer?.trim();
+        const text = answer
+          ? answer
+          : result.kind === "declined"
+            ? "The person declined this action."
+            : "Done — the turn continued after the decision.";
+        await surface(text);
+        // The entry ledger the parking came from: a responsibility run the
+        // governed turn parked waiting is settled with the continued turn's
+        // outcome — the engine drive completed that turn, so this is its
+        // result, not a re-queue.
+        await settleWaitingResponsibilityRun(ownerUserId, snapshot.toolCallId, {
+          status: "succeeded",
+          replyText: text,
+        });
+        return true;
+      }
+    : undefined;
+
+/**
+ * ME10: the waiting responsibility run a governed parking came from,
+ * settled with the resumed turn's outcome. Found by the parked call's
+ * engine id (the governed waiting payload names it); absent means the
+ * parking was a plain conversation turn — nothing to settle.
+ */
+const settleWaitingResponsibilityRun = async (
+  ownerUserId: string,
+  toolCallId: string,
+  outcome:
+    | { status: "succeeded"; replyText: string }
+    | { status: "failed"; error: string },
+): Promise<void> => {
+  const [waitingRun] = await database
+    .select({ id: responsibilityRuns.id })
+    .from(responsibilityRuns)
+    .where(
+      and(
+        eq(responsibilityRuns.status, "waiting"),
+        sql`${responsibilityRuns.waiting}->>'requestId' = ${toolCallId}`,
+      ),
+    )
+    .limit(1);
+  if (!waitingRun) return;
+  await responsibilityStore.settleRun(waitingRun.id, outcome);
+};
+
 const approvalSweep = repeatAfterEach(async () => {
   try {
     const [item] = await approvalQueue.claim({
@@ -3269,6 +4618,29 @@ const approvalSweep = repeatAfterEach(async () => {
           approvalId: z.string().min(1),
         })
         .parse(item.payload);
+      // ME10 (#482) — ENTRY 4: a governed parking is driven by the
+      // continuation orchestrator (the six gates + reactivateSuspensionLease),
+      // never replayed as a new chat. Anything it did not handle is a
+      // legacy-engine parking and keeps the legacy resume below.
+      if (governedApprovalContinuationDrive) {
+        const handled = await governedApprovalContinuationDrive(
+          input.ownerUserId,
+          input.approvalId,
+        );
+        if (handled) {
+          if (
+            !(await approvalQueue.finish({
+              kind: item.kind,
+              key: item.key,
+              owner: approvalOwner,
+            }))
+          )
+            throw new Error(
+              "The approval work lease was lost before completion.",
+            );
+          return;
+        }
+      }
       const resumeDependencies: ApprovalResumeDependencies = {
         // Asked before the action runs: with Use Bots off, or the Bot's model off the allowlist,
         // nothing is carried out and the refusal is final rather than retried.
@@ -3486,7 +4858,12 @@ const deliveryRouter = createDeliveryRouter({
     );
     await channelStore.signalBusy(input.threadId, true);
     try {
-      const result = await approvalContinuationRunner({
+      // ME10 (#482): the entry selector — the enterprise assembly runs the
+      // delivery turn through the SAME governed turn a routine firing runs
+      // (record = the inbox row, intent = the inbox id); a deployment
+      // without the enterprise capabilities keeps the legacy runner.
+      const turn = governedDeliveryTurn ?? approvalContinuationRunner;
+      const result = await turn({
         ownerUserId: input.ownerUserId,
         routineId: `delivery:${input.runId}`,
         runId: input.runId,
@@ -3617,16 +4994,22 @@ const wakeUpRunner = createWakeUpRunner({
   owner: workOwner("wake-up"),
   actorFor,
   channels: channelStore,
-  runTurn: createTurnRunner({
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
-    components: { store: componentStore, auditStore: bootAuditStore },
-    buildAgentFor,
-    toolsForTurn: computerToolsForTurn,
-    learningContainerForThread: (input) =>
-      copilotRuntime.learning?.containerForThread(input) ??
-      Promise.resolve(undefined),
-  }),
+  // ME10 (#482): the entry selector — the enterprise assembly runs a
+  // follow-up through the SAME governed turn a routine firing runs (record =
+  // the work item, intent = the item key); a deployment without the
+  // enterprise capabilities keeps the legacy runner below unchanged.
+  runTurn:
+    governedWakeUpTurn ??
+    createTurnRunner({
+      intelligence: routineIntelligence,
+      runner: routineAgentRunner,
+      components: { store: componentStore, auditStore: bootAuditStore },
+      buildAgentFor,
+      toolsForTurn: computerToolsForTurn,
+      learningContainerForThread: (input) =>
+        copilotRuntime.learning?.containerForThread(input) ??
+        Promise.resolve(undefined),
+    }),
   notify: (scope, input) => deliveryNotifications(scope, input),
 });
 const wakeUpSweep = repeatAfterEach(async () => {
@@ -6708,6 +8091,7 @@ const app = createApp(
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+    mastraContinuations: mastraContinuationRouteDeps,
     // MT122 (issue #165): present only when enterprise capabilities are wired;
     // multitenancy off or a missing channel leaves the assembly byte-for-byte
     // what it was (the middleware itself is mounted in createApp, mode-gated).

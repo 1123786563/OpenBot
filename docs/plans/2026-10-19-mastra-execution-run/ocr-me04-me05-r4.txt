@@ -1,0 +1,432 @@
+Review complete: 22 finding(s) across 3 selected item(s).
+
+─── server/src/mastra/message-parts.ts:467-474 ───
+[maintainability · low] file 部件构造对象（type/mimeType/source 结构）在 stored 分支（此处）与 legacy
+分支（legacyAttachments.map 处）完全重复，且 mimeType 硬编码为占位值 "application/octet-stream"——附件真实 mime 存于附件存储，下游
+resolvePart 按存储 mime 决定模态，此声明值不会生效但容易误导维护者以为重建时保留了类型信息。另外文件末尾的 attachmentUrlFor 仅是对 attachmentUrl
+的纯转发包装，无附加逻辑。建议提取局部 filePartFor(attachmentId) 辅助函数供两处复用，并直接调用 attachmentUrl。
+
+-           fileParts.push({
++           fileParts.push(filePartFor(part.attachmentId));
++ 
++ // ...
++ 
++ /** 占位 mime：真实类型由附件存储决定，resolvePart 按存储 mime 选择模态。 */
++ function filePartFor(attachmentId: string): Record<string, unknown> {
++   return {
+-             type: "file",
++     type: "file",
+-             mimeType: "application/octet-stream",
++     mimeType: "application/octet-stream",
+-             source: {
+-               type: "url",
+-               value: attachmentUrlFor(part.attachmentId),
+-             },
+-           });
++     source: { type: "url", value: attachmentUrl(attachmentId) },
++   };
++ }
+
+
+─── server/src/mastra/conversation-runtime.ts:601-603 ───
+[bug · medium] TOOL_CALL_START 的宿主归属启发式只覆盖 lastAssistant === null(整个流从未出现
+assistant)的情况;但多步工具循环中,若某一步模型不产出文本、直接发起工具调用(静默工具轮,agent loop 中很常见),lastAssistant 仍指向上一步已关闭的
+assistant 消息,该调用会被追加挂载到上一轮的 assistant 消息上。持久化结果会把"看到 R1
+结果之后才决定的调用"记成"与上一轮调用同轮并发发出",与真实事件因果顺序不一致,影响下一轮 rebuild 的对话语义。建议在收到 TOOL_CALL_RESULT
+后重置宿主锚点:新一轮无新文本消息的调用应通过 assistant-call-* 通道开启自己的宿主,而非追加到已关闭的历史轮次。
+
++   let lastResultLanded = false;
++   // TEXT_MESSAGE_START 分支重置: lastResultLanded = false;
++   // TOOL_CALL_RESULT 分支置位: lastResultLanded = true;
++   // TOOL_CALL_START 分支:
+-           const host =
++   const host =
+-             lastAssistant?.message ??
+-             assistantFor(`assistant-call-${shape.toolCallId}`).message;
++     lastAssistant !== null && !lastResultLanded
++       ? lastAssistant.message
++       : assistantFor(`assistant-call-${shape.toolCallId}`).message;
+
+
+─── server/src/mastra/conversation-runtime.ts:558-561 ───
+[performance · low] callFor 对每个 TOOL_CALL_ARGS 增量都线性扫描 orderedEntries 及其 toolCalls:stream-events.ts
+证实工具参数按 chunk 流式发射(每次 tool-call-delta 一帧 TOOL_CALL_ARGS),长参数流下每个 delta 都触发一次 O(消息×调用) 的全量重复扫描。建议维护
+toolCallId → { call, message } 的 Map 索引:TOOL_CALL_START 注册一次,TOOL_CALL_ARGS O(1) 查找。
+
+-   const callFor = (
+-     toolCallId: string,
+-   ): { call: { arguments: string }; message: Produced["message"] } | null => {
+-     for (const entry of orderedEntries) {
++   const callsById = new Map<
++     string,
++     { call: { arguments: string }; message: Produced["message"] }
++   >();
++   // TOOL_CALL_START push 后: callsById.set(shape.toolCallId, { call: pushed.function, message: host });
++   const callFor = (toolCallId: string) => callsById.get(toolCallId) ?? null;
+
+
+─── server/src/mastra/conversation-runtime.ts:430-430 ───
+[maintainability · low] MAX_ENGINE_MESSAGE_ID_LENGTH 通过模块加载时执行 randomUUID() 取其字符串长度(36)推导:一次无意义的运行期
+crypto 调用与 import 期副作用。同时 200 在此处是裸字面量,其权威定义(ConversationService 的
+assertInputString(input.clientMessageKey, ..., 200))处仍是另一个独立字面量,两侧仍有漂移空间。建议用具名常量表达:UUID 字符串长度直接写 36
+并注释来源,200 导出为共享常量供 service 侧一并消费。
+
+- export const MAX_ENGINE_MESSAGE_ID_LENGTH = 200 - (randomUUID().length + 1);
++ /** randomUUID() 的字符串形式长度(RFC 4122 带连字符,恒为 36)。 */
++ const UUID_STRING_LENGTH = 36;
++ /** ConversationService 对 clientMessageKey 的上限,service 侧校验共用此常量。 */
++ export const MAX_CLIENT_MESSAGE_KEY_LENGTH = 200;
++ export const MAX_ENGINE_MESSAGE_ID_LENGTH =
++   MAX_CLIENT_MESSAGE_KEY_LENGTH - (UUID_STRING_LENGTH + 1);
+
+
+─── server/src/mastra/conversation-runtime.ts:649-651 ───
+[maintainability · low] snapshot() 返回 orderedEntries 中消息对象的活引用而非拷贝:快照被工厂侧在成功终态缓冲并持久化后,若同一收集器再收到
+push(事件)(如终态后的迟到帧)或调用方原地修改消息对象,都会污染已持久化的快照;隔离仅靠注释约定。建议 snapshot
+返回结构拷贝(structuredClone),或快照后冻结条目,使快照与后续事件在结构上隔离。
+
+      snapshot(): Message[] {
+-       return orderedEntries.map((entry) => entry.message);
++       // 快照与收集器后续状态结构隔离:迟到 push 或调用方原地修改
++       // 不得污染已被缓冲/持久化的快照。
++       return orderedEntries.map((entry) =>
++         structuredClone(entry.message),
++       ) as Message[];
+      },
+
+
+─── server/src/mastra/message-parts.ts:329-333 ───
+[bug · medium] 空内容的 tool 结果会被静默丢弃：字符串分支要求 `length > 0`，数组分支要求拼接后 `text.length > 0`，因此 content 为
+""（以及 undefined/null 这类既非 string 也非 array 的形状——两个分支都不命中、也不像 user/assistant 分支那样抛具名 Unsupported）时
+parts 为空。后果链：persistExecutionMessages 对 `full.parts.length === 0` 直接 continue，导致存储历史里 assistant 行带着
+tool-call 却没有对应 result 行；下一轮 loadExecutionInput 重建后 sanitizeSeededHistory 只能把该 dangling call
+整个剥掉——模型将完全忘记这个工具曾被执行过。这与本模块"never silently drop"的契约相悖，而 parse/重建端其实完全支持空 content 的 tool-result
+part（sanitize 的 answerAt 配对只看 toolCallId，不看内容是否为空），存一条空结果即可保住配对。建议：content 为字符串时无条件产出 tool-result
+part（允许空串）；无法识别的 content 形状抛 MASTRA_PERSIST_TOOL_CONTENT_UNSUPPORTED。
+
+    if (shape.role === "tool") {
+      const toolCallId = assertString(shape.toolCallId, "tool message call id");
+      const parts: OpenBotMessagePart[] = [];
+      let text = "";
+-     if (typeof shape.content === "string" && shape.content.length > 0) {
++     const isError = shape.error !== undefined && shape.error !== null;
++     if (typeof shape.content === "string") {
++       // 空串也是一次真实的结果：存下来才不会留下 dangling call
++       parts.push({ kind: "tool-result", toolCallId, content: shape.content, isError });
++     } else if (Array.isArray(shape.content)) {
++       // ...拼接 text 后：
++       parts.push({ kind: "tool-result", toolCallId, content: text, isError });
++     } else {
++       throw new MastraMessagePartsUnsupportedError(
++         "MASTRA_PERSIST_TOOL_CONTENT_UNSUPPORTED",
++       );
++     }
+
+
+─── server/src/mastra/message-parts.ts:483-491 ───
+[bug · medium] activity 的持久化/重建往返不对称，会产生逃过过滤的空 assistant 消息：fullMessageFromAgUi 接受 role "activity"
+并产出 role="activity" 的 envelope，但唯一写 openbotParts 的路径（persistExecutionMessages →
+appendEngineMessage）只接受 assistant/tool——activity 消息会被映射成 role="assistant" 的 envelope、parts 里只剩
+activity part。重建时 assistant 分支在此处 `case "activity": break;` 静默跳过，返回 content 为 ""、无 toolCalls 的空
+assistant 消息；conversation-runtime 的 activity 过滤器按 `role !== "activity"` 过滤，根本拦不住它，空 assistant turn
+会进入模型上下文（部分 provider 直接拒绝空 content）。同时 `full.role === "activity"` 的重建分支（以及 roleConsistent 中对
+activity 的放行）在当前写入方下不可达，且该分支重建时硬编码 `content: "activity"`，存储时刻意保留的 activityType/payload
+从未被恢复。建议三选一：(a) appendEngineMessage 放行 role "activity"，让 envelope 保留角色、过滤器生效；(b) 重建时把"parts 全为
+activity 的 assistant envelope"按 activity 处理；(c) 在 fullMessageFromAgUi 直接拒绝 activity，避免半支持的契约。
+
+-         case "tool-result":
+-           toolResult = {
+-             content: part.content,
+-             toolCallId: part.toolCallId,
+-             isError: part.isError,
+-           };
+-           break;
+          case "activity":
+            break;
++     }
++     // assistant envelope 只剩 activity 部件时按 activity 重建（或拒绝该 envelope），
++     // 否则会产出 content 为 "" 的 assistant 消息，逃过调用方按 role 的 activity 过滤
++     if (
++       full.role === "assistant" &&
++       text.length === 0 &&
++       toolCalls.length === 0 &&
++       full.parts.every((part) => part.kind === "activity")
++     ) {
++       return { message: { id: full.engineMessageId ?? row.id, role: "activity", content: "activity" } as unknown as Message, attachments: [] };
++     }
+
+
+─── server/src/mastra/message-parts.ts:129-130 ───
+[bug · low] parseStoredFullMessage 对 isError 的校验与自身的严格契约不符：同 switch 里所有字段都走 assertString，唯独
+`part.isError === true` 把任何非布尔真值（"true"、1 等）静默折算成 false。一旦出现这样的存储值（写入端回归或手工修复），一条失败的 tool
+结果会重建为成功结果（error 字段被省略），改变模型语义且无任何报错——这正是本函数"Anything unprovable is corrupt"要防的场景。建议：isError 非
+undefined 且非 boolean 时抛 Corrupt。
+
+            content: assertString(part.content, "tool-result content"),
+-           isError: part.isError === true,
++           isError:
++             part.isError === undefined
++               ? false
++               : typeof part.isError === "boolean"
++                 ? part.isError
++                 : ((): never => {
++                     throw new MastraMessagePartsCorruptError(
++                       "tool-result isError must be a boolean",
++                     );
++                   })(),
+
+
+─── server/src/mastra/message-parts.ts:423-424 ───
+[maintainability · low] textParts 在函数顶部无条件计算（filter + map 遍历 row.content.parts），但只有 legacy 分支（无
+openbotParts 的行）会用到；ME03 存量路径（此后每个 mastra 后端会话的每一行）都在做这段无用功，且容易让读者误以为 stored 分支也依赖它。另外 legacy 分支里
+textParts.join("") 被调用了三次。建议把 textParts 的计算下沉到 legacy 分支内，并先算一次 const legacyText =
+textParts.join("")。
+
+-   const parts = row.content?.parts;
+-   const textParts = Array.isArray(parts)
++   // 移入 legacy 分支（stored === undefined 之后）再计算：
++   const legacyText = textParts.join("");
++   const content =
++     legacyAttachments.length > 0 && role === "user"
++       ? [
++           ...(legacyText.length > 0 ? [{ type: "text", text: legacyText }] : []),
++           ...legacyAttachments.map(/* ... */),
++         ]
++       : legacyText;
+
+
+─── server/src/mastra/message-parts.ts:509-517 ───
+[documentation · low] storedMetadataOf 的文档声称会保留"engine output 行的 engine message id"，但重建路径里只有 user
+分支（和 legacy 分支）挂了 metadata；此处 assistant 与 tool 分支重建的消息完全不携带
+metadata（openbotClientMessageKey/openbotEngineMessageId 均被丢弃）。当前消费方（submittedKeyOf 只看 user
+行、attachmentIdsOfMessage 只看 user 行）不受影响，但文档与实现不一致会误导后续调用方依赖 rebuilt assistant 消息上的
+metadata.openbotEngineMessageId。建议修正注释（说明仅 user 行保留 identity metadata，engine 输出行的引擎 id 已体现在
+message.id 上），或让 assistant/tool 重建也统一挂 metadata。
+
+
+
+─── server/src/mastra/message-parts.ts:495-498 ───
+[style · low] 此处 content 表达式为嵌套三元（外层判断 fileParts、内层判断 text），legacy 分支的 content
+构造同样是双层嵌套（legacyAttachments 判断内嵌 textParts.join("").length 判断）。按团队规范嵌套三元不允许，且两处结构高度相似，建议提取局部
+helper（如 textWithFileParts(text, fileParts)），既消掉嵌套三元，也顺带和已确认的 filePartFor 重复问题收敛到同一处构造逻辑。
+
+-       const content =
+-         fileParts.length > 0
++       const content = fileParts.length > 0
+-           ? [...(text.length > 0 ? [{ type: "text", text }] : []), ...fileParts]
++         ? [...(text.length > 0 ? [{ type: "text", text }] : []), ...fileParts]
+-           : text;
++         : text;
++ 
++ // 或提取：
++ function contentWithFileParts(
++   text: string,
++   fileParts: Record<string, unknown>[],
++ ): string | Record<string, unknown>[] {
++   if (fileParts.length === 0) return text;
++   const parts: Record<string, unknown>[] = [];
++   if (text.length > 0) parts.push({ type: "text", text });
++   parts.push(...fileParts);
++   return parts;
++ }
+
+
+─── server/src/mastra/stream-events.ts:316-318 ───
+[bug · high] tool-call-approval 分支未重置 suspendedByToolCalls，真实 ME05 审批挂起会被误判为 ME04
+循环截断。触发序列（多步工具循环的常规路径）：step1 的 finish(stepResult.reason="tool-calls") 先置
+outcome="suspended"、suspendedByToolCalls=true（onFinish 里 outcome===null 才写入，后续无法覆盖）；step2 中
+requireApproval 工具触发审批暂停，本分支仅设置 approvalPendingToolCallId，suspendedByToolCalls 保持 true；流终止后 end() 检测
+outcome==="suspended" && suspendedByToolCalls，误将其转为 errored 并发出 RUN_ERROR。后果：execution.ts:351 仅在
+outcome==="suspended" 时执行审批续跑保存（onSuspension），此处误判导致 ME05 挂起保存被跳过、客户端收到错误终态，审批续跑流程被打断。测试套件对
+tool-call-approval chunk 完全无覆盖，且 suspendedByToolCalls 在全代码中没有任何清除点。建议在本分支显式清除该标记（真实审批挂起优先于早前的
+tool-calls 步末标记）。
+
+          this.approvalPendingToolCallId = toolCallId;
++         // A real durable approval pause supersedes an earlier `tool-calls`
++         // step end: without this reset, end() would misread the ME05 pause
++         // as the ME04 loop cut and terminate it with RUN_ERROR.
++         this.suspendedByToolCalls = false;
+          if (this.outcome === null) this.outcome = "suspended";
+          break;
+
+
+─── server/src/mastra/stream-events.ts:296-300 ───
+[bug · medium] tool-call 分支的 JSON.stringify(payload.args ?? {}) 与 tool-result 分支的
+JSON.stringify(payload.result ?? null) 均未做 try/catch 防护，而 jsonText
+的注释与配套测试（unserializable_error_payload_still_emits_a_run_error）已明确证明作者认识到引擎载荷可能不可序列化（如循环引用 vendor
+对象）并在 error 路径做了防护。此处若 args/result 含循环引用，将以非契约的 TypeError 从 push 抛出，绕过 RUN_ERROR 终态语义，下游 generator
+得到的是裸异常而非可诊断的错误终态。建议两处复用 jsonText（或同等 try/catch）保持序列化防护一致。
+
+          this.events.push({
+            type: "TOOL_CALL_ARGS",
+            toolCallId,
+-           delta: JSON.stringify(payload.args ?? {}),
++           delta: jsonText(payload.args ?? {}),
+          } as unknown as BaseEvent);
+
+
+─── server/src/mastra/stream-events.ts:492-499 ───
+[bug · medium] 发出终态（emitRunError 与 emitRunFinished）时未收拢仍打开的消息生命周期：openTextIds 中未闭合的
+TEXT_MESSAGE_START 不会补发 TEXT_MESSAGE_END，已 announcedToolCalls 但未收到 streaming-end/tool-call 的调用不会补发
+TOOL_CALL_END。真实序列（如 text-start → text-delta → error，文本流中途出错时 text-end
+未发）会让客户端拿到一条永不闭合的消息。本模块对帧对称性的其余路径都严格执行 REJECT（text-end without open text-start
+等都有测试钉死），唯独终态路径对未闭合帧既不补齐也不拒绝——与自身契约不一致。建议在终态发出前对 openTextIds 逐一补发 TEXT_MESSAGE_END、对未闭合调用补发
+TOOL_CALL_END（或在注释中明确记录放弃闭合的决策理由）。
+
+    private emitRunError(message: string): void {
+      this.terminalEmitted = true;
+      this.ensureRunStarted();
++     this.closeOpenLifecycles();
+      this.events.push({
+        type: "RUN_ERROR",
+        message,
++     } as unknown as BaseEvent);
++   }
++ 
++   // Close every frame the engine left open before any terminal.
++   private closeOpenLifecycles(): void {
++     for (const id of this.openTextIds) {
++       this.events.push({
++         type: "TEXT_MESSAGE_END",
++         messageId: id,
+-     } as unknown as BaseEvent);
++       } as unknown as BaseEvent);
++     }
++     this.openTextIds.clear();
+    }
+
+
+─── server/src/mastra/stream-events.ts:177-181 ───
+[maintainability · medium] 本文件共 13 处以 `as unknown as BaseEvent`
+双重断言构造事件，完全绕过类型检查：messageId/role/delta/toolCallId 等字段若拼写错误、遗漏或与 @ag-ui/client 当前版本的具体事件类型（如
+TextMessageStartEvent、ToolCallStartEvent）的必填字段集不一致，编译期均无法发现，而这些事件直接发布给客户端，错误影响面大。建议改为按具体事件类型直接构造（单层赋
+值即可通过检查），或提取一个类型化的事件构造辅助函数，让字段错误在编译期暴露。
+
+-         this.events.push({
++         const start: TextMessageStartEvent = {
+            type: "TEXT_MESSAGE_START",
+            messageId: id,
+            role: "assistant",
+-         } as unknown as BaseEvent);
++         };
++         this.events.push(start);
+
+
+─── server/src/mastra/stream-events.ts:103-105 ───
+[maintainability · low] jsonText 的兜底文案 "model stream error (unserializable payload)"
+硬编码了"模型流错误"语义，但该函数同时被 tool-error
+分支复用（jsonText(payload.error)）：工具执行失败时若载荷不可序列化，错误消息会错误指向模型流，误导排障定位。建议让 jsonText 接受 fallback
+文案参数（或去掉场景绑定措辞）。另外附带一点：UnknownMastraChunkError 与前缀 MASTRA_STREAM_UNKNOWN_CHUNK 同时被用于"未知 chunk
+类型"和"已知 chunk 载荷畸形"（如 "text-delta without text"、"finish without reason"）两种语义，前缀对后者表述失真，可考虑区分为
+MASTRA_STREAM_MALFORMED_CHUNK 一类。
+
++ function jsonText(value: unknown, fallback = "unserializable payload"): string {
++   try {
++     return JSON.stringify(value) ?? "null";
+    } catch {
+-     return "model stream error (unserializable payload)";
++     return fallback;
++   }
+-   }
++ }
+
+
+─── server/src/mastra/stream-events.ts:391-393 ───
+[maintainability · low] streaming 模式下 push 每次清空缓冲，但 end() 不清空：no-terminal 路径（emitRunError 及其
+ensureRunStarted 发出的 RUN_STARTED）会把事件留在 this.events，此时 result getter 的 events 返回这些残余；而正常完成路径
+result.events 为空（streaming 测试仅断言了该路径）。result.events 在流式模式下的内容因结束路径而异，API
+语义不一致。当前消费方（execution.ts）只读取 result.outcome 与 suspendedToolCallId 尚无实际故障，但任何后续调用方若读取 result.events
+将得到不确定视图。建议 end() 在 streaming 模式下同样清空缓冲，或在 result/outcome 的文档中明确流式模式下 events 无意义。
+
+    end(): BaseEvent[] {
+      const before = this.events.length;
+      if (this.terminalEmitted) return [];
++     // ... 终态处理后:
++     const emitted = this.events.slice(before);
++     if (this.streaming) this.events.length = 0;
++     return emitted;
+
+
+─── server/src/mastra/stream-events.ts:174-176 ───
+[bug · medium] text-start 未查重即放行：同一 messageId 仍处于 openTextIds 时再收到一条 text-start（或 text-end 之后引擎复用同一
+id 重开），会向客户端发出第二条相同 messageId 的 TEXT_MESSAGE_START。本模块对帧对称性的其他破坏（text-delta before
+text-start、text-end without open text-start）一律 REJECT，唯独重复 START
+被静默接受，客户端会重复渲染或判定协议错乱，与文件声明的"corrupt control semantics block the run"契约不一致。建议与 text-end 对称地处理：`if
+(this.openTextIds.has(id)) throw new UnknownMastraChunkError(...)` 后再 add。
+
+          const id = this.textId(payload);
++         if (this.openTextIds.has(id)) {
++           throw new UnknownMastraChunkError(
++             "MASTRA_STREAM_UNKNOWN_CHUNK: duplicate text-start for an open message id",
++           );
++         }
+          this.ensureRunStarted();
+          this.openTextIds.add(id);
+
+
+─── server/src/mastra/stream-events.ts:231-234 ───
+[bug · medium] 工具调用帧的重复放行缺口：announcedToolCalls 只增不减，(a) 同一 toolCallId 的 streaming-start 重发、或先收到合并态
+tool-call 再来 streaming-start，都会再发一条重复 TOOL_CALL_START；(b) tool-call-input-streaming-end 重发会再发一条重复
+TOOL_CALL_END（text-end 靠 delete 天然挡住重复，这里没有等价机制）；(c) tool-result 重发会以同一合成 messageId
+`tool-result-${toolCallId}` 再发一条 TOOL_CALL_RESULT。tool-call 分支自己有 `if
+(this.announcedToolCalls.has(toolCallId)) break;` 的去重，说明作者已意识到重复帧问题，但 streaming 路径未对齐。建议用一个可删除的集合跟踪
+streaming 生命周期（start 时 has 即 REJECT、streaming-end 时 delete，delete 失败即 REJECT），与 text-start/text-end
+的严格对称保持一致。
+
+
+
+─── server/src/mastra/stream-events.ts:480-482 ───
+[bug · medium] 已记录的 "aborted" outcome 会被后续 error 覆盖：onFinish 的 stop/length 分支明确写了"an engine abort
+already recorded is not un-recorded by a trailing finish"（line 430 `if (this.outcome === "aborted")
+break;`），但 error chunk（onError）、finish reason "error" 以及 tool-error 分支都只检查 terminalEmitted，不检查
+outcome === "aborted"，直接置 errored 并发 RUN_ERROR。真实可达序列：abort/tripwire 中止后，引擎/SDK 在拆除流时抛出的 AbortError
+常以 error chunk 跟随出现，导致业务上由中止信号停止的 run 被上报为 RUN_ERROR 终态，违反本模块自己声明的 abort
+语义（terminal-less、由业务生命周期接管）。建议对齐 finish 分支：`if (this.outcome === "aborted") return;`（tool-error 与
+finish reason "error" 同理）。
+
+    private onError(payload: Record<string, unknown>): void {
+      if (this.terminalEmitted) return;
++     // An abort already recorded is not un-recorded by a trailing teardown
++     // error: the aborted outcome stays terminal-less by contract.
++     if (this.outcome === "aborted") return;
+      this.outcome = "errored";
+
+
+─── server/src/mastra/stream-events.ts:412-414 ───
+[bug · low] suspendedToolCallId 的返回不校验 outcome：接口文档（line 78-80）声明该字段"when the outcome is the
+approval suspension"才存在，但实现只看 approvalPendingToolCallId 是否曾被设置。可达序列：tool-call-approval 之后跟随 error
+chunk（outcome 翻为 errored 并发 RUN_ERROR）或 finish(stop)（outcome 翻为 finished 并发 RUN_FINISHED），result 将带着
+suspendedToolCallId 以 errored/finished 返回。当前消费方 execution.ts:351 先门控 outcome === "suspended"
+才读它，所以暂未触发误用，但这是靠调用方自觉而非契约本身，一旦有消费方按字段存在性判断挂起就会被误导。建议门控输出：仅在 `outcome === "suspended" &&
+!suspendedByToolCalls` 时携带（或在 outcome 离开 suspended 时清空该字段）。
+
+-       ...(this.approvalPendingToolCallId
++       ...((this.outcome === "suspended" && this.approvalPendingToolCallId)
+          ? { suspendedToolCallId: this.approvalPendingToolCallId }
+          : {}),
+
+
+─── server/src/mastra/stream-events.ts:156-158 ───
+[bug · low] 未受保护的 JSON.stringify 的又一处（已确认问题仅覆盖 TOOL_CALL_ARGS/TOOL_CALL_RESULT 两处事件载荷）：这里对畸形 chunk
+自身做 stringify 构造诊断消息，若该 chunk 含循环引用（vendor 错误对象常见），stringify 会以 TypeError 逃出，而不是抛出本契约的
+UnknownMastraChunkError——异常分类与前缀 MASTRA_STREAM_UNKNOWN_CHUNK 全部失效。jsonText
+已有现成的防护模式，直接复用即可：`jsonText(chunk).slice(0, 200)`。
+
+        throw new UnknownMastraChunkError(
+-         `MASTRA_STREAM_UNKNOWN_CHUNK: ${JSON.stringify(chunk)?.slice(0, 200) ?? "empty"}`,
++         `MASTRA_STREAM_UNKNOWN_CHUNK: ${jsonText(chunk).slice(0, 200)}`,
+        );
+
+
+LLM retry report summary: 5 of 71 requests affected -- 1 request failed, 4 requests recovered after retry
+
+Review planning (1 request):
+- server/src/mastra/stream-events.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> succeeded
+
+Core review (4 requests):
+- server/src/mastra/conversation-runtime.ts: timed out -> failed
+- server/src/mastra/message-parts.ts: rate limited (HTTP 429) -> succeeded
+- server/src/mastra/stream-events.ts: rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> rate limited (HTTP 429) -> succeeded
+- server/src/mastra/stream-events.ts: rate limited (HTTP 429) -> succeeded
+
+Per-attempt detail: --format json (retry_report).

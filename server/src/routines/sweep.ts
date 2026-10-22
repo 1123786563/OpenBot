@@ -84,8 +84,11 @@ export type RoutineSweepOptions = {
   routineStore: RoutineStore;
   /** The shared `work_items` queue. Not a second queue, and not a timer. */
   queue: WorkQueue;
-  /** POST /internal/routines/run. Throws on anything that is not a 202. */
-  dispatch: (routineRunId: string) => Promise<void>;
+  /** POST /internal/routines/run. Throws on anything that is not a 202. The
+   * second argument (ME09) is the firing's durable identity — the offer key —
+   * when the caller carries one, so the server can converge a redelivery on
+   * the SAME advance intent. */
+  dispatch: (routineRunId: string, firing?: { key: string }) => Promise<void>;
   /** Who this process is, for the lease. A name, so a stuck claim traces back to a pod. */
   owner: string;
   /** Lease for a claimed firing; phase two is what applies it. Default 60_000. */
@@ -450,7 +453,7 @@ export async function dispatchClaimedRoutines(
        * Age is the only signal the sweep has that no server is coming back for a row, so age is the
        * scope the closing uses.
        */
-      await options.dispatch(runId);
+      await options.dispatch(runId, { key: item.key });
       if (
         !(await options.queue.finish({
           kind: ROUTINE_FIRE_KIND,

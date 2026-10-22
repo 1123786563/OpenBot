@@ -41,6 +41,7 @@ import {
   DeliveryRefusedError,
   type DeliveryScope,
 } from "./types";
+
 const log = getLogger("server");
 
 /** The approvals service, named by what a paired chat surface may do with it. */

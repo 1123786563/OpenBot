@@ -4,11 +4,11 @@ import { z } from "zod";
 import type { AppVariables } from "../auth/guards";
 import type { OpenMuseFileStore } from "../openmuse-files/store";
 import { ACTIVE_TASKS_PER_USER, TASK_LIMIT_MESSAGE } from "./capacity";
-import { OpenMuseTaskQuotaError } from "./store";
 import {
   type createOpenMuseTaskStore,
   documentTaskCarriage,
   OpenMuseOwnerDisabledError,
+  OpenMuseTaskQuotaError,
   type OpenMuseTaskStore,
   type OpenMuseTaskWait,
   type StoredOpenMuseTask,

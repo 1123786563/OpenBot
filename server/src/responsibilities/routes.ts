@@ -14,6 +14,7 @@ import {
   ResponsibilityRefusedError,
   type ResponsibilityStore,
 } from "./types";
+
 const log = getLogger("server");
 
 /** User-owned goals. Provider events have separately authenticated ingress. */

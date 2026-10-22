@@ -213,9 +213,7 @@ function assertCatalogTenancyClean(catalog: MarketplaceCatalog): void {
     ) {
       throw new Error("MARKETPLACE_CATALOG_ENTRY_INVALID");
     }
-    assertNoClientAttribution(
-      entry.defaultConfig as Record<string, unknown>,
-    );
+    assertNoClientAttribution(entry.defaultConfig as Record<string, unknown>);
   }
 }
 
@@ -234,9 +232,9 @@ export interface MarketplaceInstallService {
     }[]
   >;
   /** 本租户可见的安装回执（RLS 租户过滤；跨公司天然不可见）。 */
-  listInstalls(scope: PlatformScope): Promise<
-    readonly MarketplaceInstallReceipt[]
-  >;
+  listInstalls(
+    scope: PlatformScope,
+  ): Promise<readonly MarketplaceInstallReceipt[]>;
   /** 从目录安装：归属 = 发起 scope 的 (tenant, workspace)。 */
   installFromCatalog(
     scope: PlatformScope,
@@ -423,10 +421,7 @@ export function createMarketplaceInstallService(channels: {
             enterpriseWorkspaceMemberships.workspaceId,
             enterpriseResources.workspaceId,
           ),
-          eq(
-            enterpriseWorkspaceMemberships.principalId,
-            scope.principalId,
-          ),
+          eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
         ),
       )
       .leftJoin(
@@ -639,8 +634,7 @@ export function createMarketplaceInstallService(channels: {
       ) {
         throw new Error("MARKETPLACE_ACTION_INVALID");
       }
-      return operator.transaction(
-        async (tx): Promise<MarketplaceExecution> => {
+      return operator.transaction(async (tx): Promise<MarketplaceExecution> => {
         await beginContext(tx, scope);
         await takeLocks(tx, [
           ...baseLockKeys(scope).map((key) => ({ key, exclusive: false })),
@@ -722,8 +716,7 @@ export function createMarketplaceInstallService(channels: {
             return deepFreeze({ outcome: "allow", agentId: receiptRef });
           }
         }
-        },
-      );
+      });
     },
   };
 }

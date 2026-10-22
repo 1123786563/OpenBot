@@ -1,30 +1,28 @@
-import type { Database } from "../db/client";
 import type { AuditStore } from "../audit";
 import { DEPLOYMENT_INITIATOR, recordAuditEvent } from "../audit";
+import type { Database } from "../db/client";
+import type { PriceDimension } from "../gateway/price-snapshot";
+import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
 import {
-  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
   type CreditReserveOutcome,
   type CreditReserveRequest,
+  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
 } from "./credit-reserve";
+import { findCompanyScopeIdentityField } from "./personal-key-isolation";
+import { attemptIdForReservation } from "./reservation-status";
 import {
   computeReservationCeiling,
   type ReservationBoundQuantities,
 } from "./reserve-bound";
-import { findCompanyScopeIdentityField } from "./personal-key-isolation";
-import {
-  TOOL_SURCHARGE_ENTRIES,
-  assessToolSurchargeEnablement,
-  type ToolSurchargeEntryIdForIdentity,
-} from "./tool-surcharge-pricing";
-import {
-  attemptIdForReservation,
-} from "./reservation-status";
 import {
   listToolCallChargesByGrant,
   recordToolCallCharge,
 } from "./tool-call-charge";
-import type { PriceDimension } from "../gateway/price-snapshot";
-import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
+import {
+  assessToolSurchargeEnablement,
+  TOOL_SURCHARGE_ENTRIES,
+  type ToolSurchargeEntryIdForIdentity,
+} from "./tool-surcharge-pricing";
 
 /*
  * The tool admission door (Bifrost 20.4, #344): the entry EVERY tool call lands on —
@@ -102,25 +100,21 @@ export type ToolAdmissionRefusal =
       status: "refused";
       /** Stage 3: the ceiling could not certify, or the reserve door refused. */
       stage: "reserve";
-      reasonCode:
-        | "price_basis_not_found"
-        | "ceiling_not_certifiable"
-        | string;
+      reasonCode: "price_basis_not_found" | "ceiling_not_certifiable" | string;
       detail: Record<string, unknown>;
     };
 
 /** The admitted answer: the identity row plus what the caller's dispatch stands on. */
-export type ToolAdmission =
-  | {
-      status: "admitted";
-      /** True when the basis priced the call exactly zero — dispatched hold-free. */
-      free: boolean;
-      chargeId: string;
-      /** The hold the call stands on; null exactly when free. */
-      reservationId: string | null;
-      /** The hold's 07.x attempt id; null exactly when free. */
-      attemptId: string | null;
-    };
+export type ToolAdmission = {
+  status: "admitted";
+  /** True when the basis priced the call exactly zero — dispatched hold-free. */
+  free: boolean;
+  chargeId: string;
+  /** The hold the call stands on; null exactly when free. */
+  reservationId: string | null;
+  /** The hold's 07.x attempt id; null exactly when free. */
+  attemptId: string | null;
+};
 
 export type ToolAdmissionOutcome = ToolAdmission | ToolAdmissionRefusal;
 
@@ -136,7 +130,11 @@ export type ToolAdmissionDependencies = {
    */
   isCompanyTool?: (tool: string) => boolean;
   /** The tool dispatch: called at most once, only after the hold exists (or the basis is free). */
-  dispatch: (input: { entry: string; tool: string; free: boolean }) => Promise<unknown>;
+  dispatch: (input: {
+    entry: string;
+    tool: string;
+    free: boolean;
+  }) => Promise<unknown>;
   /** The locked basis's dims and rate — resolved by the caller from the same versions. */
   resolveBasis: (model: {
     provider: string;
@@ -150,7 +148,11 @@ export type ToolAdmissionDependencies = {
         dims: Parameters<typeof computeReservationCeiling>[0]["dims"];
         rate: Parameters<typeof computeReservationCeiling>[0]["rate"];
       }
-    | { ok: false; reason: "price_basis_not_found"; detail?: Record<string, unknown> }
+    | {
+        ok: false;
+        reason: "price_basis_not_found";
+        detail?: Record<string, unknown>;
+      }
   >;
   /** The audit store every refusal is written to. */
   audit?: AuditStore;
@@ -185,7 +187,9 @@ type ToolAdmissionRequest = {
 
 function validateAdmissionRequest(
   input: unknown,
-): { ok: true; request: ToolAdmissionRequest } | { ok: false; detail: Record<string, unknown> } {
+):
+  | { ok: true; request: ToolAdmissionRequest }
+  | { ok: false; detail: Record<string, unknown> } {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, detail: { field: "body" } };
   }
@@ -193,10 +197,7 @@ function validateAdmissionRequest(
   if (!isIdentifier(raw.toolCallIdempotencyKey, 512)) {
     return { ok: false, detail: { field: "toolCallIdempotencyKey" } };
   }
-  if (
-    typeof raw.entry !== "string" ||
-    !IDENTITY_ENTRY_IDS.has(raw.entry)
-  ) {
+  if (typeof raw.entry !== "string" || !IDENTITY_ENTRY_IDS.has(raw.entry)) {
     return { ok: false, detail: { field: "entry" } };
   }
   if (!isIdentifier(raw.tool, 512)) {
@@ -307,7 +308,10 @@ export function createToolAdmissionService(
         RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
       );
       for (const key of Object.keys(input as Record<string, unknown>)) {
-        if (forbidden.has(key.toLowerCase()) || findCompanyScopeIdentityField({ [key]: true })) {
+        if (
+          forbidden.has(key.toLowerCase()) ||
+          findCompanyScopeIdentityField({ [key]: true })
+        ) {
           const refusal: ToolAdmissionRefusal = {
             status: "refused",
             stage: "isolation",
@@ -421,7 +425,11 @@ export function createToolAdmissionService(
       // ---- Stage 3a: the free path. Every billed dimension priced exactly zero is a
       // price, not a gap: dispatch hold-free, identity row charged-free.
       if (verdict.free) {
-        await dispatch({ entry: request.entry, tool: request.tool, free: true });
+        await dispatch({
+          entry: request.entry,
+          tool: request.tool,
+          free: true,
+        });
         const recorded = await recordToolCallCharge(database, {
           idempotencyKey: request.toolCallIdempotencyKey,
           entry: request.entry,
@@ -454,7 +462,8 @@ export function createToolAdmissionService(
       const billedDimension = dimensionOf(request.entry);
       const quantities = Object.fromEntries(
         PRICE_DIMENSIONS.map(
-          (dimension) => [dimension, dimension === billedDimension ? 1 : 0] as const,
+          (dimension) =>
+            [dimension, dimension === billedDimension ? 1 : 0] as const,
         ),
       ) as ReservationBoundQuantities;
       const ceiling = computeReservationCeiling({
@@ -508,7 +517,8 @@ export function createToolAdmissionService(
           stage: "reserve",
           reasonCode,
           detail: {
-            detail: (reserved as { detail?: Record<string, unknown> }).detail ?? {},
+            detail:
+              (reserved as { detail?: Record<string, unknown> }).detail ?? {},
           },
         };
         await recordToolCallCharge(database, {
@@ -524,7 +534,10 @@ export function createToolAdmissionService(
           "billing.tool_bypass_refused",
           request,
           reasonCode,
-          { detail: (reserved as { detail?: Record<string, unknown> }).detail ?? {} },
+          {
+            detail:
+              (reserved as { detail?: Record<string, unknown> }).detail ?? {},
+          },
         );
         return refusal;
       }
@@ -558,15 +571,20 @@ export function createToolAdmissionService(
     },
 
     /** The grant's tool-call charges, oldest first — the door's own view of its trail. */
-    listCharges: (grantId: string) => listToolCallChargesByGrant(database, grantId),
+    listCharges: (grantId: string) =>
+      listToolCallChargesByGrant(database, grantId),
   };
 }
 
-export type ToolAdmissionService = ReturnType<typeof createToolAdmissionService>;
+export type ToolAdmissionService = ReturnType<
+  typeof createToolAdmissionService
+>;
 
 /** The dimension one entrance bills on — the registry's own mapping, never a second list. */
 function dimensionOf(entry: ToolSurchargeEntryIdForIdentity): PriceDimension {
-  const found = TOOL_SURCHARGE_ENTRIES.find((candidate) => candidate.id === entry);
+  const found = TOOL_SURCHARGE_ENTRIES.find(
+    (candidate) => candidate.id === entry,
+  );
   if (found === undefined || found.dimension === null) {
     // validateAdmissionRequest already refused ids outside the identity set; reaching
     // here means the registry and the id type drifted — a loud defect, never a guess.

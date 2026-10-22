@@ -1,8 +1,11 @@
-import type { PriceDimension, PriceSnapshotDims } from "../gateway/price-snapshot";
 import type { ModelRef } from "../gateway/catalog";
 import { modelRefKey } from "../gateway/catalog";
-import { VIDEO_GENERATION_BILLED_DIMENSIONS } from "./video-generation-pricing";
+import type {
+  PriceDimension,
+  PriceSnapshotDims,
+} from "../gateway/price-snapshot";
 import { VIDEO_EDIT_BILLED_DIMENSIONS } from "./video-edit-pricing";
+import { VIDEO_GENERATION_BILLED_DIMENSIONS } from "./video-generation-pricing";
 
 /*
  * The video spec availability summary (Bifrost 19.2, #338): the read that answers, for

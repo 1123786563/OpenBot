@@ -5,15 +5,15 @@ import type { OpenMuseNotificationStore } from "../openmuse-notifications/store"
 import type { OpenMuseFileBytePurgeReport } from "./purge";
 import type { OpenMuseRelationalPurgeOutcome } from "./purge-relational";
 import {
-  sanitizeLastError,
   type OpenMuseDeletionCleanupView,
+  sanitizeLastError,
 } from "./retention";
-import { OpenMusePurgeRefusedError } from "./store";
 import type {
   OpenMuseAccountDeletionStore,
   OpenMuseDeletionResourceRows,
   StoredOpenMuseAccountDeletion,
 } from "./store";
+import { OpenMusePurgeRefusedError } from "./store";
 
 /*
  * D05 (§9 restoration): within 30 days, an administrator restore returns the

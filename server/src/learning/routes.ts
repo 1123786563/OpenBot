@@ -11,6 +11,7 @@ import { type AuditStore, recordAuditEvent } from "../audit";
 import { type AppVariables, requireAdmin } from "../auth/guards";
 import type { LearningAutoAssign } from "./auto-assign";
 import { type LearningSettingsStore, parseLearningSettings } from "./settings";
+
 const log = getLogger("server");
 
 /** The longest the settings page waits for an automatic check before answering without it. */

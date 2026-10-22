@@ -5,10 +5,7 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
-import {
-  enterpriseMemberships,
-  enterpriseTenants,
-} from "./enterprise-tenancy";
+import { enterpriseMemberships, enterpriseTenants } from "./enterprise-tenancy";
 
 // Hindsight 14（Issue #392）：暂停学习与暂停使用，两个状态分离保存。
 //

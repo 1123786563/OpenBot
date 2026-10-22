@@ -17,9 +17,9 @@ export type MarketplaceStore = {
     expertSlug: string,
   ): Promise<{ agentId: string } | null>;
   /** The expert slugs this person has installed, with their Bots. */
-  installsFor(ownerUserId: string): Promise<
-    { expertSlug: string; agentId: string }[]
-  >;
+  installsFor(
+    ownerUserId: string,
+  ): Promise<{ expertSlug: string; agentId: string }[]>;
   /**
    * Which of the named catalogue slugs this person can already see installed: their own rows, or
    * the deployment's. Another person's private skill holds the slug but is invisible here by the
@@ -76,10 +76,7 @@ export function createMarketplaceStore(database: Database): MarketplaceStore {
         .where(
           and(
             inArray(skills.slug, slugs),
-            or(
-              eq(skills.ownerUserId, ownerUserId),
-              isNull(skills.ownerUserId),
-            ),
+            or(eq(skills.ownerUserId, ownerUserId), isNull(skills.ownerUserId)),
           ),
         );
     },

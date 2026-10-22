@@ -1,4 +1,10 @@
-import { jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 /*
  * The §9 account-deletion tables (D01/D04), living in db/schema like every

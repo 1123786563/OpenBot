@@ -28,6 +28,7 @@ import {
 } from "@opentelemetry/sdk-logs";
 import { getLogger } from "../../../shared/logger";
 import { scrubCommand } from "./scrub";
+
 const log = getLogger("server");
 
 export type ExportedEvent = {

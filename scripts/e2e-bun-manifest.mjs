@@ -4,12 +4,19 @@
 // Only a Bun-runtime dependency belongs in the driven manifest. Anything else — a matcher the compat
 // layer has not grown yet, an alias the runner cannot resolve, a file that registers nothing — is a
 // gap in this repository's harness and must not be hidden by routing it onto another runtime.
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+// The writer is the shared one: writeManifest() applies BOTH island kinds
+// (filename-prefix ISLANDS and DIRECTORY_ISLANDS) and persists the full
+// payload shape (directoryIslands + audit + causes). A hand-rolled second
+// writer here once omitted those keys and silently re-merged the multitenancy
+// islands into 24-file slices — the exact false-red configuration the
+// directoryIslands contract exists to prevent (the driver keys
+// MT_TEST_DATABASE_URL routing off it).
+import { writeManifest } from "./lib/e2e-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const auditPath = process.argv[2] ?? "archive/verification/e2e-file-audit.json";
-const groupSize = Number(process.env.E2E_BUN_GROUP_SIZE ?? 24);
 
 // The mobile QA deliverable is written against an Appium driver and a device bundle: it is not
 // executable in this repository and never ran under `bun test` either. It is kept out of both the
@@ -57,42 +64,21 @@ const todo = audit.filter(
     !artifacts.includes(entry),
 );
 
-const byDirectory = new Map();
-for (const entry of driven) {
-  const directory = entry.file.split("/").slice(0, 2).join("/");
-  if (!byDirectory.has(directory)) byDirectory.set(directory, []);
-  byDirectory.get(directory).push(entry.file);
-}
-
-const groups = [];
-for (const [directory, files] of byDirectory) {
-  for (let index = 0; index < files.length; index += groupSize) {
-    const chunk = files.slice(index, index + groupSize);
-    groups.push({
-      name: `${directory}${files.length > groupSize ? ` part ${index / groupSize + 1}` : ""}`,
-      files: chunk,
-    });
-  }
-}
-
-writeFileSync(
-  resolve(root, "tests/config/e2e-bun-suites.json"),
-  `${JSON.stringify(
-    {
-      generatedBy: "scripts/e2e-bun-manifest.mjs",
-      audit: auditPath,
-      groups,
-      files: driven.map((d) => d.file),
-      artifacts: artifacts.map((a) => a.file),
-    },
-    null,
-    1,
-  )}\n`,
+const groupCount = writeManifest(
+  {
+    files: driven.map((d) => d.file),
+    artifacts: artifacts.map((a) => a.file),
+    causes: Object.fromEntries(
+      todo.map((entry) => [entry.file, entry.error ?? "unknown"]),
+    ),
+    audit: auditPath,
+  },
+  "scripts/e2e-bun-manifest.mjs",
 );
 
 console.log(`${audit.length} files audited`);
 console.log(
-  `${driven.length} kept on the Bun runtime, in ${groups.length} driven group(s)`,
+  `${driven.length} kept on the Bun runtime, in ${groupCount} driven group(s)`,
 );
 console.log(
   `${artifacts.length} deliverable artifacts, not executable here: ${artifacts.map((a) => a.file).join(", ")}`,

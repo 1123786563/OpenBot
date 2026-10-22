@@ -1,5 +1,5 @@
-import type { ConversionRate } from "../gateway/conversion-rate";
 import type { ModelRef } from "../gateway/catalog";
+import type { ConversionRate } from "../gateway/conversion-rate";
 import type { PriceSnapshotDims } from "../gateway/price-snapshot";
 import type { PayerRef } from "./payer";
 import {
@@ -7,16 +7,16 @@ import {
   type ReservationBoundQuantities,
 } from "./reserve-bound";
 import {
+  assessVideoEditEnablement,
+  type VideoEditRequestType,
+  videoEditCeilingDims,
+} from "./video-edit-pricing";
+import {
   assessVideoGenerationEnablement,
+  type VideoTierPriceTable,
   videoGenerationCeilingDims,
   videoTierPriceTableFromSnapshot,
-  type VideoTierPriceTable,
 } from "./video-generation-pricing";
-import {
-  assessVideoEditEnablement,
-  videoEditCeilingDims,
-  type VideoEditRequestType,
-} from "./video-edit-pricing";
 
 /*
  * The video submit path (Bifrost 19.1, #337 — the 提交预留 wiring; 19.3's edit/remix

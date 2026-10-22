@@ -3,8 +3,8 @@ import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { accessGrants } from "../db/schema";
 import { toolCallCharges } from "../db/schema/credit-reservations";
-import { attemptIdForReservation } from "./reservation-status";
 import type { PriceDimension } from "../gateway/price-snapshot";
+import { attemptIdForReservation } from "./reservation-status";
 import type { ToolSurchargeEntryIdForIdentity } from "./tool-surcharge-pricing";
 
 /*

@@ -174,6 +174,21 @@ export async function requestBoundModelRouteFor(
   return { routeRef: bound.routeRef, maximumTokens: bound.maximumTokens };
 }
 
+/**
+ * ME09 (#481): run one operation inside the request-local model-route
+ * binding, the way every governed admission does. The headless (routine)
+ * admission runs outside any HTTP request, so its wiring binds the SAME
+ * request-local facts — the scope, thread, Bot, route ref and ceiling it
+ * just resolved server-side — for the duration of the `start` call. Nothing
+ * here reads a client field: the caller is the server assembly.
+ */
+export function runWithBoundModelRoute<T>(
+  binding: BoundModelRoute,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return boundModelRouteContext.run(binding, operation);
+}
+
 function threadIdFrom(value: unknown): string {
   if (typeof value !== "string" || !value.trim() || value.length > 200)
     throw new Error("RUNNER_THREAD_ID_INVALID");

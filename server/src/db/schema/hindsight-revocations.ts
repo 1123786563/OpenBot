@@ -9,10 +9,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import {
-  enterpriseMemberships,
-  enterpriseTenants,
-} from "./enterprise-tenancy";
+import { enterpriseMemberships, enterpriseTenants } from "./enterprise-tenancy";
 
 // Hindsight 13（Issue #390）：遗忘与来源撤销的持久阻断台账。
 //
@@ -39,8 +36,9 @@ export const hindsightRevocations = pgTable(
     /** What was revoked: one memory row, or an authorization target (source/bot). */
     kind: text("kind").$type<"memory" | "source" | "bot">().notNull(),
     /** For kind=memory: which authority table the blocked row lives in. */
-    subjectType: text("subject_type")
-      .$type<"preference" | "source_bound" | "derived_judgment">(),
+    subjectType: text("subject_type").$type<
+      "preference" | "source_bound" | "derived_judgment"
+    >(),
     /** The authority row id (kind=memory) or the revoked target id (source/bot). */
     targetId: text("target_id").notNull(),
     /** The Hindsight document this row blocks and deletes; one ledger row per document. */

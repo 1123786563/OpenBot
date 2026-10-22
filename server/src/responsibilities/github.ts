@@ -4,6 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
 import type { ResponsibilityEvent, ResponsibilityEventResult } from "./types";
+
 const log = getLogger("server");
 
 export type GithubResponsibilityBinding = {

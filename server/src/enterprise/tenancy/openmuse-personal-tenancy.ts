@@ -54,15 +54,15 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import {
-  OPENMUSE_PERSONAL_OBJECT_TYPES,
-  openmusePersonalScopes,
-  type OpenMusePersonalObjectType,
-  type OpenMusePersonalScopeRow,
-} from "../../db/schema/openmuse-personal-tenancy";
-import {
   enterpriseMemberships,
   enterpriseWorkspaceMemberships,
 } from "../../db/schema/enterprise-tenancy";
+import {
+  OPENMUSE_PERSONAL_OBJECT_TYPES,
+  type OpenMusePersonalObjectType,
+  type OpenMusePersonalScopeRow,
+  openmusePersonalScopes,
+} from "../../db/schema/openmuse-personal-tenancy";
 import type { PlatformScope } from "../contracts";
 import {
   assertDataDatabase,

@@ -6,12 +6,12 @@ import {
   openmuseReviewedAttempts,
 } from "../db/schema/openmuse";
 import { workItems } from "../db/schema/work";
-import { OPENMUSE_TASK_MAX_ATTEMPTS } from "../openmuse-tasks/capacity";
 import { OpenMUSE_REFRESH_FAILED_MESSAGE } from "../openmuse-connectors/google-oauth";
 import {
   type OpenMuseDeletionCleanupView,
   sanitizeLastError,
 } from "../openmuse-deletion/retention";
+import { OPENMUSE_TASK_MAX_ATTEMPTS } from "../openmuse-tasks/capacity";
 import { OPENMUSE_TASK_KIND } from "../openmuse-tasks/store";
 
 /*
@@ -225,8 +225,7 @@ export function createOpenMuseOpsSignals(
                  * that buries the genuinely wedged rows and tells the
                  * operator to wait for a worker that will never come.
                  */
-                if (row.attempts >= OPENMUSE_TASK_MAX_ATTEMPTS)
-                  return false;
+                if (row.attempts >= OPENMUSE_TASK_MAX_ATTEMPTS) return false;
                 if (row.claimedBy === null)
                   return at.getTime() - row.runAt.getTime() > queuedRunnableMs;
                 return (

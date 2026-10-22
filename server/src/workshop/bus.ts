@@ -160,10 +160,16 @@ export function createTurnEventBus(
           // mode, and the last listener for the turn ends it by closing that connection.
           const subscriber = redis.duplicate();
           try {
-            await subscriber.subscribe(channelOf(turnId), (_channel, message) => {
-              const parsed = JSON.parse(message) as { turnId: string; seq: number };
-              void deliver(parsed.turnId, parsed.seq);
-            });
+            await subscriber.subscribe(
+              channelOf(turnId),
+              (_channel, message) => {
+                const parsed = JSON.parse(message) as {
+                  turnId: string;
+                  seq: number;
+                };
+                void deliver(parsed.turnId, parsed.seq);
+              },
+            );
             sub.stop = () => {
               void subscriber.quit();
             };

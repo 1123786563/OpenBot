@@ -1,5 +1,5 @@
-import { checkNavigationTarget } from "../computer/target";
 import { injectTraceHeaders } from "../../../shared/trace";
+import { checkNavigationTarget } from "../computer/target";
 
 /**
  * Where an external agent lives, and whether we are willing to talk to it.

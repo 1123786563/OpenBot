@@ -10,10 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import {
-  enterpriseMemberships,
-  enterpriseTenants,
-} from "./enterprise-tenancy";
+import { enterpriseMemberships, enterpriseTenants } from "./enterprise-tenancy";
 
 // Hindsight 05（Issue #382）：通用个人偏好的 OpenBot 权威记录。
 //
@@ -41,8 +38,9 @@ export const genericPersonalPreferences = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     /** When the person explicitly marked this preference as general; the marking's evidence. */
-    markedGenericAt: timestamp("marked_generic_at", { withTimezone: true })
-      .notNull(),
+    markedGenericAt: timestamp("marked_generic_at", {
+      withTimezone: true,
+    }).notNull(),
     /**
      * The stable document identity this row is indexed under on the Hindsight service. Derived
      * once at confirm and never changed, so an edit replaces the remote document in place

@@ -1,6 +1,6 @@
-import type { PDFDocument } from "pdf-lib";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import type { PDFDocument } from "pdf-lib";
 import { getLogger } from "../../../shared/logger";
 import type { AppVariables, AuthenticatedActor } from "../auth/guards";
 import { OPENMUSE_MAX_PDF_BYTES } from "../openmuse-files/bytes";
@@ -21,9 +21,9 @@ import {
   extractPdfDocument,
   inspectPdfDocument,
   loadPdfDocument,
+  MAX_PDF_PAGES,
   type PdfFieldExtractor,
   PdfRefusalError,
-  MAX_PDF_PAGES,
 } from "./inspect";
 import {
   transferVersionToWorkspace,
@@ -292,7 +292,8 @@ export function createOpenMuseDocumentsRoutes(deps: {
             : extract;
         const inspection = await inspectPdfDocument(bytes, extractor);
         typed = validateFill(inspection, values as Record<string, unknown>);
-        const load = parsed !== undefined ? loadOnce : () => loadPdfDocument(bytes);
+        const load =
+          parsed !== undefined ? loadOnce : () => loadPdfDocument(bytes);
         filled = await applyFill(load, inspection, typed, fillAdapter);
       } catch (error) {
         if (error instanceof PdfFillRefusalError) {
@@ -375,101 +376,102 @@ export function createOpenMuseDocumentsRoutes(deps: {
         context.json({ error: "The transfer body is too large." }, 413),
     }),
     async (context) => {
-    /*
-     * Owner-scoped like every files answer: a foreign or tombstoned id is a
-     * 404, because existence itself is not disclosed (§5); a §9-disabled
-     * owner's store read throws to onError's 403.
-     */
-    const owned = await deps.store.getOwnedFile(
-      context.var.actor.id,
-      context.req.param("id"),
-    );
-    if (!owned) {
-      return context.json({ error: "No such file." }, 404);
-    }
-    if (owned.file.mimeType !== "application/pdf") {
-      return context.json({ error: "Only PDFs can be transferred." }, 400);
-    }
-    if (owned.file.size > OPENMUSE_MAX_PDF_BYTES) {
-      return context.json(
-        {
-          error: `That PDF is larger than the ${OPENMUSE_MAX_PDF_BYTES} byte limit.`,
-        },
-        413,
+      /*
+       * Owner-scoped like every files answer: a foreign or tombstoned id is a
+       * 404, because existence itself is not disclosed (§5); a §9-disabled
+       * owner's store read throws to onError's 403.
+       */
+      const owned = await deps.store.getOwnedFile(
+        context.var.actor.id,
+        context.req.param("id"),
       );
-    }
-    let body: unknown;
-    try {
-      body = await context.req.json();
-    } catch {
+      if (!owned) {
+        return context.json({ error: "No such file." }, 404);
+      }
+      if (owned.file.mimeType !== "application/pdf") {
+        return context.json({ error: "Only PDFs can be transferred." }, 400);
+      }
+      if (owned.file.size > OPENMUSE_MAX_PDF_BYTES) {
+        return context.json(
+          {
+            error: `That PDF is larger than the ${OPENMUSE_MAX_PDF_BYTES} byte limit.`,
+          },
+          413,
+        );
+      }
+      let body: unknown;
+      try {
+        body = await context.req.json();
+      } catch {
+        return context.json(
+          {
+            error:
+              "The transfer needs a JSON body with versionId and transferKey.",
+          },
+          400,
+        );
+      }
+      const { versionId, transferKey } = (body ?? {}) as {
+        versionId?: unknown;
+        transferKey?: unknown;
+      };
+      if (
+        typeof versionId !== "string" ||
+        !versionId.trim() ||
+        typeof transferKey !== "string" ||
+        !transferKey.trim() ||
+        transferKey.length > 200
+      ) {
+        return context.json(
+          { error: "The transfer needs a versionId and a transferKey." },
+          400,
+        );
+      }
+      if (versionId !== owned.file.versionId) {
+        return context.json(
+          { error: "Only the file's current version can be transferred." },
+          409,
+        );
+      }
+      const filesystem = deps.transferWorkspace
+        ? await deps.transferWorkspace(context.var.actor)
+        : null;
+      if (!filesystem) {
+        return context.json(
+          { error: "Transfers are not available on this deployment yet." },
+          503,
+        );
+      }
+      const transferBytes = await owned.read();
+      // The served bytes' own length, not the row's stale original size (see
+      // the inspect route's guard).
+      if (transferBytes.byteLength > OPENMUSE_MAX_PDF_BYTES) {
+        return context.json(
+          {
+            error: `That PDF is larger than the ${OPENMUSE_MAX_PDF_BYTES} byte limit.`,
+          },
+          413,
+        );
+      }
+      const outcome = await transferVersionToWorkspace({
+        filesystem,
+        fileId: owned.file.id,
+        versionId,
+        transferKey,
+        bytes: transferBytes,
+      });
+      if (outcome.kind === "failed") {
+        return context.json(
+          { error: "The transfer did not complete. Try again." },
+          503,
+        );
+      }
       return context.json(
-        {
-          error:
-            "The transfer needs a JSON body with versionId and transferKey.",
-        },
-        400,
+        { path: outcome.path },
+        outcome.kind === "transferred" ? 201 : 200,
       );
-    }
-    const { versionId, transferKey } = (body ?? {}) as {
-      versionId?: unknown;
-      transferKey?: unknown;
-    };
-    if (
-      typeof versionId !== "string" ||
-      !versionId.trim() ||
-      typeof transferKey !== "string" ||
-      !transferKey.trim() ||
-      transferKey.length > 200
-    ) {
-      return context.json(
-        { error: "The transfer needs a versionId and a transferKey." },
-        400,
-      );
-    }
-    if (versionId !== owned.file.versionId) {
-      return context.json(
-        { error: "Only the file's current version can be transferred." },
-        409,
-      );
-    }
-    const filesystem = deps.transferWorkspace
-      ? await deps.transferWorkspace(context.var.actor)
-      : null;
-    if (!filesystem) {
-      return context.json(
-        { error: "Transfers are not available on this deployment yet." },
-        503,
-      );
-    }
-    const transferBytes = await owned.read();
-    // The served bytes' own length, not the row's stale original size (see
-    // the inspect route's guard).
-    if (transferBytes.byteLength > OPENMUSE_MAX_PDF_BYTES) {
-      return context.json(
-        {
-          error: `That PDF is larger than the ${OPENMUSE_MAX_PDF_BYTES} byte limit.`,
-        },
-        413,
-      );
-    }
-    const outcome = await transferVersionToWorkspace({
-      filesystem,
-      fileId: owned.file.id,
-      versionId,
-      transferKey,
-      bytes: transferBytes,
-    });
-    if (outcome.kind === "failed") {
-      return context.json(
-        { error: "The transfer did not complete. Try again." },
-        503,
-      );
-    }
-    return context.json(
-      { path: outcome.path },
-      outcome.kind === "transferred" ? 201 : 200,
-    );
-  });
+    },
+  );
 
   return routes;
 }

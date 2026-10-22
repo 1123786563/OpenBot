@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { VoiceSessionRecord } from "../../../shared/voice-session";
 import { getLogger } from "../../../shared/logger";
+import type { VoiceSessionRecord } from "../../../shared/voice-session";
 import type { AgentActor } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
 import type { ChannelStore } from "../channels/routes";
@@ -11,6 +11,7 @@ import {
   type VoiceSessionStore,
 } from "./sessions";
 import type { VoiceSummarizer } from "./summary";
+
 const log = getLogger("server");
 
 export type VoiceSessionServices = {

@@ -31,24 +31,24 @@
 
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "./bank-scope";
-import type { DegradedRecallFacade } from "./degraded-recall";
 import type {
   DegradedPreferenceSearch,
+  DegradedRecallFacade,
   DegradedSourceBoundSearch,
 } from "./degraded-recall";
-import { usagePausedFor, type HindsightPauseControls } from "./pause-controls";
+import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
 import {
-  type RecalledGenericPreference,
   preferenceRecallEligible,
+  type RecalledGenericPreference,
   temporallyVisible,
   timeUncertaintyOf,
   toRecalledPreferenceView,
 } from "./preference-recall";
-import { recallOpenFor, type HindsightRecoveryGate } from "./restore-recovery";
+import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
 import {
   type AuthorizationSnapshot,
-  readScopedAuthorization,
   type RecalledSourceBoundMemory,
+  readScopedAuthorization,
   type SourceBoundAuthorizationStore,
   sourceBoundRecallEligible,
   stillAuthorized,

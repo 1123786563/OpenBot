@@ -22,6 +22,7 @@ import type {
   AgentProfile,
   CreateAgentInput,
 } from "./profile-types";
+
 const log = getLogger("server");
 
 type AgentInputParseResult =

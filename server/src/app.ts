@@ -54,13 +54,13 @@ import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
 import type { Credits } from "./billing/credits";
 import type { CreditWriter } from "./billing/credits-writer";
-import { createRealtimeUsageService } from "./billing/realtime-usage";
-import { createRewardGranter } from "./billing/rewards";
 import {
   createPaymentCallbackRoutes,
   createPaymentRoutes,
 } from "./billing/payments/routes";
 import type { PaymentService } from "./billing/payments/service";
+import { createRealtimeUsageService } from "./billing/realtime-usage";
+import { createRewardGranter } from "./billing/rewards";
 import {
   createBillingAdminRoutes,
   createBillingCreditRoutes,
@@ -70,6 +70,13 @@ import {
 } from "./billing/routes";
 import type { BillingStatements } from "./billing/statements";
 import type { BillingService } from "./billing/types";
+import { createWorkbenchPayerMiddleware } from "./billing/workbench-payer";
+import { accessGrantRoutes } from "./bot-services/access-grants";
+import { botServiceRoutes } from "./bot-services/auth";
+import { botServiceCredentialRoutes } from "./bot-services/credential-routes";
+import type { BotServiceRegistry } from "./bot-services/registry";
+import { botServiceAdminRoutes } from "./bot-services/routes";
+import type { BotServiceStore } from "./bot-services/store";
 import {
   createAttachmentRoutes,
   createChannelAttachmentRoutes,
@@ -115,51 +122,46 @@ import type { DemonstrationStore } from "./demonstrations/store";
 import { mountDesktopConnectionFailure } from "./desktop-connection-failure";
 import { createTranscriptionProvider } from "./dictation/provider";
 import { createDictationRoutes } from "./dictation/routes";
+import type { PlatformScope } from "./enterprise/contracts";
 import { withRunnerRequestContext } from "./enterprise/runs/request-context";
-import {
-  createWorkbenchPayerMiddleware,
-} from "./billing/workbench-payer";
 import {
   createDeploymentEntryContextMiddleware,
   type DeploymentEntryContextFactory,
 } from "./enterprise/tenancy/entry-context";
-import type { HostAccessBroker } from "./host-access/broker";
-import { createHostAccessRoutes } from "./host-access/routes";
-import { identityRoutes } from "./identity/routes";
-import type { IdentityStore } from "./identity/store";
-import { gatewayAdminCredentialRoutes } from "./gateway/admin-credential-routes";
-import { gatewayAdminRoutes } from "./gateway/admin-routes";
 import {
   GatewayAdminCredentialNotConfiguredError,
   gatewayAdminCredentialControls,
 } from "./gateway/admin-credential";
+import { gatewayAdminCredentialRoutes } from "./gateway/admin-credential-routes";
+import { gatewayAdminRoutes } from "./gateway/admin-routes";
 import {
   createEnterpriseGatewayNegotiationStore,
   createGatewayCapabilityNegotiationService,
 } from "./gateway/capability-negotiation";
-import { createConversionRateStore } from "./gateway/conversion-rate-store";
 import { notConfiguredConversionRateState } from "./gateway/conversion-rate";
+import { createConversionRateStore } from "./gateway/conversion-rate-store";
 import { gatewayEndpointControls } from "./gateway/endpoint-config";
+import { createModelDiscoveryRoutes } from "./gateway/model-discovery-routes";
+import { createModelSelectionRoutes } from "./gateway/model-selection-routes";
 import { createEnterpriseGatewayProbeStore } from "./gateway/probe";
 import {
   createGatewayReadinessService,
   installGatewayReadinessService,
 } from "./gateway/readiness";
+import type { HostAccessBroker } from "./host-access/broker";
+import { createHostAccessRoutes } from "./host-access/routes";
+import { identityRoutes } from "./identity/routes";
+import type { IdentityStore } from "./identity/store";
 import { createIntelligenceClient } from "./intelligence-client";
-import { botServiceAdminRoutes } from "./bot-services/routes";
-import type { BotServiceStore } from "./bot-services/store";
-import { botServiceCredentialRoutes } from "./bot-services/credential-routes";
-import { accessGrantRoutes } from "./bot-services/access-grants";
-import { createModelSelectionRoutes } from "./gateway/model-selection-routes";
-import { createModelDiscoveryRoutes } from "./gateway/model-discovery-routes";
-import { botServiceRoutes } from "./bot-services/auth";
-import type { BotServiceRegistry } from "./bot-services/registry";
 import {
   createLearningRoutes,
   type LearningAdminDependencies,
 } from "./learning/routes";
 import { createMarketplaceRoutes } from "./marketplace/routes";
 import type { MarketplaceStore } from "./marketplace/store";
+import type { MastraContinuationInstall } from "./mastra/approvals";
+import { createMastraContinuationRoutes } from "./mastra/continuation-routes";
+import type { MastraContinuationStore } from "./mastra/continuation-store";
 import type { MemoryIngestion } from "./memory/ingestion";
 import { createMemoryRoutes } from "./memory/routes";
 import type { MemoryStore } from "./memory/store";
@@ -577,6 +579,17 @@ export function createApp(
     enterpriseConversations?: Hono;
     /** MT006 (issue #49): workspace scope listing + team administration routes. */
     enterpriseWorkspaceScope?: Hono;
+    /**
+     * ME06 (#478): the durable frontend_tool participation routes' deps —
+     * the real continuation ledger and this deployment's scope resolver.
+     * The `requireUser` middleware is created here (mount time), so the deps
+     * arrive and the route builds where the auth middleware lives.
+     */
+    mastraContinuations?: {
+      install: MastraContinuationInstall;
+      store: MastraContinuationStore;
+      resolveScope: (request: Request) => Promise<PlatformScope>;
+    };
     /**
      * MT122 (issue #165): the deployment main entry's request-context seam.
      * Present, the business API mounts the entry middleware after the
@@ -2061,6 +2074,17 @@ export function createApp(
       if (typeof routineRunId !== "string" || !routineRunId.trim()) {
         return context.json({ error: "A routineRunId is required." }, 400);
       }
+      // ME09: the firing's durable identity, when the worker carries one —
+      // the offer key the queue deduplicated on. Shape-checked, never
+      // trusted as authorization (the scheduling record decides that); it
+      // only names WHICH firing this is so a redelivery converges.
+      const firingKey = (body as { firingKey?: unknown } | null)?.firingKey;
+      const firing =
+        typeof firingKey === "string" &&
+        firingKey.trim() &&
+        firingKey.length <= 200
+          ? { firingKey: firingKey.trim() }
+          : undefined;
       /*
        * Fire and answer: the consumer needs "accepted", not the outcome. The run row in
        * `routine_runs` carries the outcome, and the consumer finishes the work item on this 202.
@@ -2072,9 +2096,9 @@ export function createApp(
       // deliberately not under /api/* (see the comment above it), so no session `web` floor
       // applies here — naming `api` is what puts the turns this fans out on their usage facts
       // at all.
-      void withUsageOrigin("api", () => routineRunner.run(routineRunId)).catch(
-        () => {},
-      );
+      void withUsageOrigin("api", () =>
+        routineRunner.run(routineRunId, firing),
+      ).catch(() => {});
       return context.json({ accepted: true }, 202);
     });
   }
@@ -2672,6 +2696,14 @@ export function createApp(
     app.route(
       "/api/approvals",
       createApprovalRoutes(coworker.approvals, requireUser),
+    );
+  if (coworker?.mastraContinuations)
+    app.route(
+      "/api/mastra-continuations",
+      createMastraContinuationRoutes({
+        ...coworker.mastraContinuations,
+        requireUser,
+      }),
     );
   if (coworker?.passwords) {
     app.route(

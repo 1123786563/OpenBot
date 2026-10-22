@@ -14,12 +14,15 @@ import {
 } from "../db/schema/credit-reservations";
 import { creditGrants, creditLedger as ledger } from "../db/schema/credits";
 import {
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+} from "../gateway/price-snapshot";
+import {
   carriedRemainder,
   liveGrants,
   readCapacity,
   type Tx,
 } from "./capacity";
-import { PRICE_DIMENSIONS, type PriceDimension } from "../gateway/price-snapshot";
 import type { ReservationLockedBasis } from "./reserve-bound";
 import type { CreditGrantSource } from "./types";
 
@@ -231,7 +234,9 @@ function ceilRational(numerator: bigint, denominator: bigint): bigint {
 export function allocateDimensionUnits(
   members: readonly SettlementDimensionLine[],
   chargedUnits: number,
-): { ok: true; rows: { dimension: PriceDimension; units: number }[] } | { ok: false } {
+):
+  | { ok: true; rows: { dimension: PriceDimension; units: number }[] }
+  | { ok: false } {
   const known = new Set<string>(PRICE_DIMENSIONS);
   let modelNumerator = 0n;
   let modelDenominator = 1n;
@@ -299,7 +304,9 @@ export function allocateDimensionUnits(
     return rows;
   };
 
-  const modelGroup = members.filter((m) => !m.dimension.startsWith("surcharge_"));
+  const modelGroup = members.filter(
+    (m) => !m.dimension.startsWith("surcharge_"),
+  );
   const surchargeGroup = members.filter((m) =>
     m.dimension.startsWith("surcharge_"),
   );
@@ -816,12 +823,10 @@ export function createCreditWriter(database: Database): CreditWriter {
                   string,
                   number
                 >,
-                exactCost: sql`${
-                  {
-                    numerator: item.exactCost.numerator.toString(),
-                    denominator: item.exactCost.denominator.toString(),
-                  }
-                }` as unknown as { numerator: string; denominator: string },
+                exactCost: sql`${{
+                  numerator: item.exactCost.numerator.toString(),
+                  denominator: item.exactCost.denominator.toString(),
+                }}` as unknown as { numerator: string; denominator: string },
               })),
             );
           } else if ("jobId" in input.lineDetail) {
@@ -838,10 +843,11 @@ export function createCreditWriter(database: Database): CreditWriter {
               // jsonb string scalar the table's shape CHECK refuses — the object itself
               // arrives as the real object the CHECK validated (the price snapshot store's
               // own documented trap).
-              actualUsage: sql`${input.lineDetail.actualUsage}` as unknown as Record<
-                string,
-                number
-              >,
+              actualUsage:
+                sql`${input.lineDetail.actualUsage}` as unknown as Record<
+                  string,
+                  number
+                >,
             });
           } else if (input.lineDetail.capability === "image") {
             await tx.insert(creditSettlementDetails).values({

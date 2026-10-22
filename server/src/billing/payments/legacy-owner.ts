@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { Database } from "../../db/client";
 import { paymentOrders } from "../../db/schema/payment";
-import { payerKey, readPayerAccountForKey, type PayerRef } from "../payer";
+import { type PayerRef, payerKey, readPayerAccountForKey } from "../payer";
 
 /**
  * The legacy deployment key, derived through the payer layer's own legacy_deployment branch —
@@ -174,7 +174,8 @@ export async function attributeLegacyOrderOwnership(
 
   return {
     scannedUnowned: unowned.length,
-    attributedFromMapping: outcomes.filter((o) => o.kind === "attributed").length,
+    attributedFromMapping: outcomes.filter((o) => o.kind === "attributed")
+      .length,
     quarantinedUnknownOwner: outcomes.filter((o) => o.kind === "quarantined")
       .length,
     alreadyAttributed: outcomes.filter((o) => o.kind === "already_attributed")

@@ -1,5 +1,9 @@
 import { getLogger } from "../../../shared/logger";
 import { resolveUpdateRoute, type UpdateRoute } from "../agents/lifecycle";
+import {
+  GOVERNED_HEADLESS_REFUSALS,
+  GovernedHeadlessRefusal,
+} from "../mastra/headless";
 import type { DrawnComponent } from "../routines/runner";
 import type { WorkItem, WorkQueue } from "../work/queue";
 import type { ExpoPushTransport } from "./push";
@@ -406,6 +410,16 @@ export function createDeliveryRouter(deps: {
         });
       } catch (error) {
         if (!(await owns())) return;
+        if (
+          // ME10 (#482): a redelivery converging on the first advance is not
+          // a second failure to report — the first delivery owns the
+          // outcome; this attempt says so on the row and stops.
+          error instanceof GovernedHeadlessRefusal &&
+          error.code === GOVERNED_HEADLESS_REFUSALS.intentAlreadyAdvanced
+        ) {
+          await deps.store.setInbox(row.id, "failed", error.message);
+          return;
+        }
         await deps.store.setInbox(
           row.id,
           "failed",

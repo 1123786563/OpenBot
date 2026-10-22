@@ -33,9 +33,6 @@
 import { eq } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import { DEPLOYMENT_INITIATOR, recordAuditEvent } from "../audit";
-import type { ConversionRate } from "../gateway/conversion-rate";
-import { PRICE_DIMENSIONS, type PriceDimension } from "../gateway/price-snapshot";
-import { MODEL_CAPABILITIES } from "../gateway/catalog";
 import type { Database } from "../db/client";
 import {
   batchItems,
@@ -44,7 +41,16 @@ import {
   creditReservations,
 } from "../db/schema/credit-reservations";
 import { creditLedger } from "../db/schema/credits";
-import { CreditReservationConflictError, createCreditWriter } from "./credits-writer";
+import { MODEL_CAPABILITIES } from "../gateway/catalog";
+import type { ConversionRate } from "../gateway/conversion-rate";
+import {
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+} from "../gateway/price-snapshot";
+import {
+  CreditReservationConflictError,
+  createCreditWriter,
+} from "./credits-writer";
 import {
   computeReservationCeiling,
   resolveLockedReservationBasis,
@@ -92,7 +98,10 @@ export type BatchSettleOutcome =
       releasedCredits: number;
       actualCost: { numerator: string; denominator: string };
       /** Each item's exact cost in report order — the per-item trace the details carry. */
-      itemCosts: { customId: string; exact: { numerator: string; denominator: string } }[];
+      itemCosts: {
+        customId: string;
+        exact: { numerator: string; denominator: string };
+      }[];
       remainder: { numerator: string; denominator: string };
       overCap?: BatchSettleOverCap;
     }
@@ -200,7 +209,9 @@ async function auditOverCap(
  * its own locked cell, sum the exacts, and settle exactly once through the credit writer
  * with the per-item line details riding the same transaction.
  */
-export function createBatchSettleService(dependencies: BatchSettleDependencies) {
+export function createBatchSettleService(
+  dependencies: BatchSettleDependencies,
+) {
   const { database } = dependencies;
   const writer = createCreditWriter(database);
 
@@ -229,20 +240,35 @@ export function createBatchSettleService(dependencies: BatchSettleDependencies) 
         };
       }
       if (hasBatchId && !isNonEmptyIdentifier(input.batchId)) {
-        return { status: "refused", reasonCode: "request_invalid", detail: { field: "batchId" } };
+        return {
+          status: "refused",
+          reasonCode: "request_invalid",
+          detail: { field: "batchId" },
+        };
       }
       if (hasProviderBatchId && !isNonEmptyIdentifier(input.providerBatchId)) {
-        return { status: "refused", reasonCode: "request_invalid", detail: { field: "providerBatchId" } };
+        return {
+          status: "refused",
+          reasonCode: "request_invalid",
+          detail: { field: "providerBatchId" },
+        };
       }
       if (!Array.isArray(input.items) || input.items.length === 0) {
-        return { status: "refused", reasonCode: "request_invalid", detail: { field: "items" } };
+        return {
+          status: "refused",
+          reasonCode: "request_invalid",
+          detail: { field: "items" },
+        };
       }
 
       // Resolve the batch: the poll lane names the local id, the notification lane the
       // provider's.
       const batch = hasBatchId
         ? await readBatchById(database, input.batchId as string)
-        : await readBatchByProviderBatchId(database, input.providerBatchId as string);
+        : await readBatchByProviderBatchId(
+            database,
+            input.providerBatchId as string,
+          );
       if (batch === undefined) {
         return {
           status: "refused",
@@ -264,7 +290,10 @@ export function createBatchSettleService(dependencies: BatchSettleDependencies) 
       // Validate the report: every reported item must be one of the batch's, its usage a
       // whole non-negative quantity map (a dimension the report does not carry is not a
       // zero — priced strictly, per dimension), and no item reported twice.
-      const reported = new Map<string, { report: BatchItemReport; item: typeof itemRows[number] }>();
+      const reported = new Map<
+        string,
+        { report: BatchItemReport; item: (typeof itemRows)[number] }
+      >();
       for (const [index, report] of input.items.entries()) {
         if (
           report === null ||
@@ -304,7 +333,11 @@ export function createBatchSettleService(dependencies: BatchSettleDependencies) 
           };
         }
         const usage = report.usage;
-        if (usage === null || typeof usage !== "object" || Array.isArray(usage)) {
+        if (
+          usage === null ||
+          typeof usage !== "object" ||
+          Array.isArray(usage)
+        ) {
           return {
             status: "refused",
             reasonCode: "request_invalid",
@@ -358,7 +391,10 @@ export function createBatchSettleService(dependencies: BatchSettleDependencies) 
         return {
           status: "refused",
           reasonCode: "settlement_conflict",
-          detail: { kind: "no_such_reservation", reason: "no such reservation" },
+          detail: {
+            kind: "no_such_reservation",
+            reason: "no such reservation",
+          },
         };
       }
       const wasSettled = reservation.status === "settled";
@@ -366,12 +402,18 @@ export function createBatchSettleService(dependencies: BatchSettleDependencies) 
       // Price every item on its OWN cell at the batch's locked versions — the exact
       // arithmetic admission used, per item, with no rounding until the sum is whole.
       const itemExact: {
-        item: typeof itemRows[number];
+        item: (typeof itemRows)[number];
         report: BatchItemReport;
         exact: { numerator: bigint; denominator: bigint };
         usageFull: Record<PriceDimension, number>;
       }[] = [];
-      const basisCache = new Map<string, { dims: Parameters<typeof computeReservationCeiling>[0]["dims"]; rate: ConversionRate }>();
+      const basisCache = new Map<
+        string,
+        {
+          dims: Parameters<typeof computeReservationCeiling>[0]["dims"];
+          rate: ConversionRate;
+        }
+      >();
       let totalNumerator = 0n;
       let totalDenominator = 1n;
       for (const row of itemRows) {
@@ -451,7 +493,10 @@ export function createBatchSettleService(dependencies: BatchSettleDependencies) 
               return {
                 status: "refused",
                 reasonCode: "price_basis_not_found",
-                detail: { rateVersion: batch.rateVersion, reason: "rate_invalid" },
+                detail: {
+                  rateVersion: batch.rateVersion,
+                  reason: "rate_invalid",
+                },
               };
             case "ceiling_exceeds_ledger":
               return {
@@ -464,14 +509,22 @@ export function createBatchSettleService(dependencies: BatchSettleDependencies) 
             `batch-settlement: unhandled pricing issue ${JSON.stringify(issue)}`,
           );
         }
-        itemExact.push({ item: row, report: entry.report, exact: priced.exactScaledUnits, usageFull });
+        itemExact.push({
+          item: row,
+          report: entry.report,
+          exact: priced.exactScaledUnits,
+          usageFull,
+        });
         totalNumerator =
           totalNumerator * priced.exactScaledUnits.denominator +
           priced.exactScaledUnits.numerator * totalDenominator;
         totalDenominator =
           totalDenominator * priced.exactScaledUnits.denominator;
       }
-      const actual = { numerator: totalNumerator, denominator: totalDenominator };
+      const actual = {
+        numerator: totalNumerator,
+        denominator: totalDenominator,
+      };
 
       // The over-cap anomaly, computed BEFORE the settle so its shape is the priced fact.
       const cap = BigInt(reservation.maximum);
@@ -590,7 +643,10 @@ export async function readBatchSettlementDetails(
     .select()
     .from(creditBatchSettlementDetails)
     .where(eq(creditBatchSettlementDetails.batchId, batchId))
-    .orderBy(creditBatchSettlementDetails.createdAt, creditBatchSettlementDetails.itemId);
+    .orderBy(
+      creditBatchSettlementDetails.createdAt,
+      creditBatchSettlementDetails.itemId,
+    );
 }
 
 /** The batch-level attribution read: the one ledger row a settled batch's charge names. */

@@ -6,7 +6,7 @@
 // organization is an empty state rather than a default, and the workbench URL
 // carries the frozen pair under the same names the web selection reads.
 
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/bun-test-compat";
+import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { within } from "@testing-library/react";

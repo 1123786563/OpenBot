@@ -2,17 +2,17 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import {
-  type CredentialStore,
   type CredentialSecretReader,
+  type CredentialStore,
   decryptSecret,
 } from "../credentials";
 import type { BotServiceStore } from "./store";
 import {
   BOT_ID_PATTERN,
   BotServiceAuthFailureError,
+  type BotServiceIdentity,
   BotServiceInputError,
   BotServiceRateLimitedError,
-  type BotServiceIdentity,
 } from "./types";
 
 /**

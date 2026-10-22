@@ -1,0 +1,6 @@
+$ tsc --noEmit
+scripts/bootstrap-local-gateway.ts(106,52): error TS2339: Property 'result' does not exist on type 'GatewayProbeRun'.
+  Property 'result' does not exist on type '{ ready: false; reasonCode: GatewayProbeNotReadyReasonCode; }'.
+scripts/bootstrap-local-gateway.ts(108,53): error TS2339: Property 'result' does not exist on type '{ ready: false; reasonCode: GatewayProbeNotReadyReasonCode; }'.
+scripts/bootstrap-local-gateway.ts(120,74): error TS2339: Property 'reasonCode' does not exist on type 'GatewayCapabilityNegotiationRun'.
+  Property 'reasonCode' does not exist on type '{ negotiated: true; negotiation: GatewayCapabilityNegotiation; }'.

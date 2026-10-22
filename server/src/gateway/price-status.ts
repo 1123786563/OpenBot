@@ -36,9 +36,9 @@
  */
 import type { PriceSnapshot } from "./price-snapshot";
 import {
-  type PriceDimension,
   PRICE_DIM_UNKNOWN_REASONS,
   PRICE_DIMENSIONS,
+  type PriceDimension,
   type PriceDimensionUnknownReason,
   type PriceSnapshotDims,
   WIRE_PRICED_DIMENSIONS,

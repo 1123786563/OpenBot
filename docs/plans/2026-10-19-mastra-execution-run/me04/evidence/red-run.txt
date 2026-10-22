@@ -1,0 +1,22 @@
+bun test v1.4.2 (50a8a8387)
+
+server/tests/mastra-tools.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../src/mastra/tools' from '/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/tests/mastra-tools.test.ts'
+-------------------------------
+
+
+server/tests/mastra-governed-tools.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../src/mastra/tools' from '/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec/server/tests/mastra-governed-tools.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 2 fail
+ 2 errors
+Ran 2 tests across 2 files. [90.00ms]

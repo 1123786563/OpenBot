@@ -76,7 +76,7 @@ export const ATTACHMENT_RESOURCE_KIND = "attachment";
 export const ATTACHMENT_BIND_KIND = "attachment-bind";
 
 export type AttachmentVerdict =
-  | { readonly outcome: "allow" } & Record<string, unknown>
+  | ({ readonly outcome: "allow" } & Record<string, unknown>)
   | ResourceNotFoundVerdict;
 
 export interface StagedUpload {
@@ -179,7 +179,9 @@ export interface AttachmentService {
 }
 
 /** 便于联合类型书写的别名。 */
-type Verdict2<T> = ({ readonly outcome: "allow" } & T) | ResourceNotFoundVerdict;
+type Verdict2<T> =
+  | ({ readonly outcome: "allow" } & T)
+  | ResourceNotFoundVerdict;
 
 export function createAttachmentService(channels: {
   readonly data: DataDatabase;
@@ -258,10 +260,8 @@ export function createAttachmentService(channels: {
     }
   };
 
-  const attachmentLockKey = (
-    tenantId: string,
-    attachmentId: string,
-  ): string => JSON.stringify(["enterprise", "attachment", tenantId, attachmentId]);
+  const attachmentLockKey = (tenantId: string, attachmentId: string): string =>
+    JSON.stringify(["enterprise", "attachment", tenantId, attachmentId]);
 
   /**
    * 附件可见事实（AC1/AC2 的一道独立防线：RLS 之外 workspace + 成员
@@ -309,10 +309,7 @@ export function createAttachmentService(channels: {
             enterpriseWorkspaceMemberships.workspaceId,
             enterpriseResources.workspaceId,
           ),
-          eq(
-            enterpriseWorkspaceMemberships.principalId,
-            scope.principalId,
-          ),
+          eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
         ),
       )
       .leftJoin(
@@ -418,7 +415,11 @@ export function createAttachmentService(channels: {
     async bindToConversation(scope, attachmentId, threadId) {
       assertScopeContext(scope);
       assertTrustedScope(scope);
-      if (typeof threadId !== "string" || !threadId.trim() || threadId.length > 256) {
+      if (
+        typeof threadId !== "string" ||
+        !threadId.trim() ||
+        threadId.length > 256
+      ) {
         throw new Error("THREAD_ID_INVALID");
       }
       // 会话归属校验走 data 通道（conversations 的读授权面是

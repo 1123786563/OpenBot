@@ -10,10 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import {
-  enterpriseMemberships,
-  enterpriseTenants,
-} from "./enterprise-tenancy";
+import { enterpriseMemberships, enterpriseTenants } from "./enterprise-tenancy";
 
 // Hindsight 15（Issue #393）：个人记忆后台处理的预算上限与准入台账。
 //

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
+import { createAuditStore, DEPLOYMENT_INITIATOR } from "../audit";
 import type { Database } from "../db/client";
 import { creditReservations } from "../db/schema/credit-reservations";
-import { DEPLOYMENT_INITIATOR, createAuditStore } from "../audit";
 import type { ConversionRate } from "../gateway/conversion-rate";
 import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
 import {
@@ -9,13 +9,16 @@ import {
   createCreditWriter,
 } from "./credits-writer";
 import {
+  attemptIdForReservation,
+  reservationIdFromAttemptId,
+} from "./reservation-status";
+import {
   computeReservationCeiling,
   lockedBasisOfReservation,
-  resolveLockedReservationBasis,
   type ReservationBoundQuantities,
   type ReservationCeilingIssue,
+  resolveLockedReservationBasis,
 } from "./reserve-bound";
-import { attemptIdForReservation, reservationIdFromAttemptId } from "./reservation-status";
 
 /**
  * The transcription settlement path (Bifrost 14.2, #311): what a transcription dispatch owes
@@ -173,7 +176,10 @@ type RequestValidation =
 /** Pure shape validation — before any database contact, a malformed request reads nothing. */
 function validateRequest(input: unknown): RequestValidation {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "body" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "body" }),
+    };
   }
   const raw = input as Record<string, unknown>;
 
@@ -222,13 +228,18 @@ function validateRequest(input: unknown): RequestValidation {
   ) {
     return {
       ok: false,
-      outcome: refused("request_invalid", { field: "requested.outputTokenCap" }),
+      outcome: refused("request_invalid", {
+        field: "requested.outputTokenCap",
+      }),
     };
   }
 
   const trusted = raw.trusted as Record<string, unknown> | null | undefined;
   if (trusted === null || typeof trusted !== "object") {
-    return { ok: false, outcome: refused("request_invalid", { field: "trusted" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "trusted" }),
+    };
   }
   const measuredSeconds = trusted.measuredSeconds;
   if (
@@ -258,7 +269,10 @@ function validateRequest(input: unknown): RequestValidation {
 
   const result = raw.result as Record<string, unknown> | null | undefined;
   if (result === null || typeof result !== "object") {
-    return { ok: false, outcome: refused("request_invalid", { field: "result" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "result" }),
+    };
   }
   if (result.outcome === "transcribed") {
     const usage = result.usage as Record<string, unknown> | null | undefined;
@@ -305,12 +319,16 @@ function validateRequest(input: unknown): RequestValidation {
         }),
       };
     }
-    const evidence = result.evidence as Record<string, unknown> | null | undefined;
+    const evidence = result.evidence as
+      | Record<string, unknown>
+      | null
+      | undefined;
     if (
       evidence === null ||
       typeof evidence !== "object" ||
       evidence.kind !== "provider_usage_report" ||
-      (evidence.reference !== undefined && !isIdentifier(evidence.reference, 512))
+      (evidence.reference !== undefined &&
+        !isIdentifier(evidence.reference, 512))
     ) {
       return {
         ok: false,
@@ -357,7 +375,9 @@ function validateRequest(input: unknown): RequestValidation {
       requested: { outputTokenCap },
       trusted: {
         measuredSeconds,
-        ...(clientDeclaredSeconds !== undefined ? { clientDeclaredSeconds } : {}),
+        ...(clientDeclaredSeconds !== undefined
+          ? { clientDeclaredSeconds }
+          : {}),
       },
       result: raw.result as TranscriptionResult,
       settledBy: raw.settledBy as string,

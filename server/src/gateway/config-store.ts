@@ -19,8 +19,8 @@ import type { Database } from "../db/client";
 import { gatewayConfigs } from "../db/schema/gateway";
 import type { GatewayEndpoint } from "./endpoint";
 
-export { parseGatewayEndpointInput } from "./endpoint";
 export type { GatewayEndpoint } from "./endpoint";
+export { parseGatewayEndpointInput } from "./endpoint";
 
 /** The readonly, non-sensitive shape every downstream ticket (01.2, 01.5, 01.7) consumes. */
 export type GatewayEndpointConfig = {

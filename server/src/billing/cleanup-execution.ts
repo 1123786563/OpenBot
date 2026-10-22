@@ -4,28 +4,28 @@ import { redactAuditPayload } from "../audit";
 import type { Database } from "../db/client";
 import { auditEvents } from "../db/schema";
 import {
+  CLEANUP_ESTATE_TABLES,
+  type CleanupClassification,
+  classifyCleanup,
+  IN_FLIGHT_RESERVATION_STATUSES,
+  type TestEvidenceInput,
+} from "./cleanup-classification";
+import {
   assembleCleanupDryRunReport,
-  verifyCleanupScopeConfirmation,
-  MANIFEST_VERSIONS,
   type CleanupDryRunReport,
-  type CleanupScopeConfirmationInput,
   type CleanupScopeBinding,
+  type CleanupScopeConfirmationInput,
+  MANIFEST_VERSIONS,
   type ManifestVersions,
+  verifyCleanupScopeConfirmation,
 } from "./cleanup-dry-run";
 import {
   assertCleanupDeletionAllowed,
-  ESTATE_ID_COLUMNS,
-  guardCleanupDeletion,
-  GUARDS_VERSION,
   type CleanupDeletionGuardReport,
+  ESTATE_ID_COLUMNS,
+  GUARDS_VERSION,
+  guardCleanupDeletion,
 } from "./cleanup-guards";
-import {
-  CLEANUP_ESTATE_TABLES,
-  classifyCleanup,
-  IN_FLIGHT_RESERVATION_STATUSES,
-  type CleanupClassification,
-  type TestEvidenceInput,
-} from "./cleanup-classification";
 import { evaluateCleanupRelations } from "./cleanup-relations";
 import { createCreditWriter } from "./credits-writer";
 
@@ -74,11 +74,7 @@ export const CLEANUP_EXECUTION_VERSION = 1;
  * skipped, and everything outside the estate is unreachable by construction — 21.5's wall 1
  * refuses any target the estate does not name — so the hash is proof, not decoration.
  */
-const PROTECTED_TABLES = [
-  "users",
-  "sessions",
-  "agents",
-] as const;
+const PROTECTED_TABLES = ["users", "sessions", "agents"] as const;
 
 /** The audit event type this program writes; one row per phase, keyed by execution id. */
 export const CLEANUP_AUDIT_EVENT_TYPE = "billing.cleanup.executed";
@@ -302,10 +298,7 @@ async function dumpTable(
   database: Database,
   table: string,
 ): Promise<Record<string, unknown>[]> {
-  return readRowsJson(
-    database,
-    sql.raw(`SELECT * FROM ${table} ORDER BY 1`),
-  );
+  return readRowsJson(database, sql.raw(`SELECT * FROM ${table} ORDER BY 1`));
 }
 
 /** The in-flight universe under one handle: every reserved|unknown hold and its allocations. */
@@ -354,15 +347,20 @@ function inFlightSetsEqual(
   b: CleanupDeletionGuardReport["inFlight"],
 ): boolean {
   return (
-    canonicalJson([...a.reservations].sort(byId((row) => row.reservationId))) ===
-      canonicalJson([...b.reservations].sort(byId((row) => row.reservationId))) &&
+    canonicalJson(
+      [...a.reservations].sort(byId((row) => row.reservationId)),
+    ) ===
+      canonicalJson(
+        [...b.reservations].sort(byId((row) => row.reservationId)),
+      ) &&
     canonicalJson([...a.allocations].sort(byId((row) => row.allocationId))) ===
       canonicalJson([...b.allocations].sort(byId((row) => row.allocationId)))
   );
 }
 
 function byId<T>(keyOf: (row: T) => string) {
-  return (a: T, b: T) => (keyOf(a) < keyOf(b) ? -1 : keyOf(a) > keyOf(b) ? 1 : 0);
+  return (a: T, b: T) =>
+    keyOf(a) < keyOf(b) ? -1 : keyOf(a) > keyOf(b) ? 1 : 0;
 }
 
 /** An inline string array literal, quote-escaped, for `= ANY(...)` probes. */
@@ -522,7 +520,8 @@ export async function executeAuthorizedCleanup(
   const relations = await evaluateCleanupRelations(database, classification);
   const dryRun = assembleCleanupDryRunReport(classification, relations);
   const verdict = verifyCleanupScopeConfirmation(auth.scope, dryRun);
-  if (!verdict.valid) throw new CleanupExecutionRefusedError(verdict.differences);
+  if (!verdict.valid)
+    throw new CleanupExecutionRefusedError(verdict.differences);
 
   // --- 21.5's fresh walls, and their agreement with the reviewed scope: the guard re-derives
   // everything from the live data, so if the world moved between the dry-run and now, the
@@ -530,7 +529,9 @@ export async function executeAuthorizedCleanup(
   const guard = await guardCleanupDeletion(database, evidence);
   assertCleanupDeletionAllowed(guard);
   const dryRunKeys = new Set(
-    dryRun.toDelete.records.map((record) => `${record.table}/${record.recordId}`),
+    dryRun.toDelete.records.map(
+      (record) => `${record.table}/${record.recordId}`,
+    ),
   );
   const guardKeys = new Set(
     guard.deletable.map((target) => `${target.table}/${target.recordId}`),
@@ -553,7 +554,10 @@ export async function executeAuthorizedCleanup(
   const protectedTables = await existingProtectedTables(database);
   const protectedHashesBefore = new Map<string, string>();
   for (const table of protectedTables.present) {
-    protectedHashesBefore.set(table, hashRows(await dumpTable(database, table)));
+    protectedHashesBefore.set(
+      table,
+      hashRows(await dumpTable(database, table)),
+    );
   }
   const retainedBefore = await dumpRetainedRows(database, classification);
   const companyKeys = keysOfClass(classification, "company_history");

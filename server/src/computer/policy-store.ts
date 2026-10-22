@@ -26,6 +26,7 @@ import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { actionPolicy } from "../db/schema";
 import type { ActionPolicy } from "./policy";
+
 const log = getLogger("server");
 
 /** There is one boundary per deployment, so there is one row. */

@@ -6,7 +6,6 @@ import { canonicalJson, type ReviewedActionProposal } from "./proposal";
 
 const log = getLogger("server");
 
-
 /**
  * The executor seam (§6 provider attempt). R01 shipped a FAKE that touched no
  * vendor to prove the claim/receipt contract; R02 replaced it at the call
@@ -61,7 +60,11 @@ export async function settleDialFailure(deps: {
   if (error instanceof OpenMuseConnectionRefusedError) {
     // The pre-claim check passed a moment ago and the race lost: the
     // request never left, so this is definite.
-    return { outcome: "failed", error: error.message, fingerprint: deps.fingerprint };
+    return {
+      outcome: "failed",
+      error: error.message,
+      fingerprint: deps.fingerprint,
+    };
   }
   if (!deps.dialStarted) {
     // Before the dial existed, nothing could have left (M39): a definite
@@ -79,7 +82,8 @@ export async function settleDialFailure(deps: {
     );
     return {
       outcome: "failed",
-      error: "The request could not be prepared; it never left this deployment.",
+      error:
+        "The request could not be prepared; it never left this deployment.",
       fingerprint: deps.fingerprint,
     };
   }

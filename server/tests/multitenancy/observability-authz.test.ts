@@ -27,7 +27,7 @@ import {
   describe,
   expect,
   test,
-} from "../../../tests/support/bun-test-compat";
+} from "../../../tests/support/e2e-compat";
 import {
   type RunOutcome,
   resolveTestDatabaseTarget,

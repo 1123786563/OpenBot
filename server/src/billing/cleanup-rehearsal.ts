@@ -15,6 +15,7 @@ import {
 import { creditGrants, creditLedger } from "../db/schema/credits";
 import { paymentEvents, paymentOrders } from "../db/schema/payment";
 import { usageOutbox } from "../db/schema/usage-outbox";
+import { readCapacity } from "./capacity";
 import {
   classifyCleanup,
   type TestEvidenceInput,
@@ -29,7 +30,6 @@ import {
   guardCleanupDeletion,
 } from "./cleanup-guards";
 import { evaluateCleanupRelations } from "./cleanup-relations";
-import { readCapacity } from "./capacity";
 import { createCreditWriter } from "./credits-writer";
 
 /*
@@ -88,15 +88,31 @@ export const REHEARSAL_VERSION = 1;
  */
 const ESTATE_DELETION_ORDER = [
   { table: "usage_outbox", pg: usageOutbox, idField: "eventId" },
-  { table: "billing_webhook_events", pg: billingWebhookEvents, idField: "eventId" },
+  {
+    table: "billing_webhook_events",
+    pg: billingWebhookEvents,
+    idField: "eventId",
+  },
   { table: "payment_events", pg: paymentEvents, idField: "id" },
   { table: "payment_orders", pg: paymentOrders, idField: "id" },
-  { table: "credit_reservation_allocations", pg: creditReservationAllocations, idField: "id" },
+  {
+    table: "credit_reservation_allocations",
+    pg: creditReservationAllocations,
+    idField: "id",
+  },
   { table: "credit_reservations", pg: creditReservations, idField: "id" },
-  { table: "credit_charge_remainders", pg: creditChargeRemainders, idField: "externalCustomerId" },
+  {
+    table: "credit_charge_remainders",
+    pg: creditChargeRemainders,
+    idField: "externalCustomerId",
+  },
   { table: "credit_ledger", pg: creditLedger, idField: "id" },
   { table: "credit_grants", pg: creditGrants, idField: "id" },
-  { table: "billing_subscriptions", pg: billingSubscriptions, idField: "externalSubscriptionId" },
+  {
+    table: "billing_subscriptions",
+    pg: billingSubscriptions,
+    idField: "externalSubscriptionId",
+  },
   { table: "payer_accounts", pg: payerAccounts, idField: "id" },
   { table: "billing_customers", pg: billingCustomers, idField: "externalId" },
 ] as const;
@@ -184,17 +200,16 @@ export type EstateDump = EstateDumpEntry[];
  * so a dump is a consistent moment. JSON-stringified dumps are the rollback drill's
  * byte-equality instrument (timestamps serialize as ISO; ordering is by record id).
  */
-export async function dumpCleanupEstate(database: Database): Promise<EstateDump> {
+export async function dumpCleanupEstate(
+  database: Database,
+): Promise<EstateDump> {
   return database.transaction(async (tx) => {
     await tx.execute(
       sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`,
     );
     const dump: EstateDump = [];
     for (const spec of ESTATE_DELETION_ORDER) {
-      const rows = await tx
-        .select()
-        .from(spec.pg)
-        .orderBy(idColumnOf(spec));
+      const rows = await tx.select().from(spec.pg).orderBy(idColumnOf(spec));
       dump.push({
         table: spec.table,
         idField: spec.idField,
@@ -334,7 +349,9 @@ export async function executeTransactionalCleanup(
       const deleted = BigInt(
         deletedByTable.find((e) => e.table === spec.table)?.rows ?? 0,
       );
-      const delta = (beforeCounts.get(spec.table) ?? 0n) - (afterCounts.get(spec.table) ?? 0n);
+      const delta =
+        (beforeCounts.get(spec.table) ?? 0n) -
+        (afterCounts.get(spec.table) ?? 0n);
       if (delta !== BigInt(deleted)) {
         throw new Error(
           `estate count delta for ${spec.table} is ${delta} but the scope deleted ${deleted}: rows left the estate by an unnamed door — rolling back`,
@@ -420,7 +437,10 @@ export async function rehearseCleanupRollback(
     await executeTransactionalCleanup(database, evidence, {
       onTableDeleted: (step) => {
         stepsCompletedBeforeFailure += 1;
-        if (drill.failAfterTable === undefined || step.table === drill.failAfterTable) {
+        if (
+          drill.failAfterTable === undefined ||
+          step.table === drill.failAfterTable
+        ) {
           injectedAfter = step.table;
           throw new Error(
             `rehearsal-injected failure after ${step.table} (${step.deleted} row(s), ${step.cumulative} cumulative)`,
@@ -476,13 +496,18 @@ export type AccountingSmokeResult = {
 export async function runAccountingSmoke(
   database: Database,
   externalCustomerId: string,
-  options: { grantCents?: number; reserveCents?: number; idempotencyPrefix?: string } = {},
+  options: {
+    grantCents?: number;
+    reserveCents?: number;
+    idempotencyPrefix?: string;
+  } = {},
 ): Promise<AccountingSmokeResult> {
   const writer = createCreditWriter(database);
   const grantCents = options.grantCents ?? 10_000;
   const reserveCents = options.reserveCents ?? 3_000;
   const prefix =
-    options.idempotencyPrefix ?? `cleanup-rehearsal-smoke:${externalCustomerId}`;
+    options.idempotencyPrefix ??
+    `cleanup-rehearsal-smoke:${externalCustomerId}`;
   const expiresAt = new Date("2030-01-01T00:00:00Z");
 
   await writer.grantCredits({
@@ -493,8 +518,10 @@ export async function runAccountingSmoke(
     reason: "cleanup rehearsal smoke grant",
     idempotencyKey: `${prefix}:grant`,
   });
-  const availableBeforeCents = await writer.availableBalance(externalCustomerId);
-  const owedUnitBefore = (await readCapacity(database, externalCustomerId)).owedUnit;
+  const availableBeforeCents =
+    await writer.availableBalance(externalCustomerId);
+  const owedUnitBefore = (await readCapacity(database, externalCustomerId))
+    .owedUnit;
   const reserved = await writer.reserveCredits({
     externalCustomerId,
     idempotencyKey: `${prefix}:reserve`,
@@ -643,7 +670,8 @@ export async function runCleanupRehearsal(
   }
   let concurrentRowsSurviving = 0;
   for (const key of afterRows.keys()) {
-    if (!beforeRows.has(key) && !scopeKeys.has(key)) concurrentRowsSurviving += 1;
+    if (!beforeRows.has(key) && !scopeKeys.has(key))
+      concurrentRowsSurviving += 1;
   }
   if (!scopeRowsRemoved) {
     throw new Error(

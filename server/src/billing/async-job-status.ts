@@ -2,7 +2,10 @@ import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Database } from "../db/client";
 import { accessGrants } from "../db/schema";
-import { asyncJobs, creditReservations } from "../db/schema/credit-reservations";
+import {
+  asyncJobs,
+  creditReservations,
+} from "../db/schema/credit-reservations";
 import { RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS } from "./credit-reserve";
 import type { CreditServiceVariables } from "./credit-service-auth";
 import { findCompanyScopeIdentityField } from "./personal-key-isolation";
@@ -115,7 +118,11 @@ function validateStatusRequest(input: unknown):
       detail: Record<string, unknown>;
     } {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, reasonCode: "request_invalid", detail: { field: "body" } };
+    return {
+      ok: false,
+      reasonCode: "request_invalid",
+      detail: { field: "body" },
+    };
   }
   const raw = input as Record<string, unknown>;
 
@@ -123,7 +130,10 @@ function validateStatusRequest(input: unknown):
     RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
   );
   for (const key of Object.keys(raw)) {
-    if (forbidden.has(key.toLowerCase()) || findCompanyScopeIdentityField({ [key]: true })) {
+    if (
+      forbidden.has(key.toLowerCase()) ||
+      findCompanyScopeIdentityField({ [key]: true })
+    ) {
       return {
         ok: false,
         reasonCode: "payer_conflict",
@@ -133,7 +143,11 @@ function validateStatusRequest(input: unknown):
   }
 
   if (!isIdentifier(raw.grantId, 512)) {
-    return { ok: false, reasonCode: "request_invalid", detail: { field: "grantId" } };
+    return {
+      ok: false,
+      reasonCode: "request_invalid",
+      detail: { field: "grantId" },
+    };
   }
 
   const selectors = ["jobId", "submitIdempotencyKey", "providerJobId"].filter(
@@ -151,7 +165,11 @@ function validateStatusRequest(input: unknown):
   }
   const selector = selectors[0];
   if (!isIdentifier(raw[selector], 512)) {
-    return { ok: false, reasonCode: "request_invalid", detail: { field: selector } };
+    return {
+      ok: false,
+      reasonCode: "request_invalid",
+      detail: { field: selector },
+    };
   }
 
   return {
@@ -198,7 +216,8 @@ export function createAsyncJobStatusService(
           detail: validated.detail,
         };
       }
-      const { grantId, jobId, submitIdempotencyKey, providerJobId } = validated.request;
+      const { grantId, jobId, submitIdempotencyKey, providerJobId } =
+        validated.request;
 
       // Scope first: the payer is resolved from the grant row alone. A grant this server
       // cannot resolve scopes nothing, and a scope that sees nothing answers not_found —
@@ -227,7 +246,11 @@ export function createAsyncJobStatusService(
       // The ownership check the whole door exists for: the job's frozen payer must be
       // exactly the account the grant resolves. Anything else — foreign or missing — is
       // the one same answer.
-      if (jobRow === undefined || jobRow.payerId !== grant.userId || jobRow.payerKind !== "personal") {
+      if (
+        jobRow === undefined ||
+        jobRow.payerId !== grant.userId ||
+        jobRow.payerKind !== "personal"
+      ) {
         return { kind: "answered", outcome: { status: "not_found" } };
       }
 
@@ -260,14 +283,18 @@ export function createAsyncJobStatusService(
             rateVersion: jobRow.rateVersion,
             entryCount: jobRow.entryCount,
             createdAt: jobRow.createdAt.toISOString(),
-            dispatchedAt: jobRow.dispatchedAt ? jobRow.dispatchedAt.toISOString() : null,
+            dispatchedAt: jobRow.dispatchedAt
+              ? jobRow.dispatchedAt.toISOString()
+              : null,
             reservation: {
               reservationId: hold.id,
               status: hold.status,
               maximumCredits: hold.maximum,
               appliedCredits: hold.applied,
               releasedCredits: hold.released,
-              terminalAt: hold.terminalAt ? hold.terminalAt.toISOString() : null,
+              terminalAt: hold.terminalAt
+                ? hold.terminalAt.toISOString()
+                : null,
             },
           },
         },

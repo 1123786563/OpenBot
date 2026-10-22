@@ -49,24 +49,25 @@
  * itself usually closes — answers the door's own tagged 503, never an
  * answer borrowed from a stale declaration.
  */
+
+import { type Context, Hono } from "hono";
+import { enterpriseControls } from "../admin/controls";
 import type {
   BotServiceAuthenticator,
   BotServiceVariables,
 } from "../bot-services/auth";
 import { requireBotService } from "../bot-services/auth";
 import type { BotServiceStore } from "../bot-services/store";
-import { type Context, Hono } from "hono";
+import { type ModelRef, modelRefKey } from "./catalog";
 import {
   type GatewayModelCapabilityFilterService,
   gatewayModelCapabilityFilterControls,
 } from "./model-capability-filter";
 import { mappedModelCapabilities } from "./model-selection-routes";
 import {
-  type GatewayPriceSnapshotStore,
   createEnterpriseGatewayPriceSnapshotStore,
+  type GatewayPriceSnapshotStore,
 } from "./price-snapshot";
-import { type ModelRef, modelRefKey } from "./catalog";
-import { enterpriseControls } from "../admin/controls";
 
 /** The services the route asks; the real mount resolves the gateway ones lazily per request. */
 export type ModelDiscoveryRouteDeps = {

@@ -36,11 +36,16 @@ import { getLogger } from "../../../shared/logger";
 import { enterpriseControls } from "../admin/controls";
 import type { Database } from "../db/client";
 import { gatewayModelPreferences } from "../db/schema";
-import { type ModelCapability, type ModelRef, MODEL_CAPABILITIES, modelRefKey } from "./catalog";
 import {
-  gatewayModelCapabilityFilterControls,
+  MODEL_CAPABILITIES,
+  type ModelCapability,
+  type ModelRef,
+  modelRefKey,
+} from "./catalog";
+import {
   type BotCapability,
   type GatewayModelCapabilityFilterService,
+  gatewayModelCapabilityFilterControls,
   type ModelExclusionReason,
 } from "./model-capability-filter";
 
@@ -107,7 +112,9 @@ export type ModelPreferenceIdentity = {
 /** Where the preferences persist; tests may supply their own. */
 export type GatewayModelPreferenceStore = {
   /** The current record for one identity cell, or undefined when nobody ever wrote it. */
-  getPreference(identity: ModelPreferenceIdentity): Promise<ModelPreferenceRecord | undefined>;
+  getPreference(
+    identity: ModelPreferenceIdentity,
+  ): Promise<ModelPreferenceRecord | undefined>;
   /**
    * Write one identity cell — an insert or an overwrite of exactly that cell. The
    * caller owns validation against the selectable list; the store only keeps shape.
@@ -164,7 +171,12 @@ function identityKey(identity: ModelPreferenceIdentity): {
       );
     }
   }
-  return { userId: identity.userId, scope: identity.scope, botId, conversationId };
+  return {
+    userId: identity.userId,
+    scope: identity.scope,
+    botId,
+    conversationId,
+  };
 }
 
 /** Strict read of one stored row; a damaged row is skipped, not repaired. */
@@ -368,7 +380,10 @@ export function createGatewayModelPreferenceService(
       };
     }
 
-    const record = await deps.preferences.setPreference({ ...identity, ref: input.ref });
+    const record = await deps.preferences.setPreference({
+      ...identity,
+      ref: input.ref,
+    });
     // Counts and layer only: the chosen ref is the user's own answer, and the log
     // line exists to trace refusals and layer churn, not to duplicate the table.
     log.info(
@@ -421,7 +436,11 @@ export function createGatewayModelPreferenceService(
         deps.preferences.getPreference({ userId, scope: "global" }),
       ]);
       if (conversation) {
-        return { status: "resolved", ref: conversation.ref, source: "conversation" };
+        return {
+          status: "resolved",
+          ref: conversation.ref,
+          source: "conversation",
+        };
       }
       if (bot) {
         return { status: "resolved", ref: bot.ref, source: "bot" };
@@ -449,7 +468,9 @@ export function gatewayModelPreferenceControls():
   const selectable = gatewayModelCapabilityFilterControls();
   if (!selectable) return undefined;
   return createGatewayModelPreferenceService({
-    preferences: createEnterpriseGatewayModelPreferenceStore(controls.deps.database),
+    preferences: createEnterpriseGatewayModelPreferenceStore(
+      controls.deps.database,
+    ),
     selectable,
     log: getLogger("server"),
   });

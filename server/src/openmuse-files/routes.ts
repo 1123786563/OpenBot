@@ -2,8 +2,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { getLogger } from "../../../shared/logger";
 import { classifyAttachment } from "../../../shared/attachments";
+import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { sniffMimeType } from "../channels/attachment-mime";
 import {

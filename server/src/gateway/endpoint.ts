@@ -39,7 +39,11 @@ export function parseGatewayBaseUrl(
     return { ok: false, error: GATEWAY_ENDPOINT_ERRORS.protocol };
   if (parsed.username || parsed.password)
     return { ok: false, error: GATEWAY_ENDPOINT_ERRORS.credentials };
-  if (parsed.pathname.replace(/\/+$/, "") !== "" || parsed.search || parsed.hash)
+  if (
+    parsed.pathname.replace(/\/+$/, "") !== "" ||
+    parsed.search ||
+    parsed.hash
+  )
     return { ok: false, error: GATEWAY_ENDPOINT_ERRORS.path };
   return { ok: true, baseUrl: parsed.origin };
 }
@@ -73,6 +77,9 @@ export function parseGatewayEndpointInput(raw: {
   if (!timeout.ok) return timeout;
   return {
     ok: true,
-    value: { baseUrl: baseUrl.baseUrl, requestTimeoutMs: timeout.requestTimeoutMs },
+    value: {
+      baseUrl: baseUrl.baseUrl,
+      requestTimeoutMs: timeout.requestTimeoutMs,
+    },
   };
 }

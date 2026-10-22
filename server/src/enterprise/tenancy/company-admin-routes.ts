@@ -25,30 +25,30 @@
 // （createUnavailableCompanyAdminRoutes），绝不以宽松替身放行。
 
 import { Hono } from "hono";
-import type { LearningRecordView } from "./learning-demonstrations";
-import {
-  assertClassifiedCompanyEntrance,
-  WORKSPACE_SCOPE_MOUNT_PREFIX,
-} from "./admin-separation";
-import type { PlatformScope } from "../contracts";
-import type { CompanyCapabilities } from "./company-capabilities";
-import type { CompanyConfigView } from "./company-config";
-import type {
-  CompanyMemberRow,
-  CompanyPeopleLifecycleService,
-} from "./people-lifecycle";
-import type { CompanySsoScimConfigService } from "./sso-scim-config";
-import type { CredentialOwnershipAdminService } from "./credential-ownership";
 import type {
   CompanyBooks,
   CompanyFinanceVisibilityService,
   CompanyUsageLine,
 } from "../../billing/company-finance-visibility";
+import type { PlatformScope } from "../contracts";
+import {
+  assertClassifiedCompanyEntrance,
+  WORKSPACE_SCOPE_MOUNT_PREFIX,
+} from "./admin-separation";
 import type {
   AuditDomain,
   AuditQueryActor,
   TenantAuditEventRow,
 } from "./audit-domains";
+import type { CompanyCapabilities } from "./company-capabilities";
+import type { CompanyConfigView } from "./company-config";
+import type { CredentialOwnershipAdminService } from "./credential-ownership";
+import type { LearningRecordView } from "./learning-demonstrations";
+import type {
+  CompanyMemberRow,
+  CompanyPeopleLifecycleService,
+} from "./people-lifecycle";
+import type { CompanySsoScimConfigService } from "./sso-scim-config";
 import type {
   CompanyAdminAuthorizer,
   CompanyAdminContext,
@@ -90,10 +90,15 @@ export interface CompanyAdminRouteDeps {
   authorizer: CompanyAdminAuthorizer & {
     resolveMemberContext(request: Request): Promise<CompanyMemberContext>;
   };
-  capabilities: { capabilitiesOf(member: CompanyMemberContext): Promise<CompanyCapabilities> };
+  capabilities: {
+    capabilitiesOf(member: CompanyMemberContext): Promise<CompanyCapabilities>;
+  };
   people: CompanyPeopleLifecycleService;
   credentials: Pick<CredentialOwnershipAdminService, "listForTenant">;
-  identity: Pick<CompanySsoScimConfigService, "readSsoConfig" | "listScimBindings">;
+  identity: Pick<
+    CompanySsoScimConfigService,
+    "readSsoConfig" | "listScimBindings"
+  >;
   config: (context: CompanyAdminContext) => Promise<CompanyConfigView>;
   learning: {
     listRecords(
@@ -112,7 +117,9 @@ export interface CompanyAdminRouteDeps {
 
 const PRINCIPAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 
-const STATUS_BY_CODE: Readonly<Record<string, 400 | 401 | 403 | 404 | 409 | 500 | 503>> = {
+const STATUS_BY_CODE: Readonly<
+  Record<string, 400 | 401 | 403 | 404 | 409 | 500 | 503>
+> = {
   AUTH_REQUIRED: 401,
   TENANT_REQUIRED: 400,
   WORKSPACE_REQUIRED: 400,
@@ -199,7 +206,9 @@ function eventTypeParam(url: URL): string | undefined {
   return raw;
 }
 
-async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
+async function readJsonObject(
+  request: Request,
+): Promise<Record<string, unknown>> {
   try {
     const value: unknown = await request.json();
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -207,7 +216,8 @@ async function readJsonObject(request: Request): Promise<Record<string, unknown>
     }
     return value as Record<string, unknown>;
   } catch (error) {
-    if (error instanceof Error && error.message === "INVALID_REQUEST") throw error;
+    if (error instanceof Error && error.message === "INVALID_REQUEST")
+      throw error;
     throw new Error("INVALID_REQUEST");
   }
 }
@@ -220,10 +230,10 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
       requireClassifiedCompanyEntrance("GET", "/admin/capabilities");
       // 成员面：每个成员都能问「我在选中的公司里能做什么」——这是入口
       // 可见性的事实源（AC1），答案本身只有能力位，无任何公司事实。
-      const member = await deps.authorizer.resolveMemberContext(context.req.raw);
-      return context.json(
-        await deps.capabilities.capabilitiesOf(member),
+      const member = await deps.authorizer.resolveMemberContext(
+        context.req.raw,
       );
+      return context.json(await deps.capabilities.capabilitiesOf(member));
     } catch (error) {
       const response = errorResponse(error);
       return context.json(response.body, response.status);
@@ -233,8 +243,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   routes.get("/admin/people", async (context) => {
     try {
       requireClassifiedCompanyEntrance("GET", "/admin/people");
-      const adminContext =
-        await deps.authorizer.resolveAdminContext(context.req.raw);
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
       const members: readonly CompanyMemberRow[] =
         await deps.people.companyMembers(adminContext);
       return context.json({ members });
@@ -250,8 +261,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
         "POST",
         "/admin/people/:principalId/promote",
       );
-      const adminContext =
-        await deps.authorizer.resolveAdminContext(context.req.raw);
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
       const report = await deps.people.promoteCompanyMember(adminContext, {
         principalId: principalParam(context.req.param("principalId")),
       });
@@ -268,8 +280,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
         "POST",
         "/admin/people/:principalId/demote",
       );
-      const adminContext =
-        await deps.authorizer.resolveAdminContext(context.req.raw);
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
       const body = await readJsonObject(context.req.raw);
       if (body.to !== "member" && body.to !== "auditor") {
         throw new Error("INVALID_REQUEST");
@@ -291,8 +304,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
         "POST",
         "/admin/people/:principalId/offboard",
       );
-      const adminContext =
-        await deps.authorizer.resolveAdminContext(context.req.raw);
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
       const report = await deps.people.offboardCompanyMember(adminContext, {
         principalId: principalParam(context.req.param("principalId")),
       });
@@ -306,8 +320,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   routes.get("/admin/credentials", async (context) => {
     try {
       requireClassifiedCompanyEntrance("GET", "/admin/credentials");
-      const adminContext =
-        await deps.authorizer.resolveAdminContext(context.req.raw);
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
       // 脱敏名册：视图类型上没有 envelope/plaintext 字段（结构性脱敏）。
       const credentials = await deps.credentials.listForTenant({
         tenantId: adminContext.tenantId,
@@ -322,8 +337,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   routes.get("/admin/identity", async (context) => {
     try {
       requireClassifiedCompanyEntrance("GET", "/admin/identity");
-      const adminContext =
-        await deps.authorizer.resolveAdminContext(context.req.raw);
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
       // SSO 配置是引用文档（协议/issuer/domain/凭据引用），无秘密；无配置
       // 是诚实空（null），不是错误——「没有」与「别家有」同形（AC2 不可见语义）。
       let sso: Awaited<ReturnType<typeof deps.identity.readSsoConfig>> | null =
@@ -351,8 +367,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   routes.get("/admin/enterprise-config", async (context) => {
     try {
       requireClassifiedCompanyEntrance("GET", "/admin/enterprise-config");
-      const adminContext =
-        await deps.authorizer.resolveAdminContext(context.req.raw);
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
       return context.json(await deps.config(adminContext));
     } catch (error) {
       const response = errorResponse(error);
@@ -363,7 +380,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   routes.get("/admin/audit-events", async (context) => {
     try {
       requireClassifiedCompanyEntrance("GET", "/admin/audit-events");
-      const member = await deps.authorizer.resolveMemberContext(context.req.raw);
+      const member = await deps.authorizer.resolveMemberContext(
+        context.req.raw,
+      );
       const url = new URL(context.req.raw.url);
       const events = await deps.audit.query(
         { kind: "company", principalId: member.principalId },
@@ -384,7 +403,9 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   routes.get("/admin/audit-events/export", async (context) => {
     try {
       requireClassifiedCompanyEntrance("GET", "/admin/audit-events/export");
-      const member = await deps.authorizer.resolveMemberContext(context.req.raw);
+      const member = await deps.authorizer.resolveMemberContext(
+        context.req.raw,
+      );
       const url = new URL(context.req.raw.url);
       const { events, truncated } = await deps.audit.exportEvents(
         { kind: "company", principalId: member.principalId },
@@ -429,13 +450,12 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
 
   routes.get("/admin/billing/company-books", async (context) => {
     try {
-      requireClassifiedCompanyEntrance(
-        "GET",
-        "/admin/billing/company-books",
-      );
+      requireClassifiedCompanyEntrance("GET", "/admin/billing/company-books");
       // 财务读取授权是显式授予（MT073），不是公司管理员自动权——判定门
       // 在服务内（拒绝路径零账务读取），路由只翻译哨兵。
-      const member = await deps.authorizer.resolveMemberContext(context.req.raw);
+      const member = await deps.authorizer.resolveMemberContext(
+        context.req.raw,
+      );
       const url = new URL(context.req.raw.url);
       const books: CompanyBooks = await deps.finance.companyBooks({
         tenantId: member.tenantId,

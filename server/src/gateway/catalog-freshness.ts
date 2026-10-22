@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { gatewayCatalogSyncState } from "../db/schema";
-import { modelRefKey, type ModelRef } from "./catalog";
+import { type ModelRef, modelRefKey } from "./catalog";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "./catalog-sync";
 
 /*
@@ -100,8 +100,7 @@ export type CatalogFreshnessVerdict =
 export function catalogFreshnessWindowConfig(
   environment: Record<string, string | undefined>,
 ): number {
-  const raw =
-    environment[BIFROST_CATALOG_FRESHNESS_WINDOW_MS_VARIABLE]?.trim();
+  const raw = environment[BIFROST_CATALOG_FRESHNESS_WINDOW_MS_VARIABLE]?.trim();
   if (raw === undefined || raw === "") {
     return DEFAULT_CATALOG_FRESHNESS_WINDOW_MS;
   }
@@ -131,9 +130,7 @@ export type EvaluateCatalogFreshnessArgs = {
  * and a boundary the deployment can actually observe must not depend on
  * sub-millisecond luck.
  */
-export function evaluateCatalogFreshness(
-  args: EvaluateCatalogFreshnessArgs,
-):
+export function evaluateCatalogFreshness(args: EvaluateCatalogFreshnessArgs):
   | CatalogFreshnessAcceptance
   | {
       fresh: false;
@@ -222,7 +219,10 @@ export type CatalogFreshnessGate = {
    */
   isCatalogFresh(modelRef: ModelRef, now?: Date): Promise<boolean>;
   /** The full verdict behind the boolean, for surfaces that show the reason. */
-  assertCatalogFresh(modelRef: ModelRef, now?: Date): Promise<CatalogFreshnessVerdict>;
+  assertCatalogFresh(
+    modelRef: ModelRef,
+    now?: Date,
+  ): Promise<CatalogFreshnessVerdict>;
 };
 
 /**

@@ -439,7 +439,11 @@ export function createOpenMuseGoogleOAuth(deps: {
           403,
         );
       }
-      if (pending.nonce !== null && input.nonce !== undefined && pending.nonce !== input.nonce) {
+      if (
+        pending.nonce !== null &&
+        input.nonce !== undefined &&
+        pending.nonce !== input.nonce
+      ) {
         throw new OpenMuseGoogleCallbackError(
           "That callback carries the wrong nonce for its consent.",
           400,

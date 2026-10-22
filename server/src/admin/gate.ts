@@ -17,6 +17,7 @@ import type { AppVariables } from "../auth/guards";
 import { agents } from "../db/schema";
 import { type Capability, capabilityRefusal } from "./capabilities";
 import { enterpriseControls } from "./controls";
+
 const log = getLogger("server");
 
 type Ctx = Context<{ Variables: AppVariables }>;

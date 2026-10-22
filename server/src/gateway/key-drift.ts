@@ -1,19 +1,19 @@
-import { and, eq, isNull } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
+import { and, eq, isNull } from "drizzle-orm";
 import { getLogger, type Logger } from "../../../shared/logger";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import {
   GATEWAY_KEY_DRIFT_DECISIONS,
   GATEWAY_KEY_FIELD_DRIFT_REASON_CODES,
-  gatewayKeyDriftEvents,
-  gatewayVirtualKeys,
   type GatewayKeyDriftDecision,
   type GatewayKeyFieldDriftReasonCode,
+  gatewayKeyDriftEvents,
+  gatewayVirtualKeys,
 } from "../db/schema";
 
-export { GATEWAY_KEY_DRIFT_DECISIONS, GATEWAY_KEY_FIELD_DRIFT_REASON_CODES };
 export type { GatewayKeyDriftDecision, GatewayKeyFieldDriftReasonCode };
+export { GATEWAY_KEY_DRIFT_DECISIONS, GATEWAY_KEY_FIELD_DRIFT_REASON_CODES };
 
 /*
  * The key FIELD-drift module (Bifrost 05.9, AC11/Q18): what it means for a short-lived
@@ -177,8 +177,7 @@ export function gatewayKeyDriftEventValues(
     localCustomerId: event.localCustomerId,
     reasonCode: event.reasonCode,
     remoteCustomerId: event.remoteCustomerId,
-    localExpiresAt:
-      localExpiresAt === null ? null : new Date(localExpiresAt),
+    localExpiresAt: localExpiresAt === null ? null : new Date(localExpiresAt),
     remoteExpiresAt:
       remoteExpiresAt === null ? null : new Date(remoteExpiresAt),
     detectedAt,
@@ -284,10 +283,7 @@ export function createGatewayKeyDriftStore(
       if (filter.outstandingOnly) {
         conditions.push(isNull(gatewayKeyDriftEvents.disposedAt));
       }
-      const query = database
-        .select()
-        .from(gatewayKeyDriftEvents)
-        .$dynamic();
+      const query = database.select().from(gatewayKeyDriftEvents).$dynamic();
       if (conditions.length > 0) {
         query.where(and(...conditions));
       }
@@ -312,7 +308,9 @@ export function createGatewayKeyDriftStore(
         );
       }
       if (disposedBy.trim() === "") {
-        throw new Error("The drift disposition must name who disposed of the event.");
+        throw new Error(
+          "The drift disposition must name who disposed of the event.",
+        );
       }
       return database.transaction(async (tx) => {
         // The guarded write: exactly one disposition per event, ever — a second caller

@@ -7,7 +7,6 @@ import type { AgentProfileStore } from "../agents/profile-store";
 import type { AgentActor } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
 import type { ChannelStore } from "../channels/routes";
-import type { MobileBffActivityReader } from "./activity";
 import {
   OpenMuseConnectionRefusedError,
   OpenMuseOwnerDisabledError,
@@ -15,6 +14,7 @@ import {
 } from "../openmuse-connectors/google-oauth";
 import { OpenMuseFileQuotaError } from "../openmuse-files/store";
 import { OpenMuseMailVendorError } from "../openmuse-mail/client";
+import type { MobileBffActivityReader } from "./activity";
 import type { OpenMuseBotProvisioner } from "./openmuse-bot";
 import type { MobileBffWorkspaceReader } from "./workspace";
 

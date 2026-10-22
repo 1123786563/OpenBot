@@ -36,7 +36,8 @@ export const DELIVERY_BASELINE = {
      */
     preexistingIncrement: {
       gitStatusEntries: 276,
-      snapshotSha256: "d2de7240a8ae718fd8ce7de1252182a04752c836577ce611f81ce37c86394e56",
+      snapshotSha256:
+        "d2de7240a8ae718fd8ce7de1252182a04752c836577ce611f81ce37c86394e56",
     },
     /** The increment manifest (this batch's own files), an untracked reports/ artifact. */
     incrementManifest: "reports/bf20-increment-files.txt",
@@ -91,13 +92,16 @@ export const FINAL_GATE_CHECKLIST: readonly FinalGateChecklistEntry[] = [
     command:
       "ocr review --audience agent --background 'Bifrost 严格积分计费交付范围' --from a789f6a4 --to <branch-HEAD> --output reports/ocr/bf20-branch.md",
     scope: "BASE a789f6a4..HEAD after the increment is committed",
-    expected: "the same findings surface (the range is the same content as the workspace leg)",
+    expected:
+      "the same findings surface (the range is the same content as the workspace leg)",
   },
   {
     step: "coverage completeness check",
-    command: "node scripts/e2e-coverage-audit.mjs && bun run typecheck && bunx biome lint --error-on-warnings .",
+    command:
+      "node scripts/e2e-coverage-audit.mjs && bun run typecheck && bunx biome lint --error-on-warnings .",
     scope: "the full repo state the OCR reviewed",
-    expected: "driven-manifest audit clean; typecheck/lint carry only the documented baseline residue",
+    expected:
+      "driven-manifest audit clean; typecheck/lint carry only the documented baseline residue",
   },
 ] as const;
 
@@ -129,7 +133,8 @@ export const REVIEW_RECORD = {
   },
   finalIndependentReview: {
     status: "pending-final-commit",
-    owner: "the coordinator's final gate (per the 2026-10-20 ruling, with the one-shot OCR above)",
+    owner:
+      "the coordinator's final gate (per the 2026-10-20 ruling, with the one-shot OCR above)",
   },
 } as const;
 

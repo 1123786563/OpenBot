@@ -816,9 +816,7 @@ export const asyncSettleTriggers = pgTable(
       .notNull()
       .defaultNow(),
     /** Which lane triggered last — the closed two-member set the tickets name. */
-    lastSource: text("last_source")
-      .$type<"poll" | "notification">()
-      .notNull(),
+    lastSource: text("last_source").$type<"poll" | "notification">().notNull(),
   },
   (table) => [
     uniqueIndex("async_settle_triggers_idempotency_key_idx").on(
@@ -862,7 +860,9 @@ export const creditAsyncSettlementDetails = pgTable(
       .$type<"completed" | "failed" | "cancelled">()
       .notNull(),
     /** The provider's real terminal usage, one whole number per billing dimension. */
-    actualUsage: jsonb("actual_usage").$type<Record<string, number>>().notNull(),
+    actualUsage: jsonb("actual_usage")
+      .$type<Record<string, number>>()
+      .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -877,7 +877,10 @@ export const creditAsyncSettlementDetails = pgTable(
       "credit_async_settlement_details_terminal_state_check",
       sql`${table.terminalState} in ('completed', 'failed', 'cancelled')`,
     ),
-    check("credit_async_settlement_details_entry_count_check", sql`${table.entryCount} > 0`),
+    check(
+      "credit_async_settlement_details_entry_count_check",
+      sql`${table.entryCount} > 0`,
+    ),
     check(
       "credit_async_settlement_details_usage_shape_check",
       sql`jsonb_typeof(${table.actualUsage}) = 'object'`,
@@ -914,10 +917,7 @@ export const realtimeSessions = pgTable(
     snapshotVersion: integer("snapshot_version").notNull(),
     rateVersion: integer("rate_version").notNull(),
     /** `open` until 15.6's revocation/expiry stop closes it. */
-    state: text("state")
-      .$type<"open" | "closed">()
-      .notNull()
-      .default("open"),
+    state: text("state").$type<"open" | "closed">().notNull().default("open"),
     startedAt: timestamp("started_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1015,7 +1015,9 @@ export const realtimeUnits = pgTable(
     /** The unit's attempt identity (06.7's `att-` mapping of the reservation). */
     attemptId: text("attempt_id"),
     /** The hold this unit reserved; absent exactly when no hold ever formed. */
-    reservationId: text("reservation_id").references(() => creditReservations.id),
+    reservationId: text("reservation_id").references(
+      () => creditReservations.id,
+    ),
     /** The 06.3 door's own refusal code, recorded on the refused unit. */
     refusalReason: text("refusal_reason"),
     /**
@@ -1130,9 +1132,7 @@ export const toolCallCharges = pgTable(
     payerKind: text("payer_kind").notNull(),
     payerId: text("payer_id").notNull(),
     /** The admission's own outcome: charged (with its hold, or priced exactly free) or refused. */
-    state: text("state")
-      .$type<"charged" | "refused">()
-      .notNull(),
+    state: text("state").$type<"charged" | "refused">().notNull(),
     /** The reservation this call's hold minted; absent exactly when no hold formed. */
     reservationId: text("reservation_id").references(
       () => creditReservations.id,
@@ -1170,10 +1170,7 @@ export const toolCallCharges = pgTable(
       sql`(${table.state} = 'charged' AND ${table.refusalReason} IS NULL AND (${table.reservationId} IS NOT NULL OR ${table.pricedFree} = true)) OR (${table.state} = 'refused' AND ${table.reservationId} IS NULL AND ${table.refusalReason} IS NOT NULL AND ${table.pricedFree} = false)`,
     ),
     // The user view and the sweep walk a grant's calls oldest first.
-    index("tool_call_charges_grant_idx").on(
-      table.grantId,
-      table.createdAt,
-    ),
+    index("tool_call_charges_grant_idx").on(table.grantId, table.createdAt),
     // One charge per reservation: a hold mints exactly one tool-call identity.
     uniqueIndex("tool_call_charges_reservation_idx")
       .on(table.reservationId)
@@ -1313,9 +1310,7 @@ export const batchItems = pgTable(
     model: text("model").notNull(),
     capability: text("capability").notNull(),
     /** The item's certified worst-case quantities, one whole number per used dimension. */
-    quantities: jsonb("quantities")
-      .$type<Record<string, number>>()
-      .notNull(),
+    quantities: jsonb("quantities").$type<Record<string, number>>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1383,7 +1378,9 @@ export const creditBatchSettlementDetails = pgTable(
       .$type<"completed" | "failed" | "cancelled">()
       .notNull(),
     /** The provider's real per-item usage, one whole number per used dimension. */
-    actualUsage: jsonb("actual_usage").$type<Record<string, number>>().notNull(),
+    actualUsage: jsonb("actual_usage")
+      .$type<Record<string, number>>()
+      .notNull(),
     /** The item's exact rational share of the settlement, decimal strings in jsonb. */
     exactCost: jsonb("exact_cost")
       .$type<{ numerator: string; denominator: string }>()
@@ -1455,11 +1452,11 @@ export const batchItemOutcomes = pgTable(
       >()
       .notNull(),
     /** The provider's own terminal word for the item (null for non-terminal classes). */
-    terminalState: text("terminal_state")
-      .$type<"completed" | "failed" | "cancelled">(),
+    terminalState: text("terminal_state").$type<
+      "completed" | "failed" | "cancelled"
+    >(),
     /** The no-charge evidence — present exactly when the classification released. */
-    evidence: jsonb("evidence")
-      .$type<{ kind: string; reference?: string }>(),
+    evidence: jsonb("evidence").$type<{ kind: string; reference?: string }>(),
     /** The raw per-item usage the item's pricing consumed (billable classes only). */
     usage: jsonb("usage").$type<Record<string, number>>(),
     /** How many reports arrived for this item — the duplicate-notification observability. */

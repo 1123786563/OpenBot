@@ -30,8 +30,8 @@
 import { createHash } from "node:crypto";
 import {
   CONFORMANCE_GROUP_22_3,
-  MODEL_ENTRYPOINTS,
   type EntrypointFamily,
+  MODEL_ENTRYPOINTS,
   type ModelEntrypoint,
 } from "./entrypoint-catalog";
 
@@ -106,12 +106,14 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       "text.responses.compact",
       "text.passthrough",
     ],
-    capability: "the governed LLM lane: OpenAI-compatible chat/completions/responses/passthrough through the pinned gateway, admitted by the credit protocol",
+    capability:
+      "the governed LLM lane: OpenAI-compatible chat/completions/responses/passthrough through the pinned gateway, admitted by the credit protocol",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "no LLM call dispatches without an enforceable ceiling: max_tokens the provider enforces, or the input-side self-enforced bound (ADR-0001's counted bytes → truncate or refuse)",
+          claim:
+            "no LLM call dispatches without an enforceable ceiling: max_tokens the provider enforces, or the input-side self-enforced bound (ADR-0001's counted bytes → truncate or refuse)",
           result:
             "bound evidence kinds are the closed set {provider_max_tokens, self_enforced_input_truncation, self_enforced_input_refusal}; the conservative estimate is absent by construction (credit-reserve.ts RESERVE_BOUND_EVIDENCE_KINDS)",
         },
@@ -119,7 +121,8 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       {
         kind: "usage-observable",
         fact: {
-          claim: "real usage lands as durable evidence; usage that never arrived is never zero",
+          claim:
+            "real usage lands as durable evidence; usage that never arrived is never zero",
           result:
             "a stream that beats the counted bound settles with the hold RETAINED and one usage_outbox row carrying the provider's real tokens (billing/usage-evidence.ts, status usage_missing → terminal manual review)",
         },
@@ -127,7 +130,8 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       {
         kind: "cancel-tail",
         fact: {
-          claim: "streaming completion, cancellation and billable failure neither lose nor duplicate a charge",
+          claim:
+            "streaming completion, cancellation and billable failure neither lose nor duplicate a charge",
           result:
             "e2e-strict-billing-text: the full-request matrix (success, stream, cancel, failure, duplicate event) answers exactly one settlement each; replays answer the first result",
         },
@@ -164,12 +168,14 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       "image.edit.stream",
       "image.variation",
     ],
-    capability: "image generation/edits/variations on the OpenAI-compatible image routes, admitted by 12.4's matrix",
+    capability:
+      "image generation/edits/variations on the OpenAI-compatible image routes, admitted by 12.4's matrix",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "the reservation ceiling prices every image a request asks for, at the resolved tier",
+          claim:
+            "the reservation ceiling prices every image a request asks for, at the resolved tier",
           result:
             "2 outputs × $0.04 + 1 input × $0.005 = $0.085 → 850 scaled units at the 100:1 fixture rate; a variation reserves EXACTLY what a generation carrying the same input reserves (image-entrypoints.test.ts)",
         },
@@ -177,15 +183,19 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       {
         kind: "usage-observable",
         fact: {
-          claim: "the settled line itemizes what the hold priced — output count and input images",
-          result: "the frozen spec carries {count, size, inputImages} (an edit with 2 images + mask: {count:1, inputImages:3} → 550 scaled units)",
+          claim:
+            "the settled line itemizes what the hold priced — output count and input images",
+          result:
+            "the frozen spec carries {count, size, inputImages} (an edit with 2 images + mask: {count:1, inputImages:3} → 550 scaled units)",
         },
       },
       {
         kind: "no-bypass",
         fact: {
-          claim: "an entrance the registry does not wire is hard-refused, never forwarded",
-          result: "an upscale path answers image_entrypoint_not_admitted with the wired kinds in the detail; reserve and dispatch both count 0",
+          claim:
+            "an entrance the registry does not wire is hard-refused, never forwarded",
+          result:
+            "an upscale path answers image_entrypoint_not_admitted with the wired kinds in the detail; reserve and dispatch both count 0",
         },
       },
       {
@@ -227,12 +237,14 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       "audio.synthesis",
       "audio.synthesis.stream",
     ],
-    capability: "audio transcriptions (±stream) and speech synthesis (±stream); translations stays blocked (14.4's own verdict)",
+    capability:
+      "audio transcriptions (±stream) and speech synthesis (±stream); translations stays blocked (14.4's own verdict)",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "the input side is metered server-trusted (container duration, whole seconds rounded up) and the output side capped by attestation",
+          claim:
+            "the input side is metered server-trusted (container duration, whole seconds rounded up) and the output side capped by attestation",
           result:
             "14.1's parseWavDurationSeconds certifies duration; an uncapped transcript refuses transcription_output_uncapped; synthesis duration refuses speech_output_duration_uncapped (14.3's boundary evidence)",
         },
@@ -241,14 +253,17 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
         kind: "usage-observable",
         fact: {
           claim: "billed dimensions are the closed set the meters read",
-          result: "transcription bills {audio_input, output, surcharge_per_request}; synthesis bills {audio_output, surcharge_per_request} with input_characters as a versioned non-vocabulary unit",
+          result:
+            "transcription bills {audio_input, output, surcharge_per_request}; synthesis bills {audio_output, surcharge_per_request} with input_characters as a versioned non-vocabulary unit",
         },
       },
       {
         kind: "cancel-tail",
         fact: {
-          claim: "an interrupted synthesis settles the confirmed buffer tail exactly once",
-          result: "speech-interruption: the confirmed prefix settles once; a replay answers the first result (13.3's own matrix)",
+          claim:
+            "an interrupted synthesis settles the confirmed buffer tail exactly once",
+          result:
+            "speech-interruption: the confirmed prefix settles once; a replay answers the first result (13.3's own matrix)",
         },
       },
     ],
@@ -284,27 +299,34 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       "runtime.enterprise-runner",
       "runtime.responsibility",
     ],
-    capability: "OpenBot's built-in model-call initiators, all dialing through the governed gateway (no direct provider dial exists)",
+    capability:
+      "OpenBot's built-in model-call initiators, all dialing through the governed gateway (no direct provider dial exists)",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "a built-in call runs only under a governed admission with its own worst-case hold",
-          result: "copilot refuses when no apiKey, no plan model and no governed admission exists (copilot.ts:2196) — the model call does not happen at all",
+          claim:
+            "a built-in call runs only under a governed admission with its own worst-case hold",
+          result:
+            "copilot refuses when no apiKey, no plan model and no governed admission exists (copilot.ts:2196) — the model call does not happen at all",
         },
       },
       {
         kind: "usage-observable",
         fact: {
-          claim: "every runtime lane's usage lands attributed to the lane's initiator",
-          result: "governed-execution: per-request immutable route refs; the governed collaborator's markConsumed precedes the dial (enterprise/governed-execution.test.ts)",
+          claim:
+            "every runtime lane's usage lands attributed to the lane's initiator",
+          result:
+            "governed-execution: per-request immutable route refs; the governed collaborator's markConsumed precedes the dial (enterprise/governed-execution.test.ts)",
         },
       },
       {
         kind: "no-bypass",
         fact: {
-          claim: "route refs are issued per request and never read from client fields",
-          result: "the enterprise runner's modelSelection carries immutable Expert and agent-bound route refs; keys resolve only through the encrypted credential store",
+          claim:
+            "route refs are issued per request and never read from client fields",
+          result:
+            "the enterprise runner's modelSelection carries immutable Expert and agent-bound route refs; keys resolve only through the encrypted credential store",
         },
       },
     ],
@@ -329,20 +351,24 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
     family: "embedding",
     group: "22.4",
     entrypointIds: ["embedding.predict"],
-    capability: "/v1/embeddings — batch entries counted in full, refused over the ceiling (11.1/11.2)",
+    capability:
+      "/v1/embeddings — batch entries counted in full, refused over the ceiling (11.1/11.2)",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "the input is counted in full (entries are the payload; truncation would change the answer) and refused over the ceiling",
-          result: "self_enforced_input_refusal with per-entry overhead tokens and the conservative byte floor; an uncountable input never reaches the reserve",
+          claim:
+            "the input is counted in full (entries are the payload; truncation would change the answer) and refused over the ceiling",
+          result:
+            "self_enforced_input_refusal with per-entry overhead tokens and the conservative byte floor; an uncountable input never reaches the reserve",
         },
       },
       {
         kind: "usage-observable",
         fact: {
           claim: "the settled usage carries the real vector-batch token count",
-          result: "EMBEDDING_BILLED_DIMENSIONS = {input, surcharge_per_request}; the outbox fact carries the counted input the hold priced",
+          result:
+            "EMBEDDING_BILLED_DIMENSIONS = {input, surcharge_per_request}; the outbox fact carries the counted input the hold priced",
         },
       },
     ],
@@ -359,27 +385,34 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
     family: "rerank",
     group: "22.4",
     entrypointIds: ["rerank.rank"],
-    capability: "/v1/rerank — documents counted in full, flat + token pricing (11.3/11.4)",
+    capability:
+      "/v1/rerank — documents counted in full, flat + token pricing (11.3/11.4)",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "an uncountable shape or an unpriced dimension refuses at the entry, before any reserve call",
-          result: "rerank_input_uncountable / rerank_price_unknown name the shape or the missing dimension; the reserve is never called on a refused verdict",
+          claim:
+            "an uncountable shape or an unpriced dimension refuses at the entry, before any reserve call",
+          result:
+            "rerank_input_uncountable / rerank_price_unknown name the shape or the missing dimension; the reserve is never called on a refused verdict",
         },
       },
       {
         kind: "usage-observable",
         fact: {
-          claim: "the hold prices counted tokens × input price + documents × flat price",
-          result: "RERANK_BILLED_DIMENSIONS = {input, surcharge_per_request}; the ceiling conversion is 06.5's own arithmetic",
+          claim:
+            "the hold prices counted tokens × input price + documents × flat price",
+          result:
+            "RERANK_BILLED_DIMENSIONS = {input, surcharge_per_request}; the ceiling conversion is 06.5's own arithmetic",
         },
       },
       {
         kind: "no-bypass",
         fact: {
-          claim: "a free basis cannot form a hold and never silently dispatches paid work",
-          result: "a zero-ceiling verdict refuses with the zero-ceiling code — free is the caller's policy, never the door's assumption",
+          claim:
+            "a free basis cannot form a hold and never silently dispatches paid work",
+          result:
+            "a zero-ceiling verdict refuses with the zero-ceiling code — free is the caller's policy, never the door's assumption",
         },
       },
     ],
@@ -402,20 +435,24 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
     family: "ocr",
     group: "22.4",
     entrypointIds: ["ocr.extract"],
-    capability: "/v1/ocr — pages pinned by the request, output capped by attestation (11.5/11.6)",
+    capability:
+      "/v1/ocr — pages pinned by the request, output capped by attestation (11.5/11.6)",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "unknown price refuses; every billed dimension priced exactly 0 is EXECUTABLE free — 明确免费与未知分开",
-          result: "price_unknown / ocr_pages_indeterminable / ocr_output_uncapped refuse with 0 dispatches; the free verdict answers status free and dispatches hold-free under the caller's gates",
+          claim:
+            "unknown price refuses; every billed dimension priced exactly 0 is EXECUTABLE free — 明确免费与未知分开",
+          result:
+            "price_unknown / ocr_pages_indeterminable / ocr_output_uncapped refuse with 0 dispatches; the free verdict answers status free and dispatches hold-free under the caller's gates",
         },
       },
       {
         kind: "usage-observable",
         fact: {
           claim: "OCR_BILLED_DIMENSIONS are what the meters read",
-          result: "{output, image, surcharge_per_request} — the v1 basis without a completion price leaves output unknown, never free",
+          result:
+            "{output, image, surcharge_per_request} — the v1 basis without a completion price leaves output unknown, never free",
         },
       },
     ],
@@ -445,41 +482,52 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       "realtime.webrtc.sdp",
       "realtime.client_secrets",
     ],
-    capability: "realtime sessions over WS (main + transcription lanes) and WebRTC SDP — per-unit reservation, one identity per session (15.x/16.x)",
+    capability:
+      "realtime sessions over WS (main + transcription lanes) and WebRTC SDP — per-unit reservation, one identity per session (15.x/16.x)",
     constraints: [
       {
         kind: "unit-gating",
         fact: {
-          claim: "every realtime unit reserves BEFORE processing; no unit, no provider turn",
-          result: "REALTIME_UNIT_STATES: pending → reserved → processing → settled|unknown|refused; a unit whose reserve refuses never enters processing (15.2's door)",
+          claim:
+            "every realtime unit reserves BEFORE processing; no unit, no provider turn",
+          result:
+            "REALTIME_UNIT_STATES: pending → reserved → processing → settled|unknown|refused; a unit whose reserve refuses never enters processing (15.2's door)",
         },
       },
       {
         kind: "exhaustion-stop",
         fact: {
-          claim: "a balance that cannot cover the next unit stops the session — durably",
-          result: "the refused unit writes stoppedAt + stopReason=insufficient_credits in the same commit; the next openUnit answers session_stopped with the stop's own reason carried (realtime-exhaustion + this batch's audit drive)",
+          claim:
+            "a balance that cannot cover the next unit stops the session — durably",
+          result:
+            "the refused unit writes stoppedAt + stopReason=insufficient_credits in the same commit; the next openUnit answers session_stopped with the stop's own reason carried (realtime-exhaustion + this batch's audit drive)",
         },
       },
       {
         kind: "shutdown-tail",
         fact: {
-          claim: "a revoked/shut-down session settles its tail once, inside what it already holds; WebRTC and WS answer identically",
-          result: "realtime-webrtc-parity: both transports, one timeline (撤销关停 → unknown → 原预留内尾结一次 → 重放答原结果), sessions and units field-for-field equal, one ledger line per tail",
+          claim:
+            "a revoked/shut-down session settles its tail once, inside what it already holds; WebRTC and WS answer identically",
+          result:
+            "realtime-webrtc-parity: both transports, one timeline (撤销关停 → unknown → 原预留内尾结一次 → 重放答原结果), sessions and units field-for-field equal, one ledger line per tail",
         },
       },
       {
         kind: "usage-observable",
         fact: {
-          claim: "the person sees settled spend, holding+unknown ceilings and abnormal reasons per session",
-          result: "GET /api/billing/credits/realtime-sessions aggregates settled/holding/unknown with the closed abnormal-code set (15.8/#321)",
+          claim:
+            "the person sees settled spend, holding+unknown ceilings and abnormal reasons per session",
+          result:
+            "GET /api/billing/credits/realtime-sessions aggregates settled/holding/unknown with the closed abnormal-code set (15.8/#321)",
         },
       },
       {
         kind: "no-bypass",
         fact: {
-          claim: "provider-session credentials and upstream endpoints are refused on presence and audited",
-          result: "billing.realtime.bypass_refused rows name the field and reason; unmapped ek_* tokens are 401 at the transport (16.3/#324)",
+          claim:
+            "provider-session credentials and upstream endpoints are refused on presence and audited",
+          result:
+            "billing.realtime.bypass_refused rows name the field and reason; unmapped ek_* tokens are 401 at the transport (16.3/#324)",
         },
       },
     ],
@@ -491,7 +539,8 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
         "TEST_DATABASE_URL=<test-db> bun test server/tests/realtime-webrtc-parity.integration.test.ts",
         "bun test server/tests/realtime-bypass-audit.test.ts",
       ],
-      resultSummary: "green on the pinned tree (realtime-session-identity / realtime-unit-reservation baseline reds are the known fixture drift, see the batch report)",
+      resultSummary:
+        "green on the pinned tree (realtime-session-identity / realtime-unit-reservation baseline reds are the known fixture drift, see the batch report)",
     },
     versionBinding: [
       "server/src/billing/realtime-session.ts",
@@ -509,27 +558,34 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
     family: "async",
     group: "22.4",
     entrypointIds: ["async.jobs"],
-    capability: "async jobs — one submit = one full-cap reservation = one job (17.x)",
+    capability:
+      "async jobs — one submit = one full-cap reservation = one job (17.x)",
     constraints: [
       {
         kind: "terminal-settlement",
         fact: {
-          claim: "a terminal job settles once; a replay answers the first result",
-          result: "async-settle-once: terminal settlement lands one ledger line; idempotent by the job's own identity (17.6)",
+          claim:
+            "a terminal job settles once; a replay answers the first result",
+          result:
+            "async-settle-once: terminal settlement lands one ledger line; idempotent by the job's own identity (17.6)",
         },
       },
       {
         kind: "unknown-holds-retained",
         fact: {
-          claim: "a lost dispatch answer keeps the FULL cap occupied and the job recoverable — nothing reads a missing provider id as no-cost",
-          result: "async-lost-jobid: dispatch_unconfirmed + 06.8 unknown with the full cap held; the 17.3 sweep queries the provider under the converged identity",
+          claim:
+            "a lost dispatch answer keeps the FULL cap occupied and the job recoverable — nothing reads a missing provider id as no-cost",
+          result:
+            "async-lost-jobid: dispatch_unconfirmed + 06.8 unknown with the full cap held; the 17.3 sweep queries the provider under the converged identity",
         },
       },
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "the cap is the whole job's worst case, all dimensions, one upward rounding",
-          result: "computeAsyncSubmitCap sums every entry's certified quantities and prices them through 06.5's exact arithmetic; an unknown dimension refuses the submit naming it",
+          claim:
+            "the cap is the whole job's worst case, all dimensions, one upward rounding",
+          result:
+            "computeAsyncSubmitCap sums every entry's certified quantities and prices them through 06.5's exact arithmetic; an unknown dimension refuses the submit naming it",
         },
       },
     ],
@@ -555,27 +611,34 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
     family: "batch",
     group: "22.4",
     entrypointIds: ["batch.create"],
-    capability: "batches — one whole-batch reservation, per-item pricing on the item's own cell (18.x)",
+    capability:
+      "batches — one whole-batch reservation, per-item pricing on the item's own cell (18.x)",
     constraints: [
       {
         kind: "terminal-settlement",
         fact: {
-          claim: "a batch settles per completed item; partial success neither loses nor duplicates",
-          result: "batch-partial-success: settled items bill their own quantities; the batch's settlement detail (0199) itemizes per item",
+          claim:
+            "a batch settles per completed item; partial success neither loses nor duplicates",
+          result:
+            "batch-partial-success: settled items bill their own quantities; the batch's settlement detail (0199) itemizes per item",
         },
       },
       {
         kind: "cancel-tail",
         fact: {
-          claim: "a partial cancel keeps completed work, cancels the rest, and never re-charges a retrieval",
-          result: "batch-partial-cancel (0201 semantics): cancel marks unstarted items cancelled; repeated retrieval does not re-charge (18.4/#336)",
+          claim:
+            "a partial cancel keeps completed work, cancels the rest, and never re-charges a retrieval",
+          result:
+            "batch-partial-cancel (0201 semantics): cancel marks unstarted items cancelled; repeated retrieval does not re-charge (18.4/#336)",
         },
       },
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "the whole-batch cap prices every item on ITS OWN model cell; a refusal anywhere refuses everything",
-          result: "batch-reservation: mixed-model fixture prices per-cell (video $0.01 vs $0.02), one hold; an insufficient balance refuses with zero rows and dispatch spy 0",
+          claim:
+            "the whole-batch cap prices every item on ITS OWN model cell; a refusal anywhere refuses everything",
+          result:
+            "batch-reservation: mixed-model fixture prices per-cell (video $0.01 vs $0.02), one hold; an insufficient balance refuses with zero rows and dispatch spy 0",
         },
       },
     ],
@@ -602,27 +665,34 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
     family: "video",
     group: "22.4",
     entrypointIds: ["video.generation", "video.edit", "video.remix"],
-    capability: "video generation + edit/remix — video seconds on `video`, input seconds on `video_input` (19.x)",
+    capability:
+      "video generation + edit/remix — video seconds on `video`, input seconds on `video_input` (19.x)",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "the spec freezes seconds and tier before any submit; an unpriceable tier refuses at enablement with the reserve never called",
-          result: "video-pricing: 60s × tier + input seconds on video_input (0202's own dimension); the enablement short-circuit answers with the missing dimension named",
+          claim:
+            "the spec freezes seconds and tier before any submit; an unpriceable tier refuses at enablement with the reserve never called",
+          result:
+            "video-pricing: 60s × tier + input seconds on video_input (0202's own dimension); the enablement short-circuit answers with the missing dimension named",
         },
       },
       {
         kind: "terminal-settlement",
         fact: {
-          claim: "a finished video settles once, its input dimension included; a replay answers the first result",
-          result: "video-settlement-recovery: terminal settlement over the 17.6 lane with the 0189 dimension breakdown; replay idempotent",
+          claim:
+            "a finished video settles once, its input dimension included; a replay answers the first result",
+          result:
+            "video-settlement-recovery: terminal settlement over the 17.6 lane with the 0189 dimension breakdown; replay idempotent",
         },
       },
       {
         kind: "unknown-holds-retained",
         fact: {
-          claim: "a restart recovers the job under its converged identity; the hold never silently releases",
-          result: "video-settlement-recovery (#340): recovery replays the submit's idempotency identity; the full cap stays held until a terminal answer",
+          claim:
+            "a restart recovers the job under its converged identity; the hold never silently releases",
+          result:
+            "video-settlement-recovery (#340): recovery replays the submit's idempotency identity; the full cap stays held until a terminal answer",
         },
       },
     ],
@@ -660,27 +730,34 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
       "tool.responses.tool_call",
       "tool.a2a.call",
     ],
-    capability: "tool/MCP/A2A executions — flat surcharges per execution, identity rows per call (20.x)",
+    capability:
+      "tool/MCP/A2A executions — flat surcharges per execution, identity rows per call (20.x)",
     constraints: [
       {
         kind: "surcharge-pricing",
         fact: {
-          claim: "every billed tool entrance prices its own surcharge dimension; an unpriced dimension refuses the call",
-          result: "TOOL_SURCHARGE_ENTRIES maps 5 entrances → {surcharge_tool_call, surcharge_web_search, surcharge_a2a_call}; tool-surcharge-pricing refuses with the missing dimension named (0195)",
+          claim:
+            "every billed tool entrance prices its own surcharge dimension; an unpriced dimension refuses the call",
+          result:
+            "TOOL_SURCHARGE_ENTRIES maps 5 entrances → {surcharge_tool_call, surcharge_web_search, surcharge_a2a_call}; tool-surcharge-pricing refuses with the missing dimension named (0195)",
         },
       },
       {
         kind: "no-bypass",
         fact: {
-          claim: "a personal-key call cannot name a company tool into scope; unpriced tools never execute",
-          result: "tool-isolation: company tools stay behind server-issued trusted scopes (isolation stage); the 21.x unpriced-tool bypass is blocked at the hook",
+          claim:
+            "a personal-key call cannot name a company tool into scope; unpriced tools never execute",
+          result:
+            "tool-isolation: company tools stay behind server-issued trusted scopes (isolation stage); the 21.x unpriced-tool bypass is blocked at the hook",
         },
       },
       {
         kind: "usage-observable",
         fact: {
-          claim: "every execution mints an identity row — charged with its hold, or refused with its reason",
-          result: "tool_call_charges (tc-): state charged|refused, reservationId absent exactly when no hold formed, refusalReason recorded (this batch's audit drive pinned the refused row's shape)",
+          claim:
+            "every execution mints an identity row — charged with its hold, or refused with its reason",
+          result:
+            "tool_call_charges (tc-): state charged|refused, reservationId absent exactly when no hold formed, refusalReason recorded (this batch's audit drive pinned the refused row's shape)",
         },
       },
     ],
@@ -706,20 +783,25 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
     family: "evaluation",
     group: "22.4",
     entrypointIds: ["evaluation.decisions"],
-    capability: "evaluation/judge calls — one case = one metered model call under the deployment's credit machinery",
+    capability:
+      "evaluation/judge calls — one case = one metered model call under the deployment's credit machinery",
     constraints: [
       {
         kind: "ceiling-enforced",
         fact: {
-          claim: "the runner reserves one case's worst-case hold BEFORE the gateway dial; a balance that cannot cover it refuses",
-          result: "execution-billing: reserveCredits → dial ordering; a thrown call is UNKNOWN (never released provider_error) because the runner cannot observe refused-before-first-token",
+          claim:
+            "the runner reserves one case's worst-case hold BEFORE the gateway dial; a balance that cannot cover it refuses",
+          result:
+            "execution-billing: reserveCredits → dial ordering; a thrown call is UNKNOWN (never released provider_error) because the runner cannot observe refused-before-first-token",
         },
       },
       {
         kind: "usage-observable",
         fact: {
-          claim: "the gateway's own usage becomes one immutable outbox fact with the exact rational charge",
-          result: "one usage_outbox row per case keyed (executionId, caseIndex) — a replayed or takeover re-run can neither dial twice nor charge twice",
+          claim:
+            "the gateway's own usage becomes one immutable outbox fact with the exact rational charge",
+          result:
+            "one usage_outbox row per case keyed (executionId, caseIndex) — a replayed or takeover re-run can neither dial twice nor charge twice",
         },
       },
     ],
@@ -735,20 +817,24 @@ export const CONFORMANCE_EVIDENCE: readonly ConformanceRecord[] = [
     family: "harness",
     group: "22.4",
     entrypointIds: ["harness.subscription"],
-    capability: "the subscription fulfillment harness — boundary-marked, never a balance-exhaustion fallback (09.3/#289)",
+    capability:
+      "the subscription fulfillment harness — boundary-marked, never a balance-exhaustion fallback (09.3/#289)",
     constraints: [
       {
         kind: "no-bypass",
         fact: {
           claim: "the harness cannot become a balance-exhaustion fallback",
-          result: "subscription-harness-boundary: entitlements fail closed (no readable customer, no subscription facts); every spend path stays behind the reserve door",
+          result:
+            "subscription-harness-boundary: entitlements fail closed (no readable customer, no subscription facts); every spend path stays behind the reserve door",
         },
       },
       {
         kind: "usage-observable",
         fact: {
-          claim: "subscription facts are the harness's own; ownership is personal and isolated",
-          result: "subscription-ownership: another user cannot read, mutate or redirect grants/orders/callbacks (AC14's own matrix)",
+          claim:
+            "subscription facts are the harness's own; ownership is personal and isolated",
+          result:
+            "subscription-ownership: another user cannot read, mutate or redirect grants/orders/callbacks (AC14's own matrix)",
         },
       },
     ],
@@ -798,20 +884,34 @@ export function evidenceFingerprint(
  * named stale until the evidence is re-verified and the fingerprint re-recorded.
  */
 export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
-  "conformance.text": "fc2f3eb182b1ab61143e9d69fa38a802a153343854ec60627c603e44e5c2fed9",
-  "conformance.image": "558e65ddd4a8da160e570480e9f6add26430fd59b6e0f5ef69283f1a8f3b2290",
-  "conformance.audio": "5edc7e3c6adbe8cb82f8718b43088b40532a29408532b123efa447e20de30b78",
-  "conformance.runtime": "e25359e7be75fc014ca7b3fe6cecb1f00f43a4caa8c4bbd5914e6de821c6f675",
-  "conformance.embedding": "131a0d70bb8541692e1a549e8a990699cc24f9ec227b31dfd96837600126feb3",
-  "conformance.rerank": "2eb95fce142fb5b96cd634eee45a6d9b2ff4de62ad1072c740152d078aca4bc3",
-  "conformance.ocr": "036ebbcd5c2c3e9676d553ff1256a19a231424ed7be7b926ee57f3dcd5550ba1",
-  "conformance.realtime": "78ee8cbfc3d3eaffe87141e793bd5fa0916bd5fc3e8d59fbcba134e06e6d0fc7",
-  "conformance.async": "54c61e7db510c0847ce4a7a6440d62a61b6d3ec165e391c7ce0c0d2f69b7d6c3",
-  "conformance.batch": "9ee704e029e02a5d96e1a97002481a8bfe546a256b85a3c2107fd177a6284359",
-  "conformance.video": "250f8a395e81245446a107e06c613779cf642171e263c8eafb6e8f6312a99169",
-  "conformance.tool": "159486f55d743ceb99986deaac208b8d510f2aa87db83a2b514944e405d921de",
-  "conformance.evaluation": "2d8f8b96f7c091fc6f5a0d7dc6888ed424da6e664c9ca8a47ff8ac6f76e7a46f",
-  "conformance.harness": "f4726fe5bd740781bc45e797740aab1e4dc0747056f61f15d372def33588380d",
+  "conformance.text":
+    "fc2f3eb182b1ab61143e9d69fa38a802a153343854ec60627c603e44e5c2fed9",
+  "conformance.image":
+    "558e65ddd4a8da160e570480e9f6add26430fd59b6e0f5ef69283f1a8f3b2290",
+  "conformance.audio":
+    "5edc7e3c6adbe8cb82f8718b43088b40532a29408532b123efa447e20de30b78",
+  "conformance.runtime":
+    "e25359e7be75fc014ca7b3fe6cecb1f00f43a4caa8c4bbd5914e6de821c6f675",
+  "conformance.embedding":
+    "131a0d70bb8541692e1a549e8a990699cc24f9ec227b31dfd96837600126feb3",
+  "conformance.rerank":
+    "2eb95fce142fb5b96cd634eee45a6d9b2ff4de62ad1072c740152d078aca4bc3",
+  "conformance.ocr":
+    "036ebbcd5c2c3e9676d553ff1256a19a231424ed7be7b926ee57f3dcd5550ba1",
+  "conformance.realtime":
+    "78ee8cbfc3d3eaffe87141e793bd5fa0916bd5fc3e8d59fbcba134e06e6d0fc7",
+  "conformance.async":
+    "54c61e7db510c0847ce4a7a6440d62a61b6d3ec165e391c7ce0c0d2f69b7d6c3",
+  "conformance.batch":
+    "9ee704e029e02a5d96e1a97002481a8bfe546a256b85a3c2107fd177a6284359",
+  "conformance.video":
+    "250f8a395e81245446a107e06c613779cf642171e263c8eafb6e8f6312a99169",
+  "conformance.tool":
+    "159486f55d743ceb99986deaac208b8d510f2aa87db83a2b514944e405d921de",
+  "conformance.evaluation":
+    "2d8f8b96f7c091fc6f5a0d7dc6888ed424da6e664c9ca8a47ff8ac6f76e7a46f",
+  "conformance.harness":
+    "f4726fe5bd740781bc45e797740aab1e4dc0747056f61f15d372def33588380d",
 } as const;
 
 /** A record whose bound files changed (or vanished) since its fingerprint was taken. */
@@ -864,7 +964,9 @@ export function admittedEntrypointsWithoutEvidence(
 ): string[] {
   const covered = new Set(records.flatMap((record) => record.entrypointIds));
   return catalog
-    .filter((row) => row.admission.status === "admitted" && !covered.has(row.id))
+    .filter(
+      (row) => row.admission.status === "admitted" && !covered.has(row.id),
+    )
     .map((row) => row.id);
 }
 

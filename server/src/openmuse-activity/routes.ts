@@ -1,4 +1,4 @@
-import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
 import {

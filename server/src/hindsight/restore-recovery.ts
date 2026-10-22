@@ -34,17 +34,15 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { hindsightBackupRestores } from "../db/schema/hindsight-restore";
 import type { HindsightReplayEvidence } from "../db/schema/hindsight-restore";
+import { hindsightBackupRestores } from "../db/schema/hindsight-restore";
 
 /** One replay pass re-issues deletions in pages of this size, through to the ledger's end. */
 const REISSUE_PAGE = 100;
 
 /** The local half the replay re-applies; the revocation service (#390) owns it. */
 export interface RevocationReplayPort {
-  replayRevocations(input: {
-    tenantId?: string;
-  }): Promise<{
+  replayRevocations(input: { tenantId?: string }): Promise<{
     memoryRows: number;
     reappliedMemoryBlocks: number;
     authorizationTargets: number;

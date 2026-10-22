@@ -19,11 +19,11 @@ import {
   users,
 } from "../db/schema";
 import {
-  gatewayVersionFromStored,
-  storedGatewayEndpointState,
   type GatewayEndpointConfig,
   type GatewayEndpointSettings,
+  gatewayVersionFromStored,
   type StoredGatewayEndpoint,
+  storedGatewayEndpointState,
 } from "../gateway/endpoint-config";
 import type { CapabilityRow, Member } from "./capabilities";
 

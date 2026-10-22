@@ -3,10 +3,11 @@
  * to the gateway; this file only makes sure the row exists before the sandbox is called and is
  * finished after, whichever way the run went.
  */
-import { eq } from "drizzle-orm";
+
 import { randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { codeRuns, type CodeRunStatus } from "../db/schema/code-runs";
+import { type CodeRunStatus, codeRuns } from "../db/schema/code-runs";
 
 export function newCodeRunId(): string {
   return `cr-${randomBytes(12).toString("hex")}`;
@@ -33,15 +34,18 @@ export type CodeRunFinish = {
 export type CodeRunStore = {
   create(input: CodeRunCreate): Promise<void>;
   finish(id: string, patch: CodeRunFinish): Promise<void>;
-  get(id: string): Promise<{
-    id: string;
-    botId: string;
-    status: CodeRunStatus;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    error: string | null;
-    finishedAt: Date | null;
-  } | undefined>;
+  get(id: string): Promise<
+    | {
+        id: string;
+        botId: string;
+        status: CodeRunStatus;
+        inputTokens: number | null;
+        outputTokens: number | null;
+        error: string | null;
+        finishedAt: Date | null;
+      }
+    | undefined
+  >;
 };
 
 export function createCodeRunStore(db: Database): CodeRunStore {

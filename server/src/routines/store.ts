@@ -236,6 +236,20 @@ export type RoutineStore = {
   routineForFiring(
     id: string,
   ): Promise<{ id: string; enabled: boolean } | null>;
+  /**
+   * ME09 (#481): the scheduling record a governed firing re-reads at the
+   * moment of running — the authority for WHAT the firing is (thread, Bot,
+   * instruction) and WHETHER it still stands. Not owner-scoped, like every
+   * other sweep-half read: the id comes from the firing's own run row, never
+   * from a person. Null means the routine is gone.
+   */
+  recordForFiring(id: string): Promise<{
+    ownerUserId: string;
+    agentId: string;
+    channelId: string;
+    instruction: string;
+    enabled: boolean;
+  } | null>;
   /** Close a run row with its outcome, and the capped error when there was one. */
   finishRun(
     runId: string,
@@ -852,6 +866,29 @@ export function createRoutineStore(database: Database): RoutineStore {
       // comes from a work item's own payload, not from a person, so there is no owner to check.
       const [row] = await database
         .select({ id: routines.id, enabled: routines.enabled })
+        .from(routines)
+        .where(eq(routines.id, id))
+        .limit(1);
+      return row ?? null;
+    },
+
+    async recordForFiring(id) {
+      // ME09: the governed firing's authority read — the same non-owner-scoped
+      // sweep-half discipline as `routineForFiring`, with the fields the
+      // governed turn re-derives everything else from. The THREAD is not a
+      // routines column: the row names a channel, and the owner's thread for
+      // that channel is resolved by the caller's channel store (the same
+      // resolution the legacy runner's `runContext` path applies), so the
+      // governed turn and the legacy turn answer "which conversation" from
+      // one authority.
+      const [row] = await database
+        .select({
+          ownerUserId: routines.ownerUserId,
+          agentId: routines.agentId,
+          channelId: routines.channelId,
+          instruction: routines.instruction,
+          enabled: routines.enabled,
+        })
         .from(routines)
         .where(eq(routines.id, id))
         .limit(1);

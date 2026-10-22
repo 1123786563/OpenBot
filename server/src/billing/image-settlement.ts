@@ -4,21 +4,24 @@ import { creditReservations } from "../db/schema/credit-reservations";
 import type { ConversionRate } from "../gateway/conversion-rate";
 import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
 import {
+  CreditReservationConflictError,
+  createCreditWriter,
+} from "./credits-writer";
+import {
   imageGenerationCeilingDims,
   imageTierPriceTableFromSnapshot,
   resolveImageTierPrice,
 } from "./image-generation-pricing";
 import {
-  CreditReservationConflictError,
-  createCreditWriter,
-} from "./credits-writer";
+  attemptIdForReservation,
+  reservationIdFromAttemptId,
+} from "./reservation-status";
 import {
   computeReservationCeiling,
   lockedBasisOfReservation,
-  resolveLockedReservationBasis,
   type ReservationBoundQuantities,
+  resolveLockedReservationBasis,
 } from "./reserve-bound";
-import { attemptIdForReservation, reservationIdFromAttemptId } from "./reservation-status";
 
 /**
  * The image-generation settlement path (Bifrost 12.2, #303): what an images dispatch owes
@@ -170,7 +173,10 @@ type RequestValidation =
 /** Pure shape validation — before any database contact, a malformed request reads nothing. */
 function validateRequest(input: unknown): RequestValidation {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "body" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "body" }),
+    };
   }
   const raw = input as Record<string, unknown>;
 
@@ -253,7 +259,10 @@ function validateRequest(input: unknown): RequestValidation {
 
   const result = raw.result as Record<string, unknown> | null | undefined;
   if (result === null || typeof result !== "object") {
-    return { ok: false, outcome: refused("request_invalid", { field: "result" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "result" }),
+    };
   }
   if (result.outcome === "generated") {
     const generated = result.count;
@@ -271,7 +280,10 @@ function validateRequest(input: unknown): RequestValidation {
         }),
       };
     }
-    const evidence = result.evidence as Record<string, unknown> | null | undefined;
+    const evidence = result.evidence as
+      | Record<string, unknown>
+      | null
+      | undefined;
     if (
       evidence === null ||
       typeof evidence !== "object" ||
@@ -403,7 +415,10 @@ export function createImageSettlementService(
         const generated = resolved.dims.image_output;
         return refused("price_unknown", {
           dimension: "image_output",
-          reason: generated.status === "unknown" ? generated.reason : "price_dim_no_source",
+          reason:
+            generated.status === "unknown"
+              ? generated.reason
+              : "price_dim_no_source",
           snapshotVersion: basis.snapshotVersion,
           stage: "tier_resolution",
         });

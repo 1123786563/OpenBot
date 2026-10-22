@@ -5,7 +5,7 @@
 // own store — the same discipline, applied to the webview's localStorage, whose partitions
 // nothing had drawn before.
 
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { within } from "@testing-library/react";

@@ -793,8 +793,7 @@ export function createObservationRetentionWorker(
        * what the retry derives from, so a failed stop is retried and a
        * completed stop is never replayed.
        */
-      const stopWork =
-        record.kind === "run" && record.workStoppedAt === null;
+      const stopWork = record.kind === "run" && record.workStoppedAt === null;
       await deps.invalidateReads?.({
         scopeKey: record.scopeKey,
         kind: record.kind,

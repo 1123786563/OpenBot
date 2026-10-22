@@ -2,11 +2,18 @@ import { and, eq, ne } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
-import { creditRecoveryItems, creditRecoveryQueries, creditReservations } from "../db/schema/credit-reservations";
+import {
+  creditRecoveryItems,
+  creditRecoveryQueries,
+  creditReservations,
+} from "../db/schema/credit-reservations";
 import type { ConversionRate } from "../gateway/conversion-rate";
 import { PRICE_DIMENSIONS } from "../gateway/price-snapshot";
-import { CreditReservationConflictError, createCreditWriter } from "./credits-writer";
 import { createCreditSettleService } from "./credit-settle";
+import {
+  CreditReservationConflictError,
+  createCreditWriter,
+} from "./credits-writer";
 
 /**
  * The evidenced disposal (Bifrost 08.9, #284): the administrator's settle-or-release
@@ -178,7 +185,9 @@ function refused(
   return { status: "refused", reasonCode, detail };
 }
 
-export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencies) {
+export function createRecoveryDisposal(
+  dependencies: RecoveryDisposalDependencies,
+) {
   const { database } = dependencies;
   const writer = createCreditWriter(database);
   const settleService = createCreditSettleService({
@@ -189,9 +198,7 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
   });
   const now = () => dependencies.now?.() ?? new Date();
 
-  async function dispose(
-    command: unknown,
-  ): Promise<RecoveryDisposalOutcome> {
+  async function dispose(command: unknown): Promise<RecoveryDisposalOutcome> {
     // ---- The shape boundary: every field present and identifier-shaped, the action in
     // the closed vocabulary, the version a whole positive number. A refusal here names
     // the field and nothing else — never a parsed fragment.
@@ -200,7 +207,11 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
     }
     const body = command as Record<string, unknown>;
     const action = body.action;
-    if (action !== "settle" && action !== "release" && action !== "compensate") {
+    if (
+      action !== "settle" &&
+      action !== "release" &&
+      action !== "compensate"
+    ) {
       return refused("request_invalid", { field: "action" });
     }
     if (!isIdentifier(body.recoveryItemId, IDENTITY_MAX)) {
@@ -308,10 +319,7 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
           reason: "a settle stands on settled_evidence only",
         });
       }
-      if (
-        evidenceRow.usageInput === null ||
-        evidenceRow.usageOutput === null
-      ) {
+      if (evidenceRow.usageInput === null || evidenceRow.usageOutput === null) {
         return refused("evidence_mismatch", {
           queryId: evidenceRow.id,
           reason: "the settled evidence carries no usage to settle from",
@@ -494,7 +502,8 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
       item.reservationId,
       { absorbedCredits: compensatedAfter.released ?? 0 },
     );
-    if (compensationResolution.status === "refused") return compensationResolution;
+    if (compensationResolution.status === "refused")
+      return compensationResolution;
     return {
       status: "disposed",
       action: "compensate",
@@ -606,7 +615,10 @@ export function createRecoveryDisposal(dependencies: RecoveryDisposalDependencie
               },
       });
     }
-    return { status: "resolved", version: won[0]?.version ?? expectedVersion + 1 };
+    return {
+      status: "resolved",
+      version: won[0]?.version ?? expectedVersion + 1,
+    };
   }
 
   return { dispose };

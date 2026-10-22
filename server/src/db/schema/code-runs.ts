@@ -29,7 +29,9 @@ export const codeRuns = pgTable(
     outputTokens: integer("output_tokens"),
     artifactPaths: text("artifact_paths"),
     error: text("error"),
-    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (table) => [index("code_runs_bot_idx").on(table.botId)],

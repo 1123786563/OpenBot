@@ -4,7 +4,7 @@ import type { Database } from "../db/client";
 import { accessGrants } from "../db/schema";
 import { creditReservations } from "../db/schema/credit-reservations";
 import type { CreditServiceVariables } from "./credit-service-auth";
-import { payerKey, type PayerRef } from "./payer";
+import { type PayerRef, payerKey } from "./payer";
 import { COMPANY_SCOPE_IDENTITY_FIELDS } from "./personal-key-isolation";
 
 /**
@@ -182,7 +182,10 @@ function isIdentifier(value: unknown, maxLength: number): value is string {
 }
 
 /** The one displayable sentence per refusal code on this surface. */
-const STATUS_REFUSAL_SENTENCES: Record<"request_invalid" | "payer_conflict", string> = {
+const STATUS_REFUSAL_SENTENCES: Record<
+  "request_invalid" | "payer_conflict",
+  string
+> = {
   request_invalid: "The status request is not a valid status request.",
   payer_conflict:
     "The request names a payment account; the account is resolved server-side from the scope grant and self-reported accounts are refused.",
@@ -191,7 +194,11 @@ const STATUS_REFUSAL_SENTENCES: Record<"request_invalid" | "payer_conflict", str
 /** Validation's discriminated answer: a valid request, or the refusal that replaces it. */
 type StatusRequestValidation =
   | { ok: true; request: ReservationStatusRequest }
-  | { ok: false; reasonCode: "request_invalid" | "payer_conflict"; detail: Record<string, unknown> };
+  | {
+      ok: false;
+      reasonCode: "request_invalid" | "payer_conflict";
+      detail: Record<string, unknown>;
+    };
 
 /**
  * Pure shape validation — run BEFORE any database contact, so a malformed request is a
@@ -199,7 +206,11 @@ type StatusRequestValidation =
  */
 function validateStatusRequest(input: unknown): StatusRequestValidation {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, reasonCode: "request_invalid", detail: { field: "body" } };
+    return {
+      ok: false,
+      reasonCode: "request_invalid",
+      detail: { field: "body" },
+    };
   }
   const raw = input as Record<string, unknown>;
 

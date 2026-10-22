@@ -3,16 +3,19 @@ import type { Database } from "../db/client";
 import { creditReservations } from "../db/schema/credit-reservations";
 import type { ConversionRate } from "../gateway/conversion-rate";
 import { CREDIT_SCALE } from "./credits";
-import { parseExactDecimal } from "./speech-pricing";
 import {
   CreditReservationConflictError,
   createCreditWriter,
 } from "./credits-writer";
 import {
+  attemptIdForReservation,
+  reservationIdFromAttemptId,
+} from "./reservation-status";
+import {
   lockedBasisOfReservation,
   resolveLockedReservationBasis,
 } from "./reserve-bound";
-import { attemptIdForReservation, reservationIdFromAttemptId } from "./reservation-status";
+import { parseExactDecimal } from "./speech-pricing";
 
 /**
  * The speech-generation settlement path (Bifrost 13.2, #307): what a synthesis dispatch owes
@@ -199,7 +202,10 @@ type RequestValidation =
 /** Pure shape validation — before any database contact, a malformed request reads nothing. */
 function validateRequest(input: unknown): RequestValidation {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "body" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "body" }),
+    };
   }
   const raw = input as Record<string, unknown>;
 
@@ -248,7 +254,9 @@ function validateRequest(input: unknown): RequestValidation {
   ) {
     return {
       ok: false,
-      outcome: refused("request_invalid", { field: "requested.inputCharacters" }),
+      outcome: refused("request_invalid", {
+        field: "requested.inputCharacters",
+      }),
     };
   }
   const voiceTier =
@@ -311,7 +319,10 @@ function validateRequest(input: unknown): RequestValidation {
 
   const result = raw.result as Record<string, unknown> | null | undefined;
   if (result === null || typeof result !== "object") {
-    return { ok: false, outcome: refused("request_invalid", { field: "result" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "result" }),
+    };
   }
   if (result.outcome === "synthesized") {
     const actualSeconds = result.actualSeconds;
@@ -337,13 +348,17 @@ function validateRequest(input: unknown): RequestValidation {
         }),
       };
     }
-    const evidence = result.evidence as Record<string, unknown> | null | undefined;
+    const evidence = result.evidence as
+      | Record<string, unknown>
+      | null
+      | undefined;
     if (
       evidence === null ||
       typeof evidence !== "object" ||
       (evidence.kind !== "provider_usage_report" &&
         evidence.kind !== "artifact_metadata") ||
-      (evidence.reference !== undefined && !isIdentifier(evidence.reference, 512))
+      (evidence.reference !== undefined &&
+        !isIdentifier(evidence.reference, 512))
     ) {
       return {
         ok: false,
@@ -407,7 +422,10 @@ function gcd(a: bigint, b: bigint): bigint {
   return x;
 }
 
-function reduce(numerator: bigint, denominator: bigint): {
+function reduce(
+  numerator: bigint,
+  denominator: bigint,
+): {
   numerator: bigint;
   denominator: bigint;
 } {
@@ -502,7 +520,8 @@ export function createSpeechSettlementService(
         return refused("price_basis_not_found", {
           stage: "tier_not_corroborated",
           dimension: "audio_output",
-          lockedAmount: lockedPerSecond.status === "known" ? lockedPerSecond.amount : null,
+          lockedAmount:
+            lockedPerSecond.status === "known" ? lockedPerSecond.amount : null,
           carriedAmount: req.priced.perOutputSecondUsd,
         });
       }
@@ -526,10 +545,7 @@ export function createSpeechSettlementService(
           snapshotVersion: basis.snapshotVersion,
         });
       }
-      if (
-        resolved.rate.numerator <= 0n ||
-        resolved.rate.denominator <= 0n
-      ) {
+      if (resolved.rate.numerator <= 0n || resolved.rate.denominator <= 0n) {
         return refused("price_basis_not_found", {
           rateVersion: basis.rateVersion,
           reason: "rate_invalid",

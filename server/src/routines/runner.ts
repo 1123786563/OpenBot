@@ -30,7 +30,12 @@ import type { ApprovalContinuation } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
 import type { ChannelStore } from "../channels/routes";
 import { HeadlessToolSuspension } from "../computer/headless-tools";
+import {
+  GOVERNED_HEADLESS_REFUSALS,
+  GovernedHeadlessRefusal,
+} from "../mastra/headless";
 import type { RoutineStore } from "./store";
+
 const log = getLogger("server");
 
 /** Everything a headless turn needs, injectable so tests never dial a model. */
@@ -59,7 +64,16 @@ export type TurnRunner = (input: {
 /** A display component the Bot drew in a turn and the server allowed, with the props it drew. */
 export type DrawnComponent = { name: string; args: Record<string, unknown> };
 
-export type RoutineRunner = { run(routineRunId: string): Promise<void> };
+export type RoutineRunner = {
+  /**
+   * ME09 (#481): the second parameter is the firing's durable identity, when
+   * the dispatcher carries one (the sweep's offer key — routine id plus the
+   * due minute). It is what makes a queue redelivery converge on the SAME
+   * advance intent instead of minting a second run; a manual click passes
+   * nothing and is its own intent.
+   */
+  run(routineRunId: string, options?: { firingKey?: string }): Promise<void>;
+};
 
 /**
  * How much of a failure's reason the channel notification carries.
@@ -95,7 +109,10 @@ export function createRoutineRunner(options: {
 }): RoutineRunner {
   const { routineStore, channelStore, runTurn } = options;
 
-  async function runOnce(routineRunId: string): Promise<void> {
+  async function runOnce(
+    routineRunId: string,
+    firingKey?: string,
+  ): Promise<void> {
     const context = await routineStore.runContext(routineRunId);
     /*
      * A deleted routine's queued run is nobody's problem. The routine is gone, its runs cascaded
@@ -179,6 +196,10 @@ export function createRoutineRunner(options: {
         agentId,
         threadId: channel.threadId,
         instruction,
+        // ME09: the firing's durable identity (the sweep's offer key when
+        // the dispatcher carried one) — the governed turn derives its ONE
+        // advance-intent key from it, so a redelivery converges.
+        ...(firingKey ? { runId: firingKey } : {}),
       }));
     } catch (error) {
       if (error instanceof HeadlessToolSuspension) {
@@ -189,6 +210,19 @@ export function createRoutineRunner(options: {
           error.waiting,
         );
         await say(error.message);
+        return;
+      }
+      /*
+       * A DUPLICATE DELIVERY IS NOT A FAILURE. A redelivered firing whose
+       * advance intent the first delivery already claimed is converged away,
+       * not counted: the routine answered once, and the fatigue rule must
+       * not read a queue's retry as the routine failing.
+       */
+      if (
+        error instanceof GovernedHeadlessRefusal &&
+        error.code === GOVERNED_HEADLESS_REFUSALS.intentAlreadyAdvanced
+      ) {
+        await routineStore.finishRun(routineRunId, "skipped", error.message);
         return;
       }
       const reason = reasonOf(error);
@@ -240,7 +274,7 @@ export function createRoutineRunner(options: {
   }
 
   return {
-    async run(routineRunId) {
+    async run(routineRunId, options) {
       /*
        * `run` never throws. Every outcome a routine can have — a gone channel, a refused model, a
        * routine deleted underneath the firing — is recorded on the run row above rather than raised
@@ -249,7 +283,7 @@ export function createRoutineRunner(options: {
        * alternative is a firing that vanishes without a line anywhere.
        */
       try {
-        await runOnce(routineRunId);
+        await runOnce(routineRunId, options?.firingKey);
       } catch (error) {
         log.error(
           {

@@ -9,7 +9,7 @@
  * throws or answers 5xx; a thrown error still propagates, so Hono's own error
  * handling sees exactly what it would have seen unwrapped.
  */
-import { context, trace, SpanStatusCode } from "@opentelemetry/api";
+import { context, SpanStatusCode, trace } from "@opentelemetry/api";
 import type { MiddlewareHandler } from "hono";
 import { extractRequestContext } from "../../../shared/trace";
 import type { RequestTrackingVariables } from "./request-tracking";

@@ -1,0 +1,47 @@
+{
+  "feature": "mastra-agent-execution",
+  "root_issue": 472,
+  "children": "473-488 (ME01-ME16)",
+  "planning_base": "1dc117b65dbb958e73d6c1a0a4a6ee6fa0f48717",
+  "execution": {
+    "path": "/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec",
+    "branch": "1123786563/mastra-exec",
+    "base": "bf64d0f2772766a7c0cdbc3e9831c9024400e165",
+    "base_ref": "main",
+    "orca_worktree_id": "d6edf033-748a-4549-ae5a-e9efd34cef91::/Users/wuyongjun/orca/workspaces/OpenBot/mastra-exec",
+    "linked_issue": 472,
+    "created_at": "2026-10-19T15:06:39Z",
+    "commit_authorization": false,
+    "checkpoint_strategy": "full uncommitted checkpoint (HEAD + staged/unstaged diff + new files + SHA256 + commands/reports)"
+  },
+  "transferred_documents_sha256": {
+    "docs/specs/2026-10-19-mastra-agent-execution-migration-design.md": "d6145088de1dc82d2761b0c0dcf724d86210f26bb5abae4a0858dd6a0140726b",
+    "docs/adr/0010-mastra-execution-openbot-governance.md": "06b6e80d997851994bec854fbe55c88412b018f046f4f313e881ca2ab119abf0",
+    "docs/tickets/mastra-agent-execution/tickets.json": "f97f998d88b0001a3d3b22ee6f77b42d6a08b543dbfee4fa6a9ed9bd175520cd",
+    "docs/tickets/mastra-agent-execution/issues/me01.md": "58c925d9092f71040d1164efad56ed00578a5d22be1e4290c10f368e17236596",
+    "docs/tickets/mastra-agent-execution/issues/me16.md": "585bfd5a84d0fa748940b3ad2db9951525243d9d83d821a2243c6d5ca7da10d6"
+  },
+  "transferred_documents_verified": true,
+  "pinned_package_versions": {
+    "@mastra/core": "1.64.0",
+    "@mastra/client-js": "1.43.0",
+    "@mastra/memory": "1.20.0",
+    "@mastra/pg": "1.25.0",
+    "@mastra/hono": "1.5.0",
+    "@ag-ui/mastra": "1.1.6",
+    "@ag-ui/client": "1.0.1",
+    "ai": "6.0.264",
+    "zod": "^4.4.3"
+  },
+  "test_environment": {
+    "runner": "e2e (ADR 0008), native + driven",
+    "test_postgres_container": "openbot-test-pg (host port 5433)",
+    "env_file": "removed before implementation: this run must not read the shared development environment. Database fixtures create their own disposable database via TEST_DATABASE_URL only",
+    "shared_db_never_used": true,
+    "unverified_if_missing": "database-backed resume/RLS/CAS evidence"
+  },
+  "external_dependencies": {
+    "395": { "affects": ["ME07"], "status_at_read": "OPEN; implementation not audited" }
+  },
+  "protected_work": "main worktree uncommitted planning docs and unrelated task changes were not modified; they were copied and hash-verified into this worktree"
+}

@@ -5,6 +5,10 @@ import type {
   ChannelActivity,
   ChannelStore,
 } from "../src/channels/routes";
+import {
+  GOVERNED_HEADLESS_REFUSALS,
+  GovernedHeadlessRefusal,
+} from "../src/mastra/headless";
 import { createRoutineRunner, type TurnRunner } from "../src/routines/runner";
 import type {
   RoutineRunContext,
@@ -74,6 +78,9 @@ function harness(options: {
     enabled: [],
     turns: [],
   };
+  // How often the fatigue rule read the consecutive-failure counter — the
+  // duplicate-delivery mapping must leave it untouched.
+  let fatigueReads = 0;
 
   const routineStore: RoutineStore = {
     create: () => unreachable("create"),
@@ -92,6 +99,7 @@ function harness(options: {
       recorded.finished.push({ runId, status, error });
     },
     async consecutiveFailures(routineId) {
+      fatigueReads += 1;
       expect(routineId).toBe(CONTEXT.routineId);
       // Read AFTER the failure is on the row, or the tenth failure reads as the ninth: hoisting
       // this read above `finishRun` in the runner would keep every other assertion here green.
@@ -133,6 +141,7 @@ function harness(options: {
 
   return {
     recorded,
+    fatigueReads: () => fatigueReads,
     runner: createRoutineRunner({ routineStore, channelStore, runTurn }),
   };
 }
@@ -244,6 +253,38 @@ describe("createRoutineRunner", () => {
     expect(recorded.finished).toEqual([
       { runId: RUN_ID, status: "skipped", error: "the channel is gone" },
     ]);
+  });
+
+  test("records a duplicate-delivery convergence as skipped without touching the fatigue rule", async () => {
+    // ME09 fix round 1, behavioral: the governed turn's redelivery refusal
+    // (ROUTINE_INTENT_ALREADY_ADVANCED) is mapped to a skipped row — and the
+    // fatigue counter is never read, because a queue's retry is not the
+    // routine failing. This is the real mapping test the headless contract
+    // test points at.
+    const { runner, recorded, fatigueReads } = harness({
+      runTurn: async () => {
+        throw new GovernedHeadlessRefusal(
+          GOVERNED_HEADLESS_REFUSALS.intentAlreadyAdvanced,
+          "This firing was already answered once.",
+        );
+      },
+    });
+
+    await runner.run(RUN_ID);
+
+    expect(recorded.finished).toEqual([
+      {
+        runId: RUN_ID,
+        status: "skipped",
+        error: "This firing was already answered once.",
+      },
+    ]);
+    // No channel line and no disabling: the routine said nothing new, and
+    // the fatigue rule (reads, first-failure message, ten-strike switch-off)
+    // never ran.
+    expect(recorded.activity).toEqual([]);
+    expect(recorded.enabled).toEqual([]);
+    expect(fatigueReads()).toBe(0);
   });
 
   test("does nothing at all for a run row that is gone", async () => {

@@ -59,19 +59,14 @@ export function serverBacksConnectorSkill(
  * own rule).
  */
 export function renderConnectorSkillTemplate(template: string): string {
-  const rendered = template.replace(
-    "{{ACTION_AVAILABILITY_SECTION}}\n\n",
-    "",
-  );
+  const rendered = template.replace("{{ACTION_AVAILABILITY_SECTION}}\n\n", "");
   return assertNoUnresolvedMarkup(rendered);
 }
 
 /** onyx rendering.py's rule: unresolved markup never ships to the agent. */
 function assertNoUnresolvedMarkup(rendered: string): string {
   if (rendered.includes("{{")) {
-    const offending = rendered
-      .split("\n")
-      .find((line) => line.includes("{{"));
+    const offending = rendered.split("\n").find((line) => line.includes("{{"));
     throw new Error(`Unresolved skill-template markup: ${offending ?? "}}"}`);
   }
   return rendered;
@@ -104,9 +99,7 @@ async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
       if (entry.isDirectory()) {
         await walk(child, rel);
       } else if (entry.isFile()) {
-        const bytes = new Uint8Array(
-          await readFile(new URL(entry.name, dir)),
-        );
+        const bytes = new Uint8Array(await readFile(new URL(entry.name, dir)));
         if (rel.endsWith(TEMPLATE_SUFFIX)) {
           const rendered = renderConnectorSkillTemplate(
             new TextDecoder().decode(bytes),

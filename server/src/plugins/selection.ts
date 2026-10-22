@@ -1,9 +1,9 @@
-import { textOf } from "../agents/message-text";
 import {
   type ResearchRole,
   researchRoleOf,
   researchRoleOfTool,
 } from "../../../shared/research";
+import { textOf } from "../agents/message-text";
 /**
  * Choosing which of a Bot's tools to put in front of the model, one run at a time.
  *

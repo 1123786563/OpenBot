@@ -7,9 +7,7 @@ import {
   PRICE_DIMENSIONS,
   type PriceDimension,
 } from "../gateway/price-snapshot";
-import {
-  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS,
-} from "./credit-reserve";
+import { RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS } from "./credit-reserve";
 import type { CreditServiceVariables } from "./credit-service-auth";
 import {
   CreditReservationConflictError,
@@ -20,11 +18,11 @@ import {
   reservationIdFromAttemptId,
 } from "./reservation-status";
 import {
+  computeDimensionScaledUnits,
   computeReservationCeiling,
   lockedBasisOfReservation,
-  resolveLockedReservationBasis,
   type ReservationBoundQuantities,
-  computeDimensionScaledUnits,
+  resolveLockedReservationBasis,
 } from "./reserve-bound";
 
 /**
@@ -76,7 +74,10 @@ export type CreditSettleRefusalReasonCode =
   (typeof SETTLE_REFUSAL_REASONS)[number];
 
 /** One line, shown on every surface, per refusal code — the reserve surface's discipline. */
-export const SETTLE_REFUSAL_SENTENCES: Record<CreditSettleRefusalReasonCode, string> = {
+export const SETTLE_REFUSAL_SENTENCES: Record<
+  CreditSettleRefusalReasonCode,
+  string
+> = {
   request_invalid: "The settle request is not a valid settle request.",
   payer_conflict:
     "The request names a payment account; the account is fixed by the reservation and self-reported accounts are refused.",
@@ -100,7 +101,8 @@ export const SETTLE_USAGE_EVIDENCE_KINDS = [
   "provider_usage_report",
 ] as const;
 
-export type SettleUsageEvidenceKind = (typeof SETTLE_USAGE_EVIDENCE_KINDS)[number];
+export type SettleUsageEvidenceKind =
+  (typeof SETTLE_USAGE_EVIDENCE_KINDS)[number];
 
 /** What the actual usage stands on. `reference` is the display id the ledger row carries. */
 export type SettleUsageEvidence = {
@@ -217,7 +219,10 @@ function refused(
  */
 function validateRequest(input: unknown): RequestValidation {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, outcome: refused("request_invalid", { field: "body" }) };
+    return {
+      ok: false,
+      outcome: refused("request_invalid", { field: "body" }),
+    };
   }
   const raw = input as Record<string, unknown>;
 
@@ -259,7 +264,10 @@ function validateRequest(input: unknown): RequestValidation {
       outcome: refused("request_invalid", { field: "reservationId" }),
     };
   }
-  if (hasAttemptId && reservationIdFromAttemptId(raw.attemptId as string) === null) {
+  if (
+    hasAttemptId &&
+    reservationIdFromAttemptId(raw.attemptId as string) === null
+  ) {
     return {
       ok: false,
       outcome: refused("request_invalid", { field: "attemptId" }),
@@ -304,7 +312,10 @@ function validateRequest(input: unknown): RequestValidation {
     ) {
       return {
         ok: false,
-        outcome: refused("request_invalid", { field: "actualUsage", dimension }),
+        outcome: refused("request_invalid", {
+          field: "actualUsage",
+          dimension,
+        }),
       };
     }
     actualUsage[dimension] = quantity;
@@ -340,7 +351,10 @@ function validateRequest(input: unknown): RequestValidation {
   ) {
     return {
       ok: false,
-      outcome: refused("request_invalid", { field: "evidence", reason: "kind" }),
+      outcome: refused("request_invalid", {
+        field: "evidence",
+        reason: "kind",
+      }),
     };
   }
   if (
@@ -407,7 +421,8 @@ export function createCreditSettleService(
     async settle(request: unknown): Promise<CreditSettleOutcome> {
       const validated = validateRequest(request);
       if (!validated.ok) return validated.outcome;
-      const { reservationId: namedReservationId, attemptId } = validated.request;
+      const { reservationId: namedReservationId, attemptId } =
+        validated.request;
       const reservationId =
         namedReservationId ?? reservationIdFromAttemptId(attemptId ?? "");
       if (reservationId === null) {

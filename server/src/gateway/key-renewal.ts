@@ -10,34 +10,32 @@ import {
 import type { BotServiceIdentity } from "../bot-services/types";
 import type { Database } from "../db/client";
 import { accessGrants, gatewayVirtualKeys } from "../db/schema";
-import type { ModelRef } from "./catalog";
-import {
-  createCatalogFreshnessGate,
-  type CatalogFreshnessVerdict,
-} from "./catalog-freshness";
-import {
-  scrubErrorOfCredentialSecret,
-} from "./credential-bundle";
-import {
-  type GatewayCustomerProvisionResult,
-  provisionCustomer as provisionCustomerForDeployment,
-} from "./customer";
 import {
   GatewayAdminCredentialNotConfiguredError,
   gatewayAdminCredentialControls,
 } from "./admin-credential";
-import { gatewayEndpointControls } from "./endpoint-config";
+import type { ModelRef } from "./catalog";
 import {
-  createGatewayVirtualKeyClient,
-  gatewayVirtualKeyName,
-  type GatewayKeyRecord,
-  type GatewayVirtualKeyClient,
-} from "./key-issuance";
+  type CatalogFreshnessVerdict,
+  createCatalogFreshnessGate,
+} from "./catalog-freshness";
+import { scrubErrorOfCredentialSecret } from "./credential-bundle";
+import {
+  type GatewayCustomerProvisionResult,
+  provisionCustomer as provisionCustomerForDeployment,
+} from "./customer";
+import { gatewayEndpointControls } from "./endpoint-config";
+import { outstandingGatewayKeyDriftReasons } from "./key-drift";
 import {
   resolveVirtualKeyTtlMinutes,
   virtualKeyTtlMinutesProblem,
 } from "./key-expiry";
-import { outstandingGatewayKeyDriftReasons } from "./key-drift";
+import {
+  createGatewayVirtualKeyClient,
+  type GatewayKeyRecord,
+  type GatewayVirtualKeyClient,
+  gatewayVirtualKeyName,
+} from "./key-issuance";
 
 /*
  * The short-lived key's RENEWAL (Bifrost 05.6, AC08/Q13/Q18): while the authorization holds,
@@ -288,7 +286,9 @@ export function createGatewayKeyRenewalService(
     // version counter's unique index is the backstop. The term is measured from ONE clock
     // reading, shared by the remote key, the local record, the answer and the audit.
     const renewedAt = deps.now?.() ?? defaultNow();
-    const expiresAt = new Date(renewedAt.getTime() + deps.keyTtlMinutes * 60_000);
+    const expiresAt = new Date(
+      renewedAt.getTime() + deps.keyTtlMinutes * 60_000,
+    );
     const renewed = await deps.database.transaction(async (tx) => {
       const [row] = await tx
         .select()
@@ -693,10 +693,9 @@ export function createDeploymentKeyRenewalService(options: {
     assertCatalogFresh: (modelRef, now) =>
       // The freshness gate over the shared database, the deployment's cap, the app clock —
       // the exact verdict 06.x's admission will read. Nothing is cached.
-      createCatalogFreshnessGate({ database: options.database }).assertCatalogFresh(
-        modelRef,
-        now,
-      ),
+      createCatalogFreshnessGate({
+        database: options.database,
+      }).assertCatalogFresh(modelRef, now),
     createClient: createGatewayVirtualKeyClient({
       readGatewayEndpoint: readEndpoint,
       resolveGatewayAdminCredential: resolveCredential,

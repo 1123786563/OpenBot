@@ -15,6 +15,7 @@ import {
   type SignInRequestView,
   type SignInStatus,
 } from "./types";
+
 const log = getLogger("server");
 
 /**

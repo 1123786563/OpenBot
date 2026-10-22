@@ -17,8 +17,8 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import type { CraftApprovalSignals } from "./approval-signals";
-import type { CraftConnectAppSignals } from "./connect-app";
 import type { CraftConfig } from "./config";
+import type { CraftConnectAppSignals } from "./connect-app";
 import { isBuildPacket } from "./events/packets";
 import { isKeepalive, isPromptResponse, isSandboxError } from "./events/types";
 import type { CraftSessionManager } from "./manager";
@@ -193,9 +193,9 @@ export function createTurnRoutes(
               // tools config), so the drain is wired whenever the KV is.
               connectAppAnnounceDrain: deps.connectAppSignals
                 ? () =>
-                    (deps.connectAppSignals as CraftConnectAppSignals).drainAnnouncements(
-                      sessionId,
-                    )
+                    (
+                      deps.connectAppSignals as CraftConnectAppSignals
+                    ).drainAnnouncements(sessionId)
                 : null,
             });
             for await (const event of events) {

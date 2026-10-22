@@ -5,9 +5,9 @@ import type { OpenMuseGoogleOAuth } from "../openmuse-connectors/google-oauth";
 import { OpenMuseVendorUnavailableError } from "../openmuse-connectors/google-oauth";
 import { GCAL_GET_DIAL_ACTION_ID } from "./calendar-update-executor";
 import {
-  readCurrentEtag,
   type ReviewedActionExecution,
   type ReviewedActionExecutor,
+  readCurrentEtag,
   settleDialFailure,
   vendorDetailOf,
 } from "./executor";

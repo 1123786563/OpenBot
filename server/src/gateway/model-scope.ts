@@ -31,23 +31,23 @@ import { and, eq } from "drizzle-orm";
 import type { Logger } from "../../../shared/logger";
 import { getLogger } from "../../../shared/logger";
 import { enterpriseControls } from "../admin/controls";
+import type { AuditStore } from "../audit";
 import type { Database } from "../db/client";
 import { gatewayModelOpenScopes } from "../db/schema";
+import type { GatewayCatalogStore } from "./catalog";
 import {
   type CatalogCapabilitySource,
   type CatalogStoredRef,
+  createEnterpriseGatewayCatalogStore,
+  MODEL_CAPABILITIES,
   type ModelCapability,
   type ModelRef,
-  MODEL_CAPABILITIES,
-  createEnterpriseGatewayCatalogStore,
   modelRefKey,
 } from "./catalog";
 import {
   createEnterpriseGatewayPriceSnapshotStore,
   type GatewayPriceSnapshotStore,
 } from "./price-snapshot";
-import type { AuditStore } from "../audit";
-import type { GatewayCatalogStore } from "./catalog";
 
 /** The two states an administrator's action can leave a ref in. */
 export const MODEL_SCOPE_STATES = ["open", "closed"] as const;
@@ -175,7 +175,9 @@ export function createEnterpriseGatewayModelScopeStore(
         );
       return rows
         .map(scopeRecordFromRow)
-        .filter((record): record is ModelOpenScopeRecord => record !== undefined);
+        .filter(
+          (record): record is ModelOpenScopeRecord => record !== undefined,
+        );
     },
 
     async setScope({ ref, state, reason, changedBy, changedAt }) {

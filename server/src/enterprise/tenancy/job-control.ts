@@ -43,14 +43,14 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import {
+  enterpriseMemberships,
+  enterpriseWorkspaceMemberships,
+} from "../../db/schema/enterprise-tenancy";
+import {
   jobConfigSnapshots,
   jobLeases,
   jobOwnership,
 } from "../../db/schema/job-ownership";
-import {
-  enterpriseMemberships,
-  enterpriseWorkspaceMemberships,
-} from "../../db/schema/enterprise-tenancy";
 import type { PlatformScope } from "../contracts";
 import {
   assertDataDatabase,
@@ -83,7 +83,10 @@ export interface ExecutionCancellationSeam {
     botId: string,
     input?: { readonly runId?: string },
   ): Promise<
-    | { readonly outcome: "allow"; readonly attempts: readonly SurfaceAttempt[] }
+    | {
+        readonly outcome: "allow";
+        readonly attempts: readonly SurfaceAttempt[];
+      }
     | ResourceNotFoundVerdict
   >;
 }
@@ -135,7 +138,11 @@ export interface JobControlServiceOptions {
 export interface JobControlService {
   cancelJob(
     viewer: PlatformScope,
-    input: { kind: JobKind; objectId: string; execution?: JobExecutionTargetInput },
+    input: {
+      kind: JobKind;
+      objectId: string;
+      execution?: JobExecutionTargetInput;
+    },
   ): Promise<CancelJobOutcome>;
   retryJob(
     viewer: PlatformScope,
@@ -170,10 +177,7 @@ function requireId(value: unknown, field: string): string {
   return value;
 }
 
-function requireOptionalId(
-  value: unknown,
-  field: string,
-): string | undefined {
+function requireOptionalId(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
   return requireId(value, field);
 }
@@ -193,13 +197,10 @@ async function visibleOwnership(
   data: DataDatabase,
   viewer: PlatformScope,
   ref: JobRef,
-): Promise<
-  | {
-      readonly ownership: JobOwnershipView;
-      readonly liveLeaseHeld: boolean;
-    }
-  | null
-> {
+): Promise<{
+  readonly ownership: JobOwnershipView;
+  readonly liveLeaseHeld: boolean;
+} | null> {
   return data.transaction(async (tx) => {
     await tx.execute(READ_TX_SETUP);
     for (const timeout of TIMEOUTS) await tx.execute(timeout);
@@ -269,7 +270,9 @@ async function visibleOwnership(
     if (!creation) {
       // 归属行与 creation 快照同事务写入（MT041 结构）；缺行只可能是外部
       // 手工删数据——响亮失败，不伪装成合法视图。
-      throw new Error("JOB_OWNERSHIP_REQUIRED: creation basis snapshot missing");
+      throw new Error(
+        "JOB_OWNERSHIP_REQUIRED: creation basis snapshot missing",
+      );
     }
     // 租约判活用 DB 时钟（与 MT041 认领/续约同一纪律：两个时钟假装一个
     // 时钟就是双重执行）。
@@ -347,7 +350,11 @@ export function createJobControlService(
   const armRetry = async (
     viewer: PlatformScope,
     ref: JobRef,
-    creation: { companyRevision: number; overrideRevision: number | null; basisDigest: string },
+    creation: {
+      companyRevision: number;
+      overrideRevision: number | null;
+      basisDigest: string;
+    },
   ): Promise<void> =>
     operator.transaction(async (tx) => {
       await tx.execute(READ_TX_SETUP);
@@ -390,8 +397,14 @@ export function createJobControlService(
         kind: requireKind(input.kind),
         objectId: requireId(input.objectId, "objectId"),
       };
-      const botId = requireOptionalId(input.execution?.botId, "execution.botId");
-      const runId = requireOptionalId(input.execution?.runId, "execution.runId");
+      const botId = requireOptionalId(
+        input.execution?.botId,
+        "execution.botId",
+      );
+      const runId = requireOptionalId(
+        input.execution?.runId,
+        "execution.runId",
+      );
       const visible = await visibleOwnership(data, viewer, ref);
       if (visible === null) return notFoundVerdict();
       // 先传播后清租约：清掉租约与传播之间没有窗口能让重认领插队开新工。

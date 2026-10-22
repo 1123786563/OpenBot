@@ -1,0 +1,557 @@
+Review complete: 30 finding(s) across 19 selected item(s).
+
+─── scripts/lib/e2e-manifest.mjs:123-126 ───
+[bug · medium] audit 透传在收敛后的写入链路中仍会丢字段：仓库里另外四个写者（e2e-add-driven.mjs / e2e-batch-drive-bun-test.mjs /
+e2e-fix-collection.mjs / e2e-route-failures.mjs）都是把 readManifest() 的返回值原样传入 writeManifest，而
+readManifest() 返回的形状是 {files, artifacts, causes, raw} —— 不含顶层 audit 键。于是这些写者运行时解构出的 audit 为
+undefined，JSON.stringify 丢弃该键，本脚本刚写入清单的 "audit": "archive/verification/e2e-file-audit.json"
+会被静默剥离——这正是本次收敛声称要消灭的"任一写者抹掉另一写者记录的字段"缺陷类，也与两侧新注释中 "no writer can strip what another recorded"
+的表述自相矛盾（causes 已保住，audit 没有）。最小修复：让 readManifest() 在返回对象中同时透出 audit: parsed.audit，四个调用方零改动即可让该键自动流经
+writeManifest 存活；或在此处对未提供 audit 的调用方回退到清单中已记录的值。
+
+- export function writeManifest(
+-   { files, artifacts, causes, audit },
+-   generatedBy,
+- ) {
++ export function readManifest() {
++   const parsed = JSON.parse(readFileSync(MANIFEST, "utf8"));
++   return {
++     files: new Set(parsed.files ?? []),
++     artifacts: new Set(parsed.artifacts ?? []),
++     causes: { ...(parsed.causes ?? {}) },
++     audit: parsed.audit,
++     raw: parsed,
++   };
++ }
+
+
+─── scripts/e2e-bun-manifest.mjs:76-77 ───
+[bug · low] 引导能力退化：readManifest() 内部 readFileSync(MANIFEST, "utf8") 无文件存在性兜底，清单文件不存在时直接抛
+ENOENT。旧版本脚本是纯生成器（只 writeFileSync
+不读），可从零再生清单；改为先读后写后，若清单被删除或损坏（例如刻意从零重建的场景），脚本会在写出任何内容前崩溃。由于清单文件本身已提交入库，正常克隆/CI 不受影响，建议 low 优先处理：在
+readManifest() 或此处对缺失文件返回空默认（files/artifacts 空 Set、causes 空对象），保住生成器的从零引导能力。注意 causes 缺键已有 ?? {}
+兜底，无需处理。
+
+- const existing = readManifest();
++ const existing = existsSync(MANIFEST)
++   ? readManifest()
++   : { files: new Set(), artifacts: new Set(), causes: {} };
+  const kept = new Set([...driven, ...artifacts].map((entry) => entry.file));
+
+
+─── server/src/enterprise/conversations/service.ts:1182-1184 ───
+[bug · medium] 「Only envelopes that parse back exactly are provable」的注释承诺并未被代码兑现：parse
+的返回值被直接丢弃，没有任何与 `full` 的等值比较。关键在于 `parseStoredFullMessage`（message-parts.ts:146-151）对非 string 的
+`toolCallId`/`engineMessageId` 是**静默丢弃**而非拒绝——结合入口处 `toolCallId` 完全没有 typeof/长度校验（engineMessageId 有
+≤200 校验，toolCallId 没有），一条 role="assistant" 且 toolCallId 为非 string 的调用会在写入时通过校验、digest 按原始 `full`
+计算、落库后重建读取时信封被解析成**不同值**（字段被丢弃），违反自身声明的可证明不变量，污染线程历史。另外 `as never` 彻底关闭类型检查（比受控 any 更糟）——而
+`parseStoredFullMessage` 的入参本就是 `unknown`，该断言完全多余。
+
+-       // Only envelopes that parse back exactly are provable: refuse anything
+-       // we could not re-read before it can corrupt a thread.
+-       parseStoredFullMessage(JSON.parse(JSON.stringify(full)) as never);
++       // 入口补齐 toolCallId 的类型/长度校验（与 engineMessageId 对齐）
++       // Only envelopes that parse back exactly are provable: compare the
++       // canonical form of the re-parsed envelope against the input — a
++       // dropped (non-string) field is a different value, refuse it.
++       const reparsed = parseStoredFullMessage(JSON.parse(JSON.stringify(full)));
++       if (fullMessageDigestInput(reparsed) !== fullMessageDigestInput(full))
++         throw new Error("INVALID_MESSAGE");
+
+
+─── server/src/enterprise/conversations/service.ts:1154-1157 ───
+[maintainability · medium] appendEngineMessage 与既有用户 append（约 675-1010 行）存在约 250 行近乎逐行复制的单写者 intent
+生命周期：prepare 事务（咨询锁→intent 查重/409→seq 预留→intent 插入）、write 事务（咨询锁→intent 复读→finalized
+态复读分支→withConversationLock→saveMessages→writeConfirmed→finalize 条件 UPDATE），以及 catch 收敛。本次
+Fix-round-1(I1) 的收敛逻辑就已经不得不在两处（append 的 catch 与 appendEngineMessage 的 catch）各加一份
+readFinalizedMessage 调用，write 事务内 finalized 态复读分支与 readFinalizedMessage
+又是第三份近似实现——这正是后续修复极易只改一处导致两路径行为分叉的实证。建议抽取共享的 intent 生命周期助手（以「如何构造 memory 行 / 附件副作用」为参数化差异点），让 I1
+这类修复只落一次。
+
+
+
+─── server/src/enterprise/conversations/service.ts:458-460 ───
+[documentation · low] 裸 `catch { return null; }` 吞掉全部异常且无任何日志：本文件已有结构化 console.error 先例（如
+getOrCreate 的 MASTRA_STORAGE_PROBE_FAILED，第 536 行）。I1 收敛路径在生产中因任何存储/事务异常静默失效时，外部只能看到下游那个它本要消除的
+message_pending 503，恰好掩盖了这段修复代码自身是否在工作。建议按文件既有格式记录失败（含 cause 与 tenantId/threadId 上下文）后再返回 null。
+
+-     } catch {
++     } catch (cause) {
++       console.error({
++         error: "MASTRA_FINALIZED_READ_FAILED",
++         context: {
++           operation: "appendEngineMessage.converge",
++           tenantId: scope.tenantId,
++           threadId,
++         },
++         cause:
++           cause instanceof Error
++             ? ((cause as { code?: unknown }).code ?? cause.constructor.name)
++             : typeof cause,
++       });
+        return null;
+      }
+
+
+─── server/tests/support/me03-fixture.ts:155-158 ───
+[maintainability · medium] CREATE DATABASE 成功之后的引导步骤（此处恢复 GRANT SELECT、以及随后的 3 组 CREATE ROLE/GRANT
+登录角色）没有失败清理路径：任一步因容器抖动或权限错误抛出时，已创建的数据库与部分登录角色会直接泄漏在共享的 openbot-test-pg
+容器中，并按失败次数跨运行累积。me01-fixture.ts 的 createMe01Database 对完全相同的路径做了显式 try/catch 清理并注释了理由（ME02 OCR
+也曾指出并修复过同类问题），此处防御不对称。建议将 CREATE DATABASE 之后、返回 fixture 之前的全部 psql 步骤包进 try，失败时先逐个 DROP ROLE IF
+EXISTS 再 DROP DATABASE WITH (FORCE)，然后 rethrow。
+
++   try {
+-   await psql(
++     await psql(
+-     dbName,
++       dbName,
+-     `GRANT SELECT ON TABLE "enterprise_workspace_memberships" TO ob_ent_directory`,
++       `GRANT SELECT ON TABLE "enterprise_workspace_memberships" TO ob_ent_directory`,
++     );
++     // ... CREATE ROLE / GRANT 登录角色引导步骤（保持原顺序） ...
++   } catch (error) {
++     for (const name of Object.values(loginNames)) {
++       await psql(dbName, `DROP ROLE IF EXISTS "${name}"`).catch(
++         () => undefined,
+-   );
++       );
++     }
++     await psql(
++       "postgres",
++       `DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`,
++     ).catch(() => undefined);
++     throw error;
++   }
+
+
+─── server/tests/support/me03-fixture.ts:140-141 ───
+[maintainability · low] 迁移子进程声明了 stdout: "pipe" 但从未读取（stderr 也仅在退出码非零后才消费）。当前 scripts/migrate.ts
+成功路径只输出一行 JSON，不会填满管道缓冲区，但若未来迁移脚本增加逐条迁移日志（几十 KB 量级），await migrated.exited 会在子进程写满约 64KB
+的管道缓冲区后永久阻塞，fixture 引导将从快速失败退化为挂起至运行器超时。建议改为 stdout: "ignore"，或在等待退出前先消费两个流。
+
+-     stdout: "pipe",
++     stdout: "ignore",
+      stderr: "pipe",
+
+
+─── server/tests/support/me03-fixture.ts:323-325 ───
+[maintainability · low] 这段凭据清理是永不执行的死代码：生产 PostgresTenantProvisioner 生成的 credentialRef 固定为
+`tenant-credential:<randomUUID>`（server/src/mastra/provisioning.ts:134），其中不包含 tenantId 的任何片段，因此
+ref.includes(tenantId.slice(0, 12)) 恒为 false。同时上方的 tenantStorageSchemaName/tenantStorageRoleNames
+硬编码 roleVersion 1，而 records 里已持有 receipt.roleVersion 与精确的 receipt.credentialRef。虽然凭据只是 per-fixture
+的内存 Map（无真实泄漏），但这段误导性代码会让读者以为清理已发生。建议直接从 registry 记录取精确值删除。
+
+-         for (const ref of [...credentials.keys()]) {
+-           if (ref.includes(tenantId.slice(0, 12))) credentials.delete(ref);
++         for (const [tenantId, entry] of records) {
++           const storageKey = tenantStorageKey(tenantId);
++           const schemaName = tenantStorageSchemaName(
++             storageKey,
++             entry.receipt.roleVersion,
++           );
++           const roles = tenantStorageRoleNames(
++             storageKey,
++             entry.receipt.roleVersion,
++           );
++           // ...DROP SCHEMA / DROP ROLE 原样...
++           credentials.delete(entry.receipt.credentialRef);
+          }
+
+
+─── server/tests/support/me03-fixture.ts:54-56 ───
+[maintainability · low] container()/psql()/promisify(execFile) 助手在 me01-fixture.ts 与本文件逐字重复（注释还确认
+src 兼容探针另有一份内联副本），且两文件对 CREATE ROLE 密码采用了相互矛盾的引号策略：me01 用 $$ 美元引用并专门注释论证其必要性，这里却直接单引号拼接 UUID
+派生值。当前两者都安全（密码为 hex 派生、execFile 无 shell 展开），但三处副本加策略分歧存在漂移风险。建议抽取共享的 tests/support PG
+容器助手模块，统一密码引用方式。
+
+
+
+─── server/tests/support/me01-child.ts:79-85 ───
+[maintainability · low] main().catch 用 String(error) 序列化错误只保留 message、丢失堆栈：子进程失败时父测试只能拿到一行字符串，无法定位是
+buildMe01Stack、listSuspendedRuns 还是 resumeStream 抛错。单行 JSON 契约并不排斥堆栈（JSON.stringify 会把换行转义为 \n），建议改用
+error.stack。
+
+  main().catch((error) => {
+    console.log(
+      `${ME01_CHILD_RESULT_PREFIX}${JSON.stringify({
+        ok: false,
+-       error: String(error),
++       error:
++         error instanceof Error ? (error.stack ?? error.message) : String(error),
+      })}`,
+    );
+
+
+─── server/src/mastra/execution.ts:211-217 ───
+[maintainability · medium] 规范事件的 threadId 身份取自 `request.input.threadId`（runner 转发的
+RunAgentInput），而冻结契约 execution-contracts.ts 明确 `binding.threadId` 才是服务端铸造、经
+loadExecutionInput/resolveMastraBinding 验证的线程身份，且持久化（persistExecutionMessages）用的也是
+binding.threadId。governedRequest 逐字段校验了 binding 与 admission 一致性，却没有任何闸门将 input.threadId 与
+binding.threadId 绑定。今天唯一的生产调用点（copilot.ts: binding.threadId = rebuilt.threadId，run 输入即
+rebuilt）两者恰好相等，不会伪造；但这是"每个后续票都扩展"的冻结接缝——任何未来调用方传入未验证的 input.threadId，RUN_STARTED/RUN_FINISHED
+就会以持久化层从未验证/未写入的线程身份发往客户端，事件身份与持久化身份静默漂移。建议事件身份改用 binding 的服务端铸造值（ME02 旧构造缺省时回退），与 runId 同源。
+
+    const normalizer = new MastraStreamNormalizer(
+      {
+-       threadId: request.input.threadId,
++       // Identity comes from the server-minted binding thread (verified by
++       // loadExecutionInput); the relayed input.threadId is only a fallback
++       // for ME02-era bindings and no gate ties it to the binding.
++       threadId: request.binding.threadId ?? request.input.threadId,
+        runId: request.binding.runId,
+      },
+      { streaming: true },
+    );
+
+
+─── server/src/mastra/stream-events.ts:371-377 ───
+[bug · low] abort 语义可被后续 finish 覆盖为成功终态：`abort` chunk 先置 outcome="aborted"（无终态），若引擎随后发出 finish 且
+reason 为 stop/length，emitRunFinished 会把 outcome 改写为 "finished" 并发出
+RUN_FINISHED——被中止的运行被结算为成功。这与本模块自述及测试名（abort_is_diagnostic_and_never_reports_success）相悖；现有测试只覆盖了
+abort→finish(tripwire) 序列（tripwire 分支不覆盖 outcome），未覆盖 abort→finish(stop)。若固定 1.64.0
+引擎确实不会发出该序列，请以测试钉死；否则 stop/length 到达时应保留 aborted 语义（不翻转、不发成功终态）。
+
+        case "stop":
+        case "length":
+-         // `length` is the governed maxOutputTokens ceiling truncating a step
+-         // — a normal terminal on this path, whose business result the runner
+-         // settles. Not an unknown reason, and never a rejection of the run.
++         // An engine abort already recorded is not un-recorded by a trailing
++         // finish: the aborted outcome stands, terminal-less.
++         if (this.outcome === "aborted") break;
+          this.emitRunFinished();
+          break;
+
+
+─── server/src/mastra/execution.ts:177-179 ───
+[bug · low] 同名 GrantedTool 被静默覆盖：Object.fromEntries 以 name 为键，若授权列表出现重名工具，后一个覆盖前一个，前者不可调用且无任何报错。ME02
+生产路径 tools 恒为空（copilot.ts 的 MASTRA_TEXT_ONLY_SLICE 守卫先行拒绝），当前不可达，但对 ME04
+接入真实工具后是潜伏隐患——与本项目"宁可拒绝也不猜测"的失败风格不一致。建议重名即拒绝。
+
+-   const tools = Object.fromEntries(
+-     request.tools.map((tool) => [tool.name, wrapGrantedTool(tool)]),
++   const tools: Record<string, ReturnType<typeof wrapGrantedTool>> = {};
++   for (const tool of request.tools) {
++     if (tools[tool.name]) {
++       throw new MastraExecutionRefusal(
++         `MASTRA_DUPLICATE_TOOL_NAME: ${tool.name}`,
+-   );
++       );
++     }
++     tools[tool.name] = wrapGrantedTool(tool);
++   }
+
+
+─── server/src/enterprise/conversations/service.ts:1194-1201 ───
+[bug · low] appendEngineMessage 缺少用户 append 在 prepare/write 两个事务里都执行的 legacy
+映射守卫(currentLegacyMapping/authorizedLegacyMapping →
+LEGACY_HISTORY_READ_ONLY)。resolveMastraBinding/history/append 对 legacy 线程一律按只读处理(legacy
+优先于会话行)，而这里只要会话行是 mastra-backend 就会写入引擎输出:若某线程同时存在 legacy 映射与 mastra 会话行(数据层无约束阻止)，引擎输出会写入私有
+resourceId 存储、而用户消息被拒，形成读写分裂。建议补上与 append 相同的 legacy 拒绝，或在注释中说明该双重状态为何不可达。
+
+        const prepared = await store.transaction(scope, async (tx) => {
++         const initialLegacy = await currentLegacyMapping(
++           tx,
++           scope,
++           input.threadId,
++         );
++         if (
++           await authorizedLegacyMapping(
++             tx,
++             scope,
++             input.threadId,
++             initialLegacy,
++           )
++         )
++           throw new Error("LEGACY_HISTORY_READ_ONLY");
+          const conversation = await authorizedConversation(
+            tx,
+            scope,
+            input.threadId,
+          );
+          if (conversation.storageBackend !== "mastra")
+            throw new Error("CONVERSATION_BACKEND_CHANGED");
+
+
+─── server/src/enterprise/conversations/service.ts:1163-1168 ───
+[bug · low] 同一方法内的两个长度上限联合不可满足:engineMessageId 允许 ≤200，但 clientMessageKey 断言 ≤200，而 contracts.ts 规定
+key 构成为 "execution key + engine message id"(executionKey 为 36 字符 UUID + ':' 分隔符)。engineMessageId 长度在
+164..200 时，上面的 engineMessageId 校验通过，组合出的 key 却必然在 assertInputString(clientMessageKey, 200) 处以
+INVALID_CLIENT_MESSAGE_KEY 失败——错误码指向"客户端 key"，而这是服务端铸造的键。建议对齐边界，例如把 engineMessageId 上限收紧到组合 key
+可容纳的长度(≤163)，或为引擎路径放宽 key 上限。
+
+        if (
+          typeof input.engineMessageId !== "string" ||
+          input.engineMessageId.length === 0 ||
+-         input.engineMessageId.length > 200
++         // clientMessageKey is capped at 200 and composed as
++         // `${executionKey}:${engineMessageId}` (UUID = 36 + 1), so the
++         // engine id must fit the composed key's budget.
++         input.engineMessageId.length > 163
+        )
+          throw new Error("INVALID_MESSAGE");
+
+
+─── server/src/mastra/conversation-runtime.ts:131-135 ───
+[bug · critical] 【严重】分页拼接结果不是时间线顺序：history() 每页按 seq desc 取出后页内 reverse（service.ts history() 与
+readMastraHistory 同构），nextBeforeSeq 指向更旧一页，因此 rows 是「最新块在前、块内升序」的块级乱序（如 250 条线程得到 [151..250,
+51..150, 1..50]）。下游全部按时间序假设消费：(1) loadExecutionInput 的 newestUserRow 取「数组中最后一个 user
+行」——多页线程下实际取到最旧块里的 user 行，提交消息 key 恒不匹配，超过 100 条消息且历史中有旧 user 行的线程每一轮都抛
+MASTRA_HISTORY_MISSING_SUBMITTED_MESSAGE；(2) authorizeHistoryAttachments 的 lastUserIndex 同样取到最旧 user
+行，未授权附件「拒绝本轮」与「降级」的判定被反转（安全语义倒置）；(3) 即便通过校验，喂给模型的 messages 也是块级乱序的会话。修复：rows 自带 seq，返回前全局升序排序（或每页
+unshift 反向拼接）。
+
+      if (result.nextBeforeSeq === null) break;
+      beforeSeq = result.nextBeforeSeq;
+    }
++   // history() 每页按 seq desc 取出后页内 reverse，页间向更旧方向翻页：
++   // 直接 push 拼接是「最新块在前」的块级乱序。按 seq 全局升序恢复时间线。
++   rows.sort((a, b) => a.seq - b.seq);
+    return rows;
+  }
+
+
+─── server/src/mastra/conversation-runtime.ts:347-351 ───
+[bug · high] 【高】activity 行未按契约过滤：agUiMessageFromStoredRow 对存储 activity 行返回 role:"activity" 的消息，注释明言
+"the caller filters them"，但本链路（authorizeHistoryAttachments 只处理 user 行、sanitizeSeededHistory 只丢弃 tool
+悬空行，均原样透传 activity）没有任何过滤点；而 execution.ts 的 toModelMessages 对 user/assistant/system/tool 之外的角色一律抛
+MastraExecutionRefusal。一条 activity 行落入存储后（schema 的 activity part/role、EngineMessageAppendInput
+文档均已为其预留），该线程此后每一轮都会以误导性的 ME03_MESSAGE_PARTS_UNSUPPORTED 永久失败。另注意 persistExecutionMessages 把
+activity full 静默映射为 role:"assistant" 落库（full.role === "tool" ? "tool" :
+"assistant"），会再次产出此类行。请在重建消息进入 sanitize 前过滤 activity 行（或重建时跳过）。
+
+    let messages = await authorizeHistoryAttachments(deps, scope, threadId, rows);
++   // activity 行不进模型上下文（agUiMessageFromStoredRow 注明 "the caller
++   // filters them"）：toModelMessages 对 user/assistant/system/tool 之外的
++   // 角色一律拒绝，不过滤会让一条 activity 行永久毒化整条线程。
++   messages = messages.filter(
++     (message) => (message as { role?: string }).role !== "activity",
++   );
+    // The established cleanup rules survive the server rebuild: a dangling
+    // tool call in stored history must never poison the model call.
+    messages = sanitizeSeededHistory(messages);
+    return { ...input, messages };
+
+
+─── server/src/mastra/conversation-runtime.ts:318-324 ───
+[bug · medium] 【中】非 mastra 后端在这条引擎路径上必然失败且错误误导：platform 分支重建的 metadata 只含
+openbotAttachments（MessageDTO 本身不携带 clientMessageKey），submittedKeyOf 恒为 undefined，platform（以及未打
+openbotClientMessageKey 的 legacy intelligence 行）线程的提交消息校验永远抛
+MASTRA_HISTORY_MISSING_SUBMITTED_MESSAGE——错误指向「客户端/服务端历史不一致」，真实原因却是后端不支持；即便校验通过，appendEngineMessage
+对非 mastra 后端也会以 CONVERSATION_BACKEND_CHANGED 拒绝（且是在模型已跑完烧掉预算之后）。建议在 resolveMastraBinding 之后显式 gate
+后端，用命名错误尽早拒绝，让 loadMemoryRows 的 platform 分支意图（支持还是死代码）变得明确。
+
+    const binding: MastraConversationBinding =
+      await deps.conversations.resolveMastraBinding(scope, threadId);
+    if (binding.tenantId !== scope.tenantId || binding.threadId !== threadId) {
+      // Another principal's thread resolves to nothing here: same denial shape
+      // as every other foreign-resource read.
+      throw new Error("CONVERSATION_NOT_FOUND");
++   }
++   if (binding.backend !== "mastra") {
++     // 引擎路径只对 mastra 后端定义：platform/intelligence 行不带
++     // openbotClientMessageKey，提交校验与 appendEngineMessage 都无法满足。
++     throw new Error("MASTRA_ENGINE_BACKEND_UNSUPPORTED");
+    }
+
+
+─── server/src/mastra/conversation-runtime.ts:269-272 ───
+[bug · medium] 【中】历史降级剥离用 endsWith 判定附件归属会误删合法附件：attachmentUrl 的规范形状是 `/api/attachments/<id>`，id
+提取契约（attachmentIdFor）用的是前缀精确截取，而这里用后缀匹配——当未授权 id 恰为某已授权 id 的后缀（如未授权 "23" 与已授权
+"9123"，`/api/attachments/9123`.endsWith("23") 为真）时，合法附件 part 会被一并剥离；外部 URL 恰以该 id
+结尾时同样被误删。请改为与提取契约一致的精确比对。
+
+          return !(
+            typeof value === "string" &&
+-           unauthorized.some((attachmentId) => value.endsWith(attachmentId))
++           unauthorized.some(
++             (attachmentId) => value === attachmentUrl(attachmentId),
++           )
+          );
+
+
+─── server/src/mastra/conversation-runtime.ts:109-111 ───
+[performance · medium] 【中】全量串行翻页读取整条历史：每 100 条消息需 2 次串行 DB 往返（history + listMessagesById），5000
+条上限的线程单轮 turn 首 token 前最多约 100 次串行往返；且超过 5000 条后每轮硬抛 MASTRA_HISTORY_TOO_LONG——没有 newest-N
+窗口兜底，长线程一旦越过上限即在 mastra 引擎上永久不可用（legacy 路径无此上限）。另外上限检查在页首进行：触发前会先多读整整一页（最多 100
+条）才在下一轮迭代抛错。建议按深度窗口截断（保留最新 N 条并向模型注明截断），或至少把检查移到当页读完后立即判断。
+
+
+
+─── server/src/mastra/conversation-runtime.ts:519-524 ───
+[bug · medium] 【中】snapshot 把全部 tool 结果统一排在所有 assistant 消息之后：多轮工具交错（A1→R1→A2→R2）会持久化为 A1,A2,R1,R2，会话
+seq 顺序与真实发生顺序错乱，下一轮重建的 call/result 配对与 boundary 计算都建立在错误顺序上。当前 ME02 文本-only 切片不可达（tools
+恒空、normalizer 把 tool-calls finish 视作挂起），但折叠逻辑已随本票落地，ME04 接线工具即暴露。建议改为单一有序条目列表：TOOL_CALL_RESULT
+到达时按事件顺序在其宿主 assistant 消息之后入列，而不是单独缓冲后追加。
+
+      snapshot(): Message[] {
+-       return [
+-         ...ordered.map((entry) => entry.message as Message),
+-         ...toolResults.map((entry) => entry.message),
+-       ];
++       // 单一有序序列：tool 结果按事件到达顺序落在其宿主 assistant 消息
++       // 之后，多轮工具交错时持久化 seq 才与真实发生顺序一致。
++       return orderedEntries.map((entry) => entry.message);
+      },
+
+
+─── server/src/mastra/conversation-runtime.ts:382-383 ───
+[bug · medium] 【中】逐条串行 append（顺序上正确）但无同键重试：service 的 appendEngineMessage 对瞬时失败显式返回
+message_pending(503) 且错误文案注明 "retry the same key"（finalize 竞态由 readFinalizedMessage 收敛，其余 pending
+态在同键重试时可恢复），而这里一次瞬时失败即令整轮 run 以 error 终止——且下一次运行会铸造全新 executionKey（bind 每次 mint 新
+UUID），本批未写完的尾部永远无法以旧键落库，线程从此留下永久截断的部分答案（assistant 已落、后续 tool 结果缺失）。建议对可重试失败（message_pending /
+瞬时错误）做有界同键重试后再放弃。
+
+      const clientMessageKey = `${binding.executionKey}:${full.engineMessageId}`;
+-     await deps.conversations.appendEngineMessage(binding.scope, {
++     // appendEngineMessage 幂等（同键同摘要收敛）：对 message_pending 等
++     // 可重试失败做有界同键重试，避免瞬时故障把整批输出永久截断
++     // （下一次运行会铸造全新 executionKey，尾部无法再落库）。
++     await appendEngineMessageWithRetry(binding.scope, {
+
+
+─── server/src/mastra/conversation-runtime.ts:388-388 ───
+[maintainability · low] 【低】`full.engineMessageId ?? ""` 是死分支且掩盖契约违反：fullMessageFromAgUi 在入口已对空/缺失 id
+抛 MASTRA_PERSIST_MESSAGE_ID_REQUIRED，走到这里 engineMessageId 必为非空字符串；空串兜底一旦因未来回归被触发，会静默生成
+`executionKey:` 形态的畸形幂等键而非显式失败。建议要么直接收窄类型传递，要么缺失时显式抛错，交由 appendEngineMessage 的 INVALID_MESSAGE 命名拒绝。
+
+
+
+─── server/src/copilot.ts:2308-2309 ───
+[bug · medium] 【中】两个 fail-closed 守卫在 factory 函数体内同步 throw，与本文件既有的失败投递契约不一致：所有同类 fail-closed
+工厂（含本路径自己的 MASTRA_TEXT_ONLY_SLICE 守卫，其注释明言 "this agent must fail when iteration starts"）都在 async
+generator 内抛错，使失败以事件流中的 RUN_ERROR 呈现；下方 MASTRA_CONVERSATION_RUNTIME_UNWIRED 的同步 throw 同理。同步 throw 落在
+runtime 调用 factory 的位置，若该调用点未包裹 try/catch，会以未分类异常/500 而非结构化 run 失败呈现。建议把两处校验移入返回的 generator 首个 await
+之前，与既有契约一致。
+
++       return (async function* () {
+-       const facts = governedModel.executionBinding?.();
++         const facts = governedModel.executionBinding?.();
+-       if (!facts) throw new Error("EXECUTION_BINDING_UNBOUND");
++         if (!facts) throw new Error("EXECUTION_BINDING_UNBOUND");
++         const runtime = mastraConversationRuntime;
++         if (!runtime) throw new Error("MASTRA_CONVERSATION_RUNTIME_UNWIRED");
++         const rebuilt = await runtime.loadExecutionInput(
+
+
+─── server/src/mastra/ag-ui-agent.ts:61-63 ───
+[maintainability · low] 【低】run() 同步 throw 违反 Observable API 惯例：订阅期的失败应经 Observable 的 error 通道下发，同步
+throw 要求所有调用方都在订阅前自行包裹。当前唯一调用点位于 copilot factory 的 generator 内（可被捕获），但 AbstractAgent 会被 runtime
+clone 后直接 run，未来调用方若未包裹同步异常即泄漏为未处理异常。建议改为 throwError(() => new Error(...)) 或在 Observable 构造内
+s.error(...)。
+
+      if (!completion?.governedModel) {
+-       throw new Error("MASTRA_AGENT_GOVERNED_MODEL_REQUIRED");
++       return throwError(
++         () => new Error("MASTRA_AGENT_GOVERNED_MODEL_REQUIRED"),
++       );
+      }
+
+
+─── server/tests/support/me01-fixture.ts:169-169 ───
+[bug · low] JSON 解析守卫存在缺口：body 为合法 JSON 但值为 `null` 时（JSON.parse("null") 返回 null），`parsedBody.model
+?? ...` 会在 HTTP 'end' 事件处理器里抛 TypeError 并逃逸，恰好违反了上方注释承诺的不变量（"A malformed body must surface as a
+diagnosable 400, not as an exception escaping the HTTP event handler and crashing the test
+process"）。当前唯一的调用方 AI SDK 只会发对象体，因此不可达，但该守卫存在的意义就是防御异常输入，建议补齐非对象体检查。
+
++       if (parsedBody === null || typeof parsedBody !== "object") {
++         response.writeHead(400, { "content-type": "application/json" });
++         response.end(
++           JSON.stringify({ error: "ME01 fake provider: non-object JSON body" }),
++         );
++         return;
++       }
+        const parsedModel = parsedBody.model ?? "me01-model";
+
+
+─── server/src/mastra/execution.ts:53-58 ───
+[bug · high] 与 ME03 运行时契约冲突：本变更集的 loadExecutionInput/agUiMessageFromStoredRow 会把【已授权附件】重建为 `{type:
+"file", source: {type: "url", value: "/api/attachments/<id>"}}` parts 并刻意保留在模型输入中（集成测试
+attachment_scope_checked_before_bytes 明确断言 newest 消息包含该 URL），生产路径（copilot 工厂 → ag-ui-agent →
+executeGovernedMastra → runMastraExecution）中间无任何转换层，textContent 对非 text part 返回 null
+后此处直接拒绝整个执行。后果有二：(1) 带已授权附件的提交消息通过授权检查后必然以 ME03_MESSAGE_PARTS_UNSUPPORTED 失败；(2)
+旧消息中的已授权附件永不过期降级，该会话此后每一轮都在这里被拒绝——而同一附件被吊销后反而触发运行时的降级（剥离 file part、追加 [attachment unavailable]
+文本）使会话恢复可运行，与降级逻辑自述目的（"one vanished row cannot permanently fail every future
+turn"）正好倒置：授权态比吊销态更不可用。注释自述 "attachments and full message parts are ME03's slice"，ME03
+已落地但此拒绝未随之调整。建议：本切片内对 file part 做显式降级（替换为文本引用说明，与未授权降级路径同构，后续字节切片再内联），或由 runtime 在本切片统一剥离附件
+parts——两者取一，保证"授权 → 可运行"。
+
+-     const text = textContent(message);
+-     if (text === null) {
+-       throw new MastraExecutionRefusal(
+-         "ME03_MESSAGE_PARTS_UNSUPPORTED: this execution slice carries plain text only.",
++ function textContent(message: Message): string | null {
++   if (typeof message.content === "string") return message.content;
++   if (Array.isArray(message.content)) {
++     const parts: string[] = [];
++     for (const part of message.content as {
++       type?: unknown;
++       text?: unknown;
++       source?: unknown;
++     }[]) {
++       if (part?.type === "text" && typeof part.text === "string") {
++         parts.push(part.text);
++         continue;
++       }
++       if (part?.type === "file") {
++         // 已授权附件以文本引用降级（与运行时对未授权附件的降级同构），
++         // 避免授权态永久拒绝整个会话；字节内联是后续切片。
++         parts.push(
++           `[attachment: ${referenceOf(part)}]`,
+-       );
++         );
++         continue;
++       }
++       return null;
++     }
++     return parts.join("");
++   }
++   return null;
+-     }
++ }
+
+
+─── server/src/mastra/message-parts.ts:275-279 ───
+[maintainability · low] assistant 分支对非字符串 content（AG-UI 允许 string | parts 数组）静默丢弃全部文本：数组 content 时
+text 恒为 ""、不产生任何 text part，也不像 user 分支（M1 修复）那样以命名错误拒绝；tool 分支对数组 content 同样只收集 type==="text"
+的部分、其余静默跳过。当前 collector 快照恒为 string content 故不可达，但该函数是持久化 seam 的通用转换入口，ME04/ME05
+引入更丰富事件形状后会变成静默数据丢失（与同文件「refused rather than guessed」的声明相悖）。建议与 user 分支对齐：数组中出现无法建模的部分时抛
+MastraMessagePartsUnsupportedError。
+
+      if (typeof shape.content === "string" && shape.content.length > 0) {
+        parts.push({ kind: "text", text: shape.content });
+        text = shape.content;
++     } else if (Array.isArray(shape.content)) {
++       const textOfParts = (shape.content as Record<string, unknown>[]) 
++         .filter((p) => isRecord(p) && p.type === "text" && typeof p.text === "string");
++       if (textOfParts.length !== shape.content.length) {
++         throw new MastraMessagePartsUnsupportedError(
++           "MASTRA_PERSIST_ASSISTANT_PART_UNSUPPORTED",
++         );
+-     }
++       }
+-     if (shape.toolCalls !== undefined) {
++       // …收集 text part
++     }
+
+
+─── server/src/mastra/message-parts.ts:483-483 ───
+[maintainability · low] 死分支且掩盖契约违反：parseStoredFullMessage 已强制 role==="tool" 的信封必须携带 toolCallId（缺失即抛
+MASTRA_MESSAGE_PARTS_CORRUPT），因此 `full.toolCallId ?? toolResult?.toolCallId ?? ""`
+的两级兜底均不可达；一旦未来回归触发，会静默重建出 toolCallId 为空串的 tool 消息而非显式失败（与已确认问题 #10 中 engineMessageId ?? ""
+同类）。建议直接使用 full.toolCallId，交由解析层守护契约。
+
+-         toolCallId: full.toolCallId ?? toolResult?.toolCallId ?? "",
++         toolCallId: full.toolCallId,
+
+
+─── server/src/mastra/conversation-runtime.ts:122-123 ───
+[maintainability · low] `row.seq !== item.seq` 恒为假：loadMemoryRows 两个分支构建 RebuiltRow 时都用 `seq:
+item.seq` 赋值，同一 item 取回的 row.seq 与 item.seq 必然相等，该比较是空校验（死条件）。真正的校验（memory 行 metadata.openbotSeq
+对账）只发生在 mastra 分支内部，platform 分支实际没有任何 storage-vs-ledger 验证——与函数头注释「verifying every memory row
+against the intent-ledger identity」不符，给读者以已验证的错觉。建议删除恒假比较，或将 platform 分支的真实保真度在注释中如实说明。
+
+          const row = memoryRows.get(item.messageId);
+-         if (!row || row.seq !== item.seq) {
++         if (!row) {
+

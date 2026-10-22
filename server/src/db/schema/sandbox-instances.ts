@@ -7,9 +7,9 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
-import { jsonb } from "./json";
 import { agents, users } from "./core";
 import { enterpriseTenants } from "./enterprise-tenancy";
+import { jsonb } from "./json";
 
 /**
  * The per-bot sandbox container lifecycle (P1-B): provisioning, ready, asleep, gone or failed.
@@ -66,9 +66,7 @@ export const sandboxInstances = pgTable(
      */
     index("sandbox_instances_bot_status_idx")
       .on(table.botId, table.status)
-      .where(
-        sql`${table.status} IN ('provisioning', 'ready', 'sleeping')`,
-      ),
+      .where(sql`${table.status} IN ('provisioning', 'ready', 'sleeping')`),
     index("sandbox_instances_tenant_idx").on(table.tenantId),
     check(
       "sandbox_instances_status_check",

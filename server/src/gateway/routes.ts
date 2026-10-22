@@ -24,7 +24,9 @@ export function createGatewayConfigRoutes(options: {
   routes.use("*", options.requireUser);
 
   routes.get("/endpoint", async (context) => {
-    return context.json({ gateway: (await readGatewayEndpoint(options.database)) ?? null });
+    return context.json({
+      gateway: (await readGatewayEndpoint(options.database)) ?? null,
+    });
   });
 
   routes.put("/endpoint", async (context) => {

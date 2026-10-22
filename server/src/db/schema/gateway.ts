@@ -388,10 +388,7 @@ export const gatewayCustomers = pgTable(
       .defaultNow(),
   },
   (table) => [
-    check(
-      "gateway_customers_kind_check",
-      sql`${table.kind} IN ('personal')`,
-    ),
+    check("gateway_customers_kind_check", sql`${table.kind} IN ('personal')`),
     check(
       "gateway_customers_provision_state_check",
       sql`${table.provisionState} IN ('pending', 'confirmed', 'recoverable', 'active')`,
@@ -639,7 +636,8 @@ export const GATEWAY_VIRTUAL_KEY_STATUSES = [
 ] as const;
 
 /** One of the closed key states; see {@link GATEWAY_VIRTUAL_KEY_STATUSES}. */
-export type GatewayVirtualKeyStatus = (typeof GATEWAY_VIRTUAL_KEY_STATUSES)[number];
+export type GatewayVirtualKeyStatus =
+  (typeof GATEWAY_VIRTUAL_KEY_STATUSES)[number];
 
 /**
  * The OpenBot side of the short-lived virtual key record — Bifrost 05.3's (#244) local ledger
@@ -852,13 +850,11 @@ export type GatewayKeyFieldDriftReasonCode =
  * declares the drifted key dead, and the local record retires it. A closed set: a new
  * decision arrives with its own semantics, never a reinterpretation of these.
  */
-export const GATEWAY_KEY_DRIFT_DECISIONS = [
-  "accepted",
-  "key_revoked",
-] as const;
+export const GATEWAY_KEY_DRIFT_DECISIONS = ["accepted", "key_revoked"] as const;
 
 /** One of the closed disposition decisions; see {@link GATEWAY_KEY_DRIFT_DECISIONS}. */
-export type GatewayKeyDriftDecision = (typeof GATEWAY_KEY_DRIFT_DECISIONS)[number];
+export type GatewayKeyDriftDecision =
+  (typeof GATEWAY_KEY_DRIFT_DECISIONS)[number];
 
 /**
  * The field-drift events (Bifrost 05.9, #250): the record of every key whose OWNER, SCOPE

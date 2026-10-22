@@ -138,9 +138,7 @@ export function countRerankInputTokens(params: unknown): number | null {
   const bytes = serializedBytes(params);
   if (bytes === Number.MAX_SAFE_INTEGER) return null;
   const counted =
-    Math.ceil(
-      (bytes / RERANK_BYTES_PER_TOKEN_FLOOR) * RERANK_SAFETY_FACTOR,
-    ) +
+    Math.ceil((bytes / RERANK_BYTES_PER_TOKEN_FLOOR) * RERANK_SAFETY_FACTOR) +
     shape.documents * RERANK_PER_DOCUMENT_OVERHEAD_TOKENS;
   return Number.isSafeInteger(counted) ? counted : null;
 }
@@ -197,12 +195,11 @@ export function assessRerankEnablement(input: {
   }
   if (shape === null) {
     const documents = request?.documents;
-    const issue =
-      !Array.isArray(documents)
-        ? "documents_not_array"
-        : documents.length === 0
-          ? "documents_empty"
-          : "document_text_not_nameable";
+    const issue = !Array.isArray(documents)
+      ? "documents_not_array"
+      : documents.length === 0
+        ? "documents_empty"
+        : "document_text_not_nameable";
     return {
       enabled: false,
       issue: { code: "rerank_input_uncountable", shape: issue },
@@ -214,7 +211,10 @@ export function assessRerankEnablement(input: {
     // priced past.
     return {
       enabled: false,
-      issue: { code: "rerank_input_uncountable", shape: "input_not_serializable" },
+      issue: {
+        code: "rerank_input_uncountable",
+        shape: "input_not_serializable",
+      },
     };
   }
 

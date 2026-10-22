@@ -134,7 +134,10 @@ export const hindsightMemoryGrants = pgTable(
     primaryKey({
       columns: [table.tenantId, table.principalId, table.kind, table.targetId],
     }),
-    check("hindsight_memory_grant_kind", sql`${table.kind} in ('source', 'bot')`),
+    check(
+      "hindsight_memory_grant_kind",
+      sql`${table.kind} in ('source', 'bot')`,
+    ),
     foreignKey({
       columns: [table.tenantId],
       foreignColumns: [enterpriseTenants.id],

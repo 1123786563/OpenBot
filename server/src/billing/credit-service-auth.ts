@@ -1,18 +1,18 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
-import type { AppVariables } from "../auth/guards";
+import { getLogger } from "../../../shared/logger";
 import {
-  DEPLOYMENT_INITIATOR,
   type AuditStore,
+  DEPLOYMENT_INITIATOR,
   recordAuditEvent,
 } from "../audit";
+import type { AppVariables } from "../auth/guards";
 import {
   type CredentialSecretReader,
   type CredentialStore,
   decryptSecret,
   encryptSecret,
 } from "../credentials";
-import { getLogger } from "../../../shared/logger";
 
 /**
  * The billing protocol's own service identity (Bifrost #252, 06.1).
@@ -161,7 +161,8 @@ export function createCreditServiceAuthenticator(
     });
     if (!live) throw new CreditServiceNotConfiguredError();
     const stored = await credentialStore.readSecret(live.id);
-    if (!stored || stored.revokedAt) throw new CreditServiceNotConfiguredError();
+    if (!stored || stored.revokedAt)
+      throw new CreditServiceNotConfiguredError();
     const expected = await decryptSecret(
       dependencies.encryptionKey,
       stored.encryptedValue,
@@ -210,7 +211,10 @@ export async function issueCreditServiceCredential(
   dependencies: CreditServiceCredentialDependencies,
 ): Promise<IssuedCreditServiceCredential> {
   const secret = mintCreditServiceSecret();
-  const encryptedValue = await encryptSecret(dependencies.encryptionKey, secret);
+  const encryptedValue = await encryptSecret(
+    dependencies.encryptionKey,
+    secret,
+  );
   const live = await dependencies.credentialStore.findLiveByKey({
     kind: CREDIT_SERVICE_CREDENTIAL_KIND,
     provider: CREDIT_SERVICE_CREDENTIAL_PROVIDER,
