@@ -541,7 +541,12 @@
     "server/tests/memory-exit-single-authority.integration.test.ts",
     "server/tests/memory-expiry.test.ts",
     "server/tests/memory-intelligence.integration.test.ts",
-    "server/tests/memory-sensitivity.test.ts",
+    "server/tests/memory-sensitivity.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 8",
+   "files": [
     "server/tests/memory-store.integration.test.ts",
     "server/tests/model-capability-filter.integration.test.ts",
     "server/tests/model-capability-filter.test.ts"
