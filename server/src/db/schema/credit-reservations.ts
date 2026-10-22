@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -781,6 +783,110 @@ export const asyncJobs = pgTable(
 );
 
 /**
+ * One async job's settle-trigger observability row (Bifrost 17.5, #329): how many times
+ * settlement was triggered, by which lane (poll or completion notification), and the ONE
+ * unified idempotency key both lanes computed (jobId + terminal version) — so a duplicate
+ * trigger shows up as a count, never as a double charge (the reservation's own settle
+ * fence, 06.9, is the money guarantee; this row is the visibility).
+ *
+ * The first trigger writes the key, the terminal state and the first timestamp, and they
+ * never move; every trigger increments the counters atomically. No amounts live here —
+ * the ledger is one, and it is not this table.
+ */
+export const asyncSettleTriggers = pgTable(
+  "async_settle_triggers",
+  {
+    /** The job whose settlement was triggered — one row per job, ever. */
+    jobId: text("job_id")
+      .primaryKey()
+      .references(() => asyncJobs.jobId),
+    /** The unified key the first trigger computed (`async-terminal-settle:<job>:<state>:<digest>`). */
+    idempotencyKey: text("idempotency_key").notNull(),
+    /** The terminal state the first report carried. */
+    terminalState: text("terminal_state")
+      .$type<"completed" | "failed" | "cancelled">()
+      .notNull(),
+    totalTriggers: integer("total_triggers").notNull().default(1),
+    pollTriggers: integer("poll_triggers").notNull().default(0),
+    notificationTriggers: integer("notification_triggers").notNull().default(0),
+    firstTriggeredAt: timestamp("first_triggered_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Which lane triggered last — the closed two-member set the tickets name. */
+    lastSource: text("last_source")
+      .$type<"poll" | "notification">()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("async_settle_triggers_idempotency_key_idx").on(
+      table.idempotencyKey,
+    ),
+    check(
+      "async_settle_triggers_counts_check",
+      sql`${table.totalTriggers} >= 1 AND ${table.pollTriggers} >= 0 AND ${table.notificationTriggers} >= 0 AND ${table.totalTriggers} >= ${table.pollTriggers} + ${table.notificationTriggers}`,
+    ),
+    // The operational read: recently triggered jobs, newest first.
+    index("async_settle_triggers_last_idx").on(table.lastTriggeredAt),
+  ],
+);
+
+/**
+ * The async job's settlement line detail (Bifrost 17.6, #330) — the async counterpart of
+ * {@link creditSettlementDetails} (image, 0179) and {@link creditSpeechSettlementDetails}
+ * (speech, 0181), in its own table because its facts are neither: the attribution anchor
+ * is the JOB (`jobId`, UNIQUE — the one key every surface of an async charge names), the
+ * capability is the job's own (the closed vocabulary `async_jobs`' CHECK owns), and the
+ * usage is the whole per-dimension map the provider's terminal report carried. Written
+ * only inside the credit writer's settle transaction (one commit with the ledger row and
+ * the reservation's terminal update), keyed uniquely by the reservation; the MONEY stays
+ * on the ledger row.
+ */
+export const creditAsyncSettlementDetails = pgTable(
+  "credit_async_settlement_details",
+  {
+    reservationId: text("reservation_id").primaryKey(),
+    ledgerId: text("ledger_id")
+      .notNull()
+      .references(() => creditLedger.id),
+    /** The job's own capability — the same closed vocabulary async_jobs' CHECK owns. */
+    capability: text("capability").notNull(),
+    /** The local job identity — the attribution anchor of the whole charge. */
+    jobId: text("job_id").notNull(),
+    /** The provider's job id, when the mapping is known (null is a state, 17.1). */
+    providerJobId: text("provider_job_id"),
+    entryCount: integer("entry_count").notNull(),
+    terminalState: text("terminal_state")
+      .$type<"completed" | "failed" | "cancelled">()
+      .notNull(),
+    /** The provider's real terminal usage, one whole number per billing dimension. */
+    actualUsage: jsonb("actual_usage").$type<Record<string, number>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("credit_async_settlement_details_job_id_idx").on(table.jobId),
+    check(
+      "credit_async_settlement_details_capability_check",
+      sql`${table.capability} in ('chat', 'embedding', 'image', 'speech', 'transcription', 'rerank', 'ocr', 'realtime', 'video', 'unknown')`,
+    ),
+    check(
+      "credit_async_settlement_details_terminal_state_check",
+      sql`${table.terminalState} in ('completed', 'failed', 'cancelled')`,
+    ),
+    check("credit_async_settlement_details_entry_count_check", sql`${table.entryCount} > 0`),
+    check(
+      "credit_async_settlement_details_usage_shape_check",
+      sql`jsonb_typeof(${table.actualUsage}) = 'object'`,
+    ),
+    index("credit_async_settlement_details_ledger_idx").on(table.ledgerId),
+  ],
+);
+
+/**
  * One established realtime session (Bifrost 15.1, #314): the durable identity a WebSocket
  * or WebRTC session is born under — the grant, the payer the door RESOLVED server-side,
  * the model cell and BOTH locked versions, frozen at establishment so the session's
@@ -949,5 +1055,95 @@ export const creditSettlementDimensionBreakdown = pgTable(
       "credit_settlement_dimension_breakdown_units_check",
       sql`${table.units} >= 0`,
     ),
+  ],
+);
+
+/**
+ * One row per REAL tool call — the tool execution's own billing identity (Bifrost 20.1,
+ * #341). Every real tool call gets a local `tc-` charge id plus the caller's idempotency
+ * key (a replay converges on the row its hold already minted), the entrance it arrived
+ * through (the closed registry in `billing/tool-surcharge-pricing.ts` — MCP, injected,
+ * responses, web search, A2A), the surcharge dimension it bills on, and the attribution
+ * frozen at creation exactly the way `async_jobs` freezes its own. A charged row carries
+ * its reservation's `att-` attempt id — the 07.x bijection — so tool fees and model fees
+ * are distinguishable by construction: the dimension is always a `surcharge_*` member,
+ * and the settlement breakdown's surcharge group says the same thing about the same call.
+ *
+ * `refused` rows never hold a reservation or an attempt — a refusal writes no money rows,
+ * and the refusal reason plus the audit trail carry the attempt; a `charged` row holds the
+ * reservation the call settled against, or carries `pricedFree` when the basis priced the
+ * call exactly zero (free is a price, executable hold-free). The routing-attached
+ * embedding call is deliberately not an entry: it bills on the attached model's own token
+ * dimensions through the request's reservation.
+ */
+export const toolCallCharges = pgTable(
+  "tool_call_charges",
+  {
+    /** The call's local identity, writer-minted — recognisable on sight, like `cr-`/`aj-`. */
+    chargeId: text("charge_id").primaryKey(),
+    /** The caller's durable request identity; a replay answers the existing row. */
+    idempotencyKey: text("idempotency_key").notNull(),
+    /** The entrance id, from the closed tool-execution registry. */
+    entry: text("entry").notNull(),
+    /** What executed: the `<client>-<tool>` pattern, the search tool, or the agent name. */
+    tool: text("tool").notNull(),
+    /** The surcharge dimension this call bills on (never a model dimension). */
+    dimension: text("dimension").notNull(),
+    /** The authorization the call ran under — frozen, like every attribution fact here. */
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    /** The resolved payer the attribution froze at creation, never the request's spelling. */
+    payerKind: text("payer_kind").notNull(),
+    payerId: text("payer_id").notNull(),
+    /** The admission's own outcome: charged (with its hold, or priced exactly free) or refused. */
+    state: text("state")
+      .$type<"charged" | "refused">()
+      .notNull(),
+    /** The reservation this call's hold minted; absent exactly when no hold formed. */
+    reservationId: text("reservation_id").references(
+      () => creditReservations.id,
+    ),
+    /** True when the basis priced the call exactly zero — charged, hold-free. */
+    pricedFree: boolean("priced_free").notNull().default(false),
+    /** The admission's own refusal code, recorded on the refused row. */
+    refusalReason: text("refusal_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("tool_call_charges_idempotency_key_unique_idx").on(
+      table.idempotencyKey,
+    ),
+    check(
+      "tool_call_charges_entry_check",
+      sql`${table.entry} IN ('mcp.tool_call', 'injected.tool_call', 'injected.web_search', 'responses.tool_call', 'a2a.call')`,
+    ),
+    check(
+      "tool_call_charges_dimension_check",
+      sql`${table.dimension} IN ('surcharge_web_search', 'surcharge_tool_call', 'surcharge_a2a_call')`,
+    ),
+    check(
+      "tool_call_charges_payer_kind_check",
+      sql`${table.payerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    check(
+      "tool_call_charges_state_check",
+      sql`${table.state} IN ('charged', 'refused')`,
+    ),
+    check(
+      "tool_call_charges_state_shape_check",
+      sql`(${table.state} = 'charged' AND ${table.refusalReason} IS NULL AND (${table.reservationId} IS NOT NULL OR ${table.pricedFree} = true)) OR (${table.state} = 'refused' AND ${table.reservationId} IS NULL AND ${table.refusalReason} IS NOT NULL AND ${table.pricedFree} = false)`,
+    ),
+    // The user view and the sweep walk a grant's calls oldest first.
+    index("tool_call_charges_grant_idx").on(
+      table.grantId,
+      table.createdAt,
+    ),
+    // One charge per reservation: a hold mints exactly one tool-call identity.
+    uniqueIndex("tool_call_charges_reservation_idx")
+      .on(table.reservationId)
+      .where(sql`${table.reservationId} IS NOT NULL`),
   ],
 );
