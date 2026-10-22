@@ -69,6 +69,7 @@ import {
   type GatewayPriceSnapshotStore,
 } from "./price-snapshot";
 import { type ModelRef, modelRefKey } from "./catalog";
+import { summarizeCapabilityAvailability } from "./capability-availability";
 import { enterpriseControls } from "../admin/controls";
 import { speechTailAvailabilityView } from "../billing/speech-tail-availability";
 
@@ -209,6 +210,19 @@ export function createModelDiscoveryRoutes(
     const excludedViews: ExcludedModelView[] = selection.excluded
       .filter((entry) => entry.reasonCode !== "model_capability_mismatch")
       .map((entry) => ({ ref: entry.ref, reasonCode: entry.reasonCode }));
+
+    // 11.6 (#301): the three group-11 capabilities' enablement summary — embedding, rerank
+    // and OCR against their own billed dimensions on the same latest snapshots the price
+    // annotations above read. A capability's state and its reason when unavailable are the
+    // summary's own words; unknown never renders as free. Additive to the frozen contract
+    // (the ticket's Produces records the field), and it carries only basis-level facts —
+    // no configuration, no operator identity, no other subject's data.
+    const groupElevenAvailability = summarizeCapabilityAvailability({
+      snapshots: snapshots.map((snapshot) => ({
+        ref: snapshot.ref,
+        dims: snapshot.dims,
+      })),
+    });
 
     return context.json({
       bot: { botId: bot.botId, displayName: bot.displayName },

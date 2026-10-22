@@ -490,7 +490,9 @@ describe("the read is 03.8's answer, presented under 03.10's names", () => {
     ]);
     const rendered = JSON.stringify(body);
     expect(rendered).not.toContain("epsilon");
-    expect(rendered).not.toContain("image");
+    // The image-only ref is named nowhere — pinned by the ref's shape, since 11.6's
+    // capability summary legitimately carries "image" as a price-dimension name.
+    expect(rendered).not.toContain('"capability":"image"');
     expect(rendered).not.toContain("model_capability_mismatch");
   });
 
@@ -513,6 +515,26 @@ describe("the read is 03.8's answer, presented under 03.10's names", () => {
       "botId",
       "displayName",
     ]);
+    // The capabilities summary is shape-closed too: one entry per group-11 capability,
+    // each with exactly the summary's own fields.
+    expect((body.capabilities as unknown[]).map((entry) => (entry as { capability: string }).capability)).toEqual([
+      "embedding",
+      "rerank",
+      "ocr",
+    ]);
+    for (const entry of body.capabilities as Record<string, unknown>[]) {
+      for (const key of ["capability", "state", "cells"]) {
+        expect(entry[key]).toBeDefined();
+      }
+      expect(["enabled", "free", "unmapped", "price_unknown"]).toContain(
+        entry.state,
+      );
+      expect(
+        entry.state === "enabled" || entry.state === "free"
+          ? entry.reasonCode === undefined
+          : typeof entry.reasonCode === "string",
+      ).toBe(true);
+    }
     const allowedReasons = MODEL_EXCLUSION_REASONS.filter(
       (reason) => reason !== "model_capability_mismatch",
     );
@@ -581,5 +603,75 @@ describe("the read is 03.8's answer, presented under 03.10's names", () => {
       error: "The bot declares no capability the model catalog can offer.",
       code: "bot_capabilities_unmappable",
     });
+  });
+
+  test("the group-11 capabilities' enablement summary rides the answer (11.6, #301)", async () => {
+    // Deployment-level facts, not bot-scoped: embedding priced, rerank free, OCR with a
+    // basis that refuses — a chat bot sees all three, because the question is what the
+    // gateway can bill strictly, not what this bot uses. The snapshot feed is scoped to
+    // this test's own app instance (the in-memory stub the route's deps accept), so the
+    // assertion reads exactly these three cells — no shared-store interference.
+    const stubSnapshots = [
+      {
+        ref: { provider, model: "emb-1", capability: "embedding" },
+        dims: fullyPricedDims(),
+        classification: { status: "known" },
+      },
+      {
+        ref: { provider, model: "rr-1", capability: "rerank" },
+        dims: freeDims(),
+        classification: { status: "free" },
+      },
+      {
+        ref: { provider, model: "ocr-1", capability: "ocr" },
+        dims: unpricedDims(),
+        classification: { status: "unknown" },
+      },
+    ];
+    const app = createModelDiscoveryRoutes(
+      { authenticate: registry.authenticate, botServices: registry },
+      {
+        selectable: () => filter,
+        priceSnapshots: () =>
+          ({
+            listLatestPriceSnapshots: async () => stubSnapshots,
+          }) as never,
+      },
+    );
+    const { secret } = await credentialedBot("capabilities", ["chat"]);
+    const response = await app.request("/", {
+      headers: { authorization: `Bearer ${secret}` },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      capabilities: {
+        capability: string;
+        state: string;
+        reasonCode?: string;
+        cells?: unknown[];
+        missingDimensions?: { ref: { model: string }; dimension: string }[];
+      }[];
+    };
+    const byCapability = Object.fromEntries(
+      body.capabilities.map((entry) => [entry.capability, entry]),
+    );
+    expect(byCapability.embedding.state).toBe("enabled");
+    expect(byCapability.embedding.reasonCode).toBeUndefined();
+    expect(byCapability.rerank.state).toBe("free");
+    // Free and unknown are different states with different words: unknown never
+    // renders as free, and the refusal carries its own reason code.
+    expect(byCapability.rerank.state).not.toBe(byCapability.ocr.state);
+    expect(byCapability.ocr.state).toBe("price_unknown");
+    expect(byCapability.ocr.reasonCode).toBe("capability_price_unknown");
+    // The re-pricing worklist names the OCR cell and its missing billed dimensions.
+    expect(
+      byCapability.ocr.missingDimensions?.map(
+        (missing) => `${missing.ref.model}:${missing.dimension}`,
+      ),
+    ).toEqual([
+      "ocr-1:surcharge_per_request",
+      "ocr-1:image",
+      "ocr-1:output",
+    ]);
   });
 });
