@@ -457,6 +457,11 @@ jobs:
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.
       - run: bun run test:ci
+      # #407: the TLS pipeline suite spawns real bash/openssl/drill processes, so its slow cases ride
+      # an explicit 30 s per-test budget (see jest.setTimeout in the file) rather than bun's 5 s
+      # default. Running it through the named script keeps the flag and the file's own budget in one
+      # place, instead of a bare `bun test` line drifting from what `test:tls` does locally.
+      - run: bun run test:tls
 
   startup:
     name: startup (${{ matrix.os }})

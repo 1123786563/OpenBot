@@ -22,6 +22,7 @@
     "test:ci": "bun scripts/test-ci.ts",
     "pretest": "bun run generate:app-config",
     "test:api": "OPENBOT_LIVE_API=1 e2e run --config e2e.unit.config.ts tests/e2e/api.e2e.test.ts",
+    "test:tls": "bun test scripts/tls-pipeline.test.ts --timeout 30000",
     "test:smoke": "OPENBOT_SMOKE=1 e2e run --config e2e.unit.config.ts tests/smoke/journey.test.ts",
     "test:live-screen": "OPENBOT_LIVE_SCREEN=1 e2e run --config e2e.unit.config.ts agent-computer/tests/live-screen.test.ts agent-computer/tests/browser-close-announcement.test.ts agent-computer/tests/reset-run.test.ts",
     "test:ui": "e2e run",

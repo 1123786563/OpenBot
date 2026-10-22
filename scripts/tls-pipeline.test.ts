@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, test } from "../tests/support/bun-test-compat";
+import { describe, expect, jest, test } from "../tests/support/bun-test-compat";
 
 /**
  * The TLS certificate pipeline behind `docker/compose/certs.yml` (#359, spec
@@ -117,6 +117,19 @@ async function guardOnce(
       : [];
   return { result, status, alerts };
 }
+
+/*
+ * #407: every case here spawns real processes — bash running lib.sh/guard/drill, plus openssl
+ * fabricating certificates — so "fast" is a machine property, not a property of the suite. On the
+ * reference laptop the whole file finishes with cases in the 5–9 s range, but bun's default 5 s
+ * per-test budget has no headroom there, and CI (or any loaded machine) tips the slowest spawn
+ * chains past it: the ticket's 3 fail / 3 error flake. The per-test budget is raised for the file
+ * instead of only through the `--timeout` flag, because a bare `bun test` of this file must behave
+ * the same way — the flag alone would keep that invocation red on slow machines. 30 s matches the
+ * `test:tls` script and the CI step; a timing-out case still fails with bun's explicit
+ * "this test timed out after ...ms" verdict, never a silent hang.
+ */
+jest.setTimeout(30_000);
 
 describe("derive_preview_host (mirrors #361 parseTemplate)", () => {
   test("empty template is the dev form: no certificate needed", async () => {
