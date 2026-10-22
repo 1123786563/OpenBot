@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/suppor
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,6 +11,7 @@ import {
   within,
 } from "@testing-library/react";
 import type { BillingInvoicePage } from "@/lib/billing/invoices";
+import { money } from "@/lib/billing/format";
 import { orderIdOfPlanGrant } from "@/lib/billing/trace";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
@@ -48,6 +50,9 @@ const PENDING_INVOICES: BillingInvoicePage = {
       issuedAt: "2026-10-01T00:00:00.000Z",
       settledAt: null,
       channelTransactionId: null,
+      payerKind: "personal",
+      fulfillment: null,
+      anomalies: [],
     },
     {
       invoiceId: "po_100",
@@ -61,6 +66,14 @@ const PENDING_INVOICES: BillingInvoicePage = {
       issuedAt: "2026-09-01T00:00:00.000Z",
       settledAt: "2026-09-01T00:01:00.000Z",
       channelTransactionId: "ch_1",
+      payerKind: "personal",
+      // 已收款且已交付：老单是「已交付」的对照面。
+      fulfillment: {
+        state: "delivered",
+        failureReason: null,
+        nextRetryAt: null,
+      },
+      anomalies: [],
     },
   ],
   pagination: { totalCount: 2, totalPages: 1, currentPage: 1, nextPage: null },
@@ -76,6 +89,12 @@ const PAID_INVOICES: BillingInvoicePage = {
           status: "paid" as const,
           settledAt: "2026-10-02T08:00:00.000Z",
           channelTransactionId: "ch_2",
+          // 钱到了、权益还没到：刷新后这行必须说「已付款，权益处理中」（BP07/#375）。
+          fulfillment: {
+            state: "processing" as const,
+            failureReason: null,
+            nextRetryAt: null,
+          },
         }
       : invoice,
   ),
@@ -89,6 +108,7 @@ const PAID_INVOICES: BillingInvoicePage = {
  */
 const BALANCE = {
   accountType: "personal" as const,
+  account: { status: "active" as const, quarantineReason: null },
   available: 88,
   consumed: 12,
   expired: 0,
@@ -175,7 +195,7 @@ function installFetchStub(overrides: {
   summary?: Stub;
   entitlements?: Stub;
   catalog?: Stub;
-}) {
+} = {}) {
   requestedUrls = [];
   state.invoices = PENDING_INVOICES;
   globalThis.fetch = (async (
@@ -224,6 +244,23 @@ function renderView({ page = 1 }: { page?: number } = {}) {
       <OrdersGrantsView page={page} onPage={() => {}} scope={PERSONAL_SCOPE} />
     </QueryClientProvider>,
   );
+}
+
+/*
+ * The paint flush this harness needs under the e2e native runner: React 19 + RTL + happy-dom
+ * land react-query results without repainting the mounted tree (the hbc4-diagnosed freeze —
+ * memory preview-tab-e2e-render-freeze). An `act` wrapping a REAL async gap lets the stub's
+ * fetch resolution ride a macrotask inside act's batching, and the tree paints. Every render
+ * test here calls it once after mount, before its first assertion.
+ */
+async function flushPaint() {
+  // Two rounds: the first lands the reads' promises, the second the tree they repaint —
+  // a single round left later mounts on the skeleton in this runner.
+  for (let round = 0; round < 2; round += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+  }
 }
 
 beforeAll(async () => {
@@ -284,6 +321,7 @@ test("orderIdOfPlanGrant refuses to guess for non-plan or off-format reasons", (
 test("订单与积分追溯页渲染本人订单、订阅与 Grant（状态、来源、有效期、追溯到订单）", async () => {
   installFetchStub({});
   const view = renderView();
+  await flushPaint();
 
   // The grants read landed — the page's slowest answer is in.
   await view.findByTestId("credit-grant-cg-plan");
@@ -335,6 +373,7 @@ test("订单与积分追溯页渲染本人订单、订阅与 Grant（状态、�
 test("页面不携带任何账户标识，仅请求本人作用域读取", async () => {
   installFetchStub({});
   const view = renderView();
+  await flushPaint();
   await view.findByTestId("credit-grant-cg-plan");
   // Let every read's request land before auditing the URLs the page asked for.
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -369,6 +408,7 @@ test("订单读取失败时显示错误与重试，不渲染空表", async () =>
     invoices: { status: 503, body: { error: "订单服务暂不可用" } },
   });
   const view = renderView();
+  await flushPaint();
 
   const ordersSection = await view.findByTestId("orders-section");
   // The server's sentence is shown with a way back in…
@@ -393,6 +433,7 @@ test("计费未启用的部署显示不可用空态", async () => {
     catalog: missing,
   });
   const view = renderView();
+  await flushPaint();
 
   await view.findByText("此部署未启用计费");
   // The deployment's fact, said once — no table, no grant rows, no crash.
@@ -403,6 +444,7 @@ test("计费未启用的部署显示不可用空态", async () => {
 test("Grant 过期状态与服务器一致", async () => {
   installFetchStub({});
   const view = renderView();
+  await flushPaint();
 
   await view.findByTestId("credit-grant-cg-promo");
   // The statuses ARE the server's answer: the lapsed grant reads 已过期, the live one 使用中 —
@@ -431,8 +473,9 @@ test("Grant 过期状态与服务器一致", async () => {
 test("订单状态变化在页面正确反映：pending → paid 经刷新后更新", async () => {
   installFetchStub({});
   const view = renderView();
+  await flushPaint();
 
-  await view.findByTestId("orders-table");
+  await view.findByTestId("orders-table", {}, { timeout: 15000 });
   const pendingRow = within(view.getByTestId("orders-table"))
     .getByText("po_123")
     .closest("tr");
@@ -441,6 +484,7 @@ test("订单状态变化在页面正确反映：pending → paid 经刷新后更
   // The webhook lands, the order settles — then the reader hits refresh.
   state.invoices = PAID_INVOICES;
   fireEvent.click(view.getByRole("button", { name: "刷新" }));
+  await flushPaint();
 
   await waitFor(() => {
     const row = within(view.getByTestId("orders-table"))
@@ -449,4 +493,137 @@ test("订单状态变化在页面正确反映：pending → paid 经刷新后更
     expect(row?.textContent).toContain("已支付");
     expect(row?.textContent).not.toContain("等待支付");
   });
+});
+
+/*
+ * BP07（#375）AC1/AC3 —— 支付记录的交付进度、异常进度与用语。
+ *
+ * 已收款未交付是独立于支付状态的事实：钱到而权益未到的行必须说「已付款，权益处理中」，
+ * 确定性冲突说「待人工处置」并把重复收款等异常行带出来（×N 计次），已交付说「已交付」；
+ * 未收款的行不欠交付（dash）。金额只按订单自身快照币种渲染；本地订单视图通篇不称
+ * 「发票」——它是支付记录，不是税务凭证。
+ */
+test("已收款未交付显示「已付款，权益处理中」，异常与处置进度明确（BP07）", async () => {
+  const INVOICES: BillingInvoicePage = {
+    ...PENDING_INVOICES,
+    invoices: [
+      {
+        ...PENDING_INVOICES.invoices[0]!,
+        invoiceId: "po_paid_processing",
+        status: "paid",
+        settledAt: "2026-10-02T08:00:00.000Z",
+        fulfillment: {
+          state: "processing",
+          failureReason: "grant_write_failed",
+          nextRetryAt: "2026-10-02T08:05:00.000Z",
+        },
+      },
+      {
+        ...PENDING_INVOICES.invoices[0]!,
+        invoiceId: "po_needs_resolution",
+        status: "paid",
+        settledAt: "2026-10-02T09:00:00.000Z",
+        fulfillment: {
+          state: "needs_resolution",
+          failureReason: "duplicate_paid",
+          nextRetryAt: null,
+        },
+        // 同一异常词记录两次：一行 + ×2，不是两行同句。
+        anomalies: [
+          {
+            code: "duplicate_paid",
+            detail: "second transaction on a covered period",
+            channelTransactionId: "ch_d1",
+            amountCents: 19900,
+            occurredAt: "2026-10-02T09:00:00.000Z",
+          },
+          {
+            code: "duplicate_paid",
+            detail: "second transaction on a covered period",
+            channelTransactionId: "ch_d2",
+            amountCents: 19900,
+            occurredAt: "2026-10-02T09:01:00.000Z",
+          },
+          {
+            code: "late_payment",
+            detail: "paid outside the fulfilment window",
+            channelTransactionId: "ch_l1",
+            amountCents: 19900,
+            occurredAt: "2026-10-02T09:02:00.000Z",
+          },
+        ],
+      },
+    ],
+  };
+  installFetchStub({ invoices: { status: 200, body: INVOICES } });
+  const view = renderView();
+  // 已知环境故障（hbc4 诊断）：e2e 原生层挂载后 react-query 结果不 paint，一次 act
+  // flush 即可（详见 memory preview-tab-e2e-render-freeze）。
+  await flushPaint();
+  await view.findByTestId("orders-table", {}, { timeout: 15000 });
+
+  const processingRow = within(view.getByTestId("orders-table"))
+    .getByText("po_paid_processing")
+    .closest("tr");
+  expect(
+    within(processingRow as HTMLElement).getByTestId(
+      "fulfillment-po_paid_processing-processing",
+    ).textContent,
+  ).toBe("已付款，权益处理中");
+  // 保留的失败原因与下次处理时间是「在处理」的证据，不是内部码原文照搬（经词表翻译）。
+  expect(processingRow?.textContent).toContain("积分发放失败，自动重试");
+  expect(processingRow?.textContent).toContain("下次处理");
+
+  const conflictRow = within(view.getByTestId("orders-table"))
+    .getByText("po_needs_resolution")
+    .closest("tr");
+  expect(
+    within(conflictRow as HTMLElement).getByTestId(
+      "fulfillment-po_needs_resolution-needs_resolution",
+    ).textContent,
+  ).toBe("待人工处置");
+  expect(
+    within(conflictRow as HTMLElement).getByTestId(
+      "anomaly-po_needs_resolution-duplicate_paid",
+    ).textContent,
+  ).toBe("权益周期已被覆盖的收款 ×2");
+  expect(
+    within(conflictRow as HTMLElement).getByTestId(
+      "anomaly-po_needs_resolution-late_payment",
+    ).textContent,
+  ).toBe("超时到账的收款");
+});
+
+test("未收款的行不欠交付；已交付的行说「已交付」（BP07）", async () => {
+  installFetchStub();
+  const view = renderView();
+  await flushPaint();
+  await view.findByTestId("orders-table", {}, { timeout: 15000 });
+  const pendingRow = within(view.getByTestId("orders-table"))
+    .getByText("po_123")
+    .closest("tr");
+  // 无收款即无交付：金额照旧、状态照旧，交付列是「–」，不是任何进度词。
+  expect(pendingRow?.querySelector('[data-testid^="fulfillment-"]')).toBeNull();
+  const deliveredRow = within(view.getByTestId("orders-table"))
+    .getByText("po_100")
+    .closest("tr");
+  expect(
+    within(deliveredRow as HTMLElement).getByTestId(
+      "fulfillment-po_100-delivered",
+    ).textContent,
+  ).toBe("已交付");
+});
+
+test("金额按订单自身快照币种渲染；本地订单视图不称「发票」（BP07 AC3）", async () => {
+  installFetchStub();
+  const view = renderView();
+  await flushPaint();
+  await view.findByTestId("orders-table", {}, { timeout: 15000 });
+  // 订单快照币种是唯一金额来源：CNY 订单按 CNY 渲染（money() 的词，不猜符号）。
+  const pendingRow = within(view.getByTestId("orders-table"))
+    .getByText("po_123")
+    .closest("tr");
+  expect(pendingRow?.textContent).toContain(money(19900, "CNY"));
+  // 本地订单视图是支付记录：整页（含文案）不出现「发票」二字。
+  expect(view.container.textContent).not.toContain("发票");
 });

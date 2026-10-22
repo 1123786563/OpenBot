@@ -172,6 +172,10 @@ const PERSONAL_SCOPE = {
 /** The 02.6 wire contract, as the server builds it (PersonalCreditBalance). */
 type BalanceFixture = {
   accountType: "personal";
+  account: {
+    status: "active" | "quarantined";
+    quarantineReason: string | null;
+  };
   available: number;
   consumed: number;
   expired: number;
@@ -217,6 +221,7 @@ type BalanceFixture = {
 
 const BALANCE: BalanceFixture = {
   accountType: "personal",
+  account: { status: "active", quarantineReason: null },
   available: 12.5,
   consumed: 3.2,
   expired: 0.75,
@@ -298,6 +303,7 @@ const BALANCE: BalanceFixture = {
 
 const EMPTY_BALANCE: BalanceFixture = {
   accountType: "personal",
+  account: { status: "active", quarantineReason: null },
   available: 0,
   consumed: 0,
   expired: 0,
@@ -513,6 +519,32 @@ test("PersonalBalanceCard renders the enabled pending view with its split and re
   expect(pending).toContain("待结算");
   expect(pending).toContain("30");
   expect(view.getAllByTestId("reservation-row")).toHaveLength(2);
+});
+
+// BP07（#375）：账户级能力状态。隔离=能力不可用，卡片以固定句说「不可用」，不把行上的
+// 原始隔离原因（运营诊断文本）内插进读者面——原因给财务/支持面；active 无标签（没有
+// 问题就不是一条值得占位的事实）。
+test("PersonalBalanceCard says a quarantined account's capabilities are unavailable, without the raw reason", () => {
+  const quarantined: BalanceFixture = {
+    ...BALANCE,
+    account: {
+      status: "quarantined",
+      quarantineReason: "legacy key with unknown attribution",
+    },
+  };
+  const view = render(<PersonalBalanceCard balance={quarantined} />);
+  expect(view.getByTestId("account-capability").textContent).toContain(
+    "能力暂不可用",
+  );
+  // 原始原因不进 DOM：读者面只说状态，不说诊断。
+  expect(view.container.textContent).not.toContain(
+    "legacy key with unknown attribution",
+  );
+});
+
+test("PersonalBalanceCard shows no capability chip on an active account", () => {
+  const view = render(<PersonalBalanceCard balance={BALANCE} />);
+  expect(view.queryByTestId("account-capability")).toBeNull();
 });
 
 test("PersonalBalanceCard renders a pre-06.12 answer as 未启用, never a bare 0", () => {
