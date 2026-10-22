@@ -28,7 +28,7 @@ export function WbCard({
       className={cn(
         "flex min-w-0 flex-col gap-3 self-start rounded-2xl border border-border bg-card p-5 shadow-card transition-[box-shadow,border-color] duration-200",
         interactive &&
-          "cursor-pointer hover:border-foreground/20 hover:shadow-card-hover",
+          "cursor-pointer hover:border-foreground/20 hover:shadow-card-hover focus-visible:border-foreground/20 focus-visible:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         className,
       )}
       {...props}

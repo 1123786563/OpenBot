@@ -413,6 +413,11 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
     // MT034/MT067/MT074 而本断言清单未同步，按注册表排序位补齐这三项
     // （MT031<MT034<MT041、MT060<MT067<MT069、MT073<MT074<MT076），
     // 文件其余内容只读。
+    // PKG02/PKG03（#461/#462 brief 预授权，pkg03b 实现补记）：包安装与
+    // Bot 授权/Run 钉扎迁移任务注册（MT 通道外的 out-of-band 追踪），按
+    // 注册表排序位补齐这两项；文件其余内容只读。
+    // PKG04（#463 brief 预授权，R4-backend 补记）：专家实例化迁移任务注册，
+    // 按注册表排序位补齐（PKG03<PKG04）；文件其余内容只读。
     expect(ALLOWED_TASK_IDS).toEqual([
       "MT000",
       "MT004",
@@ -440,6 +445,9 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       "MT076",
       "MT077",
       "MT112",
+      "PKG02",
+      "PKG03",
+      "PKG04",
     ]);
     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));
     const selfCheck = TASKS.get("MT000");

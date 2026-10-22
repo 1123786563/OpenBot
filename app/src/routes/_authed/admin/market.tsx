@@ -1,5 +1,6 @@
 import {
   IconBolt,
+  IconPackage,
   IconPencil,
   IconPlug,
   IconSearch,
@@ -22,6 +23,7 @@ import {
   TemplateDialogWb,
 } from "@/components/market/experts-pane";
 import { MyExpertsView } from "@/components/market/my-experts-view";
+import { PackagePane } from "@/components/market/package-pane";
 import {
   SkillDialogWb,
   type SkillSubject,
@@ -38,6 +40,7 @@ import {
   uninstallMarketSkillMutationOptions,
 } from "@/lib/marketplace/mutations";
 import { marketplaceQueryOptions } from "@/lib/marketplace/queries";
+import { usePackageScope } from "@/lib/plugin-packages/use-package-scope";
 import {
   addCuratedServerMutationOptions,
   enableComposioAppMutationOptions,
@@ -74,9 +77,9 @@ export const Route = createFileRoute("/_authed/admin/market")({
   component: MarketPage,
 });
 
-type Tab = "experts" | "skills" | "connectors";
+type Tab = "experts" | "skills" | "connectors" | "packages";
 
-function MarketPage() {
+export function MarketPage() {
   const { t } = useTranslation("market");
   const [tab, setTab] = React.useState<Tab>("experts");
   const [view, setView] = React.useState<"hub" | "mine">("hub");
@@ -96,6 +99,20 @@ function MarketPage() {
   const agents = useQuery(agentListQueryOptions());
   const me = useQuery(currentUserQueryOptions());
   const isAdmin = me.data?.role === "admin";
+  // PKG01/02: packages are read under the team the person last chose explicitly,
+  // and the install verb belongs to the selected company's tenant_admin role —
+  // never the deployment's. The server re-authorizes every plan/apply regardless.
+  // The listing's own faces ride along: a pending listing is a skeleton and a failed
+  // one names the failure — neither may read as "no team chosen".
+  const {
+    scope: packageScope,
+    canInstall: canInstallPackages,
+    currentUserPending: packageUserPending,
+    currentUserError: packageUserError,
+    listingPending: packageListingPending,
+    listingError: packageListingError,
+    listingRefetch: packageListingRefetch,
+  } = usePackageScope({ enabled: tab === "packages" });
   const connectorsTab = tab === "connectors";
   const openConnector = useQuery({
     ...openConnectorAppsQueryOptions(brokerQuery),
@@ -245,6 +262,11 @@ function MarketPage() {
       label: t("tab.connectors"),
       icon: <IconPlug className="size-5" />,
     },
+    {
+      key: "packages",
+      label: t("tab.packages"),
+      icon: <IconPackage className="size-5" />,
+    },
   ];
 
   // Dialog subjects: one per card kind, held so the dialog survives the re-render a mutation
@@ -302,22 +324,24 @@ function MarketPage() {
               ))}
             </nav>
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground/40" />
-                <input
-                  aria-label={t("searchAria")}
-                  className="h-9 w-56 rounded-lg border border-transparent bg-foreground/[0.04] pr-3 pl-8 text-sm text-foreground outline-none transition-colors placeholder:text-foreground/40 focus-visible:border-foreground/20 focus-visible:bg-card"
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={
-                    tab === "experts"
-                      ? t("search.experts")
-                      : tab === "skills"
-                        ? t("search.skills")
-                        : t("search.connectors")
-                  }
-                  value={search}
-                />
-              </div>
+              {tab === "packages" ? null : (
+                <div className="relative">
+                  <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground/40" />
+                  <input
+                    aria-label={t("searchAria")}
+                    className="h-9 w-56 rounded-lg border border-transparent bg-foreground/[0.04] pr-3 pl-8 text-sm text-foreground outline-none transition-colors placeholder:text-foreground/40 focus-visible:border-foreground/20 focus-visible:bg-card"
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder={
+                      tab === "experts"
+                        ? t("search.experts")
+                        : tab === "skills"
+                          ? t("search.skills")
+                          : t("search.connectors")
+                    }
+                    value={search}
+                  />
+                </div>
+              )}
               {tab === "experts" && view === "hub" ? (
                 <WbSecondaryButton onClick={() => setView("mine")}>
                   <IconUser className="size-4" />
@@ -356,7 +380,17 @@ function MarketPage() {
             </p>
           ) : null}
 
-          {pending ? (
+          {tab === "packages" ? (
+            <PackagePane
+              canInstall={canInstallPackages}
+              currentUserError={packageUserError}
+              currentUserPending={packageUserPending}
+              listingError={packageListingError}
+              listingPending={packageListingPending}
+              listingRefetch={packageListingRefetch}
+              scope={packageScope}
+            />
+          ) : pending ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {["a", "b", "c", "d", "e", "f"].map((slot) => (
                 <WbCardSkeleton key={slot} />

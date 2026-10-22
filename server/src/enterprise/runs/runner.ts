@@ -51,7 +51,11 @@ import {
   type ModelRouteSnapshotInput,
 } from "./model-route-catalog";
 import { runOutputCeilingFromInput } from "./output-ceiling";
-import { createRunService, type RunModelRoute } from "./service";
+import {
+  createRunService,
+  type RunModelRoute,
+  type RunServiceDependencies,
+} from "./service";
 import { RunDomainError } from "./store";
 
 /**
@@ -858,6 +862,11 @@ export interface ProductionRunnerCompositionDependencies {
   readonly gatewayEnvironment?: Record<string, string | undefined>;
   /** Upstream fetch for the gateway dial; defaults to the runtime's fetch. */
   readonly modelFetch?: typeof fetch;
+  /**
+   * PKG03B: package runtime `prepareWithin`, forwarded to the run service so
+   * enterprise runs pin package grants in the run transaction (Spec §9).
+   */
+  readonly preparePackageRun?: RunServiceDependencies["preparePackageRun"];
 }
 
 export interface ProductionRunnerComposition {
@@ -897,6 +906,9 @@ export function createProductionRunnerComposition(
     expertVersions,
     modelRouteFor: requestBoundModelRouteFor,
     modelCapabilitySecret: deps.modelCapabilitySecret,
+    ...(deps.preparePackageRun
+      ? { preparePackageRun: deps.preparePackageRun }
+      : {}),
     ...(deps.leaseMilliseconds !== undefined
       ? { leaseMilliseconds: deps.leaseMilliseconds }
       : {}),

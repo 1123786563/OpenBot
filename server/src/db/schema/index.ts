@@ -36,6 +36,7 @@ export * from "./enterprise-governance-policy";
 export * from "./enterprise-model-routes";
 export * from "./enterprise-oauth-state";
 export * from "./enterprise-personal-bot";
+export * from "./enterprise-plugin-packages";
 export * from "./enterprise-plugins";
 export * from "./enterprise-runs";
 export * from "./enterprise-runtime-config";

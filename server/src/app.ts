@@ -576,6 +576,12 @@ export function createApp(
     /** MT006 (issue #49): workspace scope listing + team administration routes. */
     enterpriseWorkspaceScope?: Hono;
     /**
+     * PKG01: read-only plugin-package marketplace. Mounted by the assembly even
+     * when its catalogue could not load — those routes answer 503, never an
+     * empty success page.
+     */
+    pluginPackages?: Hono;
+    /**
      * MT122 (issue #165): the deployment main entry's request-context seam.
      * Present, the business API mounts the entry middleware after the
      * usage-origin floor (multitenancy mode only); each request that carries
@@ -968,6 +974,9 @@ export function createApp(
       "/api/enterprise/workspace-scope",
       coworker.enterpriseWorkspaceScope,
     );
+  }
+  if (coworker?.pluginPackages) {
+    app.route("/api/enterprise/plugin-packages", coworker.pluginPackages);
   }
   /*
    * Registering an identity provider is an administrator's decision, not a signed-in one.

@@ -1,0 +1,2 @@
+[ocr]   ✘ code_search failed: git grep failed: exit status 1: warning: could not open directory 'server/src/tenancy/': No such file or directory
+exit=0 ended=2026-10-20T07:38:52Z

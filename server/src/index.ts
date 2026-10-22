@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import type { AbstractAgent } from "@ag-ui/client";
 import {
@@ -331,8 +332,17 @@ import {
   createUnavailableConversationRoutes,
 } from "./enterprise/conversations/routes";
 import { createConversationService } from "./enterprise/conversations/service";
+import { createPackageService } from "./enterprise/plugin-packages/install-service";
+import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
+import { createPackageRuntime } from "./enterprise/plugin-packages/runtime";
+import {
+  createPluginPackageRoutes,
+  createUnavailablePluginPackageRoutes,
+} from "./enterprise/plugin-packages/routes";
+import { createPackageReadStore } from "./enterprise/plugin-packages/store";
 import { createProductionRunnerComposition } from "./enterprise/runs/runner";
 import {
+  type OperatorDatabase,
   verifyDataDatabase,
   verifyDirectoryDatabase,
   verifyOperatorDatabase,
@@ -538,6 +548,7 @@ import { createSignInService } from "./passwords/service";
 import { createPasswordStore } from "./passwords/store";
 import { createOnboardingStore } from "./people/onboarding";
 import { createPeopleStore } from "./people/store";
+import { loadPackageCatalogue } from "./plugin-packages/catalogue";
 import { createAccountModeSwitch } from "./plugins/account-mode";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
@@ -1119,6 +1130,104 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
       });
     })()
   : createUnavailableWorkspaceScopeRoutes();
+// PKG01 (#460) / PKG02 (#461): the plugin-package marketplace. The marketplace
+// index and the content-addressed artifacts are deployment build outputs,
+// verified once at startup. A missing or invalid index leaves the routes
+// answering 503 — browsing is unavailable, never an empty or partly fabricated
+// catalogue. R6-7 (OCR round 6): a missing artifact root is deliberately NOT a
+// 503 — the catalogue still loads and each affected entry stays listed as
+// unavailable under an ARTIFACT_MISSING blocker (see loadPackageCatalogue), so
+// browsing degrades instead of disappearing. Reads reuse the enterprise
+// entry's trusted Scope resolver (`scopes` above) instead of standing up a
+// second one.
+//
+// PKG02 adds install facts to reads (restricted data channel) and plan/apply
+// (restricted operator channel). Without a verified operator channel the
+// service still serves reads but every plan/apply answers 503
+// ADMIN_CHANNEL_UNAVAILABLE — never an owner-database fallback. Plan/apply also
+// require a verified CompanyAdminContext issued by the same authorizer the
+// workspace-scope admin routes use, so a platform administrator gains no
+// implicit company authority.
+const pluginPackageRoutes = await (async () => {
+  if (!enterpriseCapabilities) return createUnavailablePluginPackageRoutes();
+  try {
+    // R4-5: the index path is deployment configuration
+    // (`OPENBOT_PLUGIN_MARKETPLACE_INDEX`); the default is the same
+    // repository-root `plugins/marketplace.json` this path always read.
+    const indexSource = await readFile(config.pluginMarketplaceIndexPath, "utf8");
+    const catalogue = await loadPackageCatalogue({
+      index: JSON.parse(indexSource),
+      artifactRoot: config.pluginArtifactRoot,
+    });
+    const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+    // R6-2 (OCR round 6): the degradation itself is unchanged — plan/apply
+    // answer 503 and read-only browsing stays up — but it is no longer
+    // silent. The structured records (same shape as the catalogue-unavailable
+    // log.error beside the catch below) let operations tell "not configured"
+    // apart from "configured but broken" when every plan/apply 503s.
+    let operator: OperatorDatabase | null = null;
+    if (!operatorUrl) {
+      log.info(
+        {
+          type: "plugin-package-operator-unavailable",
+          reason: "OPERATOR_DATABASE_NOT_CONFIGURED",
+        },
+        "plugin-package-operator-unavailable",
+      );
+    } else {
+      let database: ReturnType<typeof createDatabase> | undefined;
+      try {
+        // createDatabase itself can reject on a malformed connection
+        // string; that failure degrades exactly like a failed capability
+        // check — plan/apply answer 503, read-only browsing stays up —
+        // instead of taking the whole catalogue route down.
+        database = createDatabase(operatorUrl);
+        operator = await verifyOperatorDatabase(database);
+      } catch (error) {
+        await database?.$client.close().catch(() => {});
+        log.error(
+          {
+            type: "plugin-package-operator-unavailable",
+            reason: "OPERATOR_DATABASE_UNUSABLE",
+            cause: error instanceof Error ? error.message : String(error),
+          },
+          "plugin-package-operator-unavailable",
+        );
+      }
+    }
+    const adminAuthorizer = createCompanyAdminAuthorizer(
+      enterpriseCapabilities.directory,
+      {
+        authenticate: authenticateWorkspaceScopeRequest,
+        selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+      },
+    );
+    return createPluginPackageRoutes({
+      catalogue,
+      service: createPackageService({
+        catalogue,
+        readStore: createPackageReadStore(enterpriseCapabilities.data),
+        mutation: operator ? createPackageMutationStore(operator) : null,
+        // PKG04A: expert templates are read from the same verified,
+        // content-addressed artifacts the catalogue resolves.
+        artifactRoot: config.pluginArtifactRoot,
+      }),
+      resolveScope: (request) => enterpriseCapabilities.scopes.resolve(request),
+      resolveAdmin: operator
+        ? (request) => adminAuthorizer.resolveAdminContext(request)
+        : undefined,
+    });
+  } catch (error) {
+    log.error(
+      {
+        type: "plugin-package-catalogue-unavailable",
+        cause: error instanceof Error ? error.message : String(error),
+      },
+      "plugin-package-catalogue-unavailable",
+    );
+    return createUnavailablePluginPackageRoutes();
+  }
+})();
 // MT010 (Issue #53): personal-resource share rules. The decision half rides
 // the already-verified restricted data channel; the owner-only share/revoke
 // half needs the restricted operator channel and stays null — fail-closed,
@@ -2957,6 +3066,14 @@ const enterpriseRunner = enterpriseCapabilities
       // through the same encrypted credential store every other surface uses.
       credentialEncryptionKey: config.keyEncryptionKey,
       credentialReader: credentialStore,
+      // PKG03B (Spec §9): package pins commit with the run row, and the
+      // pinned Skill read serves package skills from those pins. Shared with
+      // the package routes' catalogue root; absent artifacts fail the READ
+      // closed per install, never the pin write.
+      preparePackageRun: createPackageRuntime({
+        data: enterpriseCapabilities.data,
+        artifactRoot: config.pluginArtifactRoot,
+      }).prepareWithin,
     })
   : undefined;
 
@@ -3963,6 +4080,12 @@ const personResponseSweep = repeatAfterEach(async () => {
  * deployment with the capability off, which is a deployment that never started one.
  */
 let workOfferedListener: WorkOfferedListener | undefined;
+/*
+ * The handoff sweep's two-second backstop poll, held for the same reason every named sweep
+ * above is: an unheld Repeating keeps claiming leases through the graceful-shutdown window
+ * and a `process.exit(0)` can land mid-delivery. Undefined when the capability is off.
+ */
+let handoffKickSweep: Repeating | undefined;
 
 if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
   const runner = createHandoffRunner({
@@ -4093,7 +4216,7 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
       if (kind === HANDOFF_KIND) void kick();
     },
   );
-  repeatAfterEach(kick, 2_000);
+  handoffKickSweep = repeatAfterEach(kick, 2_000);
 }
 
 /*
@@ -6695,6 +6818,7 @@ const app = createApp(
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+    pluginPackages: pluginPackageRoutes,
     // MT122 (issue #165): present only when enterprise capabilities are wired;
     // multitenancy off or a missing channel leaves the assembly byte-for-byte
     // what it was (the middleware itself is mounted in createApp, mode-gated).
@@ -7238,6 +7362,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     personResponseSweep.stop();
     groupSweep.stop();
     for (const sweep of deliverySweeps) sweep.stop();
+    // The handoff backstop poll (OCR round2 M12): stop claiming new hops before the
+    // listeners below, exactly like the named sweeps — undefined with the capability off.
+    handoffKickSweep?.stop();
     // The billing sweepers (audit C3): stopped before the listeners below, so a shutdown cannot
     // land mid-batch. Each stop is its own try/catch — one that throws must not block the rest.
     for (const stop of billingSweepStops) {

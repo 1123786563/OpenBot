@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    {
+      "packageKey": "openbot/demo-skill",
+      "version": "1.0.0",
+      "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+      "category": "productivity",
+      "listed": true
+    }
+  ]
+}

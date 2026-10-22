@@ -18,13 +18,21 @@
 // 加三个受限角色 URL；缺配置时数据库用例显式 skip（理由写在用例名里），
 // 绝不回退开发库，skipped 不计为通过。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { sql } from "drizzle-orm";
 import type { Context } from "hono";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { buildInventory } from "../../scripts/multitenancy/inventory";
 import { requireAdmin } from "../../src/auth/guards";
+import { createPluginPackageRoutes } from "../../src/enterprise/plugin-packages/routes";
 import {
   assertClassifiedCompanyEntrance,
+  authorizeAndRecordCompanyManagementAction,
   authorizeCompanyManagementAction,
   authorizePlatformManagementAction,
   classifyManagementPlane,
@@ -115,6 +123,16 @@ const COMPANY_ENTRANCES = [
   "DELETE /api/enterprise/workspace-scope/admin/teams/:workspaceId/members/:principalId",
 ] as const;
 
+/** PKG02 install preview/confirm + PKG03 Bot grant/revoke + PKG04 expert
+ * instantiation: company management. */
+const PACKAGE_COMPANY_ENTRANCES = [
+  "POST /api/enterprise/plugin-packages/plans",
+  "POST /api/enterprise/plugin-packages/plans/:id/apply",
+  "PUT /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
+  "DELETE /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
+  "POST /api/enterprise/plugin-packages/installs/:id/experts/:resourceId",
+] as const;
+
 function entranceOf(id: string): { method: string; path: string } {
   const separator = id.indexOf(" ");
   if (separator <= 0) throw new Error(`ENTRANCE_ID_MALFORMED:${id}`);
@@ -170,6 +188,80 @@ describe("management plane classification (closed rule table)", () => {
   test("company sentinels classify company", () => {
     for (const id of COMPANY_ENTRANCES) {
       expect(classifyManagementPlane(entranceOf(id))).toBe("company");
+    }
+    for (const id of PACKAGE_COMPANY_ENTRANCES) {
+      expect(classifyManagementPlane(entranceOf(id))).toBe("company");
+    }
+  });
+
+  test("PKG02 plan/apply are company management; package reads are not", () => {
+    // The real route table says which entrances exist; classification must
+    // agree with it, so a future route added here without a rule fails.
+    const routes = createPluginPackageRoutes({
+      catalogue: null,
+      resolveScope: async () => {
+        throw new Error("AUTH_REQUIRED");
+      },
+    });
+    const mount = "/api/enterprise/plugin-packages";
+    const registered = (
+      routes.routes as ReadonlyArray<{ method: string; path: string }>
+    ).filter((row) => row.method !== "ALL");
+    const packageRoutes = registered
+      .map((row) => `${row.method} ${mount}${row.path === "/" ? "" : row.path}`)
+      .sort();
+    expect(packageRoutes).toEqual(
+      [
+        "GET /api/enterprise/plugin-packages",
+        "GET /api/enterprise/plugin-packages/catalogue/:publisher/:name",
+        "GET /api/enterprise/plugin-packages/installs/:id",
+        "POST /api/enterprise/plugin-packages/plans",
+        "POST /api/enterprise/plugin-packages/plans/:id/apply",
+        "PUT /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
+        "DELETE /api/enterprise/plugin-packages/installs/:id/bots/:botId/grants",
+        "POST /api/enterprise/plugin-packages/installs/:id/experts/:resourceId",
+      ].sort(),
+    );
+    expect(
+      classifyManagementPlane({
+        method: "POST",
+        path: `${mount}/plans`,
+      }),
+    ).toBe("company");
+    expect(
+      classifyManagementPlane({
+        method: "POST",
+        path: `${mount}/plans/plan-1/apply`,
+      }),
+    ).toBe("company");
+    // Reads and the collection are business entrances, not management.
+    for (const entrance of [
+      { method: "GET", path: mount },
+      { method: "GET", path: `${mount}/plans` },
+      { method: "GET", path: `${mount}/installs/install-1` },
+      { method: "POST", path: mount },
+    ]) {
+      expect(classifyManagementPlane(entrance)).toBeNull();
+    }
+    // A platform identity gains no company authority by knowing the route.
+    for (const actor of [
+      { kind: "platform_operator" as const, subject: "platform-scanner" },
+      { kind: "deployment_admin" as const, userId: "deployment-admin-user" },
+    ]) {
+      expect(
+        authorizeCompanyManagementAction({
+          actor,
+          entrance: entranceOf(
+            "POST /api/enterprise/plugin-packages/plans/plan-1/apply",
+          ),
+          tenantId: "tenant-a",
+          grants: createManagementCrossGrantRegistry([]),
+        }),
+      ).toEqual({
+        outcome: "deny",
+        code: "MANAGEMENT_CROSS_AUTHORIZATION_REQUIRED",
+        plane: "company",
+      });
     }
   });
 
@@ -391,6 +483,40 @@ describe("platform management authorization (deployment plane)", () => {
       outcome: "deny",
       code: "MANAGEMENT_ENTRANCE_UNCLASSIFIED",
       plane: null,
+    });
+  });
+
+  test("a correctly-typed actor with an empty subject is refused (fail-closed, like the company face's empty tenant)", () => {
+    const entrance = entranceOf("GET /api/admin/status");
+    expect(
+      authorizePlatformManagementAction(
+        { kind: "deployment_admin", userId: "" },
+        entrance,
+      ),
+    ).toEqual({
+      outcome: "deny",
+      code: "PLATFORM_ADMIN_REQUIRED",
+      plane: "platform",
+    });
+    expect(
+      authorizePlatformManagementAction(
+        { kind: "deployment_admin", userId: "   " },
+        entrance,
+      ),
+    ).toEqual({
+      outcome: "deny",
+      code: "PLATFORM_ADMIN_REQUIRED",
+      plane: "platform",
+    });
+    expect(
+      authorizePlatformManagementAction(
+        { kind: "platform_operator", subject: "" },
+        entrance,
+      ),
+    ).toEqual({
+      outcome: "deny",
+      code: "PLATFORM_ADMIN_REQUIRED",
+      plane: "platform",
     });
   });
 });
@@ -660,6 +786,74 @@ describeDb("admin separation on the real enterprise test database", () => {
         [event.eventId],
       );
       expect(unpinned.length).toBe(0);
+    },
+  );
+
+  itDb(
+    "AC1: the combined authorize-and-record entry persists the audit inside the caller's transaction; a deny writes nothing",
+    async () => {
+      if (!fixture) throw new Error("FIXTURE_MISSING");
+      const tenantA = fixture.scope.ids["company-a"];
+      const entranceIdValue =
+        "POST /api/enterprise/workspace-scope/admin/teams";
+      const registry = createManagementCrossGrantRegistry([
+        {
+          grantId: "grant-e2e-combined",
+          subject: "platform-scanner",
+          tenantId: tenantA,
+          entrance: entranceIdValue,
+          grantedBy: "deployment-admin-user",
+          reason: "OCR round2 M5: audit write bound to the decision",
+        },
+      ]);
+      // 放行路径：判定与落库一次完成，事务内租户 pin 之后事件可读回。
+      const decision = await fixture.operator.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('app.tenant_id', ${tenantA}, true)`,
+        );
+        return authorizeAndRecordCompanyManagementAction(
+          {
+            actor: { kind: "platform_operator", subject: "platform-scanner" },
+            entrance: entranceOf(entranceIdValue),
+            tenantId: tenantA,
+            grants: registry,
+          },
+          tx,
+        );
+      });
+      if (decision.outcome !== "allow" || decision.audit === null) {
+        throw new Error("EXPECTED_ALLOW_WITH_AUDIT");
+      }
+      const pinned = await fixture.scope.isolation.queryRestricted(
+        "operator",
+        { tenantId: tenantA, operationId: decision.audit.eventId },
+        "select event_type, actor_id, details from enterprise_security_events where id = $1",
+        [decision.audit.eventId],
+      );
+      expect(pinned.length).toBe(1);
+      const combinedDetails = pinned[0].details as Record<string, unknown>;
+      expect(combinedDetails.grant_id).toBe("grant-e2e-combined");
+
+      // 拒绝路径：deny 原样返回，不接触事务、不留事件。
+      const denied = await fixture.operator.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('app.tenant_id', ${tenantA}, true)`,
+        );
+        return authorizeAndRecordCompanyManagementAction(
+          {
+            actor: { kind: "platform_operator", subject: "platform-scanner" },
+            entrance: entranceOf(entranceIdValue),
+            tenantId: tenantA,
+            grants: createManagementCrossGrantRegistry([]),
+          },
+          tx,
+        );
+      });
+      expect(denied).toEqual({
+        outcome: "deny",
+        code: "MANAGEMENT_CROSS_AUTHORIZATION_REQUIRED",
+        plane: "company",
+      });
     },
   );
 

@@ -24,6 +24,7 @@ import {
   reserveModelBudgetInTransaction,
   runCeilingIdempotencyKey,
 } from "../models/budget";
+import type { PreparePackageRunInput } from "../plugin-packages/runtime";
 import type { DataDatabase } from "../tenancy/connections";
 import { assertTrustedScope } from "../tenancy/store";
 import { createModelInvocationCapabilityService } from "./model-capability";
@@ -138,6 +139,9 @@ export async function completeRunWithLease(
   return transition(scope, input);
 }
 
+/** The restricted data-channel transaction the run writer uses. */
+type RunWriteTx = Parameters<Parameters<DataDatabase["transaction"]>[0]>[0];
+
 export interface RunServiceDependencies {
   readonly data: DataDatabase;
   readonly conversations: ConversationService;
@@ -151,6 +155,18 @@ export interface RunServiceDependencies {
   ) => number | Promise<number>;
   readonly modelCapabilitySecret: string | Uint8Array;
   readonly leaseMilliseconds?: number;
+  /**
+   * PKG03B (Spec §9): package runtime `prepareWithin`, invoked INSIDE the run
+   * transaction right after the run/attempt rows are written, so a Bot with
+   * active package grants gets its pins atomically with the run. A Bot without
+   * grants pins nothing and the run starts unchanged. Absent (non-enterprise
+   * compositions) the seam is inert.
+   */
+  readonly preparePackageRun?: (
+    tx: RunWriteTx,
+    scope: PlatformScope,
+    input: PreparePackageRunInput,
+  ) => Promise<unknown>;
 }
 
 function validateStart(scope: PlatformScope, input: StartRunInput): void {
@@ -260,6 +276,17 @@ export function createRunService(deps: RunServiceDependencies): RunService {
           routeMaximumTokens,
           leaseMilliseconds,
         );
+        // PKG03B: pins commit with the run row (Spec §9 — the same restricted
+        // transaction; no ready run is ever observable without its pins). A
+        // Bot without package grants writes no pins; a storage failure here
+        // rolls the whole run start back rather than starting an unpinned run.
+        if (deps.preparePackageRun) {
+          await deps.preparePackageRun(tx, scope, {
+            botId: admission.agentId,
+            runId: created.runId,
+            attemptGeneration: created.generation,
+          });
+        }
         await reserveModelBudgetInTransaction(
           tx,
           scope,

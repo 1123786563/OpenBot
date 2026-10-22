@@ -2,6 +2,7 @@ import {
   IconBolt,
   IconBox,
   IconLogout,
+  IconPackage,
   IconPlus,
   IconSearch,
   IconSettings,
@@ -388,6 +389,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <IconBox />
               </div>
               <span className="text-sm trackint-tight">{t("skills")}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            {/* Packages are a team surface: browsing the trusted catalogue needs no
+                deployment-admin role, so the shelf lives beside Skills, not Admin. */}
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/packages"
+                  activeProps={{
+                    className: "bg-foreground/5",
+                  }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconPackage />
+              </div>
+              <span className="text-sm">{t("packages")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

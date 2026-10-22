@@ -37,6 +37,17 @@ export default defineConfig({
     "./src/db/schema/craft.ts",
     "./src/db/schema/components.ts",
     "./src/db/schema/plugins.ts",
+    /*
+     * The plugin-package tables' DDL authority is the PKG02/PKG03/PKG04 task
+     * track in scripts/multitenancy/migrate-test.ts; the file below is the
+     * typed/query-visible projection of that DDL. It stays listed here on
+     * purpose (OCR round 1, F1, pinned by tests/schema-drizzle-parity.test.ts):
+     * a file missing from this list is invisible to `generate`, and the next
+     * generated migration would treat these tables as absent and could emit
+     * destructive DDL. Listed = controlled generate source under that parity
+     * guard, not a second way to create the tables.
+     */
+    "./src/db/schema/enterprise-plugin-packages.ts",
     "./src/db/schema/work.ts",
     "./src/db/schema/voice.ts",
     "./src/db/schema/learning.ts",

@@ -53,12 +53,13 @@ afterEach(() => {
 function selectorHeader(init: RequestInit | undefined): string | undefined {
   const headers = init?.headers;
   if (headers === undefined || headers === null) return undefined;
-  if (headers instanceof Headers) return headers.get("x-openbot-tenant") ?? undefined;
+  if (headers instanceof Headers)
+    return headers.get("x-openbot-tenant") ?? undefined;
   return (headers as Record<string, string>)["x-openbot-tenant"];
 }
 
 test("a request without tenantId is byte-for-byte what client sent before", async () => {
-  const asked = intercept();
+  const asked = intercept(() => jsonResponse(200, { servers: [] }));
 
   await client("/api/plugins/servers", "servers");
   await client("/api/me", { method: "POST", body: { key: "value" } });
@@ -73,7 +74,9 @@ test("a request without tenantId is byte-for-byte what client sent before", asyn
   expect(asked[0]?.init?.headers).toBeUndefined();
   expect(asked[2]?.init?.headers).toBeUndefined();
   // A body is JSON and only JSON, exactly as before; no selector appears anywhere.
-  expect(asked[1]?.init?.headers).toEqual({ "content-type": "application/json" });
+  expect(asked[1]?.init?.headers).toEqual({
+    "content-type": "application/json",
+  });
   expect(selectorHeader(asked[1]?.init)).toBeUndefined();
   expect(JSON.parse(String(asked[1]?.init?.body))).toEqual({ key: "value" });
 });
@@ -149,7 +152,11 @@ test("the enterprise error object answers with its readable summary", async () =
   // The field name plan §5.2 names for the same slot.
   intercept(() =>
     jsonResponse(403, {
-      error: { code: "TENANT_FORBIDDEN", message: "Not a member", retryable: false },
+      error: {
+        code: "TENANT_FORBIDDEN",
+        message: "Not a member",
+        retryable: false,
+      },
     }),
   );
   await expect(
@@ -163,7 +170,9 @@ test("an error body with no readable sentence falls back to the caller's", async
     client("/api/anything", { fallback: "Could not load it" }),
   ).rejects.toThrow("Could not load it");
 
-  intercept(() => jsonResponse(400, { error: { code: "REQUEST_BODY_INVALID" } }));
+  intercept(() =>
+    jsonResponse(400, { error: { code: "REQUEST_BODY_INVALID" } }),
+  );
   await expect(
     client("/api/anything", { fallback: "Could not load it" }),
   ).rejects.toThrow("Could not load it");
@@ -174,13 +183,67 @@ test("an error body with no readable sentence falls back to the caller's", async
 });
 
 test("success still unwraps the envelope key, and a malformed one still refuses", async () => {
-  intercept(() => jsonResponse(200, { items: [{ id: "one" }], nextCursor: null }));
+  intercept(() =>
+    jsonResponse(200, { items: [{ id: "one" }], nextCursor: null }),
+  );
   expect(await client<{ id: string }[]>("/api/somewhere", "items")).toEqual([
     { id: "one" },
   ]);
 
-  intercept(() => new Response("[]", { headers: { "content-type": "application/json" } }));
+  intercept(
+    () =>
+      new Response("[]", { headers: { "content-type": "application/json" } }),
+  );
   await expect(client("/api/somewhere", "items")).rejects.toThrow();
+});
+
+test("a 200 body without the requested key is a malformed success, not a typed undefined", async () => {
+  // JSON cannot carry `undefined`, so a missing key means the server answered
+  // a shape this caller never asked for. The fallback speaks, exactly like the
+  // malformed bodies above, instead of `undefined` masquerading as the payload.
+  intercept(() => jsonResponse(200, { other: [{ id: "one" }] }));
+  await expect(
+    client("/api/somewhere", "items", { fallback: "Could not load it" }),
+  ).rejects.toThrow("Could not load it");
+
+  intercept(() => jsonResponse(200, {}));
+  await expect(client("/api/somewhere", "items")).rejects.toThrow(
+    "That request failed.",
+  );
+
+  // A stored null is a value the server sent — it passes through untouched.
+  intercept(() => jsonResponse(200, { items: null }));
+  expect(await client<null>("/api/somewhere", "items")).toBeNull();
+});
+
+test("caller header names are normalized so transport facts cannot be duplicated", async () => {
+  const asked = intercept();
+
+  await client("/api/enterprise/plugin-packages", {
+    method: "POST",
+    tenantId: "acme",
+    workspaceId: "team-1",
+    headers: {
+      "Content-Type": "text/plain",
+      "X-Openbot-Tenant": "forged",
+      "X-Custom": "kept",
+    },
+    body: { ok: true },
+  });
+
+  const headers = asked[0]?.init?.headers as Record<string, string>;
+  // The transport's own facts own their slots; a case-variant caller key
+  // collapses into the same header instead of appending a second one.
+  expect(headers["content-type"]).toBe("application/json");
+  expect(headers["x-openbot-tenant"]).toBe("acme");
+  expect(headers["x-openbot-workspace"]).toBe("team-1");
+  expect(headers["x-custom"]).toBe("kept");
+  expect(
+    Object.keys(headers).filter((name) => name === "content-type"),
+  ).toHaveLength(1);
+  expect(
+    Object.keys(headers).filter((name) => name === "x-openbot-tenant"),
+  ).toHaveLength(1);
 });
 
 function jsonResponse(status: number, body: unknown): Response {

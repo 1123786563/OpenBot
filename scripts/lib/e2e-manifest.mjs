@@ -67,6 +67,31 @@ export const DIRECTORY_ISLANDS = [
   "app/tests/multitenancy",
 ];
 
+/*
+ * Suites that do not live in one directory island but need the same dedicated
+ * enterprise database environment. PKG02's install suites are split across
+ * `server/tests` and `server/tests/multitenancy`; naming the group with the
+ * `server/tests/multitenancy` prefix is what makes `bunEnv()` in
+ * tests/bun-suites.test.ts (which matches on the group name) hand it the
+ * `MT_TEST_*` overrides. The list is explicit so regeneration keeps the group
+ * instead of folding the files back into their directory groups.
+ */
+export const EXPLICIT_GROUPS = Object.freeze({
+  "server/tests/multitenancy pkg02": [
+    "server/tests/multitenancy/package-storage.test.ts",
+    "server/tests/package-install.integration.test.ts",
+  ],
+  "server/tests/multitenancy pkg03": [
+    "server/tests/multitenancy/package-grants.test.ts",
+  ],
+  "server/tests/multitenancy pkg03b": [
+    "server/tests/multitenancy/package-runtime.test.ts",
+  ],
+  "server/tests/multitenancy pkg04": [
+    "server/tests/multitenancy/package-expert.test.ts",
+  ],
+});
+
 export function readManifest() {
   const parsed = JSON.parse(readFileSync(MANIFEST, "utf8"));
   return {
@@ -79,7 +104,10 @@ export function readManifest() {
 
 export function groupsOf(files) {
   const byDirectory = new Map();
+  const present = new Set(files);
+  const explicit = new Set(Object.values(EXPLICIT_GROUPS).flat());
   for (const file of [...files].sort()) {
+    if (explicit.has(file)) continue;
     const segments = file.split("/");
     const directory = segments.slice(0, 2).join("/");
     const island = ISLANDS.find((prefix) => segments.at(-1).startsWith(prefix));
@@ -105,6 +133,10 @@ export function groupsOf(files) {
       });
     }
   }
+  for (const [name, files] of Object.entries(EXPLICIT_GROUPS)) {
+    const members = files.filter((file) => present.has(file));
+    if (members.length > 0) groups.push({ name, files: members });
+  }
   return groups;
 }
 
@@ -116,7 +148,14 @@ export function writeManifest({ files, artifacts, causes }, generatedBy) {
     files: list,
     artifacts: [...artifacts].sort(),
     causes,
+    // `bunEnv()` reads this to hand the multitenancy groups MT_TEST_* instead
+    // of the shared URL. Written here so regenerating the groups cannot
+    // silently drop the island declaration.
+    directoryIslands: [...DIRECTORY_ISLANDS],
   };
-  writeFileSync(MANIFEST, `${JSON.stringify(payload, null, 1)}\n`);
+  // Two-space indent, matching `biome format` for JSON: a regeneration then
+  // leaves the committed file byte-identical instead of trading a reorder diff
+  // (OCR round2 M1) for a whole-file reindent diff.
+  writeFileSync(MANIFEST, `${JSON.stringify(payload, null, 2)}\n`);
   return payload.groups.length;
 }

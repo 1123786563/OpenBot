@@ -61,7 +61,33 @@ export type ClientOptions = {
    * resolver refuses a workspace without a tenant, so callers select both or neither.
    */
   workspaceId?: string;
+  /**
+   * Request headers the endpoint requires beyond the transport's own, such as an
+   * `Idempotency-Key` on a confirm. Merged under the content-type and the scope selection so a
+   * caller cannot spoof either by supplying a header here.
+   */
+  headers?: Record<string, string>;
 };
+
+/**
+ * A non-ok answer from the server, carrying the facts a screen may need to branch on.
+ *
+ * THE MESSAGE IS UNCHANGED. Every caller that read `thrown.message` still reads the same sentence.
+ * What is new is the status and the server's own sentence (null when it sent none), so a shelf can
+ * tell "you may not see this" (401/403) from "the request never arrived" without parsing prose.
+ */
+export class ClientResponseError extends Error {
+  readonly status: number;
+  /** The readable sentence the server itself sent, or null when its body carried none. */
+  readonly serverMessage: string | null;
+
+  constructor(status: number, message: string, serverMessage: string | null) {
+    super(message);
+    this.name = "ClientResponseError";
+    this.status = status;
+    this.serverMessage = serverMessage;
+  }
+}
 
 /**
  * The sentence a failed request carries, resolved from whichever fallback the caller gave.
@@ -144,13 +170,10 @@ function scopeSelection(
  * The deployment APIs put a plain string in `error`; the enterprise API puts its closed error
  * object there — `{ code, request_id, retryable, summary }` on the wire
  * (server/src/enterprise/app.ts onError), with `message` the shape a plan text may name for it.
- * Both are one sentence to a person: read the string, or the readable field of the object, and
- * otherwise let the caller's fallback speak.
+ * Both are one sentence to a person: read the string, or the readable field of the object. Null
+ * means the server sent none, and the caller's fallback speaks instead.
  */
-async function refusalMessage(
-  response: Response,
-  options: ClientOptions,
-): Promise<string> {
+async function refusalText(response: Response): Promise<string | null> {
   const body = (await response.json().catch(() => null)) as {
     error?: unknown;
   } | null;
@@ -161,16 +184,27 @@ async function refusalMessage(
       if (typeof field === "string" && field.length > 0) return field;
     }
   }
-  return fallbackText(options);
+  return null;
 }
 
 /** Every request in this app is authenticated, and every one of them is JSON or nothing. */
 async function send(path: string, options: ClientOptions): Promise<Response> {
   const selection = scopeSelection(path, options);
-  const headers: Record<string, string> | undefined =
-    options.body === undefined
-      ? selection
-      : { "content-type": "application/json", ...selection };
+  /*
+   * Caller headers first, then the transport's own facts on top: a request cannot rename the
+   * content type of its body or the scope it selects, which is the same discipline the scope
+   * headers have had since they were introduced.
+   */
+  const merged: Record<string, string> = {};
+  // HTTP header names are case-insensitive; normalize caller keys so a caller-sent
+  // "Content-Type" or "X-Openbot-Tenant" variant replaces into the same slot instead
+  // of appending a second, ambiguous header next to the transport's own value.
+  for (const [name, value] of Object.entries(options.headers ?? {})) {
+    merged[name.toLowerCase()] = value;
+  }
+  if (options.body !== undefined) merged["content-type"] = "application/json";
+  if (selection !== undefined) Object.assign(merged, selection);
+  const headers = Object.keys(merged).length > 0 ? merged : undefined;
   return fetch(path, {
     method: options.method,
     credentials: "include",
@@ -225,9 +259,16 @@ export async function client<T>(
   if (!response.ok) {
     /*
      * The server's message is the useful one: it names the field or the permission that failed. The
-     * fallback is only for the cases where it sent none, or sent something that is not JSON.
+     * fallback is only for the cases where it sent none, or sent something that is not JSON. The
+     * status and whether the sentence came from the server ride the error for callers that must
+     * tell a refusal from transport trouble.
      */
-    throw new Error(await refusalMessage(response, options));
+    const serverMessage = await refusalText(response);
+    throw new ClientResponseError(
+      response.status,
+      serverMessage !== null ? serverMessage : await fallbackText(options),
+      serverMessage,
+    );
   }
 
   if (key === undefined) return response;
@@ -238,5 +279,13 @@ export async function client<T>(
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new Error(await fallbackText(options));
   }
-  return (body as Record<string, T>)[key];
+  const unwrapped = (body as Record<string, T>)[key];
+  if (unwrapped === undefined) {
+    // JSON has no `undefined` value, so a missing key here is the server
+    // answering a shape this caller never asked for — a malformed success,
+    // handled like the malformed bodies above instead of a typed undefined
+    // reaching the caller as if it were the payload. A stored `null` passes.
+    throw new Error(await fallbackText(options));
+  }
+  return unwrapped;
 }
