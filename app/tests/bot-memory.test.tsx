@@ -58,6 +58,8 @@ function serving() {
   searchSettings = {};
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // The scoped sources read (MT089) waits for the scope source before it asks anything.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     requested.push(url);
     if (init?.method && init.method !== "GET") {
       if (refuseWrite) {

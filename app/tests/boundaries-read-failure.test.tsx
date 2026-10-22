@@ -28,9 +28,15 @@ let policyResponse: () => Response;
 beforeEach(() => {
   global.fetch = Object.assign(
     async (path: Parameters<typeof fetch>[0]) =>
-      path === "/api/computers/policy"
-        ? policyResponse()
-        : new Response(null, { status: 404 }),
+      // The scoped boundary read (MT086) waits for the scope source before it asks anything.
+      path === "/api/me"
+        ? new Response(JSON.stringify({ user: { id: "user-1" } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })
+        : path === "/api/computers/policy"
+          ? policyResponse()
+          : new Response(null, { status: 404 }),
     { preconnect: originalFetch.preconnect },
   );
 });

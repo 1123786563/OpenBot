@@ -10,6 +10,7 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -47,7 +48,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import {
   saveComponentDraftMutationOptions,
   setComponentFunctionMutationOptions,
@@ -56,7 +57,7 @@ import {
 } from "@/lib/components/mutations";
 import {
   type ComponentRecord,
-  componentListQueryOptions,
+  scopedComponentListQueryOptions,
   type DataFunctionSummary,
   dataFunctionsQueryOptions,
 } from "@/lib/components/queries";
@@ -81,18 +82,28 @@ export const Route = createFileRoute("/_authed/admin/components/$name")({
 function RouteComponent() {
   const { t } = useTranslation("admin");
   const { name } = Route.useParams();
-  const components = useQuery(componentListQueryOptions());
-  const agents = useQuery(agentListQueryOptions());
+  // The governance face is the scope's own answer (MT094 / Issue #137, AC2/AC3): the roster, the
+  // agent candidates and the data-function list carry the selection pair, and every governance
+  // write below submits under the same pair and settles at both cache roots.
+  const scope = useScopedCache();
+  const components = useQuery(
+    scopedComponentListQueryOptions(queryClient, scope),
+  );
+  const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const dataFunctions = useQuery(dataFunctionsQueryOptions());
 
-  const setGrant = useMutation(setComponentGrantMutationOptions(queryClient));
+  const setGrant = useMutation(
+    setComponentGrantMutationOptions(queryClient, scope),
+  );
   const setFunction = useMutation(
-    setComponentFunctionMutationOptions(queryClient),
+    setComponentFunctionMutationOptions(queryClient, scope),
   );
   const setPublished = useMutation(
-    setComponentPublishedMutationOptions(queryClient),
+    setComponentPublishedMutationOptions(queryClient, scope),
   );
-  const saveDraft = useMutation(saveComponentDraftMutationOptions(queryClient));
+  const saveDraft = useMutation(
+    saveComponentDraftMutationOptions(queryClient, scope),
+  );
 
   /*
    * Read out of the list rather than held in state, so a change made here is reflected here.

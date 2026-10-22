@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-o
 import type { Database } from "../db/client";
 import { botServices } from "../db/schema/bot-services";
 import {
+  creditAsyncSettlementDetails,
   creditSettlementDimensionBreakdown,
   creditReservationAttribution,
   creditReservations,
@@ -205,6 +206,11 @@ export function createCredits(deps: {
           speechCappedSeconds: creditSpeechSettlementDetails.cappedSeconds,
           speechActualSeconds: creditSpeechSettlementDetails.actualSeconds,
           speechVoiceTier: creditSpeechSettlementDetails.voiceTier,
+          asyncCapability: creditAsyncSettlementDetails.capability,
+          asyncJobId: creditAsyncSettlementDetails.jobId,
+          asyncProviderJobId: creditAsyncSettlementDetails.providerJobId,
+          asyncEntryCount: creditAsyncSettlementDetails.entryCount,
+          asyncTerminalState: creditAsyncSettlementDetails.terminalState,
         })
         .from(creditLedger)
         // The attribution walk: a reservation-born ledger row (the writer records
@@ -234,6 +240,13 @@ export function createCredits(deps: {
         .leftJoin(
           creditSpeechSettlementDetails,
           eq(creditSpeechSettlementDetails.ledgerId, creditLedger.id),
+        )
+        // The async job line (17.6) joins the same way: a settled async charge's entry
+        // shows the JOB it is attributable to — the one key every surface of the charge
+        // names — beside the entry count and the terminal state that ended it.
+        .leftJoin(
+          creditAsyncSettlementDetails,
+          eq(creditAsyncSettlementDetails.ledgerId, creditLedger.id),
         )
         .where(where)
         .orderBy(desc(creditLedger.createdAt))
@@ -300,7 +313,9 @@ export function createCredits(deps: {
           // the image spec and counts, distinguishable from every other capability — with
           // the amount this entry already carries. Other rows carry no line at all.
           lineDetail:
-            row.lineCapability === "image"
+            row.lineCapability === "image" &&
+            row.lineRequestedCount !== null &&
+            row.lineGeneratedCount !== null
               ? {
                   capability: row.lineCapability,
                   image: {
@@ -310,7 +325,10 @@ export function createCredits(deps: {
                     generatedCount: row.lineGeneratedCount,
                   },
                 }
-              : row.speechCapability === "speech"
+              : row.speechCapability === "speech" &&
+                  row.speechInputCharacters !== null &&
+                  row.speechCappedSeconds !== null &&
+                  row.speechActualSeconds !== null
                 ? // 13.2's speech line: the characters in, the seconds out — the entry a
                   // speech consumption shows, distinguishable from image and chat.
                   {
@@ -322,7 +340,23 @@ export function createCredits(deps: {
                       actualSeconds: row.speechActualSeconds,
                     },
                   }
-                : null,
+                : row.asyncJobId !== null &&
+                  row.asyncTerminalState !== null &&
+                  row.asyncEntryCount !== null
+                  ? // 17.6's async job line: the job the charge is attributable to —
+                    // the local identity, its provider mapping, the entries and the
+                    // terminal state that ended the job, distinguishable from every
+                    // synchronous capability's entry.
+                    {
+                      capability: row.asyncCapability ?? "unknown",
+                      asyncJob: {
+                        jobId: row.asyncJobId,
+                        providerJobId: row.asyncProviderJobId,
+                        entryCount: row.asyncEntryCount,
+                        terminalState: row.asyncTerminalState,
+                      },
+                    }
+                  : null,
           // 20.3's fee split: model fee and surcharge fee of THIS entry, whole scaled
           // units of the ledger row it explains — absent when the settlement wrote no
           // split, and never a zero surcharge line the UI would read as "free tools".

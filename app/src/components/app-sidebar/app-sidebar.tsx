@@ -48,11 +48,9 @@ import {
 } from "@/components/ui/sidebar";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import {
-  type ChannelSummary,
-  channelListQueryOptions,
-} from "@/lib/channels/queries";
+import { type ChannelSummary, scopedChannelListQueryOptions } from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { relativeTime } from "@/lib/relative-time";
@@ -224,7 +222,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const signOut = useMutation(signOutMutationOptions(queryClient));
-  const channels = useInfiniteQuery(channelListQueryOptions());
+  // The roster is bound to the scope the app holds (MT087 / Issue #130, AC1): keyed under the
+  // scope's own prefix, so a switch drops the old scope's conversations wholesale and the new
+  // scope's first page answers — and the socket that keeps it live writes the same entry.
+  const scope = useScopedCache();
+  const channels = useInfiniteQuery(
+    scopedChannelListQueryOptions(queryClient, scope),
+  );
   // One socket for the app, opened where the roster is kept live.
   useChannelEvents();
   const [search, setSearch] = useState("");

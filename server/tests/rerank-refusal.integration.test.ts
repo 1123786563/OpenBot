@@ -197,7 +197,10 @@ function rerankDimsOf(pricing: Record<string, string>): PriceSnapshotDims {
       dimension === "image_output" ||
         dimension === "audio_input" ||
         dimension === "audio_output" ||
-        dimension === "video"
+        dimension === "video" ||
+        dimension === "video_input" ||
+        dimension === "surcharge_tool_call" ||
+        dimension === "surcharge_a2a_call"
         ? { status: "known" as const, amount: "0" }
         : mapped[dimension],
     ]),

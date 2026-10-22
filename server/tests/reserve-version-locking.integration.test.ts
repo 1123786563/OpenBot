@@ -78,8 +78,11 @@ const V1_AMOUNTS = {
   cache_read: "0.0000001",
   cache_write: "0.0000015",
   video: "0.01",
+  video_input: "0.0001",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.0001",
+  surcharge_tool_call: "0.002",
+  surcharge_a2a_call: "0.003",
 } as const;
 
 /** Version 2 prices: input and output quadruple (the world changes after the lock). */
@@ -97,8 +100,11 @@ const QUANTITIES: ReservationBoundQuantities = {
   cache_read: 1_000_000,
   cache_write: 100_000,
   video: 10,
+  video_input: 0,
   surcharge_web_search: 2,
   surcharge_per_request: 1,
+  surcharge_tool_call: 0,
+  surcharge_a2a_call: 0,
 };
 
 /** The fully-known dims of one amounts map — the shape appendSnapshots persists. */

@@ -99,8 +99,11 @@ const V1_AMOUNTS = {
   cache_read: "0.0000001",
   cache_write: "0.0000015",
   video: "0.01",
+  video_input: "0.0001",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.0001",
+  surcharge_tool_call: "0.002",
+  surcharge_a2a_call: "0.003",
 } as const;
 
 /** The hold ceiling the version-1 basis certifies for the bound quantities below. */
@@ -244,8 +247,11 @@ function gatewayUsageOf(named: Record<string, number>): Record<string, number> {
     cache_read: 0,
     cache_write: 0,
     video: 0,
+    video_input: 0,
     surcharge_web_search: 0,
     surcharge_per_request: 0,
+    surcharge_tool_call: 0,
+    surcharge_a2a_call: 0,
   };
   for (const [dimension, quantity] of Object.entries(named)) {
     usage[dimension] = quantity;

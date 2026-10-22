@@ -83,7 +83,10 @@ function transcriptionDimsOf(perInputSecondUsd: string): PriceSnapshotDims {
         ? { status: "known", amount: perInputSecondUsd }
         : dimension === "audio_output" ||
             dimension === "video" ||
-            dimension === "image_output"
+            dimension === "video_input" ||
+            dimension === "image_output" ||
+            dimension === "surcharge_tool_call" ||
+            dimension === "surcharge_a2a_call"
           ? { status: "known", amount: "0" }
           : mapped[dimension],
     ]),

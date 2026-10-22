@@ -3,8 +3,13 @@ import {
   type QueryClient,
   queryOptions,
 } from "@tanstack/react-query";
-import { client } from "@/lib/client";
+import { client, tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { sharedUseKeys } from "@/lib/plugins/shared-use";
+
+/** The selection pair a scoped call rides, spread into the client options (MT086). */
+type ScopePair = { tenantId?: string; workspaceId?: string };
 
 export type ResponsibilityRecord = {
   id: string;
@@ -66,6 +71,76 @@ export function responsibilitiesQueryOptions() {
     refetchInterval: 10_000,
   });
 }
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT086 / Issue #129): the responsibilities page reads and writes through here
+// ---------------------------------------------------------------------------
+
+/**
+ * The refusal a scoped responsibilities read raises when the server answers that the surface is
+ * not this person's to hold under the scope they carry. One state for the page to answer with —
+ * never a blank list, which would read as "no responsibilities" over "no access" (MT086 AC2).
+ */
+export class ResponsibilitiesUnavailableError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super("Responsibilities are not available under the scope you hold.");
+    this.name = "ResponsibilitiesUnavailableError";
+    this.status = status;
+  }
+}
+
+/**
+ * The responsibilities list, bound to the scope the screen holds (MT086 / Issue #129, AC1): keyed
+ * under the scope's own cache prefix (MT083), carrying the selection pair, and answered through
+ * the same generation guard every scoped read passes.
+ */
+export function scopedResponsibilitiesQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...responsibilityKeys.all]
+        : [...responsibilityKeys.all, ":scope-pending"],
+    enabled: open !== null,
+    refetchInterval: 10_000,
+    queryFn:
+      open === null
+        ? () => new Promise<ResponsibilityRecord[]>(() => {})
+        : async ({ signal }): Promise<ResponsibilityRecord[]> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/responsibilities", {
+                signal,
+                fallbackKey: "responsibilities.load",
+                ...(open.selection ?? {}),
+              });
+              if (response.status === 404) {
+                throw new ResponsibilitiesUnavailableError(response.status);
+              }
+              if (!response.ok) {
+                const body = (await response.json().catch(() => null)) as {
+                  error?: unknown;
+                } | null;
+                throw new Error(
+                  typeof body?.error === "string"
+                    ? body.error
+                    : "Responsibilities could not be read.",
+                );
+              }
+              const body = (await response.json().catch(() => null)) as {
+                responsibilities?: ResponsibilityRecord[];
+              } | null;
+              if (body === null || !Array.isArray(body.responsibilities)) {
+                throw new Error("Responsibilities could not be read.");
+              }
+              return body.responsibilities;
+            }),
+  });
+}
 export function responsibilityRunsQueryOptions(id: string) {
   return queryOptions({
     queryKey: responsibilityKeys.runs(id),
@@ -85,14 +160,17 @@ export function githubBindingsQueryOptions() {
       }),
   });
 }
-export function createResponsibility(input: {
-  agentId: string;
-  channelId: string;
-  title: string;
-  instruction: string;
-  successCriteria: string;
-  subscriptions: ResponsibilityRecord["subscriptions"];
-}) {
+export function createResponsibility(
+  input: {
+    agentId: string;
+    channelId: string;
+    title: string;
+    instruction: string;
+    successCriteria: string;
+    subscriptions: ResponsibilityRecord["subscriptions"];
+  },
+  scope?: ScopePair,
+) {
   return client<ResponsibilityRecord>(
     "/api/responsibilities",
     "responsibility",
@@ -100,26 +178,31 @@ export function createResponsibility(input: {
       method: "POST",
       body: input,
       fallbackKey: "responsibilities.create",
+      ...(scope ?? {}),
     },
   );
 }
 export function updateResponsibility(
   id: string,
   patch: { title: string; instruction: string; successCriteria: string },
+  scope?: ScopePair,
 ) {
   return client(`/api/responsibilities/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: patch,
     fallbackKey: "responsibilities.update",
+    ...(scope ?? {}),
   });
 }
 export function responsibilityAction(
   id: string,
   action: "pause" | "resume" | "complete" | "run",
+  scope?: ScopePair,
 ) {
   return client(`/api/responsibilities/${encodeURIComponent(id)}/${action}`, {
     method: "POST",
     fallbackKey: "responsibilities.change",
+    ...(scope ?? {}),
   });
 }
 export function createGithubBinding(repository: string, secret: string) {
@@ -268,17 +351,45 @@ export function removeGithubBindingMutationOptions(queryClient: QueryClient) {
   });
 }
 
-const settleResponsibilities = (queryClient: QueryClient) => () =>
-  queryClient.invalidateQueries({ queryKey: responsibilityKeys.all });
+/**
+ * The scope the writes here submit under (MT086 / Issue #129, AC1): an open scope's selection
+ * rides the request, and a pending one submits nothing.
+ */
+function scopePair(
+  scope: ScopedCache | undefined,
+): ScopePair | undefined {
+  return scope !== undefined && scope.status === "open"
+    ? (scope.selection ?? {})
+    : undefined;
+}
 
-export function createResponsibilityMutationOptions(queryClient: QueryClient) {
+const settleResponsibilities = (queryClient: QueryClient, scope?: ScopedCache) => () =>
+  Promise.all([
+    queryClient.invalidateQueries({ queryKey: responsibilityKeys.all }),
+    ...(scope !== undefined && scope.status === "open"
+      ? [
+          queryClient.invalidateQueries({
+            queryKey: [...scope.prefix, ...responsibilityKeys.all],
+          }),
+        ]
+      : []),
+  ]);
+
+export function createResponsibilityMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
-    mutationFn: createResponsibility,
-    onSuccess: settleResponsibilities(queryClient),
+    mutationFn: (input: Parameters<typeof createResponsibility>[0]) =>
+      createResponsibility(input, scopePair(scope)),
+    onSuccess: settleResponsibilities(queryClient, scope),
   });
 }
 
-export function updateResponsibilityMutationOptions(queryClient: QueryClient) {
+export function updateResponsibilityMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: ({
       id,
@@ -286,13 +397,16 @@ export function updateResponsibilityMutationOptions(queryClient: QueryClient) {
     }: {
       id: string;
       patch: { title: string; instruction: string; successCriteria: string };
-    }) => updateResponsibility(id, patch),
-    onSuccess: settleResponsibilities(queryClient),
+    }) => updateResponsibility(id, patch, scopePair(scope)),
+    onSuccess: settleResponsibilities(queryClient, scope),
   });
 }
 
 /** Pause, resume, complete or run a responsibility now. */
-export function responsibilityActionMutationOptions(queryClient: QueryClient) {
+export function responsibilityActionMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: ({
       id,
@@ -300,8 +414,8 @@ export function responsibilityActionMutationOptions(queryClient: QueryClient) {
     }: {
       id: string;
       action: "pause" | "resume" | "complete" | "run";
-    }) => responsibilityAction(id, action),
-    onSuccess: settleResponsibilities(queryClient),
+    }) => responsibilityAction(id, action, scopePair(scope)),
+    onSuccess: settleResponsibilities(queryClient, scope),
   });
 }
 

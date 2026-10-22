@@ -21,8 +21,11 @@
  * AsyncJob (that ticket remains open; this is the minimal identity face 17.2's own
  * acceptance needs, built so the dedicated ticket adopts the row rather than duplicating
  * it). `providerJobId` is allowed to stay absent when the dispatch answer is lost (17.3's
- * lane): the row records `dispatch_unconfirmed`, the hold stays occupied, and nothing about
- * a missing provider id is read as evidence of no cost.
+ * lane): the row records `dispatch_unconfirmed`, the reservation moves to 06.8's `unknown`
+ * with its FULL cap still occupied the moment the loss is known, and nothing about a
+ * missing provider id is read as evidence of no cost. The dispatch itself carries the
+ * submit's stable idempotency key, so a lost answer is recoverable afterwards by querying
+ * the provider under the identity the submission already converged on (17.3's sweep).
  *
  * The same request-shape discipline as the credit protocol applies here: account-identity
  * and company-scope fields (06.4 + 09.3) are refused at the boundary — presence is the
@@ -41,6 +44,7 @@ import {
   type CreditReserveOutcome,
   type CreditReserveRequest,
 } from "./credit-reserve";
+import { createCreditWriter } from "./credits-writer";
 import {
   computeReservationCeiling,
   type ReservationBoundQuantities,
@@ -108,11 +112,20 @@ export type AsyncSubmitServiceDependencies = {
   database: Database;
   /** The reserve door: called with the submit's own idempotency key. */
   reserve: (request: CreditReserveRequest) => Promise<CreditReserveOutcome>;
-  /** The provider dispatch: called at most once per job, by the submit that created it. */
+  /** The provider dispatch: called at most once per job, by the submit that created it. The
+   * input carries the submit's stable idempotency key so a provider keyed by it can be
+   * queried for the job later when the answer is lost (17.3's recovery). */
   dispatch: (input: {
     jobId: string;
     reservationId: string;
+    submitIdempotencyKey: string;
   }) => Promise<AsyncDispatchOutcome>;
+  /**
+   * 06.8's unknown mark, fired the moment a dispatch answer is known lost — the hold keeps
+   * its FULL cap and the 08.1 scan takes over. Defaults to the credit writer's own
+   * transition; injected only by tests.
+   */
+  markUnknown?: (reservationId: string, reason: string) => Promise<void>;
   /** The locked basis's dims and rate — resolved by the caller from the same versions. */
   resolveBasis: (model: {
     provider: string;
@@ -315,6 +328,9 @@ export function createAsyncSubmitService(
 ) {
   const { database, reserve, dispatch, resolveBasis } = dependencies;
   const now = dependencies.now ?? (() => new Date());
+  const markUnknown =
+    dependencies.markUnknown ??
+    createCreditWriter(database).markReservationUnknown;
 
   return {
     async submit(input: unknown): Promise<AsyncSubmitOutcome> {
@@ -461,13 +477,22 @@ export function createAsyncSubmitService(
         };
       }
 
-      // 6. The dispatch — once, by the creator. The hold already exists, so the provider
-      //    may be called; an answer that arrives names the provider job, an answer that
-      //    does not leaves the row unconfirmed with the hold occupied (17.3's lane).
+      // 6. The dispatch — once, by the creator, under the submit's stable identity. The
+      //    hold already exists, so the provider may be called; an answer that arrives names
+      //    the provider job, an answer that does not moves the hold to 06.8's `unknown`
+      //    with its FULL cap still occupied and hands the row to 17.3's recovery sweep —
+      //    the remote may already be running, so "lost" is never read as "no cost".
       const dispatched = await dispatch({
         jobId,
         reservationId: reserved.reservationId,
+        submitIdempotencyKey: request.submitIdempotencyKey,
       });
+      if (dispatched.kind === "lost") {
+        await markUnknown(
+          reserved.reservationId,
+          "async_dispatch_answer_lost",
+        );
+      }
       const [final] = await database
         .update(asyncJobs)
         .set(

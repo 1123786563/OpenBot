@@ -9,6 +9,7 @@ import {
   createGroupMutationOptions,
   sendGroupMessageMutationOptions,
 } from "@/lib/groups";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { newId } from "@/lib/new-id";
 import {
   createChannelMutationOptions,
@@ -78,9 +79,16 @@ export async function startGroupWith(input: {
 export function useStartChannel() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const createChannel = useMutation(createChannelMutationOptions(queryClient));
-  const createGroup = useMutation(createGroupMutationOptions(queryClient));
-  const deleteChannel = useMutation(deleteChannelMutationOptions(queryClient));
+  // Every start here submits under the scope the screen holds (MT087): the writes carry the
+  // selection pair, so a conversation (or group) is created in the scope in force.
+  const scope = useScopedCache();
+  const createChannel = useMutation(
+    createChannelMutationOptions(queryClient, scope),
+  );
+  const createGroup = useMutation(
+    createGroupMutationOptions(queryClient, scope),
+  );
+  const deleteChannel = useMutation(deleteChannelMutationOptions(queryClient, scope));
 
   const start = async (agentId: string, text: string) => {
     const channel = await createChannel.mutateAsync([agentId]);
@@ -107,7 +115,7 @@ export function useStartChannel() {
       send: (channelId, message) =>
         new MutationObserver(
           queryClient,
-          sendGroupMessageMutationOptions(queryClient, channelId),
+          sendGroupMessageMutationOptions(queryClient, channelId, scope),
         ).mutate({ id: newId(), text: message, agentId: null }),
       discard: async (channelId) => {
         await deleteChannel.mutateAsync(channelId);

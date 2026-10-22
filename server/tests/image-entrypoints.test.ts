@@ -97,8 +97,11 @@ function pricedDims(): PriceSnapshotDims {
     cache_read: "0",
     cache_write: "0",
     video: "0",
+    video_input: "0.0001",
     surcharge_web_search: "0",
     surcharge_per_request: "0",
+    surcharge_tool_call: "0.002",
+    surcharge_a2a_call: "0.003",
   };
   const dims = Object.fromEntries(
     PRICE_DIMENSIONS.map((dimension) => [

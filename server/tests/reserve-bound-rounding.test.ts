@@ -40,8 +40,11 @@ const FULL_DIMS: Readonly<Record<PriceDimension, string>> = {
   cache_read: "0.0000001",
   cache_write: "0.0000015",
   video: "0.01",
+  video_input: "0.0001",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.0001",
+  surcharge_tool_call: "0.002",
+  surcharge_a2a_call: "0.003",
 };
 
 /** Quantities sized so every dimension's dollar term is distinct and checkable by hand. */
@@ -56,8 +59,11 @@ const FULL_QUANTITIES: ReservationBoundQuantities = {
   cache_read: 1_000_000,
   cache_write: 100_000,
   video: 10,
+  video_input: 0,
   surcharge_web_search: 2,
   surcharge_per_request: 1,
+  surcharge_tool_call: 1,
+  surcharge_a2a_call: 1,
 };
 
 function knownDims(
@@ -97,9 +103,10 @@ describe("computeReservationCeiling — full-dimension conversion", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     // By hand: $2 + $2 + $1.50 + $0.03 + $0.02 + $0.006 + $0.006 + $0.10 + $0.15 + $0.10
-    //          + $0.002 + $0.0001 = $5.9141 → ×100 credits/$ ×100 scale = 59 141 units exactly.
-    expect(outcome.maximumCredits).toBe(59_141);
-    expect(outcome.exactScaledUnits).toEqual({ numerator: 59_141n, denominator: 1n });
+    //          + $0.002 + $0.0001 + $0.002 + $0.003 = $5.9191 → ×100 credits/$ ×100 scale
+    //          = 59 191 units exactly.
+    expect(outcome.maximumCredits).toBe(59_191);
+    expect(outcome.exactScaledUnits).toEqual({ numerator: 59_191n, denominator: 1n });
   });
 
   test("each dimension's term is exactly its quantity × its own price", () => {

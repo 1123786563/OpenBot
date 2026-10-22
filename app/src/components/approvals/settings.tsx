@@ -1,5 +1,5 @@
 import { IconEyeCheck, IconHandStop, IconTerminal2 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
@@ -19,16 +19,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
-  approvalInboxOptions,
+  ApprovalsUnavailableError,
   approvalPreferencesMutationOptions,
   createApprovalRuleMutationOptions,
   revokeApprovalRuleMutationOptions,
   ruleCoversBot,
+  scopedApprovalInboxOptions,
   updateApprovalRuleMutationOptions,
 } from "@/lib/approvals";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { queryClient } from "@/query-client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { hostLabels, LabelSelect, RuleForm, RuleRow } from "./rules";
 
 /**
@@ -38,18 +39,26 @@ import { hostLabels, LabelSelect, RuleForm, RuleRow } from "./rules";
  */
 export function ApprovalSettings() {
   const { t } = useTranslation("approvals");
-  const inbox = useQuery(approvalInboxOptions());
+  // The inbox read and every decision ride the scope this screen holds (MT086): keyed under the
+  // scope's own prefix, carrying the pair, refused — as one explicit state — when the scope does.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const inbox = useQuery(scopedApprovalInboxOptions(queryClient, scope));
   const me = useQuery(currentUserQueryOptions()).data;
   const agents = useQuery(agentListQueryOptions());
   const hiddenAgents = useQuery(agentListQueryOptions(true));
   const preferences = useMutation(
-    approvalPreferencesMutationOptions(queryClient),
+    approvalPreferencesMutationOptions(queryClient, scope),
   );
-  const addRule = useMutation(createApprovalRuleMutationOptions(queryClient));
+  const addRule = useMutation(
+    createApprovalRuleMutationOptions(queryClient, scope),
+  );
   const changeRule = useMutation(
-    updateApprovalRuleMutationOptions(queryClient),
+    updateApprovalRuleMutationOptions(queryClient, scope),
   );
-  const revoke = useMutation(revokeApprovalRuleMutationOptions(queryClient));
+  const revoke = useMutation(
+    revokeApprovalRuleMutationOptions(queryClient, scope),
+  );
   const error =
     inbox.error ?? preferences.error ?? changeRule.error ?? revoke.error;
   if (inbox.isPending && !error) return null;
@@ -73,6 +82,16 @@ export function ApprovalSettings() {
   const canAdd = Boolean(inbox.data?.preferences) && !rulesOff;
   const saved = teamRules.length + everyBot.length;
 
+  if (inbox.error instanceof ApprovalsUnavailableError) {
+    return (
+      <p
+        className="mt-6 text-muted-foreground text-sm"
+        data-testid="approvals-unavailable"
+      >
+        {t("unavailable")}
+      </p>
+    );
+  }
   return (
     <>
       {error ? (

@@ -68,8 +68,11 @@ const V1_AMOUNTS = {
   cache_read: "0.0000001",
   cache_write: "0.0000015",
   video: "0.01",
+  video_input: "0.0001",
   surcharge_web_search: "0.001",
   surcharge_per_request: "0.0001",
+  surcharge_tool_call: "0.002",
+  surcharge_a2a_call: "0.003",
 };
 
 function dimsOf(amounts: Record<string, string>) {
@@ -445,12 +448,16 @@ describe("17.2 AC-3 — submit idempotency", () => {
     expect(row.providerJobId).toBeNull();
     expect(row.state).toBe("dispatch_unconfirmed");
 
-    // The hold stays occupied: reserved, terminal nothing, full cap still held.
+    // The hold stays occupied — 17.3 moved it to 06.8's `unknown` the moment the loss was
+    // known: terminal nothing, full cap still held, and the recovery scan owns it now.
     const [hold] = await database
       .select()
       .from(creditReservations)
       .where(eq(creditReservations.id, outcome.reservationId));
-    expect(hold.status).toBe("reserved");
+    expect(hold.status).toBe("unknown");
+    expect(hold.applied).toBeNull();
+    expect(hold.released).toBeNull();
+    expect(hold.maximum).toBe(outcome.maximumCredits);
 
     // A replay still answers the same job and does NOT re-dispatch.
     const replay = await service.submit(body);

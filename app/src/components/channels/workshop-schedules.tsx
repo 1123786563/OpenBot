@@ -25,6 +25,8 @@ import {
   toggleWorkshopSchedule,
   type WorkshopSchedule,
 } from "@/lib/workshop/client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { workshopScopePair } from "@/lib/workshop/queries";
 
 /**
  * The schedules panel: what fires, when it last fired and fires next, and what it did.
@@ -38,16 +40,32 @@ import {
 export function WorkshopSchedulesView({ channelId }: { channelId: string }) {
   const { t } = useTranslation("workshop");
   const queryClient = useQueryClient();
+  // The schedules face reads and writes under the scope in force (MT091 / Issue #134, AC3 —
+  // 调度动作提交当前范围): the list carries the selection pair and files under the scope's
+  // prefix, and every write below rides the same pair.
+  const scope = useScopedCache();
 
   const schedules = useQuery({
-    queryKey: ["workshop", channelId, "schedules"],
-    queryFn: () => listWorkshopSchedules(channelId),
+    queryKey: [
+      ...(scope.status === "open" ? scope.prefix : []),
+      "workshop",
+      channelId,
+      "schedules",
+    ],
+    enabled: scope.status === "open",
+    queryFn: () => listWorkshopSchedules(channelId, workshopScopePair(scope)),
   });
 
-  const invalidate = () =>
+  const invalidate = () => {
     void queryClient.invalidateQueries({
       queryKey: ["workshop", channelId, "schedules"],
     });
+    if (scope.status === "open") {
+      void queryClient.invalidateQueries({
+        queryKey: [...scope.prefix, "workshop", channelId, "schedules"],
+      });
+    }
+  };
 
   return (
     <div className="space-y-4 overflow-y-auto p-4">
@@ -137,17 +155,20 @@ function ScheduleRow({
   onChanged: () => void;
 }) {
   const { t } = useTranslation("workshop");
+  const rowScope = useScopedCache();
   const toggle = useMutation({
     mutationFn: () =>
       toggleWorkshopSchedule(
         channelId,
         schedule.id,
         schedule.status !== "enabled",
+        workshopScopePair(rowScope),
       ),
     onSuccess: onChanged,
   });
   const remove = useMutation({
-    mutationFn: () => deleteWorkshopSchedule(channelId, schedule.id),
+    mutationFn: () =>
+      deleteWorkshopSchedule(channelId, schedule.id, workshopScopePair(rowScope)),
     onSuccess: onChanged,
   });
   const enabled = schedule.status === "enabled";
@@ -216,6 +237,7 @@ function CreateScheduleForm({
   onCreated: () => void;
 }) {
   const { t } = useTranslation("workshop");
+  const formScope = useScopedCache();
   const [prompt, setPrompt] = useState("");
   const [modeKind, setModeKind] = useState<"interval" | "daily" | "advanced">(
     "interval",
@@ -235,21 +257,25 @@ function CreateScheduleForm({
           : modeKind === "daily"
             ? { kind: "daily", time }
             : { kind: "advanced", cron };
-      return createWorkshopSchedule(channelId, {
-        prompt,
-        mode,
-        preapproval: {
-          ...(tools.trim()
-            ? {
-                tools: tools
-                  .split(",")
-                  .map((entry) => entry.trim())
-                  .filter(Boolean),
-              }
-            : {}),
-          maxTurnsPerRun: maxTurns,
+      return createWorkshopSchedule(
+        channelId,
+        {
+          prompt,
+          mode,
+          preapproval: {
+            ...(tools.trim()
+              ? {
+                  tools: tools
+                    .split(",")
+                    .map((entry) => entry.trim())
+                    .filter(Boolean),
+                }
+              : {}),
+            maxTurnsPerRun: maxTurns,
+          },
         },
-      });
+        workshopScopePair(formScope),
+      );
     },
     onSuccess: () => {
       setPrompt("");
