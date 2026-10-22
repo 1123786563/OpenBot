@@ -1,6 +1,6 @@
 # OpenBot：Better Auth 全量接入与公司多租户体系设计
 
-状态：**详细设计评审稿 v2.2，尚未批准实施**。日期：2026-10-22。本版整改用户确认的 F1–F4、H1–H4、M1–M3、L1–L3；编号与此前 F01–F06 等评审编号分别保存。
+状态：**详细设计评审稿 v2.3，尚未批准实施**。日期：2026-10-23。本版在 v2.2 基础上整改新一轮审核确认的 F-01–F-10（见 §16.5）；此前 F1–F4、H1–H4、M1–M3、L1–L3 与更早 F01–F06 等评审编号分别保存，互不覆盖。
 
 本文承接 ADR 0011 已确认的身份及目录选型。旧 ADR 0004 和旧多租户整改规格已作废；本稿重新列出独立候选需求与验收，不承接旧 Issue 的实施授权。新增物理模型、同步机制、角色、接口和上线步骤均为本稿建议；本次调整修复设计不等于批准实施、迁移或发布。当前代码事实是静态读取结果，不代表功能已通过部署或隔离验收。
 
@@ -197,7 +197,7 @@ BA 当前目录表达“当前有哪些成员”，不能单独重建“以前�
 1. 认证 actor 或受限 provisioning identity；解析服务器可信 command envelope。envelope 含 operation/actor/target tenant/action/idempotency，不接受客户端伪造 actor。
 2. 对目标公司获取现有 tenant advisory **排他事务锁**，再按现有顺序获取必要 principal/member/team 锁。首期牺牲少量目录写并发，换取与全部业务 gate 的 tenant 共享锁一致；批量命令按稳定排序，不在多个公司间无序持锁。
 3. 锁内重新读取操作者资格、公司状态、目标与管理权限。禁止在锁外通过权限检查后直接写入。
-4. 用请求局部、绑定同一个数据库连接与外层事务的 BA adapter 执行 BA 命令。adapter 的 transaction 始终启用，不依赖 SCIM 开关。1.7.1 的 `runWithTransaction` 在外层 ALS 已 active 时只执行 fn，不自动建 savepoint；不能以此推断嵌套回滚隔离。
+4. 用请求局部、绑定同一个数据库连接与外层事务的 BA adapter 执行 BA 命令。adapter 的 transaction 始终启用，不依赖 SCIM 开关。1.7.1 的 `runWithTransaction` 在外层 ALS 已 active 时只执行 fn，不自动建 savepoint；不能以此推断嵌套回滚隔离。该复用只对 `auth.api.*` 成立——原生 HTTP handler 每请求经 `runWithAdapter` 新建 ALS store 覆盖外层并自行 drain hooks（见 §5.3），禁止作为事务内写路径。
 5. 按 §5.2.1 在 BA 同步步骤结束、after hook 已逐项分类后调用同事务 finalizer：验证最终目录状态，执行所有必须原子的 hook 写入、推进版本、更新投影、写审计及 outbox，再强制延迟约束。任何一步失败整体回滚。不能等待提交后运行的 database after hook 完成这些写入。
 6. executor 独占外层 ALS store 的 `pendingHooks` 生命周期：提交前核对登记及分类，回滚时丢弃并记录；成功提交后恰好一次按登记顺序执行允许的 read-only/disabled-cache-noop hook，再返回成功。通知只能消费已提交 outbox；提交后 hook 失败记录为 post-commit failure，不能伪报原事务回滚或重放安全写入。
 
@@ -219,13 +219,13 @@ BA 当前目录表达“当前有哪些成员”，不能单独重建“以前�
 
 该顺序是本稿拟实现的集成合同，需在 T01 用实际 adapter、受限数据库角色和真实 PostgreSQL 验证；约束脚本与插件源码顺序一起进入升级检查。接受邀请、移除成员和任意中途故障都必须证明合法中间顺序可完成、非法最终状态不可提交。[PostgreSQL 延迟约束触发器](https://www.postgresql.org/docs/current/sql-createtrigger.html)
 
-1.7.1 的 `databaseHooks.*.after` 经 `queueAfterTransactionHook` 加入外层队列。现有 `sso.provisionUser`/`user.create.after` 的 `seedRole`、`recordProvisioned`，以及 `session.create.after` 的 `stampSignIn` 都必须从全局 database 闭包移到同连接 finalizer；普通注册/登录使用无 tenant 的身份事务终结，不以公司成员资格为前提。`applyConfiguredAdmin` 的每次登录提权删除，初始化只走封存 bootstrap。通知转为事务内 outbox 意图；其余只读指标 hook 允许提交后执行，未知 hook 或闭包全局连接写入禁止。BA 权威 factory 明确禁用 secondaryStorage 与 session.cookieCache，强制 session/verification DB 存储；当前 factory 未启用 secondaryStorage，不减少既有能力。固定版内部 deleteCachedUserSessions/mirrorSessionToSecondaryStorage 在禁用时不得登记，仍会登记的 refreshUserSessions 作为已核验 disabled-cache-noop 提交后执行，回滚不执行；相反配置启动拒绝，不把缓存写伪装只读。具体分类及队列接口见配套 interfaces.md §3.1。
+1.7.1 的 `databaseHooks.*.after` 经 `queueAfterTransactionHook` 加入外层队列。现有 `sso.provisionUser`/`user.create.after` 的 `seedRole`、`recordProvisioned`，以及 `session.create.after` 的 `stampSignIn` 都必须从全局 database 闭包移到同连接 finalizer；普通注册/登录使用无 tenant 的身份事务终结，不以公司成员资格为前提。`applyConfiguredAdmin` 的每次登录提权删除，初始化只走封存 bootstrap。通知转为事务内 outbox 意图；其余只读指标 hook 允许提交后执行，未知 hook 或闭包全局连接写入禁止。第四处 after-hook 来源：`oauth2/link-account.mjs` 的 `dispatchVerificationEmail` 在 SSO resolveUser（deferNonDatabaseWrites）为真时经 `queueAfterTransactionHook` 入队且会实际发信；按通知类登记并由 outbox 接管投递，当前配置未触发，启用相关邮件配置前必须先完成接管。BA 权威 factory 明确禁用 secondaryStorage 与 session.cookieCache，强制 session/verification DB 存储；当前 factory 未启用 secondaryStorage，不减少既有能力。固定版内部 deleteCachedUserSessions/mirrorSessionToSecondaryStorage 在禁用时不得登记，仍会登记的 refreshUserSessions 作为已核验 disabled-cache-noop 提交后执行，回滚不执行；相反配置启动拒绝，不把缓存写伪装只读。具体分类及队列接口见配套 interfaces.md §3.1。
 
 接受邀请的 accepted→失败→pending 补偿不能覆盖原始 SQL 错误：P01 验证适配层在原错误处保留 cause/SQLSTATE；需要补偿的内部步骤显式使用 savepoint 并先 rollback-to-savepoint，或整命令直接回滚且保留原异常。不能用补偿得到的 `25P02` 替代最初 guard/约束错误。
 
 ### 5.3 强制覆盖所有路径
 
-- `/api/auth/*` 可以挂载现有 handler，但 organization 写端点必须由集成层建立 envelope/事务上下文后才能调用；不提供绕过入口。
+- `/api/auth/*` 可以挂载现有 handler 服务普通身份读写；但固定版 `auth.handler` 每请求经 `runWithAdapter` 以 `{adapter, pendingHooks:[], isTransactionActive:false}` 新建 ALS store，覆盖外层 executor store 并自行 drain hooks，随后的 `runWithTransaction` 因 `isTransactionActive=false` 在基础连接池另开事务——BA 写与 clock/投影/审计将落在两个事务。因此 BA 权威下 ingress 必须把原生 HTTP 目录写请求（含 SCIM PUT/PATCH/DELETE）转译为外层事务内的 `auth.api.<endpoint>({headers, body, query, asResponse})` 调用（`auth.api` 不经 `runWithAdapter`）；禁止在 executor 事务内调用 `auth.handler`，装配审计将仍可达 handler 的写端点列为失败。不提供绕过入口。
 - organization 读入口也须分类。公司目录 GET 在 `DirectoryReadGate` 内检查实时 User/Principal、active 公司/成员、适用证明及原端点动作权限，再执行读；不能只依赖 BA 的 member 行存在检查。自身公司发现、本人邀请改用 OpenBot 自有窄读 adapter（对应 BA 原生 GET 关闭），邀请接受/拒绝使用独立规则，不返回公司全目录；未知原生读写入口一律拒绝。
 - `auth.api.*` 服务端调用、SCIM、SSO provisioning 和管理员操作同样受控，不能认为没有浏览器就可信。
 - 目录写角色可写 BA 目录，不直接写业务投影；受控数据库函数可写明确列、固定 schema、固定 `search_path`，撤销 PUBLIC EXECUTE。若使用 SECURITY DEFINER，函数拥有者不得变成通用业务读写旁路。
@@ -418,6 +418,7 @@ Better Auth UI 的 Organization 插件提供组织设置、人员、邀请、切
 - 保留现有可用 SSO/SCIM，不以“后续增强”名义使已有企业失去登录或离职同步。新增客户自助 IdP 配置属于后续单独功能。
 - SSO provider、SCIM connection 固定绑定公司；回调使用服务器保存的 state/intent，不能读取回调时 active organization 决定归属。
 - SSO 成功证明身份，不默认赋予公司资格；JIT 仅在该公司明确开启、验证 issuer/domain/subject 并满足策略时创建最低角色。禁止根据任意相同邮箱自动合并外部主体或授予 admin。
+- 固定版 SSO 插件在 Organization 启用后，OIDC/SAML 回调会按 provider.organizationId 经 `assignOrganization` 直接 `adapter.create` 创建 member，绕过 Directory。factory 硬前提固定 `sso({organizationProvisioning:{disabled:true}})` 并在启动时拒绝相反配置；ingress 对 `/sso/register`、`/sso/update-provider` 等请求剥离或拒绝客户端提交的 organizationId，provider↔公司绑定只由服务器按固定 binding 写入；M2 inventory 核验 `sso_providers.organization_id` 存量为空，携带 organizationId 的回调也不得产生 member 行。
 - 当前全部署 `ssoRequired` 规则不能直接作为不同公司各自的策略。公司业务与目录管理入口须按 §9.1 验证 session 级认证证据；全局 session 可以存在，但访问要求更高的公司需完成绑定该公司的追加认证。既有部署级强制规则继续生效，公司策略不能放宽它；设置失败时拒绝该公司访问，保留明确受控的 break-glass 路径。
 - SCIM externalId/subject/group 均带 connection/company 维度；deactivate 只影响绑定公司资格，不自动删除全局 User 或其他公司成员。首次加入使用服务器专用 `member.provision`，不存在关系与恢复旧关系分别检查；不伪造 invitation.accept，也不在 envelope 外直接创建 member。默认最低角色，不能覆盖已有较高或不同角色。
 - 组到团队/固定角色映射使用管理员批准的持久规则。每个事件在 tenant 锁内重新核验 binding、rule ID/revision、批准/撤销状态及固定目标，然后生成 tx/command/target 绑定的单次团队能力；规则由现有公司管理配置路径调用受控 provisioning.rule.approve/revoke，固定 binding 属于目标公司，scim/jit actor 无规则批准权；不新增客户自助 IdP 配置范围。规则变化推进 revision，旧能力和事件重试须重验。普通目录组不产生 owner/admin，不授予可委派的团队管理 Grant；规则撤销阻止后续 provisioning 写，既有成员资格的移除须走明确受控成员命令。
@@ -553,7 +554,7 @@ P0 表示 §1.3 候选范围获批时建议首期交付，不表示已恢复旧�
 
 ### 13.1 迁移前置清单
 
-从实际路由注册、schema、FK、后台任务、脚本、客户端调用与外部存储生成覆盖清单。至少确认所有身份/目录写入者、活动成员数、重复/孤立关系、同名及重复 workspace ID、owner 指定、SSO/SCIM 绑定、payer 唯一映射和旧开发绕过。另盘点持久撤权版本、缺少代际的旧授权、旧签名/公开 URL 失效方式及会话认证证据；不能凭当前 active 状态认定历史能力安全。数据规模、停写窗口和恢复时间需要实测，不承诺零停机。
+从实际路由注册、schema、FK、后台任务、脚本、客户端调用与外部存储生成覆盖清单。至少确认所有身份/目录写入者、活动成员数、重复/孤立关系、同名及重复 workspace ID、owner 指定、SSO/SCIM 绑定、payer 唯一映射和旧开发绕过。另盘点持久撤权版本、缺少代际的旧授权、旧签名/公开 URL 失效方式及会话认证证据；不能凭当前 active 状态认定历史能力安全。BA organization.slug 必填且唯一而 `enterprise_tenants` 无此列，回填的派生/归一化/碰撞/幂等规则按配套 interfaces §2 执行并纳入前置盘点。legacy 目录写入者以静态清单逐项登记处置阶段，清单须覆盖非路由写入者（deletion-semantics 的 operator 直删团队行/停用成员、root-backfill 的 raw SQL insert principals/memberships、enterprise-runtime-seed 的启动种子）；清单外写入者一经发现即阻断。数据规模、停写窗口和恢复时间需要实测，不承诺零停机。
 
 ### 13.2 切换状态机
 
@@ -696,6 +697,23 @@ ADR 0011 已确认 Better Auth 统一身份及目录、Better Auth UI 复用、�
 | L3 low | interfaces §1/§5，P04 先产 CompanyAssurance 类型/关闭实现 | P04→P05→P11；无额外证明正向、要求证明时拒绝，不影响 legacy |
 
 该索引表示方案整改归属；所有实现测试仍待执行，不作为生产缺陷已修复的证据。
+
+### 16.5 第三轮评审整改索引（F-01–F-10，2026-10-22 审核确认）
+
+编号与 §16.3/§16.4 的历轮编号分别保存；同为待实施修订，不代表已修复。
+
+| Finding | 合同修订 | 任务与必需验证 |
+| --- | --- | --- |
+| F-01 critical | §5.2/§5.3：auth.handler 每请求重建 ALS 并另开事务；原生 HTTP 目录写一律由 ingress 转 `auth.api.<endpoint>`，executor 事务内禁止 auth.handler | P01 `native_http_handler_is_never_used_for_directory_writes` 以真实 HTTP 比对 `txid_current()`；P04 ingress 转译；P23 把仍可达 handler 的写端点列为失败 |
+| F-02 high | §9：SSO 插件 `organizationProvisioning.disabled:true` 硬前提并启动拒绝；ingress 剥离/拒绝客户端 organizationId；M2 核验 `sso_providers.organization_id` 存量为空 | P12 `sso_callback_with_provider_organization_id_never_creates_member`；interfaces §3.2 补 SSO/SCIM 端点处置 |
+| F-03 high | interfaces §3.1 逐行登记固定版不经 ALS 的 `ctx.context.adapter` 直写及处置；invitation.resend 不走原生 resend 分支 | P01/P23 源码扫描生成清单，包升级引入新直写即失败 |
+| F-04 medium | §13.1：legacy 目录写入者静态清单为必需产物 | P25 inventory 产出清单；deletion-semantics.ts→P08、root-backfill.ts→P22、enterprise-runtime-seed.ts→P12 的 Files 覆盖 |
+| F-05 medium | §13.1 + interfaces §2：BA slug 必填唯一的派生/归一化/碰撞/幂等规则 | P25 `legacy_tenants_receive_deterministic_unique_slugs`；BA15、check-slug 沿用 |
+| F-06 medium | §7.1/interfaces §3：成员路由不新增同形 DELETE；path ID 固定为 OpenBot principalId | P09 转译既有 `:principalId` 路由，Files 补 assembly-enterprise.ts |
+| F-07 medium | §7.3/interfaces §3.2：X 类原生 GET 的 UI 内建依赖纳入兼容判据 | P02 `organization_components_do_not_call_x_class_endpoints`，逐组件声明注入 adapter 或不复用 |
+| F-08 low | §5.2.1：补第四处 after-hook 来源 link-account dispatchVerificationEmail | P01 分类、P04/P08 接管 outbox，启用相关配置前先接管 |
+| F-09 low | interfaces §2：既有 epoch integer 与新版本列 bigint 逐列固定 | P03 schema/迁移明确列类型 |
+| F-10 low | §10.1 角色职责：PrincipalRegistry/CompanyAssurance.require 的最小 GRANT | P03 Step 4 补 auth-writer→principals、data→clocks/assurance 授权 |
 
 ## 17. 外部资料与版本复核
 

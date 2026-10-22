@@ -41,7 +41,7 @@ P01 使用测试隔离 schema 验证适配方案；P03 才建立生产 schema。
 
 ## 2. 版本、actor 与命令
 
-`Version` 使用非负安全整数：数据库 bigint 的值必须满足 `0 <= value <= 9007199254740991`，应用读取和递增均检查 `Number.isSafeInteger`；溢出拒绝命令，不回绕。既有 `memberEpoch: number` 保持形状。资格首次建立取 1；历史回填只能采用经核实的版本，不能把未知历史补成 1。
+`Version` 使用非负安全整数：数据库 bigint 的值必须满足 `0 <= value <= 9007199254740991`，应用读取和递增均检查 `Number.isSafeInteger`；溢出拒绝命令，不回绕。既有 `memberEpoch: number` 保持形状。列类型逐列固定：既有 `enterprise_memberships.epoch`、`enterprise_workspace_memberships.epoch` 为 integer（enterprise-tenancy.ts），保持不变、迁移不改列类型；新建版本列（auth_eligibility_clocks、identity/company/team generation 等）用 bigint。P03 在 schema 中逐列写明类型，应用层比较统一走 `Number.isSafeInteger`，不因 integer/bigint 混用失效。资格首次建立取 1；历史回填只能采用经核实的版本，不能把未知历史补成 1。
 
 ```ts
 type Version = number;
@@ -93,6 +93,8 @@ interface Directory {
 ```
 
 `Database` 引用现有 `server/src/db/client.ts` 的导出；公共调用者只见 `Directory`，不传 tx、executor 或“跳过权限检查”参数。actor 由认证层或固定 provisioning binding 签发；迁移 actor 在停写离线工具中签发，普通进程不得创建。开通命令的 tenantId 由服务器幂等预分配，不由普通用户指定既有公司的 ID。
+
+BA organization.slug 为固定版必填且唯一列，而 `enterprise_tenants` 无 slug 列。M2 回填的 slug 规则：从公司业务显示名归一化派生——trim、小写、连续空白与非法字符折叠为单个连字符、去首尾连字符；归一化结果为空时退回 `tenant-<tenant_id 的稳定摘要>`。冲突按 tenant 创建时间/ID 的稳定排序追加确定性数字后缀（-2、-3…）；同一 tenant 重跑必得同一 slug（幂等），回填以 tenant_id 为键持久 slug 映射，重放不重派。BA 唯一约束冲突即阻断并报告，不静默换 slug 后丢失映射。check-slug（§3.2，平台开通只读）与后续 slug 变更沿用同一归一化规则；slug 变更后旧 slug 不可解析到其他公司。
 
 | DirectoryOperation | payload 的允许字段 | 实现任务 |
 | --- | --- | --- |
@@ -204,6 +206,8 @@ interface ScopedTeamExtension {
 
 P09 的公司管理接口固定为 `GET|POST /api/enterprise/workspace-scope/admin/teams/:workspaceId/management-grants` 和 `DELETE /api/enterprise/workspace-scope/admin/teams/:workspaceId/management-grants/:grantId`。GET 返回 `{grants: TeamManagementGrantView[]}`，POST 接 `{userId,actions}` + 幂等头，DELETE 从 path 取 grantId、body 只接 reason；写返回 DirectoryResult.grantId/grantGeneration，其余非 Grant 动作为 null。path Grant 必须属于明确 company/team；GET 也需当前公司管理授权。
 
+团队成员增删不新增与既有 `DELETE /api/enterprise/workspace-scope/admin/teams/:workspaceId/members/:principalId`（workspace-scope-routes.ts）同形的路由——Hono 将 `:userId` 与 `:principalId` 视为同一模式，同形注册造成 ID 语义冲突。P09 扩展转译既有 `POST .../members` 与 `DELETE .../members/:principalId`：path 参数类型固定为 OpenBot 稳定业务 principalId，服务端经 PrincipalRegistry/binding 解析为 BA userId 后构造 team.member.add/remove，不接受客户端直接给 BA member.id/userId；授权分支按上表 company-role/team-grant/provisioning-rule 判别，不改 BA member 默认角色。
+
 ```ts
 type TeamManagementGrantView = Readonly<{
   grantId: string; tenantId: string; workspaceId: string; userId: string;
@@ -224,6 +228,8 @@ type TeamManagementGrantView = Readonly<{
 
 executor 建立并独占外层 BA ALS store，`isTransactionActive=true`、同一 tx adapter 和 pendingHooks；内部 transaction 复用该 store，1.7.1 不自动建 savepoint。`run` 只返回同步结果与已登记/分类的队列，不提交、不自行 drain。executor 在提交前确认每个 hook 的处置，再 finalizer、约束、commit；只有 commit 成功才按登记顺序执行 pendingHooks 一次，回滚不执行。提交后允许队列失败单独记录，不伪报回滚或重放命令。adapter transaction 永远启用，与 SCIM 配置无关。BA 权威模式的 factory 硬前提是 secondaryStorage 未配置、session.cookieCache.enabled:false、session.storeSessionInDatabase:true、verification.storeInDatabase:true；启动检查拒绝相反配置，session/verification 始终从事务数据库读取。当前 OpenBot factory 未配置 secondaryStorage，故此限制不移除现有部署能力；legacy authority 保持原合同。以后启用缓存须另行设计受控 cache-sync、失败失效/重试与实时 DB gate，不能把缓存写标成 read-only。
 
+入口形态前提（F-01）：固定版 `auth.handler` 每请求执行 `runWithAdapter(handlerCtx.adapter, …)`，以 `{adapter, pendingHooks:[], isTransactionActive:false}` 新建 ALS store 覆盖外层 store 并自行 drain hooks；随后的 `runWithTransaction` 因 `isTransactionActive=false` 在基础连接池另开事务。只有 `auth.api.*`（api/dispatch）不经 `runWithAdapter`。因此 ingress 对原生 HTTP 目录写请求一律转译为外层事务内的 `auth.api.<endpoint>({headers, body, query, asResponse})` 调用；executor 事务内禁止调用 `auth.handler`，P23 装配审计将仍可达 handler 的写端点列为失败。
+
 | 现有 callback/hook | 分类与处置 | 最迟责任 |
 | --- | --- | --- |
 | sso.provisionUser / user.create.after 的 seedRole | 删除全局连接写；默认 user 及合法初始化由身份/目录 finalizer 同 tx 写兼容 role | P01 分类，P04/P12 实际迁入 |
@@ -231,6 +237,7 @@ executor 建立并独占外层 BA ALS store，`isTransactionActive=true`、同�
 | session.create.after 的 applyConfiguredAdmin | 禁止运行期提权；移除，bootstrap 单独一次封存 | P01 禁止合同，P12 清旧路径 |
 | session.create.after 的 stampSignIn | 身份 finalizer 同 tx 更新，不在 after 中用全局 database | P04/P12 |
 | 验证/恢复/邀请邮件、webhook、失效通知 | finalizer 写加密 outbox 意图，提交后 delivery；不作为可重放 callback 发信 | P04/P08/P12 |
+| oauth2/link-account 的 dispatchVerificationEmail | SSO resolveUser（deferNonDatabaseWrites）为真时经 queueAfterTransactionHook 入 pendingHooks 且实际发信；按通知类登记并由 outbox 接管，当前配置未触发，启用相关配置前必须先接管 | P01 分类，P04/P08 接管 |
 | BA 内部 deleteCachedUserSessions / mirrorSessionToSecondaryStorage | 固定配置无 secondaryStorage，来源分支不得登记；配置反例在启动前拒绝 | P01 固定版清单/配置反例，P04 factory |
 | BA 内部 refreshUserSessions（updateUser/updateUserByEmail） | 即使无 secondaryStorage 仍登记；以固定版来源登记 disabled-cache-noop，提交后照常执行其早返回，回滚不执行，不能静默丢弃 | P01/P04 |
 | 只读指标/非安全遥测 | 显式登记 read-only 后可入 pendingHooks | P01/P04 |
@@ -238,9 +245,20 @@ executor 建立并独占外层 BA ALS store，`isTransactionActive=true`、同�
 
 P01 必须逐一覆盖上述三个 BA 内部来源：禁用存储时 refresh 队列恰一次且零缓存 I/O，回滚零执行；另两者不登记，强行配置 secondaryStorage/cookieCache 在调用 route 前失败。登记以固定包来源、适配边界和运行证据为准，不靠匿名闭包字符串猜分类。普通注册/登录也由无 tenant 的身份事务终结，保留非致命登录审计政策；该政策不允许角色或 SCIM 投影事务外补写。P01 通过实际 BA hook 注册和受限连接断言分类不漏，不声称能凭闭包文本自动判定副作用。accept-invitation 的补偿若要执行，先 rollback-to-savepoint；否则保留首个 SQLSTATE/cause 后整命令回滚，禁止 25P02 覆盖原 guard 错误。
 
+固定版存在不经 ALS 的 `ctx.context.adapter` 直写（org adapter 与 internal-adapter 主路径均经 getCurrentAdapter，以下为全部例外）。P01 以源码扫描生成并核对本清单，包升级引入清单外直写即失败；P23 将扫描纳入装配审计：
+
+| 位置 | 内容 | 处置 |
+| --- | --- | --- |
+| organization/routes/crud-invites.mjs:138 | invite-member 原生 resend 分支直写 expiresAt | invitation.resend 是 OpenBot 受控命令（取消旧记录、新建邀请），不进入原生 resend 分支；该分支在 ingress 不可达 |
+| organization/routes/crud-access-control.mjs:131/271/567 | 动态角色 create/delete/updateMany | dynamicAccessControl 关闭、§3.2 角色端点全 X 不可达；启动核验配置 |
+| @better-auth/sso index.mjs:267 | assignOrganization 直接 create member | `organizationProvisioning.disabled:true` 硬前提，回调不可达该分支（另见 §9 SSO 条款） |
+| @better-auth/sso index.mjs:3473 | register 直写 ssoProvider | 受控配置写经 ingress 转 auth.api 在外层事务执行，拒绝客户端 organizationId |
+| @better-auth/scim index.mjs:3264 | SCIM update 直传 `ctx.context.adapter.update` | SCIM 写经 ingress 转 auth.api 进 executor 事务，禁止直挂 handler |
+| internal-adapter.mjs:893/906 | reserveVerificationValue 写 verification | 仅恢复 ingress 在身份事务内经 auth.api 触达；P01 证明 reservation 落在外层 tx，失败整体回滚 |
+
 ### 3.2 BA 1.7.1 原生端点处置表
 
-以下 path 均相对 `/api/auth`，同时约束对应 `auth.api.*`；固定包新增/删除/改方法必须使 surface audit 失败。D=Directory 命令，I=Identity，R=实时 DirectoryReadGate（身份/公司/member lifecycle/assurance+原动作权限），S=只更新本人偏好且验证目标，U=OpenBot 自有本人发现/邀请窄读 adapter（对应 BA 原生 GET 关闭），P=平台只读 gate，X=后端 403/404。每个 BA organization GET 都需 suspended member、suspended company、missing proof 三个反例（R 走 gate，X 始终后端拒绝）；U 只在 OpenBot 自有 adapter 返回本人可见发现/邀请，不返回全目录。不存在的 method/path 也拒绝。
+以下 path 均相对 `/api/auth`，同时约束对应 `auth.api.*`；固定包新增/删除/改方法必须使 surface audit 失败。所有写方法（D/I 及受控配置写）的 HTTP 形态按 §3.1 入口前提转译为 `auth.api` 调用，禁止直挂 `auth.handler`。D=Directory 命令，I=Identity，R=实时 DirectoryReadGate（身份/公司/member lifecycle/assurance+原动作权限），S=只更新本人偏好且验证目标，U=OpenBot 自有本人发现/邀请窄读 adapter（对应 BA 原生 GET 关闭），P=平台只读 gate，X=后端 403/404。每个 BA organization GET 都需 suspended member、suspended company、missing proof 三个反例（R 走 gate，X 始终后端拒绝）；U 只在 OpenBot 自有 adapter 返回本人可见发现/邀请，不返回全目录。不存在的 method/path 也拒绝。
 
 | Method | Native path / server API | 处置与任务 |
 | --- | --- | --- |
@@ -296,6 +314,26 @@ P01 必须逐一覆盖上述三个 BA 内部来源：禁用存储时 refresh 队
 | POST | /organization/delete-role | X，P04 |
 | GET | /organization/get-role | X，P04；固定角色能力走受控 DTO |
 | GET | /organization/list-roles | X，P04 |
+
+SSO（10 个管理/登录端点 + 回调族）与 SCIM（9 个资源路径）同样逐项处置；写方法一律经 ingress 转 `auth.api`，禁止直挂 `auth.handler`：
+
+| Method | Native path / server API | 处置与任务 |
+| --- | --- | --- |
+| POST | /sign-in/sso | 身份登录保留 BA 原生合同；公司证明走 §5 evidence bridge，P12 |
+| GET | /sso/callback/:providerId、/sso/callback | OIDC 登录回调保留 BA 合同；organizationProvisioning 关闭，携带 organizationId 也不产生 member，P12 |
+| POST | /sso/saml2/sp/acs/:providerId、/sso/saml2/sp/slo/:providerId、/sso/saml2/logout/:providerId | SAML ACS/SLO/登出回调，同上；不产生 member，P12 |
+| GET | /sso/saml2/sp/metadata | SP 元数据只读保留，P12 |
+| POST | /sso/register | 受控配置写：ingress 拒绝 body 含 organizationId，provider↔公司绑定由服务器按固定 binding 写入，经 auth.api 进事务，P12 |
+| POST | /sso/update-provider、/sso/delete-provider | 同上受控配置写，P12 |
+| POST | /sso/request-domain-verification、/sso/verify-domain | 受控域名验证配置写，P12 |
+| GET | /sso/get-provider、/sso/providers | 只读 gate，仅返回当前部署/绑定允许的最小字段，P12 |
+| POST、GET | /scim/v2/Users | POST→D member.provision（scim actor、固定 binding）；GET 限绑定公司只读，P12 |
+| GET、PATCH、PUT、DELETE | /scim/v2/Users/:userId | 写→D member.suspend/restore/remove 经 executor；GET 绑定公司只读，P12 |
+| POST、GET | /scim/v2/Groups | 组写只消费已批准 provisioning rule（team.member.add/remove 依据）；GET 绑定公司只读，P12 |
+| GET、PATCH、PUT、DELETE | /scim/v2/Groups/:groupId | 同上，P12 |
+| GET | /scim/v2/ServiceProviderConfig | 协议发现元数据只读保留，P12 |
+| GET | /scim/v2/Schemas、/scim/v2/Schemas/:schemaId | 同上，P12 |
+| GET | /scim/v2/ResourceTypes、/scim/v2/ResourceTypes/:resourceTypeId | 同上，P12 |
 
 P04 建分类/拒绝框架，后续 owner 完成动作；P23 按固定版**全部** Admin/Organization HTTP 与 server API 清单逐项对账、生成按端点反例，不把 UI 隐藏或“未知即拒绝”当成已实现 P0。私有 company.provision 可在受控 adapter 内建目录，不临时改公开插件选项或冒充管理员。
 

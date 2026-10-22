@@ -1,6 +1,6 @@
 # Better Auth 接入：验收映射与验证方法
 
-本文件是 [主计划](plan.md) 的验收方法，不是测试执行报告。所有编号来自 [v2.2 Spec](../../specs/2026-10-22-better-auth-full-integration-design.md)，旧规格/旧 Issue 的测试注释仅作为现有实现背景，不能充当此次需求或通过证据。
+本文件是 [主计划](plan.md) 的验收方法，不是测试执行报告。所有编号来自 [v2.3 Spec](../../specs/2026-10-22-better-auth-full-integration-design.md)，旧规格/旧 Issue 的测试注释仅作为现有实现背景，不能充当此次需求或通过证据。
 
 ## 1. 候选需求覆盖
 
@@ -34,12 +34,12 @@
 | BA07 | P03、P04、P05、P09、P14、P16、P18 | `directory-command.test.ts`、`scope-generations.test.ts`、`scoped-team-admin.test.ts`、`credential-source-generations.test.ts`、`execution-revocation.test.ts`、`billing-capacity-audit.test.ts` | 删除再加入/恢复不复活旧 Scope/资源及财务 Grant/审批/lease、凭据动作及个人凭据；新 Scope 也不能凭旧来源签新 lease/解密；幂等不增版 |
 | BA08 | P01、P04、P08、P12、P23 | `transaction-contract.test.ts`、`directory-command.test.ts`、`principal-registry.test.ts`、`identity-command.test.ts`、`provisioning-global-admin.test.ts`、`personal-model-identity.test.ts`、`ingress-coverage.test.ts`、`mounted-assembly.test.ts` | Principal/BA/clock/投影/审计/outbox 每阶段故障全回滚；Identity 的 User/Principal/代际/session/proof 同样全回滚；BA 权威下 HTTP/auth.api/SCIM/JIT/Admin/CLI/startup 无信封不可写；延迟 hook 不丢、不用全局连接补写，SCIM HTTP 首建故障 roles/SCIM投影/member/clock 全回滚 |
 | BA09 | P03、P05、P14、P23 | `schema-roles.test.ts`、`scope-generations.test.ts`、`mounted-assembly.test.ts` | 真实受限角色/RLS/复合 FK、池复用、存储/授权故障及 schema mismatch |
-| BA10 | P01、P04、P11、P12、P23 | `sso-evidence-contract.test.ts`、`company-assurance.test.ts`、`provisioning-global-admin.test.ts`、`ingress-coverage.test.ts` | 密码/A IdP session 不满足 B proof；SCIM A deactivate 保留 B；无邀请/无 Principal 首次 provisioning；批准规则团队加入、撤规则/跨公司/能力跨请求拒绝；每个原生目录 GET 的暂停成员/暂停公司/缺 proof 反例；OIDC/SAML 签名断言时间与 state/RelayState 绑定；已启用真实 IdP/SCIM 测试租户 |
+| BA10 | P01、P04、P11、P12、P23 | `sso-evidence-contract.test.ts`、`company-assurance.test.ts`、`provisioning-global-admin.test.ts`、`ingress-coverage.test.ts` | 密码/A IdP session 不满足 B proof；SCIM A deactivate 保留 B；无邀请/无 Principal 首次 provisioning；批准规则团队加入、撤规则/跨公司/能力跨请求拒绝；每个原生目录 GET 的暂停成员/暂停公司/缺 proof 反例；OIDC/SAML 签名断言时间与 state/RelayState 绑定；已启用真实 IdP/SCIM 测试租户；SSO 回调携带 provider.organizationId 不创建 member（organizationProvisioning 禁用） |
 | BA11 | P16、P18 | `execution-revocation.test.ts`、`billing-capacity-audit.test.ts` | 真 Run/Job 领取重放/重试/恢复/离职保持 payer，proof 到期挂起，外部事实不重复 |
 | BA12 | P18、P21 | `billing-capacity-audit.test.ts`；Web `business-scope-matrix.test.tsx` | 多团队同余额并发、个人 Key/账户分离、财务动作与用量账本对账 |
 | BA13 | P07、P19、P20、P21 | Web `scope-selection.test.tsx`、`business-scope-matrix.test.tsx`；Desktop CompanySelection/OrgLocalState；Mobile tenancy/three-client-selection 和 `tests/e2e/better-auth/mobile/app.e2e.ts` | 真实 Mobile App/MuseApi/CopilotKit/媒体接线及 Web 多标签、Desktop、启用 iOS/Android 的真实回调/切换/登出/撤权；适配层测试不能替代 native |
 | BA14 | P14、P15、P17、P21 | `business-resource-matrix.test.ts`、`download-revocation.test.ts`、`external-surface-matrix.test.ts` | 实际存储旧 URL/CDN、代理新请求/HEAD/Range/批次、lease、沙箱/浏览器/Memory/观测 |
-| BA15 | P03、P04、P25、P22 | `schema-roles.test.ts`、`migration-expand.test.ts`、`migration-recovery.test.ts` | 同名/重复 workspace ID 保留、集合/哈希/FK/payer/owner、legacy/ba/paused 读写、M3→M4 同请求矩阵和真实备份恢复/回退 |
+| BA15 | P03、P04、P25、P22 | `schema-roles.test.ts`、`migration-expand.test.ts`、`migration-recovery.test.ts` | 同名/重复 workspace ID 保留、集合/哈希/FK/payer/owner、legacy/ba/paused 读写、M3→M4 同请求矩阵和真实备份恢复/回退；legacy tenant 回填获得按 interfaces §2 规则派生的确定性唯一 slug |
 | BA16 | P17、P23、P24 | `external-surface-matrix.test.ts`、`mounted-assembly.test.ts`；`tests/config/better-auth-surfaces.json` | 固定版所有 Admin/Organization 读写逐项处置，删除/模拟登录/动态角色后端拒绝；全部实际路由/consumer/client/启用 provider 有正反证据；无未知例外 |
 | BA17 | P01、P09、P10 | `scoped-team-admin.test.ts`；Web `directory-pages.test.tsx` | 从公司管理 API 授予/撤销/重授新团队 Grant 后，普通 member 仅甲团队成功，乙/公司角色/外部邀请/原生 BA 入口拒绝；不得自行委派，双身份/规则来源审计 |
 | BA18 | P01、P04、P08 | `transaction-contract.test.ts`、`directory-command.test.ts`、`membership-lifecycle.test.ts` | 实际 adapter 合法中间顺序可提交；缺 member/缺终结/故障无半份状态或提前邮件 |
@@ -55,7 +55,7 @@
 | F01 凭据来源 | P03/P14 source schema/authorizeUse/disclosePlaintext，P16 lease.issue，P22 recovery | 保留旧 use/disclose 和个人 owner，移除再加拿新 Scope，旧 lease/新 lease/直接明文均拒绝；显式新授权才成功，B 公司不受影响 |
 | F02 真实 Mobile 接线 | P20 实际 App/MuseApi/CopilotKit/媒体，P12/P17 BFF | 断开实际挂载使浏览器用例失败；真实 native 回调、切换、旧响应/旧流、下载撤权单列 |
 | F03 团队 Grant 生产 | P09 真实 management-grants POST/DELETE，P10 UI | 公司管理者授予→普通 member 只管理甲团队→撤销后含 receipt 重放拒绝→重授新版本；自行委派/乙团队/原生 BA 管理拒绝 |
-| F04 首次 provisioning | P04 注册 member.provision，P12 SCIM HTTP/JIT callback | 无邀请首次建立成员成功，已在 B 的同主体加入 A 不影响 B；每步故障回滚，重放不增版/不覆盖角色 |
+| F04 首次 provisioning | P04 注册 member.provision，P12 SCIM HTTP/JIT callback | 无邀请首次建立成员成功，已在 B 的同主体加入 A 不影响 B；每步故障回滚，重放不增版/不覆盖角色；factory 硬前提 `sso({organizationProvisioning:{disabled:true}})` 启动拒绝相反配置，ingress 拒绝客户端 organizationId，M2 inventory 核验 `sso_providers.organization_id` 存量为空 |
 | F05 邮箱验证 | P08 email-verification.test.ts + 实际邮件，P13 UI | signup→发送/重发→验证→邀请接受；过期、邮箱变化、错账号拒绝，验证不能签公司 SSO proof |
 | F06 逐文件登记 | 每个新增测试 Task，P24 coverage audit | RED/GREEN 目标文件/用例确实执行，0 collection error/非 skip；漏登记失败，native/driven 不重计 |
 | M1 全局身份 | P04 identity-command.test.ts，P12 实际 Admin/session/旧 role | user/Principal/identityGeneration/session/proof/审计/outbox 任一步失败全回滚；恢复不复活旧能力；无 envelope 的 seedRole/安全写拒绝 |
@@ -83,6 +83,23 @@
 | L1 | P01 transaction-contract | accept-invitation guard/约束 SQL 故障仍返回首个 SQLSTATE/cause；补偿不以 25P02 掩盖，最终状态全部回滚 |
 | L2 | P05 owned_files 静态核验 | store/scope-gate/revocation/workspace-admin/workspace-scope-routes 全在 server/src/enterprise/tenancy/，Brief 不再给不存在的根路径 |
 | L3 | P04 closed-assurance、P05 Scope、P11 完整实现 | P04 先产 CompanyAssurance 类型/关闭实现；无额外策略可 null、需要证明则明确拒绝；P05 必需注入且不跨向未来文件，legacy 不受未实现 proof 影响 |
+
+## 2.3 第三轮审核发现的逐项验收（F-01–F-10）
+
+此表与 §2.1/§2.2 编号分开保存，全是**待实施验收要求**；写入文档不等于已通过。
+
+| Finding | owner / test | 必需断言与入口 |
+| --- | --- | --- |
+| F-01 critical | P01 transaction-contract、P04 ingress、P23 mounted-assembly/surfaces | `native_http_handler_is_never_used_for_directory_writes`：对每条目录写端点发真实 HTTP 请求，断言请求内 BA 写与 executor 外层事务 `txid_current()` 相同；只用 auth.api 夹具为假阳性。P23 清单中仍可达 `auth.handler` 的写端点（含 SCIM PUT/PATCH/DELETE）全部列为失败 |
+| F-02 high | P12 provisioning-global-admin、P25/P22 inventory | `sso_callback_with_provider_organization_id_never_creates_member`：provider 带 organizationId 的 OIDC/SAML 回调不产生 member 行；`sso({organizationProvisioning:{disabled:true}})` 缺失或被改启动拒绝；/sso/register 等请求 body 含 organizationId 拒绝；M2 inventory 核验 `sso_providers.organization_id` 存量为空 |
+| F-03 high | P01 transaction-contract 源码扫描、P23 surfaces | interfaces §3.1 直写清单逐项有处置且与扫描结果一致；邀请重发不经原生 resend 分支直写 expiresAt；包升级引入清单外直写时扫描非零失败 |
+| F-04 medium | P25 inventory、P08/P12/P22 各自接线 | 静态 legacy 目录写入者清单含 deletion-semantics.ts:290/378/544、root-backfill.ts:205–211、scripts/enterprise-runtime-seed.ts:43–46 并逐项写明处置阶段；清单外新写入者被扫描发现即失败 |
+| F-05 medium | P25 migration-expand | `legacy_tenants_receive_deterministic_unique_slugs`：每个回填 tenant 得到归一化、唯一、重跑幂等的 slug；冲突按稳定规则加后缀；BA 唯一约束违例阻断回填 |
+| F-06 medium | P09 scoped-team-admin、P23 surfaces | 不存在与既有 `DELETE …/members/:principalId` 同形的第二路由；path ID 类型为 OpenBot principalId，服务端解析为 BA userId，不能用 BA member.id/userId 直删 |
+| F-07 medium | P02 ui-compatibility | `organization_components_do_not_call_x_class_endpoints`：OrganizationSwitcher/Members 等组件不调用 X 类原生 GET；ui-source.json 对每个组件声明“注入 OpenBot adapter”或“不复用” |
+| F-08 low | P01 hook 分类、P04/P08 接管 | link-account `dispatchVerificationEmail` 在 deferNonDatabaseWrites 为真时入 pendingHooks 的情况被登记分类；启用相关邮件配置前投递已由 outbox 接管，未启用有配置反例 |
+| F-09 low | P03 schema-roles | 既有 epoch integer 列与新建 bigint 版本列逐列类型明确；`Number.isSafeInteger` 比较不因列类型混用失效，迁移不改既有列类型 |
+| F-10 low | P03 schema-roles/启动检查 | auth-writer 对 principals 的受控写、data 对 clocks/assurance 的受控读 GRANT 存在且最小化；缺授权时反例与启动检查失败 |
 
 ## 3. 统一验证入口
 
