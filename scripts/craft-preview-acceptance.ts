@@ -1809,19 +1809,11 @@ try {
         outcome.violation === "form-action",
         `同 site 表单提交未被 form-action 拦截（violation=${JSON.stringify(outcome.violation)}）——若提交已发往主站 ${APP_ORIGIN}，即 F-1 洞开`,
       );
-      // OCR fullrange 终门：断言必须拓扑感知——dev 拓扑观测文档仍在
-      // 127.0.0.1:<apiPort>（PREVIEW_ORIGIN），same-site 拓扑下 host 形态是
-      // <label>.<preview-base>，硬编码 PREVIEW_ORIGIN.host 会确定性 FAIL。
-      // 期望 host 从当前预览页 URL 提取 label 后按拓扑重算（hostFormOrigin /
-      // expectOrigin 同一事实源）。
-      const previewLabel =
-        TOPOLOGY === "same-site"
-          ? (new URL(previewPage.url()).hostname.split(".")[0] ?? "")
-          : "";
-      const expectedHost =
-        TOPOLOGY === "same-site"
-          ? new URL(hostFormOrigin(previewLabel)).host
-          : new URL(PREVIEW_ORIGIN).host;
+      // OCR fullrange 终门 + R5 复审：断言拓扑感知且单一事实源——期望 host
+      // 从服务器铸造的 webapp_url 提取的 sessionA.label（既有约定）派生，
+      // expectOrigin 本身已拓扑感知（dev 返回 `${PREVIEW_ORIGIN}/${label}`），
+      // 不从被测页面 URL 现场提取（那会让期望与观测同源、断言恒真）。
+      const expectedHost = new URL(expectOrigin(sessionA.label)).host;
       assert(
         outcome.host === expectedHost,
         `观测文档离开了 preview host：${outcome.host}（期望 ${expectedHost}，拓扑 ${TOPOLOGY}）`,
