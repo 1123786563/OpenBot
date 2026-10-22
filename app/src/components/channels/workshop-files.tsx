@@ -12,7 +12,11 @@ import {
   uploadWorkshopFiles,
   type WorkshopFileNode,
 } from "@/lib/workshop/client";
-import { workshopFilesQueryOptions } from "@/lib/workshop/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  scopedWorkshopFilesQueryOptions,
+  workshopScopePair,
+} from "@/lib/workshop/queries";
 
 /**
  * The workspace as a tree, and the door data comes in through.
@@ -33,7 +37,12 @@ export function WorkshopFilesView({ channelId }: { channelId: string }) {
     text: string;
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const root = useQuery(workshopFilesQueryOptions(channelId, ""));
+  // The tree and the upload are the scope's own (MT091 / Issue #134, AC1/AC3): the pair rides
+  // every read and lands the uploaded bytes in the scope's workspace.
+  const scope = useScopedCache();
+  const root = useQuery(
+    scopedWorkshopFilesQueryOptions(queryClient, scope, channelId, ""),
+  );
 
   const toggle = (path: string) => {
     setExpanded((previous) => {
@@ -46,7 +55,12 @@ export function WorkshopFilesView({ channelId }: { channelId: string }) {
 
   const refresh = async () => {
     await queryClient.invalidateQueries({
-      queryKey: workshopFilesQueryOptions(channelId, "").queryKey,
+      queryKey: scopedWorkshopFilesQueryOptions(
+        queryClient,
+        scope,
+        channelId,
+        "",
+      ).queryKey,
     });
   };
 
@@ -67,7 +81,11 @@ export function WorkshopFilesView({ channelId }: { channelId: string }) {
     }
     setUploading(true);
     try {
-      const result = await uploadWorkshopFiles(channelId, files);
+      const result = await uploadWorkshopFiles(
+        channelId,
+        files,
+        workshopScopePair(scope),
+      );
       setNotice({
         kind: "ok",
         text: t("files.uploadDone", { count: result.uploaded }),
@@ -187,7 +205,16 @@ function TreeNode({
   const isDirectory = node.type === "directory";
   const open = expanded.has(node.path);
   // Lazy: a directory's children are fetched when it opens, cached under its own key.
-  const children = useQuery(workshopFilesQueryOptions(channelId, node.path));
+  const nodeQueryClient = useQueryClient();
+  const nodeScope = useScopedCache();
+  const children = useQuery(
+    scopedWorkshopFilesQueryOptions(
+      nodeQueryClient,
+      nodeScope,
+      channelId,
+      node.path,
+    ),
+  );
 
   return (
     <div>

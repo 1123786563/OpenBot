@@ -16,6 +16,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { ChatPanel } from "@/components/craft/chat-panel";
+import { authKeys } from "@/lib/auth/queries";
 import { SessionSidebar } from "@/components/craft/session-sidebar";
 import { settleReactWork } from "./settle-react-work";
 
@@ -62,6 +63,8 @@ function serving(sessionName: string | null) {
     const url = String(input);
     const method = init?.method ?? "GET";
     calls.push({ method, url });
+    // The scoped craft reads (MT091) wait for the scope source before they ask anything.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     if (method === "GET" && url === "/api/craft/sessions/s1/messages") {
       return Response.json({ messages: [] });
     }
@@ -99,6 +102,12 @@ function serving(sessionName: string | null) {
 function draw() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
+  });
+  // MT091: preset the scope source so the scoped reads mount with their scope already open.
+  client.setQueryData(authKeys.currentUser(), {
+    id: "user-1",
+    email: "user-1@example.test",
+    role: "user",
   });
   const rootRoute = createRootRoute({
     component: () => (

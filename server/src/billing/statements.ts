@@ -1,13 +1,16 @@
-import type {
-  PaymentOrderReadScope,
-  PaymentOrderRecord,
-  PaymentStore,
+import {
+  fulfillmentStateOfOrder,
+  type PaymentOrderEventRecord,
+  type PaymentOrderReadScope,
+  type PaymentOrderRecord,
+  type PaymentStore,
 } from "./payments/types";
 import type {
   BillingEntitlements,
   BillingInvoice,
   BillingInvoiceDetail,
   BillingInvoicePage,
+  BillingPaymentAnomaly,
   BillingPlanUsage,
   BillingQuotaEntry,
   BillingService,
@@ -66,6 +69,37 @@ export type BillingStatements = {
 };
 
 /**
+ * The anomaly-event read the payment record's 异常进度 hangs on: the payment store's own
+ * `listAnomalyEvents`, nothing wider. A seam type rather than the whole store so the statements
+ * factory (and the company books below) can be doubled without dragging the money writes along.
+ */
+export type PaymentEventReader = {
+  listAnomalyEvents(
+    orderIds: readonly string[],
+  ): Promise<readonly PaymentOrderEventRecord[]>;
+};
+
+/**
+ * The anomaly progress of a set of orders, grouped per order id (BP07/#375): one batched read
+ * through the seam, oldest first inside each order. Exported because the company books' payment
+ * records answer through the same grouping — one progress shape wherever a reader meets a
+ * payment record.
+ */
+export async function anomalyProgressOf(
+  events: PaymentEventReader,
+  orderIds: readonly string[],
+): Promise<Map<string, readonly BillingPaymentAnomaly[]>> {
+  const grouped = new Map<string, BillingPaymentAnomaly[]>();
+  if (orderIds.length === 0) return grouped;
+  for (const event of await events.listAnomalyEvents(orderIds)) {
+    const list = grouped.get(event.orderId) ?? [];
+    list.push(anomalyOf(event));
+    grouped.set(event.orderId, list);
+  }
+  return grouped;
+}
+
+/**
  * A `units` string decimal to a whole number.
  *
  * The provider sends `"1234.0"`; the page draws a bar. Anything unparseable is zero rather than
@@ -82,8 +116,36 @@ export function createBillingStatements(deps: {
   quotas: QuotaConfig;
   /** Absent on a deployment that configured no payment channels: no bills, no error. */
   orders?: PaymentStore;
+  /**
+   * The anomaly events behind each payment record (BP07/#375). Absent reads as "no anomalies
+   * recorded" — the same honest-empty discipline as an absent orders store, never an error: a
+   * projection that cannot read events still answers the money facts it holds.
+   */
+  events?: PaymentEventReader;
 }): BillingStatements {
   const { service, quotas, orders } = deps;
+  /*
+   * The event reader behind the record's 异常进度: the seam when a deployment hands one over,
+   * and otherwise the ORDERS STORE ITSELF — the store's interface carries `listAnomalyEvents`
+   * beside its window reads (they are one table family), so the production wiring that already
+   * passes the payment store as `orders` needs no second wire to answer anomaly progress.
+   */
+  const events = deps.events ?? orders;
+
+  /*
+   * The anomalies of a page of orders, grouped per order: one call for the whole page (the
+   * store's read takes the ids in one query). An absent event reader reads as "no anomalies
+   * recorded" — the same honest-empty discipline as an absent orders store.
+   */
+  async function anomaliesByOrderId(
+    rows: readonly PaymentOrderRecord[],
+  ): Promise<Map<string, readonly BillingPaymentAnomaly[]>> {
+    if (!events) return new Map();
+    return anomalyProgressOf(
+      events,
+      rows.map((row) => row.id),
+    );
+  }
 
   return {
     async planUsage(externalCustomerId) {
@@ -113,7 +175,9 @@ export function createBillingStatements(deps: {
        * ceiling for still appears — dropped, it would look like the meter is off, when the truth is
        * that it is running and uncapped. `limit: null` says exactly that.
        */
-      const byCode = new Map(ceilings.map((entry) => [entry.metricCode, entry]));
+      const byCode = new Map(
+        ceilings.map((entry) => [entry.metricCode, entry]),
+      );
       const rows: BillingQuotaEntry[] = [];
       for (const [metricCode, ceiling] of byCode) {
         const charge = usage.charges.find((c) => c.metricCode === metricCode);
@@ -121,7 +185,10 @@ export function createBillingStatements(deps: {
         rows.push({
           ...ceiling,
           used,
-          remaining: Math.max(ceiling.limit === null ? 0 : ceiling.limit - used, 0),
+          remaining: Math.max(
+            ceiling.limit === null ? 0 : ceiling.limit - used,
+            0,
+          ),
           usedCents: charge?.amountCents ?? 0,
         });
       }
@@ -144,7 +211,9 @@ export function createBillingStatements(deps: {
         ...(entitlements.planCode !== undefined
           ? { planCode: entitlements.planCode }
           : {}),
-        ...(entitlements.subscription ? { status: entitlements.subscription.status } : {}),
+        ...(entitlements.subscription
+          ? { status: entitlements.subscription.status }
+          : {}),
         ...(usage.currency !== undefined ? { currency: usage.currency } : {}),
         currentPeriodStart: subscription?.start ?? null,
         currentPeriodEnd: subscription?.end ?? null,
@@ -180,6 +249,9 @@ export function createBillingStatements(deps: {
         offset: (window.page - 1) * INVOICE_PAGE_SIZE,
         scope,
       });
+      // One batched anomaly read for the whole page: a payment record without its 异常进度 is a
+      // list read that stopped halfway, and a per-row read is a page that pays twenty queries.
+      const anomalies = await anomaliesByOrderId(rows);
       /*
        * The page count answers 1, not 0, for an empty window. A pager reading "第 1 / 0 页" is a
        * pager that has lost its place; "第 1 / 1 页 · 共 0 条" is a pager sitting on an empty page,
@@ -187,13 +259,17 @@ export function createBillingStatements(deps: {
        */
       const totalPages = Math.max(Math.ceil(totalCount / INVOICE_PAGE_SIZE), 1);
       return {
-        invoices: rows.map((order) => invoiceOf(order)),
+        invoices: rows.map((order) =>
+          paymentRecordOf(order, anomalies.get(order.id) ?? []),
+        ),
         pagination: {
           totalCount,
           totalPages,
           currentPage: window.page,
           nextPage:
-            window.page * INVOICE_PAGE_SIZE < totalCount ? window.page + 1 : null,
+            window.page * INVOICE_PAGE_SIZE < totalCount
+              ? window.page + 1
+              : null,
         },
       };
     },
@@ -202,7 +278,8 @@ export function createBillingStatements(deps: {
       if (!orders) return null;
       const order = await orders.readOrder(id, scope);
       if (!order) return null;
-      const invoice = invoiceOf(order);
+      const anomalies = await anomaliesByOrderId([order]);
+      const invoice = paymentRecordOf(order, anomalies.get(order.id) ?? []);
       return {
         ...invoice,
         /*
@@ -222,8 +299,22 @@ export function createBillingStatements(deps: {
   };
 }
 
-/** One stored order as a bill, from its own snapshotted period and paid timestamp. */
-function invoiceOf(order: PaymentOrderRecord): BillingInvoice {
+/**
+ * One stored order as a payment record, from its own snapshotted period and paid timestamp —
+ * plus, since BP07/#375, the delivery progress and anomaly events the record's reader is owed:
+ * the states are independent on purpose (spec: 收款状态与交付状态独立), so a paid order that has
+ * not delivered says so instead of dressing up as complete.
+ *
+ * Exported because the record is ONE shape wherever a reader meets it: the personal bill list
+ * and the company books' payment records answer through this same projection, so the two
+ * surfaces can never disagree about what a payment record is (the unified-display decision
+ * #375 made instead of a second accounting face).
+ */
+export function paymentRecordOf(
+  order: PaymentOrderRecord,
+  anomalies: readonly BillingPaymentAnomaly[] = [],
+): BillingInvoice {
+  const fulfillmentState = fulfillmentStateOfOrder(order);
   return {
     invoiceId: order.id,
     planCode: order.planCode,
@@ -236,5 +327,30 @@ function invoiceOf(order: PaymentOrderRecord): BillingInvoice {
     issuedAt: order.createdAt.toISOString(),
     settledAt: order.paidAt?.toISOString() ?? null,
     channelTransactionId: order.channelTransactionId,
+    // The payer label the record carries: the owner ref's own kind, and only a displayable one —
+    // the scope this row reached already matched the owner exactly, so kind is the owner's word.
+    payerKind: order.ownerPayerRef?.kind === "company" ? "company" : "personal",
+    fulfillment:
+      fulfillmentState === null
+        ? null
+        : {
+            state: fulfillmentState,
+            // The retained failure facts (BP03): why the last pass did not land and when the
+            // next one runs — quoted from the row, never guessed from the state alone.
+            failureReason: order.activationFailureReason ?? null,
+            nextRetryAt: order.activationNextRetryAt?.toISOString() ?? null,
+          },
+    anomalies,
+  };
+}
+
+/** One anomaly event row as the record's progress answers it: the writer's words, verbatim. */
+function anomalyOf(event: PaymentOrderEventRecord): BillingPaymentAnomaly {
+  return {
+    code: event.code,
+    detail: event.detail,
+    channelTransactionId: event.channelTransactionId,
+    amountCents: event.amountCents,
+    occurredAt: event.createdAt.toISOString(),
   };
 }

@@ -6,6 +6,7 @@ import { BillingError } from "../types";
 import { generateOutTradeNo } from "./crypto";
 import type {
   PaymentEventInput,
+  PaymentOrderEventRecord,
   PaymentOrderReadScope,
   PaymentOrderRecord,
   PaymentOrderStatus,
@@ -820,6 +821,45 @@ export function createPaymentStore(database: Database): PaymentStore {
         .where(and(...conditions));
       return row?.value ?? 0;
     },
+
+    async listAnomalyEvents(orderIds) {
+      // No ids, no query: `inArray` over an empty list is a syntax error in SQL, and an empty
+      // page of orders owes the caller an empty event list, not a trip to the database.
+      if (orderIds.length === 0) return [];
+      const rows = await database
+        .select()
+        .from(paymentEvents)
+        .where(
+          and(
+            eq(paymentEvents.kind, "anomaly"),
+            inArray(paymentEvents.orderId, [...orderIds]),
+          ),
+        )
+        // Oldest first: the record's progress reads chronologically — the first anomaly is the
+        // one that opened the case, the last the freshest fact.
+        .orderBy(asc(paymentEvents.createdAt));
+      return rows.map(eventRowOf);
+    },
+  };
+}
+
+/**
+ * One payment_events row as the read answers it: the columns verbatim — a reader that re-derived
+ * or trimmed `detail` would be a second opinion the writer never wrote.
+ */
+function eventRowOf(
+  row: typeof paymentEvents.$inferSelect,
+): PaymentOrderEventRecord {
+  return {
+    id: row.id,
+    orderId: row.orderId,
+    kind: row.kind,
+    code: row.code,
+    state: row.state,
+    channelTransactionId: row.channelTransactionId,
+    amountCents: row.amountCents,
+    detail: row.detail,
+    createdAt: row.createdAt,
   };
 }
 

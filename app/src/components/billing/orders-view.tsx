@@ -1,5 +1,5 @@
 import { IconRefresh } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -17,16 +17,25 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   type CreditGrantEntry,
   catalogQueryOptions,
-  creditsSummaryQueryOptions,
 } from "@/lib/billing/credits";
 import { money } from "@/lib/billing/format";
 import {
+  activationFailureCopyKey,
+  anomalyLines,
+  FULFILLMENT_COPY_KEYS,
+} from "@/lib/billing/fulfillment";
+import {
   type BillingInvoice,
   BillingUnavailableError,
-  invoicesQueryOptions,
+  type InvoiceFulfillment,
 } from "@/lib/billing/invoices";
-import { entitlementsQueryOptions } from "@/lib/billing/queries";
+import {
+  scopedCreditsSummaryQueryOptions,
+  scopedEntitlementsQueryOptions,
+  scopedInvoicesQueryOptions,
+} from "@/lib/billing/scoped";
 import { orderIdOfPlanGrant } from "@/lib/billing/trace";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { useDateTime } from "@/lib/i18n/datetime";
 import { CreditGrantRow } from "./credit-grant-list";
 import { InvoiceStatusPill } from "./invoice-status";
@@ -66,14 +75,28 @@ const SOURCE_LABELS = {
 export function OrdersGrantsView({
   page,
   onPage,
+  scope,
 }: {
   page: number;
   onPage: (next: number) => void;
+  /**
+   * The scope the page holds (MT097 / Issue #140, AC4): every money read files under the
+   * scope's own prefix and carries the selection pair, so a switch drops the old scope's
+   * amounts wholesale. A pending scope reads nothing — the seam's own refusal.
+   */
+  scope: ScopedCache;
 }) {
   const { t } = useTranslation("settings");
-  const invoices = useQuery(invoicesQueryOptions({}, page));
-  const summary = useQuery(creditsSummaryQueryOptions);
-  const entitlements = useQuery(entitlementsQueryOptions);
+  const queryClient = useQueryClient();
+  const invoices = useQuery(
+    scopedInvoicesQueryOptions(queryClient, scope, {}, page),
+  );
+  const summary = useQuery(
+    scopedCreditsSummaryQueryOptions(queryClient, scope),
+  );
+  const entitlements = useQuery(
+    scopedEntitlementsQueryOptions(queryClient, scope),
+  );
   const catalog = useQuery(catalogQueryOptions);
 
   // A deployment with no billing provider has no order or grant surface at all, which is a fact
@@ -189,6 +212,15 @@ export function OrdersGrantsView({
                       <th className="px-4 py-2 font-medium">
                         {t("ordersPage.columnStatus")}
                       </th>
+                      {/*
+                       * 交付进度 (BP07/#375): 收款状态与交付状态独立 — the money state and the
+                       * delivery state are two different questions, so they are two different
+                       * columns; a paid order that has not delivered is recognizable as exactly
+                       * that, never as complete.
+                       */}
+                      <th className="px-4 py-2 font-medium">
+                        {t("ordersPage.columnFulfillment")}
+                      </th>
                       <th className="hidden px-4 py-2 font-medium md:table-cell">
                         {t("ordersPage.columnCreated")}
                       </th>
@@ -281,12 +313,15 @@ export function OrdersGrantsView({
 }
 
 /**
- * One order row: what the money bought, how much, which state the money is in, and which order to
- * quote. The detail dialog and the download stay on the bill page — this row's job is to be
- * recognizable, and to be the row a grant's trace chip points at.
+ * One order row: what the money bought, how much, which state the money is in, where the
+ * delivery stands, and which order to quote. The detail dialog and the download stay on the
+ * bill page — this row's job is to be recognizable, and to be the row a grant's trace chip
+ * points at.
  */
 function OrderRow({ invoice }: { invoice: BillingInvoice }) {
   const { formatDate, formatDateTime } = useDateTime();
+  const { t } = useTranslation("settings");
+  const anomalies = anomalyLines(invoice.anomalies);
   return (
     <tr className="border-border border-t">
       <td className="px-4 py-2 whitespace-nowrap tabular-nums">
@@ -303,6 +338,39 @@ function OrderRow({ invoice }: { invoice: BillingInvoice }) {
       <td className="px-4 py-2">
         <InvoiceStatusPill status={invoice.status} />
       </td>
+      <td className="px-4 py-2">
+        {/*
+         * No money, no delivery owed — the dash is the honest answer for a pending, blocked,
+         * canceled or expired order. Anomalies can still ride an unpaid row (a late payment on
+         * an expired order, a payment after a block), so they show on their own regardless of
+         * the fulfillment state: 重复收款和异常有明确进度, wherever the money stands.
+         */}
+        {invoice.fulfillment ? (
+          <FulfillmentProgress
+            invoiceId={invoice.invoiceId}
+            fulfillment={invoice.fulfillment}
+          />
+        ) : (
+          <span className="text-muted-foreground text-xs">–</span>
+        )}
+        {anomalies.length > 0 ? (
+          <ul
+            data-testid={`anomalies-${invoice.invoiceId}`}
+            className="mt-1 list-inside list-disc"
+          >
+            {anomalies.map((line) => (
+              <li
+                key={line.code}
+                className="text-muted-foreground text-xs"
+                data-testid={`anomaly-${invoice.invoiceId}-${line.code}`}
+              >
+                {t(line.copyKey)}
+                {line.count > 1 ? ` ×${line.count}` : ""}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </td>
       <td className="text-muted-foreground hidden px-4 py-2 whitespace-nowrap text-xs md:table-cell">
         {formatDateTime(invoice.issuedAt)}
       </td>
@@ -310,6 +378,56 @@ function OrderRow({ invoice }: { invoice: BillingInvoice }) {
         {invoice.invoiceId}
       </td>
     </tr>
+  );
+}
+
+/**
+ * The delivery progress of one paid order, as the spec's own sentences: 「已付款，权益处理中」
+ * while the sweep converges (with the retained failure reason and the next retry's time — the
+ * reader can tell "being worked on" from "stuck"), 「已交付」 when the subscription and the
+ * period's grant both landed, and the resolution word for the conflicts an operator owns —
+ * progress that names its state, never a disguised "done".
+ */
+function FulfillmentProgress({
+  invoiceId,
+  fulfillment,
+}: {
+  invoiceId: string;
+  fulfillment: InvoiceFulfillment;
+}) {
+  const { t } = useTranslation("settings");
+  const { formatDateTime } = useDateTime();
+  return (
+    <div
+      data-testid={`fulfillment-${invoiceId}`}
+      className="flex flex-col items-start gap-0.5"
+    >
+      <span
+        className={
+          fulfillment.state === "delivered"
+            ? "text-success text-xs font-medium"
+            : "text-xs font-medium"
+        }
+        data-testid={`fulfillment-${invoiceId}-${fulfillment.state}`}
+      >
+        {t(FULFILLMENT_COPY_KEYS[fulfillment.state])}
+      </span>
+      {fulfillment.state !== "delivered" && fulfillment.failureReason ? (
+        <span
+          data-testid={`fulfillment-${invoiceId}-reason`}
+          className="text-muted-foreground text-xs"
+        >
+          {t(activationFailureCopyKey(fulfillment.failureReason))}
+        </span>
+      ) : null}
+      {fulfillment.state === "processing" && fulfillment.nextRetryAt ? (
+        <span className="text-muted-foreground text-xs">
+          {t("ordersPage.fulfillment.nextRetry", {
+            at: formatDateTime(fulfillment.nextRetryAt),
+          })}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

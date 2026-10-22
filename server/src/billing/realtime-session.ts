@@ -44,6 +44,7 @@
 
 import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
+import type { AuditStore, AuditEventInput } from "../audit";
 import type { Database } from "../db/client";
 import {
   accessGrants,
@@ -79,6 +80,47 @@ export type RealtimeEstablishmentRefusalReasonCode =
   | "price_basis_not_found"
   | "price_unknown";
 
+/**
+ * The provider-session credential and upstream-endpoint vocabulary (16.3, #324): a field
+ * with any of these names is an attempt to run the session on a credential or endpoint the
+ * OpenBot admission never issued — the client-side shape of 临时 provider 会话绕开. Its
+ * PRESENCE is the refusal (the value proves nothing either way, and is never recorded):
+ * the realtime session's only inputs are the identity the door resolves itself, so there is
+ * no legitimate request that carries one of these.
+ */
+const BYPASS_REQUEST_FIELDS: ReadonlySet<string> = new Set([
+  // Provider session credentials the client has no business handing the door.
+  "clientsecret",
+  "client_secret",
+  "ephemeraltoken",
+  "ephemeral_token",
+  "sessiontoken",
+  "session_token",
+  "apikey",
+  "api_key",
+  "providertoken",
+  "provider_token",
+  "accesstoken",
+  "access_token",
+  "bearertoken",
+  "bearer_token",
+  // Upstream endpoints: the relay's connection is the server's own, never a client's.
+  "upstreamurl",
+  "upstream_url",
+  "websocketurl",
+  "websocket_url",
+  "wssurl",
+  "wss_url",
+  "endpoint",
+  "baseurl",
+  "base_url",
+  "providerurl",
+  "provider_url",
+]);
+
+/** The detail marker a shape refusal carries when it was a bypass attempt. */
+const BYPASS_DETAIL_REASON = "provider_session_credential_or_endpoint";
+
 /** What an establishment answers: the session's identity, or the refusal that names why. */
 export type RealtimeEstablishmentOutcome =
   | {
@@ -101,11 +143,27 @@ export type RealtimeSessionRecord = {
   rateVersion: number;
   startedAt: string;
   state: "open" | "closed";
+  /**
+   * 15.5's stop: when balance exhaustion stopped this session's later units, and the
+   * door's own refusal code that did it (the closed-set codes the unit rows record).
+   * Undefined-able only while pre-0203 rows exist; a live session has both or neither.
+   */
+  stoppedAt: string | null;
+  stopReason: string | null;
+  /** 15.6's close: when a revocation/expiry (or an explicit close) ended the session, and why. */
+  closedAt: string | null;
+  closeReason: string | null;
 };
 
 /** The environment the establishment door runs in. */
 export type RealtimeSessionDependencies = {
   database: Database;
+  /**
+   * 16.3's (#324) audit sink: every refused bypass ATTEMPT is one row here (the door never
+   * resolved the claimed grant, and no credential value is recorded). Absent, the refusal
+   * itself is unchanged — the audit is observability, never admission.
+   */
+  audit?: AuditStore;
   /**
    * 01.7's readiness verdict (门禁未就绪), read through a seam because the gate is a
    * process-installed service: answers whether paid capabilities may be established at
@@ -173,6 +231,15 @@ function validateEstablishmentRequest(
     if (forbidden.has(key.toLowerCase()) || findCompanyScopeIdentityField({ [key]: true })) {
       return { ok: false, detail: { field: key } };
     }
+    // 16.3 (#324): a provider-session credential or upstream endpoint field is a bypass
+    // attempt, refused on presence and marked so the caller can audit the attempt (the
+    // value is never echoed — the detail names the field, not what it carried).
+    if (BYPASS_REQUEST_FIELDS.has(key.toLowerCase())) {
+      return {
+        ok: false,
+        detail: { field: key, reason: BYPASS_DETAIL_REASON },
+      };
+    }
   }
   const model = raw.model as Record<string, unknown> | null | undefined;
   if (
@@ -236,6 +303,10 @@ function recordOf(row: typeof realtimeSessions.$inferSelect): RealtimeSessionRec
     rateVersion: row.rateVersion,
     startedAt: row.startedAt.toISOString(),
     state: row.state,
+    stoppedAt: row.stoppedAt === null ? null : row.stoppedAt.toISOString(),
+    stopReason: row.stopReason,
+    closedAt: row.closedAt === null ? null : row.closedAt.toISOString(),
+    closeReason: row.closeReason,
   };
 }
 
@@ -256,6 +327,33 @@ export function createRealtimeSessionService(
     async establish(input: unknown): Promise<RealtimeEstablishmentOutcome> {
       const validated = validateEstablishmentRequest(input);
       if (!validated.ok) {
+        // 16.3 (#324): a shape refusal that IS a bypass attempt leaves its audit row —
+        // the all-entrance enumeration's evidence. The row names the refused field and the
+        // door's own reason; the grant id rides as the client's CLAIM (never resolved by a
+        // refusal) and the credential VALUE never reaches anything (the detail carries the
+        // field name only).
+        if (validated.detail.reason === BYPASS_DETAIL_REASON) {
+          const claimedGrantId = isIdentifier(
+            (input as Record<string, unknown> | null)?.grantId,
+            512,
+          )
+            ? ((input as Record<string, unknown>).grantId as string)
+            : null;
+          const event: AuditEventInput = {
+            eventType: "billing.realtime.bypass_refused",
+            targetType: "billing",
+            ...(claimedGrantId === null ? {} : { targetId: claimedGrantId }),
+            initiator: { kind: "deployment" },
+            payload: {
+              field: validated.detail.field,
+              reason: BYPASS_DETAIL_REASON,
+              ...(claimedGrantId === null ? {} : { claimedGrantId }),
+            },
+          };
+          if (dependencies.audit !== undefined) {
+            await dependencies.audit.insert(event);
+          }
+        }
         return refused("request_invalid", validated.detail);
       }
       const request = validated.request;
@@ -455,6 +553,30 @@ export function createRealtimeSessionService(
         .from(realtimeSessions)
         .where(eq(realtimeSessions.sessionId, sessionId))
         .limit(1);
+      return row === undefined ? undefined : recordOf(row);
+    },
+
+    /**
+     * The close (15.6): open → closed, guarded by the state itself — the 0193 closed
+     * shape (closed_at + close_reason) is written by exactly this transition, once. A
+     * session already closed answers undefined, keeping its original reason. The caller
+     * names why (the unit door's authorization verdict, or an explicit teardown); the
+     * sweep of still-holding units is the unit door's own compose, not this row's.
+     */
+    async close(
+      sessionId: string,
+      reason: string,
+    ): Promise<RealtimeSessionRecord | undefined> {
+      const [row] = await database
+        .update(realtimeSessions)
+        .set({ state: "closed", closedAt: now(), closeReason: reason })
+        .where(
+          and(
+            eq(realtimeSessions.sessionId, sessionId),
+            eq(realtimeSessions.state, "open"),
+          ),
+        )
+        .returning();
       return row === undefined ? undefined : recordOf(row);
     },
   };

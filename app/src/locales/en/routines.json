@@ -211,6 +211,7 @@
       "cancel": "Cancel",
       "adding": "Adding…",
       "addKind": "Add {{kind}} trigger"
-    }
+    },
+    "unavailable": "Responsibilities are not available under the scope you hold."
   }
 }

@@ -174,6 +174,15 @@ export interface CredentialOwnershipAdminService {
     readonly label: string;
     readonly plaintext: string;
   }): Promise<{ readonly credentialId: string }>;
+  /**
+   * 本公司凭据名册（MT095 / Issue #138 AC2 的公司半边）：operator 通道、租户 pin 下的
+   * 只读投影，逐行返回与 detail 同形的**脱敏视图**（RedactedCredentialView——类型上无
+   * envelope/plaintext 字段）。名册结构性不含其他公司的行（RLS），也结构性不含任何
+   * 密封材料（投影不选 envelope 列，非约定脱敏）。
+   */
+  listForTenant(input: {
+    readonly tenantId: string;
+  }): Promise<readonly RedactedCredentialView[]>;
   /** 撤销凭据（对所有人生效，含属主）；重复撤销幂等。 */
   revoke(input: {
     readonly tenantId: string;
@@ -282,6 +291,73 @@ export function createCredentialOwnershipAdminService(
         });
       });
       return { credentialId };
+    },
+
+    async listForTenant(input) {
+      assertOperatorDatabase(operator);
+      const tenantId = requireString(input.tenantId, "tenantId", 1, 128);
+      return operator.transaction(async (tx) => {
+        await tx.execute(sql`set local lock_timeout = '2s'`);
+        await tx.execute(sql`set local statement_timeout = '5s'`);
+        await tx.execute(
+          sql`select set_config('app.tenant_id', ${tenantId}, true)`,
+        );
+        // 脱敏投影：只选非机密列（不选 envelope），行形由 RLS 租户 pin 收口。
+        const rows = await tx
+          .select({
+            credentialId: credentialRows.id,
+            kind: credentialRows.kind,
+            classification: credentialRows.classification,
+            workspaceId: credentialRows.workspaceId,
+            target: credentialRows.target,
+            label: sql<string>`${credentialRows.display} ->> 'label'`,
+            createdAt: credentialRows.createdAt,
+          })
+          .from(credentialRows)
+          .where(
+            and(
+              eq(credentialRows.tenantId, tenantId),
+              eq(credentialRows.status, "active"),
+            ),
+          )
+          .orderBy(asc(credentialRows.createdAt));
+        if (rows.length === 0) return [];
+        // 动作授权事实：名册里 effectiveActions = 该凭据是否至少有一条
+        // use / disclose 授权行（管理面可见性，不是某个成员的可用性）。
+        const actionRows = await tx
+          .select({
+            credentialId: enterpriseCredentialActions.credentialId,
+            action: enterpriseCredentialActions.action,
+          })
+          .from(enterpriseCredentialActions)
+          .where(eq(enterpriseCredentialActions.tenantId, tenantId));
+        const granted = new Map<string, { use: boolean; disclose: boolean }>();
+        for (const row of actionRows) {
+          const flags = granted.get(row.credentialId) ?? {
+            use: false,
+            disclose: false,
+          };
+          if (row.action === "use") flags.use = true;
+          else flags.disclose = true;
+          granted.set(row.credentialId, flags);
+        }
+        return rows.map((row) =>
+          Object.freeze({
+            credentialId: row.credentialId,
+            tenantId,
+            kind: row.kind as CredentialKind,
+            classification: classificationOf(row.classification),
+            workspaceId: row.workspaceId,
+            target: row.target,
+            label: row.label,
+            status: "active" as const,
+            effectiveActions: Object.freeze(
+              granted.get(row.credentialId) ?? { use: false, disclose: false },
+            ),
+            createdAt: row.createdAt.toISOString(),
+          } satisfies RedactedCredentialView),
+        );
+      });
     },
 
     async revoke(input) {

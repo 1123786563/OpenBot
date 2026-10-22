@@ -52,7 +52,11 @@ function completeDims(surchargePerRequest = "0.0001") {
   return Object.fromEntries(
     PRICE_DIMENSIONS.map((dimension) => [
       dimension,
-      dimension === "audio_input" || dimension === "audio_output" || dimension === "video"
+      dimension === "audio_input" ||
+        dimension === "audio_output" ||
+        dimension === "video" ||
+        dimension === "surcharge_tool_call" ||
+        dimension === "surcharge_a2a_call"
         ? { status: "known", amount: "0" }
         : mapped[dimension],
     ]),

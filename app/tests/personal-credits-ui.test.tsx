@@ -7,7 +7,7 @@ import "./preload";
  * app suites in this worktree (its node target lacks the runtime the preload needs), so the
  * file pins the runner that actually executes.
  */
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
+import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";
@@ -151,6 +151,23 @@ afterAll(async () => {
 });
 
 const originalFetch = global.fetch;
+
+/*
+ * The personal context's scope (MT097): the billing views now read through the scoped seam, so
+ * the harness hands them the no-selection scope a person without a company selection holds —
+ * the reads still hit the same /api/billing paths the stubs answer.
+ */
+const scopedCachePrefixMod = await import(
+  "@/lib/enterprise/tenant/scoped-cache"
+);
+const PERSONAL_SCOPE = {
+  status: "open" as const,
+  userId: "ui-test-user",
+  selection: null,
+  generation: 1,
+  prefix: scopedCachePrefixMod.scopedCachePrefix("ui-test-user", null),
+  key: "ui-test-user:personal",
+};
 
 /** The 02.6 wire contract, as the server builds it (PersonalCreditBalance). */
 type BalanceFixture = {
@@ -366,6 +383,7 @@ function renderView() {
         page={1}
         onRangeChange={() => {}}
         onPage={() => {}}
+        scope={PERSONAL_SCOPE}
       />
     </QueryClientProvider>,
   );

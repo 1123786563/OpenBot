@@ -9,6 +9,7 @@ import {
   HarnessPicker,
 } from "./HarnessPicker";
 import { isHttpEndpointUrl } from "./http-endpoint-url";
+import { CompanySelection } from "./CompanySelection";
 import { OrganizationSignIn } from "./OrganizationSignIn";
 import { asProblem, Failure, type Problem } from "./Problem";
 import {
@@ -88,6 +89,13 @@ export function App() {
     string | null
   >(null);
   const [refreshOrganization, setRefreshOrganization] = useState(false);
+  /*
+   * The organization flow's choice gate (MT101 / Issue #144). A sign-in that froze no complete
+   * company/team pair stops here instead of handing the workbench a scope-less default; the gate
+   * re-reads the frozen context (Rust re-verifies against the authority), so a restart or a
+   * recovery lands on the same answer — the frozen pair, or an honest re-choose.
+   */
+  const [organizationChoice, setOrganizationChoice] = useState(false);
   /*
    * Which Bot and which model, as two separate answers.
    *
@@ -706,27 +714,70 @@ export function App() {
   }
 
   if (refreshOrganization) {
+    const openWorkbench = async () => {
+      try {
+        await invoke("show_openbot");
+        setOrganizationChoice(false);
+        setRefreshOrganization(false);
+        setRecoveryFailure(null);
+        setRunning(true);
+      } catch (error) {
+        recoverFromStart(error);
+      }
+    };
     return (
       <main>
-        <OrganizationSignIn
-          root={root}
-          authorityUrl={organizationAuthorityUrl ?? ""}
-          onBack={() => {
-            setRefreshOrganization(false);
-            setRefreshIntelligence(true);
-            setRunning(false);
-          }}
-          onSignedIn={async () => {
-            try {
-              await invoke("show_openbot");
+        {organizationChoice ? (
+          /*
+           * The choice gate: the frozen context decides the face. No catalog is passed here —
+           * the setup window has no native eligibility listing (MT098's surface validates a
+           * choice; it does not enumerate one), so the screen says so honestly and the
+           * workbench's own selection page remains the full chooser.
+           */
+          <CompanySelection
+            root={root}
+            catalog={{ status: "pending" }}
+            onOpenWorkbench={openWorkbench}
+            onEstablished={async (frozen) => {
+              if (frozen.company !== null && frozen.team !== null) {
+                await openWorkbench();
+              }
+            }}
+          />
+        ) : (
+          <OrganizationSignIn
+            root={root}
+            authorityUrl={organizationAuthorityUrl ?? ""}
+            onBack={() => {
               setRefreshOrganization(false);
-              setRecoveryFailure(null);
-              setRunning(true);
-            } catch (error) {
-              recoverFromStart(error);
-            }
-          }}
-        />
+              setRefreshIntelligence(true);
+              setRunning(false);
+            }}
+            onSignedIn={async () => {
+              try {
+                const frozen = await invoke<{
+                  company: unknown | null;
+                  team: unknown | null;
+                } | null>("org_context_status", { root });
+                // A complete frozen pair goes straight to the workbench; no context at all is
+                // the workbench's own sign-in surface's business. Anything between — an
+                // organization without a complete company/team pair — stops at the choice gate:
+                // a sign-in without a scope never becomes a default scope.
+                if (frozen === null) {
+                  await openWorkbench();
+                  return;
+                }
+                if (frozen.company != null && frozen.team != null) {
+                  await openWorkbench();
+                  return;
+                }
+                setOrganizationChoice(true);
+              } catch (error) {
+                recoverFromStart(error);
+              }
+            }}
+          />
+        )}
         {displayedFailure && <Failure problem={displayedFailure} />}
       </main>
     );

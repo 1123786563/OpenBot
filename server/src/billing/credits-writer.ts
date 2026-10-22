@@ -3,6 +3,8 @@ import { asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingCustomers } from "../db/schema/billing";
 import {
+  creditAsyncSettlementDetails,
+  creditBatchSettlementDetails,
   creditChargeRemainders,
   creditReservationAllocations,
   creditReservations,
@@ -140,9 +142,67 @@ export type SpeechSettlementLineDetail = {
   voiceTier: string | null;
 };
 
+/**
+ * The async job line (17.6): what the terminal report said the job consumed — the whole
+ * per-dimension usage map the provider's terminal carried, priced at the basis the
+ * reservation locked. The attribution anchor is the `jobId` (UNIQUE on the detail table):
+ * the one key every surface and every audit of an async charge names. `capability` is the
+ * job's own (the closed vocabulary async_jobs' CHECK owns) and is NOT the discriminant —
+ * an async job may itself be an image or speech job; the `jobId` member is.
+ */
+export type AsyncSettlementLineDetail = {
+  capability:
+    | "chat"
+    | "embedding"
+    | "image"
+    | "speech"
+    | "transcription"
+    | "rerank"
+    | "ocr"
+    | "realtime"
+    | "video"
+    | "unknown";
+  jobId: string;
+  providerJobId: string | null;
+  entryCount: number;
+  terminalState: "completed" | "failed" | "cancelled";
+  actualUsage: Record<PriceDimension, number>;
+};
+
+/**
+ * One item's member of a batch settlement line (18.2): the item's own attribution — its
+ * identity, its model cell (items of one batch may price differently), its terminal
+ * state, its real usage and its EXACT rational share of the settlement. The members of
+ * one batch line must sum to the settlement's actual cost exactly (the writer asserts it
+ * at write time, the write-side invariant the two-level attribution reconciles by).
+ */
+export type BatchSettlementItemLine = {
+  itemId: string;
+  customId: string;
+  provider: string;
+  model: string;
+  capability: string;
+  terminalState: "completed" | "failed" | "cancelled";
+  actualUsage: Record<string, number>;
+  exactCost: { numerator: bigint; denominator: bigint };
+};
+
+/**
+ * The batch settlement's line (18.2): the batch-level facts plus one member per item.
+ * Discriminated by its `batchId` — the one key every surface of a batch charge names.
+ */
+export type BatchSettlementLineDetail = {
+  batchId: string;
+  providerBatchId: string | null;
+  itemCount: number;
+  items: BatchSettlementItemLine[];
+};
+
 export type SettlementLineDetail =
   | ImageSettlementLineDetail
-  | SpeechSettlementLineDetail;
+  | SpeechSettlementLineDetail
+  | AsyncSettlementLineDetail
+  | BatchSettlementLineDetail;
 
 /**
  * One dimension's share of a settlement (20.3): the exact scaled cost the caller's pricing
@@ -710,8 +770,80 @@ export function createCreditWriter(database: Database): CreditWriter {
           // Same transaction as the ledger row and the terminal update: the detail is the
           // settlement's display half, and a settled charge can never land without the
           // line that names it (the detail tables' one-row-per-reservation uniqueness is
-          // the fence). The capability's own member names its own table.
-          if (input.lineDetail.capability === "image") {
+          // the fence). The capability's own member names its own table — and the async
+          // member is discriminated by its `jobId`, not its capability (an async job may
+          // itself be an image or speech job; the line kind and the model cell are two
+          // different facts).
+          if ("batchId" in input.lineDetail) {
+            // The batch line is N item lines beside ONE ledger row: the members' exact
+            // costs must sum to this settlement's actual cost EXACTLY (cross-multiplied,
+            // the same discipline the dimension split enforces) — a batch line that names
+            // a different total is a defect, never a rounded guess.
+            let sumNumerator = 0n;
+            let sumDenominator = 1n;
+            for (const item of input.lineDetail.items) {
+              sumNumerator =
+                sumNumerator * item.exactCost.denominator +
+                item.exactCost.numerator * sumDenominator;
+              sumDenominator = sumDenominator * item.exactCost.denominator;
+            }
+            if (
+              sumNumerator * actual.denominator !==
+              actual.numerator * sumDenominator
+            ) {
+              throw new TypeError(
+                "settleReservation: the batch line's item costs sum to a different total than the settlement's actual cost.",
+              );
+            }
+            // NOTE: a PARTIAL settlement's line carries only its BILLABLE members (18.3)
+            // — the released items' evidence lives on their outcome rows, not on
+            // zero-cost ledger lines — so no item-count equality is asserted here; the
+            // exact-sum check above is the money guarantee.
+            const batchDetail = input.lineDetail;
+            await tx.insert(creditBatchSettlementDetails).values(
+              batchDetail.items.map((item) => ({
+                itemId: item.itemId,
+                batchId: batchDetail.batchId,
+                ledgerId,
+                provider: item.provider,
+                model: item.model,
+                capability: item.capability,
+                customId: item.customId,
+                terminalState: item.terminalState,
+                // The raw SQL wrapper is the jsonb driver trap's own workaround (see the
+                // async member below): objects must arrive as objects, never strings.
+                actualUsage: sql`${item.actualUsage}` as unknown as Record<
+                  string,
+                  number
+                >,
+                exactCost: sql`${
+                  {
+                    numerator: item.exactCost.numerator.toString(),
+                    denominator: item.exactCost.denominator.toString(),
+                  }
+                }` as unknown as { numerator: string; denominator: string },
+              })),
+            );
+          } else if ("jobId" in input.lineDetail) {
+            await tx.insert(creditAsyncSettlementDetails).values({
+              reservationId: reservation.id,
+              ledgerId,
+              capability: input.lineDetail.capability,
+              jobId: input.lineDetail.jobId,
+              providerJobId: input.lineDetail.providerJobId,
+              entryCount: input.lineDetail.entryCount,
+              terminalState: input.lineDetail.terminalState,
+              // The usage goes through a raw SQL wrapper deliberately: the Bun SQL driver
+              // encodes parameters jsonb-first, so a JS *string* param would land as a
+              // jsonb string scalar the table's shape CHECK refuses — the object itself
+              // arrives as the real object the CHECK validated (the price snapshot store's
+              // own documented trap).
+              actualUsage: sql`${input.lineDetail.actualUsage}` as unknown as Record<
+                string,
+                number
+              >,
+            });
+          } else if (input.lineDetail.capability === "image") {
             await tx.insert(creditSettlementDetails).values({
               reservationId: reservation.id,
               ledgerId,

@@ -55,6 +55,24 @@ export type PaymentFulfillmentState =
   | "delivered"
   | "needs_resolution";
 
+/**
+ * The one derivation of a paid order's fulfillment state (BP07/#375): the purchase surface's
+ * `toView` and the statement read both answer from this function, so the checkout poll and the
+ * payment-record list can never disagree about whether an order owes its reader "已付款，权益
+ * 处理中". The rule itself is BP03's, lifted here verbatim from the service's `toView` — see
+ * the type above for what each word means.
+ */
+export function fulfillmentStateOfOrder(order: {
+  status: PaymentOrderStatus;
+  activationState: PaymentActivationState;
+}): PaymentFulfillmentState | null {
+  if (order.status !== "paid") return null;
+  if (order.activationState === "applied") return "delivered";
+  if (order.activationState === "needs_resolution") return "needs_resolution";
+  // pending AND failed — a failed rule verdict is the last pass's fact, not a terminal one.
+  return "processing";
+}
+
 /** The two channels v1 collects through. */
 export type PaymentProviderId = "alipay" | "wechat";
 
@@ -246,6 +264,24 @@ export type PaymentEventInput = {
   detail: string;
 };
 
+/**
+ * One stored event row, as the read-only projections answer it (BP07/#375): the payment record's
+ * anomaly progress is these rows quoted — the code is the closed `PaymentAnomalyCode` vocabulary
+ * by construction (only `recordAnomaly` and the settlement refusals write them), and the detail is
+ * the writer's bounded words, never re-derived by a reader.
+ */
+export type PaymentOrderEventRecord = {
+  id: string;
+  orderId: string;
+  kind: PaymentEventKind;
+  code: string;
+  state: string | null;
+  channelTransactionId: string | null;
+  amountCents: number | null;
+  detail: string;
+  createdAt: Date;
+};
+
 export type PaymentStore = {
   /**
    * Insert a fresh pending order, or hand back the one that already exists. The store generates
@@ -422,6 +458,15 @@ export type PaymentStore = {
     to: Date | null;
     scope?: PaymentOrderReadScope;
   }): Promise<number>;
+  /**
+   * The anomaly events of a page of orders, oldest first (BP07/#375): the read the payment
+   * record's 异常进度 hangs on. `kind='anomaly'` only — a paid FACT is the money state the order
+   * row already carries; listing it here would let a reader double-count a payment. Takes the
+   * page's order ids in one call so a list read stays one query, not one per row.
+   */
+  listAnomalyEvents(
+    orderIds: readonly string[],
+  ): Promise<readonly PaymentOrderEventRecord[]>;
   /**
    * Paid orders whose activation has not landed — `pending` OR `failed` — for the sweeper's
    * activation-retry pass. `failed` included on purpose (P1-4): a rule-refused activation is a

@@ -565,7 +565,16 @@ export function useBuildStreaming(sessionId: string): {
       /** Fires once the send is durable — after send-message persisted the user row, before the stream. */
       onSent?: () => void | Promise<void>,
     ) => {
-      const turn = await sendMessage(sessionId, content, attachments);
+      /*
+       * The send submits under the scope in force (MT091 / Issue #134, AC3): the same pair the
+       * stream below carries on its URL rides the POST that starts the turn, read from the ref
+       * the render keeps current — a scope that moved between render and send reads as the one
+       * that is current THEN, and a pending one (the scope source unresolved) submits nothing.
+       */
+      const scopeNow = streamScopeRef.current;
+      const pair =
+        scopeNow.status === "open" ? (scopeNow.selection ?? {}) : undefined;
+      const turn = await sendMessage(sessionId, content, attachments, pair);
       await onSent?.();
       await streamTurnEvents(turn.turn_id);
     },
@@ -574,7 +583,11 @@ export function useBuildStreaming(sessionId: string): {
 
   const interruptStreaming = useCallback(async () => {
     abortRef.current?.abort();
-    await interruptSession(sessionId).catch(() => undefined);
+    const scopeNow = streamScopeRef.current;
+    await interruptSession(
+      sessionId,
+      scopeNow.status === "open" ? (scopeNow.selection ?? {}) : undefined,
+    ).catch(() => undefined);
   }, [sessionId]);
 
   useEffect(

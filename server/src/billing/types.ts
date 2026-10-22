@@ -359,6 +359,43 @@ export type BillingInvoice = {
   settledAt: string | null;
   /** The channel's own transaction id, once seen — what a person quotes to the channel. */
   channelTransactionId: string | null;
+  /**
+   * The paying account's kind, spelled so a list can label 个人/公司 without guessing (BP07/
+   * #375: 个人与公司账户必须有清晰标识). Only `personal` and `company` are displayable — the
+   * owner kinds a scope can never match (`legacy_deployment`, `unknown_owner`) do not reach a
+   * payment record in the first place.
+   */
+  payerKind: "personal" | "company";
+  /**
+   * The delivery progress a PAID order owes its reader (spec: 收款状态与交付状态独立 — 已收款
+   * 未交付显示「已付款，权益处理中」，不得被表示为完成). Null while no money landed: a pending,
+   * blocked, expired or canceled order owes no delivery and says so by absence. `failureReason`
+   * and `nextRetryAt` are the order row's own retained facts (BP03), quoted — never re-derived.
+   */
+  fulfillment: {
+    state: "processing" | "delivered" | "needs_resolution";
+    failureReason: string | null;
+    nextRetryAt: string | null;
+  } | null;
+  /**
+   * The order's recorded anomaly events, oldest first (重复收款和异常有明确进度): the writer's
+   * own closed vocabulary and bounded words, projected read-only. Empty on an order with no
+   * anomaly — absence is the honest answer, not "all clear".
+   */
+  anomalies: readonly BillingPaymentAnomaly[];
+};
+
+/**
+ * One anomaly event on a payment order, as the record's progress displays it (BP07/#375). The
+ * `code` is the writer's stable word (the `PaymentAnomalyCode` vocabulary by construction); the
+ * `detail` is what the writer recorded, quoted verbatim.
+ */
+export type BillingPaymentAnomaly = {
+  code: string;
+  detail: string;
+  channelTransactionId: string | null;
+  amountCents: number | null;
+  occurredAt: string;
 };
 
 /** One line on a bill's detail. v1 raises one line per order: the plan it bought. */
@@ -439,6 +476,45 @@ export type CreditConsumptionEntry = {
   /** The Bot the call was admitted for (06.12's attribution), null when not protocol-born. */
   botId: string | null;
   botName: string | null;
+  /**
+   * The capability line this entry settled as, when its settlement wrote one: the image
+   * line (12.2), the speech line (13.2) or the async job line (17.6) — the entry shows
+   * WHAT was consumed, distinguishable across capabilities. Other entries carry null.
+   */
+  lineDetail:
+    | {
+        capability: string;
+        image: {
+          size: string | null;
+          quality: string | null;
+          requestedCount: number;
+          generatedCount: number;
+        };
+      }
+    | {
+        capability: string;
+        speech: {
+          inputCharacters: number;
+          voiceTier: string | null;
+          cappedSeconds: number;
+          actualSeconds: string;
+        };
+      }
+    | {
+        capability: string;
+        asyncJob: {
+          jobId: string;
+          providerJobId: string | null;
+          entryCount: number;
+          terminalState: "completed" | "failed" | "cancelled";
+        };
+      }
+    | null;
+  /**
+   * The model/surcharge fee split of this entry (20.3), in credits — absent when the
+   * settlement wrote no split, never a zero surcharge line the UI would read as free.
+   */
+  feeBreakdown?: { modelCredits: number; surchargeCredits: number };
   /** ISO-8601 of when it happened. */
   timestamp: string;
 };
@@ -554,6 +630,16 @@ export type CreditReservationEntry = {
 export type PersonalCreditBalance = {
   /** The billing subject kind the answer names — always the authenticated user's own. */
   accountType: "personal";
+  /**
+   * The account-level capability status (BP07/#375): a quarantined account's billing
+   * capabilities are unavailable, and the row's own quarantine reason is the 能力不可用原因
+   * the balance card displays. An account with no account row was never quarantined — `active`
+   * is the absence of a quarantine fact, not a guess.
+   */
+  account: {
+    status: "active" | "quarantined";
+    quarantineReason: string | null;
+  };
   /** What a new draw or hold could take right now, the gate's own admission figure. */
   available: number;
   /** The lifetime amount the account's grants have absorbed, live and expired grants alike. */

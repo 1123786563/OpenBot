@@ -99,7 +99,9 @@ function imageDimsOf(imageOutputUsd: string | null): PriceSnapshotDims {
           : { status: "known", amount: imageOutputUsd }
         : dimension === "audio_input" ||
             dimension === "audio_output" ||
-            dimension === "video"
+            dimension === "video" ||
+            dimension === "surcharge_tool_call" ||
+            dimension === "surcharge_a2a_call"
           ? { status: "known", amount: "0" }
           : mapped[dimension],
     ]),

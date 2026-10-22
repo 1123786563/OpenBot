@@ -14,6 +14,14 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { authKeys } from "@/lib/auth/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
+
+/** Where the scoped roster/detail entries live for this harness's user and no selection. */
+const scoped = (key: readonly unknown[]) => [
+  ...scopedCachePrefix("user-1", null),
+  ...key,
+];
 import { Route as ChannelNewRoute } from "@/routes/_authed/_app/channel/new";
 
 beforeAll(() => GlobalRegistrator.register());
@@ -53,7 +61,8 @@ function queryClientWithAgents(agents: AgentProfile[]) {
       },
     },
   });
-  queryClient.setQueryData(agentKeys.list(false), agents);
+  seedScopeSource(queryClient);
+  queryClient.setQueryData(scoped(agentKeys.list(false)), agents);
   return queryClient;
 }
 
@@ -61,8 +70,9 @@ function queryClientWithFailingAgents() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  queryClient.setQueryData(agentKeys.list(false), undefined);
-  queryClient.setQueryDefaults(agentKeys.list(false), {
+  seedScopeSource(queryClient);
+  queryClient.setQueryData(scoped(agentKeys.list(false)), undefined);
+  queryClient.setQueryDefaults(scoped(agentKeys.list(false)), {
     queryFn: async () => {
       throw new Error("roster exploded");
     },
@@ -71,13 +81,26 @@ function queryClientWithFailingAgents() {
   return queryClient;
 }
 
+/**
+ * The scope source (MT087): preset, fresh, so the scoped reads open at once and this fetch-less
+ * harness never answers a real one.
+ */
+function seedScopeSource(queryClient: QueryClient) {
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: "user-1",
+    email: "user-1@example.com",
+    role: "user",
+    onboarding: null,
+  });
+}
+
 function queryClientWithHiddenDetail(
   agents: AgentProfile[],
   agentId: string,
   queryFn: () => Promise<AgentProfile>,
 ) {
   const queryClient = queryClientWithAgents(agents);
-  queryClient.setQueryDefaults(agentKeys.detail(agentId), {
+  queryClient.setQueryDefaults(scoped(agentKeys.detail(agentId)), {
     queryFn,
     retry: false,
   });
@@ -202,7 +225,7 @@ test("/channel/new keeps a successful visible recipient enabled", async () => {
 test("/channel/new ignores stale detail errors when the URL agent is listed", async () => {
   const queryClient = queryClientWithAgents([GENERAL_ASSISTANT]);
   await queryClient.prefetchQuery({
-    queryKey: agentKeys.detail("general-assistant"),
+    queryKey: scoped(agentKeys.detail("general-assistant")),
     queryFn: async () => {
       throw new Error("stale detail exploded");
     },
@@ -225,7 +248,7 @@ test("/channel/new keeps a successful hidden URL recipient enabled", async () =>
     title: "Hidden Bot",
   });
   const queryClient = queryClientWithAgents([GENERAL_ASSISTANT]);
-  queryClient.setQueryData(agentKeys.detail("hidden-bot"), hiddenBot);
+  queryClient.setQueryData(scoped(agentKeys.detail("hidden-bot")), hiddenBot);
   const view = renderChannelNew(queryClient, "/channel/new?agent=hidden-bot");
 
   expect(view.queryByRole("alert")).toBeNull();
@@ -246,7 +269,7 @@ test("/channel/new keeps a usable hidden detail when a background refetch fails"
       throw new Error("background detail exploded");
     },
   );
-  queryClient.setQueryData(agentKeys.detail("hidden-bot"), hiddenBot);
+  queryClient.setQueryData(scoped(agentKeys.detail("hidden-bot")), hiddenBot);
   const view = renderChannelNew(queryClient, "/channel/new?agent=hidden-bot");
 
   expect(view.queryByRole("alert")).toBeNull();

@@ -20,16 +20,17 @@ import type { PayerRef } from "../payer";
 import { payerKey } from "../payer";
 import { BillingError } from "../types";
 import type { NotificationRefusal, PaymentProvider } from "./provider";
-import type {
-  PaymentAnomalyCode,
-  PaymentCatalog,
-  PaymentOrderReadScope,
-  PaymentOrderRecord,
-  PaymentOrderView,
-  PaymentPlanEntry,
-  PaymentProviderId,
-  PaymentSettlementResult,
-  PaymentStore,
+import {
+  fulfillmentStateOfOrder,
+  type PaymentAnomalyCode,
+  type PaymentCatalog,
+  type PaymentOrderReadScope,
+  type PaymentOrderRecord,
+  type PaymentOrderView,
+  type PaymentPlanEntry,
+  type PaymentProviderId,
+  type PaymentSettlementResult,
+  type PaymentStore,
 } from "./types";
 
 /** What the payment service needs from the billing projection, and nothing more. */
@@ -310,18 +311,9 @@ export function createPaymentService(deps: {
       status: order.status,
       activationState: order.activationState,
       // "已付款，权益处理中" is a sentence about DELIVERY, not about money (BP03/#371: the two
-      // states are independent). Only a paid order owes one: applied answers "delivered", a
-      // deterministic conflict answers "needs_resolution", everything the sweep is still
-      // converging — pending AND failed, a rule verdict being the last pass's fact — answers
-      // "processing". No money, no fulfillment to report.
-      fulfillmentState:
-        order.status === "paid"
-          ? order.activationState === "applied"
-            ? "delivered"
-            : order.activationState === "needs_resolution"
-              ? "needs_resolution"
-              : "processing"
-          : null,
+      // states are independent). The rule lives in one place (fulfillmentStateOfOrder) so the
+      // statement read answers the same word this poll does — see the helper's own account.
+      fulfillmentState: fulfillmentStateOfOrder(order),
       // The QR exists to be paid once: a paid (or terminal) order stops showing it.
       checkout:
         order.status === "pending" && order.checkoutPayload

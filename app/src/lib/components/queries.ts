@@ -1,5 +1,7 @@
-import { queryOptions } from "@tanstack/react-query";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { client, tryClient } from "@/lib/client";
+import { guarded } from "@/lib/enterprise/tenant/queries";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /** A component as the Admin surface sees it: its state, its versions and who is held back from it. */
 export type ComponentRecord = {
@@ -179,5 +181,68 @@ export async function decideComponent(
       reason:
         "This deployment could not be reached to check whether that component is allowed, so it was not shown.",
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The scoped half (MT094 / Issue #137): the component pages read and write through here
+// ---------------------------------------------------------------------------
+
+/**
+ * The component roster, bound to the scope the screen holds (MT094 / Issue #137, AC2 — 已安装
+ * 列表与配置只反映当前范围): keyed under the scope's own cache prefix (MT083), carrying the
+ * selection pair, answered through the generation guard — which components exist, which Bots
+ * and data functions they hold, and whether one is published are this scope's own answers.
+ */
+export function scopedComponentListQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...componentKeys.list()]
+        : [...componentKeys.list(), ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<ComponentRecord[]>(() => {})
+        : async ({ signal }): Promise<ComponentRecord[]> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/components", {
+                signal,
+                fallbackKey: "components.load",
+                ...(open.selection ?? {}),
+              });
+              if (!response.ok) {
+                throw new Error("Components could not be read.");
+              }
+              return (await response.json()) as ComponentRecord[];
+            }),
+  });
+}
+
+/** The selection pair a scoped component write rides (MT094 / Issue #137). */
+export function componentScopePair(scope?: ScopedCache) {
+  return scope !== undefined && scope.status === "open"
+    ? (scope.selection ?? {})
+    : undefined;
+}
+
+/**
+ * The component tree invalidated at BOTH roots (MT094 / Issue #137): the unscoped one the
+ * legacy assembly still writes and this scope's own prefix — so a publication, a grant or a
+ * draft the scope just wrote is reflected immediately (AC3/AC4).
+ */
+export function invalidateComponentsInScope(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
+  void queryClient.invalidateQueries({ queryKey: componentKeys.all });
+  if (scope !== undefined && scope.status === "open") {
+    void queryClient.invalidateQueries({
+      queryKey: [...scope.prefix, ...componentKeys.all],
+    });
   }
 }
