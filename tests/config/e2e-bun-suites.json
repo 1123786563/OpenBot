@@ -575,7 +575,12 @@
    "name": "server/tests part 9",
    "files": [
     "server/tests/opik-admin-contract.test.ts",
-    "server/tests/opik-admin-summary.integration.test.ts",
+    "server/tests/opik-admin-summary.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 8",
+   "files": [
     "server/tests/opik-admin-summary.test.ts",
     "server/tests/opik-bindings.integration.test.ts",
     "server/tests/opik-bindings.test.ts",
@@ -624,7 +629,12 @@
    "name": "server/tests part 10",
    "files": [
     "server/tests/opik-experiments.integration.test.ts",
-    "server/tests/opik-experiments.test.ts",
+    "server/tests/opik-experiments.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 9",
+   "files": [
     "server/tests/opik-export.integration.test.ts",
     "server/tests/opik-export.test.ts",
     "server/tests/opik-health.test.ts",
@@ -673,7 +683,12 @@
    "name": "server/tests part 11",
    "files": [
     "server/tests/opik-t-final-assembly.test.ts",
-    "server/tests/opik-tool-steps.test.ts",
+    "server/tests/opik-tool-steps.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 10",
+   "files": [
     "server/tests/opik-trace-chain.test.ts",
     "server/tests/order-ownership.integration.test.ts",
     "server/tests/organization-auth.test.ts",
@@ -723,7 +738,12 @@
    "files": [
     "server/tests/plugin-credential-binding.integration.test.ts",
     "server/tests/plugin-credential-rotation.integration.test.ts",
-    "server/tests/plugin-curated-credential.integration.test.ts",
+    "server/tests/plugin-curated-credential.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 11",
+   "files": [
     "server/tests/plugin-logos.integration.test.ts",
     "server/tests/plugin-routes.integration.test.ts",
     "server/tests/plugin-store.integration.test.ts",
@@ -732,7 +752,7 @@
    ]
   },
   {
-   "name": "server/tests part 12",
+   "name": "server/tests part 13",
    "files": [
     "server/tests/policy-fanout.integration.test.ts",
     "server/tests/price-snapshot.integration.test.ts"
@@ -757,7 +777,7 @@
    ]
   },
   {
-   "name": "server/tests part 13",
+   "name": "server/tests part 14",
    "files": [
     "server/tests/qa-batch2-cycle-config-qr.test.ts",
     "server/tests/qa-batch2-t5-semantics.integration.test.ts",
