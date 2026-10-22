@@ -1,16 +1,16 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { connectAccountMutationOptions } from "@/lib/plugins/mutations";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
-  connectionsQueryOptions,
+  scopedConnectionsQueryOptions,
   type PluginConnection,
   personalConnections,
   pluginKeys,
 } from "@/lib/plugins/queries";
-import { queryClient } from "@/query-client";
 
 /** How often a waiting card asks again whether this person is connected yet. */
 const POLL_MS = 2_000;
@@ -88,7 +88,10 @@ export function ConnectAppCard({
   const [blockedUrl, setBlockedUrl] = useState<string | null>(null);
   /** The wait ran its full limit with no row to show for it. */
   const [timedOut, setTimedOut] = useState(false);
-  const connect = useMutation(connectAccountMutationOptions());
+  // The connect ride the scope the chat holds (MT088 AC3): the write carries the selection pair.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const connect = useMutation(connectAccountMutationOptions("settings", scope));
   /*
    * ONE ENDING AT A TIME. Every attempt ends in exactly one of these — the key form, an unreachable
    * url, a waiting tab, a blocked tab, or the failure the connector answered with — and each ending
@@ -103,8 +106,10 @@ export function ConnectAppCard({
     setTimedOut(false);
     setBlockedUrl(null);
   }, []);
+  // The poll watches this scope's own answer (MT088): the connect carried the selection pair, so
+  // the row it is waiting for arrives under the same pair — never another scope's cache entry.
   const connections = useQuery({
-    ...connectionsQueryOptions(),
+    ...scopedConnectionsQueryOptions(queryClient, scope),
     // Only while a consent is open in the other tab; otherwise this is an ordinary cached read.
     refetchInterval: waiting ? POLL_MS : false,
   });

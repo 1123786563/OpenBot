@@ -1,5 +1,6 @@
 import { IconArrowUpRight } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import type { TFunction } from "i18next";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -331,8 +332,14 @@ export function useBrokeredAccount(input: {
    * the row falls back to whatever we recorded — so the question can only ever be a wasted request
    * that ends in the one state this row has a sentence for anyway.
    */
+  /*
+   * Every account action here rides the scope the screen holds (MT088): the writes carry the
+   * selection pair, so a connect or disconnect happens in the scope in force, and the settle's
+   * invalidation retracts the row in this scope's own cache at once.
+   */
+  const scope = useScopedCache();
   const confirmation = useMutation(
-    confirmBrokeredConnectionMutationOptions(queryClient),
+    confirmBrokeredConnectionMutationOptions(queryClient, scope),
   );
   const confirmAccount = confirmation.mutate;
   /*
@@ -365,7 +372,7 @@ export function useBrokeredAccount(input: {
    * So the row says when it last checked, and the person decides when to check again.
    */
   const recheck = useMutation({
-    ...recheckBrokeredConnectionMutationOptions(queryClient),
+    ...recheckBrokeredConnectionMutationOptions(queryClient, scope),
     onError: (thrown: Error) => report(thrown.message),
   });
   /*
@@ -386,7 +393,7 @@ export function useBrokeredAccount(input: {
   const forgetRecheck = recheck.reset;
 
   const connect = useMutation({
-    ...connectAccountMutationOptions(returnTo),
+    ...connectAccountMutationOptions(returnTo, scope),
     onError: (thrown: Error) => report(thrown.message),
     /*
      * A full page navigation, not a fetch. The consent screen is the vendor's own and has to be
@@ -456,7 +463,7 @@ export function useBrokeredAccount(input: {
    * `onSettled` here, where it WOULD shadow the refetch.
    */
   const disconnect = useMutation({
-    ...disconnectBrokeredMutationOptions(queryClient),
+    ...disconnectBrokeredMutationOptions(queryClient, scope),
     onError: (thrown: Error) => {
       report(thrown.message);
       forgetAnswers();
@@ -521,7 +528,7 @@ export function useBrokeredAccount(input: {
    * guaranteed to be refused, and withholds the Re-check and Disconnect buttons the sentence names.
    */
   const submission = useMutation({
-    ...connectBrokeredWithFieldsMutationOptions(queryClient),
+    ...connectBrokeredWithFieldsMutationOptions(queryClient, scope),
     onError: (thrown: Error) => {
       report(thrown.message);
       forgetAnswers();

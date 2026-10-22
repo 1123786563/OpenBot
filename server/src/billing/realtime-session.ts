@@ -101,6 +101,16 @@ export type RealtimeSessionRecord = {
   rateVersion: number;
   startedAt: string;
   state: "open" | "closed";
+  /**
+   * 15.5's stop: when balance exhaustion stopped this session's later units, and the
+   * door's own refusal code that did it (the closed-set codes the unit rows record).
+   * Undefined-able only while pre-0203 rows exist; a live session has both or neither.
+   */
+  stoppedAt: string | null;
+  stopReason: string | null;
+  /** 15.6's close: when a revocation/expiry (or an explicit close) ended the session, and why. */
+  closedAt: string | null;
+  closeReason: string | null;
 };
 
 /** The environment the establishment door runs in. */
@@ -236,6 +246,10 @@ function recordOf(row: typeof realtimeSessions.$inferSelect): RealtimeSessionRec
     rateVersion: row.rateVersion,
     startedAt: row.startedAt.toISOString(),
     state: row.state,
+    stoppedAt: row.stoppedAt === null ? null : row.stoppedAt.toISOString(),
+    stopReason: row.stopReason,
+    closedAt: row.closedAt === null ? null : row.closedAt.toISOString(),
+    closeReason: row.closeReason,
   };
 }
 
@@ -455,6 +469,30 @@ export function createRealtimeSessionService(
         .from(realtimeSessions)
         .where(eq(realtimeSessions.sessionId, sessionId))
         .limit(1);
+      return row === undefined ? undefined : recordOf(row);
+    },
+
+    /**
+     * The close (15.6): open → closed, guarded by the state itself — the 0193 closed
+     * shape (closed_at + close_reason) is written by exactly this transition, once. A
+     * session already closed answers undefined, keeping its original reason. The caller
+     * names why (the unit door's authorization verdict, or an explicit teardown); the
+     * sweep of still-holding units is the unit door's own compose, not this row's.
+     */
+    async close(
+      sessionId: string,
+      reason: string,
+    ): Promise<RealtimeSessionRecord | undefined> {
+      const [row] = await database
+        .update(realtimeSessions)
+        .set({ state: "closed", closedAt: now(), closeReason: reason })
+        .where(
+          and(
+            eq(realtimeSessions.sessionId, sessionId),
+            eq(realtimeSessions.state, "open"),
+          ),
+        )
+        .returning();
       return row === undefined ? undefined : recordOf(row);
     },
   };

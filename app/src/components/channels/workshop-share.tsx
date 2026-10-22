@@ -9,6 +9,11 @@ import {
   type WorkshopShareScope,
   type WorkshopShareState,
 } from "@/lib/workshop/client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  invalidateWorkshopInScope,
+  workshopScopePair,
+} from "@/lib/workshop/queries";
 
 /**
  * The share manager: mint a link, show it exactly once, revoke it, mint again.
@@ -27,6 +32,10 @@ export function WorkshopShareView({
 }) {
   const { t } = useTranslation("workshop");
   const queryClient = useQueryClient();
+  // Minting and closing a share are authorization issuances under the scope in force (MT091 /
+  // Issue #134, AC2/AC3): the token is minted for this scope's session, and the close settles
+  // at both cache roots so the tab reflects the revoked state immediately.
+  const scopeCache = useScopedCache();
   const [minted, setMinted] = useState<{
     token: string;
     shareUrl: string;
@@ -39,23 +48,28 @@ export function WorkshopShareView({
 
   const create = useMutation({
     mutationFn: () =>
-      createWorkshopShare(channelId, {
-        scope,
-        ...(days > 0 ? { expiresInDays: days } : {}),
-      }),
+      createWorkshopShare(
+        channelId,
+        {
+          scope,
+          ...(days > 0 ? { expiresInDays: days } : {}),
+        },
+        workshopScopePair(scopeCache),
+      ),
     onSuccess: (created) => {
       setMinted(created);
       setConfirmingRevoke(false);
-      void queryClient.invalidateQueries({ queryKey: ["workshop"] });
+      invalidateWorkshopInScope(queryClient, scopeCache);
     },
   });
 
   const revoke = useMutation({
-    mutationFn: () => revokeWorkshopShare(channelId),
+    mutationFn: () =>
+      revokeWorkshopShare(channelId, workshopScopePair(scopeCache)),
     onSuccess: () => {
       setMinted(null);
       setConfirmingRevoke(false);
-      void queryClient.invalidateQueries({ queryKey: ["workshop"] });
+      invalidateWorkshopInScope(queryClient, scopeCache);
     },
   });
 

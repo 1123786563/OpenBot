@@ -503,7 +503,12 @@ export function createCreditSettleService(
         quantities: validated.request.actualUsage,
         rate: resolved.rate,
       });
-      const dimensionBreakdown = split.ok ? split.members : undefined;
+      // An all-zero usage (a free settle, a failed job billed at a real zero) splits into
+      // no members: an empty breakdown explains nothing the ledger row does not already
+      // say, and the writer's own allocation check refuses a breakdown with no rows — so
+      // it is omitted, exactly as a split that could not compute is.
+      const dimensionBreakdown =
+        split.ok && split.members.length > 0 ? split.members : undefined;
 
       try {
         const settled = await writer.settleReservation({

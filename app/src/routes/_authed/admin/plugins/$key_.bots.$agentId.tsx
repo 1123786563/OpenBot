@@ -33,15 +33,16 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useBotNames } from "@/lib/agents/bot-names";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import {
   grantPlugin,
   invalidatePlugins,
   setPluginGrantMutationOptions,
 } from "@/lib/plugins/mutations";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   type PluginTool,
-  pluginsPageQueryOptions,
+  scopedPluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
 import {
   botSharedAppsQueryOptions,
@@ -94,14 +95,18 @@ function RouteComponent() {
     from: "/_authed/admin/plugins/$key_/bots/$agentId",
   });
   const queryClient = useQueryClient();
-  const plugins = useQuery(pluginsPageQueryOptions());
-  const agents = useQuery(agentListQueryOptions());
+  // The plugin config face is the scope's own answer (MT094 / Issue #137, AC2).
+  const scope = useScopedCache();
+  const plugins = useQuery(scopedPluginsPageQueryOptions(queryClient, scope));
+  const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   /*
    * The ones this person has hidden. A hidden Bot is still a Bot, and still holds whatever it was
    * granted; the connector page links here for it (see `grantRoster`), and this page must not then
    * say there is no such Bot.
    */
-  const hiddenAgents = useQuery(agentListQueryOptions(true));
+  const hiddenAgents = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope, true),
+  );
   const nameFor = useBotNames();
   const [error, setError] = useState<string | null>(null);
   /** What the list is narrowed to, over action names. Never over what is switched on. */
@@ -119,7 +124,7 @@ function RouteComponent() {
   } | null>(null);
 
   const setGrant = useMutation({
-    ...setPluginGrantMutationOptions(queryClient),
+    ...setPluginGrantMutationOptions(queryClient, scope),
     onError: (thrown: Error) => setError(thrown.message),
   });
 

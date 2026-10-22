@@ -41,6 +41,8 @@ function serving() {
   sent.length = 0;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // The scoped approvals read (MT086) waits for the scope source before it asks anything.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     if (init?.method && init.method !== "GET") {
       sent.push({
         path: url,

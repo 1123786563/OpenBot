@@ -279,6 +279,65 @@ const LEGACY_ANCHOR_TASK: TaskMigrationSpec = {
 };
 
 /**
+ * MT114（Issue #157）：主库子记录回填第一批的批次进度表。
+ * expand-only——仅新增 enterprise_backfill_batches（一行 = 一个批次 × 一个
+ * 子记录类别的进度与游标），不修改任何既有表/策略/授权。进度行由回填
+ * 工具在 setup/属主通道与数据写入同一事务内推进（游标+计数同事务提交，
+ * 崩溃后从游标续跑；ON CONFLICT 幂等写入保证重放零重复），受限角色只有
+ * 租户无关的只读（进度是部署级迁移事实，不含租户业务数据）。本表就是
+ * 票面「可中断续跑且不重复写入」与「进度与计数校验报告」的持久半边，
+ * 后续批次（MT115/MT116）与跨库一致性校验（MT117）按同一表继续记。
+ */
+const CHILD_BACKFILL_PROGRESS_TASK: TaskMigrationSpec = {
+  id: "MT114",
+  description:
+    "MT114（Issue #157）：子记录回填批次进度表 enterprise_backfill_batches——expand-only 新增（batch_id+kind 主键、running/completed 相位、last_cursor 游标、五路计数、resumes 次数），受限 operator 只读，无 INSERT/UPDATE 授权（进度只由回填工具的事务推进）。",
+  steps: [
+    {
+      slug: "child_backfill_progress_table",
+      impact:
+        "新增 enterprise_backfill_batches 表：PK(batch_id, kind)；phase CHECK(running|completed)；计数列非负 CHECK；updated_at。不修改任何既有表。",
+      objects: ["enterprise_backfill_batches"],
+      statements: [
+        'CREATE TABLE "enterprise_backfill_batches" (\n' +
+          '\t"batch_id" text NOT NULL,\n' +
+          '\t"kind" text NOT NULL,\n' +
+          "\t\"phase\" text DEFAULT 'running' NOT NULL,\n" +
+          '\t"last_cursor" text,\n' +
+          '\t"scanned" integer DEFAULT 0 NOT NULL,\n' +
+          '\t"applied" integer DEFAULT 0 NOT NULL,\n' +
+          '\t"skipped_existing" integer DEFAULT 0 NOT NULL,\n' +
+          '\t"mismatch_reported" integer DEFAULT 0 NOT NULL,\n' +
+          '\t"quarantined" integer DEFAULT 0 NOT NULL,\n' +
+          '\t"written_rows" integer DEFAULT 0 NOT NULL,\n' +
+          '\t"resumes" integer DEFAULT 0 NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_backfill_batches_batch_id_kind_pk" PRIMARY KEY("batch_id","kind"),\n' +
+          '\tCONSTRAINT "enterprise_backfill_batch_phase" CHECK ("enterprise_backfill_batches"."phase" in (\'running\', \'completed\')),\n' +
+          '\tCONSTRAINT "enterprise_backfill_batch_counts" CHECK ("enterprise_backfill_batches"."scanned" >= 0 and "enterprise_backfill_batches"."applied" >= 0 and "enterprise_backfill_batches"."skipped_existing" >= 0 and "enterprise_backfill_batches"."mismatch_reported" >= 0 and "enterprise_backfill_batches"."quarantined" >= 0 and "enterprise_backfill_batches"."written_rows" >= 0 and "enterprise_backfill_batches"."resumes" >= 0)\n' +
+          ");",
+      ],
+    },
+    {
+      slug: "child_backfill_progress_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、operator 全表只读策略与 GRANT SELECT。不授予任何受限角色 INSERT/UPDATE/DELETE——进度只由回填工具的事务推进。",
+      objects: ["enterprise_backfill_batches"],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_backfill_batches" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+        'ALTER TABLE "enterprise_backfill_batches" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_backfill_batches" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_backfill_batch_operator_read" ON "enterprise_backfill_batches"\n' +
+          "  FOR SELECT TO ob_ent_operator\n" +
+          "  USING (true);",
+        'GRANT SELECT ON TABLE "enterprise_backfill_batches" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
+/**
  * MT008（Issue #51）：资源可见性属性。expand-only——仅在既有表
  * enterprise_resources 上追加可空列 visibility（NULL=未标记/遗留，
  * 'private'=个人，'workspace'=团队公共；CHECK 兑底取值域）并给受限
@@ -3358,6 +3417,7 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
   [LEGACY_ANCHOR_TASK.id, LEGACY_ANCHOR_TASK],
+  [CHILD_BACKFILL_PROGRESS_TASK.id, CHILD_BACKFILL_PROGRESS_TASK],
   [RESOURCE_VISIBILITY_TASK.id, RESOURCE_VISIBILITY_TASK],
   [CORE_RLS_TASK.id, CORE_RLS_TASK],
   [RESOURCE_DEPENDENCY_TASK.id, RESOURCE_DEPENDENCY_TASK],

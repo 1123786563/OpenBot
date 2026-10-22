@@ -23,6 +23,7 @@ import routines from "../../locales/en/routines.json";
 import settings from "../../locales/en/settings.json";
 import skills from "../../locales/en/skills.json";
 import tenant from "../../locales/en/tenant.json";
+import companyAdmin from "../../locales/en/company-admin.json";
 import workshop from "../../locales/en/workshop.json";
 import zhAdmin from "../../locales/zh-CN/admin.json";
 import zhAgents from "../../locales/zh-CN/agents.json";
@@ -46,6 +47,7 @@ import zhRoutines from "../../locales/zh-CN/routines.json";
 import zhSettings from "../../locales/zh-CN/settings.json";
 import zhSkills from "../../locales/zh-CN/skills.json";
 import zhTenant from "../../locales/zh-CN/tenant.json";
+import zhCompanyAdmin from "../../locales/zh-CN/company-admin.json";
 import zhWorkshop from "../../locales/zh-CN/workshop.json";
 
 /**
@@ -68,6 +70,7 @@ export const NAMESPACES = [
   "market",
   "errors",
   "tenant",
+  "company-admin",
   "workshop",
   "craft",
   /*
@@ -151,6 +154,7 @@ void i18next
         workshop,
         errors,
         tenant,
+        "company-admin": companyAdmin,
         craft,
         "ai-observability-runs": aiObservabilityRuns,
         "ai-observability-datasets": aiObservabilityDatasets,
@@ -176,6 +180,7 @@ void i18next
         workshop: zhWorkshop,
         errors: zhErrors,
         tenant: zhTenant,
+        "company-admin": zhCompanyAdmin,
         craft: zhCraft,
         "ai-observability-runs": zhAiObservabilityRuns,
         "ai-observability-datasets": zhAiObservabilityDatasets,

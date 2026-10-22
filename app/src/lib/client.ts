@@ -135,14 +135,22 @@ const WORKSPACE_HEADER = "x-openbot-workspace";
  *
  * TODAY the reviewed path families are the enterprise API (MT081), the coworker REST surface
  * (MT084, whose scoped reads and saves bind the Bot detail and configuration pages to the
- * selection), and the Team Bot publication surface (MT085, whose sharing page reads and writes
- * bind the same way). The deployment's other legacy REST surfaces (`/api/channels`, `/api/craft`,
- * `/api/workshop`, the dictation upload…) deliberately are NOT here: the server's entry middleware
- * passes those through untouched until they consume the scope seam themselves (MT125 lays the
- * client headers onto the legacy assembly), so sending the pair there now would be a selection no
- * one reads. The uploads and download issuances that target those surfaces ride the same attach
- * logic below (`clientUpload` and `send` share `scopeSelection`, AC3) and start carrying the pair
- * the moment their paths earn a review.
+ * selection), the Team Bot publication surface (MT085, whose sharing page reads and writes bind
+ * the same way), the six page-binding tickets that follow the same seam: the Bot
+ * operations surface (MT086 — responsibilities, computers, approvals), the conversation surface
+ * (MT087 — channels and groups), the skills-and-connections surface (MT088 — plugins), the
+ * memory-and-routines surface (MT089), the craft-and-workshop surface (MT091 — the sessions,
+ * artifacts, turns and schedules the creation pages read and write), the catalog surface
+ * (MT094 — the marketplace and component pages whose browsing, installs, configuration and
+ * publication bind the same way), and the billing surface (MT097 — the orders, invoices, credits
+ * and usage reads whose amounts belong to the selected scope, and the company books the finance
+ * view reads through the enterprise API). The deployment's other legacy REST surfaces (the dictation
+ * upload…) deliberately are NOT here: the server's entry middleware passes those through
+ * untouched until they consume the scope seam themselves (MT125 lays the client headers onto
+ * the legacy assembly), so sending the pair there now would be a selection no one reads. The
+ * uploads and download issuances that target those surfaces ride the same attach logic below
+ * (`clientUpload` and `send` share `scopeSelection`, AC3) and start carrying the pair the
+ * moment their paths earn a review.
  */
 export interface ScopeHeaderPathEntry {
   /** Stable id, the cross-check test names entries by. */
@@ -176,6 +184,97 @@ export const SCOPE_HEADER_ALLOWED_PATHS: readonly ScopeHeaderPathEntry[] = [
     reason:
       "the Team Bot publication surface — who may publish, unpublish and assign is the server's own capability answer, and the sharing page's reads and writes bind to the selection (MT085); the server consumes the pair when the legacy assembly reads it (MT125)",
     ownerTicket: "MT085",
+  },
+  {
+    id: "approvals-rest",
+    prefix: "/api/approvals",
+    reason:
+      "the approval surface — whose inbox, rules and team caps a person holds is company/team business data, and the approvals page's reads and decisions bind to the selection (MT086); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT086",
+  },
+  {
+    id: "responsibilities-rest",
+    prefix: "/api/responsibilities",
+    reason:
+      "the standing-responsibility surface — a Bot's ongoing duties and their triggers are company/team business data, and the responsibilities page's reads, creates and actions bind to the selection (MT086); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT086",
+  },
+  {
+    id: "computers-rest",
+    prefix: "/api/computers",
+    reason:
+      "the computer surface — the fleet, its action boundary and the holder state that drives every control are the server's own answers, and the computers pages' reads and actions bind to the selection (MT086); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT086",
+  },
+  {
+    id: "channels-rest",
+    prefix: "/api/channels",
+    reason:
+      "the conversation surface — a person's channels with their coworkers are company/team business data, and the roster, detail, create and member writes bind to the selection (MT087); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT087",
+  },
+  {
+    id: "groups-rest",
+    prefix: "/api/groups",
+    reason:
+      "the group-conversation surface — creating a group and changing its members are company/team business writes, and they bind to the selection (MT087); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT087",
+  },
+  {
+    id: "plugins-rest",
+    prefix: "/api/plugins",
+    reason:
+      "the skills-and-connections surface — which skills exist and which connected accounts a person holds are company/team business data, and the skills and connected-accounts pages' reads, installs, connections and disclosures bind to the selection (MT088); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT088",
+  },
+  {
+    id: "memory-rest",
+    prefix: "/api/memory",
+    reason:
+      "the memory surface — a person's memories and their sources are company/team business data, and the memory pages' reads and writes bind to the selection (MT089); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT089",
+  },
+  {
+    id: "routines-rest",
+    prefix: "/api/routines",
+    reason:
+      "the routine surface — a person's standing instructions and their runs are company/team business data, and the routines page's reads, enable, delete and run-now writes bind to the selection (MT089); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT089",
+  },
+  {
+    id: "craft-rest",
+    prefix: "/api/craft",
+    reason:
+      "the creation surface — a craft session's roster, detail, artifacts, files and sandbox state, and the turns, uploads and scheduled tasks its pages submit, are company/team business data, and the craft pages' reads and writes bind to the selection (MT091); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT091",
+  },
+  {
+    id: "workshop-rest",
+    prefix: "/api/workshop",
+    reason:
+      "the workshop surface — a channel's workshop snapshot, its turns, artifacts, files, schedules and the share it mints are company/team business data, and the workshop panel's reads and writes bind to the selection (MT091); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT091",
+  },
+  {
+    id: "marketplace-rest",
+    prefix: "/api/marketplace",
+    reason:
+      "the catalog surface — the marketplace shelf a person browses and the expert and skill installs that land in the current scope are company/team business data, and the market page's reads and installs bind to the selection (MT094); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT094",
+  },
+  {
+    id: "components-rest",
+    prefix: "/api/components",
+    reason:
+      "the component surface — which components exist, which Bots and data functions they are granted, and whether one is published are company/team business data, and the component pages' reads, grants, drafts and publication writes bind to the selection (MT094); the server consumes the pair when the legacy assembly reads it (MT125)",
+    ownerTicket: "MT094",
+  },
+  {
+    id: "billing-rest",
+    prefix: "/api/billing",
+    reason:
+      "the billing surface — the orders, invoices, credits and usage reads a person's billing pages make, and the company books a finance reader opens, are money facts of the selected scope, and MT097 binds those reads to the selection so a switch drops the old scope's amounts wholesale; the company books answer from the enterprise API's own scope gate, and the legacy payer-facing reads consume the pair when the legacy billing assembly reads it (MT125)",
+    ownerTicket: "MT097",
   },
 ];
 

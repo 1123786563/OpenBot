@@ -29,7 +29,6 @@ import {
 import { connectPromptOf } from "../src/components/channels/chat-transcript";
 import { ConnectAppCard } from "../src/components/channels/connect-app-card";
 import { pluginKeys } from "../src/lib/plugins/queries";
-import { queryClient } from "../src/query-client";
 
 /**
  * The connect card the transcript draws over one kind of refusal: an app this call needed, that
@@ -94,6 +93,8 @@ beforeEach(() => {
   global.fetch = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const path = String(input);
+      // The scoped connections poll (MT088) waits for the scope source before it asks anything.
+      if (path === "/api/me") return Response.json({ user: { id: "user-1" } });
       if (path.includes("/connect") && (init?.method ?? "GET") === "POST") {
         connectPosts += 1;
         if ("error" in connectAnswer) {
@@ -512,8 +513,8 @@ describe("the poll that is the only thing allowed to say connected", () => {
     ];
     jest.useFakeTimers();
     fakeClock = true;
-    const invalidate = spyOn(queryClient, "invalidateQueries");
-    const { view } = drawCard();
+    const { view, client } = drawCard();
+    const invalidate = spyOn(client, "invalidateQueries");
     await settle();
     fireEvent.click(view.getByRole("button", { name: "Connect" }));
     await settle();
@@ -539,8 +540,8 @@ describe("the poll that is the only thing allowed to say connected", () => {
 
   test("a mounted card whose app is already connected invalidates nothing", async () => {
     connectionRows = [{ serverId: SERVER_ID, holder: "person" }];
-    const invalidate = spyOn(queryClient, "invalidateQueries");
-    const { view } = drawCard();
+    const { view, client } = drawCard();
+    const invalidate = spyOn(client, "invalidateQueries");
     await settle();
     expect(view.getByText(/GitHub is connected/)).toBeTruthy();
     expect(invalidate).not.toHaveBeenCalled();

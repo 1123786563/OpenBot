@@ -25,8 +25,14 @@
 // （migrate-test.ts）真实执行，本文件不自建表。夹具用固定 id/created_at，
 // 同一测试库跨套件重跑保持稳定；锚点行是交付状态，afterAll 不删除。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { like, sql } from "drizzle-orm";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import {
   buildPlan,
   manifestFor,
@@ -381,10 +387,23 @@ describe("MT112 criterion 1: legacy company and default team creation is idempot
     expect(memberships).toHaveLength(1);
     expect(memberships[0]?.role).toBe("tenant_admin");
     expect(memberships[0]?.status).toBe("active");
-    const laterAnchors = (await rawClient`
+    // MT113（Issue #156，2026-10-22）后的语义收窄：本断言的意图是
+    // 「MT112 不得锚定更晚的用户」，原代理（该用户无任何 principal）
+    // 在 MT113 落地后过宽——根回填按 Spec §9.2「保持现有个人权限」为
+    // 全体部署用户落 principal + member 成员关系（授权复刻的载体）。
+    // 锚定 = anchor-id principal + tenant_admin 成员关系，按此断言：
+    const laterAnchorPrincipals = (await rawClient`
       select count(*)::int as n from "enterprise_principals"
-      where "user_id" = ${FIXTURE_LATER_USER_ID}`) as Array<{ n: number }>;
-    expect(Number(laterAnchors[0]?.n)).toBe(0);
+      where "user_id" = ${FIXTURE_LATER_USER_ID}
+        and "id" like 'entp-legacy-anchor-%'`) as Array<{ n: number }>;
+    expect(Number(laterAnchorPrincipals[0]?.n)).toBe(0);
+    const laterAdminMemberships = (await rawClient`
+      select count(*)::int as n from "enterprise_memberships" m
+      join "enterprise_principals" p on p."id" = m."principal_id"
+      where p."user_id" = ${FIXTURE_LATER_USER_ID}
+        and m."tenant_id" = ${ANCHOR_TENANT_ID}
+        and m."role" = 'tenant_admin'`) as Array<{ n: number }>;
+    expect(Number(laterAdminMemberships[0]?.n)).toBe(0);
   });
 
   test("the anchor member holds the default-team workspace membership exactly once", async () => {
