@@ -195,6 +195,22 @@ export type CreditWriter = {
   ): Promise<void>;
 
   /**
+   * The platform-loss compensation door (Bifrost 08.10): the platform absorbs an `unknown`
+   * hold whose cost could not be settled NOR proven absent, handing the held capacity back
+   * so the user does not pay for work nobody can price — but the act is NOT a release and
+   * never says "no charge": the release reason carries the `platform_compensation:<ref>`
+   * marker, the item's own disposal record carries `compensate`, and the command writes the
+   * `billing.recovery.compensated` audit event with the absorbed amount. A still-`reserved`
+   * hold refuses (this is never a second ordinary release), and a terminal hold changes
+   * nothing (the first terminal result stands). The payment account is the reservation's
+   * own — compensation moves capacity, never ownership.
+   */
+  compensateUnknownReservation(
+    reservationId: string,
+    reason: string,
+  ): Promise<void>;
+
+  /**
    * Record that a hold's provider outcome is unknown (06.8, Q12/AC15): a stream error, a
    * missing usage report, a cancellation — anything that is NOT a confirmed no-cost. The hold
    * leaves the plain `reserved` state for `unknown`, keeping its FULL capacity occupied no
@@ -635,6 +651,50 @@ export function createCreditWriter(database: Database): CreditWriter {
           );
         }
         if (reservation.status !== "unknown") return;
+        await tx
+          .update(creditReservations)
+          .set({
+            status: "released",
+            applied: 0,
+            released: reservation.maximum,
+            releaseReason: reason,
+            terminalAt: new Date(),
+          })
+          .where(eq(creditReservations.id, reservationId));
+      });
+    },
+
+    async compensateUnknownReservation(reservationId, reason) {
+      const [head] = await database
+        .select({ customer: creditReservations.externalCustomerId })
+        .from(creditReservations)
+        .where(eq(creditReservations.id, reservationId))
+        .limit(1);
+      if (!head) return;
+      await database.transaction(async (tx) => {
+        await lockCustomer(tx, head.customer);
+        const [reservation] = await tx
+          .select({
+            status: creditReservations.status,
+            maximum: creditReservations.maximum,
+          })
+          .from(creditReservations)
+          .where(eq(creditReservations.id, reservationId))
+          .limit(1);
+        if (!reservation) return;
+        if (reservation.status === "reserved") {
+          // The compensation door is stricter still: a still-plain hold has both ordinary
+          // paths (settle or release), and an absorbed loss must never be the first thing
+          // that happens to one.
+          throw new CreditReservationConflictError(
+            "compensateUnknownReservation: the reservation is still reserved; there is nothing to compensate yet.",
+          );
+        }
+        if (reservation.status !== "unknown") return;
+        // Mechanically the capacity returns like a release — there is no third terminal
+        // state for "the platform paid" on the hold itself — but the reason's marker keeps
+        // the two acts distinguishable at the row: a released-by-no-charge and a
+        // compensated read differently forever after.
         await tx
           .update(creditReservations)
           .set({
