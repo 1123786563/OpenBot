@@ -823,7 +823,12 @@
    "files": [
     "server/tests/workshop-metering.test.ts",
     "server/tests/workshop-preview.test.ts",
-    "server/tests/workshop-schedule-executor.integration.test.ts",
+    "server/tests/workshop-schedule-executor.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 16",
+   "files": [
     "server/tests/workshop-store.test.ts"
    ]
   },
