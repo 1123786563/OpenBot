@@ -786,7 +786,12 @@
     "server/tests/multitenancy/membership-model.test.ts",
     "server/tests/multitenancy/migration-tool.test.ts",
     "server/tests/multitenancy/native-runtime.test.ts",
-    "server/tests/multitenancy/not-found-semantics.test.ts",
+    "server/tests/multitenancy/not-found-semantics.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests/multitenancy part 3",
+   "files": [
     "server/tests/multitenancy/oauth-state.test.ts",
     "server/tests/multitenancy/openmuse-activity-notifications.test.ts",
     "server/tests/multitenancy/openmuse-files.test.ts",

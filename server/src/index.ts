@@ -371,6 +371,11 @@ import {
 } from "./enterprise/tenancy/openmuse-voice-mobile-tenancy";
 import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
 import {
+  createOpenMuseVoiceMobileTenancyService,
+  type OpenMuseVoiceMobileTenancyRows,
+} from "./enterprise/tenancy/openmuse-voice-mobile-tenancy";
+import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
+import {
   createPersonalShareAdminService,
   createPersonalShareDecisionService,
 } from "./enterprise/tenancy/personal-share-rules";
