@@ -45,7 +45,7 @@
 //     的路径事实，存储适配属接线票。
 //   - 签名密钥经装配注入（生产从部署配置派生）；本模块不落密钥。
 
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { enterpriseConversations } from "../../db/schema/enterprise-conversations";
 import {
@@ -66,6 +66,7 @@ import {
   type ResourceNotFoundVerdict,
 } from "./not-found-semantics";
 import { workspaceMembershipLockKey } from "./scope-gate";
+import { createSignedDownloadRule } from "./signed-download";
 import { assertTrustedScope } from "./store";
 
 // ---------------------------------------------------------------------------
@@ -76,7 +77,7 @@ export const ATTACHMENT_RESOURCE_KIND = "attachment";
 export const ATTACHMENT_BIND_KIND = "attachment-bind";
 
 export type AttachmentVerdict =
-  | { readonly outcome: "allow" } & Record<string, unknown>
+  | ({ readonly outcome: "allow" } & Record<string, unknown>)
   | ResourceNotFoundVerdict;
 
 export interface StagedUpload {
@@ -179,7 +180,9 @@ export interface AttachmentService {
 }
 
 /** 便于联合类型书写的别名。 */
-type Verdict2<T> = ({ readonly outcome: "allow" } & T) | ResourceNotFoundVerdict;
+type Verdict2<T> =
+  | ({ readonly outcome: "allow" } & T)
+  | ResourceNotFoundVerdict;
 
 export function createAttachmentService(channels: {
   readonly data: DataDatabase;
@@ -258,10 +261,8 @@ export function createAttachmentService(channels: {
     }
   };
 
-  const attachmentLockKey = (
-    tenantId: string,
-    attachmentId: string,
-  ): string => JSON.stringify(["enterprise", "attachment", tenantId, attachmentId]);
+  const attachmentLockKey = (tenantId: string, attachmentId: string): string =>
+    JSON.stringify(["enterprise", "attachment", tenantId, attachmentId]);
 
   /**
    * 附件可见事实（AC1/AC2 的一道独立防线：RLS 之外 workspace + 成员
@@ -309,10 +310,7 @@ export function createAttachmentService(channels: {
             enterpriseWorkspaceMemberships.workspaceId,
             enterpriseResources.workspaceId,
           ),
-          eq(
-            enterpriseWorkspaceMemberships.principalId,
-            scope.principalId,
-          ),
+          eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
         ),
       )
       .leftJoin(
@@ -355,10 +353,13 @@ export function createAttachmentService(channels: {
   const storagePathOf = (tenantId: string, workspaceId: string, id: string) =>
     `${tenantId}/${workspaceId}/${id}/blob`;
 
+  // MT056（Issue #99）统一：附件下载 token 的 HMAC 计算与校验来自共享
+  // 签名规则（signed-download.ts 的唯一事实源）——token 语法
+  // `${ref}.${expiry}.${hmac}` 字节形状不变，附件套件原语义不动；产物族
+  // 与原文件族的签发/代理走同一实现（票注：发现分叉先统一再继续）。
+  const signedRule = createSignedDownloadRule(signingKey);
   const hmacOf = (attachmentId: string, expiry: number): string =>
-    createHmac("sha256", signingKey)
-      .update(`${attachmentId}.${expiry}`)
-      .digest("base64url");
+    signedRule.hmacOf(attachmentId, expiry);
 
   return {
     async stageUpload(scope, input) {
@@ -418,7 +419,11 @@ export function createAttachmentService(channels: {
     async bindToConversation(scope, attachmentId, threadId) {
       assertScopeContext(scope);
       assertTrustedScope(scope);
-      if (typeof threadId !== "string" || !threadId.trim() || threadId.length > 256) {
+      if (
+        typeof threadId !== "string" ||
+        !threadId.trim() ||
+        threadId.length > 256
+      ) {
         throw new Error("THREAD_ID_INVALID");
       }
       // 会话归属校验走 data 通道（conversations 的读授权面是
