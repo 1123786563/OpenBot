@@ -5,7 +5,6 @@ import {
   IconPlug,
   IconSettings,
 } from "@tabler/icons-react";
-import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   WbAddButton,
@@ -22,7 +21,7 @@ import {
   WbTag,
 } from "@/components/market/wb";
 import { PluginLogo } from "@/components/plugins/plugin-logo";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import type {
   CatalogueItem,
@@ -145,31 +144,24 @@ export function ConnectorDialogWb({
               </div>
               <div className="mt-2.5 flex items-center gap-2">
                 {needsAccount ? (
-                  <Button
-                    render={(props) => (
-                      <Link {...props} to="/settings/connected-accounts" />
-                    )}
+                  <ButtonLink
+                    to="/settings/connected-accounts"
                     size="sm"
                     className="h-8 rounded-lg px-4"
                   >
                     {label.connect}
-                  </Button>
+                  </ButtonLink>
                 ) : isAdmin ? (
-                  <Button
-                    render={(props) => (
-                      <Link
-                        {...props}
-                        params={{ key: server.id }}
-                        to="/admin/plugins/$key"
-                      />
-                    )}
+                  <ButtonLink
+                    params={{ key: server.id }}
+                    to="/admin/plugins/$key"
                     size="sm"
                     variant="outline"
                     className="h-8 rounded-lg px-4"
                   >
                     <IconSettings className="size-4" />
                     {t("wb.manage")}
-                  </Button>
+                  </ButtonLink>
                 ) : (
                   <span className="flex items-center gap-1 text-sm text-foreground/50">
                     <IconCheck className="size-4 text-foreground/70" />
@@ -363,16 +355,14 @@ function ServerCard({
     <ConnectorCard
       action={
         needsAccount ? (
-          <Button
+          <ButtonLink
             onClick={(event) => event.stopPropagation()}
-            render={(props) => (
-              <Link {...props} to="/settings/connected-accounts" />
-            )}
+            to="/settings/connected-accounts"
             size="xs"
             variant="outline"
           >
             {label.connect}
-          </Button>
+          </ButtonLink>
         ) : (
           <span
             aria-label={label.installed}

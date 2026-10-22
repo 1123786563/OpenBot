@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-21",
+  "route": "synthetic Bot setup",
+  "checks": 2,
+  "results": [
+    {
+      "theme": "light",
+      "rootTheme": "light",
+      "popup": {
+        "bg": "rgb(255, 255, 255)",
+        "fg": "rgb(25, 33, 49)",
+        "border": "rgb(216, 223, 233)"
+      },
+      "trigger": {
+        "bg": "rgb(255, 255, 255)",
+        "border": "rgb(216, 223, 233)"
+      },
+      "expanded": "true",
+      "closed": {
+        "popup": false,
+        "activeSlot": "select-trigger"
+      },
+      "escapePass": true
+    },
+    {
+      "theme": "dark",
+      "rootTheme": "dark",
+      "popup": {
+        "bg": "rgb(36, 43, 56)",
+        "fg": "rgb(235, 239, 247)",
+        "border": "rgb(48, 57, 73)"
+      },
+      "trigger": {
+        "bg": "rgb(25, 29, 38)",
+        "border": "rgb(48, 57, 73)"
+      },
+      "expanded": "true",
+      "closed": {
+        "popup": false,
+        "activeSlot": "select-trigger"
+      },
+      "escapePass": true
+    }
+  ],
+  "pass": true
+}

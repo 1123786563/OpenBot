@@ -78,7 +78,7 @@ export function ToolCall({
     <div className="rounded-md border border-border">
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium hover:bg-muted/40"
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-medium hover:bg-ob-muted-surface/40"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
@@ -109,7 +109,7 @@ export function ToolCall({
           {onViewSubagent ? (
             <button
               type="button"
-              className="ml-auto flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              className="ml-auto flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-medium text-muted-foreground hover:bg-ob-muted-surface/60 hover:text-foreground"
               onClick={onViewSubagent}
             >
               <IconExternalLink className="size-3" />

@@ -21,7 +21,7 @@ export function CreditBar({
   return (
     <div
       className={cn(
-        "h-1.5 w-full overflow-hidden rounded-full bg-muted",
+        "h-1.5 w-full overflow-hidden rounded-full bg-ob-muted-surface",
         className,
       )}
       role="progressbar"

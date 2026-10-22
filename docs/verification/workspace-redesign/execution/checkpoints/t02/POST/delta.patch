@@ -1,0 +1,475 @@
+--- PRE/app/src/components/ui/bubble.tsx
++++ POST/app/src/components/ui/bubble.tsx
+@@ -145,7 +145,7 @@
+     "data-slot": "bubble-content",
+     ...props,
+     className: cn(
+-      "w-fit max-w-full min-w-0 overflow-hidden rounded-xl border border-transparent px-3 py-2 text-sm leading-relaxed wrap-break-word group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors [button,a]:outline-none [button,a]:focus-visible:border-ring [button,a]:focus-visible:ring-3 [button,a]:focus-visible:ring-ring/50",
++      "w-fit max-w-full min-w-0 overflow-hidden rounded-xl border border-transparent px-3 py-2 text-sm leading-relaxed wrap-break-word group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors [button,a]:outline-none [button,a]:focus-visible:border-[var(--ob-focus)] [button,a]:focus-visible:outline-2 [button,a]:focus-visible:outline-offset-2 [button,a]:focus-visible:outline-[var(--ob-focus)]",
+       className,
+     ),
+   };
+--- PRE/app/src/components/ui/button.tsx
++++ POST/app/src/components/ui/button.tsx
+@@ -12,24 +12,25 @@
+ 
+ /*
+  * The app's button vocabulary — six variants and eight sizes, unchanged since the shadcn wrappers.
+- * These classes still carry the WorkBuddy look (density, radius, the black action fill, the soft
+- * destructive wash); HeroUI supplies behaviour and state plumbing, not a new visual language.
++ * These classes carry the shared workspace tokens and keep the app's public button vocabulary;
++ * HeroUI supplies behaviour and state plumbing.
+  */
+ const buttonVariants = cva(
+-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,translate,opacity] duration-150 ease-out outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px active:transform-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
++  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,translate,opacity] duration-150 ease-out outline-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] active:not-aria-[haspopup]:translate-y-px active:transform-none pointer-coarse:min-h-11 pointer-coarse:min-w-11 disabled:pointer-events-none disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+   {
+     variants: {
+       variant: {
+-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
++        default:
++          "bg-[var(--ob-action)] text-[var(--ob-action-foreground)] hover:bg-[var(--ob-action-hover)]",
+         outline:
+-          "border-border bg-background hover:bg-ob-muted-surface hover:text-foreground aria-expanded:bg-ob-muted-surface aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
++          "border-[var(--ob-control-border)] bg-transparent text-foreground hover:bg-ob-hover hover:text-foreground aria-expanded:bg-ob-hover aria-expanded:text-foreground",
+         secondary:
+-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
++          "bg-secondary text-secondary-foreground hover:bg-ob-hover aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+         ghost:
+-          "hover:bg-ob-muted-surface hover:text-foreground aria-expanded:bg-ob-muted-surface aria-expanded:text-foreground dark:hover:bg-ob-muted-surface/50",
++          "hover:bg-ob-hover hover:text-foreground aria-expanded:bg-ob-hover aria-expanded:text-foreground",
+         destructive:
+-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+-        link: "text-primary underline-offset-4 hover:underline",
++          "bg-[var(--ob-danger-soft)] text-[var(--ob-danger)] hover:bg-[color-mix(in_srgb,var(--ob-danger)_16%,var(--ob-surface))]",
++        link: "text-[var(--ob-accent-text)] underline-offset-4 hover:underline",
+       },
+       size: {
+         default:
+--- PRE/app/src/components/ui/checkbox.tsx
++++ POST/app/src/components/ui/checkbox.tsx
+@@ -83,10 +83,13 @@
+       onChange={onCheckedChange}
+       {...props}
+     >
+-      <CheckboxPrimitive.Content data-slot="checkbox-content">
++      <CheckboxPrimitive.Content
++        data-slot="checkbox-content"
++        className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
++      >
+         <CheckboxPrimitive.Control
+           data-slot="checkbox-control"
+-          className="rounded-[4px] border-input shadow-xs"
++          className="rounded-[4px] border-[var(--ob-control-border)] shadow-xs"
+         >
+           <CheckboxPrimitive.Indicator data-slot="checkbox-indicator">
+             <IconCheck className="size-3" />
+--- PRE/app/src/components/ui/combobox.tsx
++++ POST/app/src/components/ui/combobox.tsx
+@@ -116,7 +116,7 @@
+         aria-haspopup="listbox"
+         aria-expanded={open}
+         onClick={() => setOpen(true)}
+-        className="flex min-h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-transparent px-2.5 py-1 text-left text-sm transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
++        className="flex min-h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-left text-sm transition-colors focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] pointer-coarse:min-h-11 disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)]"
+       >
+         <span
+           className={cn(
+@@ -180,7 +180,7 @@
+             }}
+             autoFocus
+             placeholder={placeholder}
+-            className="min-w-16 flex-1 bg-transparent outline-none"
++            className="min-w-16 flex-1 bg-[var(--ob-field-background)] outline-none"
+           />
+         </div>
+         <ListBox
+@@ -206,7 +206,7 @@
+               textValue={itemLabel(item)}
+               data-item-id={getKey(item)}
+               data-slot="combobox-item"
+-              className="group/combobox-item relative flex h-10 w-full cursor-default items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-focused:bg-ob-hover data-focused:text-ob-hover-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
++              className="group/combobox-item relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-focused:bg-ob-hover data-focused:text-ob-hover-foreground pointer-coarse:min-h-11 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+             >
+               {itemLabel(item)}
+               {itemSecondary?.(item)}
+--- PRE/app/src/components/ui/context-menu.tsx
++++ POST/app/src/components/ui/context-menu.tsx
+@@ -515,10 +515,10 @@
+ }
+ 
+ const ITEM_CLASS =
+-  "group/context-menu-item relative flex min-h-0 cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none active:transform-none focus:bg-ob-hover focus:text-ob-hover-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 focus:*:[svg]:text-ob-hover-foreground data-[variant=destructive]:*:[svg]:text-destructive";
++  "group/context-menu-item relative flex min-h-9 cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none active:transform-none focus:bg-ob-hover focus:text-ob-hover-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-disabled:pointer-events-none data-disabled:text-[var(--ob-disabled-foreground)] data-disabled:opacity-100 pointer-coarse:min-h-11 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 focus:*:[svg]:text-ob-hover-foreground data-[variant=destructive]:*:[svg]:text-destructive";
+ 
+ const CHECK_RADIO_ITEM_CLASS =
+-  "relative flex min-h-0 cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none active:transform-none focus:bg-ob-hover focus:text-ob-hover-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
++  "relative flex min-h-9 cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none active:transform-none focus:bg-ob-hover focus:text-ob-hover-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:text-[var(--ob-disabled-foreground)] data-disabled:opacity-100 pointer-coarse:min-h-11 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
+ 
+ type ContextMenuItemProps = Omit<
+   ComponentProps<typeof Menu.Item>,
+--- PRE/app/src/components/ui/dialog.tsx
++++ POST/app/src/components/ui/dialog.tsx
+@@ -52,12 +52,11 @@
+  */
+ 
+ /**
+- * The page scrim: 15% black over the page, 60% in dark. `transparent` is the HeroUI variant because
++ * The page scrim uses the theme backdrop token. `transparent` is the HeroUI variant because
+  * every visual comes from these classes; the variant modifier sets `background-color: transparent`
+  * in unlayered CSS, hence the `!` on the fills.
+  */
+-const SCRIM =
+-  "bg-black/15! dark:bg-black/60! supports-backdrop-filter:backdrop-blur-xs";
++const SCRIM = "bg-[var(--ob-backdrop)]!";
+ 
+ type DialogRootProps = Omit<ComponentProps<typeof Modal>, "isOpen"> & {
+   /** The app's name for React Aria's `isOpen`, kept so call sites did not change. */
+@@ -384,7 +383,7 @@
+           aria-describedby={hasDescription ? descriptionId : undefined}
+           data-slot="dialog-content"
+           className={cn(
+-            "flex flex-col gap-4 text-sm",
++            "flex flex-col gap-4 rounded-2xl bg-overlay text-overlay-foreground text-sm",
+             capped && "max-h-[85svh]!",
+             className,
+           )}
+--- PRE/app/src/components/ui/dropdown-menu.tsx
++++ POST/app/src/components/ui/dropdown-menu.tsx
+@@ -378,10 +378,10 @@
+  * -----------------------------------------------------------------------------------------------*/
+ 
+ const ITEM_CLASS =
+-  "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-ob-hover focus:text-ob-hover-foreground not-data-[variant=destructive]:focus:**:text-ob-hover-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive";
++  "group/dropdown-menu-item relative flex min-h-9 cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-ob-hover focus:text-ob-hover-foreground not-data-[variant=destructive]:focus:**:text-ob-hover-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-disabled:pointer-events-none data-disabled:text-[var(--ob-disabled-foreground)] data-disabled:opacity-100 pointer-coarse:min-h-11 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive";
+ 
+ const CHECK_RADIO_ITEM_CLASS =
+-  "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-ob-hover focus:text-ob-hover-foreground focus:**:text-ob-hover-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
++  "relative flex min-h-9 cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-ob-hover focus:text-ob-hover-foreground focus:**:text-ob-hover-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:text-[var(--ob-disabled-foreground)] data-disabled:opacity-100 pointer-coarse:min-h-11 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
+ 
+ type DropdownMenuItemProps = Omit<
+   ComponentProps<typeof Dropdown.Item>,
+--- PRE/app/src/components/ui/field.tsx
++++ POST/app/src/components/ui/field.tsx
+@@ -139,7 +139,7 @@
+     <Label
+       data-slot="field-label"
+       className={cn(
+-        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-brand/30 has-data-checked:bg-brand/5 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-brand/20 dark:has-data-checked:bg-brand/10",
++        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:text-[var(--ob-disabled-foreground)] has-data-checked:border-brand/30 has-data-checked:bg-brand/5 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-brand/20 dark:has-data-checked:bg-brand/10",
+         "has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col",
+         className,
+       )}
+@@ -153,7 +153,7 @@
+     <div
+       data-slot="field-label"
+       className={cn(
+-        "flex w-fit items-center gap-2 text-sm font-medium group-data-[disabled=true]/field:opacity-50",
++        "flex w-fit items-center gap-2 text-sm font-medium group-data-[disabled=true]/field:text-[var(--ob-disabled-foreground)]",
+         className,
+       )}
+       {...props}
+--- PRE/app/src/components/ui/input-group.tsx
++++ POST/app/src/components/ui/input-group.tsx
+@@ -11,7 +11,7 @@
+       data-slot="input-group"
+       role="group"
+       className={cn(
+-        "group/input-group relative flex h-9 w-full min-w-0 items-center rounded-lg border border-input transition-colors outline-none in-data-[slot=combobox-content]:focus-within:border-inherit in-data-[slot=combobox-content]:focus-within:ring-0 has-disabled:bg-input/50 has-disabled:opacity-50 has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-3 has-[[data-slot][aria-invalid=true]]:ring-destructive/20 has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>textarea]:h-auto dark:bg-input/30 dark:has-disabled:bg-input/80 dark:has-[[data-slot][aria-invalid=true]]:ring-destructive/40 has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
++        "group/input-group relative flex h-9 w-full min-w-0 items-center rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] transition-colors outline-none in-data-[slot=combobox-content]:focus-within:border-inherit in-data-[slot=combobox-content]:focus-within:ring-0 has-disabled:border-[var(--ob-control-border)] has-disabled:bg-[var(--ob-disabled-background)] has-disabled:text-[var(--ob-disabled-foreground)] has-[[data-slot=input-group-control]:focus-visible]:border-[var(--ob-focus)] has-[[data-slot=input-group-control]:focus-visible]:outline-2 has-[[data-slot=input-group-control]:focus-visible]:outline-offset-2 has-[[data-slot=input-group-control]:focus-visible]:outline-[var(--ob-focus)] has-[[data-slot][aria-invalid=true]]:border-[var(--ob-danger)] has-[[data-slot][aria-invalid=true]]:bg-[var(--ob-field-background)] has-[[data-slot][aria-invalid=true]]:ring-2 has-[[data-slot][aria-invalid=true]]:ring-[var(--ob-danger)]/20 has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>textarea]:h-auto has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
+         className,
+       )}
+       {...props}
+--- PRE/app/src/components/ui/input.tsx
++++ POST/app/src/components/ui/input.tsx
+@@ -9,12 +9,8 @@
+  * through, and one native change event fires per keystroke. Nothing is remapped — React Aria's
+  * input takes `disabled`, not `isDisabled`.
+  *
+- * The app's class string is authoritative. HeroUI's `.input` base also fills the field on
+- * hover / focus / invalid and adds a resting field shadow; the pre-migration field was a
+- * transparent box whose only state cue was the focus-visible ring, so the four neutralisers
+- * below keep that surface unchanged. The rest of the base (radius, padding, type scale) is
+- * overridden by the utilities that were already here — HeroUI's component CSS sits in
+- * `@layer components`, below Tailwind's `utilities`.
++ * The wrapper explicitly opts into the shared field fill and boundary tokens. Focus and invalid
++ * states change the boundary only, so the field surface remains stable while editing.
+  */
+ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+   return (
+@@ -22,7 +18,7 @@
+       type={type}
+       data-slot="input"
+       className={cn(
+-        "h-9 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none shadow-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground hover:bg-transparent focus:bg-transparent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:bg-transparent aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
++        "h-9 w-full min-w-0 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-base transition-colors outline-none shadow-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 md:text-sm",
+         className,
+       )}
+       {...props}
+--- PRE/app/src/components/ui/item.tsx
++++ POST/app/src/components/ui/item.tsx
+@@ -32,7 +32,7 @@
+ }
+ 
+ const itemVariants = cva(
+-  "group/item flex w-full flex-wrap items-center rounded-lg border dark:border-transparent text-sm transition-colors duration-100 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 [a]:transition-colors [a]:hover:bg-ob-muted-surface",
++  "group/item flex w-full flex-wrap items-center rounded-lg border dark:border-transparent text-sm transition-colors duration-100 outline-none focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 [a]:transition-colors [a]:hover:bg-ob-hover",
+   {
+     variants: {
+       variant: {
+--- PRE/app/src/components/ui/label.tsx
++++ POST/app/src/components/ui/label.tsx
+@@ -16,7 +16,7 @@
+     <LabelPrimitive
+       data-slot="label"
+       className={cn(
+-        "flex items-center gap-2 text-xs leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
++        "flex items-center gap-2 text-xs leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:text-[var(--ob-disabled-foreground)] peer-disabled:cursor-not-allowed peer-disabled:text-[var(--ob-disabled-foreground)]",
+         className,
+       )}
+       {...props}
+--- PRE/app/src/components/ui/questionnaire.tsx
++++ POST/app/src/components/ui/questionnaire.tsx
+@@ -104,8 +104,8 @@
+     <QuestionnairePrimitive.Choice
+       data-slot="questionnaire-choice"
+       className={cn(
+-        "group/questionnaire-choice relative flex min-h-11 cursor-pointer items-start gap-2.5 rounded-lg border border-input bg-transparent px-3 py-2.5 text-start text-sm transition-colors outline-none select-none hover:bg-ob-muted-surface/50 has-[>input:focus-visible]:border-ring has-[>input:focus-visible]:ring-3 has-[>input:focus-visible]:ring-ring/50 data-invalid:border-destructive dark:bg-input/20 data-checked:border-primary/40 data-checked:bg-ob-muted-surface dark:data-checked:bg-ob-muted-surface",
+-        "data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:opacity-50",
++        "group/questionnaire-choice relative flex min-h-11 cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-3 py-2.5 text-start text-sm transition-colors outline-none select-none hover:bg-ob-hover has-[>input:focus-visible]:border-[var(--ob-focus)] has-[>input:focus-visible]:outline-2 has-[>input:focus-visible]:outline-offset-2 has-[>input:focus-visible]:outline-[var(--ob-focus)] data-invalid:border-[var(--ob-danger)] data-invalid:bg-[var(--ob-field-background)] data-checked:border-primary/40 data-checked:bg-ob-muted-surface",
++        "data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:text-[var(--ob-disabled-foreground)]",
+         className,
+       )}
+       {...props}
+@@ -167,7 +167,7 @@
+       <QuestionnairePrimitive.Input
+         data-slot="questionnaire-input"
+         className={cn(
+-          "h-8 min-h-11 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-[color,box-shadow,background-color] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 sm:min-h-0 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
++          "h-8 min-h-11 w-full min-w-0 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-base transition-[color,box-shadow,background-color] outline-none focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 sm:min-h-0 md:text-sm",
+           "selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground",
+           className,
+         )}
+--- PRE/app/src/components/ui/select.tsx
++++ POST/app/src/components/ui/select.tsx
+@@ -519,7 +519,7 @@
+        */
+       role="combobox"
+       className={cn(
+-        "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
++        "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] pointer-coarse:min-h-11 pointer-coarse:min-w-11 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+         className,
+       )}
+       isDisabled={disabled}
+@@ -626,7 +626,7 @@
+       offset={sideOffset}
+       crossOffset={alignOffset}
+       className={cn(
+-        "relative isolate z-50 max-h-[var(--trigger-height,70vh)] min-w-36 overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[placement=bottom]:slide-in-from-top-2 data-[placement=left]:slide-in-from-right-2 data-[placement=right]:slide-in-from-left-2 data-[placement=top]:slide-in-from-bottom-2 data-[entering]:animate-in data-[entering]:fade-in-0 data-[entering]:zoom-in-95 data-[exiting]:animate-out data-[exiting]:fade-out-0 data-[exiting]:zoom-out-95",
++        "relative isolate z-50 max-h-[min(320px,calc(100dvh-32px))] min-w-36 overflow-x-hidden overflow-y-auto rounded-lg bg-overlay text-overlay-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[placement=bottom]:slide-in-from-top-2 data-[placement=left]:slide-in-from-right-2 data-[placement=right]:slide-in-from-left-2 data-[placement=top]:slide-in-from-bottom-2 data-[entering]:animate-in data-[entering]:fade-in-0 data-[entering]:zoom-in-95 data-[exiting]:animate-out data-[exiting]:fade-out-0 data-[exiting]:zoom-out-95",
+         className,
+       )}
+       {...props}
+@@ -696,7 +696,7 @@
+       textValue={text}
+       isDisabled={disabled}
+       className={cn(
+-        "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-focused:bg-ob-hover data-focused:text-ob-hover-foreground data-hovered:bg-ob-hover data-hovered:text-ob-hover-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
++        "relative flex min-h-9 w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-focused:bg-ob-hover data-focused:text-ob-hover-foreground data-hovered:bg-ob-hover data-hovered:text-ob-hover-foreground data-disabled:pointer-events-none data-disabled:text-[var(--ob-disabled-foreground)] data-disabled:opacity-100 pointer-coarse:min-h-11 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+         className,
+       )}
+       {...props}
+--- PRE/app/src/components/ui/sheet.tsx
++++ POST/app/src/components/ui/sheet.tsx
+@@ -18,9 +18,8 @@
+  * `Sheet` + `SheetContent` still draw the backdrop, the panel and the close button themselves.
+  */
+ 
+-/** The page scrim: 15% black over the page, 60% in dark — unchanged from the Base UI sheet. */
+-const SCRIM =
+-  "bg-black/15 dark:bg-black/60 supports-backdrop-filter:backdrop-blur-xs";
++/** Shared theme backdrop for every sheet placement. */
++const SCRIM = "bg-[var(--ob-backdrop)]";
+ 
+ type Side = "top" | "right" | "bottom" | "left";
+ 
+@@ -116,7 +115,7 @@
+           data-side={side}
+           data-slot="sheet-content"
+           className={cn(
+-            "flex flex-col gap-4 bg-popover p-0 text-sm text-popover-foreground shadow-lg",
++            "flex flex-col gap-4 rounded-2xl bg-overlay p-0 text-sm text-overlay-foreground shadow-lg",
+             SIDE_CLASSES[side],
+             className,
+           )}
+--- PRE/app/src/components/ui/switch.tsx
++++ POST/app/src/components/ui/switch.tsx
+@@ -116,7 +116,10 @@
+       size={size === "sm" ? "sm" : "md"}
+       {...props}
+     >
+-      <SwitchPrimitive.Content data-slot="switch-content">
++      <SwitchPrimitive.Content
++        data-slot="switch-content"
++        className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
++      >
+         <SwitchPrimitive.Control data-slot="switch-control">
+           <SwitchPrimitive.Thumb data-slot="switch-thumb" />
+         </SwitchPrimitive.Control>
+--- PRE/app/src/components/ui/textarea.tsx
++++ POST/app/src/components/ui/textarea.tsx
+@@ -8,17 +8,15 @@
+  * `value` / `defaultValue`, `onChange` (one native event per keystroke), `name`, `placeholder`,
+  * `disabled`, `readOnly`, `required`, `aria-invalid` and `ref` all pass through as DOM props.
+  *
+- * `field-sizing-content` stays: it is what gives the field its auto-resize behaviour, and the
+- * `min-h-16` floor keeps an empty composer tall enough. HeroUI's `.textarea` base paints a
+- * resting shadow and fills the surface on hover / focus / invalid; the neutralisers keep the
+- * surface the app has always drawn (it sits in `@layer components`, below these utilities).
++ * `field-sizing-content` stays for auto-resize behaviour. Focus and invalid states change the
++ * boundary without replacing the shared field fill.
+  */
+ function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
+   return (
+     <TextAreaPrimitive
+       data-slot="textarea"
+       className={cn(
+-        "flex field-sizing-content min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-base transition-colors outline-none shadow-none placeholder:text-muted-foreground hover:bg-transparent focus:bg-transparent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:bg-transparent aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
++        "flex field-sizing-content min-h-24 w-full rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-2 text-base transition-colors outline-none shadow-none placeholder:text-muted-foreground focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 md:text-sm",
+         className,
+       )}
+       {...props}
+--- PRE/app/src/components/ui/tooltip.tsx
++++ POST/app/src/components/ui/tooltip.tsx
+@@ -269,7 +269,7 @@
+   return (
+     <TooltipPrimitive.Content
+       className={cn(
+-        "z-50 inline-flex w-fit max-w-xs origin-(--trigger-anchor-point) items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-xs text-background has-data-[slot=kbd]:pr-1.5 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-sm",
++        "z-50 inline-flex w-fit max-w-xs origin-(--trigger-anchor-point) items-center gap-1.5 rounded-md bg-overlay px-3 py-1.5 text-xs leading-[18px] text-overlay-foreground has-data-[slot=kbd]:pr-1.5 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-sm",
+         className,
+       )}
+       crossOffset={alignOffset}
+--- PRE/app/tests/button-native.test.tsx
++++ POST/app/tests/button-native.test.tsx
+@@ -1,5 +1,4 @@
+ import "./preload";
+-import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "../../tests/support/e2e-compat";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
+ import {
+   createMemoryHistory,
+@@ -10,7 +9,17 @@
+ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+ import type { ComponentPropsWithoutRef, ReactElement } from "react";
+ import { Button } from "@/components/ui/button";
++import { Input } from "@/components/ui/input";
+ import { ButtonLink } from "@/components/ui/router-link";
++import { Textarea } from "@/components/ui/textarea";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  expect,
++  spyOn,
++  test,
++} from "../../tests/support/e2e-compat";
+ 
+ beforeAll(() => GlobalRegistrator.register());
+ afterEach(cleanup);
+@@ -40,12 +49,86 @@
+ }
+ 
+ test("a button with no `render` is still a native button", () => {
+-  const { complaints, element } = drawing(<Button>Save</Button>);
++  let receivedRef: HTMLButtonElement | null = null;
++  const { complaints, element } = drawing(
++    <Button ref={(node) => (receivedRef = node)}>Save</Button>,
++  );
+ 
+   expect(complaints).toEqual([]);
+   expect(element.tagName).toBe("BUTTON");
++  expect(receivedRef).toBe(element);
+   expect(element.getAttribute("type")).toBe("button");
+   expect(element.getAttribute("role")).toBeNull();
++});
++
++test("the public button keeps every variant and size while exposing the redesigned states", () => {
++  const variants = [
++    "default",
++    "outline",
++    "secondary",
++    "ghost",
++    "destructive",
++    "link",
++  ] as const;
++  const sizes = [
++    "default",
++    "xs",
++    "sm",
++    "lg",
++    "icon",
++    "icon-xs",
++    "icon-sm",
++    "icon-lg",
++  ] as const;
++
++  for (const variant of variants) {
++    const { element } = drawing(<Button variant={variant}>Action</Button>);
++    expect(element.getAttribute("data-variant")).toBe(variant);
++    expect(element.className).toContain("focus-visible:outline-2");
++    expect(element.className).toContain("pointer-coarse:min-h-11");
++    cleanup();
++  }
++
++  for (const size of sizes) {
++    const { element } = drawing(<Button size={size}>Action</Button>);
++    expect(element.getAttribute("data-size")).toBe(size);
++    cleanup();
++  }
++
++  const { element: outline } = drawing(
++    <Button variant="outline">Cancel</Button>,
++  );
++  expect(outline.className).toContain("border-[var(--ob-control-border)]");
++  const { element: link } = drawing(<Button variant="link">Learn more</Button>);
++  expect(link.className).toContain("text-[var(--ob-accent-text)]");
++});
++
++test("public text fields retain their native props and use stable field state classes", () => {
++  const inputView = render(
++    <Input
++      aria-label="Email"
++      aria-invalid
++      type="email"
++      defaultValue="a@b.co"
++    />,
++  );
++  const input = inputView.getByRole("textbox", { name: "Email" });
++  expect((input as HTMLInputElement).type).toBe("email");
++  expect((input as HTMLInputElement).defaultValue).toBe("a@b.co");
++  expect(input.className).toContain("bg-[var(--ob-field-background)]");
++  expect(input.className).toContain("border-[var(--ob-control-border)]");
++  expect(input.className).toContain(
++    "aria-invalid:bg-[var(--ob-field-background)]",
++  );
++  inputView.unmount();
++
++  const textareaView = render(
++    <Textarea aria-label="Notes" defaultValue="draft" />,
++  );
++  const textarea = textareaView.getByRole("textbox", { name: "Notes" });
++  expect((textarea as HTMLTextAreaElement).defaultValue).toBe("draft");
++  expect(textarea.className).toContain("min-h-24");
++  expect(textarea.className).toContain("focus-visible:outline-2");
+ });
+ 
+ /**
+@@ -166,7 +249,7 @@
+   expect(link.getAttribute("role")).toBeNull();
+   expect(link.querySelector("button")).toBeNull();
+   expect(link.querySelector("a")).toBeNull();
+-  expect(link.className).toContain("border-border");
++  expect(link.className).toContain("border-[var(--ob-control-border)]");
+ });
+ 
+ test("ButtonLink treats `href` as an external anchor", () => {

@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-21",
+  "page": "P03",
+  "route": "http://127.0.0.1:3011/channel/channel_68e1027f-5329-402e-b82e-4ba7282913e7",
+  "channelId": "channel_68e1027f-5329-402e-b82e-4ba7282913e7",
+  "fixture": "created by supported composer flow in disposable tmpfs DB; message text synthetic; intelligence loopback only",
+  "window": {
+    "width": 1440,
+    "height": 900
+  },
+  "browserZoom": "200% Chrome page zoom",
+  "before": {
+    "dpr": 4,
+    "innerWidth": 720,
+    "innerHeight": 406,
+    "scrollWidth": 720,
+    "clientWidth": 720
+  },
+  "after": {
+    "dpr": 4,
+    "innerWidth": 720,
+    "innerHeight": 406,
+    "scrollWidth": 720,
+    "clientWidth": 720
+  },
+  "textRetained": true,
+  "localRuntimeFailureVisible": true,
+  "horizontalOverflow": false,
+  "apiWrites": [
+    {
+      "method": "PUT",
+      "path": "/api/components/catalogue",
+      "dispatched": false
+    },
+    {
+      "method": "PUT",
+      "path": "/api/components/catalogue",
+      "dispatched": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/route",
+      "dispatched": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/channels",
+      "dispatched": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/channels/channel_68e1027f-5329-402e-b82e-4ba7282913e7/busy",
+      "dispatched": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/copilotkit/agent/general-assistant/connect",
+      "dispatched": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/channels/channel_68e1027f-5329-402e-b82e-4ba7282913e7/activity",
+      "dispatched": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/copilotkit/agent/general-assistant/run",
+      "dispatched": false
+    },
+    {
+      "method": "POST",
+      "path": "/api/channels/channel_68e1027f-5329-402e-b82e-4ba7282913e7/busy",
+      "dispatched": false
+    }
+  ],
+  "notes": [
+    "POST /api/route and POST /api/channels were the only API writes allowed; intelligence runner request was aborted at the browser boundary.",
+    "No external model or provider request was made."
+  ]
+}

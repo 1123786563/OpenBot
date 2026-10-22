@@ -1,0 +1,2247 @@
+{
+  "schemaVersion": "report-1",
+  "run": {
+    "id": "01a15804-9a36-7f14-92c5-904b81173ace",
+    "specVersion": "0.1",
+    "runner": {
+      "name": "e2e",
+      "version": "0.20.0"
+    },
+    "status": "passed",
+    "exitCode": 0,
+    "startedAt": "2026-10-20T06:34:19.165Z",
+    "finishedAt": "2026-10-20T06:35:20.839Z",
+    "project": {
+      "id": "openbot-unit",
+      "configDigest": "39eda43afc11183310a838a51decb3f6faff1b74cb418a354a741cb75619349a"
+    },
+    "environment": {
+      "ci": false,
+      "trustNoticeShown": false,
+      "os": "darwin 27.0.0",
+      "arch": "arm64",
+      "runtime": "node v22.22.3"
+    },
+    "vcs": {
+      "commit": "203d0f0244b2f898218fa12027089c631e8448d9",
+      "branch": "feat/heroui-v3-migration",
+      "dirty": true
+    },
+    "targets": [
+      {
+        "id": "node",
+        "index": 0,
+        "platform": "node",
+        "environment": "test",
+        "engine": {
+          "name": "none",
+          "version": "unversioned",
+          "spiVersion": 1
+        },
+        "capabilities": [],
+        "artifactCapabilities": [],
+        "stateCapability": false
+      }
+    ],
+    "serialGroups": [],
+    "results": [
+      {
+        "id": "9dce5e7a4d446828755ab05e9d57a0d011c1d97074580ed6217a0def7a176e13",
+        "testId": "tests/agent-bot.test.ts::agent-bot%20refuses%20to%20start%20when%20the%20model%20key%20is%20empty",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "agent-bot refuses to start when the model key is empty"
+        ],
+        "file": "tests/agent-bot.test.ts",
+        "source": {
+          "file": "tests/agent-bot.test.ts",
+          "line": 45,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "e7e93b41f2cc32692cc42f783dc7098fa54b16eddc9ad9d3078271f6e3135ad5",
+        "testId": "tests/agent-bot.test.ts::agent-bot%20still%20refuses%20to%20start%20without%20its%20server%20token",
+        "kind": "test",
+        "declarationIndex": 1,
+        "titlePath": [
+          "agent-bot still refuses to start without its server token"
+        ],
+        "file": "tests/agent-bot.test.ts",
+        "source": {
+          "file": "tests/agent-bot.test.ts",
+          "line": 57,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "5c4ea72510f1ff79d3146d4b334fe105343c28d7e926701f4ceef4335ee03d54",
+        "testId": "tests/agent-bot.test.ts::agent-bot%20refuses%20a%20model%20it%20cannot%20drive%20however%20the%20name%20is%20spaced",
+        "kind": "test",
+        "declarationIndex": 2,
+        "titlePath": [
+          "agent-bot refuses a model it cannot drive however the name is spaced"
+        ],
+        "file": "tests/agent-bot.test.ts",
+        "source": {
+          "file": "tests/agent-bot.test.ts",
+          "line": 66,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "628c458dc9cc3cfcc9fb449297547eca1ba23adfb53fb6c40b321a646664b101",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20agent-computer%2Ftests",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "bun runtime suite agent-computer/tests"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "ce4823f991b3d47c98f34cc38dd29fff0b9c927cd1730033ba3b7d1f283f78c4",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20agent-langgraph%2Ftests",
+        "kind": "test",
+        "declarationIndex": 1,
+        "titlePath": [
+          "bun runtime suite agent-langgraph/tests"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d9edb6a34c6ef95bac493af4e75c9914038d705e41f390e8f17a1d60fcd30591",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20agent-mastra%2Fsrc",
+        "kind": "test",
+        "declarationIndex": 2,
+        "titlePath": [
+          "bun runtime suite agent-mastra/src"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "57bebb72d762aef6b4a44cff9f8f866426d42b105dd7eac4d4db6d5f04654198",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20agent-sandbox%2Ftests",
+        "kind": "test",
+        "declarationIndex": 3,
+        "titlePath": [
+          "bun runtime suite agent-sandbox/tests"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d7651b91d1752c4e23687ea21a734654e5cc5114f30cd5493ff49ba1beaa2b85",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20app%2Fsrc",
+        "kind": "test",
+        "declarationIndex": 4,
+        "titlePath": [
+          "bun runtime suite app/src"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "2a60738a093ed41aa47ad9b4f5e0b97c5b8b8a3722cb3a36eb6d1da1f8e64c59",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20app%2Ftests%20part%201",
+        "kind": "test",
+        "declarationIndex": 5,
+        "titlePath": [
+          "bun runtime suite app/tests part 1"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a15804-9b18-77f6-b26c-7057f956f551",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-10-20T06:34:19.288Z",
+            "durationMs": 10797,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "steps": []
+          }
+        ]
+      },
+      {
+        "id": "61607beca30bdcf1785387c51a6ad3c0f147f2dbf99d71c5589cbf0089c5d6e7",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20app%2Ftests%20part%202",
+        "kind": "test",
+        "declarationIndex": 6,
+        "titlePath": [
+          "bun runtime suite app/tests part 2"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a15804-c545-7cd3-a25a-76e541ac98a9",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-10-20T06:34:30.085Z",
+            "durationMs": 13988,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "steps": []
+          }
+        ]
+      },
+      {
+        "id": "8baf40d0ec193e8a2a4a3de97fb892cbbb8da91090d3df8f3ed6b1c287e6d026",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20app%2Ftests%20part%203",
+        "kind": "test",
+        "declarationIndex": 7,
+        "titlePath": [
+          "bun runtime suite app/tests part 3"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a15804-fbe9-7bf2-b8e3-73947f8c0750",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-10-20T06:34:44.073Z",
+            "durationMs": 35916,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "steps": []
+          }
+        ]
+      },
+      {
+        "id": "d59ba25138358fc0511d6a6e75f4f7840e7882c059a0f312bf815207fa0be781",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20app%2Ftests%20part%204",
+        "kind": "test",
+        "declarationIndex": 8,
+        "titlePath": [
+          "bun runtime suite app/tests part 4"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": true,
+        "status": "passed",
+        "attempts": [
+          {
+            "id": "01a15805-8835-7dc3-8192-81ef160b0853",
+            "index": 0,
+            "status": "passed",
+            "startedAt": "2026-10-20T06:35:19.989Z",
+            "durationMs": 843,
+            "artifacts": [],
+            "secondaryErrors": [],
+            "cleanup": "complete",
+            "steps": []
+          }
+        ]
+      },
+      {
+        "id": "feede8db50f80723ae0d43e9486cb315f5efc805cf5f8b74bcb1bec2c2018202",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20app%2Ftests%2Fai-observability",
+        "kind": "test",
+        "declarationIndex": 9,
+        "titlePath": [
+          "bun runtime suite app/tests/ai-observability"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "aeb347ef8299efdaa342e1d54af7eae07b0c032428d9ef124fea259a8ae50a7d",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20app%2Ftests%2Fmultitenancy",
+        "kind": "test",
+        "declarationIndex": 10,
+        "titlePath": [
+          "bun runtime suite app/tests/multitenancy"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "bf75b4cdb92f483365d69775076e3b24000780a3249817e07c1f9207b2458aee",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20desktop%2Fscripts",
+        "kind": "test",
+        "declarationIndex": 11,
+        "titlePath": [
+          "bun runtime suite desktop/scripts"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "63dd9f81383f5ffa093581c6acc4ce04e2ec01c066f013f28b0059782133c7d2",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20desktop%2Fsrc",
+        "kind": "test",
+        "declarationIndex": 12,
+        "titlePath": [
+          "bun runtime suite desktop/src"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "160acc2129a1885f8848ba1c59231cac35e7aedc078429db2b2dff5ac7faba3b",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20scripts%2Fprocesses.test.ts",
+        "kind": "test",
+        "declarationIndex": 13,
+        "titlePath": [
+          "bun runtime suite scripts/processes.test.ts"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "3c2a669df93e46a88f4c2544d696ccf58375339855f7edb97d14e902a746268f",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20scripts%2Fstart-restart-guard.test.ts",
+        "kind": "test",
+        "declarationIndex": 14,
+        "titlePath": [
+          "bun runtime suite scripts/start-restart-guard.test.ts"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "e58d0bd5a7324d2ad2ef6ca8464f3dcf842029c048482b5f607818f8ecf35516",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20scripts%2Ftls-pipeline.test.ts",
+        "kind": "test",
+        "declarationIndex": 15,
+        "titlePath": [
+          "bun runtime suite scripts/tls-pipeline.test.ts"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "45b2fdd2437f9bd8ce129baee91370f9cbe3b44e7384346b46f8eb3f943df30c",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Fsrc",
+        "kind": "test",
+        "declarationIndex": 16,
+        "titlePath": [
+          "bun runtime suite server/src"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "3f3a9a76e23bd294cb6b3c3815b621f1e9d4b9ff0c40fae1f799b68a2842c1e4",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%201",
+        "kind": "test",
+        "declarationIndex": 17,
+        "titlePath": [
+          "bun runtime suite server/tests part 1"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d1d916abaffee1623ac0234d0c0740c30e9eb363e2a06d8ff91d01067ef5b24e",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%202",
+        "kind": "test",
+        "declarationIndex": 18,
+        "titlePath": [
+          "bun runtime suite server/tests part 2"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "6e56fc02a553335cc5d3c958fb8ed749611a79b7178bc6810611f5ea128cf075",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%203",
+        "kind": "test",
+        "declarationIndex": 19,
+        "titlePath": [
+          "bun runtime suite server/tests part 3"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "e44ebb7540c42198e16740e0651638001a8e8047676637da775019451af09d45",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%204",
+        "kind": "test",
+        "declarationIndex": 20,
+        "titlePath": [
+          "bun runtime suite server/tests part 4"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "f76ecf306df648c4f3a30ff83e77979db5526f0598956059eec4147821ad9ef5",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%205",
+        "kind": "test",
+        "declarationIndex": 21,
+        "titlePath": [
+          "bun runtime suite server/tests part 5"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "0fdcf9fa74377d144ad02a80ebc6e8d8ec887012e2ed3d75316feb7bd0c19c72",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%206",
+        "kind": "test",
+        "declarationIndex": 22,
+        "titlePath": [
+          "bun runtime suite server/tests part 6"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "eaa2792b7a65559bbf7de5c386a2aa31e603bd24c63fccc66718ed789829ee6a",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%207",
+        "kind": "test",
+        "declarationIndex": 23,
+        "titlePath": [
+          "bun runtime suite server/tests part 7"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d1eec6020b522571c49e5c79cf31094451ddffab777ca096a4183aa4559b95b4",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%208",
+        "kind": "test",
+        "declarationIndex": 24,
+        "titlePath": [
+          "bun runtime suite server/tests part 8"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "46c418138e6ce639683c901fc36bea5219765791c14bdb1ed07ff7a57017d41a",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%209",
+        "kind": "test",
+        "declarationIndex": 25,
+        "titlePath": [
+          "bun runtime suite server/tests part 9"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "62cf6f6ccba461e1fd1411e0f0bcaa592998943cdc976472ca12b1ab206f38b8",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%2010",
+        "kind": "test",
+        "declarationIndex": 26,
+        "titlePath": [
+          "bun runtime suite server/tests part 10"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d419b9059e879dd3c8b3a21274c6332761a4c4397710c22d915ce9b9aca8cf6e",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%2011",
+        "kind": "test",
+        "declarationIndex": 27,
+        "titlePath": [
+          "bun runtime suite server/tests part 11"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "1129e22651af021ba305815ad7f23d66f4ae68a2289304ffeac13e7e0bb77112",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%2012",
+        "kind": "test",
+        "declarationIndex": 28,
+        "titlePath": [
+          "bun runtime suite server/tests part 12"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "aed646623b69a075c54f91a48c59c7e9e01c2ac334ea172b98fa98c81d9ce23f",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%20part%2013",
+        "kind": "test",
+        "declarationIndex": 29,
+        "titlePath": [
+          "bun runtime suite server/tests part 13"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "1e03bc6e760b367eead1ff6d7b0329d152b97375605e10e850e5b5cbb4e05732",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%2Fbilling-credits-writer",
+        "kind": "test",
+        "declarationIndex": 30,
+        "titlePath": [
+          "bun runtime suite server/tests/billing-credits-writer"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "c06f39be2848a3a62ac1709c12522d1bdca6c38dcfa7b36989569234777a2ea7",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%2Fgateway-probe",
+        "kind": "test",
+        "declarationIndex": 31,
+        "titlePath": [
+          "bun runtime suite server/tests/gateway-probe"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "7bfdf40dbc96b55dbfe33d26e0c722032effcbad4d64b18fce7c7a8ee89156c9",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%2Fmultitenancy%20part%201",
+        "kind": "test",
+        "declarationIndex": 32,
+        "titlePath": [
+          "bun runtime suite server/tests/multitenancy part 1"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "f61e8cd57a1de48253b6110014f6d4676fc4a020b7c5efe947aa6e95dddf4c88",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%2Fmultitenancy%20part%202",
+        "kind": "test",
+        "declarationIndex": 33,
+        "titlePath": [
+          "bun runtime suite server/tests/multitenancy part 2"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "7ec478eca8067896d3190a2b72d9b6a46a1d0a9b30d92161a4f428549304b21f",
+        "testId": "tests/bun-suites.test.ts::bun%20runtime%20suite%20server%2Ftests%2Fmultitenancy%20part%203",
+        "kind": "test",
+        "declarationIndex": 34,
+        "titlePath": [
+          "bun runtime suite server/tests/multitenancy part 3"
+        ],
+        "file": "tests/bun-suites.test.ts",
+        "source": {
+          "file": "tests/bun-suites.test.ts",
+          "line": 254,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [
+          "bun-runtime"
+        ],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "title does not match --grep"
+        },
+        "attempts": []
+      },
+      {
+        "id": "514fa317175aff2efee2de2897f77c866481fcdfb15b8cd936361742d38ac521",
+        "testId": "tests/clean-checkout.test.ts::a%20clone%20that%20has%20only%20run%20bun%20install::can%20resolve%20everything%20agent-computer%20imports%20in%20its%20tests",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "a clone that has only run bun install",
+          "can resolve everything agent-computer imports in its tests"
+        ],
+        "file": "tests/clean-checkout.test.ts",
+        "source": {
+          "file": "tests/clean-checkout.test.ts",
+          "line": 36,
+          "column": 36
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "c9acac82994a6685efc471e564ff02b47b65825a0a61b4a3055b6b3ec3120a30",
+        "testId": "tests/clean-checkout.test.ts::a%20clone%20that%20has%20only%20run%20bun%20install::can%20resolve%20everything%20supervisor%20imports%20in%20its%20tests",
+        "kind": "test",
+        "declarationIndex": 1,
+        "titlePath": [
+          "a clone that has only run bun install",
+          "can resolve everything supervisor imports in its tests"
+        ],
+        "file": "tests/clean-checkout.test.ts",
+        "source": {
+          "file": "tests/clean-checkout.test.ts",
+          "line": 36,
+          "column": 36
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "00846d85f54bf317c015c7e4cb291664ce277fe5e101cec9f3c19e5a66511622",
+        "testId": "tests/clean-checkout.test.ts::a%20clone%20that%20has%20only%20run%20bun%20install::can%20read%20the%20example%20tenant%20package%20with%20nothing%20set",
+        "kind": "test",
+        "declarationIndex": 2,
+        "titlePath": [
+          "a clone that has only run bun install",
+          "can read the example tenant package with nothing set"
+        ],
+        "file": "tests/clean-checkout.test.ts",
+        "source": {
+          "file": "tests/clean-checkout.test.ts",
+          "line": 58,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d3f77e9522e3b4680f0d7c71628db0fa94fdf8fa52156a608e77482e99037019",
+        "testId": "tests/clean-checkout.test.ts::a%20clone%20that%20has%20only%20run%20bun%20install::keeps%20every%20.env%20variant%20out%20of%20the%20repository",
+        "kind": "test",
+        "declarationIndex": 3,
+        "titlePath": [
+          "a clone that has only run bun install",
+          "keeps every .env variant out of the repository"
+        ],
+        "file": "tests/clean-checkout.test.ts",
+        "source": {
+          "file": "tests/clean-checkout.test.ts",
+          "line": 78,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "95ba7cec2724f998095b796162cf916267b6652ae2f81d4b546f1749ca20e108",
+        "testId": "tests/compose.test.ts::provides%20PostgreSQL%20for%20local%20development",
+        "kind": "test",
+        "declarationIndex": 1,
+        "titlePath": [
+          "provides PostgreSQL for local development"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 234,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "ae1c1e6c102d17196c0aeb26b05201579c8f886a8f1973bb3493738fdcaf4462",
+        "testId": "tests/compose.test.ts::provides%20Qdrant%20as%20the%20only%20vector%20store",
+        "kind": "test",
+        "declarationIndex": 2,
+        "titlePath": [
+          "provides Qdrant as the only vector store"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 256,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "25c45004e08629ab1613e5a267cfb3b59eb33988e2037478c60267ec2a27030d",
+        "testId": "tests/compose.test.ts::publishes%20every%20service%20on%20a%20settable%20port%20with%20the%20documented%20default",
+        "kind": "test",
+        "declarationIndex": 3,
+        "titlePath": [
+          "publishes every service on a settable port with the documented default"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 272,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "f5f6cd05b827a79fae4a2b4ba51e11c8891bf05f4dcd750db5c1fd0effee9531",
+        "testId": "tests/compose.test.ts::publishes%20every%20service%20that%20holds%20a%20secret%20on%20loopback%20only",
+        "kind": "test",
+        "declarationIndex": 4,
+        "titlePath": [
+          "publishes every service that holds a secret on loopback only"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 301,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "0007653adb9a9be0482ddc62cddc54dc820138400a1534d62d0667f75fc3730f",
+        "testId": "tests/compose.test.ts::every%20Bot%20uses%20the%20container%20override%20ahead%20of%20the%20host%20endpoint",
+        "kind": "test",
+        "declarationIndex": 5,
+        "titlePath": [
+          "every Bot uses the container override ahead of the host endpoint"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 363,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "5add949208a31202f06ea4877dff8888f3fdbab909d6318a8ec6a27ac00257d2",
+        "testId": "tests/compose.test.ts::every%20Bot%20uses%20the%20host%20endpoint%20when%20the%20container%20override%20is%20unset",
+        "kind": "test",
+        "declarationIndex": 6,
+        "titlePath": [
+          "every Bot uses the host endpoint when the container override is unset"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 363,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "9fb0a2de4d86dee4ffe6f866ca869e2459cf38ca1b7266e5b65253ed984514ab",
+        "testId": "tests/compose.test.ts::every%20Bot%20uses%20the%20host%20endpoint%20when%20the%20container%20override%20is%20cleared",
+        "kind": "test",
+        "declarationIndex": 7,
+        "titlePath": [
+          "every Bot uses the host endpoint when the container override is cleared"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 363,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d56c4060a155cdd5dc4cf7c42e8650d017f4a40afb93bf7abd41c47596f7df18",
+        "testId": "tests/compose.test.ts::every%20Bot%20leaves%20the%20endpoint%20empty%20when%20neither%20route%20is%20configured",
+        "kind": "test",
+        "declarationIndex": 8,
+        "titlePath": [
+          "every Bot leaves the endpoint empty when neither route is configured"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 363,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "f15ccec88c9e38a81a6652f539bf53cfc169b636e1a4826768886d3b5f919b55",
+        "testId": "tests/compose.test.ts::passes%20every%20other%20provider%27s%20key%20and%20endpoint%20into%20the%20framework%20Bot%20and%20the%20picked%20harness",
+        "kind": "test",
+        "declarationIndex": 9,
+        "titlePath": [
+          "passes every other provider's key and endpoint into the framework Bot and the picked harness"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 376,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "26ab54591a14bbd26bcd700b8655dd718479f0a7ea471e1664d5e62951f7849a",
+        "testId": "tests/compose.test.ts::normalizes%20the%20picked%20LangGraph%20harness%27s%20blank%20OpenAI%20endpoint%20before%20model%20construction",
+        "kind": "test",
+        "declarationIndex": 10,
+        "titlePath": [
+          "normalizes the picked LangGraph harness's blank OpenAI endpoint before model construction"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 397,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "07e92a598a77381af0744c801959eebb556726fea342c80b12415ecb6d87f4c3",
+        "testId": "tests/compose.test.ts::passes%20the%20selected%20Anthropic%20provider%20and%20model%20into%20the%20picked%20harness",
+        "kind": "test",
+        "declarationIndex": 11,
+        "titlePath": [
+          "passes the selected Anthropic provider and model into the picked harness"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 405,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "5adbfa22a43e8957e072f7901cd8a6d40731540424dab35b3c7a76b04ce4831d",
+        "testId": "tests/compose.test.ts::mounts%20the%20ChatGPT%20token%20store%20directory%20into%20the%20picked%20harness",
+        "kind": "test",
+        "declarationIndex": 12,
+        "titlePath": [
+          "mounts the ChatGPT token store directory into the picked harness"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 447,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "3b934fc60b5c28703fca2369e16cdff467d4b4723f3facc76f7909c20a867c78",
+        "testId": "tests/compose.test.ts::keeps%20the%20migration%20order%20the%20schema%20requires",
+        "kind": "test",
+        "declarationIndex": 13,
+        "titlePath": [
+          "keeps the migration order the schema requires"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 469,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "39aae69c8fbf0ea864bcb8ab2480c4a9295ac41907320ff030cc40a6677e4a1a",
+        "testId": "tests/compose.test.ts::runs%20migrations%20after%20PostgreSQL%20becomes%20healthy",
+        "kind": "test",
+        "declarationIndex": 14,
+        "titlePath": [
+          "runs migrations after PostgreSQL becomes healthy"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 498,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "71e81adb31a68ff9db55e921109eb6a69d2e0b152853595b2d6c3fd04612a13f",
+        "testId": "tests/compose.test.ts::builds%20the%20deployment%20image%20with%20Playwright%27s%20Chromium%20payload%20only",
+        "kind": "test",
+        "declarationIndex": 15,
+        "titlePath": [
+          "builds the deployment image with Playwright's Chromium payload only"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 506,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "3b0d466cd8dee7a9dc5346a489be8b11092a23703d345d84e7ab874ab7e25064",
+        "testId": "tests/compose.test.ts::takes%20Bun%20from%20the%20same%20immutable%20release%20in%20both%20computer%20images",
+        "kind": "test",
+        "declarationIndex": 16,
+        "titlePath": [
+          "takes Bun from the same immutable release in both computer images"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 541,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "5b34584f4a894e4843907510661d52a29e4f8cd54e46ff7d02fe29428fe7a854",
+        "testId": "tests/compose.test.ts::carries%20per-Bot%20egress%20into%20the%20computer%20and%20the%20supervisor",
+        "kind": "test",
+        "declarationIndex": 17,
+        "titlePath": [
+          "carries per-Bot egress into the computer and the supervisor"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 580,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "89592267599c7bcfe1dc3b35f09d78ddc54e19ca43ba06691dfaab63d9c4db27",
+        "testId": "tests/compose.test.ts::gives%20the%20selected%20harness%20the%20same%20governed%20callback%20as%20the%20framework%20Bot",
+        "kind": "test",
+        "declarationIndex": 18,
+        "titlePath": [
+          "gives the selected harness the same governed callback as the framework Bot"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 595,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "6b3dd4864c6a1ce92c927070a0c4721035086e29c680bc0aa82e75798e257947",
+        "testId": "tests/compose.test.ts::docker%2Fcompose%2Fcerts.yml%20parses%20under%20the%20documented%20invocation",
+        "kind": "test",
+        "declarationIndex": 19,
+        "titlePath": [
+          "docker/compose/certs.yml parses under the documented invocation"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 684,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "27824f7e64d9780ed08883fed8dfe6f3e3b598aaca81a463c94a1af3c316305b",
+        "testId": "tests/compose.test.ts::docker%2Fcompose%2Fkb.yml%20parses%20under%20the%20documented%20invocation",
+        "kind": "test",
+        "declarationIndex": 20,
+        "titlePath": [
+          "docker/compose/kb.yml parses under the documented invocation"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 684,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "5c8b474f6ce6e858ae6e582351347795f4c1074b6b5f1706fca1d208a9d5899e",
+        "testId": "tests/compose.test.ts::docker%2Fcompose%2Fservices.yml%20parses%20under%20the%20documented%20invocation",
+        "kind": "test",
+        "declarationIndex": 21,
+        "titlePath": [
+          "docker/compose/services.yml parses under the documented invocation"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 684,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d88161dfc95e6dd73d7696dab47143f04ca43e1bc7d9799d085f747066f242cc",
+        "testId": "tests/compose.test.ts::docker%2Fcompose%2Flago.yml%20parses%20under%20the%20documented%20invocation",
+        "kind": "test",
+        "declarationIndex": 22,
+        "titlePath": [
+          "docker/compose/lago.yml parses under the documented invocation"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 684,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "4416a21ccb797b69d690618db88bef6c8e1c248c2549457760912b3ee337eef5",
+        "testId": "tests/compose.test.ts::docker%2Fcompose%2Fobservability.yml%20parses%20under%20the%20documented%20invocation",
+        "kind": "test",
+        "declarationIndex": 23,
+        "titlePath": [
+          "docker/compose/observability.yml parses under the documented invocation"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 684,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "02b75238258fe3b26676d582e55aff9212f276a3acd40acd9e63903960500008",
+        "testId": "tests/compose.test.ts::docs%2Fcompose.md%20indexes%20every%20optional%20stack%20and%20the%20shared%20invocation",
+        "kind": "test",
+        "declarationIndex": 24,
+        "titlePath": [
+          "docs/compose.md indexes every optional stack and the shared invocation"
+        ],
+        "file": "tests/compose.test.ts",
+        "source": {
+          "file": "tests/compose.test.ts",
+          "line": 698,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "ebdfc1d044bd8c55a4dc124da3de62768d7b6bbdb299a593d7c27bd96ac70f28",
+        "testId": "tests/fintech-package.test.ts::includes%20the%20complete%20fintech%20deployment%20package%20example",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "includes the complete fintech deployment package example"
+        ],
+        "file": "tests/fintech-package.test.ts",
+        "source": {
+          "file": "tests/fintech-package.test.ts",
+          "line": 11,
+          "column": 1
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "578653ff09daeb58c599a63d8edf422d24cf407bc1dde4bbfd86e05e3110b3d0",
+        "testId": "tests/smoke/journey.test.ts::a%20deployment%20that%20is%20up::reports%20the%20runtime%20it%20is%20actually%20running",
+        "kind": "test",
+        "declarationIndex": 1,
+        "titlePath": [
+          "a deployment that is up",
+          "reports the runtime it is actually running"
+        ],
+        "file": "tests/smoke/journey.test.ts",
+        "source": {
+          "file": "tests/smoke/journey.test.ts",
+          "line": 105,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "f34bcb2266814d079177ddea5e6327a7599026a788613d90f211c7689cab1ceb",
+        "testId": "tests/smoke/journey.test.ts::a%20deployment%20that%20is%20up::holds%20a%20licence%20the%20runtime%20accepts%2C%20and%20has%20Bots%20registered",
+        "kind": "test",
+        "declarationIndex": 2,
+        "titlePath": [
+          "a deployment that is up",
+          "holds a licence the runtime accepts, and has Bots registered"
+        ],
+        "file": "tests/smoke/journey.test.ts",
+        "source": {
+          "file": "tests/smoke/journey.test.ts",
+          "line": 113,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "7ded2cdec6087ec1acd399cdd77421b8dfc3a8a70079daadcfc15313322339f9",
+        "testId": "tests/smoke/journey.test.ts::a%20deployment%20that%20is%20up::mints%20thread%20ids%20that%20say%20which%20deployment%20they%20came%20from",
+        "kind": "test",
+        "declarationIndex": 3,
+        "titlePath": [
+          "a deployment that is up",
+          "mints thread ids that say which deployment they came from"
+        ],
+        "file": "tests/smoke/journey.test.ts",
+        "source": {
+          "file": "tests/smoke/journey.test.ts",
+          "line": 124,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "9110684903ae4e930dace1fbb3dde1079c595de46b15ba7f2e2312a970d592e0",
+        "testId": "tests/smoke/journey.test.ts::a%20Bot%20acting%20on%20its%20computer::reaches%20a%20page%20through%20the%20gateway%2C%20and%20the%20trail%20records%20it",
+        "kind": "test",
+        "declarationIndex": 4,
+        "titlePath": [
+          "a Bot acting on its computer",
+          "reaches a page through the gateway, and the trail records it"
+        ],
+        "file": "tests/smoke/journey.test.ts",
+        "source": {
+          "file": "tests/smoke/journey.test.ts",
+          "line": 135,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "acddee60d3accb5040f2a995e64931e80f1d2e265767c04d4c48a0ab8e352773",
+        "testId": "tests/smoke/journey.test.ts::a%20Bot%20acting%20on%20its%20computer::is%20refused%20by%20a%20boundary%2C%20and%20the%20refusal%20is%20recorded%20with%20its%20rule",
+        "kind": "test",
+        "declarationIndex": 5,
+        "titlePath": [
+          "a Bot acting on its computer",
+          "is refused by a boundary, and the refusal is recorded with its rule"
+        ],
+        "file": "tests/smoke/journey.test.ts",
+        "source": {
+          "file": "tests/smoke/journey.test.ts",
+          "line": 170,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "e96427ad03c773cfc93e9fba38f8ccfcbd92052b3ae4ce0c56a76298dd7cb37e",
+        "testId": "tests/workspace.test.ts::OpenBot%20workspace::defines%20the%20app%2C%20server%2C%20and%20worker%20packages",
+        "kind": "test",
+        "declarationIndex": 0,
+        "titlePath": [
+          "OpenBot workspace",
+          "defines the app, server, and worker packages"
+        ],
+        "file": "tests/workspace.test.ts",
+        "source": {
+          "file": "tests/workspace.test.ts",
+          "line": 35,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "f47b6c12089a5050e2cd6b27aa36108f8500c0f7cbc68296bd8bdb18323a4f7d",
+        "testId": "tests/workspace.test.ts::OpenBot%20workspace::dev%20starts%20the%20app%20and%20the%20server%2C%20and%20not%20the%20routines%20worker",
+        "kind": "test",
+        "declarationIndex": 1,
+        "titlePath": [
+          "OpenBot workspace",
+          "dev starts the app and the server, and not the routines worker"
+        ],
+        "file": "tests/workspace.test.ts",
+        "source": {
+          "file": "tests/workspace.test.ts",
+          "line": 46,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "d7ffd44abadd88ea9b37811b42b07a1f7cb01d3ce1294164275618a8e252bad6",
+        "testId": "tests/workspace.test.ts::OpenBot%20workspace::build%20still%20covers%20every%20workspace%2C%20including%20the%20worker",
+        "kind": "test",
+        "declarationIndex": 2,
+        "titlePath": [
+          "OpenBot workspace",
+          "build still covers every workspace, including the worker"
+        ],
+        "file": "tests/workspace.test.ts",
+        "source": {
+          "file": "tests/workspace.test.ts",
+          "line": 54,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      },
+      {
+        "id": "a6b66a650f00823085a83163ada09a5ef4cfb0b101794de9b6b4485c450afe33",
+        "testId": "tests/workspace.test.ts::OpenBot%20workspace::scripts%2Fstart.sh%20is%20what%20starts%20the%20routines%20worker",
+        "kind": "test",
+        "declarationIndex": 3,
+        "titlePath": [
+          "OpenBot workspace",
+          "scripts/start.sh is what starts the routines worker"
+        ],
+        "file": "tests/workspace.test.ts",
+        "source": {
+          "file": "tests/workspace.test.ts",
+          "line": 62,
+          "column": 3
+        },
+        "targetId": "node",
+        "platform": "node",
+        "agent": "default",
+        "repeat": 0,
+        "tags": [],
+        "selected": false,
+        "status": "skipped",
+        "skip": {
+          "cause": "filtered",
+          "reason": "file not selected by a positional argument"
+        },
+        "attempts": []
+      }
+    ],
+    "errors": [],
+    "summary": {
+      "discovered": 76,
+      "selected": 4,
+      "executed": 4,
+      "passed": 4,
+      "failed": 0,
+      "interrupted": 0,
+      "flaky": 0,
+      "skipped": 0
+    },
+    "limits": {
+      "maxAgentContextBytes": 16384,
+      "maxLedgerBytes": 8192,
+      "maxObservationBytes": 262144,
+      "maxEventsPerStep": 1000,
+      "maxModelTokensPerCall": 64000
+    },
+    "usage": {
+      "discoveredResults": 76,
+      "maxAgentContextBytes": 0,
+      "maxLedgerBytes": 0,
+      "maxObservationBytes": 0,
+      "artifactBytes": 0,
+      "downloads": 0,
+      "events": 0,
+      "modelTokens": 0,
+      "maxModelCallsInStep": 0,
+      "maxActionStepsInStep": 0
+    }
+  }
+}

@@ -28,6 +28,9 @@ export function SkillFields({
   onCancel,
   footer,
   slugLocked = false,
+  draftValues,
+  onDraftChange,
+  draftDirty = false,
 }: {
   defaultValues: SkillFormValues;
   submitLabel: string;
@@ -45,18 +48,32 @@ export function SkillFields({
    * field is read-only here and the form says why.
    */
   slugLocked?: boolean;
+  draftValues?: SkillFormValues;
+  onDraftChange?: (values: SkillFormValues, dirty: boolean) => void;
+  draftDirty?: boolean;
 }) {
   const { t } = useTranslation("skills");
   const form = useForm({
-    defaultValues,
+    defaultValues: draftValues ?? defaultValues,
     validators: { onSubmit: skillFormSchema },
     onSubmit: async ({ value }) => {
       await onSubmit(value);
     },
   });
+  const updateDraft = <K extends keyof SkillFormValues>(
+    key: K,
+    value: SkillFormValues[K],
+  ) => {
+    const next = { ...form.state.values, [key]: value };
+    onDraftChange?.(
+      next,
+      JSON.stringify(next) !== JSON.stringify(defaultValues),
+    );
+  };
 
   return (
     <form
+      data-dirty={draftDirty}
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
@@ -84,9 +101,11 @@ export function SkillFields({
                    * has no capitals in it, and "Standup" is a reasonable thing to type and a
                    * pointless thing to be told off for.
                    */
-                  onChange={(event) =>
-                    field.handleChange(event.target.value.toLowerCase())
-                  }
+                  onChange={(event) => {
+                    const value = event.target.value.toLowerCase();
+                    field.handleChange(value);
+                    updateDraft("slug", value);
+                  }}
                   placeholder={t("fields.commandPlaceholder")}
                   value={field.state.value}
                 />
@@ -124,7 +143,10 @@ export function SkillFields({
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.value)}
+                  onChange={(event) => {
+                    field.handleChange(event.target.value);
+                    updateDraft("title", event.target.value);
+                  }}
                   placeholder={t("fields.titlePlaceholder")}
                   value={field.state.value}
                 />
@@ -150,7 +172,10 @@ export function SkillFields({
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.value)}
+                  onChange={(event) => {
+                    field.handleChange(event.target.value);
+                    updateDraft("summary", event.target.value);
+                  }}
                   placeholder={t("fields.oneLinerPlaceholder")}
                   value={field.state.value}
                 />
@@ -185,7 +210,10 @@ export function SkillFields({
                   id={field.name}
                   name={field.name}
                   onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.value)}
+                  onChange={(event) => {
+                    field.handleChange(event.target.value);
+                    updateDraft("instructions", event.target.value);
+                  }}
                   placeholder={t("fields.instructionsPlaceholder")}
                   value={field.state.value}
                 />
@@ -203,7 +231,10 @@ export function SkillFields({
         <form.Field name="tools">
           {(field) => (
             <SkillTools
-              onChange={field.handleChange}
+              onChange={(value) => {
+                field.handleChange(value);
+                updateDraft("tools", value);
+              }}
               selected={field.state.value}
             />
           )}

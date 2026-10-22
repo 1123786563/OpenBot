@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,8 +10,19 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, render, waitFor } from "@testing-library/react";
+import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 // English copy: the i18n bundles initialize on import, so assertions see real sentences.
 import "@/lib/i18n";
+import type { RouterContext } from "@/router-context";
 import { Route as EvaluationsRoute } from "../src/routes/_authed/_app/bots.$agentId.evaluations";
 import { Route as ComparisonsRoute } from "../src/routes/_authed/_app/bots.$agentId.evaluations.experiment-comparisons";
 import { Route as RunsRoute } from "../src/routes/_authed/_app/bots.$agentId.runs";
@@ -125,10 +135,10 @@ afterAll(() => GlobalRegistrator.unregister());
 const originalFetch = global.fetch;
 beforeEach(() => {
   /*
-   * The reads answer 404 — the manage gate's refusal — because this test is about
-   * WHICH page mounts, not what the pages say about their data. Every page's shell
-   * (and with it the anchor sentence below) renders before and regardless of the
-   * read's verdict.
+   * The pages' own reads answer 404 — this test is about WHICH page mounts, not what
+   * the pages say about their data. Every page's shell (and with it the anchor sentence
+   * below) renders before and regardless of the read's verdict. The one read that must
+   * succeed is the route guard's — see draw(), which seeds the cache it reads.
    */
   global.fetch = Object.assign(
     async () => new Response(null, { status: 404 }),
@@ -143,15 +153,31 @@ afterEach(() => {
 
 function draw(initial: string) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+    },
   });
+  /*
+   * The routes under test carry a beforeLoad guard (`requireBotObservabilityAccess`),
+   * so the router needs the production context — main.tsx mounts RouterProvider with
+   * `{ queryClient }` exactly like this — and the guard's agent read must find a
+   * manager in the cache or it would redirect every entry to /bots. Seeding the cache
+   * (staleTime ∞, so `ensureQueryData` answers from it and never hits the 404ing fetch)
+   * is the same seed observability-route-guards.test.tsx uses when it drives the guard
+   * directly.
+   */
+  queryClient.setQueryData(agentKeys.detail("agent-1"), {
+    id: "agent-1",
+    canManage: true,
+  } as AgentProfile);
   const router = createRouter({
     routeTree: testRouteTree,
     history: createMemoryHistory({ initialEntries: [initial] }),
+    context: {} as RouterContext,
   });
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <RouterProvider router={router} context={{ queryClient }} />
     </QueryClientProvider>,
   );
   return { router, ...view };

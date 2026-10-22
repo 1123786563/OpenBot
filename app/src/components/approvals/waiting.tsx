@@ -125,7 +125,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
                       {request.action.policy.reason}
                     </p>
                   ) : null}
-                  <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap rounded bg-muted p-3 text-xs">
+                  <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap rounded bg-ob-muted-surface p-3 text-xs">
                     {JSON.stringify(request.action.args, null, 2)}
                   </pre>
                 </ItemContent>

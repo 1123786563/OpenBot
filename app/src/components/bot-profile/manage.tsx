@@ -85,7 +85,9 @@ function ResetDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("manage.reset.title", { name: agent.name })}</DialogTitle>
+          <DialogTitle>
+            {t("manage.reset.title", { name: agent.name })}
+          </DialogTitle>
           <DialogDescription>
             {t("manage.reset.description", { name: agent.name })}
           </DialogDescription>
@@ -137,7 +139,9 @@ function ResetDialog({
             size="sm"
             variant="outline"
           >
-            {reset.isSuccess ? t("manage.reset.close") : t("manage.reset.cancel")}
+            {reset.isSuccess
+              ? t("manage.reset.close")
+              : t("manage.reset.cancel")}
           </Button>
           {reset.isSuccess ? null : (
             <Button
@@ -186,136 +190,144 @@ export function ManageSection({
   const assigned = agent.assignedToMe === true;
 
   return (
-    <PageSection title={t("manage.title")}>
-      {error ? (
-        <p className="mt-4 text-destructive text-sm" role="alert">
-          {error.message}
-        </p>
-      ) : null}
-      <PageRows>
-        <Item size="sm">
-          <ItemMedia variant="icon">
-            <IconPin />
-          </ItemMedia>
-          <ItemContent>
-            <ItemTitle>{t("manage.pinned")}</ItemTitle>
-            <ItemDescription>
-              {assigned
-                ? t("manage.assignedPinned")
-                : agent.pinned
-                  ? t("manage.pinnedDescription")
-                  : t("manage.pinDescription")}
-            </ItemDescription>
-          </ItemContent>
-          <ItemActions>
-            <Switch
-              aria-label={t("manage.pinned")}
-              checked={agent.pinned || assigned}
-              disabled={assigned || setPinned.isPending}
-              onCheckedChange={(pinned) =>
-                setPinned.mutate({ agentId: agent.id, pinned })
-              }
-            />
-          </ItemActions>
-        </Item>
-        <Separator />
-        <Item size="sm">
-          <ItemMedia variant="icon">
-            <IconEyeOff />
-          </ItemMedia>
-          <ItemContent>
-            <ItemTitle>{t("manage.hidden")}</ItemTitle>
-            <ItemDescription>
-              {assigned
-                ? t("manage.assignedHidden")
-                : agent.hidden
-                  ? t("manage.hiddenDescription")
-                  : t("manage.hideDescription")}
-            </ItemDescription>
-          </ItemContent>
-          <ItemActions>
-            <Switch
-              aria-label={t("manage.hidden")}
-              checked={agent.hidden}
-              disabled={assigned || setHidden.isPending}
-              onCheckedChange={async (hidden) => {
-                await setHidden.mutateAsync({ agentId: agent.id, hidden });
-                if (hidden) onHidden();
-              }}
-            />
-          </ItemActions>
-        </Item>
-        <Separator />
-        <Item
-          render={
-            <button
-              disabled={duplicate.isPending}
-              onClick={async () =>
-                onDuplicated((await duplicate.mutateAsync(agent.id)).id)
-              }
-              type="button"
-            />
-          }
-          size="sm"
-        >
-          <ItemMedia variant="icon">
-            <IconCopy />
-          </ItemMedia>
-          <ItemContent>
-            <ItemTitle>{t("manage.duplicate")}</ItemTitle>
-            <ItemDescription>
-              {t("manage.duplicateDescription")}
-            </ItemDescription>
-          </ItemContent>
-        </Item>
-        <Separator />
-        <Item
-          render={<button onClick={() => setResetOpen(true)} type="button" />}
-          size="sm"
-        >
-          <ItemMedia variant="icon">
-            <IconRefresh />
-          </ItemMedia>
-          <ItemContent>
-            <ItemTitle>{t("manage.resetEntry.title")}</ItemTitle>
-            <ItemDescription>
-              {t("manage.resetEntry.description")}
-            </ItemDescription>
-          </ItemContent>
-          <ItemActions>
-            <IconChevronRight className="size-4 text-muted-foreground" />
-          </ItemActions>
-        </Item>
-        {agent.canManage ? (
-          <>
-            <Separator />
+    <>
+      <PageSection title={t("manage.title")}>
+        {error ? (
+          <p className="mt-4 text-destructive text-sm" role="alert">
+            {error.message}
+          </p>
+        ) : null}
+        <PageRows>
+          <Item size="sm">
+            <ItemMedia variant="icon">
+              <IconPin />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{t("manage.pinned")}</ItemTitle>
+              <ItemDescription>
+                {assigned
+                  ? t("manage.assignedPinned")
+                  : agent.pinned
+                    ? t("manage.pinnedDescription")
+                    : t("manage.pinDescription")}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Switch
+                aria-label={t("manage.pinned")}
+                checked={agent.pinned || assigned}
+                disabled={assigned || setPinned.isPending}
+                onCheckedChange={(pinned) =>
+                  setPinned.mutate({ agentId: agent.id, pinned })
+                }
+              />
+            </ItemActions>
+          </Item>
+          <Separator />
+          <Item size="sm">
+            <ItemMedia variant="icon">
+              <IconEyeOff />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{t("manage.hidden")}</ItemTitle>
+              <ItemDescription>
+                {assigned
+                  ? t("manage.assignedHidden")
+                  : agent.hidden
+                    ? t("manage.hiddenDescription")
+                    : t("manage.hideDescription")}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Switch
+                aria-label={t("manage.hidden")}
+                checked={agent.hidden}
+                disabled={assigned || setHidden.isPending}
+                onCheckedChange={async (hidden) => {
+                  await setHidden.mutateAsync({ agentId: agent.id, hidden });
+                  if (hidden) onHidden();
+                }}
+              />
+            </ItemActions>
+          </Item>
+          <Separator />
+          <Item
+            render={
+              <button
+                disabled={duplicate.isPending}
+                onClick={async () =>
+                  onDuplicated((await duplicate.mutateAsync(agent.id)).id)
+                }
+                type="button"
+              />
+            }
+            size="sm"
+          >
+            <ItemMedia variant="icon">
+              <IconCopy />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{t("manage.duplicate")}</ItemTitle>
+              <ItemDescription>
+                {t("manage.duplicateDescription")}
+              </ItemDescription>
+            </ItemContent>
+          </Item>
+          <Separator />
+          <Item
+            render={<button onClick={() => setResetOpen(true)} type="button" />}
+            size="sm"
+          >
+            <ItemMedia variant="icon">
+              <IconRefresh />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{t("manage.resetEntry.title")}</ItemTitle>
+              <ItemDescription>
+                {t("manage.resetEntry.description")}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <IconChevronRight className="size-4 text-muted-foreground" />
+            </ItemActions>
+          </Item>
+        </PageRows>
+      </PageSection>
+      {agent.canManage ? (
+        <PageSection title={t("manage.deleteTitle", { name: agent.name })}>
+          <PageRows>
             <Item
+              className="min-h-16"
               render={
                 <button onClick={() => setDeleteOpen(true)} type="button" />
               }
               size="sm"
             >
               <ItemMedia variant="icon">
-                <IconTrash />
+                <IconTrash className="text-destructive" />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>{t("manage.delete")}</ItemTitle>
+                <ItemTitle className="text-destructive">
+                  {t("manage.delete")}
+                </ItemTitle>
                 <ItemDescription>
                   {t("manage.deleteForEveryone")}
                 </ItemDescription>
               </ItemContent>
-              <ItemActions>
+              <ItemActions className="min-h-11 shrink-0">
                 <IconChevronRight className="size-4 text-muted-foreground" />
               </ItemActions>
             </Item>
-          </>
-        ) : null}
-      </PageRows>
+          </PageRows>
+        </PageSection>
+      ) : null}
       <ResetDialog agent={agent} onOpenChange={setResetOpen} open={resetOpen} />
       <Dialog onOpenChange={setDeleteOpen} open={deleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("manage.deleteTitle", { name: agent.name })}</DialogTitle>
+            <DialogTitle>
+              {t("manage.deleteTitle", { name: agent.name })}
+            </DialogTitle>
             <DialogDescription>{t("manage.cannotBeUndone")}</DialogDescription>
           </DialogHeader>
           {remove.error ? (
@@ -347,6 +359,6 @@ export function ManageSection({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageSection>
+    </>
   );
 }

@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import type { TFunction } from "i18next";
 import type * as React from "react";
 import { Fragment } from "react";
@@ -10,7 +9,6 @@ import {
   PageRows,
   PageSection,
 } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
 import {
   Item,
   ItemContent,
@@ -18,6 +16,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Separator } from "@/components/ui/separator";
 import { observationRunDetailQueryOptions } from "@/lib/ai-observability/runs";
 import { useDateTime } from "@/lib/i18n/datetime";
@@ -132,16 +131,15 @@ export function ObservationRunDetail({
            * A typed address or a stale link is the usual way here; the list is the page
            * that can answer what runs do exist, so the way back is offered, not hidden.
            */
-          <Button
+          <ButtonLink
             className="mt-2"
-            render={
-              <Link params={{ agentId: botId }} to="/bots/$agentId/runs" />
-            }
+            params={{ agentId: botId }}
+            to="/bots/$agentId/runs"
             size="sm"
             variant="outline"
           >
             {t("detail.backToList")}
-          </Button>
+          </ButtonLink>
         ) : null}
       </div>
     );
@@ -329,6 +327,7 @@ export function ObservationRunDetailPage({
   const { t } = useTranslation("ai-observability-runs");
   return (
     <BotSubpage
+      width="wide"
       agentId={agentId}
       description={t("detail.description")}
       title={t("detail.title")}

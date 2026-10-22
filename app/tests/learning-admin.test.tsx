@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -9,8 +8,16 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { LearningPage } from "@/routes/_authed/admin/learning";
 import type { LearningSettings } from "../../shared/learning";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 
 beforeAll(() => GlobalRegistrator.register());
 afterAll(() => GlobalRegistrator.unregister());
@@ -62,8 +69,18 @@ test("an administrator excludes a Bot and saves without losing the default or pa
     { preconnect: originalFetch.preconnect },
   );
   const view = page();
-  const participation = await view.findByLabelText("bot participation");
-  fireEvent.change(participation, { target: { value: "exclude" } });
+  const user = userEvent.setup({ document: view.baseElement.ownerDocument });
+  /*
+   * The participation control is the ui Select (H06): a trigger button opening a listbox, so it is
+   * driven the way the app's other Select tests drive one (click trigger, click option), not with a
+   * native select's change event.
+   */
+  await user.click(
+    await view.findByRole("button", { name: "bot participation" }),
+  );
+  await user.click(
+    await view.findByRole("option", { name: "Exclude from Learning" }),
+  );
   fireEvent.click(view.getByRole("button", { name: "Save Learning settings" }));
   await waitFor(() =>
     expect(saved).toEqual({

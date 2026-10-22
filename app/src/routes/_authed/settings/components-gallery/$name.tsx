@@ -1,6 +1,6 @@
 import { IconCode, IconTag } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ComponentPreview } from "@/components/component-preview";
@@ -10,7 +10,7 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { SettingsItemBackground } from "@/components/settings/background";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import {
   Empty,
   EmptyDescription,
@@ -108,13 +108,13 @@ function RouteComponent() {
               {t("gallery.missingEmpty")}
             </EmptyDescription>
           </EmptyHeader>
-          <Button
-            render={<Link to="/settings/components-gallery" />}
+          <ButtonLink
+            to="/settings/components-gallery"
             size="sm"
             variant="outline"
           >
             {t("gallery.backToGallery")}
-          </Button>
+          </ButtonLink>
         </Empty>
       </PageShell>
     );

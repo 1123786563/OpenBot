@@ -340,9 +340,12 @@ function RegisterDialog({
                       {t("botServices.fields.kind")}
                     </FieldLabel>
                     <Select
-                      onValueChange={(value) =>
-                        field.handleChange(value as "builtin" | "external")
-                      }
+                      onValueChange={(value) => {
+                        // null is the Select's "no selection", not a kind: dropping it keeps the
+                        // form's previous answer rather than casting emptiness into "builtin".
+                        if (value === null) return;
+                        field.handleChange(value);
+                      }}
                       value={field.state.value}
                     >
                       <SelectTrigger id={field.name}>

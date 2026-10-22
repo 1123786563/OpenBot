@@ -84,7 +84,7 @@ export function DataTable(props: Record<string, unknown>) {
           <caption className="sr-only">
             {t("gallery.table.sortCaption", { title })}
           </caption>
-          <thead className="bg-muted/50 text-xs text-muted-foreground">
+          <thead className="bg-ob-muted-surface/50 text-xs text-muted-foreground">
             <tr>
               {columns.map((column, index) => (
                 <th
@@ -101,7 +101,7 @@ export function DataTable(props: Record<string, unknown>) {
                 >
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between gap-3 whitespace-nowrap px-3 py-2.5 text-left hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                    className="flex w-full items-center justify-between gap-3 whitespace-nowrap px-3 py-2.5 text-left hover:bg-ob-muted-surface focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                     onClick={() =>
                       setSort({
                         column: index,
@@ -130,7 +130,7 @@ export function DataTable(props: Record<string, unknown>) {
             {ordered.map((row) => (
               <tr
                 key={row.position}
-                className="even:bg-muted/20 hover:bg-muted/40"
+                className="even:bg-ob-muted-surface/20 hover:bg-ob-muted-surface/40"
               >
                 {columns.map((column, index) => (
                   <td

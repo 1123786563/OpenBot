@@ -1,0 +1,62 @@
+{
+  "head": "203d0f0244b2f898218fa12027089c631e8448d9",
+  "branch": "feat/heroui-v3-migration",
+  "time": "2026-10-20T14:14:44.142591+00:00",
+  "fileCount": 8,
+  "files": [
+    {
+      "path": "app/src/components/ui/input.tsx",
+      "sha256": "cc0f4e5120494e19862e01fc79da5fdfe5f05e9021a47412af210415b4d4f7b0",
+      "bytes": 1792
+    },
+    {
+      "path": "app/src/components/ui/input-group.tsx",
+      "sha256": "4a9525714fc3301cdd2715c8fc32ffe529f218f9c8647a14606257412743ad90",
+      "bytes": 5553
+    },
+    {
+      "path": "app/src/components/ui/questionnaire.tsx",
+      "sha256": "1fc13d923a5be695895a40df0b06bc43640d99d4e060a6a5eefef32357719e6f",
+      "bytes": 10877
+    },
+    {
+      "path": "app/src/components/ui/sheet.tsx",
+      "sha256": "1f28b01a156e4a6401f7178c16b16930da59c8027afecb98187b6aeffe019c34",
+      "bytes": 6581
+    },
+    {
+      "path": "app/src/components/ui/dialog.tsx",
+      "sha256": "11f22bbfa49ac1058f59af3a8c231928d246e58e313d673f3d032bbae85b5df3",
+      "bytes": 18665
+    },
+    {
+      "path": "app/src/components/ui/combobox.tsx",
+      "sha256": "0a0f3eb7d9bd74747d078226442ea73b3eed14029a9ea3cf2e3152a367ff1649",
+      "bytes": 10168
+    },
+    {
+      "path": "app/tests/button-native.test.tsx",
+      "sha256": "7ab87d93113d201b84b1a6bb47c7de3b555f265fcf509e05c56e7602fe7949bd",
+      "bytes": 8642
+    },
+    {
+      "path": "app/tests/heroui-spike.test.tsx",
+      "sha256": "fdf5c423b336aec9b467eb98bec79cb119b1c3b0988fcc1f7e390ed44bb80986",
+      "bytes": 15780
+    }
+  ],
+  "PRE-R1_patches": [
+    "../PRE-R1/tracked-staged.patch",
+    "../PRE-R1/tracked-unstaged.patch"
+  ],
+  "changedFromPRE": [
+    "app/src/components/ui/input.tsx",
+    "app/src/components/ui/input-group.tsx",
+    "app/src/components/ui/questionnaire.tsx",
+    "app/src/components/ui/sheet.tsx",
+    "app/src/components/ui/dialog.tsx",
+    "app/src/components/ui/combobox.tsx"
+  ],
+  "delta": "delta.patch",
+  "deltaSha256": "8745eb9c29ec3f7d5296f560071de2a893ecd23b822401edae4f2af6be37af75"
+}

@@ -73,7 +73,7 @@ function ArtifactRow({
           {isMarkdown ? (
             <a
               href={exportDocxUrl(sessionId, artifact.path)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-ob-hover"
             >
               <IconFileTypeDocx className="size-3.5" />
               {t("artifacts.word")}
@@ -82,7 +82,7 @@ function ArtifactRow({
           <a
             href={artifactUrl(sessionId, artifact.path)}
             download={artifact.name}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-ob-hover"
           >
             <IconDownload className="size-3.5" />
             {t("artifacts.download")}

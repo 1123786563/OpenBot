@@ -1,8 +1,14 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import { Item, ItemContent, ItemTitle } from "@/components/ui/item";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -27,6 +33,9 @@ test("a row drawn as a disabled button is dimmed and takes no pointer", () => {
   );
   const row = view.getByRole("button", { name: "Run now" });
   expect(row.hasAttribute("disabled")).toBe(true);
-  expect(row.className).toContain("disabled:opacity-50");
+  expect(row.className).toContain(
+    "disabled:text-[var(--ob-disabled-foreground)]",
+  );
+  expect(row.className).toContain("disabled:opacity-100");
   expect(row.className).toContain("disabled:pointer-events-none");
 });

@@ -1,0 +1,329 @@
+--- a/app/src/routes/_authed/_app/craft/tasks.tsx
++++ b/app/src/routes/_authed/_app/craft/tasks.tsx
+@@ -1,16 +1,13 @@
+ import { IconPlus } from "@tabler/icons-react";
+ import { useQuery } from "@tanstack/react-query";
+ import { createFileRoute } from "@tanstack/react-router";
+-import { useCallback, useEffect, useState } from "react";
+ import { useTranslation } from "react-i18next";
+ import { z } from "zod";
+ import {
++  CraftTaskEditorPresenter,
+   ScheduledRunStatusChip,
+-  type ScheduledTaskDraft,
+-  ScheduledTaskEditor,
+ } from "@/components/craft/scheduled-task-editor";
+ import { SessionSidebar } from "@/components/craft/session-sidebar";
+-import { DetailPanel } from "@/components/layout/detail-panel";
+ import {
+   PageRows,
+   PageSection,
+@@ -57,53 +54,16 @@
+   const showCreate = isCreating === true;
+   const showEdit = !showCreate && editingId !== undefined;
+   const tasks = useQuery(scheduledTasksQueryOptions());
+-  const editorKey = showCreate ? "new" : editingId ? `edit:${editingId}` : "";
+-  const [taskDraft, setTaskDraft] = useState<{
+-    key: string;
+-    value: ScheduledTaskDraft;
+-    dirty: boolean;
+-  }>();
+-  const current = taskDraft?.key === editorKey ? taskDraft : undefined;
+-  const currentDraft = current?.value;
+-  useEffect(() => {
+-    if (!showCreate && !showEdit) setTaskDraft(undefined);
+-  }, [showCreate, showEdit]);
+-  const saveDraft = useCallback(
+-    (value: ScheduledTaskDraft, dirty: boolean) =>
+-      setTaskDraft({ key: editorKey, value, dirty }),
+-    [editorKey],
+-  );
+-  const finish = () => {
+-    setTaskDraft(undefined);
+-    navigate({ search: {} });
+-  };
++  const finish = () => navigate({ search: {} });
+ 
+   return (
+     <div className="flex min-h-0 flex-1">
+       <SessionSidebar />
+-      <DetailPanel
+-        detail={
+-          showCreate ? (
+-            <ScheduledTaskEditor
+-              key={editorKey}
+-              draft={currentDraft}
+-              draftDirty={current?.dirty}
+-              onDraftChange={saveDraft}
+-              onDone={finish}
+-            />
+-          ) : showEdit ? (
+-            <ScheduledTaskEditor
+-              key={editorKey}
+-              draft={currentDraft}
+-              draftDirty={current?.dirty}
+-              onDraftChange={saveDraft}
+-              taskId={editingId}
+-              onDone={finish}
+-            />
+-          ) : null
+-        }
++      <CraftTaskEditorPresenter
++        active={showCreate || showEdit}
++        create={showCreate}
++        taskId={showEdit ? editingId : undefined}
+         onClose={finish}
+-        open={showCreate || showEdit}
+       >
+         <PageShell
+           title={t("tasks.title")}
+@@ -147,7 +107,7 @@
+             )}
+           </PageSection>
+         </PageShell>
+-      </DetailPanel>
++      </CraftTaskEditorPresenter>
+     </div>
+   );
+ }
+--- a/app/src/components/craft/scheduled-task-editor.tsx
++++ b/app/src/components/craft/scheduled-task-editor.tsx
+@@ -1,7 +1,8 @@
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { Link } from "@tanstack/react-router";
+-import { useEffect, useState } from "react";
++import { type ReactNode, useCallback, useEffect, useState } from "react";
+ import { useTranslation } from "react-i18next";
++import { DetailPanel } from "@/components/layout/detail-panel";
+ import { Button } from "@/components/ui/button";
+ import { Checkbox } from "@/components/ui/checkbox";
+ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+@@ -705,3 +706,56 @@
+     </div>
+   );
+ }
++
++/** Route-owned editor draft presenter shared by the task page and its behavior tests. */
++export function CraftTaskEditorPresenter({
++  active,
++  create,
++  taskId,
++  onClose,
++  children,
++}: {
++  active: boolean;
++  create: boolean;
++  taskId?: string;
++  onClose: () => void;
++  children: ReactNode;
++}) {
++  const [taskDraft, setTaskDraft] = useState<{
++    key: string;
++    value: ScheduledTaskDraft;
++    dirty: boolean;
++  }>();
++  const editorKey = create ? "new" : taskId ? `edit:${taskId}` : "";
++  const current = taskDraft?.key === editorKey ? taskDraft : undefined;
++  const saveDraft = useCallback(
++    (value: ScheduledTaskDraft, dirty: boolean) =>
++      setTaskDraft({ key: editorKey, value, dirty }),
++    [editorKey],
++  );
++
++  useEffect(() => {
++    if (!active) setTaskDraft(undefined);
++  }, [active]);
++
++  return (
++    <DetailPanel
++      detail={
++        active ? (
++          <ScheduledTaskEditor
++            key={editorKey}
++            draft={current?.value}
++            draftDirty={current?.dirty}
++            onDraftChange={saveDraft}
++            {...(!create && taskId ? { taskId } : {})}
++            onDone={onClose}
++          />
++        ) : null
++      }
++      onClose={onClose}
++      open={active}
++    >
++      {children}
++    </DetailPanel>
++  );
++}
+--- a/app/tests/detail-panel.test.tsx
++++ b/app/tests/detail-panel.test.tsx
+@@ -9,7 +9,7 @@
+   waitFor,
+ } from "@testing-library/react";
+ import { useEffect, useState } from "react";
+-import { ScheduledTaskEditor } from "@/components/craft/scheduled-task-editor";
++import { CraftTaskEditorPresenter } from "@/components/craft/scheduled-task-editor";
+ import { DetailPanel } from "@/components/layout/detail-panel";
+ import { SidebarShell } from "@/components/layout/sidebar-shell";
+ import { Sidebar, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+@@ -319,50 +319,33 @@
+     });
+   }) as typeof fetch;
+ 
+-  let routedDraft:
+-    | import("@/components/craft/scheduled-task-editor").ScheduledTaskDraft
+-    | undefined;
+-  let routedDirty = false;
+-  const onDraftChange = (draft: typeof routedDraft & {}, dirty: boolean) => {
+-    routedDraft = draft;
+-    routedDirty = dirty;
+-  };
+   const queryClient = new QueryClient({
+     defaultOptions: { queries: { retry: false } },
+   });
+   function Harness({ compact }: { compact: boolean }) {
+     return (
+       <QueryClientProvider client={queryClient}>
+-        <DetailPanel
+-          open
+-          title="Edit task"
++        <CraftTaskEditorPresenter
++          active
++          create={false}
++          taskId="task-1"
+           onClose={() => {}}
+-          detail={
+-            <ScheduledTaskEditor
+-              taskId="task-1"
+-              onDone={() => {}}
+-              draft={routedDraft}
+-              draftDirty={routedDirty}
+-              onDraftChange={onDraftChange}
+-            />
+-          }
+         >
+           <output>{compact ? "compact" : "wide"}</output>
+-        </DetailPanel>
++        </CraftTaskEditorPresenter>
+       </QueryClientProvider>
+     );
+   }
+   const view = render(<Harness compact={false} />);
+   try {
+     await waitFor(() => expect(view.getByRole("status")).toBeTruthy());
+-    expect(routedDraft).toBeUndefined();
+     await resize(view.container, 880);
+-    expect(view.queryByRole("dialog", { name: "Edit task" })).toBeNull();
++    expect(view.queryByRole("dialog", { name: "Details" })).toBeNull();
+     await resize(view.container, 879);
+-    expect(await view.findByRole("dialog", { name: "Edit task" })).toBeTruthy();
++    expect(await view.findByRole("dialog", { name: "Details" })).toBeTruthy();
+     await resize(view.container, 880);
+     await waitFor(() =>
+-      expect(view.queryByRole("dialog", { name: "Edit task" })).toBeNull(),
++      expect(view.queryByRole("dialog", { name: "Details" })).toBeNull(),
+     );
+     await act(async () => {
+       resolveTask?.(
+@@ -391,15 +374,18 @@
+         "Loaded task",
+       ),
+     );
+-    expect(routedDraft?.name).toBe("Loaded task");
+-    expect(routedDirty).toBe(false);
++    expect(
++      view.getByText(
++        (_text, element) => element?.getAttribute("data-dirty") === "false",
++      ),
++    ).toBeTruthy();
+   } finally {
+     globalThis.fetch = originalFetch;
+     queryClient.clear();
+   }
+ });
+ 
+-test("switching edit identity loads and saves only the selected task", async () => {
++test("production task presenter retains dirty A across resize and isolates B", async () => {
+   const originalFetch = globalThis.fetch;
+   const updates: Array<{ path: string; body: Record<string, unknown> }> = [];
+   const task = (id: string) => ({
+@@ -436,20 +422,14 @@
+   function Harness({ taskId }: { taskId: string }) {
+     return (
+       <QueryClientProvider client={queryClient}>
+-        <DetailPanel
+-          open
+-          title="Edit task"
++        <CraftTaskEditorPresenter
++          active
++          create={false}
++          taskId={taskId}
+           onClose={() => {}}
+-          detail={
+-            <ScheduledTaskEditor
+-              key={`edit:${taskId}`}
+-              taskId={taskId}
+-              onDone={() => {}}
+-            />
+-          }
+         >
+           <p>Task list</p>
+-        </DetailPanel>
++        </CraftTaskEditorPresenter>
+       </QueryClientProvider>
+     );
+   }
+@@ -458,12 +438,53 @@
+     await waitFor(() =>
+       expect(view.getByLabelText(/name/i)).toHaveProperty("value", "Task A"),
+     );
++    const nameInput = view.getByLabelText(/name/i) as HTMLInputElement;
++    const reactPropsKey = Object.keys(nameInput).find((key) =>
++      key.startsWith("__reactProps$"),
++    );
++    const reactProps = reactPropsKey
++      ? (
++          nameInput as unknown as Record<
++            string,
++            { onChange?: (event: unknown) => void }
++          >
++        )[reactPropsKey]
++      : undefined;
++    await act(async () => {
++      reactProps?.onChange?.({ target: { value: "A dirty value" } });
++    });
++    await waitFor(() =>
++      expect(
++        view.getByText(
++          (_text, element) => element?.getAttribute("data-dirty") === "true",
++        ),
++      ).toBeTruthy(),
++    );
++    expect((view.getByLabelText(/name/i) as HTMLInputElement).value).toBe(
++      "A dirty value",
++    );
++    await resize(view.container, 880);
++    expect(view.queryByRole("dialog", { name: "Details" })).toBeNull();
++    await resize(view.container, 879);
++    expect(await view.findByRole("dialog", { name: "Details" })).toBeTruthy();
++    await resize(view.container, 880);
++    await waitFor(() =>
++      expect(view.queryByRole("dialog", { name: "Details" })).toBeNull(),
++    );
++    expect((view.getByLabelText(/name/i) as HTMLInputElement).value).toBe(
++      "A dirty value",
++    );
++    expect(view.container.querySelector('[data-dirty="true"]')).toBeTruthy();
++
+     view.rerender(<Harness taskId="B" />);
+     await waitFor(() =>
+       expect(view.getByLabelText(/name/i)).toHaveProperty("value", "Task B"),
+     );
+     expect((view.getByLabelText(/prompt/i) as HTMLTextAreaElement).value).toBe(
+       "Prompt B",
++    );
++    expect((view.getByLabelText(/name/i) as HTMLInputElement).value).not.toBe(
++      "A dirty value",
+     );
+     fireEvent.click(view.getByRole("button", { name: /save/i }));
+     await waitFor(() => expect(updates).toHaveLength(1));

@@ -1,0 +1,263 @@
+diff --git a/app/src/components/ai-observability/run-steps.tsx b/app/src/components/ai-observability/run-steps.tsx
+index 5d9faf25..e7941e38 100644
+--- a/app/src/components/ai-observability/run-steps.tsx
++++ b/app/src/components/ai-observability/run-steps.tsx
+@@ -252,9 +252,40 @@ function StepNode({ node }: { node: StepNodeModel }) {
+             {meta.join(" · ")}
+           </ItemDescription>
+           {summary !== null ? (
+-            // The payload preview is a summary, so it clamps; the record keeps the whole.
+             <ItemDescription>{summary}</ItemDescription>
+           ) : null}
++          {(() => {
++            const inputText =
++              step.input == null
++                ? null
++                : projectedValueText(step.input, t("marker.truncated"));
++            const outputText =
++              step.output == null
++                ? null
++                : projectedValueText(step.output, t("marker.truncated"));
++            const hasPayload = inputText !== null || outputText !== null;
++            const payload = [inputText, outputText]
++              .filter((value): value is string => value !== null)
++              .map((value) =>
++                value.length === 0 ? t("detail.steps.emptyValue") : value,
++              )
++              .join("\n");
++            return hasPayload ? (
++              <details className="mt-2 text-sm">
++                <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
++                  {t("detail.steps.showPayload")}
++                </summary>
++                <section
++                  aria-label={t("detail.steps.payloadRegion")}
++                  className="mt-2 max-w-full overflow-x-auto rounded-md border p-3"
++                >
++                  <pre className="whitespace-pre-wrap break-words font-mono text-xs">
++                    {payload}
++                  </pre>
++                </section>
++              </details>
++            ) : null;
++          })()}
+         </ItemContent>
+         <ItemActions>
+           <span className="text-muted-foreground text-xs">
+diff --git a/app/src/locales/en/ai-observability-runs.json b/app/src/locales/en/ai-observability-runs.json
+index 95eca5e2..b510e93d 100644
+--- a/app/src/locales/en/ai-observability-runs.json
++++ b/app/src/locales/en/ai-observability-runs.json
+@@ -84,6 +84,9 @@
+     },
+     "metadataEmpty": "No metadata was projected for this run.",
+     "steps": {
++      "showPayload": "Show recorded content",
++      "payloadRegion": "Recorded step content",
++      "emptyValue": "(empty value)",
+       "kind": {
+         "model": "Model call",
+         "tool": "Tool call",
+diff --git a/app/src/locales/zh-CN/ai-observability-runs.json b/app/src/locales/zh-CN/ai-observability-runs.json
+index 9c407bde..198ee0e2 100644
+--- a/app/src/locales/zh-CN/ai-observability-runs.json
++++ b/app/src/locales/zh-CN/ai-observability-runs.json
+@@ -84,6 +84,9 @@
+     },
+     "metadataEmpty": "该运行没有可投影的元数据。",
+     "steps": {
++      "showPayload": "查看记录内容",
++      "payloadRegion": "记录步骤内容",
++      "emptyValue": "（空值）",
+       "kind": {
+         "model": "模型调用",
+         "tool": "工具调用",
+diff --git a/app/tests/ai-observability-experiments.test.tsx b/app/tests/ai-observability-experiments.test.tsx
+index 78285c3f..194b3ac5 100644
+--- a/app/tests/ai-observability-experiments.test.tsx
++++ b/app/tests/ai-observability-experiments.test.tsx
+@@ -1,5 +1,4 @@
+ import "./preload";
+-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
+ import { QueryClientProvider } from "@tanstack/react-query";
+ import {
+@@ -16,6 +15,15 @@ import type {
+   ExperimentSubmitInput,
+   SubmittedExperimentResult,
+ } from "../../shared/ai-observability-experiments";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  beforeEach,
++  describe,
++  expect,
++  test,
++} from "../../tests/support/bun-test-compat";
+ import { ObservationEvaluationsPage } from "../src/components/ai-observability/evaluations-page";
+ import { ObservationExperimentResultsPage } from "../src/components/ai-observability/experiment-results";
+ // English copy: the i18n bundles initialize on import, so assertions see real sentences.
+@@ -451,6 +459,31 @@ async function openReadyDialog(view: ReturnType<typeof draw>) {
+   return { user, dialog };
+ }
+ 
++describe("dataset read availability (P19)", () => {
++  test("a dataset read failure is unavailable and offers no submit action", async () => {
++    listHandler = () => new Response(null, { status: 502 });
++    const view = draw();
++    await view.findAllByText("Upstream unavailable");
++    expect(view.queryByRole("dialog")).toBeNull();
++    expect(
++      view.queryByRole("button", { name: /Run an experiment/ }),
++    ).toBeNull();
++    expect(view.queryByText("Submit experiment")).toBeNull();
++  });
++
++  test("an empty dataset list keeps the empty state and entry action", async () => {
++    listHandler = () => Response.json(datasetsBody([]));
++    const view = draw();
++    await view.findByText(
++      "Pick a frozen dataset version and a Bot configuration to submit the first experiment.",
++    );
++    expect(view.queryByRole("dialog")).toBeNull();
++    expect(
++      view.getByRole("button", { name: /Run an experiment/ }),
++    ).toBeTruthy();
++  });
++});
++
+ describe("submitting an experiment freezes the T22 contract (acceptance 1)", () => {
+   test("the dialog offers this Bot's datasets and frozen versions, and submits the seven-field configuration", async () => {
+     listHandler = () => Response.json(datasetsBody([datasetRow()]));
+@@ -753,7 +786,14 @@ describe("the results page answers the report (acceptance 1 and 2)", () => {
+       });
+     const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
+     await waitFor(() => expect(pageText(view)).toContain("Judge 0.82"));
+-    expect(pageText(view)).toContain("It agrees with the reference answer.");
++    const disclosure = view.getAllByText("Show details")[0]?.closest("details");
++    expect(disclosure?.open).toBe(false);
++    const user = userEvent.setup({ document: view.container.ownerDocument });
++    await user.click(view.getAllByText("Show details")[0]!);
++    expect(disclosure?.open).toBe(true);
++    expect(disclosure?.textContent).toContain(
++      "It agrees with the reference answer.",
++    );
+   });
+ 
+   test("a failed judge record renders its own code, never a guessed score (T27-rn L-3)", async () => {
+diff --git a/app/tests/ai-observability-run-steps.test.tsx b/app/tests/ai-observability-run-steps.test.tsx
+index 15a34c2e..7f8abe82 100644
+--- a/app/tests/ai-observability-run-steps.test.tsx
++++ b/app/tests/ai-observability-run-steps.test.tsx
+@@ -1,5 +1,4 @@
+ import "./preload";
+-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import {
+@@ -9,12 +8,21 @@ import {
+   createRouter,
+   RouterProvider,
+ } from "@tanstack/react-router";
+-import { cleanup, render, waitFor } from "@testing-library/react";
++import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+ import type {
+   RunDetailResult,
+   RunStep,
+   RunUsageReport,
+ } from "../../shared/ai-observability-runs";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  beforeEach,
++  describe,
++  expect,
++  test,
++} from "../../tests/support/bun-test-compat";
+ import { ObservationRunDetailPage } from "../src/components/ai-observability/run-detail";
+ // English copy: the i18n bundles initialize on import, so assertions see real sentences.
+ import "@/lib/i18n";
+@@ -534,10 +542,81 @@ describe("retrieval steps show the query and the hit summary (acceptance 3)", ()
+     const view = draw();
+     await waitFor(() => expect(pageText(view)).toContain("partial"));
+     expect(pageText(view)).toContain("Truncated");
++    const disclosure = view
++      .getByText("Show recorded content")
++      .closest("details");
++    expect(disclosure?.open).toBe(false);
++    fireEvent.click(view.getByText("Show recorded content"));
++    expect(disclosure?.open).toBe(true);
++    expect(disclosure?.textContent).toContain("partial · Truncated");
+   });
+ });
+ 
+ describe("missing and malformed data fails closed (acceptance 4)", () => {
++  test("a projected empty string is disclosed while null, missing and omitted values stay absent (P17)", async () => {
++    stepsHandler = () =>
++      Response.json(
++        stepsBody([
++          step({
++            spanId: "empty-payload",
++            name: "empty_payload",
++            output: { state: "projected", value: "" },
++          }),
++          step({
++            spanId: "null-payload",
++            name: "null_payload",
++            input: null,
++            output: null,
++          } as unknown as RunStep),
++          step({ spanId: "missing-payload", name: "missing_payload" }),
++          step({
++            spanId: "omitted-payload",
++            name: "omitted_payload",
++            input: { state: "omitted" },
++            output: undefined,
++          }),
++        ]),
++      );
++    const view = draw();
++    await waitFor(() => expect(stepNode(view, "empty-payload")).not.toBeNull());
++
++    const emptyNode = stepNode(view, "empty-payload");
++    const disclosure = emptyNode?.querySelector("details");
++    expect(disclosure).not.toBeNull();
++    expect(disclosure?.textContent).toContain("(empty value)");
++    expect(stepNode(view, "null-payload")?.querySelector("details")).toBeNull();
++    expect(
++      stepNode(view, "missing-payload")?.querySelector("details"),
++    ).toBeNull();
++    expect(
++      stepNode(view, "omitted-payload")?.querySelector("details"),
++    ).toBeNull();
++  });
++
++  test("null and omitted payloads keep the step tree renderable without empty disclosures (P17)", async () => {
++    stepsHandler = () =>
++      Response.json(
++        stepsBody([
++          step({
++            spanId: "null-payload",
++            name: "null_payload",
++            input: null,
++            output: null,
++          } as unknown as RunStep),
++          step({
++            spanId: "omitted-payload",
++            name: "omitted_payload",
++            input: { state: "omitted" },
++            output: undefined,
++          }),
++        ]),
++      );
++    const view = draw();
++    await waitFor(() => expect(stepNode(view, "null-payload")).not.toBeNull());
++    expect(stepNode(view, "omitted-payload")).not.toBeNull();
++    expect(view.queryAllByText("Show recorded content")).toHaveLength(0);
++  });
++
+   test("a malformed steps body is the unavailable fault, and the page keeps its facts", async () => {
+     stepsHandler = () => Response.json({ steps: "no" });
+     const view = draw();

@@ -1,0 +1,250 @@
+import {
+  IconBell,
+  IconChevronRight,
+  IconMessage,
+  IconPlayerPause,
+} from "@tabler/icons-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import type * as React from "react";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { AbstractAvatar } from "@/components/agents/abstract-avatar";
+import { BotNeedsYou } from "@/components/approvals/waiting";
+import { PageRows, PageSection } from "@/components/layout/page-shell";
+import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
+import { SuggestionsInbox } from "@/components/suggestions/proactive-panel";
+import { Button } from "@/components/ui/button";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import type { AgentProfile } from "@/lib/agents/queries";
+import {
+  setBotNotifyMutationOptions,
+  setBotPausedMutationOptions,
+} from "@/lib/bot-lifecycle/mutations";
+import {
+  type BotNotify,
+  botLifecycleQueryOptions,
+} from "@/lib/bot-lifecycle/queries";
+import { queryClient } from "@/query-client";
+import { BotActivitySections } from "./activity";
+import { BotPausedBanner } from "./pause-banner";
+
+/* Key literals stay literal so `t(...)` sees a known key, not `string`. */
+const NOTIFY_LABEL = {
+  all: "botProfile.notify.all",
+  needs_input: "botProfile.notify.needsInput",
+  none: "botProfile.notify.none",
+} as const satisfies Record<BotNotify, string>;
+
+/** A Bot's own page: its state for you, what it is doing, its settings, and what can be done to it. */
+export function BotProfile({
+  agent,
+  settings,
+  manage,
+}: {
+  agent: AgentProfile;
+  /** The "Settings for this Bot" card. */
+  settings?: React.ReactNode;
+  /** Pin, hide, duplicate, reset, delete. */
+  manage?: React.ReactNode;
+}) {
+  const { t } = useTranslation("agents");
+  const lifecycle = useQuery(botLifecycleQueryOptions(agent.id));
+  // The label map, its values translated from the key literals above.
+  const notifyLabels: Record<BotNotify, string> = {
+    all: t(NOTIFY_LABEL.all),
+    needs_input: t(NOTIFY_LABEL.needs_input),
+    none: t(NOTIFY_LABEL.none),
+  };
+  const pause = useMutation(setBotPausedMutationOptions(queryClient));
+  const notify = useMutation(setBotNotifyMutationOptions(queryClient));
+  const [permission, setPermission] = useState<string>(() => {
+    try {
+      return typeof Notification === "undefined"
+        ? "unsupported"
+        : Notification.permission;
+    } catch {
+      return "unsupported";
+    }
+  });
+
+  return (
+    <>
+      <div className="mt-6 flex min-w-0 items-center gap-3">
+        <AbstractAvatar name={agent.name} seed={agent.avatarSeed} size={32} />
+        <div className="min-w-0">
+          <p className="break-words font-semibold text-base">{agent.name}</p>
+          <p className="break-words text-muted-foreground text-sm">
+            {agent.title}
+          </p>
+          <p className="break-words text-muted-foreground text-sm">
+            {agent.roleDescription}
+          </p>
+        </div>
+      </div>
+      <div className="mt-4">
+        <BotPausedBanner agentId={agent.id} />
+      </div>
+
+      <BotNeedsYou agentId={agent.id} />
+      <SuggestionsInbox agentId={agent.id} />
+
+      <PageSection title={t("botProfile.forYou")}>
+        {/* Whether this Bot's Shared-app calls are being refused right now, with the button that
+            asks an administrator. About its present reach, so it lives here, not only where
+            publishing happens. */}
+        {agent.canManage ? (
+          <SharedAppNotice botId={agent.id} reason="publish" />
+        ) : null}
+        {lifecycle.isPending ? null : lifecycle.error ? (
+          <p className="mt-4 text-destructive text-sm" role="alert">
+            {t("botProfile.stateLoadError")}
+          </p>
+        ) : (
+          <PageRows>
+            <Item size="sm">
+              <ItemMedia variant="icon">
+                <IconPlayerPause />
+              </ItemMedia>
+              <ItemContent>
+                {/* On means working, the way a responsibility's Active switch reads: titled "Paused",
+                    the row showed the word "Paused" beside a switch that was off for a running Bot. */}
+                <ItemTitle>{t("botProfile.active")}</ItemTitle>
+                <ItemDescription>
+                  {lifecycle.data.paused
+                    ? t("botProfile.activeOn")
+                    : t("botProfile.activeOff")}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Switch
+                  aria-label={t("botProfile.active")}
+                  checked={!lifecycle.data.paused}
+                  disabled={pause.isPending}
+                  onCheckedChange={(active) =>
+                    pause.mutate({ agentId: agent.id, paused: !active })
+                  }
+                />
+              </ItemActions>
+            </Item>
+            <Separator />
+            <Item size="sm">
+              <ItemMedia variant="icon">
+                <IconBell />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>{t("botProfile.notifications.title")}</ItemTitle>
+                <ItemDescription>
+                  {t(NOTIFY_LABEL[lifecycle.data.notify])}.{" "}
+                  {t("botProfile.notifications.badgesAlways")}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Select
+                  disabled={notify.isPending}
+                  // The label map, so the closed trigger says "Everything" rather than the raw value.
+                  items={notifyLabels}
+                  onValueChange={(next) => {
+                    // null is the Select's "nothing chosen" (dismiss); the saved answer stays.
+                    if (next === null || next === lifecycle.data.notify) return;
+                    notify.mutate({
+                      agentId: agent.id,
+                      notify: next,
+                    });
+                  }}
+                  value={lifecycle.data.notify}
+                >
+                  <SelectTrigger
+                    aria-label={t("botProfile.notifications.title")}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(NOTIFY_LABEL) as BotNotify[]).map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {notifyLabels[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ItemActions>
+            </Item>
+            {permission === "default" ? (
+              <>
+                <Separator />
+                <Item size="sm">
+                  <ItemMedia variant="icon">
+                    <IconBell />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>
+                      {t("botProfile.browserNotifications.title")}
+                    </ItemTitle>
+                    <ItemDescription>
+                      {t("botProfile.browserNotifications.off")}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <Button
+                      onClick={async () => {
+                        try {
+                          setPermission(await Notification.requestPermission());
+                        } catch {
+                          setPermission("unsupported");
+                        }
+                      }}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {t("botProfile.browserNotifications.turnOn")}
+                    </Button>
+                  </ItemActions>
+                </Item>
+              </>
+            ) : null}
+            <Separator />
+            <Item
+              render={<Link to="/channel/new" search={{ agent: agent.id }} />}
+              size="sm"
+            >
+              <ItemMedia variant="icon">
+                <IconMessage />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>
+                  {t("botProfile.message.title", { name: agent.name })}
+                </ItemTitle>
+                <ItemDescription>
+                  {t("botProfile.message.description")}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <IconChevronRight className="size-4 text-muted-foreground" />
+              </ItemActions>
+            </Item>
+          </PageRows>
+        )}
+      </PageSection>
+
+      <BotActivitySections agentId={agent.id} />
+      {settings}
+      {manage}
+    </>
+  );
+}

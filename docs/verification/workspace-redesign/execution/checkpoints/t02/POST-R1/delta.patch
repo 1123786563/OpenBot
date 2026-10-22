@@ -1,0 +1,90 @@
+--- a/app/src/components/ui/input.tsx
++++ b/app/src/components/ui/input.tsx
+@@ -18,7 +18,7 @@
+       type={type}
+       data-slot="input"
+       className={cn(
+-        "h-9 w-full min-w-0 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-base transition-colors outline-none shadow-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 md:text-sm",
++        "h-9 min-h-9 w-full min-w-0 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-base transition-colors outline-none shadow-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 pointer-coarse:!h-11 pointer-coarse:!min-h-11 md:text-sm",
+         className,
+       )}
+       {...props}
+--- a/app/src/components/ui/input-group.tsx
++++ b/app/src/components/ui/input-group.tsx
+@@ -11,7 +11,7 @@
+       data-slot="input-group"
+       role="group"
+       className={cn(
+-        "group/input-group relative flex h-9 w-full min-w-0 items-center rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] transition-colors outline-none in-data-[slot=combobox-content]:focus-within:border-inherit in-data-[slot=combobox-content]:focus-within:ring-0 has-disabled:border-[var(--ob-control-border)] has-disabled:bg-[var(--ob-disabled-background)] has-disabled:text-[var(--ob-disabled-foreground)] has-[[data-slot=input-group-control]:focus-visible]:border-[var(--ob-focus)] has-[[data-slot=input-group-control]:focus-visible]:outline-2 has-[[data-slot=input-group-control]:focus-visible]:outline-offset-2 has-[[data-slot=input-group-control]:focus-visible]:outline-[var(--ob-focus)] has-[[data-slot][aria-invalid=true]]:border-[var(--ob-danger)] has-[[data-slot][aria-invalid=true]]:bg-[var(--ob-field-background)] has-[[data-slot][aria-invalid=true]]:ring-2 has-[[data-slot][aria-invalid=true]]:ring-[var(--ob-danger)]/20 has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>textarea]:h-auto has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
++        "group/input-group relative flex h-9 min-h-9 w-full min-w-0 items-center rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] transition-colors outline-none pointer-coarse:!h-11 pointer-coarse:!min-h-11 in-data-[slot=combobox-content]:focus-within:border-inherit in-data-[slot=combobox-content]:focus-within:ring-0 has-disabled:border-[var(--ob-control-border)] has-disabled:bg-[var(--ob-disabled-background)] has-disabled:text-[var(--ob-disabled-foreground)] has-[[data-slot=input-group-control]:focus-visible]:border-[var(--ob-focus)] has-[[data-slot=input-group-control]:focus-visible]:outline-2 has-[[data-slot=input-group-control]:focus-visible]:outline-offset-2 has-[[data-slot=input-group-control]:focus-visible]:outline-[var(--ob-focus)] has-[[data-slot][aria-invalid=true]]:border-[var(--ob-danger)] has-[[data-slot][aria-invalid=true]]:bg-[var(--ob-field-background)] has-[[data-slot][aria-invalid=true]]:ring-2 has-[[data-slot][aria-invalid=true]]:ring-[var(--ob-danger)]/20 has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>textarea]:h-auto has-[>[data-align=block-end]]:[&>input]:pt-3 has-[>[data-align=block-start]]:[&>input]:pb-3 has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
+         className,
+       )}
+       {...props}
+--- a/app/src/components/ui/questionnaire.tsx
++++ b/app/src/components/ui/questionnaire.tsx
+@@ -167,7 +167,7 @@
+       <QuestionnairePrimitive.Input
+         data-slot="questionnaire-input"
+         className={cn(
+-          "h-8 min-h-11 w-full min-w-0 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-base transition-[color,box-shadow,background-color] outline-none focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 sm:min-h-0 md:text-sm",
++          "h-8 min-h-8 w-full min-w-0 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-base transition-[color,box-shadow,background-color] outline-none focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 pointer-coarse:!h-11 pointer-coarse:!min-h-11 md:text-sm",
+           "selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground",
+           className,
+         )}
+--- a/app/src/components/ui/sheet.tsx
++++ b/app/src/components/ui/sheet.tsx
+@@ -28,10 +28,10 @@
+  * `max-w-[85vw]`, which would clip the 18rem mobile sidebar on a 320px viewport.
+  */
+ const SIDE_CLASSES: Record<Side, string> = {
+-  top: "h-auto max-h-none w-full rounded-none border-b",
+-  bottom: "h-auto max-h-none w-full rounded-none border-t",
+-  left: "h-full w-3/4 max-w-none rounded-none border-r sm:max-w-sm",
+-  right: "h-full w-3/4 max-w-none rounded-none border-l sm:max-w-sm",
++  top: "h-auto max-h-none w-full rounded-t-none border-b",
++  bottom: "h-auto max-h-none w-full rounded-b-none border-t",
++  left: "h-full w-full max-w-none rounded-l-none border-r md:w-[min(24rem,calc(100vw-32px))]",
++  right: "h-full w-full max-w-none rounded-r-none border-l md:w-[min(24rem,calc(100vw-32px))]",
+ };
+ 
+ type SheetProps = Omit<React.ComponentProps<typeof Drawer>, "isOpen"> & {
+@@ -117,6 +117,7 @@
+           className={cn(
+             "flex flex-col gap-4 rounded-2xl bg-overlay p-0 text-sm text-overlay-foreground shadow-lg",
+             SIDE_CLASSES[side],
++            side === "left" ? "rounded-r-2xl" : side === "right" ? "rounded-l-2xl" : side === "top" ? "rounded-b-2xl" : "rounded-t-2xl",
+             className,
+           )}
+           /*
+--- a/app/src/components/ui/dialog.tsx
++++ b/app/src/components/ui/dialog.tsx
+@@ -384,7 +384,8 @@
+           data-slot="dialog-content"
+           className={cn(
+             "flex flex-col gap-4 rounded-2xl bg-overlay text-overlay-foreground text-sm",
+-            capped && "max-h-[85svh]!",
++            capped && "!m-4 !max-h-[calc(100dvh-32px)]! !max-w-[calc(100vw-32px)]! overflow-y-auto",
++            capped && size === "lg" && "!w-[min(512px,calc(100vw-32px))]!",
+             className,
+           )}
+           {...props}
+--- a/app/src/components/ui/combobox.tsx
++++ b/app/src/components/ui/combobox.tsx
+@@ -136,7 +136,7 @@
+         placement="bottom start"
+         shouldFlip
+         aria-label={placeholder}
+-        className="relative max-h-64 min-w-40 overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 enter:transition enter:duration-100"
++        className="relative flex max-h-[min(320px,calc(100dvh-32px))] min-w-40 flex-col overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 enter:transition enter:duration-100"
+       >
+         <div
+           data-slot="combobox-chips"
+@@ -197,7 +197,7 @@
+             requestAnimationFrame(() => inputRef.current?.focus());
+           }}
+           items={filtered}
+-          className="max-h-72 scroll-py-1 overflow-y-auto overscroll-contain p-1 outline-none"
++          className="min-h-0 flex-1 scroll-py-1 overflow-y-auto overscroll-contain p-1 outline-none"
+         >
+           {(item) => (
+             <ListBoxItem

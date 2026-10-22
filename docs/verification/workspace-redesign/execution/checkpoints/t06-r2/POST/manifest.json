@@ -1,0 +1,27 @@
+[
+  {
+    "path": "app/src/components/ai-observability/run-steps.tsx",
+    "bytes": 12483,
+    "sha256": "825793e03ab23ce10bc16d8c1456c968fb90133eb278bb3b5a4f74b751d880b2"
+  },
+  {
+    "path": "app/tests/ai-observability-run-steps.test.tsx",
+    "bytes": 24189,
+    "sha256": "37a48675af3099e53675fe7787518434313dac138d878cc5a0125215ffd69ef7"
+  },
+  {
+    "path": "app/tests/ai-observability-experiments.test.tsx",
+    "bytes": 49817,
+    "sha256": "4bf92f350c7c1b64c521599a4ba301d1ca3c6741f4889633e6556ce1583bb423"
+  },
+  {
+    "path": "app/tests/ai-observability-exports.test.tsx",
+    "bytes": 27366,
+    "sha256": "7f40df8426a7fbea1fb269224fa6abfd160f419b6e7a2b10f5774c833a64c182"
+  },
+  {
+    "path": "app/tests/observability-route-guards.test.tsx",
+    "bytes": 2831,
+    "sha256": "69cfc828d85bbeda51d446501b9d93267b6cad186b8b504f5d0a1f5b0198fa72"
+  }
+]

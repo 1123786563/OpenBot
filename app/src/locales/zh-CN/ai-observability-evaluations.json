@@ -112,6 +112,7 @@
     "pending_reconciliation": "等待对账",
     "sync_failure": "结果同步故障"
   },
+  "exports": { "showError": "查看失败详情" },
   "sample": {
     "scoreUnavailable": "无评分",
     "passedRules_one": "{{count}} 条规则通过",
@@ -119,6 +120,8 @@
     "failedRules_one": "{{count}} 条规则未通过",
     "failedRules_other": "{{count}} 条规则未通过",
     "usage": "用量",
+    "usageUnavailable": "用量不可用",
+    "showDetails": "显示详情",
     "judgeScored": "判分 {{score}}",
     "judgeFailed": "判分失败"
   },

@@ -1,0 +1,21 @@
+--- docs/verification/workspace-redesign/execution/checkpoints/t03-skills-draft-lifecycle/PRE-R1/untracked/app/tests/skills-draft-lifecycle.test.tsx	2026-10-21 09:36:00
++++ docs/verification/workspace-redesign/execution/checkpoints/t03-skills-draft-lifecycle/POST-R1/untracked/app/tests/skills-draft-lifecycle.test.tsx	2026-10-21 09:36:38
+@@ -145,7 +145,17 @@
+ 
+     await resize(view.container, 880);
+     await resize(view.container, 879);
+-    expect(await view.findByRole("dialog", { name: /details/i })).toBeTruthy();
++    const dialog = await view.findByRole("dialog", { name: /details/i });
++    expect(dialog).toBeTruthy();
++    const dialogTitle = dialog.querySelector(
++      'input[placeholder="My standup skill"]',
++    ) as HTMLInputElement;
++    expect(dialogTitle.value).toBe("A retained skill");
++    expect(dialogTitle.closest("form")?.getAttribute("data-dirty")).toBe(
++      "true",
++    );
++    expect(router.state.location.pathname).toBe("/skills");
++    expect(router.state.location.search).toEqual({ new: true });
+     await resize(view.container, 880);
+     await waitFor(() =>
+       expect(view.queryByRole("dialog", { name: /details/i })).toBeNull(),

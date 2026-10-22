@@ -21,6 +21,7 @@ function BotDatasetsPage() {
   return (
     <BotSubpage
       agentId={agentId}
+      width="wide"
       description={t("page.description")}
       title={t("page.title")}
     >

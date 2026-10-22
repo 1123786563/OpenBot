@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-21",
+  "page": "P04",
+  "route": "http://127.0.0.1:3011/group/channel_fb11773e-c2c8-4a9b-ae07-121cd2a96587",
+  "channelId": "channel_fb11773e-c2c8-4a9b-ae07-121cd2a96587",
+  "fixture": "created using group composer with General Assistant then Knowledge in disposable tmpfs DB; synthetic message; Intelligence loopback only",
+  "browserZoom": "200% Chrome page zoom",
+  "window": {
+    "width": 1440,
+    "height": 900
+  },
+  "after": {
+    "dpr": 4,
+    "innerWidth": 720,
+    "innerHeight": 406,
+    "scrollWidth": 720,
+    "clientWidth": 720
+  },
+  "participantOrder": {
+    "generalAssistantIndex": 34,
+    "knowledgeIndex": 53,
+    "generalFirst": true
+  },
+  "messageRetained": true,
+  "localRuntimeFailureVisible": true,
+  "horizontalOverflow": false,
+  "apiWrites": [
+    {
+      "method": "POST",
+      "path": "/api/groups",
+      "allowed": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/groups/channel_fb11773e-c2c8-4a9b-ae07-121cd2a96587",
+      "allowed": true
+    }
+  ],
+  "notes": [
+    "Only supported group creation and first-message POSTs were allowed; all other non-GET API requests were intercepted.",
+    "The configured Intelligence HTTP/WebSocket endpoints are loopback port 1; no external model/provider request was made."
+  ],
+  "runtimeErrorText": "connect ECONNREFUSED 127.0.0.1:1"
+}

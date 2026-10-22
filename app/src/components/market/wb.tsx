@@ -1,7 +1,6 @@
 import { IconCheck, IconLoader2, IconPlus } from "@tabler/icons-react";
-import { Link, type LinkProps } from "@tanstack/react-router";
-import type * as React from "react";
-import { Button } from "@/components/ui/button";
+import { Button, type ButtonProps } from "@/components/ui/button";
+import { ButtonLink, type ButtonLinkProps } from "@/components/ui/router-link";
 import { cn } from "@/lib/utils";
 
 /**
@@ -195,7 +194,7 @@ export function WbPrimaryButton({
   className,
   children,
   ...props
-}: React.ComponentProps<"button">) {
+}: ButtonProps) {
   /*
    * Delegates to the system Button for states (hover 80%, ring-3 focus, 1px press, disabled) and
    * keeps only the WB sizing (px-3.5) here — the states were the drift: opacity-85 hover and no
@@ -209,13 +208,8 @@ export function WbPrimaryButton({
 }
 
 /** The same black verb as a router link (a button cannot nest one). */
-export function WbPrimaryLink(props: LinkProps) {
-  return (
-    <Button
-      className="px-3.5"
-      render={(buttonProps) => <Link {...props} {...buttonProps} />}
-    />
-  );
+export function WbPrimaryLink(props: ButtonLinkProps) {
+  return <ButtonLink className="px-3.5" {...props} />;
 }
 
 /** The outlined secondary verb (WB's 我的专家 / 已安装(N)). */
@@ -223,7 +217,7 @@ export function WbSecondaryButton({
   className,
   children,
   ...props
-}: React.ComponentProps<"button">) {
+}: ButtonProps) {
   return (
     <Button variant="outline" className={cn("px-3", className)} {...props}>
       {children}

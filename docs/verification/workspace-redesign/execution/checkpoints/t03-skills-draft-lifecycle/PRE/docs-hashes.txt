@@ -1,0 +1,2 @@
+777c81e7a5581226ea010eed7fceae5e0d10ddbece55c3be6c9abde1d23c2851  docs/plans/2026-10-21-t03-skills-draft-lifecycle.md
+704fb686213277e5bcf3d6e89826ea62b3109d09cd74bbe88dc1d0e3bff9aab8  docs/plans/task-briefs/T03-skills-draft-lifecycle.md

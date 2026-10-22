@@ -84,6 +84,9 @@
     },
     "metadataEmpty": "No metadata was projected for this run.",
     "steps": {
+      "showPayload": "Show recorded content",
+      "payloadRegion": "Recorded step content",
+      "emptyValue": "(empty value)",
       "kind": {
         "model": "Model call",
         "tool": "Tool call",

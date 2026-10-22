@@ -66,6 +66,7 @@ export function ObservationExportsPage({
   const { t } = useTranslation("ai-observability-admin");
   return (
     <BotSubpage
+      width="wide"
       agentId={agentId}
       description={t("exports.page.description")}
       title={t("exports.page.title")}
@@ -199,13 +200,18 @@ function ExportJobRow({
               .join(" · ")}
           </ItemDescription>
           {job.state === "failed" && job.errorCode !== null ? (
-            <ItemDescription className="line-clamp-none">
-              {job.errorCode === "CAPABILITY_MISSING"
-                ? t("availability.disabled.description")
-                : t(`exports.errorCodes.${job.errorCode}`, {
-                    defaultValue: job.errorCode,
-                  })}
-            </ItemDescription>
+            <details className="mt-2 text-sm">
+              <summary className="w-fit cursor-pointer text-primary underline underline-offset-4">
+                {t("exports.showError", { ns: "ai-observability-evaluations" })}
+              </summary>
+              <ItemDescription className="mt-2 line-clamp-none">
+                {job.errorCode === "CAPABILITY_MISSING"
+                  ? t("availability.disabled.description")
+                  : t(`exports.errorCodes.${job.errorCode}`, {
+                      defaultValue: job.errorCode,
+                    })}
+              </ItemDescription>
+            </details>
           ) : null}
         </ItemContent>
         <ItemActions>

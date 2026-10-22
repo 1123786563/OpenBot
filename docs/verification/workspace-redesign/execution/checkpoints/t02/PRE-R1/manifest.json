@@ -1,0 +1,50 @@
+[
+  {
+    "path": "app/src/components/ui/input.tsx",
+    "sha256": "9d0c5924f6dac82c994c466f7ed9cf49d28ae8309e326a97ea4e681a7fe7142e",
+    "bytes": 1738,
+    "git_status": "tracked"
+  },
+  {
+    "path": "app/src/components/ui/input-group.tsx",
+    "sha256": "9d51864f6971fc036b6bce4f6b19e1bd93957e21cb1d0049e25eccace03e93b2",
+    "bytes": 5499,
+    "git_status": "tracked"
+  },
+  {
+    "path": "app/src/components/ui/questionnaire.tsx",
+    "sha256": "a70d2a62aaa578519228cde329805e6be1166969808d633a90bdbaf7509ba33a",
+    "bytes": 10843,
+    "git_status": "tracked"
+  },
+  {
+    "path": "app/src/components/ui/sheet.tsx",
+    "sha256": "5be918807ac885440eb675ac51b642d6f0e58b0fc759d737073e84b4190b7c81",
+    "bytes": 6388,
+    "git_status": "tracked"
+  },
+  {
+    "path": "app/src/components/ui/dialog.tsx",
+    "sha256": "065ab418ddf35047afbbfdbfc0feb54008596200296d9d48024091994e10e58d",
+    "bytes": 18528,
+    "git_status": "tracked"
+  },
+  {
+    "path": "app/src/components/ui/combobox.tsx",
+    "sha256": "154f8b7eded7aeb25794af2cf92ecedb1a68e5cd82db8d1197cec378f2a8a09e",
+    "bytes": 10120,
+    "git_status": "tracked"
+  },
+  {
+    "path": "app/tests/button-native.test.tsx",
+    "sha256": "7ab87d93113d201b84b1a6bb47c7de3b555f265fcf509e05c56e7602fe7949bd",
+    "bytes": 8642,
+    "git_status": "tracked"
+  },
+  {
+    "path": "app/tests/heroui-spike.test.tsx",
+    "sha256": "fdf5c423b336aec9b467eb98bec79cb119b1c3b0988fcc1f7e390ed44bb80986",
+    "bytes": 15780,
+    "git_status": "untracked"
+  }
+]

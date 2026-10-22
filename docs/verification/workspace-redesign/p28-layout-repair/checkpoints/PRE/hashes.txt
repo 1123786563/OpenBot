@@ -1,0 +1,2 @@
+2ead1965b1a33a97203e8c9de9ba1be2da327c036362db76d0cdf64cc9edaab5  app/src/components/craft/scheduled-task-editor.tsx
+b29c63f4a43553097261b120be17cd397ae60073a18a0f85c01122c994821d73  app/tests/detail-panel.test.tsx

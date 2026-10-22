@@ -1,7 +1,7 @@
 import { IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { z } from "zod";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -29,10 +29,12 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Separator } from "@/components/ui/separator";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { removeSkillMutationOptions } from "@/lib/plugins/mutations";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import type { SkillFormValues } from "@/lib/skills/form";
 
 /**
  * Personal `/` skills. They are instructions, not capabilities, and can only be granted to Bots the
@@ -76,6 +78,23 @@ function SkillsPage() {
    */
   const loading = skillsPending || mePending;
   const [error, setError] = useState<string | null>(null);
+  const draftKey = showCreate
+    ? "new"
+    : editingSlug
+      ? `edit:${editingSlug}`
+      : "";
+  const [skillDraft, setSkillDraft] = useState<{
+    key: string;
+    values: SkillFormValues;
+    dirty: boolean;
+  }>();
+  const currentDraft = skillDraft?.key === draftKey ? skillDraft : undefined;
+  useEffect(() => {
+    if (!showCreate && !showEdit) setSkillDraft(undefined);
+  }, [showCreate, showEdit]);
+  const saveDraft = (values: SkillFormValues, dirty: boolean) => {
+    setSkillDraft({ key: draftKey, values, dirty });
+  };
 
   const removeSkill = useMutation({
     ...removeSkillMutationOptions(queryClient),
@@ -100,12 +119,24 @@ function SkillsPage() {
     <DetailPanel
       detail={
         showCreate ? (
-          <NewSkill />
+          <NewSkill
+            draftDirty={currentDraft?.dirty}
+            draftValues={currentDraft?.values}
+            onDraftChange={saveDraft}
+          />
         ) : editingSlug ? (
-          <EditSkill slug={editingSlug} />
+          <EditSkill
+            draftDirty={currentDraft?.dirty}
+            draftValues={currentDraft?.values}
+            onDraftChange={saveDraft}
+            slug={editingSlug}
+          />
         ) : null
       }
-      onClose={() => navigate({ search: {} })}
+      onClose={() => {
+        setSkillDraft(undefined);
+        navigate({ search: {} });
+      }}
       open={showCreate || showEdit}
     >
       <PageShell
@@ -122,16 +153,15 @@ function SkillsPage() {
 
         <PageSection
           action={
-            <Button
-              render={(props) => (
-                <Link search={{ new: true }} to="/skills" {...props} />
-              )}
+            <ButtonLink
+              search={{ new: true }}
+              to="/skills"
               size="sm"
               variant="ghost"
             >
               <IconPlus />
               {t("newSkill")}
-            </Button>
+            </ButtonLink>
           }
           title={t("yourSkills")}
         >

@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import type { TFunction } from "i18next";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import {
   PageEmpty,
   PageRows,
@@ -30,7 +30,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { useDateTime } from "@/lib/i18n/datetime";
 import {
   type GatewayCatalogSyncResult,
   runCatalogSyncMutationOptions,
@@ -40,6 +39,7 @@ import {
   type AdminModelCatalogModel,
   gatewayModelCatalogQueryOptions,
 } from "@/lib/gateway/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 
 export const Route = createFileRoute("/_authed/admin/model-catalog")({
   component: ModelCatalogPage,
@@ -72,7 +72,6 @@ const SCOPE_REFUSAL_KEYS = [
   "model_scope_input_invalid",
   "model_scope_state_invalid",
 ] as const;
-
 
 function refusalKey(message: string): string | undefined {
   return (SCOPE_REFUSAL_KEYS as readonly string[]).includes(message)
@@ -157,7 +156,10 @@ function ModelCatalogPage() {
               ? t("modelCatalog.sync.running")
               : t("modelCatalog.sync.button")}
           </Button>
-          <span className="text-muted-foreground text-sm" data-testid="catalog-sync-result">
+          <span
+            className="text-muted-foreground text-sm"
+            data-testid="catalog-sync-result"
+          >
             {syncLine(sync.data, sync.isError, t, formatDateTime)}
           </span>
         </div>
@@ -201,8 +203,7 @@ function ModelCatalogPage() {
                     </ItemDescription>
                     {model.scope ? (
                       <ItemDescription>
-                        {t("modelCatalog.fields.reason")}:{" "}
-                        {model.scope.reason}
+                        {t("modelCatalog.fields.reason")}: {model.scope.reason}
                       </ItemDescription>
                     ) : null}
                   </ItemContent>

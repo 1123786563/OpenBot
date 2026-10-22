@@ -10,6 +10,8 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ButtonLink } from "@/components/ui/router-link";
 import {
   createSession,
   deleteSession,
@@ -67,14 +69,14 @@ export function SessionSidebar() {
         </span>
         <div className="flex items-center gap-0.5">
           {/* onyx's SidebarTab: the roster's sibling destination, one click away. */}
-          <Button
+          <ButtonLink
             size="icon"
             variant="ghost"
             aria-label={t("tasks.nav")}
-            render={(props) => <Link to="/craft/tasks" {...props} />}
+            to="/craft/tasks"
           >
             <IconCalendarClock />
-          </Button>
+          </ButtonLink>
           <Button
             size="icon"
             variant="ghost"
@@ -154,14 +156,17 @@ function SessionRow({
     <div
       className={cn(
         "group flex items-center gap-1 rounded-md px-2 py-1.5",
-        active ? "bg-muted" : "hover:bg-muted/50",
+        active ? "bg-ob-muted-surface" : "hover:bg-ob-muted-surface/50",
       )}
     >
       {editing ? (
-        <input
+        /* The app Input (H13 decisions.tsx pattern): DOM props and ref pass straight
+           through; the compact overrides shrink the field back to the roster-row density
+           the inline editor always had (tailwind-merge drops the base h-9/ring-3). */
+        <Input
           ref={inputRef}
           value={draft}
-          className="min-w-0 flex-1 rounded border border-input bg-background px-1.5 py-0.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="h-7 min-w-0 flex-1 rounded-md bg-background px-1.5 py-0.5 text-sm focus-visible:ring-1 focus-visible:ring-ring"
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {

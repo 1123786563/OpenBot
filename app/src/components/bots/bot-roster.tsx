@@ -1,8 +1,8 @@
-import { useTranslation } from "react-i18next";
 import { IconChevronRight } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import {
   attentionSummary,
@@ -150,6 +150,7 @@ function RosterRows({
           <Fragment key={agent.id}>
             {index > 0 ? <Separator /> : null}
             <Item
+              className="min-h-16 gap-3 px-4 py-3"
               render={
                 <Link params={{ agentId: agent.id }} to="/bots/$agentId" />
               }
@@ -162,11 +163,15 @@ function RosterRows({
                   size={28}
                 />
               </ItemMedia>
-              <ItemContent>
-                <ItemTitle>{agent.name}</ItemTitle>
-                <ItemDescription>{summary || agent.title}</ItemDescription>
+              <ItemContent className="min-w-0">
+                <ItemTitle className="line-clamp-2 break-words">
+                  {agent.name}
+                </ItemTitle>
+                <ItemDescription className="line-clamp-2 break-words">
+                  {summary || agent.title}
+                </ItemDescription>
               </ItemContent>
-              <ItemActions>
+              <ItemActions className="min-h-11 shrink-0">
                 {state && needsInput(state) > 0 ? (
                   <span className="rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums">
                     {needsInput(state)}

@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-21",
+  "results": [
+    {
+      "theme": "light",
+      "focusReturned": true,
+      "dialogClosed": true,
+      "reduced": true,
+      "dark": false,
+      "scroll": true
+    },
+    {
+      "theme": "dark",
+      "focusReturned": true,
+      "dialogClosed": true,
+      "reduced": true,
+      "dark": true,
+      "scroll": true
+    }
+  ],
+  "notes": "The independent reduced-motion preference was active on P06 in both themes; New Bot dialog opened and Escape closed it with focus restored to its trigger and no horizontal overflow. P03 settings-pane reduced-motion behavior was not verified in this run."
+}

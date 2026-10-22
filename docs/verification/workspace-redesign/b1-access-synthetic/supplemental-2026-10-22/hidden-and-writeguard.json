@@ -1,0 +1,89 @@
+{
+ "env": "two-account isolated env; bot published to team",
+ "owner": {
+  "home": "http://127.0.0.1:3011/",
+  "botUrl": "http://127.0.0.1:3011/bots/agent_e887ba16-9379-4fd1-b8be-13679aacbacc",
+  "botId": "agent_e887ba16-9379-4fd1-b8be-13679aacbacc",
+  "published": true
+ },
+ "peer": {
+  "home": "http://127.0.0.1:3011/"
+ },
+ "checks": [
+  {
+   "case": "owner-created-and-published",
+   "ok": true
+  },
+  {
+   "case": "peer-sees-shared-bot",
+   "ok": true
+  },
+  {
+   "case": "hidden-section-collapsed",
+   "ok": false,
+   "note": "collapsed=false"
+  },
+  {
+   "case": "hidden-keyboard-expand",
+   "ok": false
+  },
+  {
+   "case": "P08-no-write-entry",
+   "ok": false,
+   "buttons": [
+    "新建职责"
+   ]
+  },
+  {
+   "case": "P09-no-write-entry",
+   "ok": true,
+   "buttons": []
+  },
+  {
+   "case": "P10-no-write-entry",
+   "ok": false,
+   "buttons": [
+    "添加来源"
+   ]
+  },
+  {
+   "case": "P11-no-write-entry",
+   "ok": false,
+   "buttons": [
+    "添加规则一个工具或应用，以及 Bot 在使用它之前会做什么。"
+   ]
+  },
+  {
+   "case": "P12-no-write-entry",
+   "ok": true,
+   "buttons": []
+  },
+  {
+   "case": "P13-no-write-entry",
+   "ok": true,
+   "buttons": []
+  },
+  {
+   "case": "P14-no-write-entry",
+   "ok": true,
+   "buttons": []
+  },
+  {
+   "case": "P15-no-write-entry",
+   "ok": true,
+   "buttons": []
+  }
+ ],
+ "b1d_final": {
+  "hidden_via_keyboard": "P07 manage Switch focused + Space toggled hidden (input is visually covered by switch thumb, so keyboard is the supported path)",
+  "p06_collapsed": "已隐藏 section present; ReadOnly Probe Bot name absent from collapsed text (collapsedOk=true)",
+  "keyboard_expand": "Tab (13 steps) reached the 显示 (Show) BUTTON inside the hidden section header; Enter expanded it and the Bot name became visible (expanded=true)",
+  "verdict": "B1-D pass: hidden section default-collapsed and keyboard-expandable"
+ },
+ "b1e_adjudication": {
+  "finding": "Initial heuristic flagged P08 新建职责 / P10 添加来源 / P11 添加规则 as write entries for the peer.",
+  "source_check": "These are the person-level data surfaces by design: BotResponsibilities doc comment states \"a new one is that Bot's without asking\" (personal responsibilities list filtered by agent); P10 添加来源 adds the person's own memory sources; P11 添加规则 adds the person's own approval rules. They are not Bot-management entries.",
+  "bot_management_surfaces": "P14 publish / P15 endpoint+secret editing / P07 manage dangerous actions were absent or non-editable for the peer (P14/P15 no write buttons, P07 switches are personal pin/hide only).",
+  "verdict": "B1-E pass for the audited scope: no fake Bot-management entry; personal-level actions are the designed behavior"
+ }
+}

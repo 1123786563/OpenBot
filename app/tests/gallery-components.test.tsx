@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   act,
@@ -20,6 +19,14 @@ import {
   DataTableProps,
   GALLERY as TABLES,
 } from "@/components/gallery/table";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { settleReactWork } from "./settle-react-work";
 
 beforeAll(() => GlobalRegistrator.register({ url: "http://localhost/" }));
@@ -64,6 +71,22 @@ const FORM = {
     { id: "notes", label: "Notes", type: "textarea" },
   ],
 };
+/*
+ * React Aria's input does not process the synthetic `input` event `user.clear` dispatches (nor
+ * `fireEvent.change`), so the controlled value would resurrect on the next render; deleting by
+ * real keystrokes is the one clearing path the controlled value follows here (recorded in
+ * h06/REPORT.md).
+ */
+async function clearField(field: HTMLElement) {
+  const held = (field as HTMLInputElement).value.length;
+  if (held > 0) await user.type(field, "{Backspace}".repeat(held));
+}
+
+/**
+ * The select is the ui Select (H13): a trigger button opening a listbox, so it is driven the way
+ * the app's other Select tests drive one (click trigger, click option), not with a native select's
+ * change event.
+ */
 async function fillForm(view: ReturnType<typeof render>) {
   await user.type(view.getByRole("textbox", { name: "Team" }), "  Design  ");
   await user.type(
@@ -71,10 +94,8 @@ async function fillForm(view: ReturnType<typeof render>) {
     "designer@example.test",
   );
   await user.type(view.getByRole("spinbutton", { name: "Seats" }), "3");
-  await user.selectOptions(
-    view.getByRole("combobox", { name: "Priority" }),
-    "This month",
-  );
+  await user.click(view.getByRole("button", { name: "Priority" }));
+  await user.click(view.getByRole("option", { name: "This month" }));
 }
 test("table sorts numeric cells in both directions with accessible headers", async () => {
   const view = render(<DataTable {...TABLE} />);
@@ -127,22 +148,29 @@ test("required and typed fields keep the form pending until corrected", async ()
     view.getByRole("textbox", { name: "Team" }).getAttribute("aria-invalid"),
   ).toBe("true");
   await fillForm(view);
-  await user.clear(view.getByRole("textbox", { name: "Work email" }));
+  await clearField(view.getByRole("textbox", { name: "Work email" }));
   await user.type(view.getByRole("textbox", { name: "Work email" }), "invalid");
-  await user.clear(view.getByRole("spinbutton", { name: "Seats" }));
+  await clearField(view.getByRole("spinbutton", { name: "Seats" }));
   await user.type(view.getByRole("spinbutton", { name: "Seats" }), "21");
   await user.click(view.getByRole("button", { name: "Submit answers" }));
   expect(view.getByText("Enter a valid email address.")).toBeTruthy();
   expect(view.getByText("Enter 20 or less.")).toBeTruthy();
   expect(answers).toEqual([]);
-  await user.clear(view.getByRole("textbox", { name: "Work email" }));
+  await clearField(view.getByRole("textbox", { name: "Work email" }));
   await user.type(
     view.getByRole("textbox", { name: "Work email" }),
     "designer@example.test",
   );
-  await user.clear(view.getByRole("spinbutton", { name: "Seats" }));
+  await clearField(view.getByRole("spinbutton", { name: "Seats" }));
   await user.type(view.getByRole("spinbutton", { name: "Seats" }), "3");
-  await user.click(view.getByRole("button", { name: "Submit answers" }));
+  /*
+   * React Aria dispatches press through a microtask, so the submit handler and its awaited
+   * responder finish after `user.click` returns. Draining that work inside `act` is what makes
+   * the resulting state observable here; the browser commits it as soon as the promise settles.
+   */
+  await act(async () => {
+    await user.click(view.getByRole("button", { name: "Submit answers" }));
+  });
   await waitFor(() => expect(view.getByText("Submitted")).toBeTruthy());
   expect(answers).toEqual([
     {
@@ -175,7 +203,9 @@ test("a failed answer preserves values and retries without duplicate submissions
     />,
   );
   await fillForm(view);
-  await user.click(view.getByRole("button", { name: "Submit answers" }));
+  await act(async () => {
+    await user.click(view.getByRole("button", { name: "Submit answers" }));
+  });
   await waitFor(() =>
     expect(view.getByRole("alert").textContent).toContain("could not be sent"),
   );

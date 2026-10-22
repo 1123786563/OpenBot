@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
@@ -7,6 +6,13 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemorySources } from "@/components/memory/sources";
 import { ProactiveResearchSettings } from "@/components/suggestions/proactive-panel";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /** A Bot's Memory page: the apps that feed it facts, and its background research. */
@@ -121,7 +127,12 @@ test("only this Bot's sources are listed, and its app actions load without picki
   const view = draw(<MemorySources agentId="expenses" />);
   expect(await view.findByText("Receipts folder")).toBeTruthy();
   expect(view.queryByText("Wiki pages")).toBeNull();
-  expect(view.queryByRole("combobox", { name: /^Bot/ })).toBeNull();
+  /*
+   * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
+   * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
+   * change request recorded in h04/REPORT.md). Address the trigger by role button.
+   */
+  expect(view.queryByRole("button", { name: /^Bot/ })).toBeNull();
   await waitFor(() =>
     expect(requested).toContain("/api/memory/sources/available/expenses"),
   );
@@ -132,7 +143,12 @@ test("only this Bot's background research is listed, with no Bot to pick", async
   const view = draw(<ProactiveResearchSettings agentId="expenses" />);
   expect(await view.findByText(/Unpaid invoices/)).toBeTruthy();
   expect(view.queryByText(/Stale pages/)).toBeNull();
-  expect(view.queryByRole("combobox", { name: /^Bot/ })).toBeNull();
+  /*
+   * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
+   * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
+   * change request recorded in h04/REPORT.md). Address the trigger by role button.
+   */
+  expect(view.queryByRole("button", { name: /^Bot/ })).toBeNull();
 });
 
 /** Opens Add source for the Expenses Bot and chooses its one read action. */
@@ -141,7 +157,12 @@ async function openAddSource(view: ReturnType<typeof draw>) {
   await view.findByText("Receipts folder");
   await user.click(view.getByRole("button", { name: "Add source" }));
   await user.click(
-    await view.findByRole("combobox", { name: "Connected app action" }),
+    /*
+     * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
+     * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
+     * change request recorded in h04/REPORT.md). Address the trigger by role button.
+     */
+    await view.findByRole("button", { name: "Connected app action" }),
   );
   await user.click(await view.findByRole("option", { name: "Search Drive" }));
   return user;

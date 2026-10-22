@@ -1,0 +1,5 @@
+152705df29f3800851654d5358760b77094a5c3524f898131ca0e44addd2829f  docs/verification/workspace-redesign/execution/checkpoints/t05-r2/PRE/HEAD.txt
+90542dc3cf2dd48a22ca5e4d1fee896de91a11a81db861b06963c9b909fadf59  docs/verification/workspace-redesign/execution/checkpoints/t05-r2/PRE/e2e-bun-suites.json
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  docs/verification/workspace-redesign/execution/checkpoints/t05-r2/PRE/staged.patch
+393bb3fccfb4f8a4daa274189d60c26f2d9c5efc20ff876736859350a218245c  docs/verification/workspace-redesign/execution/checkpoints/t05-r2/PRE/status.txt
+ab68e3107999b2d493915c02aba556c005091956281775bc5d39e91785eec55f  docs/verification/workspace-redesign/execution/checkpoints/t05-r2/PRE/unstaged.patch

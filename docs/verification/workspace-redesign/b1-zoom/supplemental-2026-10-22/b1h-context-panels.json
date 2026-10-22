@@ -1,0 +1,45 @@
+{
+ "steps": [
+  {
+   "step": "channel-created",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a",
+   "ok": true
+  },
+  {
+   "step": "settings-open",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?settings=true",
+   "hasSettingsPanel": true,
+   "ok": true
+  },
+  {
+   "step": "mutual-exclusion-watch",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?settings=true&watch=true",
+   "ok": false,
+   "note": "expect settings dropped, watch kept"
+  },
+  {
+   "step": "back-closes",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?settings=true",
+   "ok": false
+  },
+  {
+   "step": "workshop-open",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?workshop=true",
+   "ok": true
+  },
+  {
+   "step": "mutual-exclusion-settings",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?workshop=true&settings=true",
+   "ok": false,
+   "note": "expect workshop dropped, settings kept"
+  },
+  {
+   "step": "no-overflow",
+   "ok": true,
+   "sw": 1440,
+   "w": 1440
+  }
+ ],
+ "pass": 4,
+ "total": 7
+}

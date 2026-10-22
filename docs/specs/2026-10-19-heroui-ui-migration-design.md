@@ -346,3 +346,7 @@ T0/T1 合并为 H01；T2 对应 H02；T3 对应 H03；T4 拆为 H04–H08，并�
 | [H15 #458](https://github.com/1123786563/OpenBot/issues/458) | 完成全流程、可访问性与独立审查交付验收 | H14 |
 
 contains 与 depends_on 分别记录；默认串行排期，不能把表格次序当作原生依赖。所有 Ticket 为待评审设计，建单不代表授权实施。确认视觉/范围或修订默认假设后，再进入执行工作区、详细计划与 SDD。
+
+## 11. 修订（2026-10-20）：视觉基线在交付后切换为 HeroUI 原生
+
+Wave R1（issue #502）：用户在预览 HeroUI 默认主题后裁决，放弃本文 §1"保留现有 WorkBuddy 视觉"的默认假设，主应用整体切换到 **HeroUI 原生默认主题**（accent 蓝 `oklch(0.6204 0.195 253.83)` 作为 action/brand/focus/chart-1，WorkBuddy 青绿与黑/白主按钮退役；根字号 15px→16px；radius 0.6rem→0.5rem；图表五色统一围绕 accent 重配并满足两主题 ≥3:1）。迁移的组件行为、布局合同、信息架构与验收矩阵（§7）不受影响；变更落在 `app/src/styles/tokens.css`、`app/src/styles.css`（根字号）、`app/src/styles/heroui-theme.css`（桥接收敛，WorkBuddy 覆写退役）、`app/DESIGN.md`（视觉基线改写）。WorkBuddy 保留方向自本日起由用户裁决取代；证据见 `docs/verification/heroui-migration/r1/`。

@@ -1,0 +1,41 @@
+{
+  "browserZoomSelection": {
+    "selects": 1,
+    "zoom": "200%"
+  },
+  "window": {
+    "width": 1440,
+    "height": 900
+  },
+  "results": [
+    {
+      "theme": "light",
+      "pass": true,
+      "dpr": 4,
+      "width": 720,
+      "height": 406,
+      "visualScale": 1,
+      "scrollWidth": 720,
+      "clientWidth": 720,
+      "dark": false,
+      "url": "http://127.0.0.1:3011/bots/agent_7cb6cdcd-c48b-4425-977e-057b24d04f34/runs",
+      "disabledStateVisible": true
+    },
+    {
+      "theme": "dark",
+      "pass": true,
+      "dpr": 4,
+      "width": 720,
+      "height": 406,
+      "visualScale": 1,
+      "scrollWidth": 720,
+      "clientWidth": 720,
+      "dark": true,
+      "url": "http://127.0.0.1:3011/bots/agent_7cb6cdcd-c48b-4425-977e-057b24d04f34/runs",
+      "disabledStateVisible": true
+    }
+  ],
+  "passed": 2,
+  "total": 2,
+  "limitation": "The list has no populated traces because observability is disabled; this confirms only the capability_missing state, not enabled tracing behavior."
+}

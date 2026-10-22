@@ -1,0 +1,1238 @@
+### app/DESIGN.md
+--- PRE/app/DESIGN.md
++++ POST-R2/app/DESIGN.md
+@@ -1,60 +1,59 @@
+ ---
+ name: OpenBot
+-description: An operations console for AI bots, wearing HeroUI's native default theme
+-baseline: "HeroUI native default theme (user decision 2026-10-20, issue #502); supersedes the WorkBuddy-preserved palette"
++description: A modern workspace for operating bots, teams, and model services
++baseline: "Workspace theme contract (2026-10-20): app semantic tokens own theme values; HeroUI semantic slots map to them"
+ colors:
+-  background: "#f5f5f5" # oklch(0.9702 0 0)
+-  foreground: "#18181b" # oklch(0.2103 0.0059 285.89) — HeroUI "eclipse"
+-  card: "#ffffff"
+-  card-foreground: "#18181b"
+-  popover: "#ffffff"
+-  popover-foreground: "#18181b"
+-  primary: "#0485f7" # oklch(0.6204 0.195 253.83) — HeroUI accent (hex approximations throughout)
+-  primary-foreground: "#fcfcfc" # oklch(0.9911 0 0) — HeroUI "snow"
+-  secondary: "#ebebec" # oklch(94% 0.001 286.375) — HeroUI "default"
+-  secondary-foreground: "#18181b"
+-  muted: "#efeff0" # oklch(0.9524 0.0013 286.37) — quiet surface
+-  muted-foreground: "#71717a" # oklch(0.5517 0.0138 285.94) — muted text
+-  accent: "#0485f7"
+-  accent-foreground: "#fcfcfc"
+-  brand: "#0485f7" # brand follows the accent blue (issue #502); teal retired
+-  destructive: "#ff383c" # oklch(0.6532 0.2328 25.74)
+-  destructive-foreground: "#fcfcfc"
+-  success: "#17c964" # oklch(0.7329 0.1935 150.81); ink on it is eclipse, not white
+-  border: "#dedee0" # oklch(90% 0.004 286.32)
+-  input: "#dedee0" # legacy border-input STROKE = border ladder (R1b); HeroUI field fill itself is borderless white
+-  ring: "#0485f7"
+-  sidebar: "#efeff0" # surface-secondary ground in light; in dark the ground is --surface (0.2103) — a deliberate deviation (keeps the sidebar no lighter than cards); accent = surface-tertiary both themes
+-  sidebar-foreground: "#18181b"
+-  sidebar-accent: "#eaeaeb" # oklch(0.9373 0.0013 286.37) — one step deeper
+-  sidebar-accent-foreground: "#18181b"
+-  sidebar-border: "#dedee0"
+-  sidebar-ring: "#0485f7"
+-  chart-1: "#0485f7" # the accent itself
+-  chart-2: "#c9690c" # oklch(0.62 0.15 55)
+-  chart-3: "#05893e" # oklch(0.55 0.15 150)
+-  chart-4: "#8843db" # oklch(0.55 0.22 300)
+-  chart-5: "#c72da2" # oklch(0.58 0.22 340)
+-  dark-background: "#060607" # oklch(12% 0.005 285.823)
+-  dark-foreground: "#fcfcfc"
+-  dark-card: "#18181b" # oklch(0.2103 0.0059 285.89)
+-  dark-primary: "#0485f7" # the accent is theme-independent
+-  dark-primary-foreground: "#fcfcfc"
+-  dark-accent: "#232325" # oklch(0.257 0.0037 286.14)
+-  dark-accent-foreground: "#fcfcfc"
+-  dark-destructive: "#db3b3e" # oklch(0.594 0.1967 24.63)
+-  dark-success: "#17c964"
+-  dark-brand: "#0485f7"
+-  dark-border: "#28282c" # oklch(28% 0.006 286.033)
+-  dark-input: "#28282c" # stroke ladder in dark (R1b); field fill stays borderless
+-  dark-ring: "#0485f7"
+-  dark-sidebar: "#18181b"
+-  dark-sidebar-accent: "#262728" # oklch(0.2721 0.0024 247.91)
+-  dark-chart-1: "#0485f7"
+-  dark-chart-2: "#f0a646" # oklch(0.78 0.14 70)
+-  dark-chart-3: "#55c975" # oklch(0.75 0.16 150)
+-  dark-chart-4: "#b180fc" # oklch(0.7 0.18 300)
+-  dark-chart-5: "#e867c3" # oklch(0.7 0.19 340)
++  background: "#F5F7FA"
++  foreground: "#192131"
++  card: "#FFFFFF"
++  card-foreground: "#192131"
++  popover: "#FFFFFF"
++  popover-foreground: "#192131"
++  primary: "#315FCF"
++  primary-foreground: "#FFFFFF"
++  secondary: "#EEF1F6"
++  secondary-foreground: "#192131"
++  muted: "#526079"
++  muted-foreground: "#526079"
++  accent: "#315FCF"
++  accent-foreground: "#FFFFFF"
++  brand: "#315FCF"
++  destructive: "#B32745"
++  destructive-foreground: "#FFFFFF"
++  success: "#16704D"
++  warning: "#8B570B"
++  border: "#D8DFE9"
++  input: "#7A879B"
++  ring: "#315FCF"
++  sidebar: "#EEF1F6"
++  sidebar-foreground: "#192131"
++  sidebar-accent: "#E2E8F2"
++  sidebar-accent-foreground: "#192131"
++  chart-1: "#315FCF"
++  chart-2: "#8B570B"
++  chart-3: "#16704D"
++  chart-4: "#7040AD"
++  chart-5: "#A02C76"
++  dark-background: "#111318"
++  dark-foreground: "#EBEFF7"
++  dark-card: "#191D26"
++  dark-primary: "#3D6BDA"
++  dark-primary-foreground: "#FFFFFF"
++  dark-accent: "#3D6BDA"
++  dark-accent-foreground: "#FFFFFF"
++  dark-destructive: "#FF9EA7"
++  dark-success: "#69D5AC"
++  dark-warning: "#F0BE69"
++  dark-border: "#303949"
++  dark-input: "#68788F"
++  dark-ring: "#8DB4FF"
++  dark-sidebar: "#0D1015"
++  dark-sidebar-accent: "#242B38"
++  dark-chart-1: "#8DB4FF"
++  dark-chart-2: "#F0BE69"
++  dark-chart-3: "#69D5AC"
++  dark-chart-4: "#C3A2F2"
++  dark-chart-5: "#F09ACB"
+ typography:
+   display:
+     fontFamily: "Inter Variable, Inter, ui-sans-serif, system-ui, sans-serif"
+@@ -91,369 +90,56 @@
+   gutter: "1.5rem"
+   dialog: "1.25rem"
+   section-gap: "3rem"
+-components:
+-  button-primary:
+-    backgroundColor: "{colors.primary}"
+-    textColor: "{colors.primary-foreground}"
+-    rounded: "{rounded.lg}"
+-    padding: "0.625rem"
+-    height: "2.25rem"
+-  button-primary-hover:
+-    backgroundColor: "accent mixed 90/10 with snow (HeroUI's --accent-hover)"
+-  control-checked:
+-    backgroundColor: "{colors.brand}"
+-    note: "Switches, checkboxes, radios and progress turn accent blue when ON — HeroUI's native selected state; buttons are the same accent"
+-  card:
+-    backgroundColor: "{colors.card}"
+-    rounded: "{rounded.2xl}"
+-    border: "1px solid {colors.border}"
+-    shadow: "HeroUI surface-shadow (0 2px 4px / 4% + 0 1px 2px / 6% + 0 0 1px / 6%); none in dark"
+-  dialog-surface:
+-    backgroundColor: "{colors.popover}"
+-    rounded: "{rounded.xl}"
+-    padding: "1.25rem"
+-    width: "32rem"
+-  modal-scrim:
+-    # As shipped (ui/dialog.tsx, migration-era choice kept in the R wave): 15% black light /
+-    # 60% dark with a subtle backdrop blur when the browser supports it. HeroUI's own --backdrop
+-    # (50%/60%, no blur) is NOT applied because the app's Dialog wrapper owns the scrim element.
+-    backgroundColor: "rgba(0,0,0,.15) light / rgba(0,0,0,.6) dark (app dialog.tsx)"
+-    blur: "backdrop-blur-xs when supported"
+ ---
+ 
+ # Design System: OpenBot
+ 
+-## Overview
++## Theme ownership
+ 
+-**Creative North Star: HeroUI's own voice, spoken by an operations console.**
++`app/src/styles/tokens.css` is the only value source for the 39 existing `--ob-*` tokens and the
++new semantic and layout tokens. Values are listed in
++[`theme-contract.json`](../docs/design/2026-10-20-workspace-redesign/handoff/refinement/theme-contract.json).
++It defines light values under `:root` and `[data-theme="light"]`, and dark values under `.dark` and
++`[data-theme="dark"]`.
+ 
+-> **2026-10-20 (issue #502):** this revision supersedes the WorkBuddy-preserved palette. After the
+-> HeroUI v3 migration delivered, the user reviewed a preview of the library's native default theme
+-> and chose it over the preserved WorkBuddy look. Because the migration had routed every colour
+-> through `app/src/styles/tokens.css`, the redesign was a two-file swap: token values + one root
+-> font-size change. No component, route or test file was edited. Hex values above are sRGB
+-> approximations of the oklch tokens; `variables.css` in `@heroui/styles` is the ground truth.
++`app/src/styles/heroui-theme.css` maps HeroUI's native semantic variables to those tokens in both
++theme scopes. HeroUI `--accent` is the action fill, while `--muted` is muted text. OpenBot's quiet
++surface and muted text have distinct names: `--ob-muted-surface` and `--ob-muted-text`. The native
++variables are never redeclared in `legacy-ui-bridge.css`.
+ 
+-OpenBot's browser app is a quiet, instrument-grade console: administrators decide whether to trust
+-it with credentials, operators watch bots work, and the interface's job is to stay out of the way
+-while state changes underneath it. That discipline is unchanged. What changed with issue #502 is
+-the *voice*: every value now comes from HeroUI's native default theme
+-(`@heroui/styles/dist/themes/default/variables.css`), not from WorkBuddy's bundle — the blue
+-accent, the cool zinc-family neutrals, the 16px root, the 8px control radius, and HeroUI's
+-whisper-easy surface shadow.
++`app/src/styles/legacy-ui-bridge.css` only maps remaining shadcn names to OpenBot tokens. The legacy
++`--input` alias means control border and maps to `--ob-control-border`. The existing `openbot-theme`
++preference remains the sole theme storage mechanism; CSS theme selectors do not write preferences.
+ 
+-The palette carries a deliberate division of labor, now HeroUI's own:
++## Color roles
+ 
+-- **Blue is the interactive layer.** The action colour is HeroUI's accent
+-  `oklch(0.6204 0.195 253.83)` — the same in light and dark. Primary buttons, text buttons, focus
+-  rings, and the active-nav ink are all this layer, with snow `oklch(0.9911 0 0)` as the ink on it.
+-- **Blue is also the identity layer.** The WorkBuddy teal brand is retired (issue #502): brand
+-  follows the accent everywhere — unread dots, running marks, controls in their ON state, progress
+-  fills, chart-1. There is no second brand hue any more.
+-- **Semantic color stays semantic.** HeroUI's danger `oklch(0.6532 0.2328 25.74)` and success
+-  `oklch(0.7329 0.1935 150.81)` keep the tint discipline, and the chart ramp takes the accent blue
+-  plus amber, green, violet and rose (see Charts).
++- **Canvas and surfaces:** light canvas `#F5F7FA`, dark canvas `#111318`; cards use `#FFFFFF` and
++  `#191D26`. Overlays have their own surface token. Sidebar, hover, and muted surfaces are distinct
++  semantic roles.
++- **Text:** foreground is `#192131` light and `#EBEFF7` dark. Muted text is `#526079` light and
++  `#A2ACBE` dark. Muted surfaces do not substitute for muted text.
++- **Actions and focus:** action fill is `#315FCF` light and `#3D6BDA` dark; its foreground is white.
++  Hover values are explicit contract tokens. Focus and accent text use their own tokens.
++- **Status:** success, warning, and danger each define foreground pairs and soft surfaces. Use the
++  state color with text or an icon; do not encode status only through a fill.
++- **Boundaries:** `--ob-border` is for decorative dividers. `--ob-control-border` is for necessary
++  control boundaries. `--ob-field-border` aliases the control border; field background remains the
++  surface token.
++- **Charts:** five distinct series colors are specified separately for light and dark surfaces.
+ 
+-The neutrals are HeroUI's zinc-family ramp, not warm paper: canvas `oklch(0.9702 0 0)`, sidebar and
+-quiet surfaces `oklch(0.9524 0.0013 286.37)`, cards white, hairlines `oklch(90% 0.004 286.32)`, ink
+-`oklch(0.2103 0.0059 285.89)` ("eclipse"). One gray step separates the sidebar from its selected
+-row and the canvas from its cards — the same "gray canvas, white panes" structure, at HeroUI's
+-lightnesses. Dark mode runs canvas `oklch(12% 0.005 285.823)` under surfaces `oklch(0.2103 0.0059
+-285.89)`.
++## Typography and shape
+ 
+-The system is HeroUI v3 (components) driven by a token sheet — `app/src/styles/tokens.css` for the
+-`--ob-*` values, `styles.css` for layers/utilities — with a light default and a `.dark` variant.
+-Structure comes from one layout contract — every configuration screen is `PageShell →
+-PageSection → PageRows`, one prose-width column of titled card groups — and from spacing that does
+-the work dividers would otherwise do.
+-
+-Motion is small and purposeful. State transitions run 150ms ease-out; the sidebar collapses linearly
+-at 200ms; a running tool line sweeps a subtle shimmer across its own glyphs (1.6s, compositor-only);
+-lists mount with a 4px staggered rise. That is the entire motion budget.
+-
+-**Key Characteristics:**
+-
+-- HeroUI-native values: accent blue, zinc neutrals, snow-on-accent buttons, 16px root, 8px control
+-  radius, no field strokes (fields are white fills), HeroUI surface shadows
+-- Gray canvas + white cards: the page is one gray step behind its cards, the sidebar at the
+-  hover-surface step, its selected row one deeper
+-- One accent for buttons AND controls' ON state — the WorkBuddy "black buttons vs teal controls"
+-  split is retired (issue #502)
+-- One layout contract (`PageShell`/`PageSection`/`PageRows`) for every configuration screen
+-- Sidebar at the familiar widths: 17.5rem expanded, 3.2rem collapsed (280px / 51px at the 16px root)
+-- Inter Variable as the single typeface; weight (600/500/400) is the hierarchy instrument
+-
+-## Colors
+-
+-### Interactive (accent blue)
+-
+-- **Accent Button** (`--primary: oklch(0.6204 0.195 253.83)`): primary buttons, text-button ink in
+-  accents, focus rings, and the sidebar's active-item emphasis. The accent is theme-independent:
+-  blue buttons in light AND dark. Hover mixes 90/10 with snow (HeroUI's `--accent-hover`).
+-
+-### Identity (also blue)
+-
+-- **Brand = Accent** (`--brand: oklch(0.6204 0.195 253.83)`): the unread dot in the conversation
+-  list, the ON state of every switch/checkbox/radio, progress bars, chart-1, and the market page's
+-  accents. Ink on the blue fill is snow (HeroUI's pairing). Retiring the teal was the point of
+-  issue #502: one hue now says "this system acts", everywhere.
+-
+-### Semantic
+-
+-- **Danger** (`--destructive: oklch(0.6532 0.2328 25.74)`, dark `oklch(0.594 0.1967 24.63)`):
+-  3.6:1 on white — HeroUI's own baseline, kept as-is per the user decision (the old WorkBuddy red
+-  was 5.9:1). Tinted surfaces (`/10`, hover `/20`) with snow ink on solid fills; destructive buttons
+-  are never solid red.
+-- **Success** (`--success: oklch(0.7329 0.1935 150.81)`): HeroUI pairs it with dark ink
+-  (`oklch(0.2103 …)`, 8.1:1 on the green), never white (1.9:1).
+-
+-### Neutral
+-
+-- **Canvas** (`oklch(0.9702 0 0)`): the page. `--background` everywhere the app is not a card.
+-- **Panel** (`--sidebar: oklch(0.9524 0.0013 286.37)`): the sidebar ground, HeroUI's
+-  `--surface-secondary`. The selected/hover item steps one deeper still (`--sidebar-accent:
+-  oklch(0.9373 0.0013 286.37)`) with full-ink text — the quiet "selected row" pattern: no tint,
+-  just gray depth and weight 500.
+-- **Card White** (`#ffffff`): cards and popovers, raised off the canvas by a hairline plus HeroUI's
+-  `surface-shadow` (`0 2px 4px / 4%`, `0 1px 2px / 6%`, `0 0 1px / 6%`).
+-- **Hairline** (`oklch(90% 0.004 286.32)`): borders and strokes; dark `oklch(28% 0.006 286.033)`.
+-  Form fields have NO stroke — `--field-border: transparent` with `--field-border-width: 0`; the
+-  white fill (dark: surface fill) is the field's boundary.
+-- **Muted Ink** (`--muted-foreground: oklch(0.5517 0.0138 285.94)`): descriptions and empty states;
+-  4.8:1 on white, 6.7:1 on the dark surface (dark: `oklch(70.5% 0.015 286.067)`).
+-- **Focus** (`--ring: oklch(0.6204 0.195 253.83)`): the accent — HeroUI draws focus as the accent
+-  colour (`--focus: var(--accent)`), not a black halo.
+-- **Chart Chroma** (`--chart-1…5`): accent blue, amber `oklch(0.62 0.15 55)`, green
+-  `oklch(0.55 0.15 150)`, violet `oklch(0.55 0.22 300)`, rose `oklch(0.58 0.22 340)`; dark mode
+-  lifts each hue to clear 3:1 on the dark surface. All ten values clear 3:1 against their ground
+-  (see Charts).
+-
+-### Named Rules
+-
+-**The Two-Layer Color Rule.** Color appears on the accent layer (buttons, focus, ON-controls,
+-unread, running, progress, chart-1) and the semantic layer (danger, success, the rest of the chart
+-ramp). The old third layer — a separate brand teal — is retired; a new colour must justify itself
+-on one of these two layers or it does not go in.
+-
+-**The Controls-Take-the-Accent Rule.** A control's ON state and a button's resting state are the
+-same accent blue — HeroUI's native pairing. Do not re-introduce a second identity hue for controls;
+-the glyph on an accent fill is snow (`--brand-foreground`), never dark ink.
+-
+-**The Tinted Destruction Rule.** Destructive surfaces are `bg-destructive/10` (hover `/20`) with
+-solid-red text, never a solid-red fill. Danger reads as a warning label, not an alarm.
+-
+-## Typography
+-
+-**Display Font:** Inter Variable (with `Inter, ui-sans-serif, system-ui, sans-serif` fallback)
+-**Body Font:** Inter Variable — one family for everything; hierarchy is weight and size, never a
+-second typeface. The CJK fallback chain (PingFang SC, HarmonyOS Sans SC, Microsoft YaHei) is part
+-of the contract and does not change with the theme.
+-
+-**Character:** Neutral, engineered, quietly precise. Inter at a 16px root (the browser default,
+-issue #502) sits at HeroUI's intended density.
+-
+-### Hierarchy
+-
+-- **Display** (600, 1.333rem = 21.3px): the `PageShell` title — one per screen, action button on
+-  its baseline. Weight 600, not 700: titles lead without shouting.
+-- **Headline** (600, 1.125rem = 18px): `PageSection` titles and dialog titles.
+-- **Body** (400, 0.875rem = 14px, relaxed 1.625): the workhorse. Descriptions, row content,
+-  buttons, inputs. Measure is capped at `max-w-2xl` (672px at the 16px root).
+-- **Label** (500, 0.75rem = 12px): sidebar group labels, xs controls, timestamps. Buttons and
+-  item titles are `text-sm` medium (500). There is no letterspaced-caps tier in this system.
+-
+-### Named Rules
+-
+-**The 16px Root Rule.** `html { font-size: 16px }` — HeroUI's default density, restored by issue
+-#502 from WorkBuddy's 15px. Never hardcode px sizes that assume a specific root; size in rem and
+-let the root do the scaling.
+-
+-**The Pretty-Wrap Rule.** Descriptions wrap on sense, not on width: `text-wrap: pretty` is applied
+-globally to `[data-slot="item-description"]` and `text-pretty` on page descriptions.
++Inter Variable is the primary typeface, with platform sans-serif fallbacks. The root font size is
++16px. The shared radius is 8px; component radii derive from `--radius` rather than introducing
++unrelated values.
+ 
+ ## Layout
+ 
+-Two scroll regimes, one column contract, the same skeleton HeroUI renders into.
++Layout sizes are semantic tokens: app sidebar 280px, configuration sidebar 256px, collapsed rail
++64px, prose maximum 672px, wide content maximum 1024px, chat width 720px, main minimum 480px,
++Craft session panel 224px, and Craft output panel 420px. These values describe maximums where the
++layout contract says so; narrow viewports remain responsive.
+ 
+-- **The app shell** (`_authed/_app` — bots, chat, routines): one viewport, `h-svh overflow-hidden`;
+-  the document never scrolls, panes scroll inside it. A collapsible sidebar rides the left edge at
+-  **17.5rem (280px)**, collapsing to a **3.2rem (51px)** icon rail with a 200ms linear width
+-  transition.
+-- **The document shell** (`_authed` — admin, settings): the document scrolls.
+-- **PageShell** bridges both: it owns the scroller (`min-h-0 flex-1 overflow-y-auto`) so the same
+-  screen works under either shell. Content sits in one centered column — `prose` (`max-w-2xl`,
+-  672px) by default because configuration is mostly reading; `wide` (`max-w-5xl`) exists for
+-  genuinely tabular content (the audit log) and is not a license for anything else. Horizontal
+-  padding is **1.5rem (24px)** with top 2rem under the 56px utility bar and bottom 3rem.
+-- **Section rhythm:** `PageSection` groups sit `mt-12` (3rem) apart — the space is what stops the
+-  eye running two groups together, doing a divider's job without drawing a line.
+-- **PageRows card:** a `rounded-2xl` (14.4px at the 16px root) white card with a hairline
+-  border and the resting `shadow-card`; rows inside it are squared off (see Shapes).
+-- **Density:** compact throughout — default controls are h-9 (36px), sm h-7 (28px), xs h-6 (24px);
+-  row padding `0.625rem 0.75rem`; row groups gap at 0.5-0.625rem. (All rem values unchanged from
+-  the previous revision; their px equivalents shifted with the root.)
+-- **Dialogs:** centered, `max-w-lg`, over the app scrim (15% black light / 60% dark, subtle blur — the wrapper's own element, not HeroUI's --backdrop),
+-  `max-h-[85svh]` with only the body scrolling so footer actions never leave the viewport.
+-
+-## Elevation & Depth
+-
+-HeroUI separates surfaces two ways at once: a hairline **and** a whisper of shadow. Resting cards
+-(page rows, the composer) carry `shadow-card` — HeroUI's `surface-shadow` (three layers, max 6%
+-black) — on top of their border; the shadow is what makes a white card read as raised off the gray
+-canvas rather than drawn onto it. Dark mode drops the resting shadow (HeroUI's dark
+-`surface-shadow` is fully transparent) and lets surface lightness steps do the separating, deleting
+-resting borders as before. Float layers keep HeroUI's own `overlay-shadow`: dialogs, popovers,
+-selects, dropdowns.
+-
+-### Shadow Vocabulary
+-
+-- **Rest-card** (`shadow-card` = HeroUI `surface-shadow`): cards and raised white surfaces at rest.
+-  Dark mode: none.
+-- **Float layers** (HeroUI `overlay-shadow`): dialogs, popovers, selects, dropdowns, sheets.
+-- Sidebar rail borders are drawn as box-shadow rings (`0 0 0 1px var(--sidebar-border)`) so they can
+-  flip on hover — the one place "shadow" is a border in disguise.
+-
+-### Named Rules
+-
+-**The Card-Floats-Gently Rule.** A white card on the gray canvas gets a hairline plus
+-`shadow-card`. If it floats over the page it gets HeroUI's overlay shadow. Nothing else gets
+-either, and nothing lighter than a card gets a shadow at all.
+-
+-**The Space-Not-Lines Rule.** Hierarchy between groups is spacing (`mt-12`), not separators.
+-`Separator` is for inside a card, between rows — and only where the squaring convention doesn't
+-already divide them.
+-
+-## Shapes
+-
+-One radius family off a single token: `--radius: 0.5rem` (8px at the 16px root — HeroUI's default),
+-with a multiplicative ladder — sm ×0.6, md ×0.8, lg ×1, xl ×1.4, 2xl ×1.8, 3xl ×2.2, 4xl ×2.6. The
+-ladder lands on: controls at `rounded-lg` (8px), dialogs and sheets at `rounded-xl` (11.2px), and
+-cards at `rounded-2xl` (14.4px). Form fields derive `--field-radius` from the same token (HeroUI's
+-×1.5 = 12px). Small buttons cap their radius (`rounded-[min(var(--radius-md),12px)]`) so tiny
+-heights don't go pill-shaped.
+-
+-The form language is rounded-rectangle, softened, never circular — pills appear nowhere outside
+-toggles and dots. The signature silhouette is the **squared row inside a rounded card**: `PageRows`
+-sets `[&_[data-slot=item]]:rounded-none` because a middle row has no corners and a rounded end-row
+-cannot sit concentric with the card one border inside it; the card clips, the rows fill. Icons are
+-Tabler line icons, defaulting to 16px (`size-4`), one weight, no filled variants. The scrollbar is a
+-5px hairline thumb colored by `--border`.
+-
+-## Components
+-
+-### Buttons
+-
+-Character: restrained and quick — small state deltas (the 90/10 hover mix, 1px press), 150ms
+-ease-out.
+-
+-- **Shape:** `rounded-lg` (8px), heights h-9/h-7/h-6.
+-- **Primary:** accent fill `oklch(0.6204 0.195 253.83)`, snow text, `text-sm font-medium`; hover
+-  mixes 90/10 toward snow. Same in dark — the accent is theme-independent.
+-- **Hover / Focus:** the accent focus ring (`--focus` = accent); `active` translates 1px down for a
+-  physical press.
+-- **Outline:** hairline border on background, fills the hover surface on hover/expanded.
+-- **Ghost:** transparent until hover; the sidebar-toggle and back-link voice.
+-- **Destructive:** Ember tint per the Tinted Destruction Rule.
+-- **Link variant:** foreground ink, underline on hover only (HeroUI's `--link: var(--foreground)`).
+-
+-### Controls (switch / checkbox / radio)
+-
+-HeroUI's native geometry and colors, unreplaced: the ON state is the accent fill with snow ink on
+-every control (switch track, checkbox, radio, progress). Unchecked fields are fill-defined — white
+-in light, surface in dark — with no stroke. The old WorkBuddy 32×18.4 switch and 16px teal checkbox
+-restatements were deleted with the theme bridge (issue #502).
+-
+-### Chips
+-
+-Composer chips (prompt-area) theme themselves off the same tokens — muted fills, hairline borders,
+-`rounded-md`.
+-
+-### Cards / Containers
+-
+-- **Corner Style:** `rounded-2xl` (PageRows, 14.4px) or `rounded-xl` (dialogs, gallery frames)
+-- **Background:** Card White; dark mode `oklch(0.2103 0.0059 285.89)` with the border removed
+-- **Shadow Strategy:** hairline + `shadow-card` at rest; see Elevation
+-- **Internal Padding:** rows `0.625rem 0.75rem`; dialogs `1.25rem`; gallery frames own their insets
+-
+-### Inputs / Fields
+-
+-- **Style:** fill-defined — white in light, surface in dark, no border (`--field-border:
+-  transparent`, `--field-border-width: 0`), `text-base md:text-sm`, HeroUI's `field-radius`
+-- **Focus:** the accent focus contract; aria-invalid swaps to the danger treatment
+-- **Disabled:** 50% opacity (HeroUI's `--disabled-opacity`)
+-
+-### Navigation
+-
+-Sidebar: `bg-sidebar` ground (`oklch(0.9524 0.0013 286.37)` light, `oklch(0.2103 0.0059 285.89)`
+-dark — secondary-surface ladder in light; surface ground with tertiary accent in dark), 280px wide, collapsing to the 51px icon rail. Group
+-labels sit at `text-xs` with muted foreground; items hover and select to `sidebar-accent` (the
+-deeper gray step) with full-ink `font-medium` labels — the selected row is gray depth plus weight,
+-not a tint. In-app back navigation is a ghost button with a chevron on the 56px utility bar. The
+-unread dot in the conversation list is the accent blue.
+-
+-### Menu Highlights
+-
+-Dropdown, select, and combobox options highlight with HeroUI's native selection treatment —
+-accent-soft fills with accent-tinted foreground, HeroUI's own emphasis vocabulary (the old neutral
+-`#f4f5f5` highlight was the WorkBuddy choice, retired in issue #502).
+-
+-### Settings Row (signature)
+-
+-The system's characteristic unit: an `Item` (`rounded-lg`, `px-3 py-2.5`) carrying `ItemMedia`
+-(16px icon or 40px image), `ItemContent` (medium `text-sm` title + muted `line-clamp-2` description
+-that wraps pretty), and `ItemActions` — usually a chevron. The canonical interaction: a summary row
+-that opens a dialog. In a `PageRows` card the row squares off and the whole card reads as one
+-instrument.
+-
+-### Tool Line (signature)
+-
+-A running tool call in the transcript: its own muted text with a light band sweeping left-to-right
+-across the glyphs (`background-clip: text`, only `background-position` animates, 1.6s linear),
+-disabled wholesale under `prefers-reduced-motion`. It is the app's only ambient motion and signals
+-exactly one thing: work in progress.
+-
+-## Preserved from the previous system
+-
+-- **The PageShell → PageSection → PageRows column contract** — one prose column, titled groups,
+-  `mt-12` rhythm, empty states as a muted sentence.
+-- **The rem-only sizing discipline** (root now 16px) and the spacing vocabulary.
+-- **Weight-driven hierarchy** (600/500/400, no letterspaced caps).
+-- **The tinted destruction discipline** and the quiet chat area: user bubbles are `muted`, Bot
+-  bubbles are `ghost` — no brand color inside the conversation.
+-- **The tool-line shimmer** and the entire small motion budget, reduced-motion respected.
+-- **Squared rows inside a rounded card**, the signature silhouette.
+-- **Tabler line icons at one weight, 16px default**, and the 5px hairline scrollbar.
+-- **`prefers-reduced-motion`, visible keyboard focus, and ARIA states** on every interactive
+-  primitive.
+-- The CJK font stack: Inter Variable + PingFang SC + HarmonyOS Sans SC + Microsoft YaHei, so zh-CN
+-  renders with the same hierarchy as en.
+-
+-## Do's and Don'ts
+-
+-### Do:
+-
+-- **Do** build every configuration screen from `PageShell` → `PageSection` → `PageRows`; the column
+-  contract is the system.
+-- **Do** default to the `prose` width (672px); reserve `wide` for genuinely tabular content.
+-- **Do** express hierarchy with weight (600 → 500 → 400) and the muted-foreground token, not new
+-  sizes or colors.
+-- **Do** size in `rem` — the 16px root is the density dial and px hardcodes break it.
+-- **Do** reach for the accent when a control turns ON, something is unread/running, or something is
+-  clickable — it is one hue doing all three jobs.
+-- **Do** write empty states as a muted sentence (`PageEmpty`); "nothing here yet" is a fact, not an
+-  event.
+-- **Do** keep focus treatment identical everywhere: the accent focus ring.
+-
+-### Don't:
+-
+-- **Don't** add a color that doesn't fit the Two-Layer Color Rule (accent / semantic).
+-- **Don't** reintroduce the WorkBuddy teal (`#00c29a` / `#3dd9b6`) or a black/white primary — they
+-  were retired by user decision (issue #502); grep for them when reviewing.
+-- **Don't** put the accent on large reading surfaces or body text — it is a button, a control
+-  state, a dot, a ring, a chart series; never a background for reading.
+-- **Don't** drop the resting card shadow in light mode or add one in dark mode (Card-Floats-Gently
+-  Rule).
+-- **Don't** hand-draw buttons, inputs, or cards outside `components/ui`.
+-- **Don't** use a solid destructive fill; danger is a tint.
+-- **Don't** round rows inside a `PageRows` card; the card clips, the rows fill.
+-- **Don't** add illustrations, spot art, or celebratory empties; the console stays quiet.
++Configuration screens use the existing `PageShell → PageSection → PageRows` structure. Content
++panes scroll within the app shell where that layout is already established. Theme work does not
++change route structure, component behavior, or user preference storage.
+### app/src/styles.css
+--- PRE/app/src/styles.css
++++ POST-R2/app/src/styles.css
+@@ -86,10 +86,9 @@
+ /*
+  * The shadcn/OpenBot palette, as Tailwind utilities.
+  *
+- * `--accent` and `--muted` now belong to HeroUI (emphasis fill and muted TEXT). The old utility
+- * classes that used them were migrated to `bg-ob-hover` / `bg-ob-muted-surface` /
+- * `text-ob-hover-foreground` across `app/src`, so these two mappings carry HeroUI's meaning and
+- * nothing else. All other legacy names are aliases for `--ob-*` in `legacy-ui-bridge.css`.
++ * HeroUI owns `--accent` as the action fill and `--muted` as muted text; both are mapped by
++ * heroui-theme.css. The old shadcn `--input` alias is retained only for legacy stroke utilities.
++ * All other legacy names are aliases for `--ob-*` in `legacy-ui-bridge.css`.
+  */
+ @theme inline {
+   --font-heading: var(--font-sans);
+@@ -142,6 +141,20 @@
+   --color-ob-muted-surface: var(--ob-muted-surface);
+   --color-ob-muted-text: var(--ob-muted-text);
+   --color-ob-brand: var(--ob-brand);
++  --color-ob-brand-foreground: var(--ob-brand-foreground);
++  --color-ob-danger: var(--ob-danger);
++  --color-ob-danger-foreground: var(--ob-danger-foreground);
++  --color-ob-danger-soft: var(--ob-danger-soft);
++  --color-ob-success: var(--ob-success);
++  --color-ob-success-foreground: var(--ob-success-foreground);
++  --color-ob-success-soft: var(--ob-success-soft);
++  --color-ob-warning: var(--ob-warning);
++  --color-ob-warning-foreground: var(--ob-warning-foreground);
++  --color-ob-warning-soft: var(--ob-warning-soft);
++  --color-ob-control-border: var(--ob-control-border);
++  --color-ob-accent-text: var(--ob-accent-text);
++  --color-ob-disabled-background: var(--ob-disabled-background);
++  --color-ob-disabled-foreground: var(--ob-disabled-foreground);
+ 
+   --radius-sm: calc(var(--radius) * 0.6);
+   --radius-md: calc(var(--radius) * 0.8);
+@@ -155,8 +168,8 @@
+    * exactly one place — same spirit as the radius ladder deriving off --radius.
+    */
+   --text-display: 1.333rem;
+-  /* WorkBuddy's resting card shadow (`0 4px 12px #00000008`), as the `shadow-card` utility. */
+-  --shadow-card: var(--shadow-card);
++  /* Workspace card shadow from the semantic theme contract. */
++  --shadow-card: var(--ob-shadow-card);
+   /* The hover lift for an interactive card; the market's lifted variant of the resting card shadow. */
+   --shadow-card-hover: 0 8px 24px rgb(0 0 0 / 8%);
+ }
+### app/src/styles/heroui-theme.css
+--- PRE/app/src/styles/heroui-theme.css
++++ POST-R2/app/src/styles/heroui-theme.css
+@@ -1,39 +1,261 @@
+ /*
+- * HeroUI bridge — now (almost) empty, by design.
++ * HeroUI semantic theme bridge. Every HeroUI semantic slot has one mapping here in each theme;
++ * `tokens.css` remains the only owner of OpenBot values. No mapping depends on an alias declared
++ * later in this file, so theme values resolve without cycles.
+  *
+- * BASELINE (2026-10-20, issue #502): the app adopted HeroUI's native default theme, so the
+- * `:root` mapping that restated the library's variables onto `--ob-*` values was deleted: every
+- * one of those mappings either reproduced the HeroUI default exactly (surfaces, foreground,
+- * accent, default, field, border, focus, status, radius) or enforced a WorkBuddy-specific choice
+- * the new baseline retires (the grey menu-highlight accent, the black/white action pair, the
+- * backdrop tint, the pulse skeleton, the scrollbar palette). HeroUI's own `@layer base` defaults
+- * from `@heroui/styles/themes/default` now flow natively, and `--ob-*` tokens in `tokens.css`
+- * carry the same values for the app's own vocabulary.
+- *
+- * What the removals cover, for the record:
+- *
+- *   - Surfaces/text/background/overlay/muted: ob values == defaults.
+- *   - accent/accent-foreground/accent-hover/accent-soft-foreground/link: the accent is HeroUI's
+- *     blue again; the old black/white action mapping was the WorkBuddy choice.
+- *   - default/default-foreground, field-* (white fill, transparent border, no stroke width),
+- *     border/separator/focus, the danger and success pairs, radius/field-radius,
+- *     disabled-opacity, scrollbar-*, backdrop: ob values == defaults or retired WorkBuddy
+- *     variants.
+- *   - `.ob-checkbox` / `.ob-switch` geometry + colour blocks: HeroUI's native controls already
+- *     draw the chosen look (accent ON fill, snow ink), so the WorkBuddy 16px/32×18.4 restatements
+- *     and the H14 dark OFF-track patch were removed with them; the `ob-checkbox` / `ob-switch`
+- *     classes on the wrappers are now inert markers.
+- *
+- * This file stays imported and keeps the `ob-theme` layer alive as the ONE home for future
+- * overrides that are structurally necessary for the app (behavioural or portal-related), so any
+- * that appear do not get sprinkled into components. Visual-only overrides do not belong here —
+- * if a value differs from the HeroUI default on purpose, it changes in `tokens.css` and is
+- * mapped here only while the library cannot express it.
++ * The two selectors intentionally match both the app's `.dark` state and its synchronized
++ * `[data-theme]` attribute. Portals under body inherit the same theme from the document root.
+  */
+ 
+ @layer ob-theme {
+-  /*
+-   * Intentionally empty. See the header: HeroUI's defaults win because nothing here overrides
+-   * them anymore.
+-   */
++  :root,
++  [data-theme="light"] {
++    --background: var(--ob-canvas);
++    --foreground: var(--ob-foreground);
++    --surface: var(--ob-surface);
++    --surface-foreground: var(--ob-foreground);
++    --surface-secondary: var(--ob-muted-surface);
++    --surface-secondary-foreground: var(--ob-foreground);
++    --surface-tertiary: var(--ob-hover-surface);
++    --surface-tertiary-foreground: var(--ob-foreground);
++    --overlay: var(--ob-overlay);
++    --overlay-foreground: var(--ob-foreground);
++    --muted: var(--ob-muted-text);
++
++    --scrollbar: var(--ob-control-border);
++    --scrollbar-thumb: var(--ob-control-border);
++    --scrollbar-track: transparent;
++    --scrollbar-gutter: auto;
++    --scrollbar-width: thin;
++    --scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
++
++    --default: var(--ob-secondary-surface);
++    --default-foreground: var(--ob-secondary-foreground);
++    --default-hover: var(--ob-hover-surface);
++    --default-soft: var(--ob-muted-surface);
++    --default-soft-foreground: var(--ob-foreground);
++    --default-soft-hover: var(--ob-hover-surface);
++
++    --accent: var(--ob-action);
++    --accent-foreground: var(--ob-action-foreground);
++    --accent-hover: var(--ob-action-hover);
++    --accent-soft: color-mix(in srgb, var(--ob-action) 10%, var(--ob-surface));
++    --accent-soft-foreground: var(--ob-accent-text);
++    --accent-soft-hover: color-mix(
++      in srgb,
++      var(--ob-action) 16%,
++      var(--ob-surface)
++    );
++
++    --field-background: var(--ob-field-background);
++    --field-foreground: var(--ob-foreground);
++    --field-placeholder: var(--ob-muted-text);
++    --field-border: var(--ob-control-border);
++    --field-border-width: 1px;
++    --field-hover: var(--ob-field-background);
++    --field-focus: var(--ob-field-background);
++    --field-border-hover: var(--ob-focus);
++    --field-border-focus: var(--ob-focus);
++    --field-shadow: none;
++    --field-radius: var(--ob-radius);
++    --radius: var(--ob-radius);
++
++    --success: var(--ob-success);
++    --success-foreground: var(--ob-success-foreground);
++    --success-hover: color-mix(
++      in srgb,
++      var(--ob-success) 90%,
++      var(--ob-success-foreground)
++    );
++    --success-soft: var(--ob-success-soft);
++    --success-soft-foreground: var(--ob-success);
++    --success-soft-hover: color-mix(
++      in srgb,
++      var(--ob-success) 16%,
++      var(--ob-surface)
++    );
++    --warning: var(--ob-warning);
++    --warning-foreground: var(--ob-warning-foreground);
++    --warning-hover: color-mix(
++      in srgb,
++      var(--ob-warning) 90%,
++      var(--ob-warning-foreground)
++    );
++    --warning-soft: var(--ob-warning-soft);
++    --warning-soft-foreground: var(--ob-warning);
++    --warning-soft-hover: color-mix(
++      in srgb,
++      var(--ob-warning) 16%,
++      var(--ob-surface)
++    );
++    --danger: var(--ob-danger);
++    --danger-foreground: var(--ob-danger-foreground);
++    --danger-hover: color-mix(
++      in srgb,
++      var(--ob-danger) 90%,
++      var(--ob-danger-foreground)
++    );
++    --danger-soft: var(--ob-danger-soft);
++    --danger-soft-foreground: var(--ob-danger);
++    --danger-soft-hover: color-mix(
++      in srgb,
++      var(--ob-danger) 16%,
++      var(--ob-surface)
++    );
++
++    --segment: var(--ob-surface);
++    --segment-foreground: var(--ob-foreground);
++    --border: var(--ob-border);
++    --border-secondary: var(--ob-control-border);
++    --border-tertiary: var(--ob-control-border);
++    --separator: var(--ob-border);
++    --separator-secondary: var(--ob-border);
++    --separator-tertiary: var(--ob-border);
++    --focus: var(--ob-focus);
++    --link: var(--ob-accent-text);
++    --backdrop: var(--ob-backdrop);
++
++    --surface-hover: var(--ob-hover-surface);
++    --background-secondary: var(--ob-muted-surface);
++    --background-tertiary: var(--ob-hover-surface);
++    --background-inverse: var(--ob-foreground);
++    --surface-shadow: var(--ob-shadow-card);
++    --overlay-shadow: var(--ob-shadow-overlay);
++    --border-width: 1px;
++    --disabled-opacity: 1;
++    --skeleton-animation: shimmer;
++  }
++
++  .dark,
++  [data-theme="dark"] {
++    color-scheme: dark;
++    --background: var(--ob-canvas);
++    --foreground: var(--ob-foreground);
++    --surface: var(--ob-surface);
++    --surface-foreground: var(--ob-foreground);
++    --surface-secondary: var(--ob-muted-surface);
++    --surface-secondary-foreground: var(--ob-foreground);
++    --surface-tertiary: var(--ob-hover-surface);
++    --surface-tertiary-foreground: var(--ob-foreground);
++    --overlay: var(--ob-overlay);
++    --overlay-foreground: var(--ob-foreground);
++    --muted: var(--ob-muted-text);
++
++    --scrollbar: var(--ob-control-border);
++    --scrollbar-thumb: var(--ob-control-border);
++    --scrollbar-track: transparent;
++    --scrollbar-gutter: auto;
++    --scrollbar-width: thin;
++    --scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
++
++    --default: var(--ob-secondary-surface);
++    --default-foreground: var(--ob-secondary-foreground);
++    --default-hover: var(--ob-hover-surface);
++    --default-soft: var(--ob-muted-surface);
++    --default-soft-foreground: var(--ob-foreground);
++    --default-soft-hover: var(--ob-hover-surface);
++
++    --accent: var(--ob-action);
++    --accent-foreground: var(--ob-action-foreground);
++    --accent-hover: var(--ob-action-hover);
++    --accent-soft: color-mix(in srgb, var(--ob-action) 10%, var(--ob-surface));
++    --accent-soft-foreground: var(--ob-accent-text);
++    --accent-soft-hover: color-mix(
++      in srgb,
++      var(--ob-action) 16%,
++      var(--ob-surface)
++    );
++
++    --field-background: var(--ob-field-background);
++    --field-foreground: var(--ob-foreground);
++    --field-placeholder: var(--ob-muted-text);
++    --field-border: var(--ob-control-border);
++    --field-border-width: 1px;
++    --field-hover: var(--ob-field-background);
++    --field-focus: var(--ob-field-background);
++    --field-border-hover: var(--ob-focus);
++    --field-border-focus: var(--ob-focus);
++    --field-shadow: none;
++    --field-radius: var(--ob-radius);
++    --radius: var(--ob-radius);
++
++    --success: var(--ob-success);
++    --success-foreground: var(--ob-success-foreground);
++    --success-hover: color-mix(
++      in srgb,
++      var(--ob-success) 90%,
++      var(--ob-success-foreground)
++    );
++    --success-soft: var(--ob-success-soft);
++    --success-soft-foreground: var(--ob-success);
++    --success-soft-hover: color-mix(
++      in srgb,
++      var(--ob-success) 16%,
++      var(--ob-surface)
++    );
++    --warning: var(--ob-warning);
++    --warning-foreground: var(--ob-warning-foreground);
++    --warning-hover: color-mix(
++      in srgb,
++      var(--ob-warning) 90%,
++      var(--ob-warning-foreground)
++    );
++    --warning-soft: var(--ob-warning-soft);
++    --warning-soft-foreground: var(--ob-warning);
++    --warning-soft-hover: color-mix(
++      in srgb,
++      var(--ob-warning) 16%,
++      var(--ob-surface)
++    );
++    --danger: var(--ob-danger);
++    --danger-foreground: var(--ob-danger-foreground);
++    --danger-hover: color-mix(
++      in srgb,
++      var(--ob-danger) 90%,
++      var(--ob-danger-foreground)
++    );
++    --danger-soft: var(--ob-danger-soft);
++    --danger-soft-foreground: var(--ob-danger);
++    --danger-soft-hover: color-mix(
++      in srgb,
++      var(--ob-danger) 16%,
++      var(--ob-surface)
++    );
++
++    --segment: var(--ob-surface);
++    --segment-foreground: var(--ob-foreground);
++    --border: var(--ob-border);
++    --border-secondary: var(--ob-control-border);
++    --border-tertiary: var(--ob-control-border);
++    --separator: var(--ob-border);
++    --separator-secondary: var(--ob-border);
++    --separator-tertiary: var(--ob-border);
++    --focus: var(--ob-focus);
++    --link: var(--ob-accent-text);
++    --backdrop: var(--ob-backdrop);
++
++    --surface-hover: var(--ob-hover-surface);
++    --background-secondary: var(--ob-muted-surface);
++    --background-tertiary: var(--ob-hover-surface);
++    --background-inverse: var(--ob-foreground);
++    --surface-shadow: var(--ob-shadow-card);
++    --overlay-shadow: var(--ob-shadow-overlay);
++    --border-width: 1px;
++    --disabled-opacity: 1;
++    --skeleton-animation: shimmer;
++  }
++
++  @media (prefers-reduced-motion: reduce) {
++    :root,
++    [data-theme="light"],
++    .dark,
++    [data-theme="dark"] {
++      --skeleton-animation: none;
++    }
++
++    .skeleton--shimmer::before,
++    .skeleton--shimmer::after {
++      animation: none;
++    }
++  }
+ }
+### app/src/styles/legacy-ui-bridge.css
+--- PRE/app/src/styles/legacy-ui-bridge.css
++++ POST-R2/app/src/styles/legacy-ui-bridge.css
+@@ -10,12 +10,8 @@
+  *
+  * Those two names are owned by HeroUI:
+  *
+- *   - HeroUI `--accent` is the emphasis fill (mapped to `--ob-action`). The legacy utilities that
+- *     used to read it (`bg-ob-hover`, `text-ob-hover-foreground`, …) are re-pointed in `styles.css` at
+- *     `--ob-hover-surface` instead, which is the value they have always rendered. No raw CSS in
+- *     `app/src` reads `var(--accent)`; that is a condition of this file existing.
+- *   - HeroUI `--muted` is muted TEXT (mapped to `--ob-muted-text`). The legacy surface name
+- *     (`bg-ob-muted-surface`, `bg-ob-muted-surface/50`) is re-pointed at `--ob-muted-surface` in `styles.css`.
++ *   - HeroUI `--accent` is the action fill (mapped to `--ob-action`) and `--muted` is muted text
++ *     (mapped to `--ob-muted-text`). Neither name is redeclared as a legacy alias.
+  *
+  * Keeping either name here would recreate exactly the collision this migration is fixing: a
+  * variable with two meanings, where whichever library loads last decides the colour.
+@@ -24,11 +20,8 @@
+ @layer ob-legacy {
+   :root {
+     /*
+-     * `--background`, `--foreground`, `--border`, `--radius` and `--success` are deliberately NOT
+-     * restated here: since the HeroUI-native baseline (issue #502), HeroUI's own `@layer base`
+-     * defaults carry them and the app's `--ob-*` tokens agree with those values, so a third copy
+-     * would only be one more place for them to drift apart (H14, closing the H02 review's
+-     * redundant-declaration item).
++     * `--background`, `--foreground`, `--border`, `--radius` and `--success` belong to the HeroUI
++     * bridge in heroui-theme.css. This layer contains only legacy shadcn aliases.
+      */
+     --card: var(--ob-surface);
+     --card-foreground: var(--ob-foreground);
+@@ -43,14 +36,10 @@
+     --brand: var(--ob-brand);
+     --brand-foreground: var(--ob-brand-foreground);
+     /*
+-     * `--input` is the shadcn INPUT STROKE, not the field fill, so it follows the border ladder —
+-     * NOT `--ob-field-border` (which stays `transparent` for the HeroUI-native borderless filled
+-     * fields). 21 `border-input` call sites (questionnaire choice indicator, select trigger, the
+-     * outline button's dark hairline, craft panels, …) draw a visible boundary with it, and the
+-     * `bg-input/30`-style dark tints expect a colour, not transparency. R1b: aliasing the two
+-     * names erased every `border-input` stroke in light mode (R1 REPORT §6.3).
++     * `--input` is the legacy field/control stroke alias and follows `--ob-control-border`; HeroUI
++     * field fill and native field border are separately owned by heroui-theme.css.
+      */
+-    --input: var(--ob-border);
++    --input: var(--ob-control-border);
+     --ring: var(--ob-focus);
+     --chart-1: var(--ob-chart-1);
+     --chart-2: var(--ob-chart-2);
+### app/src/styles/tokens.css
+--- PRE/app/src/styles/tokens.css
++++ POST-R2/app/src/styles/tokens.css
+@@ -1,169 +1,160 @@
+ /*
+- * OpenBot semantic tokens — the single source of colour truth for the app.
++ * OpenBot semantic tokens. This file is the single owner of every --ob-* theme value.
++ * Values and theme assignments follow the T01 theme-contract.json contract. HeroUI aliases are
++ * mapped in heroui-theme.css; legacy shadcn aliases live in legacy-ui-bridge.css.
+  *
+- * BASELINE (2026-10-20, issue #502): HeroUI's native default theme. The user reviewed the
+- * WorkBuddy-preserved preview and chose the library's own look instead, so every value below now
+- * restates `@heroui/styles/dist/themes/default/variables.css` in OpenBot's `--ob-*` vocabulary —
+- * the accent blue (`oklch(0.6204 0.195 253.83)`) is the action, brand, focus and chart-1 colour;
+- * the WorkBuddy teal ramp and the black/white primary buttons are retired.
+- *
+- * WHY A TWO-FILE SWAP WORKS. Because `styles.css` maps HeroUI's slots onto these tokens in
+- * `heroui-theme.css`, a design change after the migration only had to touch the values here: no
+- * component, route or utility below `app/src` was edited. Where a token now equals the HeroUI
+- * default exactly, the mapping in `heroui-theme.css` has been deleted so the library default flows
+- * natively instead of through a copy.
+- *
+- * The semantic split that forced the `--ob-*` namespace in the first place still holds:
+- *
+- *   - `--accent` belongs to HeroUI (emphasis fill). OpenBot's HOVER SURFACE is `--ob-hover-surface`;
+- *     the old `bg-accent` / `text-accent` classes remain renamed to `bg-ob-hover` /
+- *     `text-ob-hover-foreground`.
+- *   - `--muted` belongs to HeroUI (muted TEXT). OpenBot's QUIET SURFACE is `--ob-muted-surface`,
+- *     its text `--ob-muted-text`; the old classes remain renamed to `bg-ob-muted-surface` /
+- *     `text-ob-muted-text`.
+- *
+- * `legacy-ui-bridge.css` keeps the rest of the old shadcn vocabulary working off these tokens; it
+- * can be deleted once every call site uses the `--ob-*` names.
+- *
+- * The `.dark` block is the same state `openbot-theme`, the pre-paint script and `color-scheme`
+- * use; there is no second theme storage anywhere.
++ * The theme preference remains the existing openbot-theme value. These selectors only describe
++ * the current theme and do not add storage or an automatic preference write.
+  */
+ 
+ @layer ob-tokens {
+-  :root {
++  :root,
++  [data-theme="light"] {
+     color-scheme: light;
+-
+-    /* Surfaces */
+-    --ob-canvas: oklch(0.9702 0 0);
+-    --ob-surface: oklch(100% 0 0);
+-    --ob-overlay: oklch(100% 0 0);
+-    --ob-foreground: oklch(0.2103 0.0059 285.89);
+-    --ob-hover-surface: oklch(0.9524 0.0013 286.37);
+-    --ob-hover-surface-foreground: oklch(0.2103 0.0059 285.89);
+-    --ob-muted-surface: oklch(0.9524 0.0013 286.37);
+-    --ob-muted-text: oklch(0.5517 0.0138 285.94);
+-
+-    /* Action (accent buttons) and secondary (neutral buttons) */
+-    --ob-action: oklch(0.6204 0.195 253.83);
+-    --ob-action-foreground: oklch(0.9911 0 0);
+-    --ob-action-hover: color-mix(
+-      in oklab,
+-      oklch(0.6204 0.195 253.83) 90%,
+-      oklch(0.9911 0 0) 10%
++    --ob-canvas: #f5f7fa;
++    --ob-surface: #ffffff;
++    --ob-overlay: #ffffff;
++    --ob-foreground: #192131;
++    --ob-hover-surface: #eef1f6;
++    --ob-hover-surface-foreground: var(--ob-foreground);
++    --ob-muted-surface: var(--ob-hover-surface);
++    --ob-muted-text: #526079;
++    --ob-action: #315fcf;
++    --ob-action-foreground: #ffffff;
++    --ob-action-hover: #2853bd;
++    --ob-secondary-surface: var(--ob-muted-surface);
++    --ob-secondary-foreground: var(--ob-foreground);
++    --ob-brand: var(--ob-action);
++    --ob-brand-foreground: var(--ob-action-foreground);
++    --ob-danger: #b32745;
++    --ob-danger-foreground: #ffffff;
++    --ob-danger-soft: color-mix(
++      in srgb,
++      var(--ob-danger) 10%,
++      var(--ob-surface)
+     );
+-    --ob-secondary-surface: oklch(94% 0.001 286.375);
+-    --ob-secondary-foreground: oklch(0.2103 0.0059 285.89);
+-
+-    /* Identity + status: brand follows the accent blue everywhere (issue #502). */
+-    --ob-brand: oklch(0.6204 0.195 253.83);
+-    /* Snow on the accent fill, HeroUI's own pairing. */
+-    --ob-brand-foreground: oklch(0.9911 0 0);
+-    --ob-danger: oklch(0.6532 0.2328 25.74);
+-    --ob-danger-foreground: oklch(0.9911 0 0);
+-    --ob-danger-soft: color-mix(
+-      in oklab,
+-      oklch(0.6532 0.2328 25.74) 15%,
+-      transparent
++    --ob-success: #16704d;
++    --ob-success-foreground: #ffffff;
++    --ob-border: #d8dfe9;
++    --ob-field-border: var(--ob-control-border);
++    --ob-field-background: var(--ob-surface);
++    --ob-focus: #315fcf;
++    --ob-sidebar: #eef1f6;
++    --ob-sidebar-foreground: var(--ob-foreground);
++    --ob-sidebar-primary: var(--ob-accent-text);
++    --ob-sidebar-primary-foreground: var(--ob-foreground);
++    --ob-sidebar-accent: #e2e8f2;
++    --ob-sidebar-accent-foreground: var(--ob-foreground);
++    --ob-sidebar-border: var(--ob-border);
++    --ob-sidebar-ring: var(--ob-focus);
++    --ob-chart-1: #315fcf;
++    --ob-chart-2: #8b570b;
++    --ob-chart-3: #16704d;
++    --ob-chart-4: #7040ad;
++    --ob-chart-5: #a02c76;
++    --ob-radius: 8px;
++    --ob-shadow-card: none;
++    --ob-control-border: #7a879b;
++    --ob-accent-text: #315fcf;
++    --ob-warning: #8b570b;
++    --ob-warning-foreground: #ffffff;
++    --ob-warning-soft: color-mix(
++      in srgb,
++      var(--ob-warning) 10%,
++      var(--ob-surface)
+     );
+-    --ob-success: oklch(0.7329 0.1935 150.81);
+-    /* HeroUI pairs the light green with dark ink: snow would fall to 1.9:1. */
+-    --ob-success-foreground: oklch(0.2103 0.0059 285.89);
+-
+-    /* Boundaries + focus: fields are fill-defined (white fill, no stroke), focus is the accent.
+-     * The legacy `--input` stroke deliberately rides `--ob-border`, not `--ob-field-border` —
+-     * `border-input` draws a visible hairline (see legacy-ui-bridge.css, R1b). */
+-    --ob-border: oklch(90% 0.004 286.32);
+-    --ob-field-border: transparent;
+-    --ob-field-background: oklch(100% 0 0);
+-    --ob-focus: oklch(0.6204 0.195 253.83);
+-
+-    /* Sidebar: light = surface-secondary ground + surface-tertiary accent. Dark deliberately
+-     * grounds on --surface (0.2103) instead of surface-secondary (0.257) so the rail never reads
+-     * lighter than the cards beside it; accent stays surface-tertiary. */
+-    --ob-sidebar: oklch(0.9524 0.0013 286.37);
+-    --ob-sidebar-foreground: oklch(0.2103 0.0059 285.89);
+-    --ob-sidebar-primary: oklch(0.6204 0.195 253.83);
+-    --ob-sidebar-primary-foreground: oklch(0.9911 0 0);
+-    --ob-sidebar-accent: oklch(0.9373 0.0013 286.37);
+-    --ob-sidebar-accent-foreground: oklch(0.2103 0.0059 285.89);
+-    --ob-sidebar-border: oklch(90% 0.004 286.32);
+-    --ob-sidebar-ring: oklch(0.6204 0.195 253.83);
+-
+-    /*
+-     * Charts sit on white cards and carry data, so they are held at >= 3:1 (WCAG 1.4.11). The ramp
+-     * is unified around the accent blue (chart-1 IS the accent) plus one hue each of amber, green,
+-     * violet and rose for series separation; the dark block lifts each hue the same way. Measured
+-     * ratios are recorded in docs/verification/heroui-migration/r1/REPORT.md.
+-     */
+-    --ob-chart-1: oklch(0.6204 0.195 253.83);
+-    --ob-chart-2: oklch(0.62 0.15 55);
+-    --ob-chart-3: oklch(0.55 0.15 150);
+-    --ob-chart-4: oklch(0.55 0.22 300);
+-    --ob-chart-5: oklch(0.58 0.22 340);
+-
+-    --ob-radius: 0.5rem;
+-    --ob-shadow-card:
+-      0 2px 4px 0 rgb(0 0 0 / 4%), 0 1px 2px 0 rgb(0 0 0 / 6%),
+-      0 0 1px 0 rgb(0 0 0 / 6%);
++    --ob-success-soft: color-mix(
++      in srgb,
++      var(--ob-success) 10%,
++      var(--ob-surface)
++    );
++    --ob-disabled-background: var(--ob-muted-surface);
++    --ob-disabled-foreground: var(--ob-muted-text);
++    --ob-shadow-overlay: 0 8px 24px rgb(25 33 49 / 0.12);
++    --ob-backdrop: rgba(0, 0, 0, 0.24);
++    --ob-layout-app-sidebar: 280px;
++    --ob-layout-config-sidebar: 256px;
++    --ob-layout-rail: 64px;
++    --ob-layout-prose: 672px;
++    --ob-layout-wide: 1024px;
++    --ob-layout-chat: 720px;
++    --ob-layout-main-min: 480px;
++    --ob-layout-craft-session: 224px;
++    --ob-layout-craft-output: 420px;
+   }
+ 
+   .dark,
+   [data-theme="dark"] {
+     color-scheme: dark;
+-
+-    --ob-canvas: oklch(12% 0.005 285.823);
+-    --ob-surface: oklch(0.2103 0.0059 285.89);
+-    --ob-overlay: oklch(0.2103 0.0059 285.89);
+-    --ob-foreground: oklch(0.9911 0 0);
+-    --ob-hover-surface: oklch(0.257 0.0037 286.14);
+-    --ob-hover-surface-foreground: oklch(0.9911 0 0);
+-    --ob-muted-surface: oklch(0.257 0.0037 286.14);
+-    --ob-muted-text: oklch(70.5% 0.015 286.067);
+-
+-    /* The accent is theme-independent: blue buttons in both modes. */
+-    --ob-action: oklch(0.6204 0.195 253.83);
+-    --ob-action-foreground: oklch(0.9911 0 0);
+-    --ob-action-hover: color-mix(
+-      in oklab,
+-      oklch(0.6204 0.195 253.83) 90%,
+-      oklch(0.9911 0 0) 10%
++    --ob-canvas: #111318;
++    --ob-surface: #191d26;
++    --ob-overlay: #242b38;
++    --ob-foreground: #ebeff7;
++    --ob-hover-surface: #242b38;
++    --ob-hover-surface-foreground: var(--ob-foreground);
++    --ob-muted-surface: var(--ob-hover-surface);
++    --ob-muted-text: #a2acbe;
++    --ob-action: #3d6bda;
++    --ob-action-foreground: #ffffff;
++    --ob-action-hover: #345fc7;
++    --ob-secondary-surface: var(--ob-muted-surface);
++    --ob-secondary-foreground: var(--ob-foreground);
++    --ob-brand: var(--ob-action);
++    --ob-brand-foreground: var(--ob-action-foreground);
++    --ob-danger: #ff9ea7;
++    --ob-danger-foreground: #30141b;
++    --ob-danger-soft: color-mix(
++      in srgb,
++      var(--ob-danger) 10%,
++      var(--ob-surface)
+     );
+-    --ob-secondary-surface: oklch(27.4% 0.006 286.033);
+-    --ob-secondary-foreground: oklch(0.9911 0 0);
+-
+-    --ob-brand: oklch(0.6204 0.195 253.83);
+-    --ob-brand-foreground: oklch(0.9911 0 0);
+-    --ob-danger: oklch(0.594 0.1967 24.63);
+-    --ob-danger-foreground: oklch(0.9911 0 0);
+-    --ob-danger-soft: color-mix(
+-      in oklab,
+-      oklch(0.594 0.1967 24.63) 15%,
+-      transparent
++    --ob-success: #69d5ac;
++    --ob-success-foreground: #10231b;
++    --ob-border: #303949;
++    --ob-field-border: var(--ob-control-border);
++    --ob-field-background: var(--ob-surface);
++    --ob-focus: #8db4ff;
++    --ob-sidebar: #0d1015;
++    --ob-sidebar-foreground: var(--ob-foreground);
++    --ob-sidebar-primary: var(--ob-accent-text);
++    --ob-sidebar-primary-foreground: var(--ob-foreground);
++    --ob-sidebar-accent: #242b38;
++    --ob-sidebar-accent-foreground: var(--ob-foreground);
++    --ob-sidebar-border: var(--ob-border);
++    --ob-sidebar-ring: var(--ob-focus);
++    --ob-chart-1: #8db4ff;
++    --ob-chart-2: #f0be69;
++    --ob-chart-3: #69d5ac;
++    --ob-chart-4: #c3a2f2;
++    --ob-chart-5: #f09acb;
++    --ob-radius: 8px;
++    --ob-shadow-card: none;
++    --ob-control-border: #68788f;
++    --ob-accent-text: #8db4ff;
++    --ob-warning: #f0be69;
++    --ob-warning-foreground: #2a1d08;
++    --ob-warning-soft: color-mix(
++      in srgb,
++      var(--ob-warning) 10%,
++      var(--ob-surface)
+     );
+-    --ob-success: oklch(0.7329 0.1935 150.81);
+-    --ob-success-foreground: oklch(0.2103 0.0059 285.89);
+-
+-    --ob-border: oklch(28% 0.006 286.033);
+-    --ob-field-border: transparent;
+-    --ob-field-background: oklch(0.2103 0.0059 285.89);
+-    --ob-focus: oklch(0.6204 0.195 253.83);
+-
+-    --ob-sidebar: oklch(0.2103 0.0059 285.89);
+-    --ob-sidebar-foreground: oklch(0.9911 0 0);
+-    --ob-sidebar-primary: oklch(0.6204 0.195 253.83);
+-    --ob-sidebar-primary-foreground: oklch(0.9911 0 0);
+-    --ob-sidebar-accent: oklch(0.2721 0.0024 247.91);
+-    --ob-sidebar-accent-foreground: oklch(0.9911 0 0);
+-    --ob-sidebar-border: oklch(28% 0.006 286.033);
+-    --ob-sidebar-ring: oklch(0.6204 0.195 253.83);
+-
+-    --ob-chart-1: oklch(0.6204 0.195 253.83);
+-    --ob-chart-2: oklch(0.78 0.14 70);
+-    --ob-chart-3: oklch(0.75 0.16 150);
+-    --ob-chart-4: oklch(0.7 0.18 300);
+-    --ob-chart-5: oklch(0.7 0.19 340);
+-
+-    /* HeroUI's dark theme carries no card shadow; surface steps do the separating. */
+-    --ob-shadow-card: 0 0 0 0 transparent;
++    --ob-success-soft: color-mix(
++      in srgb,
++      var(--ob-success) 10%,
++      var(--ob-surface)
++    );
++    --ob-disabled-background: var(--ob-muted-surface);
++    --ob-disabled-foreground: var(--ob-muted-text);
++    --ob-shadow-overlay: none;
++    --ob-backdrop: rgba(0, 0, 0, 0.6);
++    --ob-layout-app-sidebar: 280px;
++    --ob-layout-config-sidebar: 256px;
++    --ob-layout-rail: 64px;
++    --ob-layout-prose: 672px;
++    --ob-layout-wide: 1024px;
++    --ob-layout-chat: 720px;
++    --ob-layout-main-min: 480px;
++    --ob-layout-craft-session: 224px;
++    --ob-layout-craft-output: 420px;
+   }
+ }

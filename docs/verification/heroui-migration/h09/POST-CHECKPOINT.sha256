@@ -1,0 +1,5 @@
+b59f593a9a4ec57d2116facc23e84b4be9454c329e5dcf382483259398fe64f7  app/tests/multitenancy/selection.test.tsx
+6def3dbd7ed30a59b9c44af2cc6730526e412dba99219d36d067acfa59507ec4  app/src/components/app-sidebar/app-sidebar.tsx
+1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80  app/src/components/layout/page-shell.tsx
+92d2345ba56a7c95ba58ce1f0e8d319488324a1e4e5bf6f2724473520316f26e  app/src/components/layout/row-mark.tsx
+a8131ca246dd9f5348902b7c1aa446fa9e1ef86abf8fb965d5e602d3e713e67e  app/src/components/layout/self-host-banner.tsx

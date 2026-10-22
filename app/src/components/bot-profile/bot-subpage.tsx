@@ -15,30 +15,42 @@ export function BotSubpage({
   title,
   description,
   children,
+  width = "prose",
 }: {
   agentId: string;
   title: string;
   description: string;
   children: (agent: AgentProfile) => React.ReactNode;
+  width?: "prose" | "wide";
 }) {
   const { t } = useTranslation("agents");
   const agent = useQuery(agentQueryOptions(agentId));
+  const agentData = agent.data;
   return (
     <PageShell
       backButton={{
-        label: agent.data?.name ?? t("botSubpage.titleFallback"),
+        label: agentData?.name ?? t("botSubpage.titleFallback"),
         linkProps: { params: { agentId }, to: "/bots/$agentId" },
       }}
       description={description}
       title={title}
+      width={width}
     >
-      {agent.isPending ? null : agent.error ? (
+      {!agentData && !agent.isPending ? (
         <p className="mt-6 text-destructive text-sm" role="alert">
           {t("botSubpage.unreachable")}
         </p>
-      ) : (
-        children(agent.data)
-      )}
+      ) : null}
+      {agentData ? (
+        <>
+          {agent.error ? (
+            <p className="mt-6 text-destructive text-sm" role="alert">
+              {t("botSubpage.unreachable")}
+            </p>
+          ) : null}
+          {children(agentData)}
+        </>
+      ) : null}
     </PageShell>
   );
 }

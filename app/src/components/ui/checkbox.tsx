@@ -1,30 +1,103 @@
-import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
+import { Checkbox as CheckboxPrimitive } from "@heroui/react";
 import { IconCheck } from "@tabler/icons-react";
+import type { ComponentPropsWithRef, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
+type CheckboxPrimitiveProps = ComponentPropsWithRef<typeof CheckboxPrimitive>;
+
+export type CheckboxProps = Omit<
+  CheckboxPrimitiveProps,
+  | "checked"
+  | "children"
+  | "className"
+  | "defaultChecked"
+  | "disabled"
+  | "isDisabled"
+  | "isIndeterminate"
+  | "isSelected"
+  | "onChange"
+> & {
+  checked?: boolean;
+  defaultChecked?: boolean;
+  /**
+   * The half-check state. React Aria drives the native input's `indeterminate` property, which is
+   * the platform's "mixed" checkbox state (exposed to assistive technology as `mixed`); the
+   * wrapper also carries `data-indeterminate` on the root for styling.
+   */
+  indeterminate?: boolean;
+  disabled?: boolean;
+  /** Accepted for parity with the old API; mapped to React Aria's `isDisabled`. */
+  isDisabled?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+  className?: string;
+  /** Optional visible label rendered inside the clickable area. */
+  children?: ReactNode;
+};
+
+/**
+ * The app's checkbox: a 16px teal-when-on control that submits `name`/`value` with a real form.
+ *
+ * HeroUI's Checkbox is a React Aria `CheckboxField` (a plain wrapper) around a
+ * `CheckboxButton` (a `<label>` holding the visually-hidden native input). The Control has to be
+ * INSIDE that label or the square is decorative — clicking it would not toggle anything. The
+ * wrapper therefore renders `Content > Control + Indicator`, which also keeps a pointer click and
+ * a programmatic `input.click()` on the same path.
+ *
+ * `aria-label`, `onClick` and the rest of the RAC props still reach the native input, so the old
+ * call sites (a table row with a shift-click range, checkboxes named by a sibling `<label
+ * htmlFor>`) keep the same event target.
+ *
+ * `id` is applied to the hidden input through `inputRef`: React Aria deliberately removes `id`
+ * from the field root, and an external `<Label htmlFor>` must keep pointing at the control that
+ * actually toggles.
+ */
+function Checkbox({
+  checked,
+  defaultChecked,
+  indeterminate = false,
+  disabled = false,
+  isDisabled,
+  onCheckedChange,
+  className,
+  children,
+  id,
+  inputRef,
+  ...props
+}: CheckboxProps) {
   return (
-    <CheckboxPrimitive.Root
+    <CheckboxPrimitive
       data-slot="checkbox"
-      className={cn(
-        /*
-         * Checked fill is the brand teal — WorkBuddy's own controls turn their brand color when
-         * ON while buttons stay black; same separation as the switch. The glyph is ink
-         * (--brand-foreground), not white: ink on teal is 7.84:1 where white is 2.29:1.
-         */
-        "peer flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input shadow-xs outline-none transition-[background-color,border-color,box-shadow] duration-150 ease-out focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-checked:border-brand data-checked:bg-brand data-checked:text-brand-foreground data-disabled:cursor-not-allowed data-disabled:opacity-50",
-        className,
-      )}
+      className={cn("ob-checkbox", className)}
+      defaultSelected={defaultChecked}
+      inputRef={(element) => {
+        if (element && id) {
+          element.id = id;
+        }
+        if (typeof inputRef === "function") inputRef(element);
+        else if (inputRef) inputRef.current = element;
+      }}
+      isDisabled={isDisabled ?? disabled}
+      isIndeterminate={indeterminate}
+      isSelected={checked}
+      onChange={onCheckedChange}
       {...props}
     >
-      <CheckboxPrimitive.Indicator
-        data-slot="checkbox-indicator"
-        className="flex items-center justify-center text-current"
+      <CheckboxPrimitive.Content
+        data-slot="checkbox-content"
+        className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
       >
-        <IconCheck className="size-3" />
-      </CheckboxPrimitive.Indicator>
-    </CheckboxPrimitive.Root>
+        <CheckboxPrimitive.Control
+          data-slot="checkbox-control"
+          className="rounded-[4px] border-[var(--ob-control-border)] shadow-xs"
+        >
+          <CheckboxPrimitive.Indicator data-slot="checkbox-indicator">
+            <IconCheck className="size-3" />
+          </CheckboxPrimitive.Indicator>
+        </CheckboxPrimitive.Control>
+        {children}
+      </CheckboxPrimitive.Content>
+    </CheckboxPrimitive>
   );
 }
 

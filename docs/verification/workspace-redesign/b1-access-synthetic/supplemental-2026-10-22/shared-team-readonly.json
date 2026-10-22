@@ -1,0 +1,243 @@
+{
+ "env": "peer non-admin account; bot published to whole team by owner",
+ "results": [
+  {
+   "pid": "P06",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "自在做什么、需要你什么，以及是否已暂停。\n\n你的\n\n你还没有自己的 Bot。\n\n与你共享的\nRead"
+  },
+  {
+   "pid": "P06",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nBots"
+  },
+  {
+   "pid": "P07",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": false,
+   "overflow": 0,
+   "text": " Bot 在为你做什么，以及它是如何设置的。\n\nReadOnly Probe Bot\n\nProbe\n"
+  },
+  {
+   "pid": "P07",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": false,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nBots"
+  },
+  {
+   "pid": "P08",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "ot 为你处理的长期目标、每次运行的起因，以及它的发现。\n\n目标\n新建职责\n\n此 Bot 还没有职责"
+  },
+  {
+   "pid": "P08",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nRead"
+  },
+  {
+   "pid": "P09",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "\n在 Slack、Microsoft Teams 或通过短信继续与此 Bot 的对话。\n\n已连接的目"
+  },
+  {
+   "pid": "P09",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nRead"
+  },
+  {
+   "pid": "P10",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "连接的应用为此 Bot 提供事实，以及它为你做的后台调研。\n\n你的 Bots 关于你的记忆在 设置 "
+  },
+  {
+   "pid": "P10",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nRead"
+  },
+  {
+   "pid": "P11",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": " Bot 无需先询问你即可做的事情。\n\n规则\n\n最严格的匹配规则优先，因此“询问”规则会压过“允许”"
+  },
+  {
+   "pid": "P11",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nRead"
+  },
+  {
+   "pid": "P12",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "ot 按计划为你做的事。可以关掉某个、立即运行或删除它。\n\n这位同事暂无计划任务 在频道中向它提出请"
+  },
+  {
+   "pid": "P12",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nRead"
+  },
+  {
+   "pid": "P13",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "此 Bot 可以使用的技能、应用和其他 Bot。\n\n已授予\n\n此 Bot 工作时可触达的内容。未列出"
+  },
+  {
+   "pid": "P13",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nRead"
+  },
+  {
+   "pid": "P14",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "可以使用此 Bot。与它的每段对话都仅对使用它的人可见。\n\n已发布\n给整个团队\n\n与它的每段对话都仅"
+  },
+  {
+   "pid": "P14",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": true,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nRead"
+  },
+  {
+   "pid": "P15",
+   "theme": "light",
+   "w": 390,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": false,
+   "overflow": 0,
+   "text": "ot 是谁、谁能找到它，以及它运行在哪里。\n\n身份\n名称\n\nReadOnly Probe Bot\n\n"
+  },
+  {
+   "pid": "P15",
+   "theme": "dark",
+   "w": 1440,
+   "ok": true,
+   "denied": false,
+   "seesBot": true,
+   "noSecret": false,
+   "overflow": 0,
+   "text": "t\nWP\nWorkspace Peer\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nRead"
+  }
+ ],
+ "secretCheckNote": "The initial noSecret heuristic flagged P07/P15 because the settings summary row shows the endpoint HOST (probe.invalid) via setupSummary(), which parses new URL(endpoint).host. Follow-up precise DOM/text check on both routes: no full URL with path, no Bearer token, no secret material, no editable inputs; P15 shows no input values at all. The host label is the designed non-sensitive summary (source: app/src/lib/agents/bot-summaries.ts setupSummary), so both routes pass the no-sensitive-value criterion.",
+ "followup": {
+  "P07": {
+   "fullUrlLeak": false,
+   "bearerLeak": false,
+   "inputValues": [
+    "on",
+    "on",
+    "on"
+   ]
+  },
+  "P15": {
+   "fullUrlLeak": false,
+   "bearerLeak": false,
+   "inputValues": []
+  }
+ },
+ "pass": 20
+}

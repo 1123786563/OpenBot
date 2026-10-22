@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-21",
+  "scope": "isolated admin; dialog opened and draft fields filled only; no save",
+  "results": [
+    {
+      "theme": "light",
+      "viewport": 390,
+      "overflow": false,
+      "dialog": true,
+      "title": 120,
+      "textarea": 300,
+      "actions": [
+        "Run when asked",
+        "Cancel",
+        "Create responsibility",
+        "Close"
+      ]
+    },
+    {
+      "theme": "dark",
+      "viewport": 390,
+      "overflow": false,
+      "dialog": true,
+      "title": 120,
+      "textarea": 300,
+      "actions": [
+        "Run when asked",
+        "Cancel",
+        "Create responsibility",
+        "Close"
+      ]
+    }
+  ]
+}

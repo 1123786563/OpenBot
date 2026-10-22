@@ -8,7 +8,7 @@ import {
   IconTextCaption,
 } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ZodType } from "zod";
 import { CallbackTokenPanel } from "@/components/agents/callback-token-panel";
@@ -184,11 +184,12 @@ function VisibilityRow({
               public: t("visibility.optionPublic"),
             }}
             onValueChange={async (next) => {
-              if (next === agent.visibility) return;
+              // null is the Select's "nothing chosen" (dismiss); the saved answer stays.
+              if (next === null || next === agent.visibility) return;
               setError(null);
               setSaving(true);
               try {
-                await onSave(next as AgentProfile["visibility"]);
+                await onSave(next);
               } catch (failure) {
                 setError(
                   failure instanceof Error
@@ -249,12 +250,12 @@ function EditTextDialog({
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const submit = async () => {
     const parsed = schema.safeParse(draft);
     if (!parsed.success) {
-      setError(
-        parsed.error.issues[0]?.message ?? t("editable.doesNotFit"),
-      );
+      setError(parsed.error.issues[0]?.message ?? t("editable.doesNotFit"));
       return;
     }
     setSaving(true);
@@ -265,6 +266,9 @@ function EditTextDialog({
       setError(
         failure instanceof Error ? failure.message : t("editable.couldNotSave"),
       );
+      requestAnimationFrame(() => {
+        (inputRef.current ?? textareaRef.current)?.focus();
+      });
     } finally {
       setSaving(false);
     }
@@ -280,6 +284,7 @@ function EditTextDialog({
             <Textarea
               aria-label={label}
               autoFocus
+              ref={textareaRef}
               onChange={(event) => setDraft(event.target.value)}
               rows={5}
               value={draft}
@@ -288,6 +293,7 @@ function EditTextDialog({
             <Input
               aria-label={label}
               autoFocus
+              ref={inputRef}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !isComposing(event)) {

@@ -12,8 +12,8 @@ import { CreditBar } from "./credit-bar";
  */
 const STATUS_TONE: Record<CreditGrantEntry["status"], string> = {
   active: "bg-success/10 text-success",
-  exhausted: "bg-muted text-muted-foreground",
-  expired: "bg-muted text-muted-foreground",
+  exhausted: "bg-ob-muted-surface text-muted-foreground",
+  expired: "bg-ob-muted-surface text-muted-foreground",
 };
 
 /**
@@ -40,7 +40,7 @@ export function CreditGrantRow({
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex flex-wrap items-center gap-2">
           {sourceLabel ? (
-            <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-muted-foreground">
+            <span className="rounded-full bg-ob-muted-surface px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-muted-foreground">
               {sourceLabel}
             </span>
           ) : null}

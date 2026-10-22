@@ -1,0 +1,72 @@
+[
+  {
+    "path": "app/src/routes/_authed/_app.tsx",
+    "sha256": "22d37ba409b40ccdb0d5ddcf413ca904b1f70b3dc98192bfc9b74844ddc36477",
+    "bytes": 967
+  },
+  {
+    "path": "app/src/routes/_authed/admin/route.tsx",
+    "sha256": "757adef57e96f04033adae7ae1f3d2c17363091911d3bea47c521083c2ef0433",
+    "bytes": 910
+  },
+  {
+    "path": "app/src/routes/_authed/settings/route.tsx",
+    "sha256": "29f357b9c3bf19784bd04f3df7e17bf6eb36fd7368fa4d3a50a0c6c9da4c9e31",
+    "bytes": 627
+  },
+  {
+    "path": "app/src/components/ui/sidebar.tsx",
+    "sha256": "667f8b8807a4b46b28b1f529c56a3ab008083435239ee6013bca6e625c16a2f6",
+    "bytes": 25973
+  },
+  {
+    "path": "app/src/components/layout/page-shell.tsx",
+    "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80",
+    "bytes": 8945
+  },
+  {
+    "path": "app/src/components/craft/scheduled-task-editor.tsx",
+    "sha256": "98212135104473876f067a35f7f8fc6683943afdf8c7354cac6e118840bae5c4",
+    "bytes": 21729
+  },
+  {
+    "path": "app/src/routes/_authed/_app/craft/tasks.tsx",
+    "sha256": "053f4dc05c7a49b45a41fcdd0d9a647bb558aea4a33fb939a073f4967a497fe4",
+    "bytes": 6493
+  },
+  {
+    "path": "app/tests/detail-panel.test.tsx",
+    "sha256": "3c5269c5f5966ee2fae60f8b5cbcf6ede6e5200a2b631651789394705618c300",
+    "bytes": 5051
+  },
+  {
+    "path": "app/tests/sidebar-preference.test.ts",
+    "sha256": "ebfd01048855e096fe21d53d54d4b59c39811454e90426a82b312ec7533e2ef0",
+    "bytes": 1939
+  },
+  {
+    "path": "app/tests/sidebar-shortcut-layouts.test.tsx",
+    "sha256": "778095d111a2406ab9c5350c8e9c3ab31416dd86445af84fd9f45d9b4b4b16c1",
+    "bytes": 2610
+  },
+  {
+    "path": "app/src/routes/_authed/_app/skills.tsx",
+    "sha256": "f7cbfb4973ec7009d862d1c8ab7313542ccf4a9447f572b219f71b5eef73e9f6",
+    "bytes": 16066
+  },
+  {
+    "path": "app/src/components/skills/new-skill.tsx",
+    "sha256": "831c644f7e6a4784891565d55d2c0fa84c3f59ae94f67cb56c01086e52a45c9e",
+    "bytes": 2044
+  },
+  {
+    "path": "app/src/components/skills/edit-skill.tsx",
+    "sha256": "ae20f1055994fb32858bcf67c17d95fcbb897d0754633e3144d9b40344adec17",
+    "bytes": 4497
+  },
+  {
+    "path": "app/src/components/skills/skill-fields.tsx",
+    "sha256": "0180934a7ed3f28f8bee31b25f7716bb014e4485a384aee5401bed45726d756f",
+    "bytes": 9683
+  }
+]

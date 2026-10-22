@@ -10,7 +10,7 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminComponentPreview } from "@/components/component-preview";
@@ -21,6 +21,7 @@ import {
 } from "@/components/layout/page-shell";
 import { SettingsItemBackground } from "@/components/settings/background";
 import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import {
   Dialog,
   DialogBody,
@@ -137,13 +138,13 @@ function RouteComponent() {
               {t("components.noSuch.hint")}
             </EmptyDescription>
           </EmptyHeader>
-          <Button
-            render={<Link to="/admin/components" />}
+          <ButtonLink
+            to="/admin/components"
             size="sm"
             variant="outline"
           >
             {t("components.noSuch.back")}
-          </Button>
+          </ButtonLink>
         </Empty>
       </PageShell>
     );
@@ -219,7 +220,7 @@ function SheetRow({
 }) {
   return (
     <Item
-      className="w-full text-left transition-colors hover:bg-muted/50"
+      className="w-full text-left transition-colors hover:bg-ob-muted-surface/50"
       /*
        * No children on the render element. `useRender` merges props, and children given here would
        * replace the row's own — which is how this first drew as three empty rows. The button takes

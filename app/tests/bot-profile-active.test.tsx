@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,6 +10,13 @@ import {
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { BotProfile } from "@/components/bot-profile/profile";
 import type { AgentProfile } from "@/lib/agents/queries";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -129,4 +135,22 @@ test("switching a running Bot off pauses it", async () => {
   fireEvent.click(await view.findByRole("switch", { name: "Active" }));
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(writes).toEqual(["pause"]);
+});
+
+test("the full Bot identity remains in the DOM and can wrap without line clamping", async () => {
+  serving(false);
+  const longName = `${"Bot name ".repeat(13)}end`;
+  const longDescription = "D".repeat(300);
+  const view = draw({
+    ...BOT,
+    name: longName,
+    roleDescription: longDescription,
+  });
+
+  const name = await view.findByText(longName);
+  const description = view.getByText(longDescription);
+  expect(name.className).toContain("break-words");
+  expect(name.className).not.toContain("line-clamp");
+  expect(description.className).toContain("break-words");
+  expect(description.className).not.toContain("line-clamp");
 });

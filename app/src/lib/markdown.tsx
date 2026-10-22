@@ -83,7 +83,7 @@ export const markdownComponents = {
            * taller than its neighbours, which is what turns a paragraph with three citations in it
            * into a ragged block.
            */
-          className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-muted/40 px-1.5 py-0.5 align-middle text-xs leading-tight no-underline transition-colors hover:bg-muted"
+          className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-ob-muted-surface/40 px-1.5 py-0.5 align-middle text-xs leading-tight no-underline transition-colors hover:bg-ob-muted-surface"
           href={href}
           rel="noreferrer noopener"
           target="_blank"

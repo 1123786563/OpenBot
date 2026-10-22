@@ -179,7 +179,7 @@ function BrowserWindow({ className }: { className?: string }) {
       <div className="flex items-center border-border border-b px-2.5 py-1.5">
         <TrafficLights />
         {/* The address pill; the empty span mirrors the lights so it centers truly. */}
-        <div className="mx-auto flex h-4.5 w-2/5 items-center justify-center gap-1 rounded-full bg-muted px-2">
+        <div className="mx-auto flex h-4.5 w-2/5 items-center justify-center gap-1 rounded-full bg-ob-muted-surface px-2">
           <IconLock className="size-2.5 text-muted-foreground/60" />
           <Line className="h-1 w-14 bg-muted-foreground/25" />
         </div>
@@ -188,7 +188,7 @@ function BrowserWindow({ className }: { className?: string }) {
 
       <div className="space-y-2.5 p-3">
         <div className="flex items-center gap-2">
-          <div className="size-4 rounded bg-muted" />
+          <div className="size-4 rounded bg-ob-muted-surface" />
           <Line className="w-10" />
           <Line className="w-8" />
           <div className="ml-auto h-4 w-12 rounded-md bg-primary/15" />
@@ -205,7 +205,7 @@ function BrowserWindow({ className }: { className?: string }) {
               className="rounded-md border border-border bg-background p-1.5"
               key={card}
             >
-              <div className="h-9 rounded-sm bg-muted" />
+              <div className="h-9 rounded-sm bg-ob-muted-surface" />
               <Line className="mt-1.5 h-1 w-3/4" />
               <Line className="mt-1 h-1 w-1/2" />
             </div>
@@ -220,7 +220,7 @@ function BrowserWindow({ className }: { className?: string }) {
 function FileGlyph() {
   return (
     <div className="relative h-8 w-6.5 rounded-[3px] border border-border bg-background">
-      <div className="absolute top-0 right-0 size-2 rounded-bl-[3px] border-border border-b border-l bg-muted" />
+      <div className="absolute top-0 right-0 size-2 rounded-bl-[3px] border-border border-b border-l bg-ob-muted-surface" />
       <div className="absolute inset-x-1 bottom-1.5 space-y-1">
         <Line className="h-0.75 w-full" />
         <Line className="h-0.75 w-2/3" />
@@ -252,7 +252,7 @@ function FinderWindow({ className }: { className?: string }) {
       </div>
 
       <div className="flex">
-        <div className="w-14 space-y-1.5 border-border border-r bg-muted/40 p-2">
+        <div className="w-14 space-y-1.5 border-border border-r bg-ob-muted-surface/40 p-2">
           {["one", "two", "three", "four"].map((row) => (
             <div className="flex items-center gap-1" key={row}>
               <span className="size-1.5 rounded-[2px] bg-muted-foreground/25" />

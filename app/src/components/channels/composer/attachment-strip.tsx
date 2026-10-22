@@ -127,7 +127,7 @@ export function AttachmentStrip({
            * attachments rather than as two things that happened to land next to each other.
            */
           <Staged
-            className="flex h-20 w-40 flex-col justify-between rounded-xl border border-border bg-muted/40 p-2"
+            className="flex h-20 w-40 flex-col justify-between rounded-xl border border-border bg-ob-muted-surface/40 p-2"
             key={file.id}
           >
             {/*

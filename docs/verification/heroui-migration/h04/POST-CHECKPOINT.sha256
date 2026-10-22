@@ -1,0 +1,11 @@
+76f7c44d3b79f5e822c37afba6c88ef34846c6f5e21cca17bd482ca8bba2dc1b  app/tests/preload.ts
+13462d923b1ac4a26567c67b0503e57dfad3b073e135e122da8db5b8eef4827f  app/tests/user-preferences.test.tsx
+2baca4ae928c57d3d045f2835cffa37720c9e34f64aa889287ef0a876409f4d9  app/tests/bot-memory.test.tsx
+75e9fcf40ccde30fe77b3d3847f5ae3e4e1497a29be9a0176174b7610ed750e7  app/tests/bot-reaching-you.test.tsx
+40a450ebd1cbc4dcad0f9d49c954c8b49363964734ea8fbd7e2aa2f7014b205a  app/src/components/plugins/shared-approval-fields.tsx
+# [W7-F1 refresh 2026-10-20] H14 (base removal wave) legitimately touched 3 of these files:
+# preload.ts (@base-ui warm block deleted + NODE_ENV=test), bot-memory/bot-reaching-you tests
+# (W4-F5 comment placement cleanup). Current terminal hashes; originals above kept for history:
+d589111c30b4f1ff6a73ffb2d506292f45eb6a883298c90983e9a00ada717790  app/tests/preload.ts
+4bf1d799cbff1d2c498779d598748040df7a962900e9d180bdd23596bf805df5  app/tests/bot-memory.test.tsx
+0849a37910fef52cd69179caa9da761649d472fec98d0e1ececf7a67866faa65  app/tests/bot-reaching-you.test.tsx

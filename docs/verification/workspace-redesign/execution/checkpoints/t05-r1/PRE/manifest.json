@@ -1,0 +1,44 @@
+[
+  {
+    "path": "app/src/components/bot-profile/bot-subpage.tsx",
+    "bytes": 1289,
+    "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+  },
+  {
+    "path": "app/src/components/delivery/reaching-you.tsx",
+    "bytes": 20422,
+    "sha256": "80addccf5eff2911855daae22de30e83795c9284183b252d890e12a55a005553"
+  },
+  {
+    "path": "app/src/components/routines/routines-list.tsx",
+    "bytes": 19944,
+    "sha256": "9255c5fae82f63be27db8910b39a37751676a023d1a205073c317b60751b83f1"
+  },
+  {
+    "path": "app/tests/bot-reaching-you.test.tsx",
+    "bytes": 8974,
+    "sha256": "0849a37910fef52cd69179caa9da761649d472fec98d0e1ececf7a67866faa65"
+  },
+  {
+    "path": "app/src/locales/en/routines.json",
+    "bytes": 8895,
+    "sha256": "ee1626cef461bc9e0cd21a7140cbdc9ca4dc1877a6e13c9d795fcc1729d50eb1"
+  },
+  {
+    "path": "app/src/locales/zh-CN/routines.json",
+    "bytes": 9139,
+    "sha256": "ea4bbbea70d2f6697c8c31bce8210e8d02eff08581389d922550a7ed5667dafe"
+  },
+  {
+    "path": "app/tests/routines-list.test.tsx",
+    "exists": false,
+    "bytes": 0,
+    "sha256": null
+  },
+  {
+    "path": "app/tests/bot-subpage.test.tsx",
+    "exists": false,
+    "bytes": 0,
+    "sha256": null
+  }
+]

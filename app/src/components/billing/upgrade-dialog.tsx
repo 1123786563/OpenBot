@@ -253,7 +253,7 @@ export function UpgradeDialog({
     if (!open || !order || order.status !== "pending") return;
     const timer = setInterval(() => {
       const current = orderRef.current;
-      if (!current || current.status !== "pending") return;
+      if (current?.status !== "pending") return;
       void queryClient
         .fetchQuery(purchaseOrderQueryOptions(current.orderId))
         .then(({ order: fresh }) => {
@@ -417,7 +417,7 @@ export function UpgradeDialog({
                   />
                 </div>
               ) : (
-                <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-lg border border-dashed bg-muted/50 text-center">
+                <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-lg border border-dashed bg-ob-muted-surface/50 text-center">
                   <span className="text-muted-foreground text-xs">
                     {t("upgradeDialog.qrPlaceholder")}
                   </span>

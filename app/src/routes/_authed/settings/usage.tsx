@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { ConsumptionRange } from "@/components/billing/consumption-table";
 import {
   isRangeKey,
   UsageCreditsView,
 } from "@/components/billing/usage-credits-view";
-import type { ConsumptionRange } from "@/components/billing/consumption-table";
 
 export const Route = createFileRoute("/_authed/settings/usage")({
   component: RouteComponent,

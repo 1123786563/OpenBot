@@ -1,0 +1,1 @@
+T05-R1 final scoped delta; PRE existing paths reconstructed from captured PRE, clean HEAD locale blobs, and exact reverse of two registered test additions; two new test files marked absent. Full baseline status/patch remain in ../PRE.

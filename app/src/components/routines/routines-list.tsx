@@ -26,6 +26,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Item,
   ItemActions,
   ItemContent,
@@ -422,38 +428,36 @@ export function RoutinesList({
                         <IconPlayerPlay />
                         {t("actions.runNow")}
                       </Button>
-                      <Button
-                        aria-expanded={historyId === routine.id}
-                        aria-label={t("actions.historyAria", {
-                          schedule: routine.schedule,
-                        })}
-                        onClick={() =>
-                          setHistoryId(
-                            historyId === routine.id ? null : routine.id,
-                          )
-                        }
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <IconHistory />
-                        {t("actions.history")}
-                      </Button>
-                      <Button
-                        aria-label={t("actions.deleteAria", {
-                          schedule: routine.schedule,
-                        })}
-                        onClick={() => {
-                          deleteRoutine.reset();
-                          setConfirmingId(routine.id);
-                        }}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <IconTrash />
-                        {t("actions.delete")}
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          aria-label={t("actions.moreActions")}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-ob-hover hover:text-ob-hover-foreground"
+                          type="button"
+                        >
+                          <span aria-hidden="true">⋯</span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setHistoryId(
+                                historyId === routine.id ? null : routine.id,
+                              )
+                            }
+                          >
+                            <IconHistory />
+                            {t("actions.history")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              deleteRoutine.reset();
+                              setConfirmingId(routine.id);
+                            }}
+                          >
+                            <IconTrash />
+                            {t("actions.delete")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </ItemFooter>
                   {historyId === routine.id ? (
@@ -480,9 +484,10 @@ export function RoutinesList({
         }}
         open={confirming !== null}
       >
-        {/* The heavier backdrop, forced: opened from a Bot's dialog this stacks over it, and Base
-            UI would otherwise render a nested dialog with no backdrop at all. */}
-        <DialogContent overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm">
+        {/* The heavier backdrop, forced: opened from a Bot's dialog this stacks over it. HeroUI
+            renders the nested backdrop itself; the `!` is only because the component CSS that sets
+            `background-color: transparent` on the backdrop is imported unlayered. */}
+        <DialogContent overlayClassName="bg-black/20! supports-backdrop-filter:backdrop-blur-sm">
           <DialogHeader>
             <DialogTitle>
               {t("delete.title", { schedule: confirming?.schedule ?? "" })}

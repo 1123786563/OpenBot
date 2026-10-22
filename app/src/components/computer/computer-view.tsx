@@ -479,7 +479,7 @@ export function ComputerView({
            * the states where they most want it. With nothing to draw the full-size view shows these
            * same words, and the wheel below them.
            */
-          className="relative block w-full cursor-pointer bg-muted"
+          className="relative block w-full cursor-pointer bg-ob-muted-surface"
           style={frameStyle}
           aria-label={t("view.openFullSize")}
         >
@@ -551,7 +551,7 @@ export function ComputerView({
         */}
         {control?.secretWanted ? (
           <form
-            className="border-t bg-muted/40 px-3 py-2 text-sm"
+            className="border-t bg-ob-muted-surface/40 px-3 py-2 text-sm"
             onSubmit={async (event) => {
               event.preventDefault();
               if (!secret || sendingSecret) return;
@@ -651,7 +651,7 @@ export function ComputerView({
                   wheel below is the reason this view opens at all in that state.
                 */}
                 <div
-                  className={`relative max-h-[75vh] min-h-0 overflow-auto rounded-xl ${showLiveScreen ? "bg-black" : "bg-muted"}`}
+                  className={`relative max-h-[75vh] min-h-0 overflow-auto rounded-xl ${showLiveScreen ? "bg-black" : "bg-ob-muted-surface"}`}
                 >
                   {settled && drawn ? (
                     /*

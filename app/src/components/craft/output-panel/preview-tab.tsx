@@ -240,7 +240,7 @@ function PreviewPaneState({
             <span className="size-2 rounded-full bg-muted-foreground/25" />
             <span className="size-2 rounded-full bg-muted-foreground/25" />
             <span className="size-2 rounded-full bg-muted-foreground/25" />
-            <span className="ml-2 h-3 flex-1 rounded-full bg-muted" />
+            <span className="ml-2 h-3 flex-1 rounded-full bg-ob-muted-surface" />
           </div>
         ) : null}
         {chrome ? <div className="p-4">{frame}</div> : frame}
@@ -1139,7 +1139,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
             href={liveEntry.plain}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-ob-muted-surface hover:text-foreground"
           >
             <IconExternalLink className="size-3.5" />
           </a>
@@ -1149,7 +1149,7 @@ export function PreviewTab({ sessionId }: { sessionId: string }) {
             aria-label={expanded ? t("preview.collapse") : t("preview.expand")}
             aria-expanded={expanded}
             onClick={() => setExpanded((value) => !value)}
-            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-ob-muted-surface hover:text-foreground"
           >
             {expanded ? (
               <IconArrowsMinimize className="size-3.5" />

@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-21",
+  "checks": 2,
+  "results": [
+    {
+      "theme": "light",
+      "colors": {
+        "surface": "rgb(255, 255, 255)",
+        "foreground": "rgb(25, 33, 49)",
+        "field": "rgb(255, 255, 255)",
+        "fieldBorder": "rgb(216, 223, 233)",
+        "rootTheme": "light"
+      },
+      "closed": {
+        "dialogs": 0,
+        "active": {
+          "tag": "A",
+          "text": "新建 Bot",
+          "href": "http://127.0.0.1:3011/bots?new=true"
+        }
+      },
+      "focusReturned": true
+    },
+    {
+      "theme": "dark",
+      "colors": {
+        "surface": "rgb(36, 43, 56)",
+        "foreground": "rgb(235, 239, 247)",
+        "field": "rgb(25, 29, 38)",
+        "fieldBorder": "rgb(48, 57, 73)",
+        "rootTheme": "dark"
+      },
+      "closed": {
+        "dialogs": 0,
+        "active": {
+          "tag": "A",
+          "text": "新建 Bot",
+          "href": "http://127.0.0.1:3011/bots?new=true"
+        }
+      },
+      "focusReturned": true
+    }
+  ],
+  "pass": true
+}

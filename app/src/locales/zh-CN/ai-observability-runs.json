@@ -84,6 +84,9 @@
     },
     "metadataEmpty": "该运行没有可投影的元数据。",
     "steps": {
+      "showPayload": "查看记录内容",
+      "payloadRegion": "记录步骤内容",
+      "emptyValue": "（空值）",
       "kind": {
         "model": "模型调用",
         "tool": "工具调用",

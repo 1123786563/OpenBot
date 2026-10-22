@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-21",
+  "channelId": "channel_143bb901-ae4c-43be-bbc2-7fe59692567f",
+  "checks": 4,
+  "passed": 4,
+  "results": [
+    {
+      "key": "settings-879",
+      "q": "settings=true",
+      "width": 1159,
+      "container": 879,
+      "overlay": true,
+      "actualContainer": 879,
+      "actualOverlay": true,
+      "url": "http://127.0.0.1:3011/channel/channel_143bb901-ae4c-43be-bbc2-7fe59692567f?settings=true",
+      "overflow": false,
+      "pass": true
+    },
+    {
+      "key": "settings-880",
+      "q": "settings=true",
+      "width": 1160,
+      "container": 880,
+      "overlay": false,
+      "actualContainer": 880,
+      "actualOverlay": false,
+      "actualInlineWidth": 400,
+      "url": "http://127.0.0.1:3011/channel/channel_143bb901-ae4c-43be-bbc2-7fe59692567f?settings=true",
+      "overflow": false,
+      "pass": true
+    },
+    {
+      "key": "workshop-959",
+      "q": "workshop=true",
+      "width": 1239,
+      "container": 959,
+      "overlay": true,
+      "actualContainer": 959,
+      "actualOverlay": true,
+      "url": "http://127.0.0.1:3011/channel/channel_143bb901-ae4c-43be-bbc2-7fe59692567f?workshop=true",
+      "overflow": false,
+      "pass": true
+    },
+    {
+      "key": "workshop-960",
+      "q": "workshop=true",
+      "width": 1240,
+      "container": 960,
+      "overlay": false,
+      "actualContainer": 960,
+      "actualOverlay": false,
+      "actualInlineWidth": 480,
+      "url": "http://127.0.0.1:3011/channel/channel_143bb901-ae4c-43be-bbc2-7fe59692567f?workshop=true",
+      "overflow": false,
+      "pass": true
+    }
+  ]
+}

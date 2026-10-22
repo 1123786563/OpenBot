@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -16,6 +15,15 @@ import type {
   ExportJobsResult,
   ExportJobView,
 } from "../../shared/ai-observability-admin";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { ObservationExportsPage } from "../src/components/ai-observability/exports-status";
 import { ObservationRunsPage } from "../src/components/ai-observability/runs-list";
 import {
@@ -434,9 +442,12 @@ describe("fault, in-flight and not-enabled stay three answers (acceptance 5)", (
       );
     const view = draw();
     await view.findByText("Failed");
-    expect(pageText(view)).toContain(
-      "The observability store was too slow to answer.",
-    );
+    const disclosure = view.getByText("Show failure detail").closest("details");
+    expect(disclosure?.open).toBe(false);
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(view.getByText("Show failure detail"));
+    expect(disclosure?.open).toBe(true);
+    expect(disclosure?.textContent).toContain("too slow to answer");
     // A terminal job never completes, so its rows are not "pending" — the pending
     // word is reserved for jobs that can still produce them (OCR round 1 medium).
     expect(pageText(view)).not.toContain("rows pending");
@@ -672,9 +683,9 @@ describe("the list consumes the pagination contract (R3-07 ≡ R3-14)", () => {
 describe("the runs page links here", () => {
   test("the export status link navigates from the keyboard", async () => {
     const view = draw("/bots/agent-1/runs");
-    // Base UI's Button renders its Link with role="button" — a button that navigates,
-    // the same shape every settings row in the app uses for its chevron links.
-    const link = await view.findByRole("button", { name: "Export status" });
+    // Navigation is a real anchor (ButtonLink), not a button that happens to navigate:
+    // the browser keeps new-tab and modifier-click behaviour, and the role says link.
+    const link = await view.findByRole("link", { name: "Export status" });
     expect(link.getAttribute("href")).toBe("/bots/agent-1/exports");
     const user = userEvent.setup({ document: view.container.ownerDocument });
     link.focus();

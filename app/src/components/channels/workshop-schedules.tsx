@@ -296,7 +296,11 @@ function CreateScheduleForm({
           />
           <Select
             value={unit}
-            onValueChange={(value) => setUnit(value as typeof unit)}
+            onValueChange={(value) => {
+              // The null guard is the migration contract (H05/H06/H10): null means "no
+              // selection", and the half-built schedule keeps its previous unit.
+              if (value !== null) setUnit(value);
+            }}
           >
             <SelectTrigger
               size="sm"

@@ -1,0 +1,2 @@
+50c612d3450bf0864d09283439fea60ff6bf11af82b03fd02008ca06eeda0391  app/tests/skills-draft-lifecycle.test.tsx
+fc58c08cd99e55bfe3eac6abcf347b5c8c988eeac57a072f2f98fed60f3e6007  docs/plans/reports/T03-skills-draft-lifecycle-impl.md

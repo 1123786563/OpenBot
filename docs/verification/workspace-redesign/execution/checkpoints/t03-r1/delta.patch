@@ -1,0 +1,363 @@
+--- a/app/src/routes/_authed/_app.tsx
++++ b/app/src/routes/_authed/_app.tsx
+@@ -15,7 +15,7 @@
+   return (
+     // One viewport, never scrolls: panes scroll inside it. A growable shell lets the transcript's
+     // scroller size against the page, grow it, and grow again.
+-    <SidebarShell className="h-svh overflow-hidden" width="340px">
++    <SidebarShell className="h-svh overflow-hidden" width="280px">
+       <SkipToContent />
+       <AppSidebar />
+       <main
+--- a/app/src/routes/_authed/admin/route.tsx
++++ b/app/src/routes/_authed/admin/route.tsx
+@@ -21,7 +21,7 @@
+ 
+ function RouteComponent() {
+   return (
+-    <SidebarShell width="300px">
++    <SidebarShell width="256px">
+       <SkipToContent />
+       <AdminSidebar />
+       <main id={MAIN_CONTENT_ID} className="flex-1">
+--- a/app/src/routes/_authed/settings/route.tsx
++++ b/app/src/routes/_authed/settings/route.tsx
+@@ -12,7 +12,7 @@
+ 
+ function RouteComponent() {
+   return (
+-    <SidebarShell width="300px">
++    <SidebarShell width="256px">
+       <SkipToContent />
+       <SettingsSidebar />
+       <main id={MAIN_CONTENT_ID} className="flex-1">
+--- a/app/src/components/ui/sidebar.tsx
++++ b/app/src/components/ui/sidebar.tsx
+@@ -23,13 +23,11 @@
+ import { keyOf } from "@/lib/hotkeys/hotkeys";
+ import { cn } from "@/lib/utils";
+ 
+-/*
+- * WorkBuddy's conversation list measures 264px expanded and 48px collapsed (extracted from its
+- * desktop bundle); 17.5rem/3.2rem at this 15px root land on exactly those widths.
+- */
+-const SIDEBAR_WIDTH = "17.5rem";
+-const SIDEBAR_WIDTH_MOBILE = "18rem";
+-const SIDEBAR_WIDTH_ICON = "3.2rem";
++/* Shell width comes from SidebarShell; the primitive owns the shared compact and mobile values. */
++const SIDEBAR_WIDTH = "280px";
++const SIDEBAR_WIDTH_MOBILE =
++  "var(--sidebar-width-mobile, min(280px, calc(100vw - 32px)))";
++const SIDEBAR_WIDTH_ICON = "64px";
+ const SIDEBAR_KEYBOARD_SHORTCUT = "b";
+ 
+ /*
+--- a/app/src/components/layout/page-shell.tsx
++++ b/app/src/components/layout/page-shell.tsx
+@@ -201,7 +201,7 @@
+      */
+     <div
+       className={cn(
+-        "mt-4 overflow-hidden rounded-2xl border border-border bg-card shadow-card dark:border-transparent dark:shadow-none",
++        "mt-4 overflow-hidden rounded-xl border border-border bg-card shadow-card dark:border-transparent dark:shadow-none",
+         "[&_[data-slot=item]]:rounded-none",
+         className,
+       )}
+--- a/app/src/components/craft/scheduled-task-editor.tsx
++++ b/app/src/components/craft/scheduled-task-editor.tsx
+@@ -235,8 +235,11 @@
+   const [confirmingDelete, setConfirmingDelete] = useState(false);
+ 
+   useEffect(() => {
++    // An empty edit form is not a draft. Publishing it while the query is pending means a responsive
++    // remount would receive it as if it were already seeded and skip the loaded task forever.
++    if (taskId && !seeded) return;
+     onDraftChange?.(form, dirty);
+-  }, [form, dirty, onDraftChange]);
++  }, [form, dirty, onDraftChange, seeded, taskId]);
+ 
+   // Seed once when the detail arrives (the panel mounts before the read resolves).
+   if (taskId && detail.data && !seeded) {
+@@ -311,6 +314,17 @@
+     };
+     return key ? (labels[key] ?? "") : "";
+   };
++
++  if (taskId && detail.isPending) {
++    return (
++      <p
++        className="mx-auto w-full max-w-xl p-8 text-sm text-muted-foreground"
++        role="status"
++      >
++        {t("tasks.loading")}
++      </p>
++    );
++  }
+ 
+   const submit = () => {
+     if (!form.name.trim() || !form.prompt.trim()) {
+--- a/app/tests/detail-panel.test.tsx
++++ b/app/tests/detail-panel.test.tsx
+@@ -1,5 +1,6 @@
+ import "./preload";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import {
+   act,
+   cleanup,
+@@ -8,7 +9,10 @@
+   waitFor,
+ } from "@testing-library/react";
+ import { useEffect, useState } from "react";
++import { ScheduledTaskEditor } from "@/components/craft/scheduled-task-editor";
+ import { DetailPanel } from "@/components/layout/detail-panel";
++import { SidebarShell } from "@/components/layout/sidebar-shell";
++import { Sidebar, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+ import {
+   afterAll,
+   afterEach,
+@@ -172,3 +176,226 @@
+   ).toBeTruthy();
+   expect(closes).toBe(0);
+ });
++
++test("sidebar shell preserves preference on responsive changes and writes explicit toggles", async () => {
++  window.localStorage.clear();
++  const originalWidth = window.innerWidth;
++  Object.defineProperty(window, "innerWidth", {
++    configurable: true,
++    value: 1024,
++  });
++  Object.defineProperty(window, "matchMedia", {
++    configurable: true,
++    value: () => ({
++      matches: false,
++      addEventListener() {},
++      removeEventListener() {},
++    }),
++  });
++  const originalSetItem = Storage.prototype.setItem;
++  const writes: Array<[string, string]> = [];
++  Storage.prototype.setItem = function (key: string, value: string) {
++    writes.push([key, value]);
++    originalSetItem.call(this, key, value);
++  };
++  function State() {
++    const sidebar = useSidebar();
++    return (
++      <>
++        <output>
++          {sidebar.isMobile
++            ? `mobile:${sidebar.openMobile}`
++            : sidebar.open
++              ? "open"
++              : "closed"}
++        </output>
++        <button onClick={() => sidebar.setOpen(false)} type="button">
++          Collapse preference
++        </button>
++        <button onClick={sidebar.toggleSidebar} type="button">
++          Toggle mobile
++        </button>
++      </>
++    );
++  }
++  try {
++    const view = render(
++      <SidebarShell width="280px">
++        <Sidebar collapsible="icon">
++          <p>Navigation</p>
++        </Sidebar>
++        <State />
++        <SidebarTrigger />
++      </SidebarShell>,
++    );
++    await waitFor(() =>
++      expect(
++        view.getByRole("button", { name: /toggle sidebar/i }),
++      ).toBeTruthy(),
++    );
++    const wrapper = view.container.querySelector<HTMLElement>(
++      "[data-slot='sidebar-wrapper']",
++    );
++    expect(wrapper?.style.getPropertyValue("--sidebar-width-icon")).toBe(
++      "64px",
++    );
++    expect(writes).toEqual([]);
++    view.rerender(
++      <SidebarShell width="280px" responsiveCompact>
++        <Sidebar collapsible="icon">
++          <p>Navigation</p>
++        </Sidebar>
++        <State />
++        <SidebarTrigger />
++      </SidebarShell>,
++    );
++    expect(writes).toEqual([]);
++    await act(async () => {
++      window.dispatchEvent(new Event("resize"));
++    });
++    fireEvent.click(view.getByRole("button", { name: "Collapse preference" }));
++    expect(writes).toHaveLength(1);
++    expect(writes[0]?.[1]).toBe("collapsed");
++  } finally {
++    Storage.prototype.setItem = originalSetItem;
++    Object.defineProperty(window, "innerWidth", {
++      configurable: true,
++      value: originalWidth,
++    });
++  }
++});
++
++test("mobile sidebar toggle changes only the sheet state", async () => {
++  const originalWidth = window.innerWidth;
++  Object.defineProperty(window, "innerWidth", {
++    configurable: true,
++    value: 500,
++  });
++  const originalSetItem = Storage.prototype.setItem;
++  const writes: string[] = [];
++  Storage.prototype.setItem = function (key, value) {
++    writes.push(key);
++    originalSetItem.call(this, key, value);
++  };
++  function MobileState() {
++    const sidebar = useSidebar();
++    return (
++      <>
++        <output>{sidebar.open ? "desktop-open" : "desktop-closed"}</output>
++        <output>{sidebar.openMobile ? "mobile-open" : "mobile-closed"}</output>
++        <button onClick={sidebar.toggleSidebar} type="button">
++          Toggle mobile
++        </button>
++      </>
++    );
++  }
++  try {
++    const view = render(
++      <SidebarShell width="280px">
++        <Sidebar collapsible="icon">
++          <p>Navigation</p>
++        </Sidebar>
++        <MobileState />
++      </SidebarShell>,
++    );
++    await waitFor(() => expect(view.getByText("mobile-closed")).toBeTruthy());
++    fireEvent.click(view.getByRole("button", { name: "Toggle mobile" }));
++    expect(view.getByText("mobile-open")).toBeTruthy();
++    expect(writes).toEqual([]);
++  } finally {
++    Storage.prototype.setItem = originalSetItem;
++    Object.defineProperty(window, "innerWidth", {
++      configurable: true,
++      value: originalWidth,
++    });
++  }
++});
++
++test("editing task does not publish pending empty form and seeds after a breakpoint remount", async () => {
++  let resolveTask: ((response: Response) => void) | undefined;
++  const originalFetch = globalThis.fetch;
++  globalThis.fetch = ((input: RequestInfo | URL) => {
++    const url = String(input);
++    if (url.includes("/runs")) {
++      return Promise.resolve(
++        new Response(JSON.stringify({ items: [] }), { status: 200 }),
++      );
++    }
++    return new Promise<Response>((resolve) => {
++      resolveTask = resolve;
++    });
++  }) as typeof fetch;
++
++  let routedDraft:
++    | import("@/components/craft/scheduled-task-editor").ScheduledTaskDraft
++    | undefined;
++  let routedDirty = false;
++  const onDraftChange = (draft: typeof routedDraft & {}, dirty: boolean) => {
++    routedDraft = draft;
++    routedDirty = dirty;
++  };
++  const queryClient = new QueryClient({
++    defaultOptions: { queries: { retry: false } },
++  });
++  function Harness({ compact }: { compact: boolean }) {
++    return (
++      <QueryClientProvider client={queryClient}>
++        <DetailPanel
++          open
++          title="Edit task"
++          onClose={() => {}}
++          detail={
++            <ScheduledTaskEditor
++              taskId="task-1"
++              onDone={() => {}}
++              draft={routedDraft}
++              draftDirty={routedDirty}
++              onDraftChange={onDraftChange}
++            />
++          }
++        >
++          <output>{compact ? "compact" : "wide"}</output>
++        </DetailPanel>
++      </QueryClientProvider>
++    );
++  }
++  const view = render(<Harness compact={false} />);
++  try {
++    await waitFor(() => expect(view.getByRole("status")).toBeTruthy());
++    expect(routedDraft).toBeUndefined();
++    view.rerender(<Harness compact />);
++    view.rerender(<Harness compact={false} />);
++    await act(async () => {
++      resolveTask?.(
++        new Response(
++          JSON.stringify({
++            id: "task-1",
++            name: "Loaded task",
++            human_readable_schedule: "Every day",
++            cron_expression: "0 9 * * *",
++            editor_mode: "advanced",
++            status: "active",
++            next_run_at: null,
++            last_run: null,
++            created_at: "2026-01-01T00:00:00Z",
++            updated_at: "2026-01-01T00:00:00Z",
++            prompt: "Loaded prompt",
++            next_runs: [],
++          }),
++          { status: 200 },
++        ),
++      );
++    });
++    await waitFor(() =>
++      expect(view.getByLabelText(/name/i)).toHaveProperty(
++        "value",
++        "Loaded task",
++      ),
++    );
++    expect(routedDraft?.name).toBe("Loaded task");
++    expect(routedDirty).toBe(false);
++  } finally {
++    globalThis.fetch = originalFetch;
++    queryClient.clear();
++  }
++});
+--- a/app/tests/sidebar-shortcut-layouts.test.tsx
++++ b/app/tests/sidebar-shortcut-layouts.test.tsx
+@@ -1,8 +1,14 @@
+ import "./preload";
+-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
+ import { GlobalRegistrator } from "@happy-dom/global-registrator";
+ import { act, cleanup, render } from "@testing-library/react";
+ import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
++import {
++  afterAll,
++  afterEach,
++  beforeAll,
++  expect,
++  test,
++} from "../../tests/support/e2e-compat";
+ 
+ /**
+  * The sidebar shortcut on a keyboard layout that does not write Latin letters.

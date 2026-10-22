@@ -1,0 +1,28 @@
+{
+ "steps": [
+  {
+   "step": "settings-open",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?settings=true",
+   "ok": true
+  },
+  {
+   "step": "watch-entry-found",
+   "ok": true
+  },
+  {
+   "step": "ui-switch-settings-to-watch",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?watch=true",
+   "ok": true
+  },
+  {
+   "step": "panel-close-clears",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?watch=true",
+   "ok": false
+  },
+  {
+   "step": "browser-back-restores",
+   "url": "http://127.0.0.1:3011/channel/channel_005ad9b1-5c16-4a99-bd72-09e139e75a6a?watch=true",
+   "ok": false
+  }
+ ]
+}

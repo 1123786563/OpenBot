@@ -1,14 +1,13 @@
 import { IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import {
+  CraftTaskEditorPresenter,
   ScheduledRunStatusChip,
-  ScheduledTaskEditor,
 } from "@/components/craft/scheduled-task-editor";
 import { SessionSidebar } from "@/components/craft/session-sidebar";
-import { DetailPanel } from "@/components/layout/detail-panel";
 import {
   PageRows,
   PageSection,
@@ -22,6 +21,7 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Separator } from "@/components/ui/separator";
 import { scheduledTasksQueryOptions } from "@/lib/craft/scheduled-tasks";
 import type { CraftScheduledTaskListItem } from "@/lib/craft/types";
@@ -54,39 +54,31 @@ function CraftTasksPage() {
   const showCreate = isCreating === true;
   const showEdit = !showCreate && editingId !== undefined;
   const tasks = useQuery(scheduledTasksQueryOptions());
+  const finish = () => navigate({ search: {} });
 
   return (
     <div className="flex min-h-0 flex-1">
       <SessionSidebar />
-      <DetailPanel
-        detail={
-          showCreate ? (
-            <ScheduledTaskEditor onDone={() => navigate({ search: {} })} />
-          ) : showEdit ? (
-            <ScheduledTaskEditor
-              taskId={editingId}
-              onDone={() => navigate({ search: {} })}
-            />
-          ) : null
-        }
-        onClose={() => navigate({ search: {} })}
-        open={showCreate || showEdit}
+      <CraftTaskEditorPresenter
+        active={showCreate || showEdit}
+        create={showCreate}
+        taskId={showEdit ? editingId : undefined}
+        onClose={finish}
       >
         <PageShell
           title={t("tasks.title")}
           description={t("tasks.description")}
           width="wide"
           action={
-            <Button
-              render={(props) => (
-                <Link search={{ new: true }} to="/craft/tasks" {...props} />
-              )}
+            <ButtonLink
+              search={{ new: true }}
+              to="/craft/tasks"
               size="sm"
               variant="ghost"
             >
               <IconPlus />
               {t("tasks.new")}
-            </Button>
+            </ButtonLink>
           }
         >
           <PageSection>
@@ -115,7 +107,7 @@ function CraftTasksPage() {
             )}
           </PageSection>
         </PageShell>
-      </DetailPanel>
+      </CraftTaskEditorPresenter>
     </div>
   );
 }

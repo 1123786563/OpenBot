@@ -1,8 +1,14 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, render } from "@testing-library/react";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 
 /**
  * The sidebar shortcut on a keyboard layout that does not write Latin letters.

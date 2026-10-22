@@ -1,0 +1,49 @@
+--- docs/verification/workspace-redesign/execution/checkpoints/t06-r3/PRE/ai-observability-run-steps.test.tsx	2026-10-21 01:32:30
++++ docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/ai-observability-run-steps.test.tsx	2026-10-21 01:34:11
+@@ -553,6 +553,46 @@
+ });
+ 
+ describe("missing and malformed data fails closed (acceptance 4)", () => {
++  test("a projected empty string is disclosed while null, missing and omitted values stay absent (P17)", async () => {
++    stepsHandler = () =>
++      Response.json(
++        stepsBody([
++          step({
++            spanId: "empty-payload",
++            name: "empty_payload",
++            output: { state: "projected", value: "" },
++          }),
++          step({
++            spanId: "null-payload",
++            name: "null_payload",
++            input: null,
++            output: null,
++          } as unknown as RunStep),
++          step({ spanId: "missing-payload", name: "missing_payload" }),
++          step({
++            spanId: "omitted-payload",
++            name: "omitted_payload",
++            input: { state: "omitted" },
++            output: undefined,
++          }),
++        ]),
++      );
++    const view = draw();
++    await waitFor(() => expect(stepNode(view, "empty-payload")).not.toBeNull());
++
++    const emptyNode = stepNode(view, "empty-payload");
++    const disclosure = emptyNode?.querySelector("details");
++    expect(disclosure).not.toBeNull();
++    expect(disclosure?.textContent).toContain("(empty value)");
++    expect(stepNode(view, "null-payload")?.querySelector("details")).toBeNull();
++    expect(
++      stepNode(view, "missing-payload")?.querySelector("details"),
++    ).toBeNull();
++    expect(
++      stepNode(view, "omitted-payload")?.querySelector("details"),
++    ).toBeNull();
++  });
++
+   test("null and omitted payloads keep the step tree renderable without empty disclosures (P17)", async () => {
+     stepsHandler = () =>
+       Response.json(

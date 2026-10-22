@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,6 +10,13 @@ import {
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BotResponsibilities } from "@/components/responsibilities/responsibilities";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /** A Bot's Responsibilities page: its own goals, and a new one that needs no Bot picked. */
@@ -127,8 +133,13 @@ test("a new responsibility needs no Bot picked, and offers only this Bot's conve
   await view.findByText("Reconcile receipts");
   const user = userEvent.setup({ document });
   await user.click(view.getByRole("button", { name: /New responsibility/ }));
-  expect(view.queryByRole("combobox", { name: /^Bot/ })).toBeNull();
-  await user.click(view.getByRole("combobox", { name: /^Conversation/ }));
+  expect(view.queryByRole("button", { name: /^Bot/ })).toBeNull();
+  /*
+   * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the role="combobox" the
+   * ui/select wrapper forwards is dropped by HeroUI (interface change request recorded in
+   * h04/REPORT.md). Address the trigger by role button.
+   */
+  await user.click(view.getByRole("button", { name: /^Conversation/ }));
   const options = (await view.findAllByRole("option")).map(
     (option) => option.textContent,
   );

@@ -155,7 +155,7 @@ export function ProposedSkillCard({
         {t("proposed.instructions")}
       </p>
       {/* Scrolled rather than clamped: this is the part worth reading before agreeing to it. */}
-      <p className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+      <p className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-ob-muted-surface/40 px-3 py-2 text-sm">
         {values.instructions}
       </p>
 

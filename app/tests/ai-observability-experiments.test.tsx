@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -16,6 +15,15 @@ import type {
   ExperimentSubmitInput,
   SubmittedExperimentResult,
 } from "../../shared/ai-observability-experiments";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { ObservationEvaluationsPage } from "../src/components/ai-observability/evaluations-page";
 import { ObservationExperimentResultsPage } from "../src/components/ai-observability/experiment-results";
 // English copy: the i18n bundles initialize on import, so assertions see real sentences.
@@ -451,6 +459,31 @@ async function openReadyDialog(view: ReturnType<typeof draw>) {
   return { user, dialog };
 }
 
+describe("dataset read availability (P19)", () => {
+  test("a dataset read failure is unavailable and offers no submit action", async () => {
+    listHandler = () => new Response(null, { status: 502 });
+    const view = draw();
+    await view.findAllByText("Upstream unavailable");
+    expect(view.queryByRole("dialog")).toBeNull();
+    expect(
+      view.queryByRole("button", { name: /Run an experiment/ }),
+    ).toBeNull();
+    expect(view.queryByText("Submit experiment")).toBeNull();
+  });
+
+  test("an empty dataset list keeps the empty state and entry action", async () => {
+    listHandler = () => Response.json(datasetsBody([]));
+    const view = draw();
+    await view.findByText(
+      "Pick a frozen dataset version and a Bot configuration to submit the first experiment.",
+    );
+    expect(view.queryByRole("dialog")).toBeNull();
+    expect(
+      view.getByRole("button", { name: /Run an experiment/ }),
+    ).toBeTruthy();
+  });
+});
+
 describe("submitting an experiment freezes the T22 contract (acceptance 1)", () => {
   test("the dialog offers this Bot's datasets and frozen versions, and submits the seven-field configuration", async () => {
     listHandler = () => Response.json(datasetsBody([datasetRow()]));
@@ -753,7 +786,14 @@ describe("the results page answers the report (acceptance 1 and 2)", () => {
       });
     const view = draw("/bots/agent-1/evaluations/experiments/exp-1/exec-1");
     await waitFor(() => expect(pageText(view)).toContain("Judge 0.82"));
-    expect(pageText(view)).toContain("It agrees with the reference answer.");
+    const disclosure = view.getAllByText("Show details")[0]?.closest("details");
+    expect(disclosure?.open).toBe(false);
+    const user = userEvent.setup({ document: view.container.ownerDocument });
+    await user.click(view.getAllByText("Show details")[0]!);
+    expect(disclosure?.open).toBe(true);
+    expect(disclosure?.textContent).toContain(
+      "It agrees with the reference answer.",
+    );
   });
 
   test("a failed judge record renders its own code, never a guessed score (T27-rn L-3)", async () => {

@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-21",
+  "scope": "isolated admin; exact POST /api/responsibilities intercepted with 503; no server writes",
+  "results": [
+    {
+      "theme": "light",
+      "intercepted": 1,
+      "viewport": 390,
+      "overflow": false,
+      "values": [
+        "P08 controlled failure",
+        "Persist this long instruction through server error.",
+        "Failure should retain all values."
+      ],
+      "alert": "controlled failure",
+      "ok": true
+    },
+    {
+      "theme": "dark",
+      "intercepted": 1,
+      "viewport": 390,
+      "overflow": false,
+      "values": [
+        "P08 controlled failure",
+        "Persist this long instruction through server error.",
+        "Failure should retain all values."
+      ],
+      "alert": "controlled failure",
+      "ok": true
+    }
+  ]
+}

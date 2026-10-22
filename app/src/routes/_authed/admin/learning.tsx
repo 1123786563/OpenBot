@@ -5,7 +5,15 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useDateTime } from "@/lib/i18n/datetime";
 import {
@@ -26,7 +34,13 @@ import type {
 export const Route = createFileRoute("/_authed/admin/learning")({
   component: LearningPage,
 });
-const selectClass = "w-full rounded-md border bg-background px-3 py-2 text-sm";
+
+/** 每个 Bot 的参与模式：继承部署默认 / 排除 / 指定容器。 */
+const PARTICIPATION_LABEL = {
+  inherit: "learning.participation.useDefault",
+  exclude: "learning.participation.exclude",
+  container: "learning.participation.useContainer",
+} as const;
 
 /** What automatic assignment found, in words, or nothing when there is nothing to say. */
 function automaticMessage(
@@ -229,16 +243,13 @@ export function LearningPage() {
               save.mutate(settings);
             }}
           >
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={settings.enabled}
-                onChange={(event) =>
-                  change({ ...settings, enabled: event.target.checked })
-                }
-              />
+            <Checkbox
+              checked={settings.enabled}
+              className="gap-2 text-sm"
+              onCheckedChange={(enabled) => change({ ...settings, enabled })}
+            >
               {t("learning.participation.enable")}
-            </label>
+            </Checkbox>
             <TargetFields
               label={t("learning.participation.default")}
               target={settings.defaultTarget}
@@ -275,21 +286,25 @@ export function LearningPage() {
                     : "container";
                 return (
                   <div key={id} className="grid gap-3 rounded-lg border p-4">
-                    <label className="grid gap-2 text-sm font-medium">
+                    <label
+                      className="grid gap-2 text-sm font-medium"
+                      htmlFor={`${id}-participation`}
+                    >
                       {nameFor(id)}
-                      <select
-                        className={selectClass}
-                        aria-label={t("learning.participation.botAria", {
-                          name: nameFor(id),
-                        })}
-                        value={mode}
-                        onChange={(event) => {
+                      <Select
+                        items={{
+                          container: t("learning.participation.useContainer"),
+                          exclude: t("learning.participation.exclude"),
+                          inherit: t("learning.participation.useDefault"),
+                        }}
+                        onValueChange={(next) => {
+                          // null 是 Select 的「未选择」（关闭弹层）；保持原覆盖不动。
+                          if (next === null) return;
                           const mappings = { ...settings.agents };
-                          if (event.target.value === "inherit")
-                            delete mappings[id];
+                          if (next === "inherit") delete mappings[id];
                           else
                             mappings[id] =
-                              event.target.value === "exclude"
+                              next === "exclude"
                                 ? null
                                 : {
                                     containerId:
@@ -297,17 +312,27 @@ export function LearningPage() {
                                   };
                           change({ ...settings, agents: mappings });
                         }}
+                        value={mode}
                       >
-                        <option value="inherit">
-                          {t("learning.participation.useDefault")}
-                        </option>
-                        <option value="exclude">
-                          {t("learning.participation.exclude")}
-                        </option>
-                        <option value="container">
-                          {t("learning.participation.useContainer")}
-                        </option>
-                      </select>
+                        <SelectTrigger
+                          aria-label={t("learning.participation.botAria", {
+                            name: nameFor(id),
+                          })}
+                          className="w-full"
+                          id={`${id}-participation`}
+                        />
+                        <SelectContent>
+                          {(
+                            Object.keys(PARTICIPATION_LABEL) as Array<
+                              keyof typeof PARTICIPATION_LABEL
+                            >
+                          ).map((value) => (
+                            <SelectItem key={value} value={value}>
+                              {t(PARTICIPATION_LABEL[value])}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </label>
                     {mode === "container" && (
                       <TargetFields
@@ -351,20 +376,39 @@ export function LearningPage() {
         description={t("learning.review.description")}
       >
         <div className="grid gap-4">
-          <label className="grid gap-2 text-sm">
+          <label className="grid gap-2 text-sm" htmlFor="learning-inspect-for">
             {t("learning.review.inspectFor")}
-            <select
-              className={selectClass}
+            <Select
+              items={{
+                // ""（部署默认）是真实选项而不是空选择；触发器文案由 placeholder 呈现。
+                "": t("learning.review.deploymentDefault"),
+                ...Object.fromEntries(
+                  botIds.map((id) => [id, nameFor(id)] as const),
+                ),
+              }}
+              onValueChange={(next) => {
+                // null 是 Select 的「未选择」（关闭弹层）；保持当前筛选不动。
+                if (next === null) return;
+                setSelected(next);
+              }}
               value={selected}
-              onChange={(event) => setSelected(event.target.value)}
             >
-              <option value="">{t("learning.review.deploymentDefault")}</option>
-              {botIds.map((id) => (
-                <option key={id} value={id}>
-                  {nameFor(id)}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full" id="learning-inspect-for">
+                <SelectValue
+                  placeholder={t("learning.review.deploymentDefault")}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">
+                  {t("learning.review.deploymentDefault")}
+                </SelectItem>
+                {botIds.map((id) => (
+                  <SelectItem key={id} value={id}>
+                    {nameFor(id)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
           {overview.isPending && (
             <p role="status">{t("learning.review.checking")}</p>

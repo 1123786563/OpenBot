@@ -1,0 +1,10 @@
+Checkpoint: T01 control-border cascade repair POST
+PRE checkpoint: docs/verification/workspace-redesign/t01/control-border-repair/PRE
+Starting HEAD: 203d0f0244b2f898218fa12027089c631e8448d9
+Ending HEAD: 203d0f0244b2f898218fa12027089c631e8448d9 (no commit)
+Owned source files changed in this task:
+  app/src/styles.css — HeroUI base import assigned to existing base layer
+  app/tests/button-native.test.tsx — Textarea semantic border token assertion
+Pre-existing dirty work in both owned source files was preserved. Full resulting files are saved under files/;
+hashes.txt records their source hashes and snapshot-hashes.txt verifies the saved copies.
+Focused verification and remaining browser validation are recorded in docs/plans/reports/T01-control-border-impl.md.

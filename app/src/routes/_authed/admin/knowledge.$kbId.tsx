@@ -32,6 +32,13 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -67,8 +74,13 @@ export const Route = createFileRoute("/_authed/admin/knowledge/$kbId")({
 });
 
 const field = "grid min-w-0 gap-1 text-sm";
-const select =
-  "h-9 w-full min-w-0 rounded-md border bg-background px-3 text-sm";
+
+/** 添加文档的三种来源；顺序即选项顺序（text / url / file）。 */
+const ADD_TYPE_LABEL = {
+  text: "add.typeText",
+  url: "add.typeUrl",
+  file: "add.typeFile",
+} as const;
 
 /** 关键字输入的 debounce：每次击键都重筛 500 行表格没有意义。 */
 const KEYWORD_DEBOUNCE_MS = 300;
@@ -179,18 +191,32 @@ function AddDocument({ kbId }: { kbId: string }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <label className={field} htmlFor={typeId}>
           {t("add.type")}
-          <select
-            id={typeId}
-            className={select}
+          <Select
+            items={{
+              file: t("add.typeFile"),
+              text: t("add.typeText"),
+              url: t("add.typeUrl"),
+            }}
+            onValueChange={(next) => {
+              // null 是 Select 的「未选择」（关闭弹层）；保持当前来源不动。
+              if (next === null) return;
+              setType(next);
+            }}
             value={type}
-            onChange={(event) =>
-              setType(event.target.value as "text" | "url" | "file")
-            }
           >
-            <option value="text">{t("add.typeText")}</option>
-            <option value="url">{t("add.typeUrl")}</option>
-            <option value="file">{t("add.typeFile")}</option>
-          </select>
+            <SelectTrigger className="w-full" id={typeId} />
+            <SelectContent>
+              {(
+                Object.keys(ADD_TYPE_LABEL) as Array<
+                  keyof typeof ADD_TYPE_LABEL
+                >
+              ).map((value) => (
+                <SelectItem key={value} value={value}>
+                  {t(ADD_TYPE_LABEL[value])}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
         <label className={field} htmlFor={titleId}>
           {t("add.titleField")}
@@ -432,42 +458,68 @@ function DocumentList({ kbId }: { kbId: string }) {
         </label>
         <label className={field} htmlFor={typeId}>
           {t("filter.type")}
-          <select
-            id={typeId}
-            className={select}
+          <Select
+            items={{
+              // ""（不过滤）是真实选项而不是空选择；触发器文案由 placeholder 呈现。
+              "": t("filter.all"),
+              file: t("add.typeFile"),
+              url: t("add.typeUrl"),
+              text: t("add.typeText"),
+            }}
+            onValueChange={(next) => {
+              // null 是 Select 的「未选择」（关闭弹层）；保持当前筛选不动。
+              if (next === null) return;
+              setFilter((current) => ({ ...current, type: next }));
+            }}
             value={filter.type}
-            onChange={(event) =>
-              setFilter((current) => ({
-                ...current,
-                type: event.target.value as KnowledgeDocumentFilter["type"],
-              }))
-            }
           >
-            <option value="">{t("filter.all")}</option>
-            <option value="file">{t("add.typeFile")}</option>
-            <option value="url">{t("add.typeUrl")}</option>
-            <option value="text">{t("add.typeText")}</option>
-          </select>
+            <SelectTrigger className="w-full" id={typeId}>
+              <SelectValue placeholder={t("filter.all")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">{t("filter.all")}</SelectItem>
+              {(
+                Object.keys(ADD_TYPE_LABEL) as Array<
+                  keyof typeof ADD_TYPE_LABEL
+                >
+              ).map((value) => (
+                <SelectItem key={value} value={value}>
+                  {t(ADD_TYPE_LABEL[value])}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
         <label className={field} htmlFor={statusId}>
           {t("filter.status")}
-          <select
-            id={statusId}
-            className={select}
+          <Select
+            items={{
+              "": t("filter.all"),
+              completed: t("status.completed"),
+              failed: t("status.failed"),
+              pending: t("status.pending"),
+              processing: t("status.processing"),
+            }}
+            onValueChange={(next) => {
+              // null 是 Select 的「未选择」（关闭弹层）；保持当前筛选不动。
+              if (next === null) return;
+              setFilter((current) => ({ ...current, status: next }));
+            }}
             value={filter.status}
-            onChange={(event) =>
-              setFilter((current) => ({
-                ...current,
-                status: event.target.value as KnowledgeDocumentFilter["status"],
-              }))
-            }
           >
-            <option value="">{t("filter.all")}</option>
-            <option value="pending">{t("status.pending")}</option>
-            <option value="processing">{t("status.processing")}</option>
-            <option value="completed">{t("status.completed")}</option>
-            <option value="failed">{t("status.failed")}</option>
-          </select>
+            <SelectTrigger className="w-full" id={statusId}>
+              <SelectValue placeholder={t("filter.all")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">{t("filter.all")}</SelectItem>
+              <SelectItem value="pending">{t("status.pending")}</SelectItem>
+              <SelectItem value="processing">
+                {t("status.processing")}
+              </SelectItem>
+              <SelectItem value="completed">{t("status.completed")}</SelectItem>
+              <SelectItem value="failed">{t("status.failed")}</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
       </div>
 
@@ -632,7 +684,7 @@ function DocumentRow({
                   ? doc.parse_status === "completed"
                     ? "bg-primary text-primary-foreground"
                     : "bg-destructive text-destructive-foreground"
-                  : "bg-muted text-muted-foreground"
+                  : "bg-ob-muted-surface text-muted-foreground"
               }`}
             >
               {statusLabel}

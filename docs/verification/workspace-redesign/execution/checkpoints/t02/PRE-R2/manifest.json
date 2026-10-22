@@ -1,0 +1,14 @@
+[
+  {
+    "path": "app/src/components/ui/dialog.tsx",
+    "sha256": "11f22bbfa49ac1058f59af3a8c231928d246e58e313d673f3d032bbae85b5df3",
+    "bytes": 18665,
+    "git_status": "tracked"
+  },
+  {
+    "path": "app/src/components/ui/input-group.tsx",
+    "sha256": "4a9525714fc3301cdd2715c8fc32ffe529f218f9c8647a14606257412743ad90",
+    "bytes": 5553,
+    "git_status": "tracked"
+  }
+]

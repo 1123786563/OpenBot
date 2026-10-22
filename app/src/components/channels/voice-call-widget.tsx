@@ -142,11 +142,11 @@ export function VoiceCallWidget({
         </div>
       ) : (
         <>
-          <div className="flex h-18 items-center gap-4 rounded-full bg-muted/60 px-4">
+          <div className="flex h-18 items-center gap-4 rounded-full bg-ob-muted-surface/60 px-4">
             <div
               title={name}
               className={cn(
-                "flex size-[40px] shrink-0 items-center justify-center rounded-full ring-2 ring-transparent ring-offset-2 ring-offset-muted transition-shadow motion-reduce:transition-none",
+                "flex size-[40px] shrink-0 items-center justify-center rounded-full ring-2 ring-transparent ring-offset-2 ring-offset-ob-muted-surface transition-shadow motion-reduce:transition-none",
                 state.speaking && "ring-primary/40",
               )}
             >
@@ -172,7 +172,7 @@ export function VoiceCallWidget({
             <div
               title={state.muted ? t("voice.youMuted") : t("voice.you")}
               className={cn(
-                "relative flex size-[40px] shrink-0 items-center justify-center rounded-full bg-background ring-2 ring-transparent ring-offset-2 ring-offset-muted transition-shadow motion-reduce:transition-none",
+                "relative flex size-[40px] shrink-0 items-center justify-center rounded-full bg-background ring-2 ring-transparent ring-offset-2 ring-offset-ob-muted-surface transition-shadow motion-reduce:transition-none",
                 state.listening && !state.muted && "ring-primary/40",
               )}
             >
@@ -283,7 +283,7 @@ export function VoiceCallWidget({
                 transition={transition}
                 className="overflow-hidden"
               >
-                <div className="mt-3 h-16 overflow-y-auto rounded-xl bg-muted/40 p-2 text-xs leading-relaxed text-muted-foreground">
+                <div className="mt-3 h-16 overflow-y-auto rounded-xl bg-ob-muted-surface/40 p-2 text-xs leading-relaxed text-muted-foreground">
                   {state.reply || state.transcript || t("voice.captionsHint")}
                 </div>
               </motion.div>

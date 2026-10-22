@@ -1,0 +1,192 @@
+{
+  "meta": {
+    "namespace": "ai-observability-evaluations",
+    "ownedBy": "#36 #37 (experiment submit/results, comparison)"
+  },
+  "placeholder": {
+    "title": "Evaluations",
+    "description": "Dataset versions and experiment results for this Bot will be listed here once the observability store is connected. Nothing is missing from the Bot itself."
+  },
+  "page": {
+    "title": "Evaluations",
+    "description": "Frozen dataset versions and experiment results for this Bot."
+  },
+  "availability": {
+    "disabled": {
+      "title": "Evaluation is off",
+      "description": "Observability is disabled for this deployment, so experiments cannot run."
+    },
+    "empty": {
+      "title": "No experiments yet",
+      "description": "Pick a frozen dataset version and a Bot configuration to submit the first experiment."
+    },
+    "forbidden": {
+      "title": "You cannot run this experiment",
+      "description": "Experiments follow the Bot's management rights and are re-checked before every sample."
+    },
+    "notFound": {
+      "title": "No such experiment",
+      "description": "This address names an experiment or execution your scope does not hold — either it never existed or it belongs to someone else."
+    },
+    "unscored": {
+      "title": "Score unavailable for this sample",
+      "description": "The sample produced no score. A missing score is not a zero, and it is excluded from the average rather than counted as a failure."
+    },
+    "omitted": {
+      "title": "Content omitted",
+      "description": "This field could not be handled safely, so only metrics are shown. Omitted is not the same as empty."
+    },
+    "truncated": {
+      "title": "Content truncated",
+      "description": "This value exceeds the recorded size limit and was cut."
+    },
+    "syncing": {
+      "title": "Results still syncing",
+      "description": "The experiment finished but its scores are not confirmed upstream yet. Syncing is not success."
+    },
+    "unavailable": {
+      "title": "Upstream unavailable",
+      "description": "The observability store did not answer. Runs already in flight kept their hold; nothing was released or double-charged."
+    }
+  },
+  "submit": {
+    "rowTitle": "Run an experiment",
+    "rowDescription": "Freeze a Bot configuration against a frozen dataset version and submit it for evaluation.",
+    "dialogTitle": "Submit an experiment",
+    "dialogDescription": "The configuration freezes as submitted — the dataset version, prompt, model, parameters, tool fixtures and judge are pinned, and resubmitting the same configuration hits the same experiment.",
+    "name": "Experiment name",
+    "dataset": "Dataset",
+    "version": "Frozen version",
+    "versionCases_one": "{{id}} · {{count}} case",
+    "versionCases_other": "{{id}} · {{count}} cases",
+    "prompt": "Prompt",
+    "modelName": "Model",
+    "modelParameters": "Model parameters (JSON)",
+    "botConfig": "Bot configuration (JSON)",
+    "toolFixtures": "Tool fixtures (JSON)",
+    "judgeConfig": "Judge configuration (JSON)",
+    "judgeVersion": "Judge version",
+    "incomplete": "A name, a frozen version, a prompt, a model and a judge version are needed before submitting.",
+    "jsonInvalid": "This field must be a JSON object.",
+    "versionsUnavailable": "The frozen versions of this dataset did not answer.",
+    "submit": "Submit experiment",
+    "close": "Close",
+    "submittedNew": "Experiment frozen and started.",
+    "submittedReplay": "This configuration was already frozen — the existing experiment answered, and nothing new was created.",
+    "canary_one": "{{count}} field the redaction policy refused.",
+    "canary_other": "{{count}} fields the redaction policy refused.",
+    "viewResults": "View results"
+  },
+  "results": {
+    "back": "Evaluations",
+    "untitled": "Experiment results",
+    "executionTitle": "Execution record",
+    "executionDescription": "The safe execution record this report links back to — the run that produced these samples.",
+    "summaryTitle": "Summary",
+    "summaryDescription": "Every class is counted on its own; the mean averages scored samples only.",
+    "samplesTitle": "Samples",
+    "samplesDescription": "One row per frozen case, with its class, score, reason and usage.",
+    "cancel": "Cancel this experiment",
+    "meanScore": "Mean score",
+    "meanNone": "No sample was scored — a missing score is not a zero.",
+    "base_one": "{{count}} frozen case",
+    "base_other": "{{count}} frozen cases",
+    "scorerVersion": "Scored by {{version}}",
+    "scorerUnavailable": "Scorer version unavailable",
+    "toolRejections_one": "{{count}} tool call refused",
+    "toolRejections_other": "{{count}} tool calls refused"
+  },
+  "states": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Canceled"
+  },
+  "classes": {
+    "scored": "Scored",
+    "in_progress": "Still running",
+    "execution_failed": "Execution failed",
+    "scoring_failed": "Scoring failed",
+    "cancelled": "Canceled",
+    "pending_reconciliation": "Awaiting reconciliation",
+    "sync_failure": "Result sync failure"
+  },
+  "exports": { "showError": "Show failure detail" },
+  "sample": {
+    "scoreUnavailable": "Score unavailable",
+    "passedRules_one": "{{count}} rule passed",
+    "passedRules_other": "{{count}} rules passed",
+    "failedRules_one": "{{count}} rule failed",
+    "failedRules_other": "{{count}} rules failed",
+    "usage": "Usage",
+    "usageUnavailable": "Usage unavailable",
+    "showDetails": "Show details",
+    "judgeScored": "Judge {{score}}",
+    "judgeFailed": "Judge failed"
+  },
+  "error": {
+    "EXPERIMENT_INPUT_INVALID": "The experiment name or configuration is not valid. Nothing was submitted.",
+    "EXPERIMENT_DATASET_VERSION_NOT_FOUND": "This Bot's datasets hold no frozen version with that id. Nothing was submitted.",
+    "EXPERIMENT_STATE_INVALID": "The experiment's state refuses this. Nothing changed.",
+    "EXECUTION_STATE_INVALID": "Only a running execution can be canceled — this one has already settled.",
+    "unreachable": "The observability store did not answer. Nothing changed."
+  },
+  "comparison": {
+    "back": "Evaluations",
+    "untitled": "Compare experiments",
+    "selectTitle": "Choose two executions",
+    "selectDescription": "A comparison spans two experiments, so it cannot live under either one: name a baseline and a candidate — one experiment id and one execution id each. Both sides are read as your scope sees them.",
+    "baselineExperiment": "Baseline experiment id",
+    "baselineExecution": "Baseline execution id",
+    "candidateExperiment": "Candidate experiment id",
+    "candidateExecution": "Candidate execution id",
+    "incomplete": "All four ids are needed before a comparison can be read.",
+    "compare": "Compare",
+    "baseline": "Baseline",
+    "candidate": "Candidate",
+    "sidesTitle": "The two executions",
+    "sidesDescription": "Each side's own facts: state, scored samples, completion, usage, and the server-minted result link back to the safe execution record.",
+    "duration": "Ran for {{seconds}} s",
+    "completion": "{{percent}}% settled",
+    "scored_one": "{{count}} scored sample",
+    "scored_other": "{{count}} scored samples",
+    "usageLedger": "Usage records: {{reported}} reported · {{missing}} missing",
+    "compatibilityTitle": "Compatibility",
+    "compatibilityDescription": "The frozen sample set and the scoring definition must match; every other difference is the configuration being compared — shown, never hidden, never blocking.",
+    "compatible": "Comparable — the same frozen sample set under the same scoring definition.",
+    "incompatible": "Not comparable — the blocking fields differ, so no winner is claimed and no deltas are shown.",
+    "witnessUnavailable": "Withheld — unknown, not equal",
+    "sameOnBothSides": "Same on both sides",
+    "blockingDifference": "Blocks the comparison",
+    "configDifference": "A configuration difference — shown, never blocking",
+    "fields": {
+      "datasetContentHash": "Dataset content hash",
+      "judgeVersion": "Judge version",
+      "judgeConfig": "Judge configuration",
+      "readOnlyTools": "Read-only tools",
+      "modelName": "Model",
+      "modelParameters": "Model parameters",
+      "prompt": "Prompt",
+      "botConfig": "Bot configuration",
+      "toolFixtures": "Tool fixtures"
+    },
+    "download": "Download comparison (JSON)",
+    "deltasTitle": "Deltas",
+    "deltasDescription": "One row per shared frozen case; the mean delta is the difference of the two means. A sample still in flight or awaiting reconciliation stays not comparable — its verdict is still open.",
+    "meanDelta": "Mean moved by {{delta}}",
+    "meanDeltaNone": "No mean delta — a missing mean is not a zero.",
+    "scoreDelta": "Δ {{delta}}",
+    "scoreDeltaNone": "No score delta — a missing score is not a zero.",
+    "direction": {
+      "regressed": "Regressed",
+      "improved": "Improved",
+      "unchanged": "Unchanged",
+      "incomparable": "Not comparable"
+    },
+    "regressionsTitle": "Regressions",
+    "regressionsDescription": "The samples that got worse — each row names the frozen case and links both execution records.",
+    "noRegressions": "No sample regressed.",
+    "case": "Case {{version}} · {{hash}}"
+  }
+}

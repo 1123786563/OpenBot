@@ -1,85 +1,167 @@
-import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
+import { Description, Drawer } from "@heroui/react";
 import { IconX } from "@tabler/icons-react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-function Sheet({ ...props }: SheetPrimitive.Root.Props) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />;
-}
+/*
+ * CSS this wrapper needs. The orchestrator adds it to app/src/styles.css, next to the H02/H03
+ * component imports — this file must not import CSS itself:
+ *
+ *   @import "@heroui/styles/components/drawer.css" layer(components);
+ *
+ * `close-button.css`, `surface.css` and `description.css` are already imported by H03.
+ *
+ * HeroUI's Drawer is React Aria's Dialog under a side placement, so focus trapping, focus return,
+ * Escape, outside-press dismissal and body-scroll release all come from the same overlay stack as
+ * `dialog.tsx`. The compound parts are mapped once, here, so call sites keep the flat API they had:
+ * `Sheet` + `SheetContent` still draw the backdrop, the panel and the close button themselves.
+ */
 
-function SheetTrigger({ ...props }: SheetPrimitive.Trigger.Props) {
-  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
-}
+/** Shared theme backdrop for every sheet placement. */
+const SCRIM = "bg-[var(--ob-backdrop)]";
 
-function SheetClose({ ...props }: SheetPrimitive.Close.Props) {
-  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
-}
+type Side = "top" | "right" | "bottom" | "left";
 
-function SheetPortal({ ...props }: SheetPrimitive.Portal.Props) {
-  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />;
-}
+/**
+ * Geometry per placement. `max-w-none` is load-bearing: `.drawer__dialog` ships
+ * `max-w-[85vw]`, which would clip the 18rem mobile sidebar on a 320px viewport.
+ */
+const SIDE_CLASSES: Record<Side, string> = {
+  top: "h-auto max-h-none w-full rounded-t-none border-b",
+  bottom: "h-auto max-h-none w-full rounded-b-none border-t",
+  left: "h-full w-full max-w-none rounded-l-none border-r md:w-[min(24rem,calc(100vw-32px))]",
+  right:
+    "h-full w-full max-w-none rounded-r-none border-l md:w-[min(24rem,calc(100vw-32px))]",
+};
 
-function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
+type SheetProps = Omit<React.ComponentProps<typeof Drawer>, "isOpen"> & {
+  /** The app's name for React Aria's `isOpen`, kept so call sites did not change. */
+  open?: boolean;
+  isOpen?: boolean;
+  /**
+   * Base UI's non-modal flag. HeroUI's Drawer is modal by construction (React Aria's ModalOverlay
+   * always traps focus and locks scroll), and the app never opened a non-modal sheet. Accepted and
+   * ignored so the public shape survives; a second, hand-rolled overlay for it would be a new
+   * component rather than this migration.
+   *
+   * @deprecated No effect. Drawer sheets are always modal.
+   */
+  modal?: boolean;
+};
+
+function Sheet({
+  open,
+  isOpen,
+  onOpenChange,
+  modal: _modal,
+  ...props
+}: SheetProps) {
   return (
-    <SheetPrimitive.Backdrop
-      data-slot="sheet-overlay"
-      className={cn(
-        /* Same scrim as the dialog: WorkBuddy's 15% black, 60% in dark. */
-        "fixed inset-0 z-50 bg-black/15 dark:bg-black/60 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs",
-        className,
-      )}
+    <Drawer
+      data-slot="sheet"
+      isOpen={isOpen ?? open}
+      onOpenChange={onOpenChange}
       {...props}
     />
   );
 }
+
+/**
+ * React Aria's trigger button. It must stay inside `Sheet`, which is what publishes the press
+ * handler that opens the drawer.
+ */
+function SheetTrigger({
+  ...props
+}: React.ComponentProps<typeof Drawer.Trigger>) {
+  return <Drawer.Trigger data-slot="sheet-trigger" {...props} />;
+}
+
+/**
+ * A close control for content other than the panel's corner button. `slot="close"` is React Aria's
+ * contract: a button carrying it inside a dialog closes the dialog on press.
+ */
+function SheetClose({ ...props }: React.ComponentProps<typeof Button>) {
+  return <Button data-slot="sheet-close" slot="close" {...props} />;
+}
+
+type SheetContentProps = Omit<
+  React.ComponentProps<typeof Drawer.Dialog>,
+  "className" | "children"
+> & {
+  className?: string;
+  children?: React.ReactNode;
+  side?: Side;
+  showCloseButton?: boolean;
+};
 
 function SheetContent({
   className,
   children,
   side = "right",
   showCloseButton = true,
+  style,
   ...props
-}: SheetPrimitive.Popup.Props & {
-  side?: "top" | "right" | "bottom" | "left";
-  showCloseButton?: boolean;
-}) {
+}: SheetContentProps) {
   return (
-    <SheetPortal>
-      <SheetOverlay />
-      <SheetPrimitive.Popup
-        data-slot="sheet-content"
-        data-side={side}
-        className={cn(
-          "fixed z-50 flex flex-col gap-4 bg-popover bg-clip-padding text-sm text-popover-foreground shadow-lg transition duration-200 ease-in-out data-ending-style:opacity-0 data-starting-style:opacity-0 data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=bottom]:data-ending-style:translate-y-[2.5rem] data-[side=bottom]:data-starting-style:translate-y-[2.5rem] data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:data-ending-style:translate-x-[-2.5rem] data-[side=left]:data-starting-style:translate-x-[-2.5rem] data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:data-ending-style:translate-x-[2.5rem] data-[side=right]:data-starting-style:translate-x-[2.5rem] data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=top]:data-ending-style:translate-y-[-2.5rem] data-[side=top]:data-starting-style:translate-y-[-2.5rem] data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm motion-reduce:transition-none motion-reduce:data-[side=bottom]:data-ending-style:translate-y-0 motion-reduce:data-[side=bottom]:data-starting-style:translate-y-0 motion-reduce:data-[side=left]:data-ending-style:translate-x-0 motion-reduce:data-[side=left]:data-starting-style:translate-x-0 motion-reduce:data-[side=right]:data-ending-style:translate-x-0 motion-reduce:data-[side=right]:data-starting-style:translate-x-0 motion-reduce:data-[side=top]:data-ending-style:translate-y-0 motion-reduce:data-[side=top]:data-starting-style:translate-y-0",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-        {showCloseButton && (
-          <SheetPrimitive.Close
-            data-slot="sheet-close"
-            render={
-              <Button
-                variant="ghost"
-                className="absolute top-3 right-3"
-                size="icon-sm"
-              />
-            }
-          >
-            <IconX />
-            <span className="sr-only">Close</span>
-          </SheetPrimitive.Close>
-        )}
-      </SheetPrimitive.Popup>
-    </SheetPortal>
+    <Drawer.Backdrop
+      className={SCRIM}
+      data-slot="sheet-overlay"
+      isDismissable
+      variant="transparent"
+    >
+      {/* `placement` is React Aria's Modal, the full-viewport flex box the panel is placed in. */}
+      <Drawer.Content placement={side}>
+        <Drawer.Dialog
+          data-side={side}
+          data-slot="sheet-content"
+          className={cn(
+            "flex flex-col gap-4 rounded-2xl bg-overlay p-0 text-sm text-overlay-foreground shadow-lg",
+            SIDE_CLASSES[side],
+            side === "left"
+              ? "rounded-r-2xl"
+              : side === "right"
+                ? "rounded-l-2xl"
+                : side === "top"
+                  ? "rounded-b-2xl"
+                  : "rounded-t-2xl",
+            className,
+          )}
+          /*
+           * HeroUI's drawer binds drag-to-dismiss to the whole panel and sets `touch-action: none`
+           * on it. The Base UI sheet had no drag, and the sidebar's roster scrolls inside this
+           * panel on touch — both would be lost. The explicit undefined handlers override the
+           * spread `dragHandlers` (Drawer.Dialog applies its own first), and the style restores
+           * panning; outside-press and Escape still close through `isDismissable` on the backdrop.
+           */
+          onPointerDown={undefined}
+          onPointerMove={undefined}
+          onPointerUp={undefined}
+          style={{ touchAction: "auto", ...style }}
+          {...props}
+        >
+          {children}
+          {showCloseButton && (
+            <Button
+              className="absolute top-3 right-3"
+              data-slot="sheet-close"
+              size="icon-sm"
+              slot="close"
+              variant="ghost"
+            >
+              <IconX />
+              <span className="sr-only">Close</span>
+            </Button>
+          )}
+        </Drawer.Dialog>
+      </Drawer.Content>
+    </Drawer.Backdrop>
   );
 }
 
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div
+    <Drawer.Header
       data-slot="sheet-header"
       className={cn("flex flex-col gap-0.5 p-4", className)}
       {...props}
@@ -89,7 +171,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
 
 function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div
+    <Drawer.Footer
       data-slot="sheet-footer"
       className={cn("mt-auto flex flex-col gap-2 p-4", className)}
       {...props}
@@ -97,9 +179,13 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function SheetTitle({ className, ...props }: SheetPrimitive.Title.Props) {
+/** `Drawer.Heading` is React Aria's `Heading slot="title"` — what labels the dialog. */
+function SheetTitle({
+  className,
+  ...props
+}: React.ComponentProps<typeof Drawer.Heading>) {
   return (
-    <SheetPrimitive.Title
+    <Drawer.Heading
       data-slot="sheet-title"
       className={cn(
         "font-heading text-base font-medium text-foreground",
@@ -113,9 +199,9 @@ function SheetTitle({ className, ...props }: SheetPrimitive.Title.Props) {
 function SheetDescription({
   className,
   ...props
-}: SheetPrimitive.Description.Props) {
+}: React.ComponentProps<typeof Description>) {
   return (
-    <SheetPrimitive.Description
+    <Description
       data-slot="sheet-description"
       className={cn("text-sm text-muted-foreground", className)}
       {...props}

@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { DetailPanel } from "@/components/layout/detail-panel";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,7 +47,7 @@ import { cn } from "@/lib/utils";
  * lands in advanced mode with the raw expression, which is always honest.
  */
 
-type FormState = {
+export type ScheduledTaskDraft = {
   name: string;
   prompt: string;
   mode: CraftScheduledTaskEditorMode;
@@ -69,7 +71,7 @@ const WEEKDAY_KEYS: Record<number, string> = {
   6: "sat",
 };
 
-function emptyForm(): FormState {
+function emptyForm(): ScheduledTaskDraft {
   return {
     name: "",
     prompt: "",
@@ -85,7 +87,7 @@ function emptyForm(): FormState {
 }
 
 /** Best-effort reverse of the server's compileToCron — mode defaults to what the task was saved as. */
-function formFromTask(task: CraftScheduledTaskDetail): FormState {
+function formFromTask(task: CraftScheduledTaskDetail): ScheduledTaskDraft {
   const [minute, hour, dayOfMonth, , dayOfWeek] = task.cron_expression
     .split(/\s+/)
     .map((field) => field ?? "");
@@ -156,7 +158,7 @@ function formFromTask(task: CraftScheduledTaskDetail): FormState {
   };
 }
 
-function payloadFor(state: FormState) {
+function payloadFor(state: ScheduledTaskDraft) {
   if (state.mode === "advanced") return { cron: state.cron.trim() };
   if (state.mode === "interval") {
     const every = Number.parseInt(state.every, 10);
@@ -201,10 +203,16 @@ export function ScheduledRunStatusChip({
 export function ScheduledTaskEditor({
   taskId,
   onDone,
+  draft,
+  draftDirty = false,
+  onDraftChange,
 }: {
   /** Absent means creating. */
   taskId?: string;
   onDone: () => void;
+  draft?: ScheduledTaskDraft;
+  draftDirty?: boolean;
+  onDraftChange?: (draft: ScheduledTaskDraft, dirty: boolean) => void;
 }) {
   const { t } = useTranslation("craft");
   const queryClient = useQueryClient();
@@ -217,14 +225,27 @@ export function ScheduledTaskEditor({
     enabled: taskId !== undefined,
   });
 
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [seeded, setSeeded] = useState(false);
+  const [form, setForm] = useState<ScheduledTaskDraft>(
+    () => draft ?? emptyForm(),
+  );
+  const [seeded, setSeeded] = useState(
+    () => draft !== undefined || taskId === undefined,
+  );
+  const [dirty, setDirty] = useState(draftDirty);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    // An empty edit form is not a draft. Publishing it while the query is pending means a responsive
+    // remount would receive it as if it were already seeded and skip the loaded task forever.
+    if (taskId && !seeded) return;
+    onDraftChange?.(form, dirty);
+  }, [form, dirty, onDraftChange, seeded, taskId]);
 
   // Seed once when the detail arrives (the panel mounts before the read resolves).
   if (taskId && detail.data && !seeded) {
     setForm(formFromTask(detail.data));
+    setDirty(false);
     setSeeded(true);
   }
 
@@ -295,6 +316,28 @@ export function ScheduledTaskEditor({
     return key ? (labels[key] ?? "") : "";
   };
 
+  if (taskId && detail.isPending) {
+    return (
+      <p
+        className="mx-auto w-full max-w-xl p-8 text-sm text-muted-foreground"
+        role="status"
+      >
+        {t("tasks.loading")}
+      </p>
+    );
+  }
+
+  if (taskId && detail.isError && !detail.data) {
+    return (
+      <p
+        className="mx-auto w-full max-w-xl p-8 text-sm text-destructive"
+        role="alert"
+      >
+        {t("tasks.loadError")}
+      </p>
+    );
+  }
+
   const submit = () => {
     if (!form.name.trim() || !form.prompt.trim()) {
       setError(t("tasks.requiredError"));
@@ -308,7 +351,10 @@ export function ScheduledTaskEditor({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8">
+    <div
+      className="mx-auto flex w-full max-w-xl flex-col gap-6 p-8"
+      data-dirty={dirty}
+    >
       <header>
         <h1 className="text-2xl font-semibold">
           {taskId ? t("tasks.editTitle") : t("tasks.newTitle")}
@@ -330,7 +376,10 @@ export function ScheduledTaskEditor({
           <Input
             id="task-name"
             value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            onChange={(event) => {
+              setForm({ ...form, name: event.target.value });
+              setDirty(true);
+            }}
           />
         </Field>
 
@@ -340,9 +389,10 @@ export function ScheduledTaskEditor({
             id="task-prompt"
             rows={4}
             value={form.prompt}
-            onChange={(event) =>
-              setForm({ ...form, prompt: event.target.value })
-            }
+            onChange={(event) => {
+              setForm({ ...form, prompt: event.target.value });
+              setDirty(true);
+            }}
           />
         </Field>
 
@@ -350,9 +400,15 @@ export function ScheduledTaskEditor({
           <FieldLabel htmlFor="task-mode">{t("tasks.schedule")}</FieldLabel>
           <Select
             value={form.mode}
-            onValueChange={(mode) =>
-              setForm({ ...form, mode: mode as FormState["mode"] })
-            }
+            onValueChange={(mode) => {
+              // The null guard is the migration contract (H05/H06/H10): React Aria reports an
+              // empty selection as null, and the draft keeps its editor mode rather than a
+              // cast-through absence.
+              if (mode !== null) {
+                setForm({ ...form, mode });
+                setDirty(true);
+              }
+            }}
           >
             <SelectTrigger id="task-mode">
               <SelectValue>
@@ -386,9 +442,10 @@ export function ScheduledTaskEditor({
                 type="number"
                 min={1}
                 value={form.every}
-                onChange={(event) =>
-                  setForm({ ...form, every: event.target.value })
-                }
+                onChange={(event) => {
+                  setForm({ ...form, every: event.target.value });
+                  setDirty(true);
+                }}
               />
             </Field>
             <Field className="flex-1">
@@ -397,9 +454,13 @@ export function ScheduledTaskEditor({
               </FieldLabel>
               <Select
                 value={form.unit}
-                onValueChange={(unit) =>
-                  setForm({ ...form, unit: unit as CraftIntervalUnit })
-                }
+                onValueChange={(unit) => {
+                  // Same null guard: null keeps the draft's previous unit.
+                  if (unit !== null) {
+                    setForm({ ...form, unit });
+                    setDirty(true);
+                  }
+                }}
               >
                 <SelectTrigger id="task-unit">
                   <SelectValue>
@@ -431,9 +492,10 @@ export function ScheduledTaskEditor({
               id="task-time-days"
               type="time"
               value={form.timeOfDay}
-              onChange={(event) =>
-                setForm({ ...form, timeOfDay: event.target.value })
-              }
+              onChange={(event) => {
+                setForm({ ...form, timeOfDay: event.target.value });
+                setDirty(true);
+              }}
             />
           </Field>
         ) : null}
@@ -448,9 +510,10 @@ export function ScheduledTaskEditor({
                 id="task-time-daily"
                 type="time"
                 value={form.timeOfDay}
-                onChange={(event) =>
-                  setForm({ ...form, timeOfDay: event.target.value })
-                }
+                onChange={(event) => {
+                  setForm({ ...form, timeOfDay: event.target.value });
+                  setDirty(true);
+                }}
               />
             </Field>
             <Field>
@@ -465,14 +528,15 @@ export function ScheduledTaskEditor({
                       size="sm"
                       variant={active ? "default" : "outline"}
                       aria-pressed={active}
-                      onClick={() =>
+                      onClick={() => {
                         setForm({
                           ...form,
                           weekdays: active
                             ? form.weekdays.filter((value) => value !== day)
                             : [...form.weekdays, day].sort((a, b) => a - b),
-                        })
-                      }
+                        });
+                        setDirty(true);
+                      }}
                     >
                       {weekdayLabel(day)}
                     </Button>
@@ -493,9 +557,10 @@ export function ScheduledTaskEditor({
               id="task-cron"
               placeholder="0 9 * * 1-5"
               value={form.cron}
-              onChange={(event) =>
-                setForm({ ...form, cron: event.target.value })
-              }
+              onChange={(event) => {
+                setForm({ ...form, cron: event.target.value });
+                setDirty(true);
+              }}
             />
             <p className="text-muted-foreground text-xs">
               {t("tasks.cronHint")}
@@ -509,9 +574,13 @@ export function ScheduledTaskEditor({
           </FieldLabel>
           <Select
             value={form.status}
-            onValueChange={(status) =>
-              setForm({ ...form, status: status as CraftScheduledTaskStatus })
-            }
+            onValueChange={(status) => {
+              // Same null guard: null keeps the draft's previous status.
+              if (status !== null) {
+                setForm({ ...form, status });
+                setDirty(true);
+              }
+            }}
           >
             <SelectTrigger id="task-status">
               <SelectValue>
@@ -529,21 +598,17 @@ export function ScheduledTaskEditor({
 
         {!taskId ? (
           <Field>
-            <label
-              htmlFor="task-run-now"
-              className="flex cursor-pointer items-center gap-2 text-sm"
+            <Checkbox
+              id="task-run-now"
+              checked={form.runImmediately}
+              onCheckedChange={(checked) => {
+                setForm({ ...form, runImmediately: checked });
+                setDirty(true);
+              }}
+              className="text-sm"
             >
-              <input
-                id="task-run-now"
-                type="checkbox"
-                className="size-4 accent-foreground"
-                checked={form.runImmediately}
-                onChange={(event) =>
-                  setForm({ ...form, runImmediately: event.target.checked })
-                }
-              />
               {t("tasks.runImmediately")}
-            </label>
+            </Checkbox>
           </Field>
         ) : null}
       </FieldGroup>
@@ -643,6 +708,61 @@ export function ScheduledTaskEditor({
           <Separator />
         </section>
       ) : null}
+    </div>
+  );
+}
+
+/** Route-owned editor draft presenter shared by the task page and its behavior tests. */
+export function CraftTaskEditorPresenter({
+  active,
+  create,
+  taskId,
+  onClose,
+  children,
+}: {
+  active: boolean;
+  create: boolean;
+  taskId?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const [taskDraft, setTaskDraft] = useState<{
+    key: string;
+    value: ScheduledTaskDraft;
+    dirty: boolean;
+  }>();
+  const editorKey = create ? "new" : taskId ? `edit:${taskId}` : "";
+  const current = taskDraft?.key === editorKey ? taskDraft : undefined;
+  const saveDraft = useCallback(
+    (value: ScheduledTaskDraft, dirty: boolean) =>
+      setTaskDraft({ key: editorKey, value, dirty }),
+    [editorKey],
+  );
+
+  useEffect(() => {
+    if (!active) setTaskDraft(undefined);
+  }, [active]);
+
+  return (
+    <div className="flex-1 min-w-0">
+      <DetailPanel
+        detail={
+          active ? (
+            <ScheduledTaskEditor
+              key={editorKey}
+              draft={current?.value}
+              draftDirty={current?.dirty}
+              onDraftChange={saveDraft}
+              {...(!create && taskId ? { taskId } : {})}
+              onDone={onClose}
+            />
+          ) : null
+        }
+        onClose={onClose}
+        open={active}
+      >
+        {children}
+      </DetailPanel>
     </div>
   );
 }

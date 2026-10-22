@@ -9,8 +9,8 @@ import {
   IconWebhook,
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, useId, useState } from "react";
 import type { TFunction } from "i18next";
+import { Fragment, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SharedAppNotice } from "@/components/plugins/shared-app-notice";
 import { Button } from "@/components/ui/button";
@@ -329,9 +329,7 @@ function TriggerRow({
         <ItemTitle>{t(KIND_KEYS[trigger.kind])}</ItemTitle>
         <ItemDescription className="line-clamp-none">
           {describeFilter(t, trigger.config)}
-          {trigger.enabled
-            ? ""
-            : t("responsibilities.triggers.pausedSuffix")}
+          {trigger.enabled ? "" : t("responsibilities.triggers.pausedSuffix")}
         </ItemDescription>
       </ItemContent>
       <ItemActions>
@@ -587,9 +585,10 @@ function NewTriggerDialog({
   );
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
-      {/* The heavier backdrop, forced: this stacks over the responsibility's dialog, and Base UI
-          would otherwise render a nested dialog with no backdrop at all. */}
-      <DialogContent overlayClassName="bg-black/20 supports-backdrop-filter:backdrop-blur-sm">
+      {/* The heavier backdrop, forced: this stacks over the responsibility's dialog. HeroUI renders
+          the nested backdrop itself; the `!` is only because the component CSS that sets
+          `background-color: transparent` on the backdrop is imported unlayered. */}
+      <DialogContent overlayClassName="bg-black/20! supports-backdrop-filter:backdrop-blur-sm">
         <DialogHeader>
           <DialogTitle>{t("responsibilities.triggers.add")}</DialogTitle>
           <DialogDescription>
@@ -623,7 +622,9 @@ function NewTriggerDialog({
                 <Select
                   items={kindItems}
                   onValueChange={(value) => {
-                    if (value) setKind(value as TriggerKind);
+                    // null is the Select's "nothing chosen" (dismiss); the draft kind stays.
+                    if (value === null) return;
+                    setKind(value);
                   }}
                   value={kind}
                 >
@@ -661,7 +662,9 @@ function NewTriggerDialog({
                     <Select
                       items={slackModeItems}
                       onValueChange={(value) => {
-                        if (value) setMode(value as SlackMode);
+                        // null is the Select's "nothing chosen" (dismiss); the draft mode stays.
+                        if (value === null) return;
+                        setMode(value);
                       }}
                       value={mode}
                     >

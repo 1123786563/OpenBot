@@ -1,15 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { AbstractAvatar } from "@/components/agents/abstract-avatar";
 import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/router-link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentQueryOptions } from "@/lib/agents/queries";
 
 function Tag({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
+    <span className="inline-flex items-center rounded-full border border-border bg-ob-muted-surface/40 px-2 py-0.5 text-xs text-muted-foreground">
       {children}
     </span>
   );
@@ -113,15 +114,14 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         >
           {t("agentProfile.startNewChannel")}
         </Button>
-        <Button
+        <ButtonLink
           className="w-full text-sm!"
-          render={(props) => (
-            <Link {...props} params={{ agentId }} to="/bots/$agentId" />
-          )}
+          params={{ agentId }}
+          to="/bots/$agentId"
           variant="outline"
         >
           {t("agentProfile.open", { name: profile.name })}
-        </Button>
+        </ButtonLink>
       </div>
     </div>
   );

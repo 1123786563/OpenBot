@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-21",
+  "route": "/bots/agent_023d30c3-2e68-4bd4-a4ab-e2bba67c9fcc/approvals",
+  "syntheticResponse": {"method": "POST", "path": "/api/approvals/rules", "status": 400, "forwardedToApi": false},
+  "results": [
+    {"theme":"light","viewport":"390x844","draft":"mcp/nowhere/*","alert":"controlled rules failure","focusAfterFailure":"Tool/app input (INPUT)","dialogOpenAfterFailure":true,"escapeClosesDialog":true,"triggerFocusRestored":true,"horizontalOverflow":false,"interceptedPostCount":1,"ruleWriteCount":0,"viewportActual":"390x844","deviceScaleFactor":1,"errorScreenshot":"artifacts/light-390x844-error.png","closedScreenshot":"artifacts/light-390x844-closed.png"},
+    {"theme":"dark","viewport":"390x844","draft":"mcp/nowhere/*","alert":"controlled rules failure","focusAfterFailure":"Tool/app input (INPUT)","dialogOpenAfterFailure":true,"escapeClosesDialog":true,"triggerFocusRestored":true,"horizontalOverflow":false,"interceptedPostCount":1,"ruleWriteCount":0,"viewportActual":"390x844","deviceScaleFactor":1,"errorScreenshot":"artifacts/dark-390x844-error.png","closedScreenshot":"artifacts/dark-390x844-closed.png"}
+  ]
+}

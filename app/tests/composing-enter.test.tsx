@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,11 +10,19 @@ import {
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentType, ReactNode } from "react";
-import { SetupSections } from "@/components/bot-profile/setup";
 import { CreateAgentDialog } from "@/components/agents/create-agent-dialog";
+import { SetupSections } from "@/components/bot-profile/setup";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
 import { computerKeys } from "@/lib/computers/queries";
 import { Route as BoundariesRoute } from "@/routes/_authed/admin/boundaries";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 
 /**
  * The Enter that confirms a character an input method is composing is not an Enter.
@@ -122,7 +129,14 @@ async function confirmComposedCharacter(field: Element) {
 /** A person replacing what a field holds, one key at a time. */
 async function type(field: Element, value: string) {
   const user = userEvent.setup({ document: field.ownerDocument });
-  await user.clear(field);
+  /*
+   * React Aria's input does not process the synthetic `input` event `user.clear` dispatches (nor
+   * `fireEvent.change`), so the controlled value would resurrect on the next render; deleting by
+   * real keystrokes is the one clearing path the controlled value follows here (recorded in
+   * h06/REPORT.md).
+   */
+  const held = (field as HTMLInputElement).value.length;
+  if (held > 0) await user.type(field, "{Backspace}".repeat(held));
   await user.type(field, value);
 }
 

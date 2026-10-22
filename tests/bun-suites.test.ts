@@ -1,5 +1,14 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -161,6 +170,179 @@ function readJunit(xml: string): {
   };
 }
 
+/*
+ * A failure assertion can carry bun's full util.inspect dump of a Happy-DOM tree: one shared-process
+ * interference cascade produced a 6 GB junit.xml, and reading it as one string hits Node's
+ * 0x1fffffe8 character limit before the alone-re-run fallback could even start. Reports past this
+ * size are scanned in bounded windows instead: the counts come from the <testsuites> root
+ * attributes near the head, and each failure keeps only its first 300 characters, exactly as the
+ * in-memory parser above truncates them.
+ */
+const HUGE_REPORT_BYTES = 64 * 1024 * 1024;
+
+/** Windowed twin of `readJunit` for reports too large for a single string. */
+function readHugeJunit(path: string): ReturnType<typeof readJunit> {
+  const failed: string[] = [];
+  const failingFiles = new Set<string>();
+  let tests = 0;
+  let failures = 0;
+  let errors = 0;
+  let skipped = 0;
+
+  const attribute = (tag: string, name: string): number => {
+    const match = new RegExp(`\\b${name}="(\\d+)"`).exec(tag);
+    return match ? Number(match[1]) : 0;
+  };
+
+  const handleTestcase = (tag: string, body: string) => {
+    if (!/<(failure|error)\b/.test(body)) return;
+    const file = /\bfile="([^"]*)"/.exec(tag)?.[1];
+    if (file) failingFiles.add(file);
+    const name = /\bname="([^"]*)"/.exec(tag)?.[1] ?? "";
+    /*
+     * A window can cut the excerpt inside the failure opening tag (review F-1). When that
+     * fragment leads the body, drop it so the summary keeps readable text instead of raw
+     * attribute characters.
+     */
+    let text = body;
+    const failureTag = /<(?:failure|error)\b[^>]*>/.exec(body)?.[0] ?? null;
+    if (failureTag === null) {
+      // Opening tag cut mid-way: the fragment has no '>' so nothing after it was parsed yet.
+      if (/\s*<(?:failure|error)\b[^>]*$/.test(body)) text = "";
+    } else if (body.slice(0, body.indexOf(failureTag)).trim() === "") {
+      text = body.slice(body.indexOf(failureTag) + failureTag.length);
+    }
+    let detail = text
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    if (!detail) {
+      const failureTag = /<(?:failure|error)\b[^>]*>/.exec(body)?.[0] ?? "";
+      const kind = /\btype="([^"]*)"/.exec(failureTag)?.[1] ?? "";
+      const message = (
+        /\bmessage="([^"]*)"/.exec(failureTag)?.[1] ?? ""
+      ).replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)));
+      detail = `${kind}${message ? `: ${message}` : ""}`.trim();
+    }
+    failed.push(`${name}: ${detail}`);
+  };
+
+  /*
+   * Scan in fixed windows. Each iteration rebuilds `window` from `carry` (the unprocessed tail
+   * of the previous window, capped at carryLimit) plus the next chunk; `cursor` walks complete
+   * testcase tags inside it. When a failure body overflows the window the loop keeps only the
+   * head excerpt, then seeks the closing tag byte offset and resumes after it, so the dump
+   * itself is never held in memory.
+   */
+  const fd = openSync(path, "r");
+  try {
+    const chunkSize = 4 * 1024 * 1024;
+    // Enough to hold an opening tag, its 300-character excerpt, and a closing tag in one window.
+    const carryLimit = 8192;
+    const buffer = Buffer.allocUnsafe(chunkSize);
+    let carry = "";
+    let rootSeen = false;
+    let position = 0;
+    outer: while (true) {
+      // Both Node and Bun return the byte count directly (no { bytesRead } wrapper).
+      const readBytes = readSync(fd, buffer, 0, chunkSize, position) as number;
+      if (readBytes === 0) break;
+      position += readBytes;
+      const window = carry + buffer.toString("utf8", 0, readBytes);
+      if (!rootSeen) {
+        const root = /<testsuites\b[^>]*>/.exec(window);
+        if (root) {
+          rootSeen = true;
+          tests = attribute(root[0], "tests");
+          failures = attribute(root[0], "failures");
+          errors = attribute(root[0], "errors");
+          skipped = attribute(root[0], "skipped");
+        }
+      }
+      let cursor = 0;
+      for (;;) {
+        const open = window.indexOf("<testcase", cursor);
+        if (open === -1) {
+          carry =
+            window.length > carryLimit ? window.slice(-carryLimit) : window;
+          continue outer;
+        }
+        const tagEnd = window.indexOf(">", open);
+        // Incomplete opening tag: wait for the next chunk.
+        if (tagEnd === -1) {
+          carry = window.slice(open);
+          continue outer;
+        }
+        /*
+         * A failure body is the inspect dump itself and can dwarf any window. 300 characters of
+         * body already decide the summary, so when the closing tag is not in view take the head
+         * excerpt and then seek the close tag in bounded steps from the current chunk onward.
+         */
+        const close = window.indexOf("</testcase>", tagEnd);
+        let bodyEnd = close;
+        if (close === -1) {
+          bodyEnd = window.length;
+        }
+        if (bodyEnd - tagEnd > carryLimit) {
+          bodyEnd = tagEnd + carryLimit;
+        }
+        handleTestcase(
+          window.slice(open, tagEnd + 1),
+          window.slice(tagEnd + 1, bodyEnd),
+        );
+        if (close === -1) {
+          // Skip the rest of this dump: find the closing tag byte offset, then resume after it.
+          const skip = findClosingTagFrom(fd, position, "</testcase>");
+          if (skip === -1) break outer; // truncated report; nothing more to read
+          position = skip;
+          carry = "";
+          continue outer;
+        }
+        cursor = close + "</testcase>".length;
+      }
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return {
+    tests,
+    failures,
+    errors,
+    skipped,
+    failed,
+    failingFiles: [...failingFiles],
+  };
+}
+
+/**
+ * Searches `haystack` starting at byte `from` for `needle`, in bounded chunks, and returns the byte
+ * offset just past the match (-1 at end of file). Neither the dump nor an oversized intermediate
+ * string is ever materialized: each chunk is decoded, searched, and dropped.
+ */
+function findClosingTagFrom(fd: number, from: number, needle: string): number {
+  const chunkSize = 4 * 1024 * 1024;
+  const buffer = Buffer.allocUnsafe(chunkSize);
+  // needle.length - 1 bytes of a partial match can straddle chunks; carry them as a string.
+  let overlap = "";
+  let position = Math.max(0, from - (needle.length - 1));
+  for (;;) {
+    const readBytes = readSync(fd, buffer, 0, chunkSize, position) as number;
+    if (readBytes === 0) return -1;
+    const chunk = overlap + buffer.toString("utf8", 0, readBytes);
+    const index = chunk.indexOf(needle);
+    if (index !== -1) {
+      // Bytes consumed to the end of the match, discounting the overlap prefix.
+      const consumed =
+        Buffer.byteLength(chunk.slice(0, index + needle.length)) -
+        Buffer.byteLength(overlap);
+      return position + consumed;
+    }
+    position += readBytes;
+    overlap = chunk.slice(-(needle.length - 1));
+  }
+}
+
 /** One `bun test` invocation, with its junit parsed. The driver needs it twice: grouped and alone. */
 async function runBun(
   files: string[],
@@ -216,7 +398,12 @@ async function runBun(
         `bun wrote no junit report for ${files[0]}:\n${(stderr || stdout).slice(-800)}`,
       );
     }
-    return { ...readJunit(readFileSync(report, "utf8")), exitCode, stderr };
+    // A shared-process cascade once wrote a 6 GB dump; the fallback below must still run.
+    const parsed =
+      statSync(report).size > HUGE_REPORT_BYTES
+        ? readHugeJunit(report)
+        : readJunit(readFileSync(report, "utf8"));
+    return { ...parsed, exitCode, stderr };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

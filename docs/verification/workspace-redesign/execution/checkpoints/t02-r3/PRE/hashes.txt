@@ -1,0 +1,5 @@
+152705df29f3800851654d5358760b77094a5c3524f898131ca0e44addd2829f  docs/verification/workspace-redesign/execution/checkpoints/t02-r3/PRE/HEAD.txt
+7ab87d93113d201b84b1a6bb47c7de3b555f265fcf509e05c56e7602fe7949bd  docs/verification/workspace-redesign/execution/checkpoints/t02-r3/PRE/button-native.test.tsx
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  docs/verification/workspace-redesign/execution/checkpoints/t02-r3/PRE/staged.patch
+fac58510f50916622e93df25589af05c4f4cf7d4f42c67c84da4b43cea11b2b9  docs/verification/workspace-redesign/execution/checkpoints/t02-r3/PRE/status.txt
+7b71faabb394a6384df1b16c82cd5000611bc16ae38961496a8c612e7cda0e98  docs/verification/workspace-redesign/execution/checkpoints/t02-r3/PRE/unstaged.patch

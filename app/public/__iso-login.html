@@ -1,0 +1,9 @@
+<!doctype html>
+<html><body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0">
+<p>正在登录测试环境…</p>
+<script>
+fetch('http://127.0.0.1:3002/api/auth/sign-in/email',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({email:'workspace-test@local.test',password:'iso-accept-only-2026'})})
+.then(async r=>{ if(!r.ok){document.body.innerHTML='<pre>登录失败: '+await r.text()+'</pre>';return;} location.href='http://127.0.0.1:3011/'; })
+.catch(e=>document.body.innerHTML='<pre>'+e+'</pre>');
+</script>
+</body></html>

@@ -1,0 +1,39 @@
+/*
+ * HeroUI bridge — now (almost) empty, by design.
+ *
+ * BASELINE (2026-10-20, issue #502): the app adopted HeroUI's native default theme, so the
+ * `:root` mapping that restated the library's variables onto `--ob-*` values was deleted: every
+ * one of those mappings either reproduced the HeroUI default exactly (surfaces, foreground,
+ * accent, default, field, border, focus, status, radius) or enforced a WorkBuddy-specific choice
+ * the new baseline retires (the grey menu-highlight accent, the black/white action pair, the
+ * backdrop tint, the pulse skeleton, the scrollbar palette). HeroUI's own `@layer base` defaults
+ * from `@heroui/styles/themes/default` now flow natively, and `--ob-*` tokens in `tokens.css`
+ * carry the same values for the app's own vocabulary.
+ *
+ * What the removals cover, for the record:
+ *
+ *   - Surfaces/text/background/overlay/muted: ob values == defaults.
+ *   - accent/accent-foreground/accent-hover/accent-soft-foreground/link: the accent is HeroUI's
+ *     blue again; the old black/white action mapping was the WorkBuddy choice.
+ *   - default/default-foreground, field-* (white fill, transparent border, no stroke width),
+ *     border/separator/focus, the danger and success pairs, radius/field-radius,
+ *     disabled-opacity, scrollbar-*, backdrop: ob values == defaults or retired WorkBuddy
+ *     variants.
+ *   - `.ob-checkbox` / `.ob-switch` geometry + colour blocks: HeroUI's native controls already
+ *     draw the chosen look (accent ON fill, snow ink), so the WorkBuddy 16px/32×18.4 restatements
+ *     and the H14 dark OFF-track patch were removed with them; the `ob-checkbox` / `ob-switch`
+ *     classes on the wrappers are now inert markers.
+ *
+ * This file stays imported and keeps the `ob-theme` layer alive as the ONE home for future
+ * overrides that are structurally necessary for the app (behavioural or portal-related), so any
+ * that appear do not get sprinkled into components. Visual-only overrides do not belong here —
+ * if a value differs from the HeroUI default on purpose, it changes in `tokens.css` and is
+ * mapped here only while the library cannot express it.
+ */
+
+@layer ob-theme {
+  /*
+   * Intentionally empty. See the header: HeroUI's defaults win because nothing here overrides
+   * them anymore.
+   */
+}

@@ -1,10 +1,16 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReachingYou } from "@/components/delivery/reaching-you";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /** A Bot's Reaching you page: where this Bot's conversations continue outside OpenBot. */
@@ -78,6 +84,7 @@ function serving(sms = false) {
         channels: [
           channel("channel-expenses", "Finance desk", ["expenses"]),
           channel("channel-knowledge", "Docs desk", ["knowledge"]),
+          channel("channel-dual", "Team desk", ["expenses", "knowledge"]),
         ],
         nextCursor: null,
       });
@@ -91,13 +98,13 @@ function serving(sms = false) {
   }) as unknown as typeof fetch;
 }
 
-function draw() {
+function draw(agentId = "expenses") {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <ReachingYou agentId="expenses" />
+      <ReachingYou agentId={agentId} />
     </QueryClientProvider>,
   );
 }
@@ -122,7 +129,14 @@ async function chooseConversation(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
 ) {
-  await user.click(view.getByRole("combobox", { name: /^Conversation/ }));
+  await user.click(
+    /*
+     * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
+     * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
+     * change request recorded in h04/REPORT.md). Address the trigger by role button.
+     */
+    view.getByRole("button", { name: /^Conversation/ }),
+  );
   await user.click(await view.findByRole("option", { name }));
 }
 
@@ -130,9 +144,23 @@ test("linking Slack needs only a conversation, and warns that it moves the accou
   serving();
   const view = draw();
   const user = await openSlackLink(view);
-  expect(view.queryByRole("combobox", { name: /^Bot/ })).toBeNull();
+  expect(
+    /*
+     * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
+     * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
+     * change request recorded in h04/REPORT.md). Address the trigger by role button.
+     */
+    view.queryByRole("button", { name: /^Bot/ }),
+  ).toBeNull();
   expect(view.getByText(/Linking it here moves it/)).toBeTruthy();
-  await user.click(view.getByRole("combobox", { name: /^Conversation/ }));
+  await user.click(
+    /*
+     * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
+     * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
+     * change request recorded in h04/REPORT.md). Address the trigger by role button.
+     */
+    view.getByRole("button", { name: /^Conversation/ }),
+  );
   const options = (await view.findAllByRole("option")).map(
     (option) => option.textContent,
   );
@@ -168,7 +196,12 @@ test("closing the dialog keeps the link code, so reopening the row shows it agai
   expect(await view.findByText("link abc")).toBeTruthy();
   // With the conversation it links, so "this conversation" still names one.
   expect(
-    view.getByRole("combobox", { name: /^Conversation/ }).textContent,
+    /*
+     * HeroUI Select.Trigger is a plain button with aria-haspopup="listbox"; the
+     * role="combobox" the ui/select wrapper forwards is dropped by HeroUI (interface
+     * change request recorded in h04/REPORT.md). Address the trigger by role button.
+     */
+    view.getByRole("button", { name: /^Conversation/ }).textContent,
   ).toContain("Finance desk");
   expect(
     writes.filter(
@@ -224,7 +257,90 @@ test("a phone is verified for the chosen conversation, then asks for its code", 
       },
     }),
   );
+  expect(
+    JSON.parse(sessionStorage.getItem("openbot.reachability.pendingSms")!),
+  ).toEqual({
+    version: 1,
+    challengeId: "challenge-1",
+    agentId: "expenses",
+    channelId: "channel-expenses",
+  });
   await user.type(await view.findByLabelText("Verification code"), "123456");
+  await user.click(view.getByRole("button", { name: "Confirm phone" }));
+  await waitFor(() =>
+    expect(writes).toContainEqual({
+      request: "POST /api/delivery/sms/confirm",
+      body: { challengeId: "challenge-1", code: "123456" },
+    }),
+  );
+});
+
+test("a pending SMS challenge stays with its Bot while navigating A to B to A", async () => {
+  serving(true);
+  sessionStorage.setItem(
+    "openbot.reachability.pendingSms",
+    JSON.stringify({
+      version: 1,
+      challengeId: "challenge-1",
+      agentId: "expenses",
+      channelId: "channel-expenses",
+    }),
+  );
+  const other = draw("knowledge");
+  await other.findByRole("button", { name: "Disconnect" });
+  expect(other.queryByText(/verification code is on its way/i)).toBeNull();
+  cleanup();
+  const original = draw("expenses");
+  await original.findByRole("button", { name: "Disconnect" });
+  expect(original.getByText(/code is on its way/i)).toBeTruthy();
+});
+
+test("a pending SMS challenge stays with its conversation while switching A to B to A", async () => {
+  serving(true);
+  sessionStorage.removeItem("openbot.reachability.pendingSms");
+  expect(sessionStorage.getItem("openbot.reachability.pendingSms")).toBeNull();
+  const view = draw();
+  await view.findByRole("button", { name: "Disconnect" });
+  const user = userEvent.setup({ document });
+  await user.click(view.getByRole("button", { name: /^Connect a phone/ }));
+  await chooseConversation(view, user, "Finance desk");
+  await user.type(view.getByLabelText("Phone number"), "+15551234567");
+  await user.click(
+    view.getByRole("button", { name: "Send verification code" }),
+  );
+  await waitFor(() =>
+    expect(writes).toContainEqual({
+      request: "POST /api/delivery/sms/start",
+      body: {
+        channelId: "channel-expenses",
+        agentId: "expenses",
+        phone: "+15551234567",
+      },
+    }),
+  );
+  expect(
+    JSON.parse(sessionStorage.getItem("openbot.reachability.pendingSms")!),
+  ).toEqual({
+    version: 1,
+    challengeId: "challenge-1",
+    agentId: "expenses",
+    channelId: "channel-expenses",
+  });
+
+  const chooser = view.getByRole("button", { name: /^Conversation/ });
+  expect(chooser.textContent).toMatch(/Finance desk/);
+  expect(view.getByLabelText("Verification code")).toBeTruthy();
+
+  await chooseConversation(view, user, "Team desk");
+  expect(view.queryByLabelText("Verification code")).toBeNull();
+  expect(
+    JSON.parse(sessionStorage.getItem("openbot.reachability.pendingSms")!)
+      .channelId,
+  ).toBe("channel-expenses");
+
+  await chooseConversation(view, user, "Finance desk");
+  expect(view.getByLabelText("Verification code")).toBeTruthy();
+  await user.type(view.getByLabelText("Verification code"), "123456");
   await user.click(view.getByRole("button", { name: "Confirm phone" }));
   await waitFor(() =>
     expect(writes).toContainEqual({

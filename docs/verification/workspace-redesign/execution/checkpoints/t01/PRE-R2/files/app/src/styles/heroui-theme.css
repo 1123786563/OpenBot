@@ -1,0 +1,261 @@
+/*
+ * HeroUI semantic theme bridge. Every HeroUI semantic slot has one mapping here in each theme;
+ * `tokens.css` remains the only owner of OpenBot values. No mapping depends on an alias declared
+ * later in this file, so theme values resolve without cycles.
+ *
+ * The two selectors intentionally match both the app's `.dark` state and its synchronized
+ * `[data-theme]` attribute. Portals under body inherit the same theme from the document root.
+ */
+
+@layer ob-theme {
+  :root,
+  [data-theme="light"] {
+    --background: var(--ob-canvas);
+    --foreground: var(--ob-foreground);
+    --surface: var(--ob-surface);
+    --surface-foreground: var(--ob-foreground);
+    --surface-secondary: var(--ob-muted-surface);
+    --surface-secondary-foreground: var(--ob-foreground);
+    --surface-tertiary: var(--ob-hover-surface);
+    --surface-tertiary-foreground: var(--ob-foreground);
+    --overlay: var(--ob-overlay);
+    --overlay-foreground: var(--ob-foreground);
+    --muted: var(--ob-muted-text);
+
+    --scrollbar: var(--ob-control-border);
+    --scrollbar-thumb: var(--ob-control-border);
+    --scrollbar-track: transparent;
+    --scrollbar-gutter: auto;
+    --scrollbar-width: thin;
+    --scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+
+    --default: var(--ob-secondary-surface);
+    --default-foreground: var(--ob-secondary-foreground);
+    --default-hover: var(--ob-hover-surface);
+    --default-soft: var(--ob-muted-surface);
+    --default-soft-foreground: var(--ob-foreground);
+    --default-soft-hover: var(--ob-hover-surface);
+
+    --accent: var(--ob-action);
+    --accent-foreground: var(--ob-action-foreground);
+    --accent-hover: var(--ob-action-hover);
+    --accent-soft: color-mix(in srgb, var(--ob-action) 10%, var(--ob-surface));
+    --accent-soft-foreground: var(--ob-accent-text);
+    --accent-soft-hover: color-mix(
+      in srgb,
+      var(--ob-action) 16%,
+      var(--ob-surface)
+    );
+
+    --field-background: var(--ob-field-background);
+    --field-foreground: var(--ob-foreground);
+    --field-placeholder: var(--ob-muted-text);
+    --field-border: var(--ob-control-border);
+    --field-border-width: 1px;
+    --field-hover: var(--ob-field-background);
+    --field-focus: var(--ob-field-background);
+    --field-border-hover: var(--ob-focus);
+    --field-border-focus: var(--ob-focus);
+    --field-shadow: none;
+    --field-radius: var(--ob-radius);
+    --radius: var(--ob-radius);
+
+    --success: var(--ob-success);
+    --success-foreground: var(--ob-success-foreground);
+    --success-hover: color-mix(
+      in srgb,
+      var(--ob-success) 90%,
+      var(--ob-success-foreground)
+    );
+    --success-soft: var(--ob-success-soft);
+    --success-soft-foreground: var(--ob-success);
+    --success-soft-hover: color-mix(
+      in srgb,
+      var(--ob-success) 16%,
+      var(--ob-surface)
+    );
+    --warning: var(--ob-warning);
+    --warning-foreground: var(--ob-warning-foreground);
+    --warning-hover: color-mix(
+      in srgb,
+      var(--ob-warning) 90%,
+      var(--ob-warning-foreground)
+    );
+    --warning-soft: var(--ob-warning-soft);
+    --warning-soft-foreground: var(--ob-warning);
+    --warning-soft-hover: color-mix(
+      in srgb,
+      var(--ob-warning) 16%,
+      var(--ob-surface)
+    );
+    --danger: var(--ob-danger);
+    --danger-foreground: var(--ob-danger-foreground);
+    --danger-hover: color-mix(
+      in srgb,
+      var(--ob-danger) 90%,
+      var(--ob-danger-foreground)
+    );
+    --danger-soft: var(--ob-danger-soft);
+    --danger-soft-foreground: var(--ob-danger);
+    --danger-soft-hover: color-mix(
+      in srgb,
+      var(--ob-danger) 16%,
+      var(--ob-surface)
+    );
+
+    --segment: var(--ob-surface);
+    --segment-foreground: var(--ob-foreground);
+    --border: var(--ob-border);
+    --border-secondary: var(--ob-control-border);
+    --border-tertiary: var(--ob-control-border);
+    --separator: var(--ob-border);
+    --separator-secondary: var(--ob-border);
+    --separator-tertiary: var(--ob-border);
+    --focus: var(--ob-focus);
+    --link: var(--ob-accent-text);
+    --backdrop: var(--ob-backdrop);
+
+    --surface-hover: var(--ob-hover-surface);
+    --background-secondary: var(--ob-muted-surface);
+    --background-tertiary: var(--ob-hover-surface);
+    --background-inverse: var(--ob-foreground);
+    --surface-shadow: var(--ob-shadow-card);
+    --overlay-shadow: var(--ob-shadow-overlay);
+    --border-width: 1px;
+    --disabled-opacity: 1;
+    --skeleton-animation: shimmer;
+  }
+
+  .dark,
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --background: var(--ob-canvas);
+    --foreground: var(--ob-foreground);
+    --surface: var(--ob-surface);
+    --surface-foreground: var(--ob-foreground);
+    --surface-secondary: var(--ob-muted-surface);
+    --surface-secondary-foreground: var(--ob-foreground);
+    --surface-tertiary: var(--ob-hover-surface);
+    --surface-tertiary-foreground: var(--ob-foreground);
+    --overlay: var(--ob-overlay);
+    --overlay-foreground: var(--ob-foreground);
+    --muted: var(--ob-muted-text);
+
+    --scrollbar: var(--ob-control-border);
+    --scrollbar-thumb: var(--ob-control-border);
+    --scrollbar-track: transparent;
+    --scrollbar-gutter: auto;
+    --scrollbar-width: thin;
+    --scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+
+    --default: var(--ob-secondary-surface);
+    --default-foreground: var(--ob-secondary-foreground);
+    --default-hover: var(--ob-hover-surface);
+    --default-soft: var(--ob-muted-surface);
+    --default-soft-foreground: var(--ob-foreground);
+    --default-soft-hover: var(--ob-hover-surface);
+
+    --accent: var(--ob-action);
+    --accent-foreground: var(--ob-action-foreground);
+    --accent-hover: var(--ob-action-hover);
+    --accent-soft: color-mix(in srgb, var(--ob-action) 10%, var(--ob-surface));
+    --accent-soft-foreground: var(--ob-accent-text);
+    --accent-soft-hover: color-mix(
+      in srgb,
+      var(--ob-action) 16%,
+      var(--ob-surface)
+    );
+
+    --field-background: var(--ob-field-background);
+    --field-foreground: var(--ob-foreground);
+    --field-placeholder: var(--ob-muted-text);
+    --field-border: var(--ob-control-border);
+    --field-border-width: 1px;
+    --field-hover: var(--ob-field-background);
+    --field-focus: var(--ob-field-background);
+    --field-border-hover: var(--ob-focus);
+    --field-border-focus: var(--ob-focus);
+    --field-shadow: none;
+    --field-radius: var(--ob-radius);
+    --radius: var(--ob-radius);
+
+    --success: var(--ob-success);
+    --success-foreground: var(--ob-success-foreground);
+    --success-hover: color-mix(
+      in srgb,
+      var(--ob-success) 90%,
+      var(--ob-success-foreground)
+    );
+    --success-soft: var(--ob-success-soft);
+    --success-soft-foreground: var(--ob-success);
+    --success-soft-hover: color-mix(
+      in srgb,
+      var(--ob-success) 16%,
+      var(--ob-surface)
+    );
+    --warning: var(--ob-warning);
+    --warning-foreground: var(--ob-warning-foreground);
+    --warning-hover: color-mix(
+      in srgb,
+      var(--ob-warning) 90%,
+      var(--ob-warning-foreground)
+    );
+    --warning-soft: var(--ob-warning-soft);
+    --warning-soft-foreground: var(--ob-warning);
+    --warning-soft-hover: color-mix(
+      in srgb,
+      var(--ob-warning) 16%,
+      var(--ob-surface)
+    );
+    --danger: var(--ob-danger);
+    --danger-foreground: var(--ob-danger-foreground);
+    --danger-hover: color-mix(
+      in srgb,
+      var(--ob-danger) 90%,
+      var(--ob-danger-foreground)
+    );
+    --danger-soft: var(--ob-danger-soft);
+    --danger-soft-foreground: var(--ob-danger);
+    --danger-soft-hover: color-mix(
+      in srgb,
+      var(--ob-danger) 16%,
+      var(--ob-surface)
+    );
+
+    --segment: var(--ob-surface);
+    --segment-foreground: var(--ob-foreground);
+    --border: var(--ob-border);
+    --border-secondary: var(--ob-control-border);
+    --border-tertiary: var(--ob-control-border);
+    --separator: var(--ob-border);
+    --separator-secondary: var(--ob-border);
+    --separator-tertiary: var(--ob-border);
+    --focus: var(--ob-focus);
+    --link: var(--ob-accent-text);
+    --backdrop: var(--ob-backdrop);
+
+    --surface-hover: var(--ob-hover-surface);
+    --background-secondary: var(--ob-muted-surface);
+    --background-tertiary: var(--ob-hover-surface);
+    --background-inverse: var(--ob-foreground);
+    --surface-shadow: var(--ob-shadow-card);
+    --overlay-shadow: var(--ob-shadow-overlay);
+    --border-width: 1px;
+    --disabled-opacity: 1;
+    --skeleton-animation: shimmer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-theme="light"],
+  .dark,
+  [data-theme="dark"] {
+    --skeleton-animation: none;
+  }
+
+  .skeleton--shimmer::before,
+  .skeleton--shimmer::after {
+    animation: none;
+  }
+}

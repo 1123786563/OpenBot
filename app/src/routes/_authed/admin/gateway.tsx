@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type enAdmin from "@/locales/en/admin.json";
 import {
   PageRows,
   PageSection,
@@ -29,6 +28,7 @@ import {
   type GatewayAdminStatus,
   gatewayStatusQueryOptions,
 } from "@/lib/gateway/queries";
+import type enAdmin from "@/locales/en/admin.json";
 
 export const Route = createFileRoute("/_authed/admin/gateway")({
   component: GatewayPage,
@@ -306,8 +306,14 @@ function GatewayPage() {
             <FieldError errors={rateProblems} />
           ) : null}
           <div className="flex items-center gap-3">
-            <Button disabled={saveRate.isPending} onClick={submitRate} size="sm">
-              {saveRate.isPending ? t("gateway.saving") : t("gateway.rate.save")}
+            <Button
+              disabled={saveRate.isPending}
+              onClick={submitRate}
+              size="sm"
+            >
+              {saveRate.isPending
+                ? t("gateway.saving")
+                : t("gateway.rate.save")}
             </Button>
             {saveRate.error ? (
               <p className="text-destructive text-sm" role="alert">
@@ -429,7 +435,9 @@ function ReadinessView({
               : t("gateway.extension.none")}
             {" · "}
             <span data-testid="gateway-extension-status">
-              {status.extension ? status.extension.creditAdmissionExtension : ""}
+              {status.extension
+                ? status.extension.creditAdmissionExtension
+                : ""}
             </span>
           </ItemDescription>
         </ItemContent>
@@ -465,18 +473,26 @@ function ReadinessView({
  * sentence may be missing, the information may not.
  */
 const GATEWAY_REASON_CODES = {
-  gateway_readiness_endpoint_not_configured: "gateway_readiness_endpoint_not_configured",
-  gateway_readiness_endpoint_unavailable: "gateway_readiness_endpoint_unavailable",
-  gateway_readiness_credential_not_configured: "gateway_readiness_credential_not_configured",
-  gateway_readiness_credential_unavailable: "gateway_readiness_credential_unavailable",
+  gateway_readiness_endpoint_not_configured:
+    "gateway_readiness_endpoint_not_configured",
+  gateway_readiness_endpoint_unavailable:
+    "gateway_readiness_endpoint_unavailable",
+  gateway_readiness_credential_not_configured:
+    "gateway_readiness_credential_not_configured",
+  gateway_readiness_credential_unavailable:
+    "gateway_readiness_credential_unavailable",
   gateway_readiness_probe_missing: "gateway_readiness_probe_missing",
   gateway_readiness_probe_not_ok: "gateway_readiness_probe_not_ok",
   gateway_readiness_probe_unavailable: "gateway_readiness_probe_unavailable",
-  gateway_readiness_extension_not_negotiated: "gateway_readiness_extension_not_negotiated",
+  gateway_readiness_extension_not_negotiated:
+    "gateway_readiness_extension_not_negotiated",
   gateway_readiness_extension_absent: "gateway_readiness_extension_absent",
-  gateway_readiness_extension_incompatible: "gateway_readiness_extension_incompatible",
-  gateway_readiness_extension_unavailable: "gateway_readiness_extension_unavailable",
-  gateway_readiness_rate_not_configured: "gateway_readiness_rate_not_configured",
+  gateway_readiness_extension_incompatible:
+    "gateway_readiness_extension_incompatible",
+  gateway_readiness_extension_unavailable:
+    "gateway_readiness_extension_unavailable",
+  gateway_readiness_rate_not_configured:
+    "gateway_readiness_rate_not_configured",
   gateway_readiness_rate_unavailable: "gateway_readiness_rate_unavailable",
   gateway_readiness_gate_unavailable: "gateway_readiness_gate_unavailable",
 } as const satisfies Record<string, keyof typeof enAdmin.gateway.blocking>;
@@ -485,7 +501,8 @@ const GATEWAY_REASON_CODES = {
 type Translate = ReturnType<typeof useTranslation<"admin">>["t"];
 
 function reasonText(t: Translate, reason: string): string {
-  const code = GATEWAY_REASON_CODES[reason as keyof typeof GATEWAY_REASON_CODES];
+  const code =
+    GATEWAY_REASON_CODES[reason as keyof typeof GATEWAY_REASON_CODES];
   // The template literal over the code union is exactly the keys the bundle
   // declares, so this call is checked, not cast past the key typing.
   return code ? t(`gateway.blocking.${code}`) : reason;

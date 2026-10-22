@@ -1,0 +1,70 @@
+/*
+ * The shadcn/OpenBot vocabulary, kept alive for call sites that have not migrated yet.
+ *
+ * Every alias here points at an OpenBot semantic token, so the old utilities (`bg-background`,
+ * `text-muted-foreground`, `border-input`, …) keep their exact computed values while the app moves
+ * to `--ob-*`. It has a deletion plan: once no file under `app/src` reads these names, delete this
+ * file and the `--color-*` aliases in `styles.css`.
+ *
+ * WHAT IS DELIBERATELY ABSENT — `--accent` AND `--muted`.
+ *
+ * Those two names are owned by HeroUI:
+ *
+ *   - HeroUI `--accent` is the emphasis fill (mapped to `--ob-action`). The legacy utilities that
+ *     used to read it (`bg-ob-hover`, `text-ob-hover-foreground`, …) are re-pointed in `styles.css` at
+ *     `--ob-hover-surface` instead, which is the value they have always rendered. No raw CSS in
+ *     `app/src` reads `var(--accent)`; that is a condition of this file existing.
+ *   - HeroUI `--muted` is muted TEXT (mapped to `--ob-muted-text`). The legacy surface name
+ *     (`bg-ob-muted-surface`, `bg-ob-muted-surface/50`) is re-pointed at `--ob-muted-surface` in `styles.css`.
+ *
+ * Keeping either name here would recreate exactly the collision this migration is fixing: a
+ * variable with two meanings, where whichever library loads last decides the colour.
+ */
+
+@layer ob-legacy {
+  :root {
+    /*
+     * `--background`, `--foreground`, `--border`, `--radius` and `--success` are deliberately NOT
+     * restated here: since the HeroUI-native baseline (issue #502), HeroUI's own `@layer base`
+     * defaults carry them and the app's `--ob-*` tokens agree with those values, so a third copy
+     * would only be one more place for them to drift apart (H14, closing the H02 review's
+     * redundant-declaration item).
+     */
+    --card: var(--ob-surface);
+    --card-foreground: var(--ob-foreground);
+    --popover: var(--ob-overlay);
+    --popover-foreground: var(--ob-foreground);
+    --primary: var(--ob-action);
+    --primary-foreground: var(--ob-action-foreground);
+    --secondary: var(--ob-secondary-surface);
+    --secondary-foreground: var(--ob-secondary-foreground);
+    --muted-foreground: var(--ob-muted-text);
+    --destructive: var(--ob-danger);
+    --brand: var(--ob-brand);
+    --brand-foreground: var(--ob-brand-foreground);
+    /*
+     * `--input` is the shadcn INPUT STROKE, not the field fill, so it follows the border ladder —
+     * NOT `--ob-field-border` (which stays `transparent` for the HeroUI-native borderless filled
+     * fields). 21 `border-input` call sites (questionnaire choice indicator, select trigger, the
+     * outline button's dark hairline, craft panels, …) draw a visible boundary with it, and the
+     * `bg-input/30`-style dark tints expect a colour, not transparency. R1b: aliasing the two
+     * names erased every `border-input` stroke in light mode (R1 REPORT §6.3).
+     */
+    --input: var(--ob-border);
+    --ring: var(--ob-focus);
+    --chart-1: var(--ob-chart-1);
+    --chart-2: var(--ob-chart-2);
+    --chart-3: var(--ob-chart-3);
+    --chart-4: var(--ob-chart-4);
+    --chart-5: var(--ob-chart-5);
+    --shadow-card: var(--ob-shadow-card);
+    --sidebar: var(--ob-sidebar);
+    --sidebar-foreground: var(--ob-sidebar-foreground);
+    --sidebar-primary: var(--ob-sidebar-primary);
+    --sidebar-primary-foreground: var(--ob-sidebar-primary-foreground);
+    --sidebar-accent: var(--ob-sidebar-accent);
+    --sidebar-accent-foreground: var(--ob-sidebar-accent-foreground);
+    --sidebar-border: var(--ob-sidebar-border);
+    --sidebar-ring: var(--ob-sidebar-ring);
+  }
+}

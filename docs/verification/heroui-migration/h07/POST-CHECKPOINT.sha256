@@ -1,0 +1,6 @@
+9b9f609b87cfb89ec1da5fa214fd237a4d36c6408d5411b565a483413b99902b  app/src/components/approvals/rules.tsx
+3d8d849f2eed57d1a8f6a4c5473aeb5dae221eb2695b5f0cbda7493c5f3673db  app/src/components/approvals/waiting.tsx
+5f9b9c309e8fe295d430874e912de4613b6581e2e8df1e05287669cdaa4eaf3e  app/tests/bot-sharing.test.tsx
+00d38357a3e3a779970f2162c522f898555dbeb55aebb938b77a31aad1e945c7  app/tests/approval-team-settings.test.tsx
+26adaea0623dd50a662f89e3dbc7b944670274e38b8c7ee69c3b4cf3e6dcfffa  app/tests/approvals-rules.test.tsx
+08e5822348da77f3d9ebb782909d1e60948eed9f9ca4b9d1272931848808d18b  app/tests/bot-approval-rules.test.tsx

@@ -75,7 +75,15 @@ test("shows loading and read errors without enabling a save", async () => {
   const pending = Promise.withResolvers<Response>();
   response = () => pending.promise;
   const { view } = setup();
-  expect(view.getByRole("combobox")).toHaveProperty("disabled", true);
+  /*
+   * The trigger is addressed by its accessible name, not by a `combobox` role: HeroUI
+   * Select.Trigger renders a plain button with aria-haspopup="listbox" and drops the
+   * role="combobox" the ui/select wrapper forwards (interface change request recorded;
+   * come back to the role query if the wrapper regains the attribute).
+   */
+  expect(
+    view.getByRole("button", { name: "Message list emphasis" }),
+  ).toHaveProperty("disabled", true);
   expect(view.queryByText("General Assistant")).toBeNull();
   pending.resolve(
     Response.json({ error: "Storage unavailable" }, { status: 503 }),

@@ -59,7 +59,7 @@ function RouteComponent() {
         <div className="mt-8 w-full flex flex-col items-center">
           <Composer
             agents={toAgentOptions(agents)}
-            className="w-full max-w-2xl"
+            className="w-full max-w-[720px]"
             disabled={!fallback}
             onSubmit={async (draft) => {
               // A channel is pinned to one coworker for the life of its thread, so the coworker is
@@ -98,7 +98,7 @@ function RouteComponent() {
           {fallback ? (
             // Said out loud: a message that silently reaches somebody you did not choose is the
             // kind of surprise that costs trust the first time it happens.
-            <p className="mt-2 w-full max-w-2xl text-xs text-muted-foreground text-center">
+            <p className="mt-2 w-full max-w-[720px] text-xs text-muted-foreground text-center">
               <Trans
                 components={{ code: <code /> }}
                 i18nKey="new.fallbackHint"
@@ -108,7 +108,7 @@ function RouteComponent() {
           ) : null}
           {error ? (
             <p
-              className="mt-2 w-full max-w-2xl text-sm text-destructive"
+              className="mt-2 w-full max-w-[720px] text-sm text-destructive"
               role="alert"
             >
               {error}
@@ -122,7 +122,7 @@ function RouteComponent() {
             // true when the query has never once returned successfully, so this alert can only
             // ever claim a load failure while that is actually what happened.
             <p
-              className="mt-2 w-full max-w-2xl text-sm text-destructive"
+              className="mt-2 w-full max-w-[720px] text-sm text-destructive"
               role="alert"
             >
               {t("new.loadError")}

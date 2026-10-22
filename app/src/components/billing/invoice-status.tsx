@@ -13,10 +13,10 @@ import { cn } from "@/lib/utils";
  */
 const TONE: Record<InvoiceStatus, string> = {
   paid: "bg-success/10 text-success",
-  pending: "bg-muted text-muted-foreground",
+  pending: "bg-ob-muted-surface text-muted-foreground",
   blocked: "bg-destructive/10 text-destructive",
-  canceled: "bg-muted text-muted-foreground",
-  expired: "bg-muted text-muted-foreground",
+  canceled: "bg-ob-muted-surface text-muted-foreground",
+  expired: "bg-ob-muted-surface text-muted-foreground",
 };
 
 export function InvoiceStatusPill({

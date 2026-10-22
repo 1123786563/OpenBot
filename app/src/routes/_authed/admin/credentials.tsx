@@ -136,9 +136,12 @@ function CredentialsPage() {
                           {t("credentials.fields.type")}
                         </FieldLabel>
                         <Select
-                          onValueChange={(value) =>
-                            field.handleChange(value as "model" | "connector")
-                          }
+                          onValueChange={(value) => {
+                            // null is the Select's "no selection", not a kind: dropping it keeps the
+                            // form's previous answer rather than casting emptiness into "model".
+                            if (value === null) return;
+                            field.handleChange(value);
+                          }}
                           value={field.state.value}
                         >
                           <SelectTrigger

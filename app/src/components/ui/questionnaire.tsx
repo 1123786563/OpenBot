@@ -104,8 +104,8 @@ function QuestionnaireChoice({
     <QuestionnairePrimitive.Choice
       data-slot="questionnaire-choice"
       className={cn(
-        "group/questionnaire-choice relative flex min-h-11 cursor-pointer items-start gap-2.5 rounded-lg border border-input bg-transparent px-3 py-2.5 text-start text-sm transition-colors outline-none select-none hover:bg-muted/50 has-[>input:focus-visible]:border-ring has-[>input:focus-visible]:ring-3 has-[>input:focus-visible]:ring-ring/50 data-invalid:border-destructive dark:bg-input/20 data-checked:border-primary/40 data-checked:bg-muted dark:data-checked:bg-muted",
-        "data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:opacity-50",
+        "group/questionnaire-choice relative flex min-h-11 cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-3 py-2.5 text-start text-sm transition-colors outline-none select-none hover:bg-ob-hover has-[>input:focus-visible]:border-[var(--ob-focus)] has-[>input:focus-visible]:outline-2 has-[>input:focus-visible]:outline-offset-2 has-[>input:focus-visible]:outline-[var(--ob-focus)] data-invalid:border-[var(--ob-danger)] data-invalid:bg-[var(--ob-field-background)] data-checked:border-primary/40 data-checked:bg-ob-muted-surface",
+        "data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:text-[var(--ob-disabled-foreground)]",
         className,
       )}
       {...props}
@@ -167,7 +167,7 @@ function QuestionnaireInput({
       <QuestionnairePrimitive.Input
         data-slot="questionnaire-input"
         className={cn(
-          "h-8 min-h-11 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-[color,box-shadow,background-color] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 sm:min-h-0 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+          "h-8 min-h-8 w-full min-w-0 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-base transition-[color,box-shadow,background-color] outline-none focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)] aria-invalid:ring-2 aria-invalid:ring-[var(--ob-danger)]/20 pointer-coarse:!h-11 pointer-coarse:!min-h-11 md:text-sm",
           "selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground",
           className,
         )}

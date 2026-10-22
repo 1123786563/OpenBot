@@ -26,7 +26,7 @@ export function TranscriptEntry({
     case "user":
       return (
         <div className="flex justify-end">
-          <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-muted px-3 py-2 text-sm">
+          <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-ob-muted-surface px-3 py-2 text-sm">
             {item.text ? (
               <p className="whitespace-pre-wrap">{item.text}</p>
             ) : null}

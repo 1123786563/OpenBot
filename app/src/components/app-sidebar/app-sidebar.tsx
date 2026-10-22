@@ -61,7 +61,7 @@ import {
   useMessageListEmphasis,
 } from "@/lib/settings/message-list";
 import { BotsNavBadge } from "../bot-profile/attention";
-import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/router-link";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
 import { ChannelPagination } from "./channel-pagination";
@@ -258,21 +258,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </Link>
               )}
             />
-            <Button
+            <ButtonLink
               size="icon"
               variant="ghost"
-              render={(props) => (
-                <Link
-                  {...props}
-                  to="/channel/new"
-                  activeProps={{
-                    className: "bg-foreground/5",
-                  }}
-                />
-              )}
+              to="/channel/new"
+              activeProps={{
+                className: "bg-foreground/5",
+              }}
             >
               <IconPlus />
-            </Button>
+            </ButtonLink>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>

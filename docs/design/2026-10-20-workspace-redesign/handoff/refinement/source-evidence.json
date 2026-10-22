@@ -1,0 +1,4949 @@
+[
+  {
+    "source": "app/src/routes/_authed/_app/agents/index.tsx",
+    "route_id": "/_authed/_app/agents/",
+    "sha256": "eec259cf5215ed5a2a37f916f2be6617e97dec3c35379bab9cac2910b5b4e78a",
+    "line_count": 14,
+    "local_imports": [
+      {
+        "path": "app/src/lib/agents/legacy-routes.ts",
+        "sha256": "486956acc16d0afbe6e51b5c5b6a4243653cf8039889de1c7e02a863e705f5f1"
+      }
+    ],
+    "signals": [
+      {
+        "line": 7,
+        "text": "validateSearch: z.object({"
+      },
+      {
+        "line": 11,
+        "text": "beforeLoad: ({ search }) => {"
+      },
+      {
+        "line": 12,
+        "text": "throw redirect(legacyAgentsTarget(search));"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/approvals.tsx",
+    "route_id": "/_authed/_app/approvals",
+    "sha256": "d46ba8d03b2cb750527ad0603a69a3a068f84f841d980455ff48feac0b29a637",
+    "line_count": 9,
+    "local_imports": [
+      {
+        "path": "app/src/lib/agents/legacy-routes.ts",
+        "sha256": "486956acc16d0afbe6e51b5c5b6a4243653cf8039889de1c7e02a863e705f5f1"
+      }
+    ],
+    "signals": [
+      {
+        "line": 6,
+        "text": "beforeLoad: () => {"
+      },
+      {
+        "line": 7,
+        "text": "throw redirect({ to: LEGACY_PAGES[\"/approvals\"], replace: true });"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bot.tsx",
+    "route_id": "/_authed/_app/bot",
+    "sha256": "031a3cd410927b004a92c29bee3d63f4c66d81e46c37ba705b7a1f1d5ce08f82",
+    "line_count": 252,
+    "local_imports": [
+      {
+        "path": "app/src/components/computer/computer-controls.tsx",
+        "sha256": "256c581092b65ff4472eeec4dc2a5abc8fb95dc662f47227afa6bdf9850093ed"
+      },
+      {
+        "path": "app/src/components/computer/computer-panel.tsx",
+        "sha256": "665ccc11323de2a2f60ca41dd5bb92f27df2d74022d403e12bdab4afefe97883"
+      },
+      {
+        "path": "app/src/components/layout/detail-panel.tsx",
+        "sha256": "ebbb4ba553cc1e12f44bf19e83d158ccbaab349b9f6b5f341876af449fd3219d"
+      },
+      {
+        "path": "app/src/components/layout/sidebar-toggle.tsx",
+        "sha256": "a27f44f3dd90fe6cc642c83973dd874a465925fec6398c0c7eba1295caf5aa66"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/lib/agents/default-agent.ts",
+        "sha256": "bb425beddf633e4ece0c43bc11039341e7ec575699d1f25277a7e15e0fdee125"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/client.ts",
+        "sha256": "12d206d70fc7911ad1dce92b59981c824dbdf8177ce1bc71280fe38ea10d7e69"
+      },
+      {
+        "path": "app/src/lib/copilot/active-bot.tsx",
+        "sha256": "52346ffeee9cc9c4c703ddaf6e2204be94f40c34d5fcc70e1928d776c71bff4f"
+      },
+      {
+        "path": "app/src/lib/copilot/bot-thread.ts",
+        "sha256": "88054ac09699568348dc28127c34c1740355aedaca5ad867edfec9d98e987480"
+      },
+      {
+        "path": "app/src/lib/copilot/stopped-turn.ts",
+        "sha256": "cd0b7a3cc50eeacf1530e1a42e16e403f9b13be2bdd205c7762370d98b0b5262"
+      }
+    ],
+    "signals": [
+      {
+        "line": 24,
+        "text": "validateSearch: ("
+      },
+      {
+        "line": 77,
+        "text": "isError,"
+      },
+      {
+        "line": 78,
+        "text": "isPending,"
+      },
+      {
+        "line": 87,
+        "text": "isError: isDetailError,"
+      },
+      {
+        "line": 88,
+        "text": "isPending: isDetailPending,"
+      },
+      {
+        "line": 99,
+        "text": "if (isPending || (shouldLoadExplicitBot && isDetailPending)) return null;"
+      },
+      {
+        "line": 100,
+        "text": "if (isError && agents === undefined) {"
+      },
+      {
+        "line": 163,
+        "text": "<DetailPanel"
+      },
+      {
+        "line": 167,
+        "text": "detail={<ComputerViewPanel agentId={agentId} name={name} />}"
+      },
+      {
+        "line": 250,
+        "text": "</DetailPanel>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.access.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/access",
+    "sha256": "2aacdde1712399062d928a43253052150b76e1ed98830b0d6dfdcf3387c17d73",
+    "line_count": 22,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/access.tsx",
+        "sha256": "2204565ea3311769f0d044b8246aa16b48069d29dce944f39b9357e39c161b7e"
+      },
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.approvals.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/approvals",
+    "sha256": "60a1b18790403ab53c8d9b7082df415dbbc0acb9e212b498f6c50e1fa295a981",
+    "line_count": 22,
+    "local_imports": [
+      {
+        "path": "app/src/components/approvals/bot-rules.tsx",
+        "sha256": "579bf42419f91b9120e92705468aab1c8ff242f83639401d426fd2b3681b0e4a"
+      },
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.datasets.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/datasets",
+    "sha256": "78bad32260afb769196839a52d09b2984e2d718ed6c42c245dcae1420b9caf06",
+    "line_count": 30,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/datasets-list.tsx",
+        "sha256": "1db4dc86756f88adccc049d4065aa2fa933fb26c5bddee69f5725843efc14978"
+      },
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      },
+      {
+        "path": "app/src/lib/observability/route-guard.ts",
+        "sha256": "484576b9d0f007c8b83e246fd5d57015606d9baba6462762bc613c3cbe3a7418"
+      }
+    ],
+    "signals": [
+      {
+        "line": 9,
+        "text": "* versions for one Bot. The guard reads the server-decided canManage verdict so a directly"
+      },
+      {
+        "line": 13,
+        "text": "beforeLoad: ({ context, params }) =>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.$datasetId.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/evaluations/$datasetId",
+    "sha256": "f982b5a41be4a120d5293cc59be9fa575a8b19f0d5b018f10c240268bfc0567d",
+    "line_count": 20,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/dataset-detail.tsx",
+        "sha256": "8d99f71cf91b39ee58c535245d1e2702bbf41ad6282c40c261812f9e42d306f2"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiment-comparisons.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/evaluations/experiment-comparisons",
+    "sha256": "baf3e15a9fa657d345353c1e491b0a2503d80ff4de5818256fdf743a31ddb060",
+    "line_count": 33,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/experiment-comparison.tsx",
+        "sha256": "ce744e4544c567b1bace4d94ec365ed61cc734f15bc5da5f3da5c594dccff94d"
+      }
+    ],
+    "signals": [
+      {
+        "line": 23,
+        "text": "validateSearch: comparisonSearchSchema,"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.experiments.$experimentId.$executionId.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/evaluations/experiments/$experimentId/$executionId",
+    "sha256": "40dacdaf01f7d9a8f2c7600ecf8e8d5f739f1556adfe77feba3cf3fe47b50f29",
+    "line_count": 27,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/experiment-results.tsx",
+        "sha256": "1a1f83151c9826272daad4c618e0c6c676a0228b912e1ae334772701d76d6972"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/evaluations",
+    "sha256": "dd475a94562dd27eb002591dfbed92de65a01b9b8d3c7c09af690c656dfabaf2",
+    "line_count": 40,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/evaluations-page.tsx",
+        "sha256": "f589f00a1f5bbc8bd9068655bb61f6398ee40df6bc66fb28dd0354eef5aeeeb3"
+      },
+      {
+        "path": "app/src/lib/observability/route-guard.ts",
+        "sha256": "484576b9d0f007c8b83e246fd5d57015606d9baba6462762bc613c3cbe3a7418"
+      }
+    ],
+    "signals": [
+      {
+        "line": 27,
+        "text": "beforeLoad: ({ context, params }) =>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.exports.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/exports",
+    "sha256": "2d43f8426b3016c38e233424f99023030e85d08951b9900daf60f91cd3b56f97",
+    "line_count": 17,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/exports-status.tsx",
+        "sha256": "3ee4fa0f1ffd5ecb58f0a49347a42aaefba7dc7f032dffc5bbf591531208df79"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.index.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/",
+    "sha256": "f09844ba2ee19526764cd50deff588d99758fadf734348436038be3fe70ee82c",
+    "line_count": 54,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/manage.tsx",
+        "sha256": "6ee1a6d2ab8fe59a2996858eded27201a3b48614b630c324dceeee87e212bb93"
+      },
+      {
+        "path": "app/src/components/bot-profile/profile.tsx",
+        "sha256": "9cd02e83f778c8134ceb115c5ef596ff1b9f3bb98ab82766064e08f6ae7d2442"
+      },
+      {
+        "path": "app/src/components/bot-profile/settings-rows.tsx",
+        "sha256": "441ffcfb71188c666584bbb09a59845bf18a5c1e412737af87db6c05f4377648"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      }
+    ],
+    "signals": [
+      {
+        "line": 21,
+        "text": "<PageShell"
+      },
+      {
+        "line": 29,
+        "text": "{agent.isPending ? null : agent.error ? ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.memory.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/memory",
+    "sha256": "474b67a758963efdd65b185216b9408447b5362d38cfe0cf998fdafe5d8baf61",
+    "line_count": 38,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      },
+      {
+        "path": "app/src/components/memory/sources.tsx",
+        "sha256": "5cb9fa0aae39f325bed591cd6b2be9201aa3da7096f09dacf20183bb6fc4c618"
+      },
+      {
+        "path": "app/src/components/suggestions/proactive-panel.tsx",
+        "sha256": "bfc69514c2675a4e05dd7c7da19dce64333af65b7ccd1b52061e915d17af039e"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.reach.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/reach",
+    "sha256": "08d9e4cdfbaafc154c69b1f40882643e8ae54bf7f3c3c8697bd642dad3e7ac77",
+    "line_count": 22,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      },
+      {
+        "path": "app/src/components/delivery/reaching-you.tsx",
+        "sha256": "80addccf5eff2911855daae22de30e83795c9284183b252d890e12a55a005553"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.responsibilities.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/responsibilities",
+    "sha256": "38e5a5fa50badcf085e0c6f43392c547b34537865e8d621b5c7cff2fc9f8e2c9",
+    "line_count": 24,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      },
+      {
+        "path": "app/src/components/responsibilities/responsibilities.tsx",
+        "sha256": "1877a6a810e518d3dd6b497556fbcea0ab81b05adbcfccad91df3acd7c425a31"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.routines.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/routines",
+    "sha256": "ca27eb42d6d16e562ec5252cc0012e7fbeb532eef21affa56ffbea80ac3cdf9f",
+    "line_count": 22,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      },
+      {
+        "path": "app/src/components/routines/routines-list.tsx",
+        "sha256": "9255c5fae82f63be27db8910b39a37751676a023d1a205073c317b60751b83f1"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/runs/$bindingId",
+    "sha256": "f34fb40436fb763e86d52eef71d0bee1f083e970a08234f1ed5034b1d4c6c4bc",
+    "line_count": 18,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/run-detail.tsx",
+        "sha256": "439e02a89ae7b81f9c06a412b5590a5f9c8d38c5b936a779abbb37c92516c8cf"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.runs.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/runs",
+    "sha256": "20472cc32537889140d8160ecbe35ea9a7e0dea0ef4e0b98562fc00c4c3b1606",
+    "line_count": 35,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/runs-list.tsx",
+        "sha256": "470172dce9a055223b80f4054bae02ee1fb0c201e4705485012e594173180974"
+      },
+      {
+        "path": "app/src/lib/observability/route-guard.ts",
+        "sha256": "484576b9d0f007c8b83e246fd5d57015606d9baba6462762bc613c3cbe3a7418"
+      }
+    ],
+    "signals": [
+      {
+        "line": 23,
+        "text": "beforeLoad: ({ context, params }) =>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.setup.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/setup",
+    "sha256": "c8516ecd193d39b0b42eab4ad6421731d7490134c9eab42194d0e6a173e1eafd",
+    "line_count": 22,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      },
+      {
+        "path": "app/src/components/bot-profile/setup.tsx",
+        "sha256": "9ebfec43eba5b2eef0c39667674109238ab522032a8c65762487cd10ad5f1c49"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.$agentId.sharing.tsx",
+    "route_id": "/_authed/_app/bots/$agentId/sharing",
+    "sha256": "ae9b4d2cd6d3b5555261dc82b271fd95386cd27a0a9250c2f812bbb36b4f2fb1",
+    "line_count": 22,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/bot-subpage.tsx",
+        "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef"
+      },
+      {
+        "path": "app/src/components/bot-profile/sharing.tsx",
+        "sha256": "d3f16609db68eb0e14c4808ccb7d4a7004851b5ef877eb8d4e7453c40bb62be1"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/bots.index.tsx",
+    "route_id": "/_authed/_app/bots/",
+    "sha256": "9905297120c4347a6cfa2988a9fe2d7a275335df226a6621e330ce3271fabc5e",
+    "line_count": 45,
+    "local_imports": [
+      {
+        "path": "app/src/components/agents/create-agent-dialog.tsx",
+        "sha256": "2cb9fc335917af25636b15baa9280d187efa78ffc6e1381d6c3fd7044bcd1034"
+      },
+      {
+        "path": "app/src/components/bots/bot-roster.tsx",
+        "sha256": "84b180421162ea1647ea29124e700c5e78b6649ce37a927752b038b5d1359586"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/router-link.tsx",
+        "sha256": "f95b4cb6f7e42d0ff3ca288cfb0df9496875aba65be4c2ee28432c38ddc735f8"
+      }
+    ],
+    "signals": [
+      {
+        "line": 12,
+        "text": "validateSearch: z.object({ new: z.boolean().optional() }),"
+      },
+      {
+        "line": 21,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/channel/$channelId.tsx",
+    "route_id": "/_authed/_app/channel/$channelId",
+    "sha256": "53a6ff3ba2d8758dcce6891a59908a9634cf9db00e0f1d457de9aea368be419b",
+    "line_count": 258,
+    "local_imports": [
+      {
+        "path": "app/src/components/agents/agent-profile.tsx",
+        "sha256": "4ac92bb14774dccd0345384a120e80e9aca0f7f8ffac08b278eb1bcc2f274f2d"
+      },
+      {
+        "path": "app/src/components/app-sidebar/app-sidebar.tsx",
+        "sha256": "6def3dbd7ed30a59b9c44af2cc6730526e412dba99219d36d067acfa59507ec4"
+      },
+      {
+        "path": "app/src/components/bot-profile/pause-banner.tsx",
+        "sha256": "1a64b0da528b9bdf10844573549492e33eb5d22b67db6070653b512751303e0d"
+      },
+      {
+        "path": "app/src/components/channels/avatar.tsx",
+        "sha256": "d05082d8adeb9cd038bbdd1553fb403935546153a028ae63a23c572d0540535d"
+      },
+      {
+        "path": "app/src/components/channels/channel-chat.tsx",
+        "sha256": "185987787cec1b08aa6fcdd7b107aed284ef07ea14814b3ea4978aa1cc9a8746"
+      },
+      {
+        "path": "app/src/components/channels/workshop-panel.tsx",
+        "sha256": "ff276fee08a030fc0bc53e72627e4fb7b815dd74e814639cdede40d1c406df13"
+      },
+      {
+        "path": "app/src/components/computer/computer-controls.tsx",
+        "sha256": "256c581092b65ff4472eeec4dc2a5abc8fb95dc662f47227afa6bdf9850093ed"
+      },
+      {
+        "path": "app/src/components/computer/computer-panel.tsx",
+        "sha256": "665ccc11323de2a2f60ca41dd5bb92f27df2d74022d403e12bdab4afefe97883"
+      },
+      {
+        "path": "app/src/components/layout/detail-panel.tsx",
+        "sha256": "ebbb4ba553cc1e12f44bf19e83d158ccbaab349b9f6b5f341876af449fd3219d"
+      },
+      {
+        "path": "app/src/components/layout/sidebar-toggle.tsx",
+        "sha256": "a27f44f3dd90fe6cc642c83973dd874a465925fec6398c0c7eba1295caf5aa66"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/lib/channels/mark-read.ts",
+        "sha256": "58110fab11744eaf51879f2ffbd7a9f0e79263cf9721b7a9b997a4bd9613c016"
+      },
+      {
+        "path": "app/src/lib/channels/queries.ts",
+        "sha256": "ea7ce5d59b333849e1f6a07b878a4878171e56a2b02e1f1dec68321e8c68da61"
+      },
+      {
+        "path": "app/src/lib/copilot/computer-activity.ts",
+        "sha256": "51f601fbd072868c639473935e7514c8c92db12505226b71f8ed93922aa5c169"
+      }
+    ],
+    "signals": [
+      {
+        "line": 48,
+        "text": "validateSearch: chatSearchSchema,"
+      },
+      {
+        "line": 101,
+        "text": "<DetailPanel"
+      },
+      {
+        "line": 120,
+        "text": "<ComputerViewPanel agentId={agentId} name={channel?.data?.name} />"
+      },
+      {
+        "line": 122,
+        "text": "<WorkshopPanel channelId={channelId} botId={agentId} />"
+      },
+      {
+        "line": 205,
+        "text": "isPending={channel.isPending}"
+      },
+      {
+        "line": 208,
+        "text": "</DetailPanel>"
+      },
+      {
+        "line": 218,
+        "text": "isPending,"
+      },
+      {
+        "line": 222,
+        "text": "isPending: boolean;"
+      },
+      {
+        "line": 227,
+        "text": "if (isPending) return null;"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/channel/new.tsx",
+    "route_id": "/_authed/_app/channel/new",
+    "sha256": "63c28f1d8f1fafc72aa2195ea21b85077df39f53f49298f3e5461a032feaef47",
+    "line_count": 209,
+    "local_imports": [
+      {
+        "path": "app/src/components/channels/avatar.tsx",
+        "sha256": "d05082d8adeb9cd038bbdd1553fb403935546153a028ae63a23c572d0540535d"
+      },
+      {
+        "path": "app/src/components/channels/compose-state.ts",
+        "sha256": "cc839ca4ee62ab0e9d51332f6f00fbdcc5f0d092835058c4d11219bfa5a23abb"
+      },
+      {
+        "path": "app/src/components/channels/conversation-view.tsx",
+        "sha256": "f2e64a73ceb6e6f07d77cf8b27cee168403603d3f1c51785b340149b5ceb459b"
+      },
+      {
+        "path": "app/src/components/channels/transcript-messages.ts",
+        "sha256": "728cbf5024b9b33ed46422918193dda0d6c999a7d3c717ebd49712158e104041"
+      },
+      {
+        "path": "app/src/components/layout/sidebar-toggle.tsx",
+        "sha256": "a27f44f3dd90fe6cc642c83973dd874a465925fec6398c0c7eba1295caf5aa66"
+      },
+      {
+        "path": "app/src/components/ui/combobox.tsx",
+        "sha256": "36f7ec998f7d9692790c4e094f644f8c1343d28bfa9f6dc3cea67412b35049f8"
+      },
+      {
+        "path": "app/src/lib/agents/default-agent.ts",
+        "sha256": "bb425beddf633e4ece0c43bc11039341e7ec575699d1f25277a7e15e0fdee125"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/channels/start.ts",
+        "sha256": "e8c5f2c43b5c6ff6dccd2728160af3539d80105cace2ece56fb3d5cf8335be2e"
+      },
+      {
+        "path": "app/src/lib/plugins/skill-commands.ts",
+        "sha256": "787735d4e7a7403c772cbe7e6c783a2aa60ea5abde731e25f215793a48270290"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 36,
+        "text": "validateSearch: (search: Record<string, unknown>): { agent?: string } => ({"
+      },
+      {
+        "line": 47,
+        "text": "const { data: profiles, isError: rosterError } = useQuery("
+      },
+      {
+        "line": 51,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 53,
+        "text": "const [sent, setSent] = useState<Message | null>(null);"
+      },
+      {
+        "line": 63,
+        "text": "isError: detailError,"
+      },
+      {
+        "line": 65,
+        "text": "isPending: detailPending,"
+      },
+      {
+        "line": 94,
+        "text": "const [picked, setPicked] = useState<AgentProfile[] | null>(null);"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/craft/$sessionId.tsx",
+    "route_id": "/_authed/_app/craft/$sessionId",
+    "sha256": "49edeed3cdd14105c18007ffb1c2b90d2fee835a3e6a90679f1e53eff82a579a",
+    "line_count": 46,
+    "local_imports": [
+      {
+        "path": "app/src/components/craft/chat-panel.tsx",
+        "sha256": "24666b5f35b27a6e2c86b870a799a1337b0389c39cbddcecc9f5a63d6413e6bd"
+      },
+      {
+        "path": "app/src/components/craft/output-panel/index.tsx",
+        "sha256": "a7a2e775374cc59cab5b14251e5ec32718f0279bd1d9ad4d2638a8891fe1f26a"
+      },
+      {
+        "path": "app/src/components/craft/sandbox-status-indicator.tsx",
+        "sha256": "9eaa97ae56c22b34a222e07e6f52f964fd4c884b6120b276163b023776f732c1"
+      },
+      {
+        "path": "app/src/components/craft/session-sidebar.tsx",
+        "sha256": "2805bb555f13bff32accb297c479d3fbac7bc37d78356c705e291ff787bec9e4"
+      },
+      {
+        "path": "app/src/lib/craft/queries.ts",
+        "sha256": "ef6ec0dc80653aba0ac1223228a1a5475eaa53dd7ece713e3b17245d5f1d070c"
+      }
+    ],
+    "signals": [
+      {
+        "line": 38,
+        "text": "<ChatPanel sessionId={sessionId} />"
+      },
+      {
+        "line": 42,
+        "text": "<OutputPanel sessionId={sessionId} />"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/craft/index.tsx",
+    "route_id": "/_authed/_app/craft/",
+    "sha256": "5e188cc32a5984297f8127c8cbeb27a4fabb6a1feaee938e996fde8e7247bc4f",
+    "line_count": 26,
+    "local_imports": [
+      {
+        "path": "app/src/components/craft/session-sidebar.tsx",
+        "sha256": "2805bb555f13bff32accb297c479d3fbac7bc37d78356c705e291ff787bec9e4"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/craft/tasks.tsx",
+    "route_id": "/_authed/_app/craft/tasks",
+    "sha256": "282aad7a0f2cfd4b957a4578863a482e1230672593bf60d05035c18e190af141",
+    "line_count": 168,
+    "local_imports": [
+      {
+        "path": "app/src/components/craft/scheduled-task-editor.tsx",
+        "sha256": "c7719517ee7d11099e6edf145c0e81c9787b7c544f1af66347667fc62b8eb6c8"
+      },
+      {
+        "path": "app/src/components/craft/session-sidebar.tsx",
+        "sha256": "2805bb555f13bff32accb297c479d3fbac7bc37d78356c705e291ff787bec9e4"
+      },
+      {
+        "path": "app/src/components/layout/detail-panel.tsx",
+        "sha256": "ebbb4ba553cc1e12f44bf19e83d158ccbaab349b9f6b5f341876af449fd3219d"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/router-link.tsx",
+        "sha256": "f95b4cb6f7e42d0ff3ca288cfb0df9496875aba65be4c2ee28432c38ddc735f8"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/craft/scheduled-tasks.ts",
+        "sha256": "6596e855a29719d8ece885d8710b92153605ef8018c1439bc41439ffab24345a"
+      },
+      {
+        "path": "app/src/lib/craft/types.ts",
+        "sha256": "44a6937083689443d0654247059cc571752a09fdc20bf449f302cd68afbc301f"
+      },
+      {
+        "path": "app/src/lib/relative-time.ts",
+        "sha256": "fedcc300ea8ad6efeb1213c706ab090223d36fc92f7f7df43297f5c59dd21e41"
+      },
+      {
+        "path": "app/src/lib/utils.ts",
+        "sha256": "4acbc7165a8d54738ff62b51414e772c08fe78434e524e6d8770180d3ba2925f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 46,
+        "text": "validateSearch: tasksSearchSchema,"
+      },
+      {
+        "line": 62,
+        "text": "<DetailPanel"
+      },
+      {
+        "line": 76,
+        "text": "<PageShell"
+      },
+      {
+        "line": 93,
+        "text": "{tasks.isPending ? ("
+      },
+      {
+        "line": 118,
+        "text": "</DetailPanel>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/group/$channelId.tsx",
+    "route_id": "/_authed/_app/group/$channelId",
+    "sha256": "e533069d763620ce1680c6aa6f468fc9d3aed6914e5d7559eeab50028d622107",
+    "line_count": 42,
+    "local_imports": [
+      {
+        "path": "app/src/components/bot-profile/pause-banner.tsx",
+        "sha256": "1a64b0da528b9bdf10844573549492e33eb5d22b67db6070653b512751303e0d"
+      },
+      {
+        "path": "app/src/components/channels/avatar.tsx",
+        "sha256": "d05082d8adeb9cd038bbdd1553fb403935546153a028ae63a23c572d0540535d"
+      },
+      {
+        "path": "app/src/components/channels/group-chat.tsx",
+        "sha256": "cf4651017ffdc094f42bf3aa8dcd3e864b1e730a5e398d8656dd740e19691abe"
+      },
+      {
+        "path": "app/src/components/channels/group-people.tsx",
+        "sha256": "ba7e46af91efd711e88d9f2ebff8c48985d24ad0b004dc568f3fa33d3426e82d"
+      },
+      {
+        "path": "app/src/components/layout/sidebar-toggle.tsx",
+        "sha256": "a27f44f3dd90fe6cc642c83973dd874a465925fec6398c0c7eba1295caf5aa66"
+      },
+      {
+        "path": "app/src/lib/channels/mark-read.ts",
+        "sha256": "58110fab11744eaf51879f2ffbd7a9f0e79263cf9721b7a9b997a4bd9613c016"
+      },
+      {
+        "path": "app/src/lib/channels/queries.ts",
+        "sha256": "ea7ce5d59b333849e1f6a07b878a4878171e56a2b02e1f1dec68321e8c68da61"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/_app/group/new.tsx",
+    "route_id": "/_authed/_app/group/new",
+    "sha256": "377434889ae8e0319b12a44ee445d821c000fe73b0e367acc0d0dab353364a04",
+    "line_count": 9,
+    "local_imports": [
+      {
+        "path": "app/src/lib/agents/legacy-routes.ts",
+        "sha256": "486956acc16d0afbe6e51b5c5b6a4243653cf8039889de1c7e02a863e705f5f1"
+      }
+    ],
+    "signals": [
+      {
+        "line": 6,
+        "text": "beforeLoad: () => {"
+      },
+      {
+        "line": 7,
+        "text": "throw redirect({ to: LEGACY_PAGES[\"/group/new\"], replace: true });"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/index.tsx",
+    "route_id": "/_authed/_app/",
+    "sha256": "36d257c77b0173bb9e808b9c29e7a7006444b856d39ad559b281238a70d4062f",
+    "line_count": 229,
+    "local_imports": [
+      {
+        "path": "app/src/components/agents/agent-card.tsx",
+        "sha256": "0dfc51052d4a1577acb652b7a1615b9eb97dbb8fd1cac09b147b265f17c9edb7"
+      },
+      {
+        "path": "app/src/components/channels/composer/index.ts",
+        "sha256": "67bfbe1d370308d93a1584fbc480f3985be21b5bdd800a7d73116b0e58a9176f"
+      },
+      {
+        "path": "app/src/components/layout/sidebar-toggle.tsx",
+        "sha256": "a27f44f3dd90fe6cc642c83973dd874a465925fec6398c0c7eba1295caf5aa66"
+      },
+      {
+        "path": "app/src/components/ui/carousel.tsx",
+        "sha256": "41df71b67d0b8536393ef64617c418ab710eeec407ea9f59ad40f889e680aec6"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/components/ui/skeleton.tsx",
+        "sha256": "f630c2a46c4f26101ea7cd35d1286708a79542b61bf5e9970f025a489b580109"
+      },
+      {
+        "path": "app/src/lib/agents/default-agent.ts",
+        "sha256": "bb425beddf633e4ece0c43bc11039341e7ec575699d1f25277a7e15e0fdee125"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/channels/route.ts",
+        "sha256": "91bcd01879f5dc4203dbadb2aed42073a46bb4c45d69894a0a60593dd7eb5bfc"
+      },
+      {
+        "path": "app/src/lib/channels/start.ts",
+        "sha256": "e8c5f2c43b5c6ff6dccd2728160af3539d80105cace2ece56fb3d5cf8335be2e"
+      },
+      {
+        "path": "app/src/lib/generated/application-config.ts",
+        "sha256": "865289b0e17e52cd8ea5880517b2a6fcafefa88b79b25343afe2fb790f32eac7"
+      }
+    ],
+    "signals": [
+      {
+        "line": 3,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 34,
+        "text": "isPending: loading,"
+      },
+      {
+        "line": 35,
+        "text": "isError: failed,"
+      },
+      {
+        "line": 39,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 62,
+        "text": "className=\"w-full max-w-2xl\""
+      },
+      {
+        "line": 101,
+        "text": "<p className=\"mt-2 w-full max-w-2xl text-xs text-muted-foreground text-center\">"
+      },
+      {
+        "line": 111,
+        "text": "className=\"mt-2 w-full max-w-2xl text-sm text-destructive\""
+      },
+      {
+        "line": 125,
+        "text": "className=\"mt-2 w-full max-w-2xl text-sm text-destructive\""
+      },
+      {
+        "line": 142,
+        "text": "<div className=\"mt-10 w-full max-w-2xl\">"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/memory.tsx",
+    "route_id": "/_authed/_app/memory",
+    "sha256": "955e992dbd21bec77ff9207527965f8e088f051f23b07ec6caab3753ec109626",
+    "line_count": 9,
+    "local_imports": [
+      {
+        "path": "app/src/lib/agents/legacy-routes.ts",
+        "sha256": "486956acc16d0afbe6e51b5c5b6a4243653cf8039889de1c7e02a863e705f5f1"
+      }
+    ],
+    "signals": [
+      {
+        "line": 6,
+        "text": "beforeLoad: () => {"
+      },
+      {
+        "line": 7,
+        "text": "throw redirect({ to: LEGACY_PAGES[\"/memory\"], replace: true });"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/reachability.tsx",
+    "route_id": "/_authed/_app/reachability",
+    "sha256": "90ae4ff718cf6feb3665e216858a84ea876529484863957092d9ac4334623556",
+    "line_count": 9,
+    "local_imports": [
+      {
+        "path": "app/src/lib/agents/legacy-routes.ts",
+        "sha256": "486956acc16d0afbe6e51b5c5b6a4243653cf8039889de1c7e02a863e705f5f1"
+      }
+    ],
+    "signals": [
+      {
+        "line": 6,
+        "text": "beforeLoad: () => {"
+      },
+      {
+        "line": 7,
+        "text": "throw redirect({ to: LEGACY_PAGES[\"/reachability\"], replace: true });"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/responsibilities.tsx",
+    "route_id": "/_authed/_app/responsibilities",
+    "sha256": "2c8c6c54a8635b2f145b21c33858394a84986f10a7fb33670859a506847fd3a4",
+    "line_count": 9,
+    "local_imports": [
+      {
+        "path": "app/src/lib/agents/legacy-routes.ts",
+        "sha256": "486956acc16d0afbe6e51b5c5b6a4243653cf8039889de1c7e02a863e705f5f1"
+      }
+    ],
+    "signals": [
+      {
+        "line": 6,
+        "text": "beforeLoad: () => {"
+      },
+      {
+        "line": 7,
+        "text": "throw redirect({ to: LEGACY_PAGES[\"/responsibilities\"], replace: true });"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/routines.tsx",
+    "route_id": "/_authed/_app/routines",
+    "sha256": "4b70934bb0865ceaa283de0d620e7704acdb2ebeb88c2deed72e5bfe4987eaa3",
+    "line_count": 29,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/routines/routines-list.tsx",
+        "sha256": "9255c5fae82f63be27db8910b39a37751676a023d1a205073c317b60751b83f1"
+      }
+    ],
+    "signals": [
+      {
+        "line": 25,
+        "text": "<PageShell description={t(\"description\")} title={t(\"title\")}>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/skills.tsx",
+    "route_id": "/_authed/_app/skills",
+    "sha256": "8083efa3197455bd8810bad70203aa1510cff79aed7adf7da1224ab2e574cca2",
+    "line_count": 370,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/detail-panel.tsx",
+        "sha256": "ebbb4ba553cc1e12f44bf19e83d158ccbaab349b9f6b5f341876af449fd3219d"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/stagger.tsx",
+        "sha256": "ed3421446209018dcf32ce543aafe23ffdeb083ce02bbf9ac3424f1f9646f462"
+      },
+      {
+        "path": "app/src/components/skills/edit-skill.tsx",
+        "sha256": "5f58216e2aa606e09664fce41b745de7c42f14695f581bb18e9287925440e8e9"
+      },
+      {
+        "path": "app/src/components/skills/new-skill.tsx",
+        "sha256": "b59f563462c19fcf9e48fb0b91141bfce4adf37a227d3cfafa6574432ff0e700"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/router-link.tsx",
+        "sha256": "f95b4cb6f7e42d0ff3ca288cfb0df9496875aba65be4c2ee28432c38ddc735f8"
+      },
+      {
+        "path": "app/src/components/ui/dropdown-menu.tsx",
+        "sha256": "1e3a945ac6f0747aae2c5fab7ce6fa565192552173e8132641bc5cfc5b5c3a0b"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/auth/queries.ts",
+        "sha256": "0550177fc6e367b92324452846a738c86d54b018492fd800a484d24b2eee4ebd"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 55,
+        "text": "validateSearch: skillsSearchSchema,"
+      },
+      {
+        "line": 68,
+        "text": "const { data, isPending: skillsPending } = useQuery("
+      },
+      {
+        "line": 71,
+        "text": "const { data: me, isPending: mePending } = useQuery("
+      },
+      {
+        "line": 79,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 101,
+        "text": "<DetailPanel"
+      },
+      {
+        "line": 112,
+        "text": "<PageShell"
+      },
+      {
+        "line": 143,
+        "text": "* And not after a read that failed, for the same reason: `isPending` goes false on a"
+      },
+      {
+        "line": 296,
+        "text": "</DetailPanel>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app/team-bots.tsx",
+    "route_id": "/_authed/_app/team-bots",
+    "sha256": "39b79e343a0d5d0cddde5f7029bff4d9db8ffee8b919a219ec76e0b77b59f9c7",
+    "line_count": 8,
+    "local_imports": [],
+    "signals": [
+      {
+        "line": 5,
+        "text": "beforeLoad: () => {"
+      },
+      {
+        "line": 6,
+        "text": "throw redirect({ to: \"/bots\", replace: true });"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/_app.tsx",
+    "route_id": "/_authed/_app",
+    "sha256": "22d37ba409b40ccdb0d5ddcf413ca904b1f70b3dc98192bfc9b74844ddc36477",
+    "line_count": 30,
+    "local_imports": [
+      {
+        "path": "app/src/components/app-sidebar/app-sidebar.tsx",
+        "sha256": "6def3dbd7ed30a59b9c44af2cc6730526e412dba99219d36d067acfa59507ec4"
+      },
+      {
+        "path": "app/src/components/layout/self-host-banner.tsx",
+        "sha256": "a8131ca246dd9f5348902b7c1aa446fa9e1ef86abf8fb965d5e602d3e713e67e"
+      },
+      {
+        "path": "app/src/components/layout/sidebar-shell.tsx",
+        "sha256": "45088ccd74039267b6f1e69e8be1a7ed0b1c31dee7c18f9a47220dae6b1507c0"
+      },
+      {
+        "path": "app/src/components/layout/skip-to-content.tsx",
+        "sha256": "fa405468f752f44f41e07b83acce5afb3c782461122feb30db514ab1aa84b89b"
+      }
+    ],
+    "signals": [
+      {
+        "line": 18,
+        "text": "<SidebarShell className=\"h-svh overflow-hidden\" width=\"340px\">"
+      },
+      {
+        "line": 23,
+        "text": "className=\"flex-1 flex flex-col min-h-0 overflow-hidden\""
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/ai-observability.tsx",
+    "route_id": "/_authed/admin/ai-observability",
+    "sha256": "be78407f7510896bd30970c7315f0cfdc51ab409d35df7eb3b58a727dcfede4b",
+    "line_count": 12,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/admin-summary.tsx",
+        "sha256": "e28ede2244a74fb9a3e213fc528e6ec6f466c1edec58e71e08b09f1f2d5f77ac"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/admin/approvals.tsx",
+    "route_id": "/_authed/admin/approvals",
+    "sha256": "702ab3dd2e52bab046d99f4185c3941d1ae0fd8fdecddd0608a6dd9fb0b89d64",
+    "line_count": 20,
+    "local_imports": [
+      {
+        "path": "app/src/components/approvals/team-settings.tsx",
+        "sha256": "2de17c440ad74b5948075e9ee575da5183d240874948944e8ca1253c0151f301"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      }
+    ],
+    "signals": [
+      {
+        "line": 13,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/audit.tsx",
+    "route_id": "/_authed/admin/audit",
+    "sha256": "82d6edfe4b48288e79e6ef9953f582a57ab4cf219ec2e74c661300539829a210",
+    "line_count": 594,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/lib/agents/bot-names.ts",
+        "sha256": "d373bcac1cae36de9382682ce4e6b03954d62f0daae208eb57883af797a24d9f"
+      },
+      {
+        "path": "app/src/lib/audit/outcome.ts",
+        "sha256": "3e98f394b46786559d4bebb080f82588254eeec068eab3c0baf76d896f5b0e9b"
+      },
+      {
+        "path": "app/src/lib/audit/queries.ts",
+        "sha256": "628b5bb39ee8fcb847eec4f9072be9e32b724809ffabd2862707d5f0cc6f955d"
+      },
+      {
+        "path": "app/src/lib/audit/silence.ts",
+        "sha256": "09531520523da259a54d668e616a42f416d63e8ca2e2935389add5ed2955ae51"
+      },
+      {
+        "path": "app/src/lib/client.ts",
+        "sha256": "12d206d70fc7911ad1dce92b59981c824dbdf8177ce1bc71280fe38ea10d7e69"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 76,
+        "text": "const [search, setSearch] = useState<string>(FILTERS[0].search);"
+      },
+      {
+        "line": 80,
+        "text": "const [exporting, setExporting] = useState(false);"
+      },
+      {
+        "line": 81,
+        "text": "const [exportError, setExportError] = useState<string | null>(null);"
+      },
+      {
+        "line": 82,
+        "text": "const [exportCapped, setExportCapped] = useState<number | null>(null);"
+      },
+      {
+        "line": 126,
+        "text": "<PageShell"
+      },
+      {
+        "line": 174,
+        "text": "{events.isPending ? null : events.isError ? ("
+      },
+      {
+        "line": 183,
+        "text": "className=\"mt-4 overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-2 focus-visible:outline-ring\""
+      },
+      {
+        "line": 184,
+        "text": "// biome-ignore lint/a11y/noNoninteractiveTabindex: An overflow region needs keyboard focus to scroll in Safari; the region has an accessible name."
+      },
+      {
+        "line": 470,
+        "text": "* A width rather than a max-width, because the table lays itself out from its content and"
+      },
+      {
+        "line": 471,
+        "text": "* a max-width on a block inside a cell does not constrain that. A router's reason is a"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/billing.tsx",
+    "route_id": "/_authed/admin/billing",
+    "sha256": "08998723f1a9857542e435d7ba5493ec7ad2c2e3f9aca0b505417ae644cd3789",
+    "line_count": 37,
+    "local_imports": [
+      {
+        "path": "app/src/components/admin/billing-cleanup-execution-card.tsx",
+        "sha256": "6214db8ba7afeb6b4d28521344dc72febdb437048e33089cf4fed064d88ef4e9"
+      },
+      {
+        "path": "app/src/components/billing/admin-credit-grant.tsx",
+        "sha256": "4c17726832a4e094d271f74046aee87a3ad1e94a848b28cdb85a632f54a8a734"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      }
+    ],
+    "signals": [
+      {
+        "line": 19,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/bot-services.tsx",
+    "route_id": "/_authed/admin/bot-services",
+    "sha256": "0b316307594b2541fa3e9671e080eedf8f2a2079f3d75977c29f7b697a3f7c49",
+    "line_count": 596,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/layout/stagger.tsx",
+        "sha256": "ed3421446209018dcf32ce543aafe23ffdeb083ce02bbf9ac3424f1f9646f462"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/checkbox.tsx",
+        "sha256": "ef2b727cd9b91582b3e37b073008c31525e7dca350911d0fe0a2a784f5a1b55f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/field.tsx",
+        "sha256": "baf94fb9eb20e6910ba5560fa6f3ecde7f34caa86c790ccd27ca32913f646ef9"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/bot-services/mutations.ts",
+        "sha256": "24847db27fe2b7ee8518bcd09a0b979417cfd538c14923dc81684a16fc0799f9"
+      },
+      {
+        "path": "app/src/lib/bot-services/queries.ts",
+        "sha256": "c317611feea9d6c90afad4e4a03b30de82c1ee08ff1d239a10324d099b447751"
+      }
+    ],
+    "signals": [
+      {
+        "line": 5,
+        "text": "import { useId, useState } from \"react\";"
+      },
+      {
+        "line": 103,
+        "text": "const [adding, setAdding] = useState(false);"
+      },
+      {
+        "line": 104,
+        "text": "const [editing, setEditing] = useState<BotService | null>(null);"
+      },
+      {
+        "line": 114,
+        "text": "<PageShell"
+      },
+      {
+        "line": 140,
+        "text": "{botServices.isPending ? ("
+      },
+      {
+        "line": 170,
+        "text": "disabled={setStatus.isPending}"
+      },
+      {
+        "line": 178,
+        "text": "disabled={setStatus.isPending}"
+      },
+      {
+        "line": 210,
+        "text": "isPending: boolean;"
+      },
+      {
+        "line": 279,
+        "text": "<FieldGroup className=\"sm:grid sm:grid-cols-2\">"
+      },
+      {
+        "line": 374,
+        "text": "<div className=\"grid grid-cols-2 gap-2\">"
+      },
+      {
+        "line": 430,
+        "text": "disabled={!canSubmit || isSubmitting || register.isPending}"
+      },
+      {
+        "line": 435,
+        "text": "{isSubmitting || register.isPending"
+      },
+      {
+        "line": 537,
+        "text": "<div className=\"grid grid-cols-2 gap-2\">"
+      },
+      {
+        "line": 581,
+        "text": "disabled={!canSubmit || isSubmitting || edit.isPending}"
+      },
+      {
+        "line": 586,
+        "text": "{isSubmitting || edit.isPending"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/boundaries.tsx",
+    "route_id": "/_authed/admin/boundaries",
+    "sha256": "e02cba22f9df0a3bed5eb1e536edb115738250b736f37be2be1319a99fcc18d1",
+    "line_count": 378,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/lib/composing.ts",
+        "sha256": "c813d3026e24e11f79216bcc3422ac6b7f2404ea07d0201bab50e0526506f7ca"
+      },
+      {
+        "path": "app/src/lib/computers/mutations.ts",
+        "sha256": "fcf314e55a4aab02b7c783bf1552855c6cb9c154052daa494cc4b0e8c62a1727"
+      },
+      {
+        "path": "app/src/lib/computers/queries.ts",
+        "sha256": "3d562f36e57d9ec1fa1e87043fa446ddc68986ed27a6822359037940754ab134"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 3,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 56,
+        "text": "const [problem, setProblem] = useState<string | null>(null);"
+      },
+      {
+        "line": 57,
+        "text": "const [saved, setSaved] = useState(false);"
+      },
+      {
+        "line": 58,
+        "text": "const [draft, setDraft] = useState(\"\");"
+      },
+      {
+        "line": 60,
+        "text": "const [tested, setTested] = useState<{"
+      },
+      {
+        "line": 64,
+        "text": "const [testing, setTesting] = useState(false);"
+      },
+      {
+        "line": 74,
+        "text": "const saving = savePolicy.isPending;"
+      },
+      {
+        "line": 93,
+        "text": "<PageShell title={t(\"boundaries.title\")}>"
+      },
+      {
+        "line": 103,
+        "text": "return <PageShell title={t(\"boundaries.title\")}>{null}</PageShell>;"
+      },
+      {
+        "line": 139,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/components/$name.tsx",
+    "route_id": "/_authed/admin/components/$name",
+    "sha256": "2a432c5d6d55c5b83ea1620fd064a9817130d09bc1229c99235188909882fcd4",
+    "line_count": 590,
+    "local_imports": [
+      {
+        "path": "app/src/components/component-preview.tsx",
+        "sha256": "3f6159630eb4e1b4fd7d68f0180e15d329334c6de6abe9c8340a56811425add7"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/settings/background.tsx",
+        "sha256": "d73fa754fcf40dfcfb9165bc16ae6495eb7a8d40dd89d1aa33438c9c4e176bf5"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/router-link.tsx",
+        "sha256": "f95b4cb6f7e42d0ff3ca288cfb0df9496875aba65be4c2ee28432c38ddc735f8"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/switch.tsx",
+        "sha256": "44585dfce1d62d41f8c6e24739005afc8d59d34f877e6e0f3600874a008b06d5"
+      },
+      {
+        "path": "app/src/components/ui/textarea.tsx",
+        "sha256": "bdff907bbb3a6453930a208ed377c9ce671a0d3f27b0c44263749b6c0c14b933"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/components/mutations.ts",
+        "sha256": "402c1f1cb8885e9639da40d22d9bd6d550e61424269b1fd740e5dd8716dfaea2"
+      },
+      {
+        "path": "app/src/lib/components/queries.ts",
+        "sha256": "1792f93d776c89519abede6e402c95006ec02403c47e72a8c9637b05538b0c83"
+      },
+      {
+        "path": "app/src/lib/copilot/gallery-registry.ts",
+        "sha256": "684664511012086bd1a18959bc7d93c7db9dc8d61a53d8f124f868beae92c608"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 14,
+        "text": "import { type ReactNode, useState } from \"react\";"
+      },
+      {
+        "line": 108,
+        "text": "if (components.isPending) return null;"
+      },
+      {
+        "line": 112,
+        "text": "<PageShell"
+      },
+      {
+        "line": 129,
+        "text": "<PageShell"
+      },
+      {
+        "line": 273,
+        "text": "const [sheet, setSheet] = useState<Sheet>(null);"
+      },
+      {
+        "line": 274,
+        "text": "const [draft, setDraft] = useState(component.draftDescription);"
+      },
+      {
+        "line": 303,
+        "text": "<PageShell"
+      },
+      {
+        "line": 314,
+        "text": "<div className=\"relative mt-8 aspect-[2/1] overflow-hidden rounded-lg border border-border bg-card\">"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/components/index.tsx",
+    "route_id": "/_authed/admin/components/",
+    "sha256": "548195c133e7ac26ebec8446853e94f912dd8f3d32c9146c8a427c59a10bdc7b",
+    "line_count": 110,
+    "local_imports": [
+      {
+        "path": "app/src/components/component-preview.tsx",
+        "sha256": "3f6159630eb4e1b4fd7d68f0180e15d329334c6de6abe9c8340a56811425add7"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/settings/background.tsx",
+        "sha256": "d73fa754fcf40dfcfb9165bc16ae6495eb7a8d40dd89d1aa33438c9c4e176bf5"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/lib/components/queries.ts",
+        "sha256": "1792f93d776c89519abede6e402c95006ec02403c47e72a8c9637b05538b0c83"
+      },
+      {
+        "path": "app/src/lib/utils.ts",
+        "sha256": "4acbc7165a8d54738ff62b51414e772c08fe78434e524e6d8770180d3ba2925f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 31,
+        "text": "<PageShell"
+      },
+      {
+        "line": 40,
+        "text": "{components.isPending ? ("
+      },
+      {
+        "line": 56,
+        "text": "<div className=\"mx-auto mt-12 grid w-full max-w-2xl grid-cols-1 gap-4 md:grid-cols-2\">"
+      },
+      {
+        "line": 64,
+        "text": "className=\"flex aspect-square flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50\""
+      },
+      {
+        "line": 90,
+        "text": "* ratio — taller than this box, and `overflow-hidden` clips at the border rather"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/computers.tsx",
+    "route_id": "/_authed/admin/computers",
+    "sha256": "20f00892900ddcadb78dd70c7d3430d5164a3e237aac8cba83d3e6d4a5ea44f7",
+    "line_count": 562,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/stagger.tsx",
+        "sha256": "ed3421446209018dcf32ce543aafe23ffdeb083ce02bbf9ac3424f1f9646f462"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/agents/bot-names.ts",
+        "sha256": "d373bcac1cae36de9382682ce4e6b03954d62f0daae208eb57883af797a24d9f"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/computers/host-access.ts",
+        "sha256": "e1ba0d6c60637ce4d1d9436f62662e35d6563eb977da52470a315c7cabdcc8fc"
+      },
+      {
+        "path": "app/src/lib/computers/mutations.ts",
+        "sha256": "fcf314e55a4aab02b7c783bf1552855c6cb9c154052daa494cc4b0e8c62a1727"
+      },
+      {
+        "path": "app/src/lib/computers/queries.ts",
+        "sha256": "3d562f36e57d9ec1fa1e87043fa446ddc68986ed27a6822359037940754ab134"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 52,
+        "text": "const [busy, setBusy] = useState<string | null>(null);"
+      },
+      {
+        "line": 54,
+        "text": "const [confirming, setConfirming] = useState<string | null>(null);"
+      },
+      {
+        "line": 56,
+        "text": "const [confirmingUpdate, setConfirmingUpdate] = useState<string | null>(null);"
+      },
+      {
+        "line": 99,
+        "text": "<PageShell"
+      },
+      {
+        "line": 133,
+        "text": "loading={hostAccess.isPending || agents.isPending}"
+      },
+      {
+        "line": 141,
+        "text": "requestGrant.isPending"
+      },
+      {
+        "line": 146,
+        "text": "revokeGrant.isPending"
+      },
+      {
+        "line": 150,
+        "text": "stopping={stopHostAccess.isPending}"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/credentials.tsx",
+    "route_id": "/_authed/admin/credentials",
+    "sha256": "6c589745b52154d76cdf0a3f8a24b7615fbe013a6060437f624e5a99c7e0a09d",
+    "line_count": 385,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/layout/stagger.tsx",
+        "sha256": "ed3421446209018dcf32ce543aafe23ffdeb083ce02bbf9ac3424f1f9646f462"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/field.tsx",
+        "sha256": "baf94fb9eb20e6910ba5560fa6f3ecde7f34caa86c790ccd27ca32913f646ef9"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/credentials/form.ts",
+        "sha256": "e513e969e2199fde1683d014ce6db11202f7585a06354bcccedef9f4e60c3c1c"
+      },
+      {
+        "path": "app/src/lib/credentials/mutations.ts",
+        "sha256": "ba35fca2c7e44368efcb79a71a993730628e5d83956706c3f4835c59e7db4d4f"
+      },
+      {
+        "path": "app/src/lib/credentials/queries.ts",
+        "sha256": "68483ad9d463d89e0add5dc6e542269b04addb0703eefb5a5b5f4c901d1da381"
+      }
+    ],
+    "signals": [
+      {
+        "line": 5,
+        "text": "import { useId, useState } from \"react\";"
+      },
+      {
+        "line": 67,
+        "text": "const [adding, setAdding] = useState(false);"
+      },
+      {
+        "line": 94,
+        "text": "<PageShell"
+      },
+      {
+        "line": 128,
+        "text": "<FieldGroup className=\"sm:grid sm:grid-cols-2\">"
+      },
+      {
+        "line": 302,
+        "text": "!canSubmit || isSubmitting || createCredential.isPending"
+      },
+      {
+        "line": 308,
+        "text": "{isSubmitting || createCredential.isPending"
+      },
+      {
+        "line": 319,
+        "text": "{credentials.isPending ? ("
+      },
+      {
+        "line": 345,
+        "text": "revokeCredential.isPending"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/enterprise.tsx",
+    "route_id": "/_authed/admin/enterprise",
+    "sha256": "f8fb69e6e130958093e2b6d66da66ba7c027e98634dd9bd2ea752f480b4e0523",
+    "line_count": 1196,
+    "local_imports": [
+      {
+        "path": "app/src/components/admin/model-billing-paths.tsx",
+        "sha256": "52762cd45d1faab273700464c78deb3dcf7d4b1f4c69f9c3c1b5b05898b4b900"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/label.tsx",
+        "sha256": "f413aa84f1d2948214d661370ee115e37022cc576ccd1763058e7e96b8203bad"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/switch.tsx",
+        "sha256": "44585dfce1d62d41f8c6e24739005afc8d59d34f877e6e0f3600874a008b06d5"
+      },
+      {
+        "path": "app/src/components/ui/textarea.tsx",
+        "sha256": "bdff907bbb3a6453930a208ed377c9ce671a0d3f27b0c44263749b6c0c14b933"
+      },
+      {
+        "path": "app/src/lib/enterprise/mutations.ts",
+        "sha256": "b1235c29f6b714e3cee16be472896138b5f859927f9bdeef38f1bc02c3514c09"
+      },
+      {
+        "path": "app/src/lib/enterprise/queries.ts",
+        "sha256": "90d87e622164f95cfeb9b27b5315e82a7323a887eaf33861dcf08f766c63643e"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 18,
+        "text": "import { useId, useState } from \"react\";"
+      },
+      {
+        "line": 134,
+        "text": "<PageShell"
+      },
+      {
+        "line": 143,
+        "text": "{overview.isPending ? ("
+      },
+      {
+        "line": 161,
+        "text": "saving={setCapability.isPending || setSetting.isPending}"
+      },
+      {
+        "line": 186,
+        "text": "const [overridesOpen, setOverridesOpen] = useState(false);"
+      },
+      {
+        "line": 187,
+        "text": "const [networkScope, setNetworkScope] = useState<"
+      },
+      {
+        "line": 190,
+        "text": "const [modelsOpen, setModelsOpen] = useState(false);"
+      },
+      {
+        "line": 191,
+        "text": "const [daysOpen, setDaysOpen] = useState(false);"
+      },
+      {
+        "line": 655,
+        "text": "if (usage.isPending) return null;"
+      },
+      {
+        "line": 704,
+        "text": "if (actions.isPending) return null;"
+      },
+      {
+        "line": 746,
+        "text": "disabled={sweep.isPending}"
+      },
+      {
+        "line": 751,
+        "text": "{sweep.isPending"
+      },
+      {
+        "line": 797,
+        "text": "const [scopeIndex, setScopeIndex] = useState(0);"
+      },
+      {
+        "line": 806,
+        "text": "<DialogBody className=\"mt-4 space-y-4 overflow-y-auto\">"
+      },
+      {
+        "line": 918,
+        "text": "const [group, setGroup] = useState(initial.scopeId || data.groups[0] || \"\");"
+      },
+      {
+        "line": 919,
+        "text": "const [mode, setMode] = useState<NetworkMode>("
+      },
+      {
+        "line": 922,
+        "text": "const [rules, setRules] = useState(rulesToText(existing?.rules ?? []));"
+      },
+      {
+        "line": 923,
+        "text": "const [locked, setLocked] = useState(existing?.locked ?? false);"
+      },
+      {
+        "line": 939,
+        "text": "<DialogBody className=\"mt-4 space-y-4 overflow-y-auto\">"
+      },
+      {
+        "line": 1046,
+        "text": "disabled={remove.isPending}"
+      },
+      {
+        "line": 1065,
+        "text": "save.isPending || (initial.scopeKind === \"group\" && !scopeId)"
+      },
+      {
+        "line": 1071,
+        "text": "{save.isPending ? t(\"enterprise.saving\") : t(\"enterprise.save\")}"
+      },
+      {
+        "line": 1095,
+        "text": "const [text, setText] = useState(initial.join(\"\\n\"));"
+      },
+      {
+        "line": 1105,
+        "text": "<DialogBody className=\"mt-4 space-y-2 overflow-y-auto\">"
+      },
+      {
+        "line": 1151,
+        "text": "const [days, setDays] = useState(String(initial));"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/gateway.tsx",
+    "route_id": "/_authed/admin/gateway",
+    "sha256": "96e52d16c2b84b3cd5948e2e02130aee1b1eef4fdcff0cd74876e093d6315c82",
+    "line_count": 509,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/field.tsx",
+        "sha256": "baf94fb9eb20e6910ba5560fa6f3ecde7f34caa86c790ccd27ca32913f646ef9"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/gateway/mutations.ts",
+        "sha256": "bc7c5b6cbb73a2e0cf375f523b05147bc8a717977b2f25bfc265be9ed9526c31"
+      },
+      {
+        "path": "app/src/lib/gateway/queries.ts",
+        "sha256": "b512fa62a0e11d808ed76c5c0bceae7bb8f1835f9d3e54e3a65269d0bf1cfe03"
+      }
+    ],
+    "signals": [
+      {
+        "line": 3,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 101,
+        "text": "const [baseUrl, setBaseUrl] = useState(\"\");"
+      },
+      {
+        "line": 102,
+        "text": "const [requestTimeoutMs, setRequestTimeoutMs] = useState(\"10000\");"
+      },
+      {
+        "line": 103,
+        "text": "const [endpointProblems, setEndpointProblems] = useState<FieldProblem[]>([]);"
+      },
+      {
+        "line": 104,
+        "text": "const [numerator, setNumerator] = useState(\"\");"
+      },
+      {
+        "line": 105,
+        "text": "const [denominator, setDenominator] = useState(\"1\");"
+      },
+      {
+        "line": 106,
+        "text": "const [rateProblems, setRateProblems] = useState<FieldProblem[]>([]);"
+      },
+      {
+        "line": 107,
+        "text": "const [adminKey, setAdminKey] = useState(\"\");"
+      },
+      {
+        "line": 108,
+        "text": "const [credentialProblem, setCredentialProblem] = useState<"
+      },
+      {
+        "line": 176,
+        "text": "<PageShell"
+      },
+      {
+        "line": 185,
+        "text": "disabled={runProbe.isPending || status.isPending}"
+      },
+      {
+        "line": 190,
+        "text": "{runProbe.isPending"
+      },
+      {
+        "line": 196,
+        "text": "{status.isPending ? ("
+      },
+      {
+        "line": 246,
+        "text": "disabled={saveEndpoint.isPending}"
+      },
+      {
+        "line": 250,
+        "text": "{saveEndpoint.isPending"
+      },
+      {
+        "line": 310,
+        "text": "disabled={saveRate.isPending}"
+      },
+      {
+        "line": 314,
+        "text": "{saveRate.isPending"
+      },
+      {
+        "line": 362,
+        "text": "disabled={saveCredential.isPending}"
+      },
+      {
+        "line": 366,
+        "text": "{saveCredential.isPending"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/identity-providers.tsx",
+    "route_id": "/_authed/admin/identity-providers",
+    "sha256": "6af5c179e25625febe967fa8cbb569e75a98d62c5510b241757fe8ba671ce0c2",
+    "line_count": 344,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/layout/stagger.tsx",
+        "sha256": "ed3421446209018dcf32ce543aafe23ffdeb083ce02bbf9ac3424f1f9646f462"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/label.tsx",
+        "sha256": "f413aa84f1d2948214d661370ee115e37022cc576ccd1763058e7e96b8203bad"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/textarea.tsx",
+        "sha256": "bdff907bbb3a6453930a208ed377c9ce671a0d3f27b0c44263749b6c0c14b933"
+      },
+      {
+        "path": "app/src/lib/identity-providers/mutations.ts",
+        "sha256": "e903a0561d5fd7a756ce08bcf1676380b73717028c8e48b7e597b8889fc21766"
+      },
+      {
+        "path": "app/src/lib/identity-providers/queries.ts",
+        "sha256": "4a30aa8489124c4de12d0eddb3a0aafa07d3650eebe3ac36ab326d787045e2f5"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useId, useState } from \"react\";"
+      },
+      {
+        "line": 67,
+        "text": "const [open, setOpen] = useState(false);"
+      },
+      {
+        "line": 68,
+        "text": "const [draft, setDraft] = useState(EMPTY);"
+      },
+      {
+        "line": 105,
+        "text": "<PageShell"
+      },
+      {
+        "line": 123,
+        "text": "{providers.isPending ? ("
+      },
+      {
+        "line": 148,
+        "text": "disabled={remove.isPending}"
+      },
+      {
+        "line": 170,
+        "text": "<DialogBody className=\"mt-4 space-y-4 overflow-y-auto\">"
+      },
+      {
+        "line": 330,
+        "text": "disabled={register.isPending}"
+      },
+      {
+        "line": 335,
+        "text": "{register.isPending"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/index.tsx",
+    "route_id": "/_authed/admin/",
+    "sha256": "3c485a88a09030f33764345d233f131f9eda4487687b6a4016c6df26cb22b4cd",
+    "line_count": 229,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/stagger.tsx",
+        "sha256": "ed3421446209018dcf32ce543aafe23ffdeb083ce02bbf9ac3424f1f9646f462"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      }
+    ],
+    "signals": [
+      {
+        "line": 191,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/knowledge.$kbId.tsx",
+    "route_id": "/_authed/admin/knowledge/$kbId",
+    "sha256": "6f8060bcbf0050d033798f84234d2065d29e3bc0dc024498b7e31a993f3acb28",
+    "line_count": 964,
+    "local_imports": [
+      {
+        "path": "app/src/components/knowledge/upload-tasks-panel.tsx",
+        "sha256": "acce92cb796d604b837f892e9753c64bd570e4b4e24804fc63be7ea30cf115ac"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/checkbox.tsx",
+        "sha256": "ef2b727cd9b91582b3e37b073008c31525e7dca350911d0fe0a2a784f5a1b55f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/label.tsx",
+        "sha256": "f413aa84f1d2948214d661370ee115e37022cc576ccd1763058e7e96b8203bad"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/components/ui/switch.tsx",
+        "sha256": "44585dfce1d62d41f8c6e24739005afc8d59d34f877e6e0f3600874a008b06d5"
+      },
+      {
+        "path": "app/src/components/ui/textarea.tsx",
+        "sha256": "bdff907bbb3a6453930a208ed377c9ce671a0d3f27b0c44263749b6c0c14b933"
+      },
+      {
+        "path": "app/src/lib/knowledge.ts",
+        "sha256": "205c5756e37c0ffab8b3a41820af4b2fbd08ece00132ca343364c1ade870038b"
+      },
+      {
+        "path": "app/src/lib/knowledge-format.ts",
+        "sha256": "e280945b72a33cd6e8132c555064f2907ea990278f314183816442679ca147ab"
+      },
+      {
+        "path": "app/src/lib/knowledge-sorting.ts",
+        "sha256": "5b293fbf48688c66bb126cbab3890f68f182740945edc68e8fcad1e933b43384"
+      },
+      {
+        "path": "app/src/lib/relative-time.ts",
+        "sha256": "fedcc300ea8ad6efeb1213c706ab090223d36fc92f7f7df43297f5c59dd21e41"
+      },
+      {
+        "path": "app/src/lib/upload-queue/store.ts",
+        "sha256": "e2ffaf3cbff7a7de0982d33f0ee664debad6664be5d83e85ed3a042eaed59ad3"
+      }
+    ],
+    "signals": [
+      {
+        "line": 11,
+        "text": "useState,"
+      },
+      {
+        "line": 100,
+        "text": "<PageShell"
+      },
+      {
+        "line": 113,
+        "text": "<UploadTasksPanel kbId={kbId} />"
+      },
+      {
+        "line": 126,
+        "text": "const [type, setType] = useState<\"text\" | \"url\" | \"file\">(\"text\");"
+      },
+      {
+        "line": 127,
+        "text": "const [title, setTitle] = useState(\"\");"
+      },
+      {
+        "line": 128,
+        "text": "const [content, setContent] = useState(\"\");"
+      },
+      {
+        "line": 129,
+        "text": "const [url, setUrl] = useState(\"\");"
+      },
+      {
+        "line": 191,
+        "text": "<div className=\"grid gap-3 sm:grid-cols-2\">"
+      },
+      {
+        "line": 280,
+        "text": "add.isPending ||"
+      },
+      {
+        "line": 285,
+        "text": "{add.isPending ? t(\"add.adding\") : t(\"add.submit\")}"
+      },
+      {
+        "line": 302,
+        "text": "useState<KnowledgeDocumentFilter>(emptyDocumentFilter);"
+      },
+      {
+        "line": 303,
+        "text": "const [debouncedKeyword, setDebouncedKeyword] = useState(\"\");"
+      },
+      {
+        "line": 304,
+        "text": "const [sort, setSort] = useState<DocumentSortValue>(DEFAULT_DOCUMENT_SORT);"
+      },
+      {
+        "line": 305,
+        "text": "const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());"
+      },
+      {
+        "line": 306,
+        "text": "const [lastCheckedIndex, setLastCheckedIndex] = useState<number | null>(null);"
+      },
+      {
+        "line": 307,
+        "text": "const [pendingDelete, setPendingDelete] = useState<KnowledgeDocument | null>("
+      },
+      {
+        "line": 310,
+        "text": "const [bulkDeleting, setBulkDeleting] = useState(false);"
+      },
+      {
+        "line": 311,
+        "text": "const [bulkError, setBulkError] = useState<string | null>(null);"
+      },
+      {
+        "line": 444,
+        "text": "<div className=\"mt-2 grid gap-2 sm:grid-cols-3\">"
+      },
+      {
+        "line": 563,
+        "text": "className=\"mt-2 overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-2 focus-visible:outline-ring\""
+      },
+      {
+        "line": 564,
+        "text": "// biome-ignore lint/a11y/noNoninteractiveTabindex: An overflow region needs keyboard focus to scroll in Safari; the region has an accessible name."
+      },
+      {
+        "line": 597,
+        "text": "deletePending={remove.isPending}"
+      },
+      {
+        "line": 603,
+        "text": ") : docs.isPending ? null : ("
+      },
+      {
+        "line": 616,
+        "text": "pending={remove.isPending}"
+      },
+      {
+        "line": 770,
+        "text": "const [query, setQuery] = useState(\"\");"
+      },
+      {
+        "line": 771,
+        "text": "const [topK, setTopK] = useState(5);"
+      },
+      {
+        "line": 772,
+        "text": "const [threshold, setThreshold] = useState(0);"
+      },
+      {
+        "line": 773,
+        "text": "const [hybrid, setHybrid] = useState(true);"
+      },
+      {
+        "line": 811,
+        "text": "<div className=\"grid gap-3 sm:grid-cols-3\">"
+      },
+      {
+        "line": 863,
+        "text": "disabled={search.isPending || !query.trim()}"
+      },
+      {
+        "line": 865,
+        "text": "{search.isPending ? t(\"search.searching\") : t(\"search.submit\")}"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/knowledge.index.tsx",
+    "route_id": "/_authed/admin/knowledge/",
+    "sha256": "5b00721be94981665778f1728d7a0da311fcdd75b97432db4bf9801dcc7533ac",
+    "line_count": 419,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/textarea.tsx",
+        "sha256": "bdff907bbb3a6453930a208ed377c9ce671a0d3f27b0c44263749b6c0c14b933"
+      },
+      {
+        "path": "app/src/lib/knowledge.ts",
+        "sha256": "205c5756e37c0ffab8b3a41820af4b2fbd08ece00132ca343364c1ade870038b"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useId, useState } from \"react\";"
+      },
+      {
+        "line": 60,
+        "text": "const [createOpen, setCreateOpen] = useState(false);"
+      },
+      {
+        "line": 61,
+        "text": "const [pendingDelete, setPendingDelete] = useState<KnowledgeBase | null>("
+      },
+      {
+        "line": 72,
+        "text": "<PageShell title={t(\"title\")} description={t(\"description\")} width=\"wide\">"
+      },
+      {
+        "line": 84,
+        "text": "{bases.isPending ? ("
+      },
+      {
+        "line": 121,
+        "text": "disabled={remove.isPending}"
+      },
+      {
+        "line": 151,
+        "text": "pending={remove.isPending}"
+      },
+      {
+        "line": 176,
+        "text": "const [name, setName] = useState(\"\");"
+      },
+      {
+        "line": 177,
+        "text": "const [description, setDescription] = useState(\"\");"
+      },
+      {
+        "line": 178,
+        "text": "const [advancedOpen, setAdvancedOpen] = useState(false);"
+      },
+      {
+        "line": 179,
+        "text": "const [embedder, setEmbedder] = useState(\"\");"
+      },
+      {
+        "line": 180,
+        "text": "const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE);"
+      },
+      {
+        "line": 181,
+        "text": "const [chunkOverlap, setChunkOverlap] = useState(DEFAULT_CHUNK_OVERLAP);"
+      },
+      {
+        "line": 182,
+        "text": "const [rerankModel, setRerankModel] = useState(\"\");"
+      },
+      {
+        "line": 208,
+        "text": "if (create.isPending) return;"
+      },
+      {
+        "line": 290,
+        "text": "<div className=\"grid gap-3 sm:grid-cols-2\">"
+      },
+      {
+        "line": 350,
+        "text": "disabled={create.isPending || !name.trim()}"
+      },
+      {
+        "line": 352,
+        "text": "{create.isPending ? t(\"create.creating\") : t(\"create.submit\")}"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/learning.tsx",
+    "route_id": "/_authed/admin/learning",
+    "sha256": "98124fd094d5d99fbd4377558454b9c40396b085c0fe3feff091594b8aef06e6",
+    "line_count": 563,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/checkbox.tsx",
+        "sha256": "ef2b727cd9b91582b3e37b073008c31525e7dca350911d0fe0a2a784f5a1b55f"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      },
+      {
+        "path": "app/src/lib/learning/queries.ts",
+        "sha256": "775aea58afdfffe7be732db9a18ecdcb313c7d89b744f7264705915922d65b1b"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useId, useState } from \"react\";"
+      },
+      {
+        "line": 82,
+        "text": "<div className=\"grid gap-3 sm:grid-cols-2\">"
+      },
+      {
+        "line": 146,
+        "text": "disabled={create.isPending}"
+      },
+      {
+        "line": 149,
+        "text": "{create.isPending"
+      },
+      {
+        "line": 184,
+        "text": "const [draft, setDraft] = useState<LearningSettings | null>(null);"
+      },
+      {
+        "line": 185,
+        "text": "const [selected, setSelected] = useState(\"\");"
+      },
+      {
+        "line": 186,
+        "text": "const [saved, setSaved] = useState(false);"
+      },
+      {
+        "line": 222,
+        "text": "<PageShell"
+      },
+      {
+        "line": 230,
+        "text": "{settingsQuery.isPending && ("
+      },
+      {
+        "line": 357,
+        "text": "<Button type=\"submit\" disabled={save.isPending}>"
+      },
+      {
+        "line": 358,
+        "text": "{save.isPending ? t(\"learning.saving\") : t(\"learning.save\")}"
+      },
+      {
+        "line": 413,
+        "text": "{overview.isPending && ("
+      },
+      {
+        "line": 432,
+        "text": "<dl className=\"grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm\">"
+      },
+      {
+        "line": 507,
+        "text": "{delivery.isPending ? ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/market.tsx",
+    "route_id": "/_authed/admin/market",
+    "sha256": "076cb177712cbc3d5a190b5a72c869f3accc0427b64327b89f9e05df16ebb49f",
+    "line_count": 471,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/sidebar-toggle.tsx",
+        "sha256": "a27f44f3dd90fe6cc642c83973dd874a465925fec6398c0c7eba1295caf5aa66"
+      },
+      {
+        "path": "app/src/components/market/connectors-pane.tsx",
+        "sha256": "c7a3020dd629a3759f4fdd26e5d0db7ad15910593f0fb82268182a50b66e21b1"
+      },
+      {
+        "path": "app/src/components/market/experts-pane.tsx",
+        "sha256": "4336ffb1b04d6addc76e30391f36b19a14d64ab3ce8ed68de9f302839554ded2"
+      },
+      {
+        "path": "app/src/components/market/my-experts-view.tsx",
+        "sha256": "8cf424379262027da4aff40ca4043d463c96859f2abeb73319730c60b3d00d51"
+      },
+      {
+        "path": "app/src/components/market/skills-pane.tsx",
+        "sha256": "84756f2b8f5e15773b4d6720c18b567f745ae28d0c7391842a0083f7ae96ef58"
+      },
+      {
+        "path": "app/src/components/market/wb.tsx",
+        "sha256": "33cac6287fdb82d6846129ed2b7918fbfe8cd4cbc5fbbd9be3a3d87ba27baea9"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/auth/queries.ts",
+        "sha256": "0550177fc6e367b92324452846a738c86d54b018492fd800a484d24b2eee4ebd"
+      },
+      {
+        "path": "app/src/lib/marketplace/mutations.ts",
+        "sha256": "5d9761300b988c5814ac7caa50ec9ea78ecc186e4ec7a3b180eefab79d0fe757"
+      },
+      {
+        "path": "app/src/lib/marketplace/queries.ts",
+        "sha256": "ec4e2df8d56f01ece32d856110efbfd0e5f2d0fd71970b8fe3b7edf0744f1d47"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      },
+      {
+        "path": "app/src/lib/utils.ts",
+        "sha256": "4acbc7165a8d54738ff62b51414e772c08fe78434e524e6d8770180d3ba2925f"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 81,
+        "text": "const [tab, setTab] = React.useState<Tab>(\"experts\");"
+      },
+      {
+        "line": 82,
+        "text": "const [view, setView] = React.useState<\"hub\" | \"mine\">(\"hub\");"
+      },
+      {
+        "line": 83,
+        "text": "const [search, setSearch] = React.useState(\"\");"
+      },
+      {
+        "line": 84,
+        "text": "const [category, setCategory] = React.useState<string>(\"all\");"
+      },
+      {
+        "line": 85,
+        "text": "const [installedOnly, setInstalledOnly] = React.useState(false);"
+      },
+      {
+        "line": 88,
+        "text": "const [brokerQuery, setBrokerQuery] = React.useState(\"\");"
+      },
+      {
+        "line": 109,
+        "text": "const [actionError, setActionError] = React.useState<string | null>(null);"
+      },
+      {
+        "line": 117,
+        "text": "const [busy, setBusy] = React.useState<ReadonlySet<string>>(new Set());"
+      },
+      {
+        "line": 226,
+        "text": "const pending = marketplace.isPending || plugins.isPending;"
+      },
+      {
+        "line": 252,
+        "text": "const [agentSubject, setAgentSubject] = React.useState<string | null>(null);"
+      },
+      {
+        "line": 253,
+        "text": "const [templateSubject, setTemplateSubject] = React.useState<string | null>("
+      },
+      {
+        "line": 256,
+        "text": "const [skillSubject, setSkillSubject] = React.useState<SkillSubject | null>("
+      },
+      {
+        "line": 260,
+        "text": "React.useState<Parameters<typeof ConnectorDialogWb>[0][\"subject\"]>(null);"
+      },
+      {
+        "line": 272,
+        "text": "<div className=\"min-h-0 flex-1 overflow-y-auto\">"
+      },
+      {
+        "line": 360,
+        "text": "<div className=\"grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3\">"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/model-catalog.tsx",
+    "route_id": "/_authed/admin/model-catalog",
+    "sha256": "90c77e3f1bfcd90def1bdf7a1aaeabd971350ba4089e7064439ebcf6acc8f951",
+    "line_count": 347,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/field.tsx",
+        "sha256": "baf94fb9eb20e6910ba5560fa6f3ecde7f34caa86c790ccd27ca32913f646ef9"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/gateway/mutations.ts",
+        "sha256": "bc7c5b6cbb73a2e0cf375f523b05147bc8a717977b2f25bfc265be9ed9526c31"
+      },
+      {
+        "path": "app/src/lib/gateway/queries.ts",
+        "sha256": "b512fa62a0e11d808ed76c5c0bceae7bb8f1835f9d3e54e3a65269d0bf1cfe03"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 94,
+        "text": "const [pending, setPending] = useState<{"
+      },
+      {
+        "line": 98,
+        "text": "const [reason, setReason] = useState(\"\");"
+      },
+      {
+        "line": 99,
+        "text": "const [problem, setProblem] = useState<string | undefined>(undefined);"
+      },
+      {
+        "line": 141,
+        "text": "<PageShell"
+      },
+      {
+        "line": 151,
+        "text": "disabled={sync.isPending}"
+      },
+      {
+        "line": 155,
+        "text": "{sync.isPending"
+      },
+      {
+        "line": 163,
+        "text": "{syncLine(sync.data, sync.isError, t, formatDateTime)}"
+      },
+      {
+        "line": 172,
+        "text": "{catalog.isPending ? <PageRowsSkeleton rows={4} /> : null}"
+      },
+      {
+        "line": 173,
+        "text": "{catalog.isError ? ("
+      },
+      {
+        "line": 274,
+        "text": "<Button disabled={setScope.isPending} onClick={() => void submit()}>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/observability.tsx",
+    "route_id": "/_authed/admin/observability",
+    "sha256": "83e551ee571cc43edf964e04f37e036d3f646aae104ba5554b450feeaa25f2da",
+    "line_count": 11,
+    "local_imports": [
+      {
+        "path": "app/src/components/ai-observability/admin-summary.tsx",
+        "sha256": "e28ede2244a74fb9a3e213fc528e6ec6f466c1edec58e71e08b09f1f2d5f77ac"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/admin/people.tsx",
+    "route_id": "/_authed/admin/people",
+    "sha256": "daea4f83302752d0b8748614b265743e2052ac77e81a3e1713dc32434c7641a5",
+    "line_count": 250,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/layout/stagger.tsx",
+        "sha256": "ed3421446209018dcf32ce543aafe23ffdeb083ce02bbf9ac3424f1f9646f462"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/switch.tsx",
+        "sha256": "44585dfce1d62d41f8c6e24739005afc8d59d34f877e6e0f3600874a008b06d5"
+      },
+      {
+        "path": "app/src/lib/auth/queries.ts",
+        "sha256": "0550177fc6e367b92324452846a738c86d54b018492fd800a484d24b2eee4ebd"
+      },
+      {
+        "path": "app/src/lib/enterprise/mutations.ts",
+        "sha256": "b1235c29f6b714e3cee16be472896138b5f859927f9bdeef38f1bc02c3514c09"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      },
+      {
+        "path": "app/src/lib/people/mutations.ts",
+        "sha256": "527b73c9de31feacd35caa67c5a743c30c45e4c388ab564d6d7d48b63b866ec9"
+      },
+      {
+        "path": "app/src/lib/people/queries.ts",
+        "sha256": "3912af8a0c7fee47d417f4137f9dc857682884fc0d7b8e83845d82491b2aef19"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 5,
+        "text": "import { useEffect, useState } from \"react\";"
+      },
+      {
+        "line": 85,
+        "text": "const [search, setSearch] = useState(\"\");"
+      },
+      {
+        "line": 90,
+        "text": "const [query, setQuery] = useState(\"\");"
+      },
+      {
+        "line": 109,
+        "text": "<PageShell description={t(\"people.description\")} title={t(\"people.title\")}>"
+      },
+      {
+        "line": 144,
+        "text": "{people.isPending ? ("
+      },
+      {
+        "line": 158,
+        "text": "const busy = setRole.isPending || setAccess.isPending;"
+      },
+      {
+        "line": 186,
+        "text": "disabled={terminate.isPending}"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/playground.tsx",
+    "route_id": "/_authed/admin/playground",
+    "sha256": "02895e46a8045ca0fb9521948cab68026de47c5f7d78e40370c0b5ca84aa4439",
+    "line_count": 528,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/sidebar-toggle.tsx",
+        "sha256": "a27f44f3dd90fe6cc642c83973dd874a465925fec6398c0c7eba1295caf5aa66"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/field.tsx",
+        "sha256": "baf94fb9eb20e6910ba5560fa6f3ecde7f34caa86c790ccd27ca32913f646ef9"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/textarea.tsx",
+        "sha256": "bdff907bbb3a6453930a208ed377c9ce671a0d3f27b0c44263749b6c0c14b933"
+      },
+      {
+        "path": "app/src/lib/sandboxed/mutations.ts",
+        "sha256": "56af0a31c4ba4a0c6e4bd61e8173334c83ebc5b8425ded1543a31406fa70edf8"
+      },
+      {
+        "path": "app/src/lib/sandboxed/queries.ts",
+        "sha256": "36f882e9fa21ce71e314c31f9183940cb01097017b626e2536011f3a2532aba5"
+      }
+    ],
+    "signals": [
+      {
+        "line": 5,
+        "text": "import { useId, useState } from \"react\";"
+      },
+      {
+        "line": 142,
+        "text": "const [deleting, setDeleting] = useState<string | null>(null);"
+      },
+      {
+        "line": 145,
+        "text": "const [draft, setDraft] = useState<Draft>(STARTER);"
+      },
+      {
+        "line": 146,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 147,
+        "text": "const [notice, setNotice] = useState<string | null>(null);"
+      },
+      {
+        "line": 173,
+        "text": "saveDraft.isPending || publishDraft.isPending || removeComponent.isPending;"
+      },
+      {
+        "line": 235,
+        "text": "<p className=\"mt-1 max-w-prose text-pretty text-muted-foreground text-sm leading-relaxed\">"
+      },
+      {
+        "line": 279,
+        "text": "<div className=\"grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto px-6 py-4 lg:grid-cols-2\">"
+      },
+      {
+        "line": 281,
+        "text": "<div className=\"grid gap-2 md:grid-cols-2\">"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/plugins/$key.tsx",
+    "route_id": "/_authed/admin/plugins/$key",
+    "sha256": "4eb88347497d2dd733442967d29ee052156f39a7a24d70d0d704c3522352afb7",
+    "line_count": 1559,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/plugins/account-mode-dialog.tsx",
+        "sha256": "d55d3e986ed949edaaad50713300f7ae818e36ebda3f828aedcb3deef8f01ebb"
+      },
+      {
+        "path": "app/src/components/plugins/brokered-account-row.tsx",
+        "sha256": "f39e24839e72264f92d8d0992daabb6cf3fad57df0a6bc098dc1a601d96760b4"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/checkbox.tsx",
+        "sha256": "ef2b727cd9b91582b3e37b073008c31525e7dca350911d0fe0a2a784f5a1b55f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/field.tsx",
+        "sha256": "baf94fb9eb20e6910ba5560fa6f3ecde7f34caa86c790ccd27ca32913f646ef9"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/switch.tsx",
+        "sha256": "44585dfce1d62d41f8c6e24739005afc8d59d34f877e6e0f3600874a008b06d5"
+      },
+      {
+        "path": "app/src/lib/agents/grant-roster.ts",
+        "sha256": "153c5e649bcb760631f3197a719f6bd21ecf1abca84a8476a211aa654b9d4526"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/brokered-provenance.ts",
+        "sha256": "45cf1f4e2839691c3ea1de5880e6c82978226a597b175825e6dfee78f2965c34"
+      },
+      {
+        "path": "app/src/lib/credentials/mutations.ts",
+        "sha256": "ba35fca2c7e44368efcb79a71a993730628e5d83956706c3f4835c59e7db4d4f"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      },
+      {
+        "path": "app/src/lib/plugins/shared-use.ts",
+        "sha256": "a813db0f01eea3464cb361adc7031993e896d5af5a681ef22063b8ed97b902d0"
+      }
+    ],
+    "signals": [
+      {
+        "line": 10,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 271,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 272,
+        "text": "const [dialog, setDialog] = useState<OpenDialog>(null);"
+      },
+      {
+        "line": 274,
+        "text": "const [modeTarget, setModeTarget] = useState<\"personal\" | \"shared\" | null>("
+      },
+      {
+        "line": 277,
+        "text": "const [token, setToken] = useState(\"\");"
+      },
+      {
+        "line": 278,
+        "text": "const [instanceHost, setInstanceHost] = useState(\"\");"
+      },
+      {
+        "line": 279,
+        "text": "const [client, setClient] = useState({ clientId: \"\", clientSecret: \"\" });"
+      },
+      {
+        "line": 281,
+        "text": "const [selectedBots, setSelectedBots] = useState<ReadonlySet<string>>("
+      },
+      {
+        "line": 284,
+        "text": "const [selectedRefs, setSelectedRefs] = useState<ReadonlySet<string>>("
+      },
+      {
+        "line": 294,
+        "text": "const [granting, setGranting] = useState<{"
+      },
+      {
+        "line": 509,
+        "text": "if (plugins.isPending || connections.isPending) {"
+      },
+      {
+        "line": 510,
+        "text": "return <PageShell title={t(\"pluginDetail.plugin\")}>{null}</PageShell>;"
+      },
+      {
+        "line": 514,
+        "text": "* (`plugins.data && !server`). `isPending` goes false on a failed fetch exactly as it does on a"
+      },
+      {
+        "line": 522,
+        "text": "<PageShell"
+      },
+      {
+        "line": 537,
+        "text": "<PageShell"
+      },
+      {
+        "line": 561,
+        "text": "<PageShell"
+      },
+      {
+        "line": 938,
+        "text": "disabled={connectSelf.isPending}"
+      },
+      {
+        "line": 1412,
+        "text": "<div className=\"max-h-64 space-y-5 overflow-y-auto\">"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/plugins/$key_.bots.$agentId.tsx",
+    "route_id": "/_authed/admin/plugins/$key_/bots/$agentId",
+    "sha256": "d2406cc9a509dc76a3a33c77d51be722b33db237b960c5724f9b581d4e3ce9ca",
+    "line_count": 567,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/plugins/shared-approval-fields.tsx",
+        "sha256": "40a450ebd1cbc4dcad0f9d49c954c8b49363964734ea8fbd7e2aa2f7014b205a"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/switch.tsx",
+        "sha256": "44585dfce1d62d41f8c6e24739005afc8d59d34f877e6e0f3600874a008b06d5"
+      },
+      {
+        "path": "app/src/lib/agents/bot-names.ts",
+        "sha256": "d373bcac1cae36de9382682ce4e6b03954d62f0daae208eb57883af797a24d9f"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      },
+      {
+        "path": "app/src/lib/plugins/shared-use.ts",
+        "sha256": "a813db0f01eea3464cb361adc7031993e896d5af5a681ef22063b8ed97b902d0"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 106,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 108,
+        "text": "const [search, setSearch] = useState(\"\");"
+      },
+      {
+        "line": 116,
+        "text": "const [granting, setGranting] = useState<{"
+      },
+      {
+        "line": 141,
+        "text": "const [pendingGrant, setPendingGrant] = useState<{ ref: string } | null>("
+      },
+      {
+        "line": 144,
+        "text": "const [approval, setApproval] = useState<SharedUseApproval>({"
+      },
+      {
+        "line": 149,
+        "text": "const [grantingShared, setGrantingShared] = useState(false);"
+      },
+      {
+        "line": 193,
+        "text": "if (plugins.isPending || agents.isPending || hiddenAgents.isPending) {"
+      },
+      {
+        "line": 194,
+        "text": "return <PageShell title={t(\"botGrants.botTitle\")}>{null}</PageShell>;"
+      },
+      {
+        "line": 200,
+        "text": "* `isPending` goes false on a failed fetch exactly as it does on a successful one, so `!server`"
+      },
+      {
+        "line": 207,
+        "text": "<PageShell"
+      },
+      {
+        "line": 229,
+        "text": "<PageShell"
+      },
+      {
+        "line": 247,
+        "text": "* `isPending` goes false on a failed fetch exactly as it does on a successful one, so `!bot`"
+      },
+      {
+        "line": 257,
+        "text": "<PageShell"
+      },
+      {
+        "line": 377,
+        "text": "(setGrant.isPending && setGrant.variables?.ref === tool.ref)"
+      },
+      {
+        "line": 418,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/plugins/$key_.tools.$tool.tsx",
+    "route_id": "/_authed/admin/plugins/$key_/tools/$tool",
+    "sha256": "c782e0f6a765002e9ff115ac6bf355eafd41a4154752cedc080082ec96d169d5",
+    "line_count": 250,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/switch.tsx",
+        "sha256": "44585dfce1d62d41f8c6e24739005afc8d59d34f877e6e0f3600874a008b06d5"
+      },
+      {
+        "path": "app/src/lib/agents/grant-roster.ts",
+        "sha256": "153c5e649bcb760631f3197a719f6bd21ecf1abca84a8476a211aa654b9d4526"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      }
+    ],
+    "signals": [
+      {
+        "line": 3,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 65,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 84,
+        "text": "if (plugins.isPending) {"
+      },
+      {
+        "line": 85,
+        "text": "return <PageShell title={t(\"toolGrants.toolTitle\")}>{null}</PageShell>;"
+      },
+      {
+        "line": 90,
+        "text": "* `isPending` goes false on a failed fetch too, and the sentence below is a claim about this"
+      },
+      {
+        "line": 96,
+        "text": "<PageShell backButton={back} title={toolName}>"
+      },
+      {
+        "line": 106,
+        "text": "<PageShell"
+      },
+      {
+        "line": 140,
+        "text": "<PageShell"
+      },
+      {
+        "line": 226,
+        "text": "setGrant.isPending &&"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/plugins/composio.tsx",
+    "route_id": "/_authed/admin/plugins/composio",
+    "sha256": "2bf535249944bebc9a6a082628fccc573dc989ecc228a922bedb2d622443d9d9",
+    "line_count": 237,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 68,
+        "text": "const [search, setSearch] = React.useState(\"\");"
+      },
+      {
+        "line": 74,
+        "text": "const [query, setQuery] = React.useState(\"\");"
+      },
+      {
+        "line": 87,
+        "text": "* `error`, `isPending` and `variables` describe ONLY the most recent press. An admin pressing Add"
+      },
+      {
+        "line": 97,
+        "text": "const [enableError, setEnableError] = React.useState<string | null>(null);"
+      },
+      {
+        "line": 101,
+        "text": "* `enable.isPending && enable.variables?.slug === entry.slug` is the observer again: it names the"
+      },
+      {
+        "line": 107,
+        "text": "const [adding, setAdding] = React.useState<ReadonlySet<string>>(new Set());"
+      },
+      {
+        "line": 133,
+        "text": "<PageShell"
+      },
+      {
+        "line": 160,
+        "text": "{apps.isPending ? ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/plugins/index.tsx",
+    "route_id": "/_authed/admin/plugins/",
+    "sha256": "b266aa194c3f6f10580034619a03dfe85c49db15b5f60de35f381b2c4b33b0c0",
+    "line_count": 346,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/layout/row-mark.tsx",
+        "sha256": "92d2345ba56a7c95ba58ce1f0e8d319488324a1e4e5bf6f2724473520316f26e"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      }
+    ],
+    "signals": [
+      {
+        "line": 125,
+        "text": "<PageShell"
+      },
+      {
+        "line": 130,
+        "text": "{plugins.isPending ? ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/plugins/open-connector.tsx",
+    "route_id": "/_authed/admin/plugins/open-connector",
+    "sha256": "046915d40c64b36f3b383af81d044e2b3a1d46a90e98eaa829fe959392dd5e63",
+    "line_count": 250,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 75,
+        "text": "const [search, setSearch] = React.useState(\"\");"
+      },
+      {
+        "line": 81,
+        "text": "const [query, setQuery] = React.useState(\"\");"
+      },
+      {
+        "line": 94,
+        "text": "* `error`, `isPending` and `variables` describe ONLY the most recent press. An admin pressing Add"
+      },
+      {
+        "line": 105,
+        "text": "const [enableError, setEnableError] = React.useState<string | null>(null);"
+      },
+      {
+        "line": 109,
+        "text": "* `enable.isPending && enable.variables?.slug === entry.slug` is the observer again: it names the"
+      },
+      {
+        "line": 115,
+        "text": "const [adding, setAdding] = React.useState<ReadonlySet<string>>(new Set());"
+      },
+      {
+        "line": 141,
+        "text": "<PageShell"
+      },
+      {
+        "line": 168,
+        "text": "{apps.isPending ? ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/route.tsx",
+    "route_id": "/_authed/admin",
+    "sha256": "757adef57e96f04033adae7ae1f3d2c17363091911d3bea47c521083c2ef0433",
+    "line_count": 32,
+    "local_imports": [
+      {
+        "path": "app/src/components/admin/admin-sidebar.tsx",
+        "sha256": "3e990e0ae83a60abf1641a9635f1a71f78b49e48f9d93b65fe8db338e3ede044"
+      },
+      {
+        "path": "app/src/components/layout/sidebar-shell.tsx",
+        "sha256": "45088ccd74039267b6f1e69e8be1a7ed0b1c31dee7c18f9a47220dae6b1507c0"
+      },
+      {
+        "path": "app/src/components/layout/skip-to-content.tsx",
+        "sha256": "fa405468f752f44f41e07b83acce5afb3c782461122feb30db514ab1aa84b89b"
+      }
+    ],
+    "signals": [
+      {
+        "line": 11,
+        "text": "beforeLoad: async ({ context }) => {"
+      },
+      {
+        "line": 16,
+        "text": "throw redirect({ to: \"/\" });"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/admin/skills.tsx",
+    "route_id": "/_authed/admin/skills",
+    "sha256": "b388cecbd6e57f95ccca9307707d8bd58f44f170785c1ed06e87c3ee0dab763a",
+    "line_count": 281,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/field.tsx",
+        "sha256": "baf94fb9eb20e6910ba5560fa6f3ecde7f34caa86c790ccd27ca32913f646ef9"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/textarea.tsx",
+        "sha256": "bdff907bbb3a6453930a208ed377c9ce671a0d3f27b0c44263749b6c0c14b933"
+      },
+      {
+        "path": "app/src/lib/agents/bot-names.ts",
+        "sha256": "d373bcac1cae36de9382682ce4e6b03954d62f0daae208eb57883af797a24d9f"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      }
+    ],
+    "signals": [
+      {
+        "line": 5,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 68,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 69,
+        "text": "const [writing, setWriting] = useState(false);"
+      },
+      {
+        "line": 70,
+        "text": "const [draft, setDraft] = useState(EMPTY_DRAFT);"
+      },
+      {
+        "line": 93,
+        "text": "<PageShell"
+      },
+      {
+        "line": 113,
+        "text": "{/* A read that failed says so; `isPending` goes false on it too, and it is not \"none\". */}"
+      },
+      {
+        "line": 114,
+        "text": "{plugins.isPending ? ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/onboarding.tsx",
+    "route_id": "/_authed/onboarding",
+    "sha256": "94f6f70204bfd5c40dc202d638d53a5a89c89caf920584aa840ec9208485a8fe",
+    "line_count": 284,
+    "local_imports": [
+      {
+        "path": "app/src/components/agents/orb/agent-orb.tsx",
+        "sha256": "8c7bba80d4bc6dbf67cf8d06aba6bd7ad5d808f9388f38da58f1a45c3f89d3bf"
+      },
+      {
+        "path": "app/src/components/channels/composer/index.ts",
+        "sha256": "67bfbe1d370308d93a1584fbc480f3985be21b5bdd800a7d73116b0e58a9176f"
+      },
+      {
+        "path": "app/src/components/computer/desktop-illustration.tsx",
+        "sha256": "649ad1d484ae5e1c2c371c7639cb5c29c81d012386566b46204957d757c5453f"
+      },
+      {
+        "path": "app/src/components/computer/placeholder.tsx",
+        "sha256": "9ac67fdde069f561d89365480433869670c3119ac4a33aabaf7a80a5f509abcb"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/lib/agents/queries.ts",
+        "sha256": "5ebfe1721ed9b80e9e396822829d9cc6f0079053a81e46c2e865f363cf4567aa"
+      },
+      {
+        "path": "app/src/lib/auth/queries.ts",
+        "sha256": "0550177fc6e367b92324452846a738c86d54b018492fd800a484d24b2eee4ebd"
+      },
+      {
+        "path": "app/src/lib/generated/application-config.ts",
+        "sha256": "865289b0e17e52cd8ea5880517b2a6fcafefa88b79b25343afe2fb790f32eac7"
+      },
+      {
+        "path": "app/src/lib/onboarding/mutations.ts",
+        "sha256": "d027b3fc18955872ceac10581870b85f572e3d597959332116a035b3744fcf8f"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 20,
+        "text": "beforeLoad: async ({ context }) => {"
+      },
+      {
+        "line": 26,
+        "text": "throw redirect({ to: \"/\" });"
+      },
+      {
+        "line": 36,
+        "text": "<h1 className=\"text-3xl font-semibold tracking-tight max-w-md text-center\">"
+      },
+      {
+        "line": 56,
+        "text": "<div className=\"max-w-md w-full mx-auto pointer-events-none mt-10\">"
+      },
+      {
+        "line": 72,
+        "text": "<h1 className=\"text-3xl font-semibold tracking-tight max-w-md text-center\">"
+      },
+      {
+        "line": 76,
+        "text": "<div className=\"relative aspect-5/3 w-full max-w-lg rounded-2xl overflow-hidden border border-border\">"
+      },
+      {
+        "line": 127,
+        "text": "<h1 className=\"text-3xl font-semibold tracking-tight max-w-md text-center\">"
+      },
+      {
+        "line": 131,
+        "text": "<div className=\"w-full max-w-lg overflow-hidden grid grid-cols-1 md:grid-cols-2 gap-4\">"
+      },
+      {
+        "line": 183,
+        "text": "const [step, setStep] = React.useState(0);"
+      },
+      {
+        "line": 184,
+        "text": "const [direction, setDirection] = React.useState(1);"
+      },
+      {
+        "line": 186,
+        "text": "const [leaving, setLeaving] = React.useState(false);"
+      },
+      {
+        "line": 203,
+        "text": "className={`min-h-svh overflow-hidden flex flex-col items-center justify-center w-full ${leaving ? \"pointer-events-none\" : \"\"}`}"
+      },
+      {
+        "line": 212,
+        "text": "<div className=\"mx-auto w-full max-w-2xl px-4\">"
+      },
+      {
+        "line": 217,
+        "text": "className=\"overflow-hidden\""
+      },
+      {
+        "line": 244,
+        "text": "className=\"mt-20 flex flex-col items-center justify-center max-w-xs gap-4 w-full mx-auto\""
+      },
+      {
+        "line": 249,
+        "text": "disabled={complete.isPending}"
+      },
+      {
+        "line": 261,
+        "text": "{complete.isPending"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/approvals.tsx",
+    "route_id": "/_authed/settings/approvals",
+    "sha256": "23d9ca7388ad9109865c9aefbc5bda0c218806c7dfdd7d07b3f9bddbfc3c126e",
+    "line_count": 17,
+    "local_imports": [
+      {
+        "path": "app/src/components/approvals/settings.tsx",
+        "sha256": "431f3007e28de8cfd12da2f04dc46594ca008602ee3c9536dcb22bc4b6d11176"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      }
+    ],
+    "signals": [
+      {
+        "line": 13,
+        "text": "<PageShell description={t(\"description\")} title={t(\"title\")}>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/components-gallery/$name.tsx",
+    "route_id": "/_authed/settings/components-gallery/$name",
+    "sha256": "4980f35eb2f0e1601ae53b254e6985345e9026806cc66445e5c3f8b178d0e869",
+    "line_count": 153,
+    "local_imports": [
+      {
+        "path": "app/src/components/component-preview.tsx",
+        "sha256": "3f6159630eb4e1b4fd7d68f0180e15d329334c6de6abe9c8340a56811425add7"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/settings/background.tsx",
+        "sha256": "d73fa754fcf40dfcfb9165bc16ae6495eb7a8d40dd89d1aa33438c9c4e176bf5"
+      },
+      {
+        "path": "app/src/components/ui/router-link.tsx",
+        "sha256": "f95b4cb6f7e42d0ff3ca288cfb0df9496875aba65be4c2ee28432c38ddc735f8"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/components/queries.ts",
+        "sha256": "1792f93d776c89519abede6e402c95006ec02403c47e72a8c9637b05538b0c83"
+      }
+    ],
+    "signals": [
+      {
+        "line": 77,
+        "text": "if (components.isPending) return null;"
+      },
+      {
+        "line": 81,
+        "text": "<PageShell backButton={back} title={t(\"gallery.title\")}>"
+      },
+      {
+        "line": 99,
+        "text": "<PageShell"
+      },
+      {
+        "line": 124,
+        "text": "<PageShell"
+      },
+      {
+        "line": 129,
+        "text": "<div className=\"relative mt-8 aspect-[2/1] overflow-hidden rounded-lg border border-border bg-card\">"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/components-gallery/index.tsx",
+    "route_id": "/_authed/settings/components-gallery/",
+    "sha256": "1a2dcfdc4d808fcb81474396db973e97cdfd36b3d207eb8cdfb993948bb724f9",
+    "line_count": 92,
+    "local_imports": [
+      {
+        "path": "app/src/components/component-preview.tsx",
+        "sha256": "3f6159630eb4e1b4fd7d68f0180e15d329334c6de6abe9c8340a56811425add7"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/settings/background.tsx",
+        "sha256": "d73fa754fcf40dfcfb9165bc16ae6495eb7a8d40dd89d1aa33438c9c4e176bf5"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/lib/components/queries.ts",
+        "sha256": "1792f93d776c89519abede6e402c95006ec02403c47e72a8c9637b05538b0c83"
+      }
+    ],
+    "signals": [
+      {
+        "line": 34,
+        "text": "<PageShell"
+      },
+      {
+        "line": 38,
+        "text": "{components.isPending ? ("
+      },
+      {
+        "line": 54,
+        "text": "<div className=\"mx-auto mt-12 grid w-full max-w-2xl grid-cols-1 gap-4 md:grid-cols-2\">"
+      },
+      {
+        "line": 61,
+        "text": "className=\"flex aspect-square flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50\""
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/connected-accounts/$key.tsx",
+    "route_id": "/_authed/settings/connected-accounts/$key",
+    "sha256": "477cb9b4dd5e28f5f2701b543ca98e13e60f49246021ba3320a851a334a62016",
+    "line_count": 475,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/plugins/brokered-account-row.tsx",
+        "sha256": "f39e24839e72264f92d8d0992daabb6cf3fad57df0a6bc098dc1a601d96760b4"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dropdown-menu.tsx",
+        "sha256": "1e3a945ac6f0747aae2c5fab7ce6fa565192552173e8132641bc5cfc5b5c3a0b"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/brokered-provenance.ts",
+        "sha256": "45cf1f4e2839691c3ea1de5880e6c82978226a597b175825e6dfee78f2965c34"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      },
+      {
+        "path": "app/src/lib/plugins/mutations.ts",
+        "sha256": "55a0556980b16007da9f73765f622dd1496ba05baa637f1d1792f3ed90f42bc8"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useState } from \"react\";"
+      },
+      {
+        "line": 101,
+        "text": "const [notice, setNotice] = useState<string | null>(null);"
+      },
+      {
+        "line": 187,
+        "text": "if (plugins.isPending || connections.isPending) {"
+      },
+      {
+        "line": 189,
+        "text": "<PageShell title={t(\"connectedAccounts.accountTitle\")}>{null}</PageShell>"
+      },
+      {
+        "line": 216,
+        "text": "<PageShell backButton={back} title={server?.title ?? key}>"
+      },
+      {
+        "line": 231,
+        "text": "<PageShell backButton={back} title={key}>"
+      },
+      {
+        "line": 250,
+        "text": "<PageShell backButton={back} title={server.title}>"
+      },
+      {
+        "line": 282,
+        "text": "<PageShell"
+      },
+      {
+        "line": 326,
+        "text": "<PageShell"
+      },
+      {
+        "line": 341,
+        "text": "<PageShell"
+      },
+      {
+        "line": 427,
+        "text": "disabled={!enabled || connect.isPending}"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/connected-accounts/index.tsx",
+    "route_id": "/_authed/settings/connected-accounts/",
+    "sha256": "e63c2c97f7970edb1929a57d20e49570268eb084d66281a3869931736d4ff091",
+    "line_count": 487,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/layout/row-mark.tsx",
+        "sha256": "92d2345ba56a7c95ba58ce1f0e8d319488324a1e4e5bf6f2724473520316f26e"
+      },
+      {
+        "path": "app/src/components/plugins/plugin-logo.tsx",
+        "sha256": "abe94053532e3cd3b35f85ea20fc9a028cceaa7918397c3f280de2bd433b4314"
+      },
+      {
+        "path": "app/src/components/settings/linked-accounts.tsx",
+        "sha256": "ab106da38ae6bc1a9c78db0c138caae013ceff93ebf46b248e98879766517112"
+      },
+      {
+        "path": "app/src/components/settings/linked-notice.ts",
+        "sha256": "fe0d5b3866779cc8fba3f74bac5d661da4d0ca8dedd52a3452d7b86ef2bf5232"
+      },
+      {
+        "path": "app/src/components/settings/github-sources.tsx",
+        "sha256": "10f65ded739457789e9aca5f278e0f8f9c55171cceedf2eb223f1b3170ff6016"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/input-group.tsx",
+        "sha256": "2cce9f2da636bafa34211318bfe7582a20b8f44040f2a5fa7cca7149eca6b677"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/lib/brokered-provenance.ts",
+        "sha256": "45cf1f4e2839691c3ea1de5880e6c82978226a597b175825e6dfee78f2965c34"
+      },
+      {
+        "path": "app/src/lib/identity/queries.ts",
+        "sha256": "66f35ae3c2d042ee4884947941cd2c02e5f0f72d95d807e6d8ad7094957ab7a6"
+      },
+      {
+        "path": "app/src/lib/plugins/queries.ts",
+        "sha256": "8ce495d0569ca7cec8b5b7260f9e6487bbca15a4d768820eafe541a9db893ee7"
+      },
+      {
+        "path": "app/src/lib/team-bots.ts",
+        "sha256": "47f3fcb367efac7b846635de364b062f2bf5ffd11e5c5bbb58eb8d65ca625400"
+      }
+    ],
+    "signals": [
+      {
+        "line": 70,
+        "text": "validateSearch: ("
+      },
+      {
+        "line": 155,
+        "text": "const [arrival] = React.useState(() => linkedNotice(linked));"
+      },
+      {
+        "line": 165,
+        "text": "const [search, setSearch] = React.useState(\"\");"
+      },
+      {
+        "line": 261,
+        "text": "<PageShell"
+      },
+      {
+        "line": 262,
+        "text": "className=\"max-w-4xl @container\""
+      },
+      {
+        "line": 300,
+        "text": "{plugins.isPending || connections.isPending ? ("
+      },
+      {
+        "line": 345,
+        "text": "<div className=\"grid grid-cols-1 gap-x-6 gap-y-2 @min-[36rem]:grid-cols-2\">"
+      },
+      {
+        "line": 408,
+        "text": "{!plugins.isPending &&"
+      },
+      {
+        "line": 409,
+        "text": "!connections.isPending &&"
+      },
+      {
+        "line": 414,
+        "text": "<div className=\"grid grid-cols-1 gap-x-6 gap-y-2 @min-[36rem]:grid-cols-2\">"
+      },
+      {
+        "line": 475,
+        "text": "disabled={clear.isPending}"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/index.tsx",
+    "route_id": "/_authed/settings/",
+    "sha256": "f124f311249a8ce31b48436af94c55330e8136e740ac3c8d77f2560b8997f5f4",
+    "line_count": 148,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/settings/message-list-preference.tsx",
+        "sha256": "608d2a19a2bfea3d0ba52ea651634a0064997a2b7b7fe9427fc6a3d3a9a6bcb2"
+      },
+      {
+        "path": "app/src/components/settings/standing-instructions.tsx",
+        "sha256": "e41e314df3c295e4f696516a0031c313df60906a98a91b86ac2c289b25676314"
+      },
+      {
+        "path": "app/src/components/theme-provider.tsx",
+        "sha256": "84e385d4ecdf5cbb74f798e0d0fc4ab26096c9785d772e5f8349d08cc61ee20a"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/components/ui/switch.tsx",
+        "sha256": "44585dfce1d62d41f8c6e24739005afc8d59d34f877e6e0f3600874a008b06d5"
+      },
+      {
+        "path": "app/src/lib/hotkeys/hotkeys.ts",
+        "sha256": "8e82cadcf2b161bf6357c81b5334bd846a2c2002e16e4a47858fc06ca8a83dac"
+      },
+      {
+        "path": "app/src/lib/i18n/index.ts",
+        "sha256": "7b28f46d51ecd2055a8e2eb08e607c2a40da5db89ed89a02afd27658f493b19b"
+      }
+    ],
+    "signals": [
+      {
+        "line": 89,
+        "text": "<PageShell description={t(\"description\")} title={t(\"title\")}>"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/invoices.tsx",
+    "route_id": "/_authed/settings/invoices",
+    "sha256": "f5c02319368670efd7fd374ce9a1fca7535a4d953f7c1882e08baa9f90748c9c",
+    "line_count": 542,
+    "local_imports": [
+      {
+        "path": "app/src/components/billing/invoice-status.tsx",
+        "sha256": "1ee8d5cc2b5f892ce52814e7ac7c30004e32df9e4d1604f785c1419daefff907"
+      },
+      {
+        "path": "app/src/components/billing/pager.tsx",
+        "sha256": "32e87e309e968dda12f18329db9d7f6cfbc14a469c89955c36880944f1b50a6a"
+      },
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/dialog.tsx",
+        "sha256": "cbaa0dbeef10cbdec7a981f99933c3dc87bfc718077e39d7ada2ed4a1abc965b"
+      },
+      {
+        "path": "app/src/components/ui/empty.tsx",
+        "sha256": "b5d3fa246fb71996c516af93ba697e0c61412591e2b2aec6c0a85f6de36e577a"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/components/ui/skeleton.tsx",
+        "sha256": "f630c2a46c4f26101ea7cd35d1286708a79542b61bf5e9970f025a489b580109"
+      },
+      {
+        "path": "app/src/lib/billing/format.ts",
+        "sha256": "216bce93672569b4543e6586c8efa54932dce3bfba9283482ced5d338f5db96e"
+      },
+      {
+        "path": "app/src/lib/billing/invoices.ts",
+        "sha256": "f03f7ce27d52eda47fe5b48574d7233c7996f6e0da78f2a9a576a6f76d19ef2a"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      }
+    ],
+    "signals": [
+      {
+        "line": 8,
+        "text": "import { useMemo, useState } from \"react\";"
+      },
+      {
+        "line": 58,
+        "text": "validateSearch: ("
+      },
+      {
+        "line": 127,
+        "text": "const [openId, setOpenId] = useState<string | null>(null);"
+      },
+      {
+        "line": 144,
+        "text": "<PageShell"
+      },
+      {
+        "line": 182,
+        "text": "{invoices.isPending ? ("
+      },
+      {
+        "line": 248,
+        "text": "className=\"mt-4 overflow-x-auto rounded-lg border border-border bg-card focus-visible:outline-2 focus-visible:outline-ring\""
+      },
+      {
+        "line": 249,
+        "text": "// biome-ignore lint/a11y/noNoninteractiveTabindex: An overflow region needs keyboard focus to scroll in Safari; the region has an accessible name."
+      },
+      {
+        "line": 386,
+        "text": "<DialogContent className=\"max-w-md\">"
+      },
+      {
+        "line": 394,
+        "text": "{detail.isPending ? ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/memory.tsx",
+    "route_id": "/_authed/settings/memory",
+    "sha256": "73947823f7db9b5143b4d063ce3845cf5ad544cc93ab7cc88a94f74f94877a78",
+    "line_count": 21,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/memory/memories.tsx",
+        "sha256": "151db855e798a6eecff2ea30afd1ed4573e5c8a50d14cc99a1c44b6b563dc783"
+      }
+    ],
+    "signals": [
+      {
+        "line": 13,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/model-access.tsx",
+    "route_id": "/_authed/settings/model-access",
+    "sha256": "9ec7d010db2669ae82ec9efe1a6e52b384d5babc48f342c643b4ca32efeb992d",
+    "line_count": 232,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/settings/model-picker.tsx",
+        "sha256": "32d95798cd851d88615a549e052f333d5b08d2c98e3b219f06bb88ebd812aabe"
+      },
+      {
+        "path": "app/src/components/settings/model-access-authorizations.tsx",
+        "sha256": "1d22d0a08a7b193e351edeec859733da08b7c94ebda760afcca174b11ba015b5"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      },
+      {
+        "path": "app/src/lib/model-access/mutations.ts",
+        "sha256": "b58667c86bf0317d0a542a981b4df4e83ef6f7720d3e39208a1c344ec5fea358"
+      }
+    ],
+    "signals": [
+      {
+        "line": 50,
+        "text": "const [bindingCode, setBindingCode] = React.useState(\"\");"
+      },
+      {
+        "line": 51,
+        "text": "const [preview, setPreview] = React.useState<BindingPreview | null>(null);"
+      },
+      {
+        "line": 52,
+        "text": "const [grant, setGrant] = React.useState<AccessGrant | null>(null);"
+      },
+      {
+        "line": 68,
+        "text": "<PageShell"
+      },
+      {
+        "line": 97,
+        "text": "disabled={confirm.isPending}"
+      },
+      {
+        "line": 99,
+        "text": "{confirm.isPending"
+      },
+      {
+        "line": 106,
+        "text": "disabled={confirm.isPending}"
+      },
+      {
+        "line": 147,
+        "text": "disabled={lookup.isPending || !bindingCode.trim()}"
+      },
+      {
+        "line": 149,
+        "text": "{lookup.isPending"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/notifications.tsx",
+    "route_id": "/_authed/settings/notifications",
+    "sha256": "8400fe55e3df45325850d9022c3f3528393fa9cf3529b1dd489cf94c2a75ee02",
+    "line_count": 24,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/settings/devices.tsx",
+        "sha256": "799f1b5a5e68c91d5e83a15ace76d31f20db9859548f26847df9af0a0d61add6"
+      },
+      {
+        "path": "app/src/components/settings/update-routing.tsx",
+        "sha256": "6e1db87782bab9550e64052d8fcf5533f8db054a38a4799f4d75702d153464b7"
+      }
+    ],
+    "signals": [
+      {
+        "line": 15,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/orders.tsx",
+    "route_id": "/_authed/settings/orders",
+    "sha256": "3af8c69240dea710d25dfddbae27b011742d62368e8ee54041c251fb93c651b5",
+    "line_count": 36,
+    "local_imports": [
+      {
+        "path": "app/src/components/billing/orders-view.tsx",
+        "sha256": "40da520e8c3d23110bb70e6d4974130d77ee4b4aa3910a082e46111e3d49449a"
+      }
+    ],
+    "signals": [
+      {
+        "line": 11,
+        "text": "validateSearch: ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/passwords.tsx",
+    "route_id": "/_authed/settings/passwords",
+    "sha256": "d4d86d2c82b54196bea1519e40a6b6cb1914cae82659a255082fa0c9e38be50f",
+    "line_count": 104,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/i18n/datetime.ts",
+        "sha256": "6f2cc3943391216419df7a2360de49bf23a3beca289a43395101e2ed98d20be5"
+      },
+      {
+        "path": "app/src/lib/passwords/mutations.ts",
+        "sha256": "733d4ccf8777e28346f4baec5289c0217b92b1fd1659b01c25e613e00cf0595c"
+      },
+      {
+        "path": "app/src/lib/passwords/queries.ts",
+        "sha256": "ae5cb2c3218d827cb875ccaa0af517d1ad1f8528606535f4724a8aeb12245437"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 43,
+        "text": "<PageShell"
+      },
+      {
+        "line": 48,
+        "text": "{logins.isPending ? ("
+      },
+      {
+        "line": 85,
+        "text": "disabled={remove.isPending}"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/settings/route.tsx",
+    "route_id": "/_authed/settings",
+    "sha256": "29f357b9c3bf19784bd04f3df7e17bf6eb36fd7368fa4d3a50a0c6c9da4c9e31",
+    "line_count": 23,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/sidebar-shell.tsx",
+        "sha256": "45088ccd74039267b6f1e69e8be1a7ed0b1c31dee7c18f9a47220dae6b1507c0"
+      },
+      {
+        "path": "app/src/components/layout/skip-to-content.tsx",
+        "sha256": "fa405468f752f44f41e07b83acce5afb3c782461122feb30db514ab1aa84b89b"
+      },
+      {
+        "path": "app/src/components/settings/settings-sidebar.tsx",
+        "sha256": "c340542473da9c723894195bd1805fe0b33ebb6ab30a09732a35f8024ef72c78"
+      }
+    ],
+    "signals": []
+  },
+  {
+    "source": "app/src/routes/_authed/settings/usage.tsx",
+    "route_id": "/_authed/settings/usage",
+    "sha256": "6f7b5e87c3c8bb6ac15804bdb63b45a93761f799bd88c1fdee5655b073498a7b",
+    "line_count": 49,
+    "local_imports": [
+      {
+        "path": "app/src/components/billing/consumption-table.tsx",
+        "sha256": "fa8c453e43da82894cb22ac4f57b86e8d76c33b8838fc3217fd98c65e5497cad"
+      },
+      {
+        "path": "app/src/components/billing/usage-credits-view.tsx",
+        "sha256": "2a5c688cf4f4d92787ac8909f5f686c5a7b9084ba5d00768499c5454792195dd"
+      }
+    ],
+    "signals": [
+      {
+        "line": 16,
+        "text": "validateSearch: ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/sign-in/$requestId.tsx",
+    "route_id": "/_authed/sign-in/$requestId",
+    "sha256": "e77d92c317dc509775c26e43824f641333cb0a8b4c3392b2f443387cff0bb60c",
+    "line_count": 35,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/passwords/sign-in-form.tsx",
+        "sha256": "740e7b0c34f5af8d16034d4c6c27b69e5bfe5aba816d4ce32d024bae8d6200f9"
+      },
+      {
+        "path": "app/src/lib/passwords/queries.ts",
+        "sha256": "ae5cb2c3218d827cb875ccaa0af517d1ad1f8528606535f4724a8aeb12245437"
+      }
+    ],
+    "signals": [
+      {
+        "line": 24,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/tenant/channels.tsx",
+    "route_id": "/_authed/tenant/channels",
+    "sha256": "cf5e2042bf065e7f124dba4b74df4f4a1b9ddbb082fcaf6e0931361996e5798e",
+    "line_count": 277,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/item.tsx",
+        "sha256": "706b0c6270b804a2c9b260a204d9fb47fadc7dccaa8b16fd30ceb395a8b77f07"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/lib/auth/queries.ts",
+        "sha256": "0550177fc6e367b92324452846a738c86d54b018492fd800a484d24b2eee4ebd"
+      },
+      {
+        "path": "app/src/lib/enterprise/tenant/queries.ts",
+        "sha256": "2a9be9072702a8bbfcf09b130f908511d14e2523ece40690173b6b344e1af360"
+      },
+      {
+        "path": "app/src/query-client.ts",
+        "sha256": "b62b4501a15ffb39b3de1334bda29b8661ed826a323ae4c9953c264158bb846f"
+      }
+    ],
+    "signals": [
+      {
+        "line": 58,
+        "text": "validateSearch: ("
+      },
+      {
+        "line": 83,
+        "text": "<PageShell"
+      },
+      {
+        "line": 88,
+        "text": "{chooser.isPending ? ("
+      },
+      {
+        "line": 163,
+        "text": "{channels.isPending ? ("
+      },
+      {
+        "line": 244,
+        "text": "{record.isPending ? ("
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed/tenant/selection.tsx",
+    "route_id": "/_authed/tenant/selection",
+    "sha256": "d70d958dc84c21ca829dddbaac1a29eeaca29f592011b0339ca96c60ec7908a8",
+    "line_count": 310,
+    "local_imports": [
+      {
+        "path": "app/src/components/layout/page-shell.tsx",
+        "sha256": "1590d4773918c44bbbb7e8ca3ebe59db439e703dbb355a2550da11516bd48e80"
+      },
+      {
+        "path": "app/src/components/layout/page-skeletons.tsx",
+        "sha256": "860e4b878aac89b52ed6c73bc1d0321ab8d66e14d380ef75d0849adbc7218886"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/select.tsx",
+        "sha256": "f4a9e42b179adda8cac75000060db26420cf2d4ececfa35acc750b5c6b7ad709"
+      },
+      {
+        "path": "app/src/lib/auth/queries.ts",
+        "sha256": "0550177fc6e367b92324452846a738c86d54b018492fd800a484d24b2eee4ebd"
+      },
+      {
+        "path": "app/src/lib/enterprise/tenant/selection.ts",
+        "sha256": "fc7693cc2ca926495cdb8f78bb6aed28420fa11b5d6d4c40e06552bd81755021"
+      }
+    ],
+    "signals": [
+      {
+        "line": 63,
+        "text": "validateSearch: ("
+      },
+      {
+        "line": 90,
+        "text": "user.isError || listing.isError"
+      },
+      {
+        "line": 92,
+        "text": ": userId === undefined || listing.isPending"
+      },
+      {
+        "line": 127,
+        "text": "<PageShell"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/_authed.tsx",
+    "route_id": "/_authed",
+    "sha256": "77ae1bc16c524496ffa84b46a413c9df8f677211d3a2f1365f78db53e8de7ec1",
+    "line_count": 31,
+    "local_imports": [],
+    "signals": [
+      {
+        "line": 7,
+        "text": "beforeLoad: async ({ context, location }) => {"
+      },
+      {
+        "line": 12,
+        "text": "throw redirect({ to: \"/sign\" });"
+      },
+      {
+        "line": 20,
+        "text": "throw redirect({ to: \"/onboarding\" });"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/share.$token.tsx",
+    "route_id": "/share/$token",
+    "sha256": "304465a9c96e1be42ed1c5342af8fc3b483ce0ca781e541d06c679111fe5f0bb",
+    "line_count": 149,
+    "local_imports": [
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/lib/workshop/public-client.ts",
+        "sha256": "00dd941d4d368bf36f7b350511d48c2acbe1e8b7df7793955f756cd7c9c5fab9"
+      }
+    ],
+    "signals": [
+      {
+        "line": 29,
+        "text": "if (share.isPending) {"
+      },
+      {
+        "line": 40,
+        "text": "if (share.isError || !share.data) {"
+      },
+      {
+        "line": 43,
+        "text": "<div className=\"max-w-sm space-y-2 text-center\">"
+      },
+      {
+        "line": 58,
+        "text": "<main className=\"mx-auto min-h-svh max-w-4xl space-y-4 p-6\">"
+      },
+      {
+        "line": 85,
+        "text": "<ul className=\"mt-2 grid gap-2 sm:grid-cols-2\">"
+      },
+      {
+        "line": 123,
+        "text": "disabled={report.isPending || report.isSuccess}"
+      }
+    ]
+  },
+  {
+    "source": "app/src/routes/sign.tsx",
+    "route_id": "/sign",
+    "sha256": "f4b2a3d2bab36af2c462e7e6356c35a1b8867817b5bcf8c12369cf632104437c",
+    "line_count": 266,
+    "local_imports": [
+      {
+        "path": "app/src/components/agents/orb/agent-orb.tsx",
+        "sha256": "8c7bba80d4bc6dbf67cf8d06aba6bd7ad5d808f9388f38da58f1a45c3f89d3bf"
+      },
+      {
+        "path": "app/src/components/auth/provider-logo.tsx",
+        "sha256": "eb867c74d4ea09ef24e4c113be8b4958cbc1ff1b11e7b7343d9411e404454fd3"
+      },
+      {
+        "path": "app/src/components/ui/button.tsx",
+        "sha256": "6a7120cd53d3063278c17923b358633c74d50105b7e7b772fa44963e50eeb84f"
+      },
+      {
+        "path": "app/src/components/ui/input.tsx",
+        "sha256": "146ddf0a65a2a8fdbe44fb286fa5b9ab2854daa29310efd82467e8bdc9621108"
+      },
+      {
+        "path": "app/src/components/ui/separator.tsx",
+        "sha256": "c606e415fd948da35bd267b4c59c4b4763d2adbb3335056b14129393f3db079a"
+      },
+      {
+        "path": "app/src/lib/auth/client.ts",
+        "sha256": "1343f57a332e024dc35fdd98ecbc9e728fbc1e8482415ea3b10041f52c740609"
+      },
+      {
+        "path": "app/src/lib/generated/application-config.ts",
+        "sha256": "865289b0e17e52cd8ea5880517b2a6fcafefa88b79b25343afe2fb790f32eac7"
+      }
+    ],
+    "signals": [
+      {
+        "line": 4,
+        "text": "import { useEffect, useRef, useState } from \"react\";"
+      },
+      {
+        "line": 30,
+        "text": "beforeLoad: async ({ context }) => {"
+      },
+      {
+        "line": 35,
+        "text": "throw redirect({ to: \"/\" });"
+      },
+      {
+        "line": 48,
+        "text": "const [opening, setOpening] = useState<AuthProviderId | \"sso\" | null>(null);"
+      },
+      {
+        "line": 49,
+        "text": "const [error, setError] = useState<string | null>(null);"
+      },
+      {
+        "line": 52,
+        "text": "const [email, setEmail] = useState(\"\");"
+      },
+      {
+        "line": 172,
+        "text": "className=\"flex-1 flex w-full max-w-82 flex-col items-center justify-center p-4\""
+      }
+    ]
+  }
+]

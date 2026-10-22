@@ -35,7 +35,7 @@ export function SelfHostBanner() {
   return (
     <aside
       aria-label={t("selfHostBanner.ariaLabel")}
-      className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-border bg-muted/60 px-4 py-1.5 text-sm"
+      className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-border bg-ob-muted-surface/60 px-4 py-1.5 text-sm"
     >
       {/*
        * Packed from the left rather than pushing Dismiss to the far right: on localhost CopilotKit's

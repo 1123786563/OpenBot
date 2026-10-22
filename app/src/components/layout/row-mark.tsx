@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
  * screens stay consistent with the other eleven that use it.
  *
  * One component rather than a class literal at every call site, because the whole value is that the
- * tiles are identical: copies of `size-9 rounded-lg bg-muted/60` are chances for one of them to
+ * tiles are identical: copies of `size-9 rounded-lg bg-ob-muted-surface/60` are chances for one of them to
  * drift, and a list with one tile a pixel out looks broken rather than varied.
  */
 export function RowMark({
@@ -28,7 +28,7 @@ export function RowMark({
   return (
     <ItemMedia
       className={cn(
-        "size-9 rounded-lg bg-muted/60 text-muted-foreground",
+        "size-9 rounded-lg bg-ob-muted-surface/60 text-muted-foreground",
         className,
       )}
       variant="icon"

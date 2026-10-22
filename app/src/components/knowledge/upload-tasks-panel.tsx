@@ -151,7 +151,7 @@ function ActiveTaskRow({ task }: { task: UploadTaskView }) {
       </div>
       {/* 进度条：无 progress 组件，宽度百分比 div（spec §1 C4 降级方案）。 */}
       <div
-        className="h-1.5 overflow-hidden rounded-full bg-muted"
+        className="h-1.5 overflow-hidden rounded-full bg-ob-muted-surface"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}

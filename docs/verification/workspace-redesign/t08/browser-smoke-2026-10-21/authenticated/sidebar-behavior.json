@@ -1,0 +1,31 @@
+{
+  "start": {
+    "stored": "expanded",
+    "state": "expanded",
+    "gap": 280,
+    "overflow": false
+  },
+  "collapsed": {
+    "stored": "collapsed",
+    "state": "collapsed",
+    "gap": 0,
+    "overflow": false
+  },
+  "persisted": {
+    "stored": "collapsed",
+    "state": "collapsed",
+    "gap": 0,
+    "overflow": false
+  },
+  "mobile": {
+    "stored": "collapsed",
+    "overflow": false
+  },
+  "expanded": {
+    "stored": "expanded",
+    "state": "expanded",
+    "gap": 280,
+    "overflow": false
+  },
+  "pass": true
+}

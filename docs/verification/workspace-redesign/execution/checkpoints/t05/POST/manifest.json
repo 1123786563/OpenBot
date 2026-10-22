@@ -1,0 +1,226 @@
+[
+  {
+    "path": "app/src/components/agents/callback-token-panel.tsx",
+    "sha256": "17bcfa6d8ac9efd4a111e57ba3beca572d31b5bf673f1ff85529f3b40eb494c5",
+    "bytes": 3540,
+    "post_sha256": "17bcfa6d8ac9efd4a111e57ba3beca572d31b5bf673f1ff85529f3b40eb494c5",
+    "post_bytes": 3540,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/approvals/bot-rules.tsx",
+    "sha256": "579bf42419f91b9120e92705468aab1c8ff242f83639401d426fd2b3681b0e4a",
+    "bytes": 3931,
+    "post_sha256": "579bf42419f91b9120e92705468aab1c8ff242f83639401d426fd2b3681b0e4a",
+    "post_bytes": 3931,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/approvals/rules.tsx",
+    "sha256": "9b9f609b87cfb89ec1da5fa214fd237a4d36c6408d5411b565a483413b99902b",
+    "bytes": 10109,
+    "post_sha256": "9b9f609b87cfb89ec1da5fa214fd237a4d36c6408d5411b565a483413b99902b",
+    "post_bytes": 10109,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/bot-profile/bot-subpage.tsx",
+    "sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef",
+    "bytes": 1289,
+    "post_sha256": "852bf1a52b9fee8206418d478c0f6c5d189b4eb319340351a1e9c70701eb10ef",
+    "post_bytes": 1289,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/bot-profile/setup.tsx",
+    "sha256": "9ebfec43eba5b2eef0c39667674109238ab522032a8c65762487cd10ad5f1c49",
+    "bytes": 11022,
+    "post_sha256": "9ebfec43eba5b2eef0c39667674109238ab522032a8c65762487cd10ad5f1c49",
+    "post_bytes": 11022,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/bot-profile/sharing.tsx",
+    "sha256": "d3f16609db68eb0e14c4808ccb7d4a7004851b5ef877eb8d4e7453c40bb62be1",
+    "bytes": 16952,
+    "post_sha256": "d3f16609db68eb0e14c4808ccb7d4a7004851b5ef877eb8d4e7453c40bb62be1",
+    "post_bytes": 16952,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/delivery/reaching-you.tsx",
+    "sha256": "80addccf5eff2911855daae22de30e83795c9284183b252d890e12a55a005553",
+    "bytes": 20422,
+    "post_sha256": "80addccf5eff2911855daae22de30e83795c9284183b252d890e12a55a005553",
+    "post_bytes": 20422,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/memory/sources.tsx",
+    "sha256": "5cb9fa0aae39f325bed591cd6b2be9201aa3da7096f09dacf20183bb6fc4c618",
+    "bytes": 16489,
+    "post_sha256": "5cb9fa0aae39f325bed591cd6b2be9201aa3da7096f09dacf20183bb6fc4c618",
+    "post_bytes": 16489,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/responsibilities/new-responsibility-dialog.tsx",
+    "sha256": "ab05402830d8d7f1359ab573f804a555f50bb04b879622107d65e3c41f83ecb9",
+    "bytes": 12487,
+    "post_sha256": "ab05402830d8d7f1359ab573f804a555f50bb04b879622107d65e3c41f83ecb9",
+    "post_bytes": 12487,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/responsibilities/responsibilities.tsx",
+    "sha256": "1877a6a810e518d3dd6b497556fbcea0ab81b05adbcfccad91df3acd7c425a31",
+    "bytes": 4311,
+    "post_sha256": "1877a6a810e518d3dd6b497556fbcea0ab81b05adbcfccad91df3acd7c425a31",
+    "post_bytes": 4311,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/responsibilities/responsibility-dialog.tsx",
+    "sha256": "97b243877cfa8f831eaa7e336bc3060e4dcd37625ff14f1d46a43e4d8718f79c",
+    "bytes": 18687,
+    "post_sha256": "97b243877cfa8f831eaa7e336bc3060e4dcd37625ff14f1d46a43e4d8718f79c",
+    "post_bytes": 18687,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/responsibilities/triggers.tsx",
+    "sha256": "7213a73ae5c3586fe4a4ef900c791c8bc2ea9b9d08ac5b47a299c640746f9880",
+    "bytes": 29117,
+    "post_sha256": "7213a73ae5c3586fe4a4ef900c791c8bc2ea9b9d08ac5b47a299c640746f9880",
+    "post_bytes": 29117,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/components/routines/routines-list.tsx",
+    "sha256": "9255c5fae82f63be27db8910b39a37751676a023d1a205073c317b60751b83f1",
+    "bytes": 19944,
+    "post_sha256": "9255c5fae82f63be27db8910b39a37751676a023d1a205073c317b60751b83f1",
+    "post_bytes": 19944,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.access.tsx",
+    "sha256": "2aacdde1712399062d928a43253052150b76e1ed98830b0d6dfdcf3387c17d73",
+    "bytes": 676,
+    "post_sha256": "2aacdde1712399062d928a43253052150b76e1ed98830b0d6dfdcf3387c17d73",
+    "post_bytes": 676,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.approvals.tsx",
+    "sha256": "60a1b18790403ab53c8d9b7082df415dbbc0acb9e212b498f6c50e1fa295a981",
+    "bytes": 709,
+    "post_sha256": "60a1b18790403ab53c8d9b7082df415dbbc0acb9e212b498f6c50e1fa295a981",
+    "post_bytes": 709,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.memory.tsx",
+    "sha256": "474b67a758963efdd65b185216b9408447b5362d38cfe0cf998fdafe5d8baf61",
+    "bytes": 1232,
+    "post_sha256": "474b67a758963efdd65b185216b9408447b5362d38cfe0cf998fdafe5d8baf61",
+    "post_bytes": 1232,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.reach.tsx",
+    "sha256": "08d9e4cdfbaafc154c69b1f40882643e8ae54bf7f3c3c8697bd642dad3e7ac77",
+    "bytes": 673,
+    "post_sha256": "08d9e4cdfbaafc154c69b1f40882643e8ae54bf7f3c3c8697bd642dad3e7ac77",
+    "post_bytes": 673,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.responsibilities.tsx",
+    "sha256": "38e5a5fa50badcf085e0c6f43392c547b34537865e8d621b5c7cff2fc9f8e2c9",
+    "bytes": 761,
+    "post_sha256": "38e5a5fa50badcf085e0c6f43392c547b34537865e8d621b5c7cff2fc9f8e2c9",
+    "post_bytes": 761,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.routines.tsx",
+    "sha256": "ca27eb42d6d16e562ec5252cc0012e7fbeb532eef21affa56ffbea80ac3cdf9f",
+    "bytes": 691,
+    "post_sha256": "ca27eb42d6d16e562ec5252cc0012e7fbeb532eef21affa56ffbea80ac3cdf9f",
+    "post_bytes": 691,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.setup.tsx",
+    "sha256": "c8516ecd193d39b0b42eab4ad6421731d7490134c9eab42194d0e6a173e1eafd",
+    "bytes": 668,
+    "post_sha256": "c8516ecd193d39b0b42eab4ad6421731d7490134c9eab42194d0e6a173e1eafd",
+    "post_bytes": 668,
+    "matches_pre": true
+  },
+  {
+    "path": "app/src/routes/_authed/_app/bots.$agentId.sharing.tsx",
+    "sha256": "ae9b4d2cd6d3b5555261dc82b271fd95386cd27a0a9250c2f812bbb36b4f2fb1",
+    "bytes": 684,
+    "post_sha256": "ae9b4d2cd6d3b5555261dc82b271fd95386cd27a0a9250c2f812bbb36b4f2fb1",
+    "post_bytes": 684,
+    "matches_pre": true
+  },
+  {
+    "path": "app/tests/bot-access-skills.test.tsx",
+    "sha256": "b0d68f688212a978f360905f107eca1267d40728e9351fa2151b379067e87a98",
+    "bytes": 5052,
+    "post_sha256": "b0d68f688212a978f360905f107eca1267d40728e9351fa2151b379067e87a98",
+    "post_bytes": 5052,
+    "matches_pre": true
+  },
+  {
+    "path": "app/tests/bot-approval-rules.test.tsx",
+    "sha256": "08e5822348da77f3d9ebb782909d1e60948eed9f9ca4b9d1272931848808d18b",
+    "bytes": 5175,
+    "post_sha256": "08e5822348da77f3d9ebb782909d1e60948eed9f9ca4b9d1272931848808d18b",
+    "post_bytes": 5175,
+    "matches_pre": true
+  },
+  {
+    "path": "app/tests/bot-memory.test.tsx",
+    "sha256": "4bf1d799cbff1d2c498779d598748040df7a962900e9d180bdd23596bf805df5",
+    "bytes": 7546,
+    "post_sha256": "4bf1d799cbff1d2c498779d598748040df7a962900e9d180bdd23596bf805df5",
+    "post_bytes": 7546,
+    "matches_pre": true
+  },
+  {
+    "path": "app/tests/bot-reaching-you.test.tsx",
+    "sha256": "0849a37910fef52cd69179caa9da761649d472fec98d0e1ececf7a67866faa65",
+    "bytes": 8974,
+    "post_sha256": "0849a37910fef52cd69179caa9da761649d472fec98d0e1ececf7a67866faa65",
+    "post_bytes": 8974,
+    "matches_pre": true
+  },
+  {
+    "path": "app/tests/bot-responsibilities.test.tsx",
+    "sha256": "b7cd6d25b025d8d77b03830f9a9a46b2130fe595488c948dc4d86d598ff6d89d",
+    "bytes": 5141,
+    "post_sha256": "b7cd6d25b025d8d77b03830f9a9a46b2130fe595488c948dc4d86d598ff6d89d",
+    "post_bytes": 5141,
+    "matches_pre": true
+  },
+  {
+    "path": "app/tests/bot-setup.test.tsx",
+    "sha256": "ffd8ff923883c499d1e918d43167f08458318ccad6b391ec4d10e26b5ee01aab",
+    "bytes": 7105,
+    "post_sha256": "ffd8ff923883c499d1e918d43167f08458318ccad6b391ec4d10e26b5ee01aab",
+    "post_bytes": 7105,
+    "matches_pre": true
+  },
+  {
+    "path": "app/tests/bot-sharing.test.tsx",
+    "sha256": "5f9b9c309e8fe295d430874e912de4613b6581e2e8df1e05287669cdaa4eaf3e",
+    "bytes": 8210,
+    "post_sha256": "5f9b9c309e8fe295d430874e912de4613b6581e2e8df1e05287669cdaa4eaf3e",
+    "post_bytes": 8210,
+    "matches_pre": true
+  }
+]

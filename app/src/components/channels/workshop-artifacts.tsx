@@ -104,7 +104,7 @@ function ArtifactCard({
           <a
             href={workshopArtifactDownloadUrl(channelId, artifact.id)}
             download={artifact.name}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-ob-hover"
           >
             <IconDownload className="size-3.5" />
             {t("artifacts.download")}
@@ -124,7 +124,7 @@ function Preview({ artifact }: { artifact: WorkshopArtifact }) {
       // The indexer stores head rows in the artifact's previewUrl field for csv kinds
       // (server contract); absent means "too large to preview", not "broken".
       return artifact.previewUrl ? (
-        <pre className="mt-2 overflow-x-auto rounded bg-muted/50 p-2 text-xs whitespace-pre">
+        <pre className="mt-2 overflow-x-auto rounded bg-ob-muted-surface/50 p-2 text-xs whitespace-pre">
           {artifact.previewUrl}
         </pre>
       ) : (

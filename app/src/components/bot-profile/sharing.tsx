@@ -7,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -172,7 +172,9 @@ export function SharingSections({ agent }: { agent: AgentProfile }) {
       {agent.mine && (published || publishable) ? (
         <PageSection
           description={t("sharing.publishNote")}
-          title={published ? t("sharing.publishedToTitle") : t("sharing.publish")}
+          title={
+            published ? t("sharing.publishedToTitle") : t("sharing.publish")
+          }
         >
           {/* More than one value — an audience, then people and groups — so a summary row and a
               dialog rather than a form on the page. */}
@@ -224,8 +226,7 @@ function audienceSummary(
   t: TFunction<"agents">,
 ): string {
   if (!current) return t("sharing.notPublished");
-  if (current.audience === "team")
-    return t("teamBots.publishForm.wholeTeam");
+  if (current.audience === "team") return t("teamBots.publishForm.wholeTeam");
   const parts = [
     countLabel(
       current.people?.length ?? 0,
@@ -260,6 +261,7 @@ function PublishDialog({
 }) {
   const { t } = useTranslation("agents");
   const formId = useId();
+  const audienceTrigger = useRef<HTMLButtonElement>(null);
   const audiences = {
     team: t("teamBots.publishForm.wholeTeam"),
     people: t("teamBots.publishForm.specificPeople"),
@@ -293,7 +295,14 @@ function PublishDialog({
                   emails: audience === "people" ? list(emails) : [],
                   groups: audience === "people" ? list(groups) : [],
                 },
-                { onSuccess: onClose },
+                {
+                  onError: () => {
+                    requestAnimationFrame(() =>
+                      audienceTrigger.current?.focus(),
+                    );
+                  },
+                  onSuccess: onClose,
+                },
               );
             }}
           >
@@ -311,7 +320,11 @@ function PublishDialog({
                   }}
                   value={audience}
                 >
-                  <SelectTrigger className="w-full" id={`${formId}-audience`}>
+                  <SelectTrigger
+                    className="w-full"
+                    id={`${formId}-audience`}
+                    ref={audienceTrigger}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

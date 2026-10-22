@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { Badge, GalleryFrame } from "./frame";
 
@@ -101,9 +102,9 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
 
       {decided ? null : (
         <div className="mt-4 space-y-2">
-          <input
+          <Input
             aria-label={t("gallery.decisions.reasonOptional")}
-            className="w-full rounded-md border border-border bg-transparent px-3 py-1.5 text-sm"
+            className="w-full"
             disabled={Boolean(sending)}
             onChange={(event) => setNote(event.target.value)}
             placeholder={t("gallery.decisions.reasonOptional")}

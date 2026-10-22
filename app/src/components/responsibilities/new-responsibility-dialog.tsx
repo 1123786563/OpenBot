@@ -249,8 +249,9 @@ export function NewResponsibilityDialog({
                   <Select
                     items={sourceItems}
                     onValueChange={(value) => {
-                      if (value && value in SOURCE_KEYS)
-                        setSource(value as Source);
+                      // null is the Select's "nothing chosen" (dismiss); the draft source stays.
+                      if (value === null || !(value in SOURCE_KEYS)) return;
+                      setSource(value);
                     }}
                     value={source}
                   >

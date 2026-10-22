@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-21",
+  "route": "/bots/agent_023d30c3-2e68-4bd4-a4ab-e2bba67c9fcc/setup",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "syntheticPatchStatus": 503,
+  "afterFailure": {
+    "activeTag": "BODY",
+    "activeInsideDialog": false,
+    "title": "A legal controlled error title",
+    "alert": "controlled setup failure",
+    "overflow": false
+  },
+  "afterEscapeWithoutRefocus": 1,
+  "afterEscapeWithManualInputFocus": 0,
+  "focusReturned": true
+}
