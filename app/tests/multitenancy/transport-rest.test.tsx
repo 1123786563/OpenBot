@@ -161,10 +161,10 @@ describe("MT081 AC2 — unreviewed and non-same-origin paths attach nothing", ()
 
   test("a same-origin business path outside the reviewed inventory attaches nothing", async () => {
     serve();
-    // `/api/agents` earned its review at MT084 (the scoped Bot detail/config surface), so the
-    // example of an unreviewed path is the channels REST surface — still a same-origin business
-    // path the inventory has not admitted (MT125 lays the legacy assembly).
-    await client("/api/channels", SELECTORS);
+    // `/api/agents` earned its review at MT084, `/api/craft` at MT091 (the scoped creation
+    // surfaces), so the example of an unreviewed path is the proactive surface — still a
+    // same-origin business path the inventory has not admitted (MT125 lays the legacy assembly).
+    await client("/api/proactive/suggestions", SELECTORS);
     expect(headerOf(asked[0]?.init, "x-openbot-tenant")).toBeUndefined();
     expect(headerOf(asked[0]?.init, "x-openbot-workspace")).toBeUndefined();
   });
@@ -209,7 +209,9 @@ describe("MT081 AC3 — uploads ride the same attach logic, not their own", () =
     serve();
     const form = new FormData();
     form.append("file", new File(["bytes"], "a.txt", { type: "text/plain" }));
-    await clientUpload("/api/channels/ch-1/attachments", form, SELECTORS);
+    // `/api/proactive` is the unreviewed example now — `/api/craft` earned its review at
+    // MT091 (the scoped creation surfaces), uploads included.
+    await clientUpload("/api/proactive/attachments", form, SELECTORS);
 
     expect(headerOf(asked[0]?.init, "x-openbot-tenant")).toBeUndefined();
     expect(headerOf(asked[0]?.init, "x-openbot-workspace")).toBeUndefined();
@@ -259,34 +261,40 @@ describe("MT081 AC3 — uploads ride the same attach logic, not their own", () =
     });
     const file = new File(["bytes"], "notes.txt", { type: "text/plain" });
 
-    // craft: POST /api/craft/sessions/:id/upload
-    await craftUploadFile("session-1", file);
+    // craft: POST /api/craft/sessions/:id/upload — a reviewed path since MT091 (the scoped
+    // creation surfaces), so the pair rides it the moment the caller holds one.
+    await craftUploadFile("session-1", file, SELECTORS);
     expect(String(asked[0]?.input)).toBe(
       "/api/craft/sessions/session-1/upload",
     );
     expect(asked[0]?.init?.credentials).toBe("include");
     expect(asked[0]?.init?.body).toBeInstanceOf(FormData);
-    // Its path is not yet in the reviewed inventory (MT125 lays the legacy
-    // assembly), so today it sends no pair — decided by the same inventory,
-    // not by a copy of the rule.
-    expect(headerOf(asked[0]?.init, "x-openbot-tenant")).toBeUndefined();
+    expect(headerOf(asked[0]?.init, "x-openbot-tenant")).toBe("acme");
+    expect(headerOf(asked[0]?.init, "x-openbot-workspace")).toBe(
+      "acme-finance",
+    );
 
-    // workshop: POST /api/workshop/channels/:id/files/upload
-    await uploadWorkshopFiles("ch-1", [file]);
-    expect(String(asked[1]?.input)).toBe("/api/workshop/ch-1/files/upload");
-    expect(asked[1]?.init?.credentials).toBe("include");
-    expect(asked[1]?.init?.body).toBeInstanceOf(FormData);
+    // And without a scope in force the same inventory sends nothing — the rule is the
+    // caller's selection, not the path's reputation.
+    await craftUploadFile("session-1", file);
     expect(headerOf(asked[1]?.init, "x-openbot-tenant")).toBeUndefined();
+
+    // workshop: POST /api/workshop/channels/:id/files/upload — reviewed with MT091 too.
+    await uploadWorkshopFiles("ch-1", [file], SELECTORS);
+    expect(String(asked[2]?.input)).toBe("/api/workshop/ch-1/files/upload");
+    expect(asked[2]?.init?.credentials).toBe("include");
+    expect(asked[2]?.init?.body).toBeInstanceOf(FormData);
+    expect(headerOf(asked[2]?.init, "x-openbot-tenant")).toBe("acme");
 
     // channels composer: POST /api/channels/:id/attachments
     const upload = uploadToChannel("ch-1", "group-1");
     await upload(file);
-    expect(String(asked[2]?.input)).toBe("/api/channels/ch-1/attachments");
-    expect(asked[2]?.init?.credentials).toBe("include");
-    expect(asked[2]?.init?.body).toBeInstanceOf(FormData);
-    expect(headerOf(asked[2]?.init, "x-openbot-tenant")).toBeUndefined();
+    expect(String(asked[3]?.input)).toBe("/api/channels/ch-1/attachments");
+    expect(asked[3]?.init?.credentials).toBe("include");
+    expect(asked[3]?.init?.body).toBeInstanceOf(FormData);
+    expect(headerOf(asked[3]?.init, "x-openbot-tenant")).toBeUndefined();
     // The composer's own field rides the multipart body, not the headers.
-    const sent = asked[2]?.init?.body as FormData;
+    const sent = asked[3]?.init?.body as FormData;
     expect(sent.get("uploadGroup")).toBe("group-1");
   });
 });

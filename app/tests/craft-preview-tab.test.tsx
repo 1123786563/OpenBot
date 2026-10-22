@@ -21,6 +21,8 @@ import {
 } from "@/components/craft/output-panel/preview-tab";
 import i18n from "@/lib/i18n";
 import { craftKeys } from "@/lib/craft/queries";
+import { authKeys } from "@/lib/auth/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
 import { settleReactWork } from "./settle-react-work";
 
 const herePath = fileURLToPath(import.meta.url);
@@ -83,11 +85,22 @@ const LEGACY_PATH = "/api/craft/sessions/cs-1/webapp";
 /** The single-use pass the exchange answers with (D4/D9). */
 const TICKET = "single-use-ticket-32-bytes";
 
+/*
+ * MT091: the scoped reads file under the scope's own prefix — with no stored selection that is
+ * the personal context's subtree, so every preset below moves there too.
+ */
+const scopedWebapp = (id: string) => [
+  ...scopedCachePrefix("user-1", null),
+  ...craftKeys.webapp(id),
+];
+
 /** Answer `/webapp-info` and `POST /preview-ticket`, recording the exchanges. */
 function serving(info: Info, options: { ticketFails?: boolean } = {}) {
   const posts: string[] = [];
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // The scoped webapp read (MT091) waits for the scope source before it asks anything.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     if (url.includes("/webapp-info")) {
       return Response.json({
         previewOrigin: info.webapp_url,
@@ -121,6 +134,17 @@ function serving(info: Info, options: { ticketFails?: boolean } = {}) {
 function draw(client?: QueryClient): RenderResult {
   const queryClient =
     client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  /*
+   * MT091: the scoped webapp read files under the scope the auth read resolves. Preset the
+   * scope source so the pane mounts with its scope already open (the Node runner does not
+   * paint the store update an async fetch would land — the same preset discipline the mt15
+   * suites adopted).
+   */
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: "user-1",
+    email: "user-1@example.test",
+    role: "user",
+  });
   return render(
     <QueryClientProvider client={queryClient}>
       <PreviewTab sessionId="cs-1" />
@@ -1171,6 +1195,8 @@ test("concurrent effect re-entries for the same address exchange ONCE — and th
   const posts: string[] = [];
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // The scoped webapp read (MT091) waits for the scope source before it asks anything.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     if (url.includes("/webapp-info")) {
       return Response.json({
         has_webapp: true,
@@ -1195,7 +1221,7 @@ test("concurrent effect re-entries for the same address exchange ONCE — and th
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  client.setQueryData(craftKeys.webapp("cs-1"), {
+  client.setQueryData(scopedWebapp("cs-1"), {
     has_webapp: true,
     webapp_url: PREVIEW_ORIGIN,
     previewOrigin: PREVIEW_ORIGIN,
@@ -1244,6 +1270,8 @@ test("a session switch never sets the spent entry's src on the new session's fra
   const posts: string[] = [];
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    // The scoped webapp read (MT091) waits for the scope source before it asks anything.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     if (url.includes("/webapp-info")) {
       return Response.json({
         has_webapp: true,
@@ -1291,7 +1319,7 @@ test("a session switch never sets the spent entry's src on the new session's fra
 
     // The second session's answer is ALREADY cached, byte-identical: the
     // only thing the rerender changes is the session (and so the frame key).
-    client.setQueryData(craftKeys.webapp("cs-2"), {
+    client.setQueryData(scopedWebapp("cs-2"), {
       has_webapp: true,
       webapp_url: PREVIEW_ORIGIN,
       previewOrigin: PREVIEW_ORIGIN,
@@ -1365,7 +1393,7 @@ describe("a replaced frame element re-enters with a fresh pass (fix-ocr5 M-2)", 
 
     // The second session's answer is ALREADY in the cache, byte-identical:
     // the rerender changes no query state — only the frame's node identity.
-    client.setQueryData(craftKeys.webapp("cs-2"), {
+    client.setQueryData(scopedWebapp("cs-2"), {
       has_webapp: true,
       webapp_url: PREVIEW_ORIGIN,
       previewOrigin: PREVIEW_ORIGIN,
@@ -1601,7 +1629,7 @@ describe("a dead entry recovers through the frame's error event (fix-ocr10 #2)",
     )) as HTMLIFrameElement;
     expect(first.getAttribute("src")).toContain("1-ticket");
 
-    client.setQueryData(craftKeys.webapp("cs-2"), {
+    client.setQueryData(scopedWebapp("cs-2"), {
       has_webapp: true,
       webapp_url: PREVIEW_ORIGIN,
       previewOrigin: PREVIEW_ORIGIN,
@@ -2423,7 +2451,7 @@ describe("fix-ocr15: the load handler and the frame wiring", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    client.setQueryData(craftKeys.webapp("cs-1"), {
+    client.setQueryData(scopedWebapp("cs-1"), {
       has_webapp: true,
       webapp_url: PREVIEW_ORIGIN,
       previewOrigin: PREVIEW_ORIGIN,
@@ -2985,7 +3013,7 @@ describe("fix-ocr26 #3: the cancelled exchange's catch holds the guard too", () 
     // The session switch cancels cs-1's guard (the effect cleanup) and buys
     // cs-2 its own pass — the cached answer is byte-identical, so only the
     // session (and the frame key) changes.
-    client.setQueryData(craftKeys.webapp("cs-2"), infoBody);
+    client.setQueryData(scopedWebapp("cs-2"), infoBody);
     view.rerender(
       <QueryClientProvider client={client}>
         <PreviewTab sessionId="cs-2" />

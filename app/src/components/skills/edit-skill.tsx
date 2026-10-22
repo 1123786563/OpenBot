@@ -4,6 +4,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { SkillAgents } from "@/components/skills/skill-agents";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { saveSkillMutationOptions } from "@/lib/plugins/mutations";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { pluginsPageQueryOptions } from "@/lib/plugins/queries";
 import type { SkillFormValues } from "@/lib/skills/form";
 
@@ -28,6 +29,8 @@ export function EditSkill({
 }) {
   const { t } = useTranslation("skills");
   const queryClient = useQueryClient();
+  // The save rides the scope this screen holds (MT088 AC3): the write carries the selection pair.
+  const scope = useScopedCache();
   const navigate = useNavigate();
   const { data, isPending } = useQuery(pluginsPageQueryOptions());
 
@@ -38,7 +41,7 @@ export function EditSkill({
    */
   const skill = data?.skills.find((candidate) => candidate.slug === slug);
 
-  const saveSkill = useMutation(saveSkillMutationOptions(queryClient));
+  const saveSkill = useMutation(saveSkillMutationOptions(queryClient, scope));
 
   /* Nothing while it loads. "Missing" and "not yet arrived" must not read the same. */
   if (isPending) return null;

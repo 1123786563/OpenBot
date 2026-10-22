@@ -59,6 +59,8 @@ const FULL_AMOUNTS: Readonly<Record<PriceDimension, string>> = {
   surcharge_web_search: "0.001",
   /** The per-page price an OCR ref carries on the wire's flat field. */
   surcharge_per_request: "0.01",
+  surcharge_tool_call: "0.002",
+  surcharge_a2a_call: "0.003",
 };
 
 /** Build 03.2-shaped dims: every dimension of the vocabulary, known or unknown. */

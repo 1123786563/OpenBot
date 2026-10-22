@@ -1,5 +1,5 @@
 import { IconRefresh } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -26,6 +26,12 @@ import {
   invoicesQueryOptions,
 } from "@/lib/billing/invoices";
 import { entitlementsQueryOptions } from "@/lib/billing/queries";
+import {
+  scopedCreditsSummaryQueryOptions,
+  scopedEntitlementsQueryOptions,
+  scopedInvoicesQueryOptions,
+} from "@/lib/billing/scoped";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { orderIdOfPlanGrant } from "@/lib/billing/trace";
 import { useDateTime } from "@/lib/i18n/datetime";
 import { CreditGrantRow } from "./credit-grant-list";
@@ -66,14 +72,28 @@ const SOURCE_LABELS = {
 export function OrdersGrantsView({
   page,
   onPage,
+  scope,
 }: {
   page: number;
   onPage: (next: number) => void;
+  /**
+   * The scope the page holds (MT097 / Issue #140, AC4): every money read files under the
+   * scope's own prefix and carries the selection pair, so a switch drops the old scope's
+   * amounts wholesale. A pending scope reads nothing — the seam's own refusal.
+   */
+  scope: ScopedCache;
 }) {
   const { t } = useTranslation("settings");
-  const invoices = useQuery(invoicesQueryOptions({}, page));
-  const summary = useQuery(creditsSummaryQueryOptions);
-  const entitlements = useQuery(entitlementsQueryOptions);
+  const queryClient = useQueryClient();
+  const invoices = useQuery(
+    scopedInvoicesQueryOptions(queryClient, scope, {}, page),
+  );
+  const summary = useQuery(
+    scopedCreditsSummaryQueryOptions(queryClient, scope),
+  );
+  const entitlements = useQuery(
+    scopedEntitlementsQueryOptions(queryClient, scope),
+  );
   const catalog = useQuery(catalogQueryOptions);
 
   // A deployment with no billing provider has no order or grant surface at all, which is a fact

@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { ComponentPreview } from "@/components/component-preview";
+import { AdminComponentPreview } from "@/components/component-preview";
 import { PageShell } from "@/components/layout/page-shell";
 import { PageRowsSkeleton } from "@/components/layout/page-skeletons";
 import { SettingsItemBackground } from "@/components/settings/background";
@@ -11,73 +11,97 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { componentListQueryOptions } from "@/lib/components/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { scopedComponentListQueryOptions } from "@/lib/components/queries";
+import { cn } from "@/lib/utils";
 
 /**
- * What a Bot can draw, for the person it draws for.
- *
- * The same gallery an administrator governs, with none of the governing. Published components only:
- * an unpublished one is not something any Bot can put on screen, so listing it here would describe a
- * capability nobody has. The description shown is the published one — what the model is actually
- * told — rather than a draft an administrator may be part-way through rewording.
+ * The gallery of compiled components. Governance for any one of them is its own page, because a
+ * component carries per-Bot grants, per-function grants and an editable description — more than a
+ * tile can hold.
  */
 export const Route = createFileRoute("/_authed/settings/components-gallery/")({
   component: RouteComponent,
 });
 
 function RouteComponent() {
-  const { t } = useTranslation("settings");
-  const components = useQuery(componentListQueryOptions());
-  const published = components.data?.filter((component) => component.published);
+  const { t } = useTranslation("admin");
+  // The roster is the scope's own answer (MT094 / Issue #137, AC2): the pair rides the read.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const components = useQuery(
+    scopedComponentListQueryOptions(queryClient, scope),
+  );
 
   return (
     <PageShell
-      description={t("gallery.description")}
-      title={t("gallery.title")}
+      description={t("components.gallery.description")}
+      title={t("components.gallery.title")}
     >
+      {/*
+       * Pending, error, empty, rows — in that order. Pending draws nothing rather than a
+       * placeholder, and it has to come first: the empty sentence would otherwise stand there
+       * asserting there are no components for as long as the fetch takes.
+       */}
       {components.isPending ? (
         <PageRowsSkeleton />
       ) : components.error ? (
         <p className="mt-12 text-destructive text-sm" role="alert">
-          {t("gallery.loadError")}
+          {t("components.loadError")}
         </p>
-      ) : published?.length === 0 ? (
+      ) : components.data?.length === 0 ? (
         <Empty className="mt-12 min-h-[30dvh] border border-dashed">
           <EmptyHeader>
-            <EmptyTitle>{t("gallery.emptyTitle")}</EmptyTitle>
+            <EmptyTitle>{t("components.gallery.emptyTitle")}</EmptyTitle>
             <EmptyDescription className="text-pretty">
-              {t("gallery.emptyDescription")}
+              {t("components.gallery.emptyDescription")}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
         <div className="mx-auto mt-12 grid w-full max-w-2xl grid-cols-1 gap-4 md:grid-cols-2">
-          {published?.map((component) => (
+          {components.data?.map((component) => (
             /*
-             * No status dot, unlike the Admin tiles. Everything listed here is published by
-             * definition, so a dot saying so would be the same mark on every tile.
+             * A real link rather than a button, so a component can be opened in a new tab the way
+             * anything else addressable can. Its name comes from the title and description below:
+             * the preview is `aria-hidden`, so nothing inside it reaches the accessible name.
              */
             <Link
               className="flex aspect-square flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              data-testid={`gallery-${component.name}`}
+              data-testid={`component-${component.name}`}
               key={component.name}
               params={{ name: component.name }}
-              to="/settings/components-gallery/$name"
+              to="/admin/components/$name"
             >
               <div className="min-h-28 p-4">
-                <h4 className="line-clamp-1 font-medium text-sm">
-                  {component.title}
-                </h4>
+                <div className="flex flex-row items-center gap-2">
+                  <div
+                    className={cn("inline-block size-1.5 rounded-full", {
+                      "bg-muted-foreground": !component.published,
+                      "bg-success": component.published,
+                    })}
+                  />
+                  <h4 className="line-clamp-1 font-medium text-sm">
+                    {component.title}
+                  </h4>
+                </div>
                 <p className="mt-2 line-clamp-2 text-muted-foreground text-xs">
-                  {component.publishedDescription}
+                  {component.draftDescription}
                 </p>
               </div>
               <div className="relative flex-1">
+                {/*
+                 * The artwork is sized explicitly. Left to itself it carries a viewBox and no width
+                 * or height, which resolves to the full width and a height derived from its 3:2
+                 * ratio — taller than this box, and `overflow-hidden` clips at the border rather
+                 * than the padding, so it escaped the inset and met the tile's corners square.
+                 * `slice` crops it to whatever shape it is given instead.
+                 */}
                 <div className="absolute top-0 left-0 h-full w-full p-3">
                   <SettingsItemBackground className="h-full w-full rounded-md" />
                 </div>
                 <div className="absolute top-0 left-0 z-10 h-full w-full p-3">
-                  <ComponentPreview
+                  <AdminComponentPreview
                     kind={component.kind}
                     name={component.name}
                   />

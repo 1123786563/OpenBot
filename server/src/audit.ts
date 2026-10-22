@@ -884,6 +884,33 @@ export const auditEventTypes = [
    */
   "billing.account_resolution.denied",
   /**
+   * A tool call was refused at the tool admission door for a billing reason (Bifrost
+   * 20.4, #344): the basis left a surcharge dimension the call bills on unpriced
+   * (unknown is never a zero cost), or the reserve door refused the hold (insufficient
+   * credits above all). The payload names the entrance (the closed registry id), the
+   * tool pattern, the grant and the refusal code — the attempt is the fact the trail
+   * keeps; no hold, no ledger row, and the tool execution count is zero.
+   */
+  "billing.tool_bypass_refused",
+  /**
+   * A personal-key caller tried to reach company scope through the tool admission door
+   * (Bifrost 20.4, #344): a company-scope selector was present in the request (presence
+   * is the attempt), or the named tool is company-scoped and the grant is a personal
+   * model-access grant. The payload names the entrance, the tool pattern, the grant and
+   * the refusal code — never another tenant's data; the overreach is the fact.
+   */
+  "billing.tool_overreach_refused",
+  /**
+   * An async job settled for MORE than the full-cap reservation held (Bifrost 17.6,
+   * #330): the provider's reliable terminal usage priced, at the locked basis, above the
+   * ceiling the submit certified. The ledger records the cost in full but only the held
+   * capacity is applied — this row is the ANOMALY that fact is: never silently truncated
+   * (the delta is not dropped) and never silently appended (no charge beyond the hold
+   * lands on the user). The payload names the job, the reservation, the cap, the exact
+   * terminal cost and the overage — the record 08.x's disposal consumes.
+   */
+  "billing.async_settle_over_cap",
+  /**
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
    * (onyx parity — no approval row), so this audit row is the one durable record that a

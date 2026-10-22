@@ -1,5 +1,5 @@
 import { IconEyeCheck, IconTerminal2, IconUserCog } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -18,13 +18,14 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
-  approvalInboxOptions,
+  ApprovalsUnavailableError,
   createTeamApprovalRuleMutationOptions,
   revokeTeamApprovalRuleMutationOptions,
+  scopedApprovalInboxOptions,
   teamApprovalSettingsMutationOptions,
   updateTeamApprovalRuleMutationOptions,
 } from "@/lib/approvals";
-import { queryClient } from "@/query-client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { hostLabels, LabelSelect, RuleForm, RuleRow } from "./rules";
 import { SharedUseRequests } from "./shared-use-requests";
 
@@ -35,16 +36,22 @@ import { SharedUseRequests } from "./shared-use-requests";
  */
 export function TeamApprovalSettings() {
   const { t } = useTranslation("approvals");
-  const inbox = useQuery(approvalInboxOptions());
-  const team = useMutation(teamApprovalSettingsMutationOptions(queryClient));
+  // The team rules read and every team write ride the scope this screen holds (MT086); a scope
+  // that refuses says so in one line instead of drawing an unlocked-looking list over a refusal.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const inbox = useQuery(scopedApprovalInboxOptions(queryClient, scope));
+  const team = useMutation(
+    teamApprovalSettingsMutationOptions(queryClient, scope),
+  );
   const addTeamRule = useMutation(
-    createTeamApprovalRuleMutationOptions(queryClient),
+    createTeamApprovalRuleMutationOptions(queryClient, scope),
   );
   const changeTeamRule = useMutation(
-    updateTeamApprovalRuleMutationOptions(queryClient),
+    updateTeamApprovalRuleMutationOptions(queryClient, scope),
   );
   const revokeTeam = useMutation(
-    revokeTeamApprovalRuleMutationOptions(queryClient),
+    revokeTeamApprovalRuleMutationOptions(queryClient, scope),
   );
   const error =
     inbox.error ?? team.error ?? changeTeamRule.error ?? revokeTeam.error;
@@ -52,6 +59,16 @@ export function TeamApprovalSettings() {
   const settings = inbox.data?.team;
   const teamRules = inbox.data?.teamRules ?? [];
 
+  if (inbox.error instanceof ApprovalsUnavailableError) {
+    return (
+      <p
+        className="mt-6 text-muted-foreground text-sm"
+        data-testid="approvals-unavailable"
+      >
+        {t("unavailable")}
+      </p>
+    );
+  }
   return (
     <>
       {error ? (

@@ -5,7 +5,7 @@ import {
   IconPlug,
   IconSearch,
 } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -40,11 +40,12 @@ import {
 import { isBrokeredProvenance } from "@/lib/brokered-provenance";
 import { linkedAccountsQueryOptions } from "@/lib/identity/queries";
 import {
-  connectionsQueryOptions,
   type PluginServer,
   personalConnections,
-  pluginsPageQueryOptions,
+  scopedConnectionsQueryOptions,
+  scopedPluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { clearTeamBotConsentsMutationOptions } from "@/lib/team-bots";
 
 /**
@@ -163,8 +164,15 @@ function RouteComponent() {
     }
   }, [linked, navigate]);
   const [search, setSearch] = React.useState("");
-  const plugins = useQuery(pluginsPageQueryOptions());
-  const connections = useQuery(connectionsQueryOptions());
+  // Both reads ride the scope this screen holds (MT088): keyed under the scope's own prefix,
+  // carrying the pair, so the connections listed are the server's answer under the scope in force
+  // and a switch drops the old scope's rows wholesale — never one scope's account beside another's.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const plugins = useQuery(scopedPluginsPageQueryOptions(queryClient, scope));
+  const connections = useQuery(
+    scopedConnectionsQueryOptions(queryClient, scope),
+  );
 
   /*
    * ONLY THE PERSON'S OWN. A Shared app's row is the deployment's, not this person's, and the
@@ -451,7 +459,9 @@ function RouteComponent() {
  */
 function TeamBotConsents() {
   const { t } = useTranslation("settings");
-  const clear = useMutation(clearTeamBotConsentsMutationOptions());
+  // The clear rides the scope this screen holds (MT088 AC3), like every other write on the page.
+  const scope = useScopedCache();
+  const clear = useMutation(clearTeamBotConsentsMutationOptions(scope));
   return (
     <PageSection
       description={t("teamBots.description")}

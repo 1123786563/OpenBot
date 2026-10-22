@@ -125,6 +125,48 @@ export function agentListQueryOptions(hidden = false) {
   });
 }
 
+/**
+ * The roster a picker offers, bound to the scope the screen holds (MT087 / Issue #130, AC2): keyed
+ * under the scope's own cache prefix (MT083), carrying the selection pair, and answered through the
+ * generation guard — so the candidates a "who to talk to" list offers are the server's answer
+ * under the scope in force, and a Bot of another scope is never offered because the server never
+ * names it. The unscoped list stays for the surfaces this ticket does not bind.
+ */
+export function scopedAgentListQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  hidden = false,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...agentKeys.list(hidden)]
+        : [...agentKeys.list(hidden), ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<AgentProfile[]>(() => {})
+        : async ({ signal }): Promise<AgentProfile[]> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient(
+                `/api/agents${hidden ? "?hidden=true" : ""}`,
+                { signal, fallbackKey: "agents.load", ...(open.selection ?? {}) },
+              );
+              if (!response.ok) {
+                throw new Error("Coworkers could not be read.");
+              }
+              const body = (await response.json().catch(() => null)) as {
+                agents?: AgentProfile[];
+              } | null;
+              if (body === null || !Array.isArray(body.agents)) {
+                throw new Error("Coworkers could not be read.");
+              }
+              return body.agents;
+            }),
+  });
+}
+
 /** Package-defined IDs remain one path segment without changing their stored or cache identity. */
 export function agentApiPath(agentId: string): string {
   return `/api/agents/${encodeURIComponent(agentId)}`;

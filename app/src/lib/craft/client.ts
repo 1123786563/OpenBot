@@ -24,24 +24,35 @@ const craftPath = (suffix = "") => `/api/craft${suffix}`;
 const sessionPath = (id: string, suffix = "") =>
   `/api/craft/sessions/${encodeURIComponent(id)}${suffix}`;
 
+/**
+ * The selection pair a scoped craft call rides (MT091 / Issue #134), spread into the client
+ * options — the same pair the transport attaches as headers on this reviewed path family.
+ */
+export type CraftScopePair = { tenantId?: string; workspaceId?: string };
+
 // ── sessions ────────────────────────────────────────────────────────────────────
 
 /** The sidebar's session list: the user's interactive sessions, newest first. */
-export function listSessions(signal?: AbortSignal): Promise<CraftSession[]> {
+export function listSessions(
+  signal?: AbortSignal,
+  scope?: CraftScopePair,
+): Promise<CraftSession[]> {
   return client(craftPath("/sessions"), {
     fallback: "The craft sessions could not be loaded.",
     signal,
+    ...(scope ?? {}),
   })
     .then((r) => r.json())
     .then((body: { sessions: CraftSession[] }) => body.sessions);
 }
 
 /** Create (or reuse) an empty session; returns the session the UI navigates to. */
-export function createSession(): Promise<CraftSession> {
+export function createSession(scope?: CraftScopePair): Promise<CraftSession> {
   return client(craftPath("/sessions"), {
     method: "POST",
     body: {},
     fallback: "A craft session could not be created.",
+    ...(scope ?? {}),
   }).then((r) => r.json());
 }
 
@@ -49,32 +60,44 @@ export function createSession(): Promise<CraftSession> {
 export function getSession(
   id: string,
   signal?: AbortSignal,
+  scope?: CraftScopePair,
 ): Promise<CraftSession> {
   return client(sessionPath(id), {
     fallback: "The craft session could not be loaded.",
     signal,
+    ...(scope ?? {}),
   }).then((r) => r.json());
 }
 
-export function renameSession(id: string, name: string): Promise<CraftSession> {
+export function renameSession(
+  id: string,
+  name: string,
+  scope?: CraftScopePair,
+): Promise<CraftSession> {
   return client(sessionPath(id, "/name"), {
     method: "PUT",
     body: { name },
     fallback: "The session could not be renamed.",
+    ...(scope ?? {}),
   }).then((r) => r.json());
 }
 
-export function deleteSession(id: string): Promise<void> {
+export function deleteSession(id: string, scope?: CraftScopePair): Promise<void> {
   return client(sessionPath(id), {
     method: "DELETE",
     fallback: "The session could not be deleted.",
+    ...(scope ?? {}),
   }).then(() => undefined);
 }
 
-export function generateSessionName(id: string): Promise<string> {
+export function generateSessionName(
+  id: string,
+  scope?: CraftScopePair,
+): Promise<string> {
   return client(sessionPath(id, "/generate-name"), {
     method: "POST",
     fallback: "The session name could not be generated.",
+    ...(scope ?? {}),
   })
     .then((r) => r.json())
     .then((body: { name: string }) => body.name);
@@ -88,10 +111,12 @@ export function generateSessionName(id: string): Promise<string> {
 export function fetchSandboxStatus(
   id: string,
   signal?: AbortSignal,
+  scope?: CraftScopePair,
 ): Promise<CraftSandboxStatusResponse> {
   return client(sessionPath(id, "/sandbox-status"), {
     fallback: "The sandbox status could not be loaded.",
     signal,
+    ...(scope ?? {}),
   }).then((r) => r.json());
 }
 
@@ -100,10 +125,12 @@ export function fetchSandboxStatus(
 export function listMessages(
   id: string,
   signal?: AbortSignal,
+  scope?: CraftScopePair,
 ): Promise<CraftMessage[]> {
   return client(sessionPath(id, "/messages"), {
     fallback: "The messages could not be loaded.",
     signal,
+    ...(scope ?? {}),
   })
     .then((r) => r.json())
     .then((body: { messages: CraftMessage[] }) => body.messages);
@@ -114,11 +141,13 @@ export function sendMessage(
   id: string,
   content: string,
   attachments?: CraftAttachment[],
+  scope?: CraftScopePair,
 ): Promise<{ turn_id: string }> {
   return client(sessionPath(id, "/send-message"), {
     method: "POST",
     body: attachments?.length ? { content, attachments } : { content },
     fallback: "The message could not be sent.",
+    ...(scope ?? {}),
   }).then((r) => r.json());
 }
 
@@ -133,10 +162,13 @@ export function sendMessage(
 export async function uploadFile(
   id: string,
   file: File,
+  scope?: CraftScopePair,
 ): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
-  const response = await clientUpload(sessionPath(id, "/upload"), form);
+  const response = await clientUpload(sessionPath(id, "/upload"), form, {
+    ...(scope ?? {}),
+  });
   const body = (await response.json().catch(() => null)) as
     | UploadResult
     | { error?: string }
@@ -162,10 +194,14 @@ export type UploadResult = {
 };
 
 /** Ask a running turn to stop; settles the session's live stream. */
-export function interruptSession(id: string): Promise<void> {
+export function interruptSession(
+  id: string,
+  scope?: CraftScopePair,
+): Promise<void> {
   return client(sessionPath(id, "/interrupt"), {
     method: "POST",
     fallback: "The turn could not be stopped.",
+    ...(scope ?? {}),
   }).then(() => undefined);
 }
 
@@ -179,10 +215,12 @@ export function turnEventsUrl(sessionId: string, turnId: string): string {
 export function listArtifacts(
   id: string,
   signal?: AbortSignal,
+  scope?: CraftScopePair,
 ): Promise<CraftArtifactEntry[]> {
   return client(sessionPath(id, "/artifacts"), {
     fallback: "The artifacts could not be listed.",
     signal,
+    ...(scope ?? {}),
   })
     .then((r) => r.json())
     .then((body: { artifacts: CraftArtifactEntry[] }) => body.artifacts);
@@ -192,11 +230,13 @@ export function listFiles(
   id: string,
   path = "",
   signal?: AbortSignal,
+  scope?: CraftScopePair,
 ): Promise<CraftFileEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return client(sessionPath(id, `/files${query}`), {
     fallback: "The files could not be listed.",
     signal,
+    ...(scope ?? {}),
   })
     .then((r) => r.json())
     .then((body: { entries: CraftFileEntry[] }) => body.entries);
@@ -217,10 +257,12 @@ export function exportDocxUrl(id: string, path: string): string {
 export function webappInfo(
   id: string,
   signal?: AbortSignal,
+  scope?: CraftScopePair,
 ): Promise<CraftWebappInfo> {
   return client(sessionPath(id, "/webapp-info"), {
     fallback: "The web app could not be inspected.",
     signal,
+    ...(scope ?? {}),
   }).then((r) => r.json());
 }
 
@@ -230,10 +272,14 @@ export function webappInfo(
  * and is consumed by the 302 that follows; it is never stored, logged, or
  * retried with.
  */
-export function issuePreviewTicket(id: string): Promise<CraftPreviewTicket> {
+export function issuePreviewTicket(
+  id: string,
+  scope?: CraftScopePair,
+): Promise<CraftPreviewTicket> {
   return client(sessionPath(id, "/preview-ticket"), {
     method: "POST",
     fallback: "The preview pass could not be issued.",
+    ...(scope ?? {}),
   }).then((r) => r.json());
 }
 
@@ -249,6 +295,7 @@ export function issuePreviewTicket(id: string): Promise<CraftPreviewTicket> {
 export function previewOriginLive(
   id: string,
   signal?: AbortSignal,
+  scope?: CraftScopePair,
 ): Promise<Response> {
   // tryClient returns the Response verbatim — the caller reads `ok` itself —
   // and `send` consumes no `fallback` (that is `client`'s refusal-sentence
@@ -257,6 +304,7 @@ export function previewOriginLive(
   // (fix-ocr18 #5).
   return tryClient(sessionPath(id, "/preview-origin-live"), {
     signal,
+    ...(scope ?? {}),
   });
 }
 
@@ -265,10 +313,12 @@ export function previewOriginLive(
 export function listLiveApprovals(
   id: string,
   signal?: AbortSignal,
+  scope?: CraftScopePair,
 ): Promise<CraftApproval[]> {
   return client(sessionPath(id, "/approvals/live"), {
     fallback: "The pending approvals could not be loaded.",
     signal,
+    ...(scope ?? {}),
   })
     .then((r) => r.json())
     .then((body: { approvals: CraftApproval[] }) => body.approvals);
@@ -277,6 +327,7 @@ export function listLiveApprovals(
 export function decideCraftApproval(
   approvalId: string,
   decision: "allow_once" | "allow_always" | "deny",
+  scope?: CraftScopePair,
 ): Promise<void> {
   return client(
     craftPath(`/approvals/${encodeURIComponent(approvalId)}/decision`),
@@ -284,6 +335,7 @@ export function decideCraftApproval(
       method: "POST",
       body: { decision },
       fallback: "The approval could not be recorded.",
+      ...(scope ?? {}),
     },
   ).then(() => undefined);
 }

@@ -4,6 +4,7 @@ import {
   UsageCreditsView,
 } from "@/components/billing/usage-credits-view";
 import type { ConsumptionRange } from "@/components/billing/consumption-table";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 export const Route = createFileRoute("/_authed/settings/usage")({
   component: RouteComponent,
@@ -36,6 +37,7 @@ export const Route = createFileRoute("/_authed/settings/usage")({
 function RouteComponent() {
   const { range, page } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const scope = useScopedCache();
   return (
     <UsageCreditsView
       range={range}
@@ -44,6 +46,7 @@ function RouteComponent() {
         void navigate({ search: { range: next, page: 1 } })
       }
       onPage={(next) => void navigate({ search: { range, page: next } })}
+      scope={scope}
     />
   );
 }

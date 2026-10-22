@@ -141,7 +141,12 @@
     "access": "访问权限",
     "accessDescription": "你同意的内容，以服务商的记录为准——而不是所请求的内容。当授权屏幕只被部分接受时，两者会有差异。",
     "granted": "已授予",
-    "noScope": "服务商未指明任何范围。"
+    "noScope": "服务商未指明任何范围。",
+    "secretTitle": "密钥",
+    "secretMasked": "已脱敏。{{vendor}} 持有有效凭据，本部署只保存密封副本。",
+    "revealSecret": "查看明文",
+    "hideSecret": "隐藏",
+    "revealAudited": "明文读取是独立于使用连接的单独授权动作，每次读取都会写入审计日志。"
   },
   "passwords": {
     "title": "密码",

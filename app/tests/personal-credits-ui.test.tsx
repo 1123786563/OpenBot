@@ -152,6 +152,23 @@ afterAll(async () => {
 
 const originalFetch = global.fetch;
 
+/*
+ * The personal context's scope (MT097): the billing views now read through the scoped seam, so
+ * the harness hands them the no-selection scope a person without a company selection holds —
+ * the reads still hit the same /api/billing paths the stubs answer.
+ */
+const scopedCachePrefixMod = await import(
+  "@/lib/enterprise/tenant/scoped-cache"
+);
+const PERSONAL_SCOPE = {
+  status: "open" as const,
+  userId: "ui-test-user",
+  selection: null,
+  generation: 1,
+  prefix: scopedCachePrefixMod.scopedCachePrefix("ui-test-user", null),
+  key: "ui-test-user:personal",
+};
+
 /** The 02.6 wire contract, as the server builds it (PersonalCreditBalance). */
 type BalanceFixture = {
   accountType: "personal";
@@ -366,6 +383,7 @@ function renderView() {
         page={1}
         onRangeChange={() => {}}
         onPage={() => {}}
+        scope={PERSONAL_SCOPE}
       />
     </QueryClientProvider>,
   );
