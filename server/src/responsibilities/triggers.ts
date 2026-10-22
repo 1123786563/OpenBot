@@ -280,6 +280,9 @@ export type TriggerRecord = {
   hasSecret: boolean;
   /** A paused trigger acknowledges deliveries but never queues a run. */
   enabled: boolean;
+  /** MT044: the persisted company/team mapping, null on legacy personal triggers. */
+  tenantId: string | null;
+  workspaceId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -293,6 +296,9 @@ export type ResolvedTrigger = {
   config: TriggerConfig;
   secret: string | null;
   enabled: boolean;
+  /** MT044: the persisted company/team mapping, null on legacy personal triggers. */
+  tenantId: string | null;
+  workspaceId: string | null;
   createdAt: Date;
 };
 
@@ -367,6 +373,8 @@ export function createTriggerStore(
     config: responsibilityTriggers.config,
     credentialId: responsibilityTriggers.credentialId,
     enabled: responsibilityTriggers.enabled,
+    tenantId: responsibilityTriggers.tenantId,
+    workspaceId: responsibilityTriggers.workspaceId,
     createdAt: responsibilityTriggers.createdAt,
     updatedAt: responsibilityTriggers.updatedAt,
   };
@@ -377,6 +385,8 @@ export function createTriggerStore(
     config: TriggerConfig;
     credentialId: string | null;
     enabled: boolean;
+    tenantId: string | null;
+    workspaceId: string | null;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -416,6 +426,15 @@ export function createTriggerStore(
       );
     return secret.trim();
   }
+  /** MT044: attribution ids are server-supplied ids, not user text — trimmed non-empty, bounded. */
+  function idOrRefuse(value: string, field: string) {
+    const id = value?.trim();
+    if (!id || id.length > 200)
+      throw new ResponsibilityRefusedError(
+        `Trigger attribution ${field} must be 1–200 characters.`,
+      );
+    return id;
+  }
   async function secretFor(credentialId: string | null) {
     if (!credentialId) return null;
     const credential = await vault.reader.readSecret(credentialId);
@@ -434,6 +453,8 @@ export function createTriggerStore(
       config: row.config,
       secret: await secretFor(row.credentialId),
       enabled: row.enabled,
+      tenantId: row.tenantId,
+      workspaceId: row.workspaceId,
       createdAt: row.createdAt,
     };
   }
@@ -461,15 +482,33 @@ export function createTriggerStore(
         );
       return rows.map(record);
     },
-    /** Returns the secret once when OpenBot generated it; vendor secrets are pasted in `input.secret`. */
+    /**
+     * Returns the secret once when OpenBot generated it; vendor secrets are pasted in `input.secret`.
+     * `input.attribution` (MT044) is server-supplied only — the enterprise session's selected
+     * company/team at creation, persisted as the trigger's ownership mapping. A delivery payload
+     * can never reach it: the strict config schema rejects unknown fields.
+     */
     async create(
       ownerUserId: string,
       responsibilityId: string,
-      input: { config: unknown; secret?: string },
+      input: {
+        config: unknown;
+        secret?: string;
+        attribution?: { tenantId: string; workspaceId: string };
+      },
     ): Promise<{ trigger: TriggerRecord; secret: string | null }> {
       const config = parseTriggerConfig(input.config);
       await ownedGoal(ownerUserId, responsibilityId);
       await checkSlack(ownerUserId, config);
+      const attribution = input.attribution
+        ? {
+            tenantId: idOrRefuse(input.attribution.tenantId, "tenantId"),
+            workspaceId: idOrRefuse(
+              input.attribution.workspaceId,
+              "workspaceId",
+            ),
+          }
+        : { tenantId: null, workspaceId: null };
       const id = randomUUID();
       const secret = GENERATED_SECRET.has(config.kind)
         ? generateWebhookSecret()
@@ -501,6 +540,8 @@ export function createTriggerStore(
             kind: config.kind,
             config,
             credentialId: credential?.id ?? null,
+            tenantId: attribution.tenantId,
+            workspaceId: attribution.workspaceId,
           })
           .returning(columns);
         if (!row) throw new Error("Trigger creation returned no row.");
