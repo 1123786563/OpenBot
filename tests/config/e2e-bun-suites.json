@@ -511,7 +511,12 @@
    "name": "server/tests part 8",
    "files": [
     "server/tests/key-state-sync.test.ts",
-    "server/tests/last-sign-in-backfill.integration.test.ts",
+    "server/tests/last-sign-in-backfill.integration.test.ts"
+   ]
+  },
+  {
+   "name": "server/tests part 7",
+   "files": [
     "server/tests/learning-agent.integration.test.ts",
     "server/tests/learning-langgraph.test.ts",
     "server/tests/learning-mastra.test.ts",
@@ -607,7 +612,7 @@
    ]
   },
   {
-   "name": "server/tests part 13",
+   "name": "server/tests part 14",
    "files": [
     "server/tests/opik-execution-billing.integration.test.ts",
     "server/tests/opik-execution-billing.test.ts",
