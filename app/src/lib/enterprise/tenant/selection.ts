@@ -86,6 +86,8 @@ export function scopeRefusalOf(
 const WORKSPACE_SCOPE_LISTING = ":workspace-scope";
 /** Third-level token under a tenant scope; team entries gather under it, per workspace. */
 const WORKSPACE = ":workspace";
+/** The live current selection this app session holds (see {@link selectionKeys.current}). */
+const CURRENT_SELECTION = ":current-selection";
 
 export const selectionKeys = {
   /** The eligibility listing — the one read that needs no selection, like the chooser. */
@@ -94,6 +96,17 @@ export const selectionKeys = {
   /** Everything one (company, team) answers for, under the tenant prefix the switch removes. */
   workspaceScope: (userId: string, tenantId: string, workspaceId: string) =>
     [...tenantKeys.scope(userId, tenantId), WORKSPACE, workspaceId] as const,
+  /**
+   * The selection this app session is actually working under, pair or null.
+   *
+   * Written by {@link selectWorkspaceScope} (the one switch seam), seeded from the per-account
+   * storage by whoever observes it first (the streaming half reads it in
+   * `lib/enterprise/tenant/stream-scope.ts`, MT082), and mirrored across tabs through the
+   * browser's storage event. Distinct from storage itself, which stays what it always was: the
+   * user's last explicit choice, not a live value.
+   */
+  current: (userId: string) =>
+    [...tenantKeys.all, userId, CURRENT_SELECTION] as const,
 };
 
 /**
@@ -326,6 +339,10 @@ function sameScope(
  * advances the generation and drops only the old team's subtree: leaving one team is not leaving
  * the company. Order matters exactly as in `selectTenant` — the generation moves before any cache
  * goes, so a response already in flight against the old scope is refused on arrival.
+ *
+ * The live current-selection entry (`selectionKeys.current`, MT082) moves here too: every switch
+ * that can change what a stream should carry changes it in this one place, so the streaming half
+ * has no second seam to keep in step.
  */
 export function selectWorkspaceScope(
   queryClient: QueryClient,
@@ -334,6 +351,7 @@ export function selectWorkspaceScope(
   next: ScopeSelection | null,
 ): void {
   if (sameScope(previous, next)) return;
+  queryClient.setQueryData(selectionKeys.current(userId), next);
   if (
     previous !== null &&
     next !== null &&
