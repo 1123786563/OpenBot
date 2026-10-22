@@ -1,7 +1,7 @@
 # Craft Preview 修复批次 #404–#419 收口汇总（#419 / N06）
 
 - 日期：2026-10-23（本地 +08:00）／ 2026-10-22T20:4xZ
-- 工作区：`.worktrees/craft-preview-404-419`（分支 `craft-preview-404-419`，HEAD `209dd79e6b`，含 N01–N05 全部提交，未 push）
+- 工作区：`.worktrees/craft-preview-404-419`（分支 `craft-preview-404-419`，N01–N05 波次收于 `209dd79e6b`；后续 OCR 修复轮 R1–R5 续至 `a1c5b430b1`，见 ledger.md）
 - 编写：N06-419（mechanical_worker，hare）
 - 证据基线：本表每行 verdict 均引用实际验证报告路径，不以本文档勾选替代测试证据。
 
