@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -45,7 +45,7 @@ import { cn } from "@/lib/utils";
  * lands in advanced mode with the raw expression, which is always honest.
  */
 
-type FormState = {
+export type ScheduledTaskDraft = {
   name: string;
   prompt: string;
   mode: CraftScheduledTaskEditorMode;
@@ -69,7 +69,7 @@ const WEEKDAY_KEYS: Record<number, string> = {
   6: "sat",
 };
 
-function emptyForm(): FormState {
+function emptyForm(): ScheduledTaskDraft {
   return {
     name: "",
     prompt: "",
@@ -85,7 +85,7 @@ function emptyForm(): FormState {
 }
 
 /** Best-effort reverse of the server's compileToCron — mode defaults to what the task was saved as. */
-function formFromTask(task: CraftScheduledTaskDetail): FormState {
+function formFromTask(task: CraftScheduledTaskDetail): ScheduledTaskDraft {
   const [minute, hour, dayOfMonth, , dayOfWeek] = task.cron_expression
     .split(/\s+/)
     .map((field) => field ?? "");
@@ -156,7 +156,7 @@ function formFromTask(task: CraftScheduledTaskDetail): FormState {
   };
 }
 
-function payloadFor(state: FormState) {
+function payloadFor(state: ScheduledTaskDraft) {
   if (state.mode === "advanced") return { cron: state.cron.trim() };
   if (state.mode === "interval") {
     const every = Number.parseInt(state.every, 10);
@@ -201,10 +201,14 @@ export function ScheduledRunStatusChip({
 export function ScheduledTaskEditor({
   taskId,
   onDone,
+  draft,
+  onDraftChange,
 }: {
   /** Absent means creating. */
   taskId?: string;
   onDone: () => void;
+  draft?: ScheduledTaskDraft;
+  onDraftChange?: (draft: ScheduledTaskDraft) => void;
 }) {
   const { t } = useTranslation("craft");
   const queryClient = useQueryClient();
@@ -217,10 +221,14 @@ export function ScheduledTaskEditor({
     enabled: taskId !== undefined,
   });
 
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [seeded, setSeeded] = useState(false);
+  const [form, setForm] = useState<ScheduledTaskDraft>(() => draft ?? emptyForm());
+  const [seeded, setSeeded] = useState(() => draft !== undefined || taskId === undefined);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    onDraftChange?.(form);
+  }, [form, onDraftChange]);
 
   // Seed once when the detail arrives (the panel mounts before the read resolves).
   if (taskId && detail.data && !seeded) {

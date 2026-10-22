@@ -843,6 +843,17 @@ export const auditEventTypes = [
    */
   "billing.recovery.disposed",
   /**
+   * An administrator compensated a recovery item (Bifrost 08.10, #285): the platform
+   * absorbed a loss the trail could neither settle nor release — a distinct act from a
+   * disposal, recorded under its OWN event type so it can never be read back as
+   * "confirmed no charge". The payload carries the recorded justification (reason), the
+   * absorbed amount (the hold's ceiling), the still_unknown evidence row the absorption
+   * stood on, the reservation, the expectedVersion and the command key — the whole
+   * decision, reconstructable from the row alone. Replays of the same command are NOT
+   * re-audited: the first row is the act.
+   */
+  "billing.recovery.compensated",
+  /**
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
    * (onyx parity — no approval row), so this audit row is the one durable record that a

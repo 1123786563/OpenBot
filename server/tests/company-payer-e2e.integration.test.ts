@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";

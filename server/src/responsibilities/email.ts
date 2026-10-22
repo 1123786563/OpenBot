@@ -21,8 +21,10 @@ import { createVerify, X509Certificate } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getLogger } from "../../../shared/logger";
+import { INBOUND_MAPPING_MISSING } from "../enterprise/tenancy/inbound-attribution";
 import { deliverToTrigger, type TriggerIngressDeps } from "./trigger-routes";
 import { matchesFilter } from "./triggers";
+
 const log = getLogger("server");
 
 export type InboundEmailConfig = { domain: string; topicArns: string[] };
@@ -360,9 +362,30 @@ export function createEmailTriggerRoutes(
         .join(""),
     };
     const results = [];
+    let quarantined = 0;
     for (const id of triggerIds) {
       const trigger = await deps.directory.resolve(id);
-      if (trigger?.config.kind !== "email") continue;
+      if (trigger?.config.kind !== "email") {
+        // MT044 (Issue #87): the envelope was authenticated by AWS's own signature, so this
+        // is a genuine delivery to an address this domain promised to route — but the address
+        // maps to no live email trigger. Quarantined for operators instead of dropped
+        // silently; it never reaches any business scope. Unauthenticated mail never gets
+        // here (the SNS signature check refused it above).
+        if (deps.attribution) {
+          const quarantinedDelivery = await deps.attribution.quarantine({
+            channel: "email",
+            triggerId: id,
+            deliveryId: mail.messageId,
+            eventType: "received",
+            reason: INBOUND_MAPPING_MISSING,
+            payload,
+          });
+          // A redelivery of an already-quarantined message is acknowledged but
+          // does not queue a second row — the response counts fresh quarantines.
+          if (quarantinedDelivery.status === "quarantined") quarantined += 1;
+        }
+        continue;
+      }
       const config = trigger.config;
       const allowed =
         config.allowedSenders.length === 0 ||
@@ -377,7 +400,11 @@ export function createEmailTriggerRoutes(
       );
     }
     // SNS retries anything but 2xx, so an unrouted or filtered mail is still acknowledged.
-    return context.json({ accepted: true, deliveries: results.length });
+    return context.json({
+      accepted: true,
+      deliveries: results.length,
+      ...(quarantined > 0 ? { quarantined } : {}),
+    });
   });
   return routes;
 }

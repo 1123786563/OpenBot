@@ -5,7 +5,7 @@
 // mock answers with is identifiers and counts only, the same shape the command
 // returns.
 
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/bun-test-compat";
+import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { within } from "@testing-library/react";
