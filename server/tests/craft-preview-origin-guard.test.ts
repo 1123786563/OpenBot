@@ -16,6 +16,9 @@
 //
 // 拒绝面不回显、不记录任何 cookie 或 ticket 值。
 
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -42,6 +45,18 @@ const HOST_TEMPLATE = "https://{session}.preview.example.com";
 /** The value the refusal must never echo or log. */
 const COOKIE = "openbot.session=super-secret-session-value";
 
+/** A healthy TLS renewal-status record in a throwaway file (#411's fixture
+ * shape — the same one craft-preview-rejection.test.ts hands its origins).
+ * #411's tlsStatusGate fail-closes host-form origins without a judgeable
+ * status file; this suite mints host-form addresses, so hand them a healthy
+ * record and keep the TLS gate out of the way of what this file tests. */
+const healthyTlsStatusFile = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "openbot-tls-status-guard-"));
+  const statusFile = join(dir, "renewal-status.json");
+  writeFileSync(statusFile, JSON.stringify({ health: "ok", daysLeft: 45 }));
+  return statusFile;
+})();
+
 const originWith = (
   previewOriginTemplate: string,
   env: Record<string, string | undefined> = {},
@@ -63,7 +78,7 @@ const originWith = (
       } as unknown as CraftStore,
     }),
     secret: SECRET,
-    env,
+    env: { OPENBOT_TLS_STATUS_FILE: healthyTlsStatusFile, ...env },
     servePreview: (async () =>
       new Response("unproxied", { status: 503 })) as ServePreview,
   });
