@@ -116,6 +116,15 @@ export type CreditConsumptionEntry = {
   /** The Bot the call was admitted for (06.12's attribution), null when not protocol-born. */
   botId: string | null;
   botName: string | null;
+  /**
+   * The fee split (20.3): this entry's model fee and surcharge fee, whole units of the
+   * entry's credits (they sum to it). Absent when the settlement wrote no split — the UI
+   * shows no surcharge line for such rows, never a zero that would read as "free tools".
+   */
+  feeBreakdown?: {
+    modelCredits: number;
+    surchargeCredits: number;
+  } | null;
   timestamp: string;
 };
 

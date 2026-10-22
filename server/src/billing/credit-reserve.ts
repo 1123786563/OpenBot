@@ -31,6 +31,7 @@ import {
   createCreditWriter,
 } from "./credits-writer";
 import { type PayerKind, type PayerRef, payerKey } from "./payer";
+import { COMPANY_SCOPE_IDENTITY_FIELDS } from "./personal-key-isolation";
 import {
   attemptIdForReservation,
   type ReservationStatusService,
@@ -222,7 +223,9 @@ const DEFAULT_HOLD_TTL_MS = 15 * 60 * 1000;
  * The account-identity fields a reserve request must never carry (06.4): a caller naming any
  * of these is self-reporting the account key the server alone resolves. A closed vocabulary,
  * matched case-insensitively — the reserve boundary's own list, a superset of 02.4's
- * cross-surface set (this protocol also refuses `customerKey`).
+ * cross-surface set (this protocol also refuses `customerKey`). 09.3 extends the same
+ * boundary to the company-scope selectors: naming a workspace, team or organization is the
+ * scope-elevation twin of naming an account, and rides the identical refusal.
  */
 export const RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS = [
   "userId",
@@ -232,6 +235,7 @@ export const RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS = [
   "customerKey",
   "companyId",
   "tenantId",
+  ...COMPANY_SCOPE_IDENTITY_FIELDS,
 ] as const;
 
 /** The forbidden field present in a request's own spelling, or null. Presence is the attempt. */

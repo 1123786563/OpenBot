@@ -427,7 +427,6 @@ import {
 import { createTenantMastraStorage } from "./mastra/tenant-storage";
 import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
-import { createIntelligenceMemory } from "./memory/intelligence";
 import { createMemoryStore } from "./memory/store";
 import { memoryTools } from "./memory/tools";
 import { officialModelMetadataLookup } from "./model-availability-check";
@@ -2118,14 +2117,9 @@ const hostAccessBroker = createHostAccessBroker(Date.now, {
 // grant, the policy and the audit row are exactly where they were. Host-folder tools are also
 // server-dispatched: the selected Bot and the signed-in owner are bound here, then the desktop worker
 // receives only opaque grant ids and relative paths.
-// Memory lives in CopilotKit Intelligence when this deployment is entitled to it, and in OpenBot's own
-// tables when it is not; see memory/store.ts. Its own client, like the thread reader's: the
-// constructor opens nothing.
-const personalMemoryStore = createMemoryStore(database, {
-  intelligence: createIntelligenceMemory({
-    client: createIntelligenceClient(config.runtime.intelligence),
-  }),
-});
+// Personal memory lives in OpenBot's own tables only — the Intelligence path exited (Hindsight 18 /
+// #395); indexed cross-session recall runs over the Hindsight chain. See memory/store.ts.
+const personalMemoryStore = createMemoryStore(database);
 const demonstrationStore = createDemonstrationStore(database);
 const demonstrationRecorder = createDemonstrationRecorder({
   store: demonstrationStore,
@@ -2196,9 +2190,6 @@ const sweepStep = async (operation: string, fn: () => Promise<unknown>) => {
 };
 const memorySweep = repeatAfterEach(async () => {
   await sweepStep("syncDue", () => memoryIngestion.syncDue());
-  // Mirror to Intelligence what is out of step: the backfill on the first passes after a deployment
-  // becomes entitled, and afterwards whatever an outage left behind. A no-op without Intelligence.
-  await sweepStep("mirrorPending", () => personalMemoryStore.mirrorPending());
   // Candidates nobody handled for 30 days are expired with the same tombstone forgetting uses.
   // Idempotent, so running it this often is safe and a repeat run after a crash deletes nothing more.
   await sweepStep("expireStaleCandidates", () =>

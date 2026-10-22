@@ -5,6 +5,7 @@ import { accessGrants } from "../db/schema";
 import { creditReservations } from "../db/schema/credit-reservations";
 import type { CreditServiceVariables } from "./credit-service-auth";
 import { payerKey, type PayerRef } from "./payer";
+import { COMPANY_SCOPE_IDENTITY_FIELDS } from "./personal-key-isolation";
 
 /**
  * The reservation Status query and the attempt identity (Bifrost #258, 06.7).
@@ -143,7 +144,10 @@ export type ReservationStatusAnswer =
       detail: Record<string, unknown>;
     };
 
-/** The account-identity fields a status request must never carry (06.4's boundary). */
+/**
+ * The account-identity fields a status request must never carry (06.4's boundary; 09.3
+ * extends it with the company-scope selectors, the elevation twin of an account name).
+ */
 export const STATUS_FORBIDDEN_ACCOUNT_KEY_FIELDS = [
   "userId",
   "externalCustomerId",
@@ -152,6 +156,7 @@ export const STATUS_FORBIDDEN_ACCOUNT_KEY_FIELDS = [
   "customerKey",
   "companyId",
   "tenantId",
+  ...COMPANY_SCOPE_IDENTITY_FIELDS,
 ] as const;
 
 /** The forbidden field present in a request's own spelling, or null. Presence is the attempt. */
