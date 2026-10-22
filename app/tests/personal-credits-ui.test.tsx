@@ -48,7 +48,7 @@ const CloseContext = createContext<() => void>(() => {});
  * file that set it and later files get the real module's richer semantics back: a closed dialog
  * must mount nothing, a trigger's child always renders, and DialogContent keeps a real close
  * button. Content renders inline instead of into a portal — the only part happy-dom cannot do. */
-const uninstallDialogMock = mock.module("@/components/ui/dialog", () => {
+mock.module("@/components/ui/dialog", () => {
   const pass = ({ children }: { children?: ReactNode }) => children ?? null;
   const DialogTriggerMock = ({
     children,
@@ -125,13 +125,6 @@ const uninstallDialogMock = mock.module("@/components/ui/dialog", () => {
     DialogTrigger: DialogTriggerMock,
   };
 });
-
-/*
- * Give the registry entry back at suite end: the handle e2e-compat returns deletes the mock for
- * the raw specifier, so a later file the same worker imports resolves the real Dialog instead of
- * this passthrough — the leak behind the suite's order-dependent dialog failures.
- */
-afterAll(() => uninstallDialogMock());
 
 const { UsageCreditsView } = await import(
   "@/components/billing/usage-credits-view"
