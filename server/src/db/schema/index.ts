@@ -74,6 +74,7 @@ export * from "./openmuse";
 export * from "./openmuse-file-tenancy";
 export * from "./openmuse-personal-tenancy";
 export * from "./openmuse-task-tenancy";
+export * from "./openmuse-voice-mobile-tenancy";
 export * from "./passwords";
 export * from "./payer-accounts";
 export * from "./payment";
