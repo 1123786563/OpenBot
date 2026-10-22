@@ -22,6 +22,17 @@ export type PurchaseStatus =
 /** Whether a paid order's plan has reached Lago — progress orthogonal to the money state. */
 export type PurchaseActivationState = "pending" | "applied" | "failed";
 
+/**
+ * The delivery progress a paid order shows (BP07/#375, mirrors the server's
+ * `PaymentFulfillmentState`): 「已付款，权益处理中」 while the sweep converges, `delivered` when
+ * the subscription AND the period's grant both landed, `needs_resolution` for the deterministic
+ * conflicts an operator owns. Null unless money landed — no money, no delivery to report.
+ */
+export type PurchaseFulfillmentState =
+  | "processing"
+  | "delivered"
+  | "needs_resolution";
+
 /** What a checkout renders. v1 ships QR codes only; `redirect` is named for a future wap flow. */
 export type PurchaseCheckout =
   | { kind: "qrcode"; payload: string }
@@ -36,6 +47,8 @@ export type PurchaseOrderView = {
   currency: string;
   status: PurchaseStatus;
   activationState: PurchaseActivationState;
+  /** The user-facing delivery progress — null unless money landed. */
+  fulfillmentState: PurchaseFulfillmentState | null;
   checkout: PurchaseCheckout | null;
   /** When the QR code stops being payable. */
   expiresAt: string;

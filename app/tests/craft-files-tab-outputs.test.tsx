@@ -4,6 +4,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, type RenderResult } from "@testing-library/react";
 import { FilesTab } from "@/components/craft/output-panel/files-tab";
+import { authKeys } from "@/lib/auth/queries";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -29,6 +30,8 @@ function serving() {
   calls.length = 0;
   global.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
+    // The scoped file-tree read (MT091) waits for the scope source before it asks anything.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     calls.push(url);
     if (url.includes("/files?path=outputs")) {
       return Response.json({
@@ -50,6 +53,13 @@ function serving() {
 function draw() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
+  });
+  // MT091: preset the scope source so the scoped tree read mounts with its scope already open
+  // (the Node runner does not paint the store update an async fetch would land).
+  client.setQueryData(authKeys.currentUser(), {
+    id: "user-1",
+    email: "user-1@example.test",
+    role: "user",
   });
   return render(
     <QueryClientProvider client={client}>

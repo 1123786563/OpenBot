@@ -1,6 +1,21 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { pluginKeys } from "./queries";
+
+/** The selection pair a scoped call rides, spread into the client options (MT088). */
+type ScopePair = { tenantId?: string; workspaceId?: string };
+
+/**
+ * The scope the writes here submit under (MT088 / Issue #131, AC3): an open scope's selection
+ * rides the request, and a pending one submits nothing — an install or connect cannot fire before
+ * its surface's scope source has answered.
+ */
+function scopePair(scope: ScopedCache | undefined): ScopePair | undefined {
+  return scope !== undefined && scope.status === "open"
+    ? (scope.selection ?? {})
+    : undefined;
+}
 import type { SharedUseApproval } from "./shared-use";
 
 /**
@@ -98,6 +113,29 @@ export function invalidatePlugins(queryClient: QueryClient) {
 }
 
 /**
+ * Server-derived answers are invalidated in both homes (MT088): the surface's unscoped entries,
+ * and — when a scope is in force — this scope's own subtree (MT083's prefix), where the scoped
+ * skills and connections reads live. This is what makes a disconnect retract a row at once in the
+ * scope the screen holds (MT088 AC4). Exported because the catalog writes (MT094) settle the
+ * same two homes — an install lands in the plugins surface exactly like a connect does.
+ */
+export function invalidatePluginsInScope(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
+  return Promise.all([
+    invalidatePlugins(queryClient),
+    ...(scope !== undefined && scope.status === "open"
+      ? [
+          queryClient.invalidateQueries({
+            queryKey: [...scope.prefix, ...pluginKeys.all],
+          }),
+        ]
+      : []),
+  ]);
+}
+
+/**
  * Grant one plugin to one Bot, and refetch nothing.
  *
  * The write on its own, for the caller granting a batch of them: the server still records a row per
@@ -112,12 +150,15 @@ export function invalidatePlugins(queryClient: QueryClient) {
  * in this file is: a grant that carries no opinion about audience must not read as one that narrowed
  * it to nothing.
  */
-export function grantPlugin(variables: {
-  kind: PluginKind;
-  ref: string;
-  agentId: string;
-  approval?: SharedUseApproval;
-}): Promise<unknown> {
+export function grantPlugin(
+  variables: {
+    kind: PluginKind;
+    ref: string;
+    agentId: string;
+    approval?: SharedUseApproval;
+  },
+  scope?: ScopedCache,
+): Promise<unknown> {
   return client("/api/plugins/grants", {
     method: "POST",
     body: {
@@ -127,6 +168,7 @@ export function grantPlugin(variables: {
       ...(variables.approval ? { approval: variables.approval } : {}),
     },
     fallbackKey: "agents.change",
+    ...(scopePair(scope) ?? {}),
   });
 }
 
@@ -173,7 +215,10 @@ export async function accountModePreview(
  * `approvals` carries the administrator's narrowed approvals, keyed by Bot id, for Bots the preview
  * listed; a Bot not named gets its exposure as listed.
  */
-export function setAccountModeMutationOptions(queryClient: QueryClient) {
+export function setAccountModeMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (variables: {
       serverId: string;
@@ -190,10 +235,11 @@ export function setAccountModeMutationOptions(queryClient: QueryClient) {
             ...(variables.approvals ? { approvals: variables.approvals } : {}),
           },
           fallbackKey: "plugins.switchFailed",
+          ...(scopePair(scope) ?? {}),
         },
       );
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -203,7 +249,10 @@ export function setAccountModeMutationOptions(queryClient: QueryClient) {
  * Granting posts to the collection; withholding deletes from it, and the delete identifies the row
  * by query string because a grant has no id of its own — it is the three things it joins.
  */
-export function setPluginGrantMutationOptions(queryClient: QueryClient) {
+export function setPluginGrantMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (variables: {
       kind: PluginKind;
@@ -212,41 +261,53 @@ export function setPluginGrantMutationOptions(queryClient: QueryClient) {
       granted: boolean;
     }) => {
       if (variables.granted) {
-        await grantPlugin(variables);
+        await grantPlugin(variables, scope);
         return;
       }
       await client(
         `/api/plugins/grants?kind=${variables.kind}&ref=${encodeURIComponent(variables.ref)}&agentId=${encodeURIComponent(variables.agentId)}`,
-        { method: "DELETE", fallbackKey: "agents.change" },
+        {
+          method: "DELETE",
+          fallbackKey: "agents.change",
+          ...(scopePair(scope) ?? {}),
+        },
       );
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
-export function addCuratedServerMutationOptions(queryClient: QueryClient) {
+export function addCuratedServerMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (input: CuratedServerInput) => {
       await client("/api/plugins/servers", {
         method: "POST",
         body: input,
         fallbackKey: FALLBACK_KEY,
+        ...(scopePair(scope) ?? {}),
       });
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
-export function addCustomServerMutationOptions(queryClient: QueryClient) {
+export function addCustomServerMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (input: CustomServerInput) => {
       await client("/api/plugins/servers/custom", {
         method: "POST",
         body: input,
         fallbackKey: FALLBACK_KEY,
+        ...(scopePair(scope) ?? {}),
       });
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -256,16 +317,20 @@ export function addCustomServerMutationOptions(queryClient: QueryClient) {
  * Its own endpoint rather than a curated key, because the catalogue is the vendor's rather than
  * ours: the slug is all the server needs to look the app up and record the row.
  */
-export function enableComposioAppMutationOptions(queryClient: QueryClient) {
+export function enableComposioAppMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (input: { slug: string }) => {
       await client("/api/plugins/composio/apps", {
         method: "POST",
         body: input,
         fallbackKey: "plugins.addApp",
+        ...(scopePair(scope) ?? {}),
       });
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -279,6 +344,7 @@ export function enableComposioAppMutationOptions(queryClient: QueryClient) {
  */
 export function enableOpenConnectorAppMutationOptions(
   queryClient: QueryClient,
+  scope?: ScopedCache,
 ) {
   return mutationOptions({
     mutationFn: async (input: { slug: string }) => {
@@ -286,9 +352,10 @@ export function enableOpenConnectorAppMutationOptions(
         method: "POST",
         body: input,
         fallbackKey: "plugins.addApp",
+        ...(scopePair(scope) ?? {}),
       });
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -300,7 +367,10 @@ export function enableOpenConnectorAppMutationOptions(
  * URL parser resolves before any handler sees it, and a `?` truncates the id into a query. This was
  * the one interpolation here that went in raw.
  */
-export function refreshPluginServerMutationOptions(queryClient: QueryClient) {
+export function refreshPluginServerMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (serverId: string) => {
       await client(
@@ -309,22 +379,27 @@ export function refreshPluginServerMutationOptions(queryClient: QueryClient) {
           method: "POST",
           body: {},
           fallbackKey: FALLBACK_KEY,
+          ...(scopePair(scope) ?? {}),
         },
       );
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
-export function removePluginServerMutationOptions(queryClient: QueryClient) {
+export function removePluginServerMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (serverId: string) => {
       await client(`/api/plugins/servers/${encodeURIComponent(serverId)}`, {
         method: "DELETE",
         fallbackKey: FALLBACK_KEY,
+        ...(scopePair(scope) ?? {}),
       });
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -334,7 +409,10 @@ export function removePluginServerMutationOptions(queryClient: QueryClient) {
  * One endpoint for both: the slug is the identity, so posting an existing one replaces it. The
  * fallback names saving rather than creating for that reason.
  */
-export function saveSkillMutationOptions(queryClient: QueryClient) {
+export function saveSkillMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: (input: SkillInput): Promise<unknown> =>
       client("/api/plugins/skills", {
@@ -345,8 +423,9 @@ export function saveSkillMutationOptions(queryClient: QueryClient) {
          * the common one — and paraphrasing that would throw away the only part worth reading.
          */
         fallbackKey: "plugins.saveSkill",
+        ...(scopePair(scope) ?? {}),
       }),
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -368,7 +447,10 @@ export type OAuthClientInput = {
  * Nobody's documents are reachable with what this sends. A client identifies this deployment to the
  * vendor; the grant that reads anything belongs to each person and is made on their own settings page.
  */
-export function registerOAuthClientMutationOptions(queryClient: QueryClient) {
+export function registerOAuthClientMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (input: OAuthClientInput) => {
       await client(
@@ -377,10 +459,11 @@ export function registerOAuthClientMutationOptions(queryClient: QueryClient) {
           method: "POST",
           body: { clientId: input.clientId, clientSecret: input.clientSecret },
           fallbackKey: "plugins.registerOAuth",
+          ...(scopePair(scope) ?? {}),
         },
       );
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -427,13 +510,18 @@ export function registerOAuthClientMutationOptions(queryClient: QueryClient) {
  */
 export function connectAccountMutationOptions(
   returnTo: "settings" | "admin" = "settings",
+  scope?: ScopedCache,
 ) {
   return mutationOptions({
     mutationFn: async (serverId: string): Promise<string | null> => {
       const authorizationUrl = await client<string | undefined>(
         `/api/plugins/servers/${encodeURIComponent(serverId)}/connect?returnTo=${returnTo}`,
         "authorizationUrl",
-        { method: "POST", fallbackKey: "plugins.connectAccount" },
+        {
+          method: "POST",
+          fallbackKey: "plugins.connectAccount",
+          ...(scopePair(scope) ?? {}),
+        },
       );
       return authorizationUrl ?? null;
     },
@@ -469,6 +557,7 @@ export type BrokeredConnectionConfirmation = { connected: boolean };
  */
 export function confirmBrokeredConnectionMutationOptions(
   queryClient: QueryClient,
+  scope?: ScopedCache,
 ) {
   return mutationOptions({
     mutationFn: async (
@@ -476,11 +565,15 @@ export function confirmBrokeredConnectionMutationOptions(
     ): Promise<BrokeredConnectionConfirmation> => {
       const response = await client(
         `/api/plugins/servers/${encodeURIComponent(serverId)}/connection/confirm`,
-        { method: "POST", fallbackKey: "plugins.confirm" },
+        {
+          method: "POST",
+          fallbackKey: "plugins.confirm",
+          ...(scopePair(scope) ?? {}),
+        },
       );
       return response.json();
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -491,7 +584,10 @@ export function confirmBrokeredConnectionMutationOptions(
  * the vendor still holding a live grant on somebody's mailbox, which is not what the person who
  * pressed disconnect was told would happen.
  */
-export function disconnectBrokeredMutationOptions(queryClient: QueryClient) {
+export function disconnectBrokeredMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (serverId: string) => {
       await client(
@@ -499,22 +595,27 @@ export function disconnectBrokeredMutationOptions(queryClient: QueryClient) {
         {
           method: "DELETE",
           fallbackKey: "plugins.disconnect",
+          ...(scopePair(scope) ?? {}),
         },
       );
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
-export function removeSkillMutationOptions(queryClient: QueryClient) {
+export function removeSkillMutationOptions(
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) {
   return mutationOptions({
     mutationFn: async (slug: string) => {
       await client(`/api/plugins/skills/${encodeURIComponent(slug)}`, {
         method: "DELETE",
         fallbackKey: FALLBACK_KEY,
+        ...(scopePair(scope) ?? {}),
       });
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -611,6 +712,7 @@ export type BrokeredKeyConnection = {
  */
 export function connectBrokeredWithFieldsMutationOptions(
   queryClient: QueryClient,
+  scope?: ScopedCache,
 ) {
   return mutationOptions({
     mutationFn: async (variables: {
@@ -624,6 +726,7 @@ export function connectBrokeredWithFieldsMutationOptions(
             method: "POST",
             body: { values: variables.values },
             fallbackKey: "plugins.connectAccount",
+            ...(scopePair(scope) ?? {}),
           },
         );
         return response.json();
@@ -632,7 +735,7 @@ export function connectBrokeredWithFieldsMutationOptions(
         variables.values = {};
       }
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
   });
 }
 
@@ -670,15 +773,56 @@ export type BrokeredKeyCheck = {
  */
 export function recheckBrokeredConnectionMutationOptions(
   queryClient: QueryClient,
+  scope?: ScopedCache,
 ) {
   return mutationOptions({
     mutationFn: async (serverId: string): Promise<BrokeredKeyCheck> => {
       const response = await client(
         `/api/plugins/servers/${encodeURIComponent(serverId)}/connection/recheck`,
-        { method: "POST", fallbackKey: "plugins.check" },
+        {
+          method: "POST",
+          fallbackKey: "plugins.check",
+          ...(scopePair(scope) ?? {}),
+        },
       );
       return response.json();
     },
-    onSettled: () => invalidatePlugins(queryClient),
+    onSettled: () => invalidatePluginsInScope(queryClient, scope),
+  });
+}
+
+/**
+ * Read one connection's secret in the clear — the one plaintext surface, on purpose (MT088 /
+ * Issue #131, AC2; the server's contract is MT027's: usable is not readable).
+ *
+ * OFFERED ONLY WHERE THE SERVER SAYS IT MAY BE: the caller renders the action from the row's own
+ * `canDisclose` answer and never derives it here, so on a deployment whose ownership rows grant no
+ * `disclose` the action does not exist — fail-closed, the same rule the ownership service lives by.
+ *
+ * AN INDEPENDENT, AUDITED ACTION, not part of using the connection: the disclose endpoint is its
+ * own authorization (a `disclose` row beside the `use` one), and the server writes the audit row in
+ * the same transaction that returns the plaintext.
+ *
+ * NO `queryClient` AND NO INVALIDATION, the `revealTriggerSecret` discipline: the answer changes
+ * nothing anybody reads, so there is nothing to invalidate — and the secret lives only in the
+ * component that asked for it, never in a cache a refetch would replay.
+ */
+export function revealConnectionSecretMutationOptions(scope?: ScopedCache) {
+  return mutationOptions({
+    mutationFn: async (serverId: string): Promise<string> => {
+      const revealed = await client<string | undefined>(
+        `/api/plugins/servers/${encodeURIComponent(serverId)}/connection/disclose`,
+        "secret",
+        {
+          method: "POST",
+          fallbackKey: "plugins.revealSecret",
+          ...(scopePair(scope) ?? {}),
+        },
+      );
+      if (revealed === undefined || revealed === "") {
+        throw new Error("The secret could not be read.");
+      }
+      return revealed;
+    },
   });
 }

@@ -34,11 +34,12 @@
 // payer-accounts / company-reservation 一致；账簿投影只含公司账务事实
 // （映射客户、账户状态、余额、用量），不含账户内部键。
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { billingCompanyFinanceGrants } from "../db/schema/company-finance";
 import { creditReservations } from "../db/schema/credit-reservations";
 import { enterpriseMemberships } from "../db/schema/enterprise-tenancy";
+import { usageOutbox } from "../db/schema/usage-outbox";
 import {
   type CompanyUsageSummary,
   createCompanyReservationService,
@@ -48,6 +49,26 @@ import {
   createPayerAccountService,
   type PayerAccountService,
 } from "./payer-accounts";
+import type { PaymentStore } from "./payments/types";
+import {
+  anomalyProgressOf,
+  type PaymentEventReader,
+  paymentRecordOf,
+} from "./statements";
+import type { BillingInvoice } from "./types";
+
+/** 一条公司用量证据行（usage_outbox 的只读投影；×100 缩放整数与 token 数原样）。 */
+export interface CompanyUsageLine {
+  readonly eventId: string;
+  readonly source: "llm" | "code_run";
+  readonly model: string;
+  /** 公司工作台调用的团队维度；null = 无团队维度的公司行（与表同形）。 */
+  readonly workspaceId: string | null;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly reservationId: string | null;
+  readonly occurredAt: Date;
+}
 
 /** 一条公司财务读取授权（按存储行回答）。 */
 export interface CompanyFinanceGrant {
@@ -84,9 +105,18 @@ export interface CompanyBooks {
   readonly account: {
     readonly externalCustomerId: string;
     readonly status: "active" | "quarantined";
+    /** 隔离态必留的原因（能力不可用原因的账户级答案）；active 行为 null。 */
+    readonly quarantineReason: string | null;
   } | null;
   /** 公司账户当前可花余额（credits-writer 权威口径；无账户为 0）。 */
   readonly balanceUnits: number;
+  /**
+   * 公司支付记录（BP07/#375）：公司 PayerRef 名下最近订单的统一投影（金额/币种/渠道/
+   * 收款时间/付款账户标识/交付进度/异常进度）——与个人支付记录同一 `BillingInvoice`
+   * 形状（statements.paymentRecordOf），只读消费既有订单行，零新账务。判定门后读取；
+   * 无映射为诚实空列表。
+   */
+  readonly payments: readonly BillingInvoice[];
   readonly usage: {
     /** 公司总额：账户侧独立口径（按公司映射客户的预扣投影）。 */
     readonly companyTotal: CompanyUsageTotals;
@@ -135,6 +165,18 @@ export interface CompanyFinanceVisibilityService {
     tenantId: string;
     principalId: string;
   }): Promise<CompanyBooks>;
+  /**
+   * 公司用量证据行（MT097 / Issue #140 AC3）：判定门后从**已交付的 usage_outbox**
+   * （billing 侧 Bifrost 09 链路）只读投影最近用量行——按公司映射客户过滤，个人
+   * Bifrost 直连消费（个人客户的行）**结构性不在答案里**，不是服务层自觉过滤。
+   * 只读消费，零复制、零新账务；行可经 reservationId 关联结算明细（0189 维度拆分、
+   * 0197 异步结算行）——本投影不 join，明细归各自交付面。
+   */
+  recentUsageLines(input: {
+    tenantId: string;
+    principalId: string;
+    limit?: number;
+  }): Promise<readonly CompanyUsageLine[]>;
 }
 
 function requireNonEmpty(value: unknown, what: string): string {
@@ -160,13 +202,26 @@ function grantOfRow(
 export function createCompanyFinanceVisibilityService({
   database,
   writer,
+  orders,
+  events,
 }: {
   database: Database;
   writer: CreditWriter;
+  /**
+   * 公司支付记录的只读来源（BP07/#375）：payments 模块自己的窗口读。缺省为「无支付记录」
+   * ——与无映射同一诚实空语义，绝不以替身放行；判定门先于本读，拒绝路径零订单行读取。
+   */
+  orders?: Pick<PaymentStore, "listOrdersInWindow">;
+  /** 订单异常事件的只读来源；缺省为无异常记录（零错误）。
+   */
+  events?: PaymentEventReader;
 }): CompanyFinanceVisibilityService {
   const payer: PayerAccountService = createPayerAccountService(database);
   // MT070 归属×预扣投影的唯一权威实现（只读消费，零复制）。
   const companyCalls = createCompanyReservationService({ database, writer });
+  // 公司支付记录的窗口大小：最近一笔起最近 20 笔，与个人账单页同一页大小
+  // （statements 的 INVOICE_PAGE_SIZE）——一个读屏的量，不是一次导出。
+  const COMPANY_PAYMENT_RECORD_LIMIT = 20;
 
   /** 成员资格活查：row 存在且 active 才算数（停用立即失效，A5 邻接）。 */
   async function activeMembership(
@@ -300,6 +355,34 @@ export function createCompanyFinanceVisibilityService({
           ? await writer.availableBalance(mapping.externalCustomerId)
           : 0;
 
+      /*
+       * 公司支付记录（BP07/#375）：订单的 owner scope 读，PayerRef 是**本服务自己**从
+       * tenantId 派生的公司主体（payer-company.ts 的同款字面），不是调用方传的——判定门
+       * 已过，此处才碰订单行。与个人支付记录同一投影（paymentRecordOf），最近 20 笔；
+       * 异常进度一次批量读。无 store 或无映射 → 诚实空列表。
+       */
+      let payments: readonly BillingInvoice[] = [];
+      if (orders && mapping) {
+        const rows = await orders.listOrdersInWindow({
+          from: null,
+          to: null,
+          limit: COMPANY_PAYMENT_RECORD_LIMIT,
+          offset: 0,
+          scope: {
+            actorPayerRef: { kind: "company", id: input.tenantId },
+          },
+        });
+        const progress = events
+          ? await anomalyProgressOf(
+              events,
+              rows.map((row) => row.id),
+            )
+          : new Map<string, BillingInvoice["anomalies"]>();
+        payments = rows.map((row) =>
+          paymentRecordOf(row, progress.get(row.id) ?? []),
+        );
+      }
+
       // 公司总额：账户侧独立口径——按公司映射客户投影预扣表，不经归属行。
       const heldUnits = sql<number>`coalesce(sum(case when ${creditReservations.status} = 'reserved' then ${creditReservations.maximum} else 0 end), 0)::int`;
       const chargedUnits = sql<number>`coalesce(sum(case when ${creditReservations.status} = 'settled' then coalesce(${creditReservations.charged}, 0) else 0 end), 0)::int`;
@@ -333,9 +416,11 @@ export function createCompanyFinanceVisibilityService({
           ? {
               externalCustomerId: account.externalCustomerId,
               status: account.status,
+              quarantineReason: account.quarantineReason,
             }
           : null,
         balanceUnits,
+        payments,
         usage: {
           companyTotal: {
             heldUnits: accountSide.heldUnits,
@@ -345,6 +430,47 @@ export function createCompanyFinanceVisibilityService({
           byUser: summary.byUser,
         },
       };
+    },
+
+    async recentUsageLines(input) {
+      requireNonEmpty(input?.tenantId, "tenantId");
+      requireNonEmpty(input?.principalId, "principalId");
+      // 判定门先行（与 companyBooks 同一门）：拒绝路径零用量行读取。
+      await this.assertCompanyFinanceReader({
+        tenantId: input.tenantId,
+        principalId: input.principalId,
+      });
+      const mapping = await payer.resolveCompanyCustomer(input.tenantId);
+      if (!mapping) {
+        // 诚实空：无映射即无公司用量行（个人直连消费不在本面，也无处可泄）。
+        return [];
+      }
+      const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+      const rows = await database
+        .select({
+          eventId: usageOutbox.eventId,
+          source: usageOutbox.source,
+          model: usageOutbox.model,
+          workspaceId: usageOutbox.workspaceId,
+          inputTokens: usageOutbox.inputTokens,
+          outputTokens: usageOutbox.outputTokens,
+          reservationId: usageOutbox.reservationId,
+          occurredAt: usageOutbox.occurredAt,
+        })
+        .from(usageOutbox)
+        .where(eq(usageOutbox.externalCustomerId, mapping.externalCustomerId))
+        .orderBy(desc(usageOutbox.occurredAt))
+        .limit(limit);
+      return rows.map((row) => ({
+        eventId: row.eventId,
+        source: row.source,
+        model: row.model,
+        workspaceId: row.workspaceId,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        reservationId: row.reservationId,
+        occurredAt: row.occurredAt,
+      }));
     },
   };
 }

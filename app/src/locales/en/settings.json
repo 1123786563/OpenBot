@@ -141,7 +141,12 @@
     "access": "Access",
     "accessDescription": "What you agreed to, as the vendor recorded it — not what was asked for. The two differ when a consent screen is only partly accepted.",
     "granted": "Granted",
-    "noScope": "The vendor named no scope."
+    "noScope": "The vendor named no scope.",
+    "secretTitle": "Secret",
+    "secretMasked": "Masked. {{vendor}} holds the live credential; this deployment stores only a sealed copy.",
+    "revealSecret": "Reveal secret",
+    "hideSecret": "Hide",
+    "revealAudited": "Reading the secret in the clear is an action of its own, authorized separately from using the connection, and every read is written to the audit log."
   },
   "passwords": {
     "title": "Passwords",
@@ -397,7 +402,22 @@
       "no_usage": "The model service reported zero usage for this call, so no charge was incurred.",
       "fallback": "This call is still being reconciled; the figure updates when it completes."
     },
-    "pendingHandling": "Pending amounts are held, not spent; the platform verifies the outcome with the model service and then settles or releases them automatically."
+    "pendingHandling": "Pending amounts are held, not spent; the platform verifies the outcome with the model service and then settles or releases them automatically.",
+    "realtimeTitle": "Realtime sessions",
+    "realtimeDescription": "What each realtime session consumed, what awaits settlement, and why a session stopped",
+    "realtimeEmpty": "No realtime sessions yet.",
+    "realtimeConsumed": "Consumed",
+    "realtimePending": "Awaiting settlement",
+    "realtimeStartedAt": "Started {{time}}",
+    "realtimeUnits": "{{settled}} settled · {{holding}} in flight · {{unknown}} unknown",
+    "realtimeStateOpen": "Open",
+    "realtimeStateClosed": "Closed",
+    "realtimeAbnormalNone": "Healthy",
+    "realtimeAbnormalFallback": "This session is being reconciled and updates when it completes.",
+    "realtimeAbnormal_stopped_insufficient_credits": "Stopped — the account balance ran out",
+    "realtimeAbnormal_closed_grant_invalid": "Closed — the access grant was revoked or expired",
+    "realtimeAbnormal_closed_payer_conflict": "Closed — the payment account could not be stood on",
+    "realtimeAbnormal_closed_payer_unresolved": "Closed — the payment account could not be resolved"
   },
   "ordersPage": {
     "title": "Orders & credits",

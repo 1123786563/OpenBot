@@ -1,7 +1,8 @@
-import type {
-  PriceDimension,
-  PriceDimensionUnknownReason,
-  PriceSnapshotDims,
+import {
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+  type PriceDimensionUnknownReason,
+  type PriceSnapshotDims,
 } from "../gateway/price-snapshot";
 import type { ConversionRate } from "../gateway/conversion-rate";
 import type { ReservationBoundQuantities } from "./reserve-bound";
@@ -183,22 +184,7 @@ export function assessSpeechGeneration(input: {
   }
 
   const quantities = Object.fromEntries(
-    (
-      [
-        "input",
-        "output",
-        "reasoning",
-        "image",
-        "image_output",
-        "audio_input",
-        "audio_output",
-        "cache_read",
-        "cache_write",
-        "video",
-        "surcharge_web_search",
-        "surcharge_per_request",
-      ] as const
-    ).map((dimension) => [
+    PRICE_DIMENSIONS.map((dimension) => [
       dimension,
       dimension === "audio_output"
         ? input.durationCapSeconds

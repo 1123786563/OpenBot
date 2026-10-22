@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import { createCredits } from "../src/billing/credits";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createDatabase } from "../src/db/client";
+import { createPayerAccountService } from "../src/billing/payer-accounts";
+import { payerKey } from "../src/billing/payer";
+import { billingCustomers } from "../src/db/schema/billing";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -36,7 +39,10 @@ afterAll(async () => {
     sql`DELETE FROM credit_grants WHERE idempotency_key LIKE ${`${prefix}%`}`,
   );
   await database.execute(
-    sql`DELETE FROM billing_customers WHERE external_id LIKE ${`${prefix}%`}`,
+    sql`DELETE FROM billing_credit_accounts WHERE external_customer_id LIKE ${`${prefix}%`} OR external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
+  );
+  await database.execute(
+    sql`DELETE FROM billing_customers WHERE external_id LIKE ${`${prefix}%`} OR external_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
   await database.$client.close();
 });
@@ -97,4 +103,55 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
   // The page and the gate agree, to within the one unit a carried remainder occupies.
   const spendable = await writer.availableBalance(customer);
   expect(released.plan.remaining * 100 + released.rewards.remaining * 100 - spendable).toBeLessThanOrEqual(1);
+});
+
+/*
+ * BP07/#375：个人余额面随答账户级能力状态（隔离=能力不可用+原因），读的是
+ * billing_credit_accounts 的既有行——无行=从未被隔离=active；隔离行把行上必留的原因
+ * 原样带出，页面据此说「能力不可用」而不是把冻结画成普通余额。
+ */
+test("the personal balance names the account capability status, quarantined reason and all", async () => {
+  const plain = `${prefix}-plain`;
+  const quarantined = `${prefix}-quarantined`;
+
+  // 未注册账户行的 key：active 是「没有隔离事实」的诚实读法，不是猜测。
+  const plainCredits = createCredits({
+    database,
+    externalCustomerKey: plain,
+    catalog: new Map(),
+  });
+  const plainBalance = await plainCredits.personalBalance({
+    kind: "personal",
+    id: `${prefix}-user`,
+  });
+  expect(plainBalance.account).toEqual({
+    status: "active",
+    quarantineReason: null,
+  });
+
+  // 隔离行：经 payer 服务自己的隔离入口种下（原因必留），读侧原样带出。隔离的
+  // Customer 必须是 personalBalance 实际解析的键（payerKey 的 personal 派生键），
+  // 而不是调用方随手起的客户名——这正是读侧按解析键查账户行的含义。
+  const resolvedKey = payerKey({ kind: "personal", id: `${prefix}-user` });
+  await database
+    .insert(billingCustomers)
+    .values({ externalId: resolvedKey });
+  await createPayerAccountService(database).quarantineUnknownAccount({
+    externalCustomerId: resolvedKey,
+    reason: "bp07 fixture: unattributable legacy key",
+    actor: "bp07-fixture",
+  });
+  const quarantinedCredits = createCredits({
+    database,
+    externalCustomerKey: resolvedKey,
+    catalog: new Map(),
+  });
+  const quarantinedBalance = await quarantinedCredits.personalBalance({
+    kind: "personal",
+    id: `${prefix}-user`,
+  });
+  expect(quarantinedBalance.account).toEqual({
+    status: "quarantined",
+    quarantineReason: "bp07 fixture: unattributable legacy key",
+  });
 });

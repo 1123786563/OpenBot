@@ -1102,15 +1102,25 @@ export async function extractDataTables(): Promise<DataTableEntry[]> {
   return entries.sort((a, b) => (a.id < b.id ? -1 : 1));
 }
 
-const CONFIG_SOURCES = ["src/config.ts", "src/redis.ts"];
+// MT111（Issue #154）回写：观测后端的配置面独立于主 config（Opik 语义：
+// absent env = 关闭），不入列则 OPIK_* 键对清单不可见——「实际启用的外部
+// 集成」清单必须能看见它才能被分类。
+const CONFIG_SOURCES = [
+  "src/config.ts",
+  "src/redis.ts",
+  "src/ai-observability/config.ts",
+];
 
 const EXTERNAL_DEPS: Array<[string, string, string]> = [
   // env 前缀 → 依赖名 → 业务闭环
   ["DATABASE_URL", "PostgreSQL（主库）", "platform"],
   ["ENTERPRISE_DIRECTORY_DATABASE_URL", "PostgreSQL（企业目录库）", "identity"],
   ["ENTERPRISE_DATA_DATABASE_URL", "PostgreSQL（企业数据库）", "conversation"],
+  // MT111（Issue #154）回写：真实键是 OPENBOT_TENANT_STORAGE_RUNTIME_
+  // DATABASE_URL（config.ts 唯一读取点）；原前缀永远匹配不到任何键，
+  // 该依赖从未物化过——按真实键名对齐。
   [
-    "TENANT_STORAGE_RUNTIME_DATABASE_URL",
+    "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL",
     "PostgreSQL（租户运行时库）",
     "conversation",
   ],
@@ -1133,6 +1143,9 @@ const EXTERNAL_DEPS: Array<[string, string, string]> = [
   ["SES_", "AWS SES", "responsibilities"],
   ["SNS_", "AWS SNS", "responsibilities"],
   ["SANDBOX_TOKEN", "CodeSandbox", "codesandbox"],
+  // MT111（Issue #154）回写：观测后端是父 Spec §8 点名的实际启用集成
+  // （「观测与网关集成」行）；此前键面不在 CONFIG_SOURCES 里，清单不可见。
+  ["OPIK_", "Opik 观测后端", "agent-runtime"],
 ];
 
 export function extractExternalDependencies(): {

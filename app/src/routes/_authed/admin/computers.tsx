@@ -38,7 +38,11 @@ import {
   stopHostAccessMutationOptions,
 } from "@/lib/computers/host-access";
 import { setComputerStateMutationOptions } from "@/lib/computers/mutations";
-import { computerFleetQueryOptions } from "@/lib/computers/queries";
+import {
+  ComputersUnavailableError,
+  scopedComputerFleetQueryOptions,
+} from "@/lib/computers/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { useDateTime } from "@/lib/i18n/datetime";
 
 export const Route = createFileRoute("/_authed/admin/computers")({
@@ -56,11 +60,15 @@ function ComputersPage() {
   const [confirmingUpdate, setConfirmingUpdate] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const nameFor = useBotNames();
-
-  const fleet = useQuery(computerFleetQueryOptions());
+  // The fleet read and every state action ride the scope this screen holds (MT086); a scope that
+  // refuses says so in one line instead of drawing an empty fleet over a refusal.
+  const scope = useScopedCache();
+  const fleet = useQuery(scopedComputerFleetQueryOptions(queryClient, scope));
   const hostAccess = useQuery(hostAccessQueryOptions());
   const agents = useQuery(agentListQueryOptions());
-  const setState = useMutation(setComputerStateMutationOptions(queryClient));
+  const setState = useMutation(
+    setComputerStateMutationOptions(queryClient, scope),
+  );
   const requestGrant = useMutation(
     requestHostFolderGrantMutationOptions(queryClient),
   );
@@ -71,6 +79,16 @@ function ComputersPage() {
     stopHostAccessMutationOptions(queryClient),
   );
 
+  if (fleet.error instanceof ComputersUnavailableError) {
+    return (
+      <p
+        className="mt-6 text-muted-foreground text-sm"
+        data-testid="computers-unavailable"
+      >
+        {t("unavailable")}
+      </p>
+    );
+  }
   const computers = fleet.data?.computers ?? null;
   const isolation = fleet.data?.isolation ?? null;
   /*

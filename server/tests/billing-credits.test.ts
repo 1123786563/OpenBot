@@ -55,6 +55,13 @@ describe("credit routes", () => {
     ],
   };
 
+  // BP07/#375：账户级能力状态（隔离=能力不可用+原因）随余额一并作答；默认普通账户，
+  // 隔离变体由用例翻转。
+  let accountStatus: { status: "active" | "quarantined"; quarantineReason: string | null } = {
+    status: "active",
+    quarantineReason: null,
+  };
+
   const credits: Credits = {
     catalog: new Map([["advanced", CATALOG]]),
     // The summary route answers the personal balance read (ticket 02.6) with the ref the route
@@ -63,6 +70,7 @@ describe("credit routes", () => {
       resolvedPayers.push(payer);
       return {
         accountType: "personal",
+        account: accountStatus,
         available: 476.37,
         consumed: 123.63,
         expired: 0,
@@ -167,6 +175,30 @@ describe("credit routes", () => {
     // The account came from the session, not from the request: the ref the service received is
     // the signed-in member's own personal payer.
     expect(resolvedPayers).toEqual([{ kind: "personal", id: MEMBER.id }]);
+  });
+
+  // BP07/#375：能力不可用原因随个人余额面作答——隔离账户带着行上必留的原因原样到 wire，
+  // 页面据此渲染「能力不可用」，而不是把冻结账户画成普通余额。
+  test("the summary carries the account capability status, quarantine reason and all (BP07)", async () => {
+    accountStatus = {
+      status: "quarantined",
+      quarantineReason: "legacy key with unknown attribution",
+    };
+    try {
+      const response = await app(MEMBER).request(
+        "/api/billing/credits/summary",
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        account: { status: string; quarantineReason: string | null };
+      };
+      expect(body.account).toEqual({
+        status: "quarantined",
+        quarantineReason: "legacy key with unknown attribution",
+      });
+    } finally {
+      accountStatus = { status: "active", quarantineReason: null };
+    }
   });
 
   test("the grants list carries the soon-to-expire cue", async () => {

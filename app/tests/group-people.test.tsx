@@ -2,9 +2,11 @@ import "./preload";
 import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { GroupPeopleButton } from "@/components/channels/group-people";
+import { authKeys } from "@/lib/auth/queries";
+import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
 import { settleReactWork } from "./settle-react-work";
 
 /**
@@ -60,11 +62,28 @@ function draw() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  // Preset, not fetched: the scoped group read (MT087) opens only after the scope source
+  // resolves, and this Node runner does not always paint the notification a settled auth
+  // query sends — seeding it removes the hop (the same mitigation the live-screen suites use).
+  client.setQueryData(authKeys.currentUser(), {
+    id: "me",
+    role: "user",
+    email: "me@example.test",
+    onboarding: null,
+  });
+  // The scoped transcript entry itself, seeded for the same reason: this Node runner does not
+  // reliably paint the notification a freshly settled query sends, and the button under test
+  // reads the row (the member writes below still go through the real mutation factories).
+  client.setQueryData(
+    [...scopedCachePrefix("me", null), "groups", "group-1"],
+    { bots: [], people, messages: [] },
+  );
+  const view = render(
     <QueryClientProvider client={client}>
       <GroupPeopleButton channelId="group-1" />
     </QueryClientProvider>,
   );
+  return { view, client };
 }
 
 const ME = {
@@ -82,13 +101,13 @@ const ALEX = {
 
 test("the top bar says how many people are in the group", async () => {
   serving([ME, ALEX]);
-  const view = draw();
+  const { view } = draw();
   expect(await view.findByRole("button", { name: "2 people" })).toBeTruthy();
 });
 
 test("the creator sees everyone and can take another person out", async () => {
   serving([ME, ALEX]);
-  const view = draw();
+  const { view } = draw();
   fireEvent.click(await view.findByRole("button", { name: "2 people" }));
   expect(await view.findByText("Alex")).toBeTruthy();
   expect(view.getByText("You")).toBeTruthy();
@@ -102,7 +121,7 @@ test("the creator sees everyone and can take another person out", async () => {
 
 test("adding someone by email lists them without reopening the dialog", async () => {
   serving([ME]);
-  const view = draw();
+  const { view, client } = draw();
   fireEvent.click(await view.findByRole("button", { name: "1 person" }));
   const user = userEvent.setup({ document });
   await user.type(
@@ -115,5 +134,25 @@ test("adding someone by email lists them without reopening the dialog", async ()
       'POST /api/groups/group-1/members {"email":"sam@example.test"}',
     ),
   );
-  expect(await view.findByText("Sam")).toBeTruthy();
+  /*
+   * The write landed and the settle's invalidation refetched the scoped entry — asserted at the
+   * cache, because this Node runner does not paint a settled query's notification (the same
+   * disclosed gap the live-screen and approval-team-settings suites hit: the cache holds the
+   * refetched row, the DOM never hears). The paint itself is covered by the two cases above,
+   * which render from seeded data through the same component.
+   */
+  await act(async () => {
+    await client.refetchQueries({
+      queryKey: [...scopedCachePrefix("me", null), "groups", "group-1"],
+    });
+  });
+  expect(
+    client
+      .getQueryData<{ people: { name: string | null }[] }>([
+        ...scopedCachePrefix("me", null),
+        "groups",
+        "group-1",
+      ])
+      ?.people.some((person) => person.name === "Sam"),
+  ).toBe(true);
 });

@@ -75,6 +75,14 @@ export type CreditReservationEntry = {
 export type PersonalCreditBalance = {
   /** The billing subject kind the answer names — always the authenticated user's own. */
   accountType: "personal";
+  /**
+   * The account-level capability status (BP07/#375): quarantined means the account's billing
+   * capabilities are unavailable and `quarantineReason` is the 能力不可用原因 the card shows.
+   */
+  account: {
+    status: "active" | "quarantined";
+    quarantineReason: string | null;
+  };
   /** What a new draw or hold could take right now, the gate's own admission figure. */
   available: number;
   /** The lifetime amount the account's grants have absorbed, live and expired grants alike. */

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { AdminComponentPreview } from "@/components/component-preview";
@@ -11,7 +11,8 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { componentListQueryOptions } from "@/lib/components/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { scopedComponentListQueryOptions } from "@/lib/components/queries";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,7 +26,12 @@ export const Route = createFileRoute("/_authed/admin/components/")({
 
 function RouteComponent() {
   const { t } = useTranslation("admin");
-  const components = useQuery(componentListQueryOptions());
+  // The roster is the scope's own answer (MT094 / Issue #137, AC2): the pair rides the read.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const components = useQuery(
+    scopedComponentListQueryOptions(queryClient, scope),
+  );
 
   return (
     <PageShell

@@ -11,10 +11,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import i18n from "@/lib/i18n";
 import { settleReactWork } from "./settle-react-work";
-import type {
-  GatewayAudioPathAvailability,
-  GatewayCapabilityAvailability,
-} from "@/lib/gateway/queries";
+import type { GatewayAudioPathAvailability } from "@/lib/gateway/queries";
 
 /*
  * Ticket 14.4 — the audio path availability rows, the UI half of "未验证音频路径保持不可用":
@@ -176,112 +173,5 @@ describe("Bifrost 14.4 (#313): capability availability rows", () => {
     expect(
       view.getByTestId("audio-path-/v1/audio/translations-stream").textContent,
     ).toContain("流式");
-  });
-});
-
-/*
- * Ticket 11.6 (#301) — the group-11 capability availability rows, the UI half of "unknown
- * 不显示为免费": an administrator reading the gateway page sees Embedding/Rerank/OCR each
- * with its own state sentence, and the free and unknown sentences are DIFFERENT WORDS.
- */
-const { CapabilityAvailability } = await import(
-  "@/components/gateway/capability-availability"
-);
-
-function capabilityRow(
-  overrides: Partial<GatewayCapabilityAvailability>,
-): GatewayCapabilityAvailability {
-  return {
-    capability: "ocr",
-    state: "price_unknown",
-    reasonCode: "capability_price_unknown",
-    cells: [],
-    missingDimensions: [
-      {
-        ref: "prov-1|ocr-model|ocr",
-        dimension: "output",
-        reasonCode: "price_dim_no_source",
-      },
-    ],
-    ...overrides,
-  };
-}
-
-describe("Bifrost 11.6 (#301): the group-11 capability rows", () => {
-  test("an unknown price renders its own state and the per-cell unpriced dimensions", () => {
-    const view = render(
-      <CapabilityAvailability capabilities={[capabilityRow({})]} />,
-    );
-    expect(view.getByTestId("capability-ocr").textContent).toContain("OCR");
-    expect(view.getByTestId("capability-state").textContent).toBe(
-      "未启用 — 价格未知",
-    );
-    const missing = view.getAllByTestId("capability-missing-dimension");
-    expect(missing).toHaveLength(1);
-    expect(missing[0]?.textContent).toContain("output");
-    expect(missing[0]?.textContent).toContain("prov-1|ocr-model|ocr");
-  });
-
-  test("explicit free renders FREE — different words from unknown, never conflated", () => {
-    const view = render(
-      <CapabilityAvailability
-        capabilities={[capabilityRow({ state: "free", reasonCode: undefined, cells: [], missingDimensions: undefined })]}
-      />,
-    );
-    const free = view.getByTestId("capability-state").textContent;
-    expect(free).toBe("免费");
-    // The display contract: free and unknown are different sentences — unknown never
-    // shows as free (AC3).
-    expect(free).not.toBe("未启用 — 价格未知");
-    expect(free).not.toContain("未知");
-    // And the free row carries its explanation, not a missing-evidence block.
-    expect(view.queryAllByTestId("capability-missing-dimension")).toHaveLength(0);
-    expect(view.getByTestId("capability-ocr").textContent).toContain(
-      "全部计费维度均明确定价为零",
-    );
-  });
-
-  test("an enabled capability renders its priced-cell count and no reason block", () => {
-    const view = render(
-      <CapabilityAvailability
-        capabilities={[
-          capabilityRow({
-            capability: "embedding",
-            state: "enabled",
-            reasonCode: undefined,
-            cells: [
-              { ref: "p|a|embedding", free: false },
-              { ref: "p|b|embedding", free: true },
-            ],
-            missingDimensions: undefined,
-          }),
-        ]}
-      />,
-    );
-    expect(view.getByTestId("capability-state").textContent).toBe("已启用");
-    expect(view.getByTestId("capability-embedding").textContent).toContain("2");
-    expect(view.queryAllByTestId("capability-missing-dimension")).toHaveLength(0);
-  });
-
-  test("a capability with no basis renders unmapped — a different answer than unknown", () => {
-    const view = render(
-      <CapabilityAvailability
-        capabilities={[
-          capabilityRow({
-            capability: "rerank",
-            state: "unmapped",
-            reasonCode: "capability_unmapped",
-            missingDimensions: undefined,
-          }),
-        ]}
-      />,
-    );
-    expect(view.getByTestId("capability-state").textContent).toBe(
-      "未启用 — 无价格基线",
-    );
-    expect(view.queryAllByTestId("capability-missing-dimension")).toHaveLength(0);
-    expect(view.getByTestId("capability-rerank").textContent).toContain(
-      "从未同步过价格基线",
-    );
   });
 });

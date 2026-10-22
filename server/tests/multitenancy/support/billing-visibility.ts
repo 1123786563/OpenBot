@@ -264,6 +264,9 @@ export async function createBillingVisibilityFixture(): Promise<BillingVisibilit
       currency: "CNY",
       expiresAt: new Date(Date.now() + 3600_000),
       createdBy: createdByUserId,
+      // BP01（#369）后的 owner 契约：订单在创建时归属付款账户。本套件的语义是
+      // 「成员个人订单」（AC1 的隔离面），故 owner=创建人 personal PayerRef。
+      ownerPayerRef: { kind: "personal", id: createdByUserId },
       checkoutPayload: `mt073-qr-${tag}`,
     });
     await store.cancelOrder(order.id, order.version);
@@ -307,6 +310,8 @@ export async function createBillingVisibilityFixture(): Promise<BillingVisibilit
         currency: "CNY",
         expiresAt: new Date(Date.now() + 3600_000),
         createdBy: createdByUserId,
+        // 同 insertThenCancel：成员个人订单，owner=创建人 personal PayerRef。
+        ownerPayerRef: { kind: "personal", id: createdByUserId },
         checkoutPayload: `mt073-qr-${tag}`,
       });
       return order;

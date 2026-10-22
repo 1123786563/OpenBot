@@ -141,7 +141,12 @@
     "access": "访问权限",
     "accessDescription": "你同意的内容，以服务商的记录为准——而不是所请求的内容。当授权屏幕只被部分接受时，两者会有差异。",
     "granted": "已授予",
-    "noScope": "服务商未指明任何范围。"
+    "noScope": "服务商未指明任何范围。",
+    "secretTitle": "密钥",
+    "secretMasked": "已脱敏。{{vendor}} 持有有效凭据，本部署只保存密封副本。",
+    "revealSecret": "查看明文",
+    "hideSecret": "隐藏",
+    "revealAudited": "明文读取是独立于使用连接的单独授权动作，每次读取都会写入审计日志。"
   },
   "passwords": {
     "title": "密码",
@@ -397,7 +402,22 @@
       "no_usage": "模型服务报告本次调用用量为零，未产生费用。",
       "fallback": "该笔调用仍在核对中，处理完成后金额会自动更新。"
     },
-    "pendingHandling": "待结算部分不占用您的可用额度之外的资金；平台将向模型服务核实结果后自动结算或释放。"
+    "pendingHandling": "待结算部分不占用您的可用额度之外的资金；平台将向模型服务核实结果后自动结算或释放。",
+    "realtimeTitle": "实时会话",
+    "realtimeDescription": "每个实时会话的消费、待结算额度与异常原因",
+    "realtimeEmpty": "暂无实时会话。",
+    "realtimeConsumed": "已消费",
+    "realtimePending": "待结算",
+    "realtimeStartedAt": "开始于 {{time}}",
+    "realtimeUnits": "{{settled}} 已结算 · {{holding}} 进行中 · {{unknown}} 待核实",
+    "realtimeStateOpen": "进行中",
+    "realtimeStateClosed": "已关闭",
+    "realtimeAbnormalNone": "正常",
+    "realtimeAbnormalFallback": "该会话正在对账，完成后会更新。",
+    "realtimeAbnormal_stopped_insufficient_credits": "已停止——账户余额耗尽",
+    "realtimeAbnormal_closed_grant_invalid": "已关闭——访问授权已撤销或过期",
+    "realtimeAbnormal_closed_payer_conflict": "已关闭——付款账户无法确认",
+    "realtimeAbnormal_closed_payer_unresolved": "已关闭——付款账户无法解析"
   },
   "ordersPage": {
     "title": "订单与积分",
