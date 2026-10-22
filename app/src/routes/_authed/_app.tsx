@@ -15,7 +15,7 @@ function RouteComponent() {
   return (
     // One viewport, never scrolls: panes scroll inside it. A growable shell lets the transcript's
     // scroller size against the page, grow it, and grow again.
-    <SidebarShell className="h-svh overflow-hidden" width="340px">
+    <SidebarShell className="h-svh overflow-hidden" width="280px">
       <SkipToContent />
       <AppSidebar />
       <main

@@ -4,6 +4,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   pgTable,
   primaryKey,
   text,
@@ -199,5 +200,88 @@ export const billingWebhookEvents = pgTable(
     // A plain lookup index, not a uniqueness fence: two distinct events may legitimately carry
     // byte-identical bodies, so the hash is evidence, never a dedupe key (audit A7).
     index("billing_webhook_events_body_hash_idx").on(table.bodyHash),
+  ],
+);
+
+/**
+ * The account-level resolution registry (Bifrost BP06, #374): one row per authorized
+ * disposal command on one payer account — the durable RESULT REGISTRATION of an
+ * operator's account-scope decision (补发/结算/释放/平台承担损失/人工退款), with the
+ * evidence it stood on, the operator who commanded it, and the command's own retry
+ * identity.
+ *
+ * THE ROWS ARE DECISIONS, NOT MONEY MOVEMENT. The actions themselves go through their own
+ * doors — a hold settles or releases only through 08.9's evidenced disposal, a plan
+ * redelivers through the activation path — so this table never moves a hold or writes a
+ * ledger row. What it guarantees is the ticket's own list: a replay of the SAME command
+ * reads the recorded answer and registers nothing (the idempotency-key UNIQUE index), the
+ * refund ceiling reads the account's PRIOR refunds (超可退额 is a query, not a hope), and
+ * every landed row names its evidence — a command without evidence never reaches the
+ * table (0176's CHECKs keep a landed row honest; the service refuses the rest).
+ */
+export const billingAccountResolutions = pgTable(
+  "billing_account_resolutions",
+  {
+    /** `bar-` plus 8 random bytes as hex, minted by the resolution service. */
+    id: text("id").primaryKey(),
+    /** The payer account the disposal decided about (the credit account key). */
+    externalCustomerId: text("external_customer_id")
+      .notNull()
+      .references(() => billingCustomers.externalId, { onDelete: "cascade" }),
+    /** The account-scope action, from the closed five-word vocabulary. */
+    action: text("action")
+      .$type<"reissue" | "settle" | "release" | "absorb" | "refund">()
+      .notNull(),
+    /** The operator's stable snake_case reason word (e.g. `paid_not_delivered`). */
+    reasonCode: text("reason_code").notNull(),
+    /** What the command stands on, by kind; see the migration for the closed set. */
+    evidenceKind: text("evidence_kind")
+      .$type<
+        | "reconcile_finding"
+        | "payment_event"
+        | "recovery_evidence"
+        | "operator_statement"
+      >()
+      .notNull(),
+    /** The specific evidence row/reference the kind names — never free prose alone. */
+    evidenceReference: text("evidence_reference").notNull(),
+    /** The operator who commanded the disposal; the session's own actor on the route. */
+    operatorId: text("operator_id").notNull(),
+    /** The command's retry identity: the same key replays the recorded answer. */
+    idempotencyKey: text("idempotency_key").notNull(),
+    /** The money the action concerns, when it concerns money (refund/absorb/reissue);
+     * NULL for record-only actions. Positive whole cents when present. */
+    amountCents: integer("amount_cents"),
+    /** The operator's own bounded words for what was done. */
+    detail: text("detail").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    check(
+      "billing_account_resolutions_action_check",
+      sql`${table.action} IN ('reissue', 'settle', 'release', 'absorb', 'refund')`,
+    ),
+    check(
+      "billing_account_resolutions_evidence_kind_check",
+      sql`${table.evidenceKind} IN ('reconcile_finding', 'payment_event', 'recovery_evidence', 'operator_statement')`,
+    ),
+    check(
+      "billing_account_resolutions_amount_check",
+      sql`${table.amountCents} IS NULL OR ${table.amountCents} > 0`,
+    ),
+    check(
+      "billing_account_resolutions_reason_code_shape_check",
+      sql`${table.reasonCode} ~ '^[a-z0-9_]{1,64}$'`,
+    ),
+    // One registration per command key, ever — the database-level half of 可重放不重复.
+    uniqueIndex("billing_account_resolutions_idempotency_key_unique_idx").on(
+      table.idempotencyKey,
+    ),
+    index("billing_account_resolutions_account_idx").on(
+      table.externalCustomerId,
+      table.createdAt,
+    ),
   ],
 );

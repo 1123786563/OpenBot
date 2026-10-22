@@ -479,11 +479,15 @@ describe("cross-Bot recall inside the company; nobody else's (#382 AC2)", () => 
     expect(serialized).not.toContain("document");
     expect(serialized).not.toContain("EXTRACTED FACT");
     for (const item of viaBotOne) {
+      // Hindsight 09 (#386) added the temporal fields; still no bank, no document id.
       expect(Object.keys(item).sort()).toEqual([
         "content",
+        "effectiveFrom",
+        "effectiveUntil",
         "id",
         "markedGenericAt",
         "provenance",
+        "timeUncertain",
       ]);
     }
   });

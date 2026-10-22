@@ -125,6 +125,12 @@ export const RESERVE_BOUND_EVIDENCE_KINDS = [
   "provider_max_tokens",
   /** The input side is truncated to a ceiling before sending (self-enforced bound). */
   "self_enforced_input_truncation",
+  /**
+   * The input side is counted in full and the call REFUSED over the ceiling (the
+   * embeddings bound, 11.1/11.2): a batch's entries are the payload, so truncation would
+   * change the answer the caller asked for — the honest self-enforcement is refusal.
+   */
+  "self_enforced_input_refusal",
 ] as const;
 
 export type ReserveBoundEvidenceKind =
