@@ -55,14 +55,33 @@ export function createProactiveStore(database: Database) {
       owner: string,
       input: unknown,
       threadId: string,
+      /** MT045: enterprise attribution, server-supplied and create-once; absent = personal. */
+      attribution?: { tenantId: string; workspaceId: string },
     ): Promise<ProactiveSetting> {
       const parsed = parseWith(proactiveSettingInputSchema, input);
+      // MT045: attribution ids are server-supplied ids, not user text — trimmed
+      // non-empty, bounded, and never something the body can influence.
+      const idOrRefuse = (value: string, field: string) => {
+        const id = value?.trim();
+        if (!id || id.length > 200)
+          throw new ProactiveRefusedError(
+            `The ${field} for this background research is not valid.`,
+          );
+        return id;
+      };
+      const scoped = attribution
+        ? {
+            tenantId: idOrRefuse(attribution.tenantId, "company"),
+            workspaceId: idOrRefuse(attribution.workspaceId, "team"),
+          }
+        : { tenantId: null, workspaceId: null };
       const [row] = await database
         .insert(proactiveSettings)
         .values({
           id: randomUUID(),
           ownerUserId: owner,
           threadId,
+          ...scoped,
           ...parsed,
         })
         .onConflictDoNothing()

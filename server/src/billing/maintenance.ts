@@ -233,3 +233,81 @@ export function startRecoveryScanSweeps(
     },
   };
 }
+
+/**
+ * The recovery retry sweep (Bifrost 08.4, #279): the background driver that hands the
+ * recovery lanes their items on a schedule — the same shape as the scan sweep above. Each
+ * pass reads the pending items whose backoff has elapsed and whose failure count is still
+ * below the threshold, routes each to its lane (a persisted result to 08.2's replay; a
+ * no-result item to 08.5's provider query where a source is wired), and stamps the next
+ * retry's backoff on every failure. The pass itself is safe to race — the claim is 08.1's
+ * atomic one — and the lock exists for the same reason as the scan's: N replicas should
+ * not run N identical due-reads every interval (audit C3's shape).
+ *
+ * The key 4_192_009 is reserved for this sweep and must not be reused: two sweepers
+ * sharing a key would silently skip each other's passes.
+ */
+export function startRecoveryRetrySweeps(
+  retry: {
+    runRetryPass(workerId: string): Promise<{
+      due: number;
+      escalatedToManual: number;
+    }>;
+  },
+  options: {
+    workerId?: string;
+    intervalMs?: number;
+    firstRunMs?: number;
+    log?: (message: string) => void;
+    lock?: SweepLock;
+  } = {},
+): { stop(): void } {
+  const workerId =
+    options.workerId ??
+    `recovery-retry-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  const intervalMs = options.intervalMs ?? 60_000;
+  const firstRunMs = options.firstRunMs ?? 90_000;
+  const lock = options.lock;
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
+  const log = options.log ?? ((message: string) => console.warn(message));
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  let running = false;
+
+  const run = () => {
+    if (running) return;
+    running = true;
+    void withSweepLock(lock, () => retry.runRetryPass(workerId))
+      .then((batch) => {
+        if (batch && batch.escalatedToManual > 0) {
+          log(
+            `billing: recovery retry pass due=${batch.due} escalated=${batch.escalatedToManual} to manual queue`,
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        log(
+          `billing: recovery retry pass failed error=${
+            error instanceof Error ? error.name : "unknown"
+          }`,
+        );
+      })
+      .finally(() => {
+        running = false;
+      });
+  };
+
+  const first = setTimeout(() => {
+    run();
+    const repeating = setInterval(run, intervalMs);
+    repeating.unref?.();
+    timers.push(repeating);
+  }, firstRunMs);
+  first.unref?.();
+  timers.push(first);
+
+  return {
+    stop: () => {
+      for (const timer of timers) clearTimeout(timer);
+    },
+  };
+}

@@ -233,6 +233,8 @@ describe("proactive run", () => {
       lastRunAt: null,
       lastStatus: "idle",
       lastError: null,
+      tenantId: null,
+      workspaceId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
