@@ -6,10 +6,10 @@ Implemented only the four owned wrappers: `button.tsx`, `sheet.tsx`, `context-me
 
 - `button.tsx`: sorted React imports and applied the formatter's single-line `mergeRefs` layout.
 - `sheet.tsx`: formatter-only wrapping of long values/ternary.
-- `context-menu.tsx`: added the missing `cancelLongPress` hook dependency using a stable `useCallback`; added `role="group"` to the event-handling trigger wrapper to satisfy the static-interaction rule; removed the temporary unused import.
+- `context-menu.tsx`: added the missing `cancelLongPress` hook dependency using a stable `useCallback`; after independent review, the event-handling wrapper defaults to `role="presentation"` and preserves a caller-supplied role; added a narrow Biome suppression documenting its delegated interaction; removed the temporary unused import.
 - `dialog.tsx`: included `props.onOpenChange` in the Escape listener effect dependencies.
 
-The added role gives the non-interactive group wrapper an explicit semantic role; pointer, keyboard, and touch handling remain intact. No public wrapper props or exports changed.
+The presentational role keeps the event surface out of the accessibility tree while preserving caller overrides and pointer, keyboard, and touch handling. No public wrapper props or exports changed.
 
 ## Diagnostics before edits
 
@@ -32,4 +32,12 @@ Exit: 1. Output: 4 files checked; 6 errors. Findings: `button.tsx` import orderi
 
 ## Self-review
 
-Reviewed the four-file diff. Changes are confined to import/format compliance and effect/interaction semantics flagged by Biome. The callback dependency is stable via `useCallback`; the dialog listener correctly rebinds when the close callback changes. The trigger's `role="group"` keeps the element non-interactive while providing an explicit role. No tests or unrelated source files were edited. No commit was made. Remaining concern: the required focused test command is not fully green due to two `heroui-spike` failures; these failures were not investigated or changed because they are outside this static-check-only repair's scope.
+Reviewed the four-file diff. Changes are confined to import/format compliance and effect/interaction semantics flagged by Biome. The callback dependency is stable via `useCallback`; the dialog listener correctly rebinds when the close callback changes. The trigger defaults to a presentational role and honors caller overrides. No tests or unrelated source files were edited. No commit was made by the implementer. The original combined focused command had two `heroui-spike` failures; both match the documented isolation-sensitive Modal baseline. After the reviewer-requested role repair, the targeted ContextMenu probe passed 8/8. The independent controller verification summary records the remaining full-suite variance and final authorization boundary.
+
+## Review repair note
+
+Applied the reviewer-requested accessibility correction in `context-menu.tsx`: the wrapper now uses `role={role ?? "presentation"}` after destructuring `role` from caller props, so caller-provided roles are retained and cannot be overwritten by the props spread. Biome still flags a presentational event wrapper under `noStaticElementInteractions`, so a targeted suppression documents that this wrapper delegates interaction to its child and is intentionally presentational.
+
+- `bunx biome check app/src/components/ui/context-menu.tsx` — exit 0, one file checked, no fixes applied. Output: `docs/verification/workspace-redesign/t02-r6/repair-biome.txt`.
+- `bunx e2e run --config e2e.unit.config.ts app/tests/zz-probe-context-menu.test.tsx` — exit 0; one file, 8 passed, 0 failed, skipped, interrupted, or flaky. Output: `docs/verification/workspace-redesign/t02-r6/repair-context-menu-e2e.txt`; structured report `.e2e/unit/report.json`.
+- Final `context-menu.tsx` SHA-256: `4b04a2801604d011a66298c54ba41d382d423fb46be24fa649dc1813b14df317`.

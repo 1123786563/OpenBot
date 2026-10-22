@@ -166,6 +166,7 @@ function ContextMenuTrigger({
   onTouchMove,
   onTouchEnd,
   onTouchCancel,
+  role,
   ...props
 }: ContextMenuTriggerProps) {
   const { requestOpen, disabled, triggerRef } = useContextMenuRoot();
@@ -187,13 +188,14 @@ function ContextMenuTrigger({
   useEffect(() => cancelLongPress, [cancelLongPress]);
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: this wrapper is presentational; it delegates interaction to its child.
     <div
       {...props}
       ref={(node) => {
         triggerRef.current = node;
       }}
       className={cn("select-none", className)}
-      role="group"
+      role={role ?? "presentation"}
       data-slot="context-menu-trigger"
       style={{ WebkitTouchCallout: "none", ...style }}
       onContextMenu={(event) => {
