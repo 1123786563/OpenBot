@@ -156,7 +156,8 @@
   {
    "name": "app/tests/multitenancy",
    "files": [
-    "app/tests/multitenancy/selection.test.tsx"
+    "app/tests/multitenancy/selection.test.tsx",
+    "app/tests/multitenancy/transport-rest.test.tsx"
    ]
   },
   {
@@ -649,6 +650,8 @@
     "server/tests/multitenancy/native-runtime.test.ts",
     "server/tests/multitenancy/not-found-semantics.test.ts",
     "server/tests/multitenancy/oauth-state.test.ts",
+    "server/tests/multitenancy/openmuse-files.test.ts",
+    "server/tests/multitenancy/openmuse-personal.test.ts",
     "server/tests/multitenancy/openmuse-private-bot.test.ts",
     "server/tests/multitenancy/openmuse-tasks.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
@@ -775,6 +778,7 @@
   "app/tests/memory-settings.test.tsx",
   "app/tests/model-picker-ui.test.tsx",
   "app/tests/multitenancy/selection.test.tsx",
+  "app/tests/multitenancy/transport-rest.test.tsx",
   "app/tests/observability-i18n-namespaces.test.ts",
   "app/tests/observability-route-guards.test.tsx",
   "app/tests/pending-settlement-ui.test.tsx",
@@ -1004,6 +1008,8 @@
   "server/tests/multitenancy/native-runtime.test.ts",
   "server/tests/multitenancy/not-found-semantics.test.ts",
   "server/tests/multitenancy/oauth-state.test.ts",
+  "server/tests/multitenancy/openmuse-files.test.ts",
+  "server/tests/multitenancy/openmuse-personal.test.ts",
   "server/tests/multitenancy/openmuse-private-bot.test.ts",
   "server/tests/multitenancy/openmuse-tasks.test.ts",
   "server/tests/multitenancy/payer-accounts.test.ts",
@@ -1246,7 +1252,10 @@
   "server/tests/multitenancy/agent-adapters.test.ts": "runner named it: wave3 round7 mt9 套件",
   "server/tests/multitenancy/runs-protocol.test.ts": "runner named it: wave3 round7 mt9 套件",
   "server/tests/hindsight-judgment-review.contract.test.ts": "runner named it: wave3 hbc8 #389 套件",
-  "server/tests/hindsight-judgment-review.integration.test.ts": "runner named it: wave3 hbc8 #389 套件"
+  "server/tests/hindsight-judgment-review.integration.test.ts": "runner named it: wave3 hbc8 #389 套件",
+  "app/tests/multitenancy/transport-rest.test.tsx": "runner named it: imports tests/support/bun-test-compat (bun:test registry) — MT081/#124 transport suite",
+  "server/tests/multitenancy/openmuse-files.test.ts": "runner named it: imports tests/support/bun-test-compat (bun:test registry) — MT061/#104 files tenancy suite",
+  "server/tests/multitenancy/openmuse-personal.test.ts": "runner named it: imports tests/support/bun-test-compat (bun:test registry) — MT062/#105 personal tenancy suite"
  },
  "directoryIslands": [
   "server/tests/multitenancy",

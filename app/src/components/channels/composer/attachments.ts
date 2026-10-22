@@ -5,6 +5,7 @@ import {
   attachmentUrl,
   MAX_IMAGE_BYTES,
 } from "@/lib/channels/attachments";
+import { clientUpload } from "@/lib/client";
 
 /**
  * Uploads a picked file to this deployment and hands the composer a link to it, never the bytes.
@@ -33,8 +34,10 @@ type UploadedAttachment = {
 /**
  * The SDK's `onUpload`, scoped to one channel.
  *
- * `fetch` directly rather than `client()` from `@/lib/client`: `client()` JSON-stringifies its
- * body and sets a JSON content type, neither of which can carry a multipart upload.
+ * `clientUpload` from `@/lib/client` rather than a private `fetch`: multipart cannot ride
+ * `client()` (it JSON-stringifies its body and sets a JSON content type), and `clientUpload` is
+ * that transport's own multipart half — same credentials, same scope-selection discipline — so
+ * this surface has no attach logic of its own to drift from the REST one (MT081 AC3).
  *
  * Supplying this is what keeps the bytes out of browser state: with `onUpload` set, the SDK never
  * calls its own `readFileAsBase64` and never retains the `File` it was handed, so no copy of the
@@ -61,11 +64,10 @@ export function uploadToChannel(
      */
     formData.append("uploadGroup", uploadGroup);
 
-    const response = await fetch(`/api/channels/${channelId}/attachments`, {
-      method: "POST",
-      credentials: "include",
-      body: formData,
-    });
+    const response = await clientUpload(
+      `/api/channels/${channelId}/attachments`,
+      formData,
+    );
 
     /*
      * READ ONCE, FOR EITHER OUTCOME, AND NEVER TRUSTED.

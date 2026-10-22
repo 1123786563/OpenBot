@@ -61,6 +61,8 @@ export * from "./mastra-message-intents";
 export * from "./mastra-tenant-storage";
 export * from "./memory";
 export * from "./openmuse";
+export * from "./openmuse-file-tenancy";
+export * from "./openmuse-personal-tenancy";
 export * from "./openmuse-task-tenancy";
 export * from "./passwords";
 export * from "./payer-accounts";
