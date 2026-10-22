@@ -423,6 +423,16 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
     // 波次 19（orca-dag-wave3 mt12，brief 预授权窄缝同款）：本票新增
     // MT064（Issue #107）、MT065（Issue #108）与 MT066（Issue #109）
     // 并入排序位（MT062<MT064<MT065<MT066<MT067）。
+    // 波次 20（orca-dag-wave3 mt27，brief 预授权窄缝同款）：本票新增
+    // MT053（Issue #96，enterprise_craft_scopes 协会表）与 MT054
+    // （Issue #97，enterprise_craft_schedule_scopes 协会表）并入排序位
+    // （MT042<MT053<MT054<MT059）。
+    // 波次 21（orca-dag-wave3 mt28，brief 预授权窄缝同款）：本票新增
+    // MT055（Issue #98，enterprise_artifact_scopes 协会表）、MT057
+    // （Issue #100，enterprise_workshop_scopes 与
+    // enterprise_workshop_sandbox_bindings 两协会表）与 MT058（Issue
+    // #101，enterprise_workshop_share_grants 表）并入排序位
+    // （MT054<MT055<MT057<MT058<MT059）。
     expect(ALLOWED_TASK_IDS).toEqual([
       "MT000",
       "MT004",
@@ -443,6 +453,11 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       "MT040",
       "MT041",
       "MT042",
+      "MT053",
+      "MT054",
+      "MT055",
+      "MT057",
+      "MT058",
       "MT059",
       "MT060",
       "MT061",
@@ -465,6 +480,10 @@ describe("issue #46 criterion 3: deterministic names and increasing numbers", ()
       // MT114（Issue #157，MT114 brief 预授权窄缝同款）：仅本断言追加
       // "MT114"（子记录回填批次进度表迁移注册），文件其余内容只读。
       "MT114",
+      // 波次 20（orca-dag-wave3 mt22，brief 预授权窄缝同款）：本票新增
+      // MT120（Issue #163）持久隔离清单表迁移注册并入排序位
+      // （MT114<MT120）。
+      "MT120",
     ]);
     expect(new Set(ALLOWED_TASK_IDS)).toEqual(new Set(TASKS.keys()));
     const selfCheck = TASKS.get("MT000");

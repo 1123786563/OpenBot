@@ -53,6 +53,10 @@ import {
 import type { DISPOSAL_REFUSAL_REASONS } from "./recovery-disposal";
 import type { ConversionRate } from "../gateway/conversion-rate";
 import type { RealtimeUsageReader } from "./realtime-usage";
+import type {
+  AsyncJobDisplayState,
+  AsyncJobsViewReader,
+} from "./async-jobs-view";
 
 /** The shape `requireAdmin` takes in auth/guards.ts: a refusal answer, or nothing to add. */
 type RequireAdmin = (
@@ -224,6 +228,11 @@ export function createBillingCreditRoutes(deps: {
    * Absent answers 503, never a fallback — the same rule the reward claim keeps.
    */
   realtimeUsage?: RealtimeUsageReader;
+  /**
+   * 17.8's async jobs read (the person's own jobs with status, reason and amounts).
+   * Absent answers 503, never a fallback — the same rule every optional read here keeps.
+   */
+  asyncJobsView?: AsyncJobsViewReader;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -303,6 +312,27 @@ export function createBillingCreditRoutes(deps: {
     const payer = resolvePayerForPersonalUser(context.var.actor);
     return context.json({
       sessions: await deps.realtimeUsage.realtimeSessionsForPayer(payer),
+    });
+  });
+
+  /*
+   * The person's own async jobs (17.8, AC1/AC3): status in the code table the money lanes
+   * hold, the reason a waiting state waits for, and the amounts in the ledger's own ×100
+   * integers — the same shape the reads above keep. The account is the session's own payer,
+   * resolved server-side; no route parameter names an account, so another person's jobs are
+   * never in the question (他人任务不可见), and the attribution shown is the job row's own
+   * frozen grant/payer — a key that expired after the submit changes nothing (归属不变).
+   */
+  routes.get("/credits/async-jobs", async (context) => {
+    if (!deps.asyncJobsView) {
+      return context.json(
+        { error: "Async jobs are unavailable. Try again." },
+        503,
+      );
+    }
+    const payer = resolvePayerForPersonalUser(context.var.actor);
+    return context.json({
+      jobs: await deps.asyncJobsView.asyncJobsForPayer(payer),
     });
   });
 
@@ -502,6 +532,11 @@ export function createBillingAdminRoutes(deps: {
    * leaves version-0 locks unsettleable there too — the same refusal, never a fallback rate.
    */
   environmentRate?: ConversionRate;
+  /**
+   * 17.8's async jobs review read (the task dimension beside 08.8's anomaly queue).
+   * Absent answers 503 — a review that cannot read says so, never an empty answer.
+   */
+  asyncJobsView?: AsyncJobsViewReader;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -929,6 +964,76 @@ export function createBillingAdminRoutes(deps: {
         evidence: evidenceByItem.get(item.id) ?? [],
       })),
     });
+  });
+
+  /*
+   * The async jobs review read (Bifrost 17.8): every payer's async jobs with the SAME
+   * status/reason/amounts projection the user page renders, plus the money lanes' own
+   * current facts, filtered by the task dimensions (jobId prefix, status in the code
+   * table, payer). THIS ROUTE READS, IT NEVER DISPOSES — the recovery review's own rule,
+   * held to the route set exactly as 08.8's tests hold theirs. 管理员访问走审计路径: both
+   * the denied probe (08.8's own trail) and the read itself land one audit row, so the
+   * trail answers WHO reviewed WHAT window — the payload carries the filters and the
+   * result count, never another account's rows.
+   */
+  routes.get("/async-jobs", async (context) => {
+    const denied = deps.requireAdmin(context);
+    if (denied) {
+      if (deps.audit) {
+        await recordAuditEvent(deps.audit, {
+          eventType: "billing.async_jobs.review_denied",
+          targetType: "billing",
+          actorUserId: context.var.actor.id,
+          payload: { path: "/api/admin/billing/async-jobs" },
+        });
+      }
+      return denied;
+    }
+    if (!deps.asyncJobsView) {
+      return context.json(
+        { error: "The async jobs review is unavailable. Try again." },
+        503,
+      );
+    }
+    const statusParam = context.req.query("status");
+    let status: AsyncJobDisplayState | undefined;
+    if (statusParam !== undefined) {
+      const allowed: AsyncJobDisplayState[] = [
+        "queued",
+        "running",
+        "pending-settlement",
+        "settled",
+        "refused",
+        "cancelled",
+      ];
+      if (!allowed.includes(statusParam as AsyncJobDisplayState)) {
+        return context.json({ error: "Supply a valid status filter." }, 400);
+      }
+      status = statusParam as AsyncJobDisplayState;
+    }
+    const filter = {
+      jobId: context.req.query("jobId") ?? undefined,
+      status,
+      payerId: context.req.query("payerId") ?? undefined,
+    };
+    const jobs = await deps.asyncJobsView.asyncJobsForReview(filter);
+    if (deps.audit) {
+      await recordAuditEvent(deps.audit, {
+        eventType: "billing.async_jobs.review_read",
+        targetType: "billing",
+        actorUserId: context.var.actor.id,
+        payload: {
+          path: "/api/admin/billing/async-jobs",
+          filters: {
+            ...(filter.jobId !== undefined ? { jobId: filter.jobId } : {}),
+            ...(status !== undefined ? { status } : {}),
+            ...(filter.payerId !== undefined ? { payerId: filter.payerId } : {}),
+          },
+          resultCount: jobs.length,
+        },
+      });
+    }
+    return context.json({ generatedAt: new Date().toISOString(), jobs });
   });
 
   /*

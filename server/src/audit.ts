@@ -927,6 +927,27 @@ export const auditEventTypes = [
    */
   "billing.batch_item_cancelled",
   /**
+   * An async job's cancellation landed its conclusion (17.7): the job, the provider job,
+   * the payer, the provider's own cancel result, the money reaction it produced, and —
+   * when the release stood on the provider's unbilled confirmation — the evidence receipt
+   * the release carried. Written when a conclusion first lands or changes, never again for
+   * the same conclusion (重复取消不重复审计), so the trail reads as the job's cancellation
+   * history while the row in `async_job_cancellations` is the durable current fact.
+   */
+  "billing.async_job_cancelled",
+  /**
+   * An administrator read the async jobs review window (17.8): the filters asked (jobId
+   * prefix, status, payer — whichever were present) and the result count. The payload
+   * deliberately carries no job rows: the review's own audit is WHO looked at WHAT window,
+   * and the jobs themselves live in their own tables.
+   */
+  "billing.async_jobs.review_read",
+  /**
+   * A non-administrator probed the async jobs review (17.8): the same fact 08.8 records
+   * for the anomaly queue — the caller saw nothing, so the trail carries the path only.
+   */
+  "billing.async_jobs.review_denied",
+  /**
    * A craft session's owner answered a connect_app card (connected/declined; the session,
    * the app id and the decision in the payload). The handshake itself rides ephemeral KV
    * (onyx parity — no approval row), so this audit row is the one durable record that a

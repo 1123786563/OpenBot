@@ -13,6 +13,12 @@ import {
   type ReservationBoundQuantities,
   type ReservationCeilingIssue,
 } from "./reserve-bound";
+import {
+  assessSpeechTailConstraint,
+  speechTailAvailabilityView,
+  type SpeechTailUnavailableReason,
+  type SpeechTailVerdict,
+} from "./speech-tail-availability";
 import type { PriceDimension, PriceSnapshotDims } from "../gateway/price-snapshot";
 
 /*
@@ -58,6 +64,21 @@ export type AudioPathAdmissionRefusal =
       reasonCode: "audio_path_unverified" | "audio_path_not_an_entrance";
       /** The registry's own missing items — the specific evidence the path lacks. */
       detail: { missingItems: readonly AudioPathMissingItem[] };
+    }
+  | {
+      status: "refused";
+      /**
+       * 13.4's tail constraint refused the synthesis call mode itself: the format's
+       * generated audio cannot be measured, so its tail cost cannot be bounded. Still the
+       * evidence stage — the refusal is a property of the path, before any price or door.
+       */
+      stage: "evidence";
+      reasonCode: "speech_tail_unconstrainable";
+      detail: {
+        stream: boolean;
+        responseFormat: string;
+        reasons: readonly SpeechTailUnavailableReason[];
+      };
     }
   | {
       status: "refused";
@@ -123,6 +144,12 @@ export type AudioPathAdmissionInput = {
   stream: boolean;
   /** The audio model cell being admitted. */
   model: ModelRef;
+  /**
+   * The synthesis request's wire response_format; absent is the wire's mp3 default, which
+   * 13.4's tail constraint refuses before the reserve door — a forced call on an
+   * unconstrainable path never reaches a provider.
+   */
+  responseFormat?: string;
   /** The quantities the capability's own assessor certified (13.1's / 14.1's own). */
   quantities: ReservationBoundQuantities;
   /** The authorization the dispatch runs under — the reserve door re-proves it live. */
@@ -144,14 +171,24 @@ export type AudioPathAdmissionInput = {
 /**
  * The availability verdict (AC1/AC2), derived exactly the way 14.3 derives its projections:
  * the record's structural gaps empty AND every dimension it bills KNOWN on the basis — the
- * same machinery the admin surface reads, consumed here at the door. Pure — the same
- * registry and basis always answer the same verdict, so the admin surface, the discovery
- * readers and this gate can never disagree about what is usable.
+ * same machinery the admin surface reads, consumed here at the door. 13.4 adds the synthesis
+ * family's own tail axis between the two: a call mode whose response format cannot be
+ * measured refuses with `speech_tail_unconstrainable` BEFORE the price axis is consulted,
+ * because a tail the server cannot bound is unavailable whatever the basis prices — and a
+ * constrainable format falls through to the price axis unchanged. Pure — the same registry
+ * and basis always answer the same verdict, so the admin surface, the discovery readers
+ * and this gate can never disagree about what is usable.
  */
 export function assessAudioPathAvailability(input: {
   path: string;
   stream: boolean;
   dims: PriceSnapshotDims;
+  /**
+   * The synthesis request's wire response_format; absent is the wire's mp3 default, which
+   * the tail constraint refuses. Meaningful for the synthesis family only — transcription
+   * bills its INPUT audio (14.1's upload meter) and carries no output-format tail.
+   */
+  responseFormat?: string;
 }):
   | { available: true; record: AudioCapabilityEvidenceRecord }
   | {
@@ -159,9 +196,12 @@ export function assessAudioPathAvailability(input: {
       reasonCode:
         | "audio_path_unverified"
         | "audio_path_not_an_entrance"
-        | "price_unknown";
+        | "price_unknown"
+        | "speech_tail_unconstrainable";
       missingItems: readonly AudioPathMissingItem[];
       missingDimensions: readonly { dimension: PriceDimension; reason: string }[];
+      /** The tail verdict that refused a synthesis call mode, when it did. */
+      tail?: SpeechTailVerdict;
     } {
   const record = AUDIO_CAPABILITY_EVIDENCE.find(
     (candidate) => candidate.path === input.path && candidate.stream === input.stream,
@@ -176,6 +216,23 @@ export function assessAudioPathAvailability(input: {
       missingItems: [],
       missingDimensions: [],
     };
+  }
+  if (record.family === "synthesis") {
+    // 13.4's tail axis: a property of the path's own call mode, so it precedes every
+    // basis-dependent verdict — the same ordering the registry's structural gaps keep.
+    const tail = assessSpeechTailConstraint({
+      stream: input.stream,
+      responseFormat: input.responseFormat,
+    });
+    if (!tail.constrainable) {
+      return {
+        available: false,
+        reasonCode: "speech_tail_unconstrainable",
+        missingItems: [],
+        missingDimensions: [],
+        tail,
+      };
+    }
   }
   if (enableableAudioPaths(input.dims).some((enableable) => enableable === record)) {
     return { available: true, record };
@@ -228,6 +285,18 @@ export type AudioPathAvailabilityRow = {
   exists: boolean;
   /** The registry's own structural gaps — the codes a refusal would name. */
   missingItems: readonly AudioPathMissingItem[];
+  /**
+   * 13.4's per-format tail projection, on the synthesis family's rows only: which response
+   * formats the call mode can bound and which stay unenabled with their reasons — the
+   * admin-surface half of "不可用原因可在发现接口与界面查询", derived from the same pure
+   * verdict the door refuses by, never re-worded.
+   */
+  tailConstraint?: readonly {
+    format: string;
+    defaultFormat: boolean;
+    enabled: boolean;
+    reasons?: readonly SpeechTailUnavailableReason[];
+  }[];
   /** One row per audio-capable cell's latest basis: enabled there, or why not. */
   bases: readonly {
     ref: string;
@@ -263,6 +332,18 @@ export function audioPathAvailabilityView(
       stream: record.stream,
       exists: record.exists,
       missingItems: record.missingItems,
+      ...(record.family === "synthesis"
+        ? {
+            tailConstraint: speechTailAvailabilityView()
+              .filter((row) => row.stream === record.stream)
+              .map((row) => ({
+                format: row.format,
+                defaultFormat: row.defaultFormat,
+                enabled: row.enabled,
+                ...(row.reasons !== undefined ? { reasons: row.reasons } : {}),
+              })),
+          }
+        : {}),
       bases: rows,
     };
   });
@@ -284,8 +365,27 @@ export function createAudioPathAdmission(
         path: input.path,
         stream: input.stream,
         dims: input.dims,
+        ...(input.responseFormat !== undefined
+          ? { responseFormat: input.responseFormat }
+          : {}),
       });
       if (!availability.available) {
+        if (
+          availability.reasonCode === "speech_tail_unconstrainable" &&
+          availability.tail &&
+          !availability.tail.constrainable
+        ) {
+          return {
+            status: "refused",
+            stage: "evidence",
+            reasonCode: "speech_tail_unconstrainable",
+            detail: {
+              stream: input.stream,
+              responseFormat: availability.tail.format,
+              reasons: availability.tail.reasons,
+            },
+          };
+        }
         if (availability.reasonCode === "price_unknown") {
           return {
             status: "refused",
@@ -297,7 +397,10 @@ export function createAudioPathAdmission(
         return {
           status: "refused",
           stage: "evidence",
-          reasonCode: availability.reasonCode,
+          reasonCode:
+            availability.reasonCode === "audio_path_not_an_entrance"
+              ? "audio_path_not_an_entrance"
+              : "audio_path_unverified",
           detail: { missingItems: availability.missingItems ?? [] },
         };
       }

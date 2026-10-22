@@ -3413,6 +3413,582 @@ const OPENMUSE_VOICE_MOBILE_TENANCY_TASK: TaskMigrationSpec = {
   ],
 };
 
+/**
+ * MT120（Issue #163）：无法归属外部状态的持久隔离清单。
+ *
+ * 一张新表 enterprise_quarantine_items（表 + RLS 两步，expand-only）：
+ * 扫描幂等 upsert（setup/属主语义）、运维经受限通道查看、处置经受限
+ * operator 通道翻状态（审计先行在服务面 quarantine-list.ts）。
+ */
+const QUARANTINE_LIST_TASK: TaskMigrationSpec = {
+  id: "MT120",
+  description:
+    "MT120（Issue #163）：持久隔离清单——新增 enterprise_quarantine_items（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "quarantine_items_table",
+      impact:
+        "新增 enterprise_quarantine_items：一行 = 一条无法唯一归属的外部状态隔离条目（确定性 id `<category>:<recordId>`，PK (tenant_id, id)，FK tenant → enterprise_tenants cascade）；category/reason/disposition/status 四闭集 CHECK；处置留痕列（resolved_at/resolved_by/target_tenant_id）。不修改任何既有表。",
+      objects: ["enterprise_quarantine_items"],
+      statements: [
+        'CREATE TABLE "enterprise_quarantine_items" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"category" text NOT NULL,\n' +
+          '\t"record_id" text NOT NULL,\n' +
+          '\t"reason" text NOT NULL,\n' +
+          '\t"suggested_disposition" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'open' NOT NULL,\n" +
+          '\t"discovered_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"last_seen_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"resolved_at" timestamp with time zone,\n' +
+          '\t"resolved_by" text,\n' +
+          '\t"target_tenant_id" text,\n' +
+          '\tCONSTRAINT "enterprise_quarantine_items_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "enterprise_tenants"("id") ON DELETE cascade ON UPDATE cascade,\n' +
+          '\tCONSTRAINT "enterprise_quarantine_items_pk" PRIMARY KEY ("tenant_id", "id"),\n' +
+          "\tCONSTRAINT \"enterprise_quarantine_items_category_closed\" CHECK (\"category\" IN ('root-record', 'external-file')),\n" +
+          "\tCONSTRAINT \"enterprise_quarantine_items_reason_closed\" CHECK (\"reason\" IN ('claimed-by-another-tenant', 'owner-principal-missing', 'ambiguous-membership', 'parent-tenant-mismatch', 'parent-association-missing', 'digest-mismatch')),\n" +
+          "\tCONSTRAINT \"enterprise_quarantine_items_disposition_closed\" CHECK (\"suggested_disposition\" IN ('assign', 'destroy')),\n" +
+          "\tCONSTRAINT \"enterprise_quarantine_items_status_closed\" CHECK (\"status\" IN ('open', 'assigned', 'destroyed', 'cleared-upstream'))\n" +
+          ");",
+      ],
+    },
+    {
+      slug: "quarantine_items_rls",
+      impact:
+        "仅对 enterprise_quarantine_items：REVOKE PUBLIC、ENABLE + FORCE RLS、最小策略（data 租户臂 SELECT；operator 租户臂 SELECT/INSERT/UPDATE）及配套最小 GRANT（data 只读；operator 全列 INSERT + 处置列 UPDATE——resolved_* / target_tenant_id / status）。不改动任何既有表策略或既有授权。",
+      objects: ["enterprise_quarantine_items"],
+      statements: [
+        'REVOKE ALL ON TABLE "enterprise_quarantine_items" FROM PUBLIC;',
+        'ALTER TABLE "enterprise_quarantine_items" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_quarantine_items" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_quarantine_items_data_read" ON "enterprise_quarantine_items" FOR SELECT TO ob_ent_data USING ("tenant_id" = current_setting(\'app.tenant_id\', true));',
+        'CREATE POLICY "enterprise_quarantine_items_operator_read" ON "enterprise_quarantine_items" FOR SELECT TO ob_ent_operator USING ("tenant_id" = current_setting(\'app.tenant_id\', true));',
+        'CREATE POLICY "enterprise_quarantine_items_operator_insert" ON "enterprise_quarantine_items" FOR INSERT TO ob_ent_operator WITH CHECK ("tenant_id" = current_setting(\'app.tenant_id\', true));',
+        'CREATE POLICY "enterprise_quarantine_items_operator_update" ON "enterprise_quarantine_items" FOR UPDATE TO ob_ent_operator USING ("tenant_id" = current_setting(\'app.tenant_id\', true)) WITH CHECK ("tenant_id" = current_setting(\'app.tenant_id\', true));',
+        'GRANT SELECT ON TABLE "enterprise_quarantine_items" TO ob_ent_data;',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_quarantine_items" TO ob_ent_operator;',
+        'GRANT UPDATE ("status", "resolved_at", "resolved_by", "target_tenant_id", "reason", "suggested_disposition", "last_seen_at") ON TABLE "enterprise_quarantine_items" TO ob_ent_operator;',
+      ],
+    },
+  ],
+};
+
+/**
+ * MT053（Issue #96）：Craft 会话、turn、消息与快照的作用域。expand-only——
+ * 一张新协会表与按既有模式的最小 RLS；不修改任何既有表/策略/角色授权。
+ *
+ *   1. enterprise_craft_scopes：一行 = 一个 craft 会话在一个 (公司, 团队,
+ *      主体) 三元组上的归属关联（Spec §4.2 逐字形状；MT060 openmuse_
+ *      task_scopes 同型判例）。session_id 主键 FK → craft_sessions(id)
+ *      cascade；复合外键钉到 enterprise_workspaces、enterprise_
+ *      memberships 与 users，均 cascade。
+ *   2. RLS 沿 MT059/MT060 既有模式：REVOKE PUBLIC + 四能力角色 → ENABLE +
+ *      FORCE → data 租户臂 + restrictive 主体自读 → operator 租户+主体
+ *      上下文读/插/删 + operator workspace 读臂（团队公共面的存在性事实，
+ *      无主体 pin）。零 UPDATE 授权——归属不可改写是结构不是纪律。
+ */
+const CRAFT_SESSION_SCOPES_RLS_STATEMENTS = [
+  'REVOKE ALL PRIVILEGES ON TABLE "enterprise_craft_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "enterprise_craft_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "enterprise_craft_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "enterprise_craft_scope_data_tenant_read" ON "enterprise_craft_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_craft_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_scope_data_self_read" ON "enterprise_craft_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_craft_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_scope_operator_workspace_read" ON "enterprise_craft_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_craft_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_craft_scopes\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_scope_operator_read" ON "enterprise_craft_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_craft_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_craft_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_scope_operator_insert" ON "enterprise_craft_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"enterprise_craft_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_craft_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_scope_operator_delete" ON "enterprise_craft_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_craft_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_craft_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'GRANT SELECT ON TABLE "enterprise_craft_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "enterprise_craft_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "enterprise_craft_scopes" TO ob_ent_operator;',
+];
+
+const CRAFT_SESSION_SCOPES_TASK: TaskMigrationSpec = {
+  id: "MT053",
+  description:
+    "MT053（Issue #96）：Craft 会话作用域——新增 enterprise_craft_scopes 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "craft_scope_tables",
+      impact:
+        "新增 enterprise_craft_scopes 表：session_id 主键（FK → craft_sessions cascade）；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；范围列表索引。不修改任何既有表。",
+      objects: ["enterprise_craft_scopes"],
+      statements: [
+        'CREATE TABLE "enterprise_craft_scopes" (\n' +
+          '\t"session_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL\n' +
+          ");",
+        'CREATE INDEX "enterprise_craft_scopes_scope_list_idx" ON "enterprise_craft_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","session_id");',
+        'ALTER TABLE "enterprise_craft_scopes" ADD CONSTRAINT "enterprise_craft_scopes_session_fk" FOREIGN KEY ("session_id") REFERENCES "public"."craft_sessions"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_craft_scopes" ADD CONSTRAINT "enterprise_craft_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_craft_scopes" ADD CONSTRAINT "enterprise_craft_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_craft_scopes" ADD CONSTRAINT "enterprise_craft_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "craft_scope_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + workspace 读臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["enterprise_craft_scopes"],
+      statements: CRAFT_SESSION_SCOPES_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT054（Issue #97）：Craft 计划任务、子任务与应用连接的归属。expand-only
+ * ——一张新协会表与按既有模式的最小 RLS（+ MT042 扫描臂）；不修改任何
+ * 既有表/策略/角色授权。
+ *
+ *   1. enterprise_craft_schedule_scopes：一行 = 一个 Craft 计划域对象
+ *      （kind ∈ {'scheduled_task','subtask','connection'}）在一个
+ *      (公司, 团队, 主体) 三元组上的归属关联。(kind, object_id) 复合主键；
+ *      subtask ⇔ parent_object_id、connection ⇔ credential_ref 两 CHECK 钉
+ *      死；复合外键钉到 enterprise_workspaces、enterprise_memberships 与
+ *      users，均 cascade。
+ *   2. RLS 沿 MT059/MT060 既有模式 + MT042 扫描臂：operator 在
+ *      app.scan_sweep='on' 上下文下的跨租户 SELECT 臂（平台触发重建专用；
+ *      普通业务事务永不设置该键，租户臂语义不变）。零 UPDATE 授权。
+ */
+const CRAFT_SCHEDULE_SCOPES_RLS_STATEMENTS = [
+  'REVOKE ALL PRIVILEGES ON TABLE "enterprise_craft_schedule_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "enterprise_craft_schedule_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "enterprise_craft_schedule_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "enterprise_craft_schedule_scope_data_tenant_read" ON "enterprise_craft_schedule_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_craft_schedule_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_schedule_scope_data_self_read" ON "enterprise_craft_schedule_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_craft_schedule_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_schedule_scope_operator_read" ON "enterprise_craft_schedule_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_craft_schedule_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_craft_schedule_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_schedule_scope_operator_insert" ON "enterprise_craft_schedule_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"enterprise_craft_schedule_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_craft_schedule_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_schedule_scope_operator_delete" ON "enterprise_craft_schedule_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_craft_schedule_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_craft_schedule_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_craft_schedule_scope_operator_sweep_read" ON "enterprise_craft_schedule_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "enterprise_craft_schedule_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "enterprise_craft_schedule_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "enterprise_craft_schedule_scopes" TO ob_ent_operator;',
+];
+
+const CRAFT_SCHEDULE_SCOPES_TASK: TaskMigrationSpec = {
+  id: "MT054",
+  description:
+    "MT054（Issue #97）：Craft 计划任务/子任务/应用连接归属——新增 enterprise_craft_schedule_scopes 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "craft_schedule_scope_tables",
+      impact:
+        "新增 enterprise_craft_schedule_scopes 表：(kind, object_id) 复合主键（kind 三闭集 CHECK）；subtask ⇔ parent_object_id、connection ⇔ credential_ref 两结构 CHECK；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；范围列表与父引用索引。不修改任何既有表。",
+      objects: ["enterprise_craft_schedule_scopes"],
+      statements: [
+        'CREATE TABLE "enterprise_craft_schedule_scopes" (\n' +
+          '\t"kind" text NOT NULL,\n' +
+          '\t"object_id" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"parent_object_id" text,\n' +
+          '\t"credential_ref" text,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          "\tCONSTRAINT \"enterprise_craft_schedule_scopes_kind\" CHECK (\"enterprise_craft_schedule_scopes\".\"kind\" in ('scheduled_task','subtask','connection')),\n" +
+          '\tCONSTRAINT "enterprise_craft_schedule_scopes_subtask_parent" CHECK (("enterprise_craft_schedule_scopes"."kind" = \'subtask\') = ("enterprise_craft_schedule_scopes"."parent_object_id" is not null)),\n' +
+          '\tCONSTRAINT "enterprise_craft_schedule_scopes_connection_credential" CHECK (("enterprise_craft_schedule_scopes"."kind" = \'connection\') = ("enterprise_craft_schedule_scopes"."credential_ref" is not null)),\n' +
+          '\tCONSTRAINT "enterprise_craft_schedule_scopes_parent_plain" CHECK ("enterprise_craft_schedule_scopes"."parent_object_id" is null or "enterprise_craft_schedule_scopes"."parent_object_id" <> \'\'),\n' +
+          '\tCONSTRAINT "enterprise_craft_schedule_scopes_credential_plain" CHECK ("enterprise_craft_schedule_scopes"."credential_ref" is null or "enterprise_craft_schedule_scopes"."credential_ref" <> \'\'),\n' +
+          '\tCONSTRAINT "enterprise_craft_schedule_scopes_kind_object_id" PRIMARY KEY ("kind","object_id")\n' +
+          ");",
+        'CREATE INDEX "enterprise_craft_schedule_scopes_scope_list_idx" ON "enterprise_craft_schedule_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","object_id");',
+        'CREATE INDEX "enterprise_craft_schedule_scopes_parent_idx" ON "enterprise_craft_schedule_scopes" USING btree ("tenant_id","workspace_id","parent_object_id");',
+        'ALTER TABLE "enterprise_craft_schedule_scopes" ADD CONSTRAINT "enterprise_craft_schedule_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_craft_schedule_scopes" ADD CONSTRAINT "enterprise_craft_schedule_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_craft_schedule_scopes" ADD CONSTRAINT "enterprise_craft_schedule_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "craft_schedule_scope_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["enterprise_craft_schedule_scopes"],
+      statements: CRAFT_SCHEDULE_SCOPES_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT055（Issue #98）：产物与对象存储路径按归属隔离。expand-only——一张
+ * 新协会表与按既有模式的最小 RLS；不修改任何既有表/策略/角色授权。
+ *
+ *   1. enterprise_artifact_scopes：一行 = 一个 Workshop 产物行
+ *      （workshop_artifacts）在一个 (公司, 团队, 主体) 三元组上的归属
+ *      关联（Spec §4.2 逐字形状；MT053 enterprise_craft_scopes 同型
+ *      判例）。artifact_id 主键 FK → workshop_artifacts(id) cascade；
+ *      session_id 为关联事实列（无 FK——目标列非唯一；一致性由 pin 写
+ *      入路径钉死）+ 索引；复合外键钉到 enterprise_workspaces、
+ *      enterprise_memberships 与 users，均 cascade。
+ *   2. RLS 沿 MT053 既有模式：REVOKE PUBLIC + 四能力角色 → ENABLE +
+ *      FORCE → data 租户臂 + restrictive 主体自读 → operator 租户+主体
+ *      上下文读/插/删 + workspace 读臂。零 UPDATE 授权。
+ */
+const ARTIFACT_SCOPES_RLS_STATEMENTS = [
+  'REVOKE ALL PRIVILEGES ON TABLE "enterprise_artifact_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "enterprise_artifact_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "enterprise_artifact_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "enterprise_artifact_scope_data_tenant_read" ON "enterprise_artifact_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_artifact_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_artifact_scope_data_self_read" ON "enterprise_artifact_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_artifact_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_artifact_scope_operator_workspace_read" ON "enterprise_artifact_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_artifact_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_artifact_scopes\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), ''));",
+  'CREATE POLICY "enterprise_artifact_scope_operator_read" ON "enterprise_artifact_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_artifact_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_artifact_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_artifact_scope_operator_insert" ON "enterprise_artifact_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"enterprise_artifact_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_artifact_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_artifact_scope_operator_delete" ON "enterprise_artifact_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_artifact_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_artifact_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'GRANT SELECT ON TABLE "enterprise_artifact_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "enterprise_artifact_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "enterprise_artifact_scopes" TO ob_ent_operator;',
+];
+
+const ARTIFACT_SCOPES_TASK: TaskMigrationSpec = {
+  id: "MT055",
+  description:
+    "MT055（Issue #98）：产物与对象存储路径按归属隔离——新增 enterprise_artifact_scopes 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "artifact_scope_tables",
+      impact:
+        "新增 enterprise_artifact_scopes 表：artifact_id 主键（FK → workshop_artifacts cascade）；session_id 关联事实列 + 索引；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；范围列表索引。不修改任何既有表。",
+      objects: ["enterprise_artifact_scopes"],
+      statements: [
+        'CREATE TABLE "enterprise_artifact_scopes" (\n' +
+          '\t"artifact_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"session_id" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL\n' +
+          ");",
+        'CREATE INDEX "enterprise_artifact_scopes_scope_list_idx" ON "enterprise_artifact_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","artifact_id");',
+        'CREATE INDEX "enterprise_artifact_scopes_session_idx" ON "enterprise_artifact_scopes" USING btree ("session_id");',
+        'ALTER TABLE "enterprise_artifact_scopes" ADD CONSTRAINT "enterprise_artifact_scopes_artifact_fk" FOREIGN KEY ("artifact_id") REFERENCES "public"."workshop_artifacts"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_artifact_scopes" ADD CONSTRAINT "enterprise_artifact_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_artifact_scopes" ADD CONSTRAINT "enterprise_artifact_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_artifact_scopes" ADD CONSTRAINT "enterprise_artifact_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "artifact_scope_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + workspace 读臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["enterprise_artifact_scopes"],
+      statements: ARTIFACT_SCOPES_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT057（Issue #100）：Workshop 会话、执行、产物与沙箱实例关联的作用域。
+ * expand-only——两张新表与按既有模式的最小 RLS；不修改任何既有表/策略/
+ * 角色授权。
+ *
+ *   1. enterprise_workshop_scopes：一行 = 一个 Workshop 会话
+ *      （workshop_sessions）在一个 (公司, 团队, 主体) 三元组上的归属
+ *      关联（MT053 同型判例）。session_id 主键 FK → workshop_sessions
+ *      (id) cascade；channel_id 关联事实列 + 索引；复合外键钉到
+ *      enterprise_workspaces、enterprise_memberships 与 users，均
+ *      cascade。
+ *   2. enterprise_workshop_sandbox_bindings：一行 = 一个沙箱实例
+ *      （sandbox_instances）到一个同范围会话的绑定。instance_id 主键
+ *      FK → sandbox_instances(id) cascade；status 两态 CHECK（bound/
+ *      recycled）+ recycled ⇔ recycled_at 结构 CHECK；operator 列级
+ *      UPDATE 只有 (status, recycled_at, updated_at)（0178 列级 GRANT
+ *      同纪律——生命周期可变，归属不可变）。
+ */
+const WORKSHOP_SCOPES_RLS_STATEMENTS = [
+  'REVOKE ALL PRIVILEGES ON TABLE "enterprise_workshop_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "enterprise_workshop_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "enterprise_workshop_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "enterprise_workshop_scope_data_tenant_read" ON "enterprise_workshop_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_workshop_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_scope_data_self_read" ON "enterprise_workshop_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_workshop_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_scope_operator_workspace_read" ON "enterprise_workshop_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_workshop_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_scopes\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_scope_operator_read" ON "enterprise_workshop_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_workshop_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_scope_operator_insert" ON "enterprise_workshop_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"enterprise_workshop_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_scope_operator_delete" ON "enterprise_workshop_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_workshop_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'GRANT SELECT ON TABLE "enterprise_workshop_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "enterprise_workshop_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "enterprise_workshop_scopes" TO ob_ent_operator;',
+];
+
+const WORKSHOP_SANDBOX_BINDINGS_RLS_STATEMENTS = [
+  'REVOKE ALL PRIVILEGES ON TABLE "enterprise_workshop_sandbox_bindings" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "enterprise_workshop_sandbox_bindings" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "enterprise_workshop_sandbox_bindings" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "enterprise_workshop_sandbox_binding_data_tenant_read" ON "enterprise_workshop_sandbox_bindings"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_workshop_sandbox_bindings\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_sandbox_binding_data_self_read" ON "enterprise_workshop_sandbox_bindings"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_workshop_sandbox_bindings\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_sandbox_binding_operator_read" ON "enterprise_workshop_sandbox_bindings"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_workshop_sandbox_bindings\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_sandbox_bindings\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_sandbox_binding_operator_insert" ON "enterprise_workshop_sandbox_bindings"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"enterprise_workshop_sandbox_bindings\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_sandbox_bindings\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_sandbox_binding_operator_delete" ON "enterprise_workshop_sandbox_bindings"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_workshop_sandbox_bindings\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_sandbox_bindings\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'GRANT SELECT ON TABLE "enterprise_workshop_sandbox_bindings" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "enterprise_workshop_sandbox_bindings" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "enterprise_workshop_sandbox_bindings" TO ob_ent_operator;',
+  'GRANT UPDATE ("status", "recycled_at", "updated_at") ON TABLE "enterprise_workshop_sandbox_bindings" TO ob_ent_operator;',
+  'CREATE POLICY "enterprise_workshop_sandbox_binding_operator_update" ON "enterprise_workshop_sandbox_bindings"\n' +
+    "  FOR UPDATE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_workshop_sandbox_bindings\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_sandbox_bindings\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''))\n" +
+    "  WITH CHECK (\"enterprise_workshop_sandbox_bindings\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_sandbox_bindings\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+];
+
+const WORKSHOP_SCOPES_TASK: TaskMigrationSpec = {
+  id: "MT057",
+  description:
+    "MT057（Issue #100）：Workshop 会话/执行/产物/沙箱实例关联作用域——新增 enterprise_workshop_scopes 与 enterprise_workshop_sandbox_bindings 两协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "workshop_scope_tables",
+      impact:
+        "新增 enterprise_workshop_scopes 表：session_id 主键（FK → workshop_sessions cascade）；channel_id 关联事实列 + 索引；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；范围列表索引。不修改任何既有表。",
+      objects: ["enterprise_workshop_scopes"],
+      statements: [
+        'CREATE TABLE "enterprise_workshop_scopes" (\n' +
+          '\t"session_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"channel_id" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL\n' +
+          ");",
+        'CREATE INDEX "enterprise_workshop_scopes_scope_list_idx" ON "enterprise_workshop_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","session_id");',
+        'CREATE INDEX "enterprise_workshop_scopes_channel_idx" ON "enterprise_workshop_scopes" USING btree ("channel_id");',
+        'ALTER TABLE "enterprise_workshop_scopes" ADD CONSTRAINT "enterprise_workshop_scopes_session_fk" FOREIGN KEY ("session_id") REFERENCES "public"."workshop_sessions"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_scopes" ADD CONSTRAINT "enterprise_workshop_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_scopes" ADD CONSTRAINT "enterprise_workshop_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_scopes" ADD CONSTRAINT "enterprise_workshop_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "workshop_scope_rls",
+      impact:
+        "仅对 enterprise_workshop_scopes：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + workspace 读臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。",
+      objects: ["enterprise_workshop_scopes"],
+      statements: WORKSHOP_SCOPES_RLS_STATEMENTS,
+    },
+    {
+      slug: "workshop_sandbox_binding_tables",
+      impact:
+        "新增 enterprise_workshop_sandbox_bindings 表：instance_id 主键（FK → sandbox_instances cascade）；session_id FK → workshop_sessions cascade；status 两态 CHECK + recycled ⇔ recycled_at 结构 CHECK；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；范围与会话索引。不修改任何既有表。",
+      objects: ["enterprise_workshop_sandbox_bindings"],
+      statements: [
+        'CREATE TABLE "enterprise_workshop_sandbox_bindings" (\n' +
+          '\t"instance_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"session_id" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'bound' NOT NULL,\n" +
+          '\t"bound_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"recycled_at" timestamp with time zone,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_workshop_sandbox_bindings_status_check" CHECK ("enterprise_workshop_sandbox_bindings"."status" in (\'bound\',\'recycled\')),\n' +
+          '\tCONSTRAINT "enterprise_workshop_sandbox_bindings_recycled_check" CHECK ((("enterprise_workshop_sandbox_bindings"."status" = \'recycled\') = ("enterprise_workshop_sandbox_bindings"."recycled_at" is not null)))\n' +
+          ");",
+        'CREATE INDEX "enterprise_workshop_sandbox_bindings_scope_idx" ON "enterprise_workshop_sandbox_bindings" USING btree ("tenant_id","workspace_id","principal_id");',
+        'CREATE INDEX "enterprise_workshop_sandbox_bindings_session_idx" ON "enterprise_workshop_sandbox_bindings" USING btree ("session_id");',
+        'ALTER TABLE "enterprise_workshop_sandbox_bindings" ADD CONSTRAINT "enterprise_workshop_sandbox_bindings_instance_fk" FOREIGN KEY ("instance_id") REFERENCES "public"."sandbox_instances"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_sandbox_bindings" ADD CONSTRAINT "enterprise_workshop_sandbox_bindings_session_fk" FOREIGN KEY ("session_id") REFERENCES "public"."workshop_sessions"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_sandbox_bindings" ADD CONSTRAINT "enterprise_workshop_sandbox_bindings_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_sandbox_bindings" ADD CONSTRAINT "enterprise_workshop_sandbox_bindings_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_sandbox_bindings" ADD CONSTRAINT "enterprise_workshop_sandbox_bindings_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "workshop_sandbox_binding_rls",
+      impact:
+        "仅对 enterprise_workshop_sandbox_bindings：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删）及配套最小 GRANT + 列级 UPDATE（status, recycled_at, updated_at——生命周期可变，归属不可变；0178 同纪律）。不改动任何既有表策略或既有授权。",
+      objects: ["enterprise_workshop_sandbox_bindings"],
+      statements: WORKSHOP_SANDBOX_BINDINGS_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT058（Issue #101）：分享令牌改为有效分享授权。expand-only——一张新表
+ * 与按既有模式的最小 RLS；不修改任何既有表/策略/角色授权。
+ *
+ *   1. enterprise_workshop_share_grants：一行 = 一次有效分享授权
+ *      （受众/动作域/有效期/撤销都是行本体）。token_hash UNIQUE（sha256
+ *      承载段，B14 纪律）；受众两态 CHECK + cross-team ⇔ audience_
+ *      workspace_id 结构 CHECK；复合外键 (tenant_id, audience_workspace_
+ *      id) → enterprise_workspaces 把跨公司受众行结构性排除（MT010 同
+ *      纪律）；一会话至多一条活链（partial unique index，revoked_at
+ *      IS NULL）。
+ *   2. RLS：data 租户臂 + restrictive 签发者自读；operator 租户臂读
+ *      （解析入口）+ 插入 + 列级 UPDATE (revoked_at, revoked_by)——撤销
+ *      不是删除（可审计），归属列零 UPDATE。
+ */
+const SHARE_GRANTS_RLS_STATEMENTS = [
+  'REVOKE ALL PRIVILEGES ON TABLE "enterprise_workshop_share_grants" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "enterprise_workshop_share_grants" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "enterprise_workshop_share_grants" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "enterprise_workshop_share_grant_data_tenant_read" ON "enterprise_workshop_share_grants"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_workshop_share_grants\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_share_grant_data_self_read" ON "enterprise_workshop_share_grants"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"enterprise_workshop_share_grants\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_share_grant_operator_read" ON "enterprise_workshop_share_grants"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"enterprise_workshop_share_grants\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "enterprise_workshop_share_grant_operator_insert" ON "enterprise_workshop_share_grants"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"enterprise_workshop_share_grants\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_share_grants\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'GRANT SELECT ON TABLE "enterprise_workshop_share_grants" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "enterprise_workshop_share_grants" TO ob_ent_operator;',
+  'GRANT UPDATE ("revoked_at", "revoked_by") ON TABLE "enterprise_workshop_share_grants" TO ob_ent_operator;',
+  'CREATE POLICY "enterprise_workshop_share_grant_operator_update" ON "enterprise_workshop_share_grants"\n' +
+    "  FOR UPDATE TO ob_ent_operator\n" +
+    "  USING (\"enterprise_workshop_share_grants\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_share_grants\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''))\n" +
+    "  WITH CHECK (\"enterprise_workshop_share_grants\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"enterprise_workshop_share_grants\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+];
+
+const SHARE_GRANTS_TASK: TaskMigrationSpec = {
+  id: "MT058",
+  description:
+    "MT058（Issue #101）：分享令牌改为有效分享授权——新增 enterprise_workshop_share_grants 表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "share_grant_tables",
+      impact:
+        "新增 enterprise_workshop_share_grants 表：id 主键；session_id FK → workshop_sessions cascade；token_hash UNIQUE；受众两态 CHECK + cross-team ⇔ 受众团队列结构 CHECK + 动作域两态 CHECK；复合外键钉 (tenant, owner workspace)、(tenant, audience workspace)（跨公司受众行结构性排除）与 (tenant, principal)；一会话至多一条活链 partial unique index。不修改任何既有表。",
+      objects: ["enterprise_workshop_share_grants"],
+      statements: [
+        'CREATE TABLE "enterprise_workshop_share_grants" (\n' +
+          '\t"id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"session_id" text NOT NULL,\n' +
+          '\t"token_hash" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"owner_workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"audience" text NOT NULL,\n' +
+          '\t"audience_workspace_id" text,\n' +
+          '\t"share_action" text NOT NULL,\n' +
+          '\t"expires_at" timestamp with time zone,\n' +
+          '\t"revoked_at" timestamp with time zone,\n' +
+          '\t"revoked_by" text,\n' +
+          '\t"created_by" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_workshop_share_grants_audience_check" CHECK ("enterprise_workshop_share_grants"."audience" in (\'same-team\',\'cross-team\')),\n' +
+          '\tCONSTRAINT "enterprise_workshop_share_grants_share_action_check" CHECK ("enterprise_workshop_share_grants"."share_action" in (\'preview\',\'preview_download\')),\n' +
+          '\tCONSTRAINT "enterprise_workshop_share_grants_audience_workspace_check" CHECK ((("enterprise_workshop_share_grants"."audience" = \'cross-team\') = ("enterprise_workshop_share_grants"."audience_workspace_id" is not null)))\n' +
+          ");",
+        'CREATE UNIQUE INDEX "enterprise_workshop_share_grants_live_session_idx" ON "enterprise_workshop_share_grants" USING btree ("session_id") WHERE ("revoked_at" IS NULL);',
+        'CREATE UNIQUE INDEX "enterprise_workshop_share_grants_token_idx" ON "enterprise_workshop_share_grants" USING btree ("token_hash");',
+        'CREATE INDEX "enterprise_workshop_share_grants_session_idx" ON "enterprise_workshop_share_grants" USING btree ("session_id");',
+        'ALTER TABLE "enterprise_workshop_share_grants" ADD CONSTRAINT "enterprise_workshop_share_grants_session_fk" FOREIGN KEY ("session_id") REFERENCES "public"."workshop_sessions"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_share_grants" ADD CONSTRAINT "enterprise_workshop_share_grants_owner_workspace_fk" FOREIGN KEY ("tenant_id","owner_workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_share_grants" ADD CONSTRAINT "enterprise_workshop_share_grants_audience_workspace_fk" FOREIGN KEY ("tenant_id","audience_workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_share_grants" ADD CONSTRAINT "enterprise_workshop_share_grants_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_workshop_share_grants" ADD CONSTRAINT "enterprise_workshop_share_grants_created_by_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "share_grant_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 签发者自读；operator 租户臂读 + 租户+主体上下文插）及配套最小 GRANT + 列级 UPDATE (revoked_at, revoked_by)——撤销不是删除，归属列零 UPDATE。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["enterprise_workshop_share_grants"],
+      statements: SHARE_GRANTS_RLS_STATEMENTS,
+    },
+  ],
+};
+
 export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
@@ -3446,6 +4022,7 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   ],
   [OPENMUSE_ACTIVITY_TENANCY_TASK.id, OPENMUSE_ACTIVITY_TENANCY_TASK],
   [OPENMUSE_VOICE_MOBILE_TENANCY_TASK.id, OPENMUSE_VOICE_MOBILE_TENANCY_TASK],
+  [QUARANTINE_LIST_TASK.id, QUARANTINE_LIST_TASK],
   [SHARED_APPROVAL_TASK.id, SHARED_APPROVAL_TASK],
   [DELETION_SEMANTICS_TASK.id, DELETION_SEMANTICS_TASK],
   [HOST_ACCESS_TASK.id, HOST_ACCESS_TASK],
@@ -3454,6 +4031,11 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [PURGE_RESTORE_TASK.id, PURGE_RESTORE_TASK],
   [VENDOR_BILLING_INTERACTION_TASK.id, VENDOR_BILLING_INTERACTION_TASK],
   [AUDIT_DOMAIN_TASK.id, AUDIT_DOMAIN_TASK],
+  [CRAFT_SESSION_SCOPES_TASK.id, CRAFT_SESSION_SCOPES_TASK],
+  [CRAFT_SCHEDULE_SCOPES_TASK.id, CRAFT_SCHEDULE_SCOPES_TASK],
+  [ARTIFACT_SCOPES_TASK.id, ARTIFACT_SCOPES_TASK],
+  [WORKSHOP_SCOPES_TASK.id, WORKSHOP_SCOPES_TASK],
+  [SHARE_GRANTS_TASK.id, SHARE_GRANTS_TASK],
 ]);
 
 export const ALLOWED_TASK_IDS: readonly string[] = [...TASKS.keys()].sort();

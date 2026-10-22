@@ -26,6 +26,7 @@ import {
   MODEL_EXCLUSION_REASONS,
 } from "../src/gateway/model-capability-filter";
 import { createModelDiscoveryRoutes } from "../src/gateway/model-discovery-routes";
+import { speechTailAvailabilityView } from "../src/billing/speech-tail-availability";
 import {
   createEnterpriseGatewayPriceSnapshotStore,
   mapPriceDims,
@@ -441,6 +442,9 @@ describe("the read is 03.8's answer, presented under 03.10's names", () => {
       bot: { botId: "audio-bot", displayName: "Audio Bot" },
       selectable: [{ ref: fakeRef, priceStatus: "free" }],
       excluded: [],
+      // 13.4 (#309): the tail-constraint projection rides along verbatim — the pure view
+      // the door refuses by, not a presentation coined for this route.
+      speechPaths: speechTailAvailabilityView(),
     });
   });
 
@@ -497,7 +501,14 @@ describe("the read is 03.8's answer, presented under 03.10's names", () => {
     });
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(["bot", "excluded", "selectable"]);
+    // 13.4 (#309) added `speechPaths` beside the frozen model fields: the speech call
+    // modes' tail-constraint projection, additive so 05.3/07.x consumers are untouched.
+    expect(Object.keys(body).sort()).toEqual([
+      "bot",
+      "excluded",
+      "selectable",
+      "speechPaths",
+    ]);
     expect(Object.keys(body.bot as object).sort()).toEqual([
       "botId",
       "displayName",

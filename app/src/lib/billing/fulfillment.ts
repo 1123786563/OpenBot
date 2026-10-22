@@ -98,10 +98,12 @@ export function anomalyCopyKey(code: string): AnomalyCopyKey {
  * that say the same thing. Order is first-occurrence order: the oldest event opens the case.
  */
 export function anomalyLines(
-  anomalies: readonly BillingPaymentAnomaly[],
+  anomalies: readonly BillingPaymentAnomaly[] | undefined,
 ): { code: string; count: number; copyKey: AnomalyCopyKey }[] {
   const byCode = new Map<string, { code: string; count: number }>();
-  for (const anomaly of anomalies) {
+  // The server omits `anomalies` when the deployment has no event reader —
+  // "no anomalies recorded", never an error (statements.ts contract).
+  for (const anomaly of anomalies ?? []) {
     const entry = byCode.get(anomaly.code) ?? { code: anomaly.code, count: 0 };
     entry.count += 1;
     byCode.set(anomaly.code, entry);

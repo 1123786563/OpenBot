@@ -400,7 +400,9 @@
       "provider_error": "The model service refused before producing anything, so no charge was incurred.",
       "bound_refused": "The call failed admission and never reached the model service, so no charge was incurred.",
       "no_usage": "The model service reported zero usage for this call, so no charge was incurred.",
-      "fallback": "This call is still being reconciled; the figure updates when it completes."
+      "fallback": "This call is still being reconciled; the figure updates when it completes.",
+      "async_dispatch_answer_lost": "The job's dispatch acknowledgement was lost; whether the provider took it is unconfirmed, and it settles or releases after the platform verifies it.",
+      "async_cancel_result_unknown": "The cancellation never received the provider's answer, so the outcome is unknown; it settles or releases after the platform verifies it."
     },
     "pendingHandling": "Pending amounts are held, not spent; the platform verifies the outcome with the model service and then settles or releases them automatically.",
     "realtimeTitle": "Realtime sessions",
@@ -417,7 +419,27 @@
     "realtimeAbnormal_stopped_insufficient_credits": "Stopped — the account balance ran out",
     "realtimeAbnormal_closed_grant_invalid": "Closed — the access grant was revoked or expired",
     "realtimeAbnormal_closed_payer_conflict": "Closed — the payment account could not be stood on",
-    "realtimeAbnormal_closed_payer_unresolved": "Closed — the payment account could not be resolved"
+    "realtimeAbnormal_closed_payer_unresolved": "Closed — the payment account could not be resolved",
+    "asyncJobs": {
+      "title": "Async jobs",
+      "description": "The async jobs you submitted, with their status, reason and amounts; attribution is fixed at submit and a key expiring changes nothing shown.",
+      "section": "My jobs",
+      "loadFailed": "Your async jobs could not be loaded.",
+      "empty": "No async jobs yet.",
+      "dispatched": "Dispatched",
+      "dispatchUnconfirmed": "Dispatch unconfirmed",
+      "cap": "Cap {{amount}} credits",
+      "settled": "Settled {{amount}}",
+      "pending": "Awaiting settlement {{amount}}",
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "pendingSettlement": "Awaiting settlement",
+        "settled": "Settled",
+        "refused": "Refused",
+        "cancelled": "Cancelled"
+      }
+    }
   },
   "ordersPage": {
     "title": "Orders & credits",

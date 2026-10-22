@@ -549,8 +549,10 @@ describeDb("MT123 运行时装配（专用库 + 受限角色 + RLS）", () => {
       }) => app.routes.map((route) => `${route.method} ${route.path}`);
 
       // API 路径对照：业务路由面（method+path 多重集）逐项相同。多租户 app
-      // 唯一多出的注册是恰好一枚 `ALL /api/*`——MT122 入口中间件挂载
-      // （中间件自身不回答任何路径，不是 API 面），单列断言。
+      // 多出的注册是恰好两枚 `ALL /api/*`——MT122 入口中间件与 MT125 旧
+      // 入口守卫的挂载（两枚中间件自身不回答任何常规 API 路径，不是
+      // API 面），单列断言。（MT123 交付时为一枚；MT125（Issue #168）按
+      // 波次先例把计数从 +1 修订为 +2，断言文件其余内容只读。）
       const withoutEntryMount = (lines: string[]) =>
         lines.filter((line) => line !== "ALL /api/*").sort();
       expect(withoutEntryMount(routeLines(multiTenant))).toEqual(
@@ -559,7 +561,7 @@ describeDb("MT123 运行时装配（专用库 + 受限角色 + RLS）", () => {
       const countOf = (lines: string[], needle: string) =>
         lines.filter((line) => line === needle).length;
       expect(countOf(routeLines(multiTenant), "ALL /api/*")).toBe(
-        countOf(routeLines(singleTenant), "ALL /api/*") + 1,
+        countOf(routeLines(singleTenant), "ALL /api/*") + 2,
       );
     },
     60000,

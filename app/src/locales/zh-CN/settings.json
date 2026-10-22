@@ -400,7 +400,9 @@
       "provider_error": "模型服务在产生任何内容前已拒绝，未产生费用。",
       "bound_refused": "调用未通过准入检查，未到达模型服务，未产生费用。",
       "no_usage": "模型服务报告本次调用用量为零，未产生费用。",
-      "fallback": "该笔调用仍在核对中，处理完成后金额会自动更新。"
+      "fallback": "该笔调用仍在核对中，处理完成后金额会自动更新。",
+      "async_dispatch_answer_lost": "任务派发的回执丢失，是否已被受理尚未确认，待平台核实后结算或释放。",
+      "async_cancel_result_unknown": "取消请求未收到供应商答复，结果未知，待平台核实后结算或释放。"
     },
     "pendingHandling": "待结算部分不占用您的可用额度之外的资金；平台将向模型服务核实结果后自动结算或释放。",
     "realtimeTitle": "实时会话",
@@ -417,7 +419,27 @@
     "realtimeAbnormal_stopped_insufficient_credits": "已停止——账户余额耗尽",
     "realtimeAbnormal_closed_grant_invalid": "已关闭——访问授权已撤销或过期",
     "realtimeAbnormal_closed_payer_conflict": "已关闭——付款账户无法确认",
-    "realtimeAbnormal_closed_payer_unresolved": "已关闭——付款账户无法解析"
+    "realtimeAbnormal_closed_payer_unresolved": "已关闭——付款账户无法解析",
+    "asyncJobs": {
+      "title": "异步任务",
+      "description": "您提交的异步任务及其状态、原因与金额；归属在提交时固定，密钥到期不影响展示。",
+      "section": "我的任务",
+      "loadFailed": "异步任务加载失败。",
+      "empty": "还没有异步任务。",
+      "dispatched": "已派发",
+      "dispatchUnconfirmed": "派发未确认",
+      "cap": "上限 {{amount}} 积分",
+      "settled": "已结算 {{amount}}",
+      "pending": "待结算 {{amount}}",
+      "status": {
+        "queued": "排队中",
+        "running": "运行中",
+        "pendingSettlement": "待结算",
+        "settled": "已结算",
+        "refused": "已拒绝",
+        "cancelled": "已取消"
+      }
+    }
   },
   "ordersPage": {
     "title": "订单与积分",

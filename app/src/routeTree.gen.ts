@@ -46,6 +46,7 @@ import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admi
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsApprovalsRouteImport } from './routes/_authed/settings/approvals'
+import { Route as AuthedSettingsAsyncJobsRouteImport } from './routes/_authed/settings/async-jobs'
 import { Route as AuthedSettingsInvoicesRouteImport } from './routes/_authed/settings/invoices'
 import { Route as AuthedSettingsMemoryRouteImport } from './routes/_authed/settings/memory'
 import { Route as AuthedSettingsModelAccessRouteImport } from './routes/_authed/settings/model-access'
@@ -287,6 +288,11 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
 const AuthedSettingsApprovalsRoute = AuthedSettingsApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
+const AuthedSettingsAsyncJobsRoute = AuthedSettingsAsyncJobsRouteImport.update({
+  id: '/async-jobs',
+  path: '/async-jobs',
   getParentRoute: () => AuthedSettingsRouteRoute,
 } as any)
 const AuthedSettingsInvoicesRoute = AuthedSettingsInvoicesRouteImport.update({
@@ -635,6 +641,7 @@ export interface FileRoutesByFullPath {
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
   '/settings/approvals': typeof AuthedSettingsApprovalsRoute
+  '/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/settings/memory': typeof AuthedSettingsMemoryRoute
   '/settings/model-access': typeof AuthedSettingsModelAccessRoute
@@ -724,6 +731,7 @@ export interface FileRoutesByTo {
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
   '/settings/approvals': typeof AuthedSettingsApprovalsRoute
+  '/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/settings/memory': typeof AuthedSettingsMemoryRoute
   '/settings/model-access': typeof AuthedSettingsModelAccessRoute
@@ -818,6 +826,7 @@ export interface FileRoutesById {
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
   '/_authed/settings/approvals': typeof AuthedSettingsApprovalsRoute
+  '/_authed/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/_authed/settings/invoices': typeof AuthedSettingsInvoicesRoute
   '/_authed/settings/memory': typeof AuthedSettingsMemoryRoute
   '/_authed/settings/model-access': typeof AuthedSettingsModelAccessRoute
@@ -913,6 +922,7 @@ export interface FileRouteTypes {
     | '/admin/playground'
     | '/admin/skills'
     | '/settings/approvals'
+    | '/settings/async-jobs'
     | '/settings/invoices'
     | '/settings/memory'
     | '/settings/model-access'
@@ -1002,6 +1012,7 @@ export interface FileRouteTypes {
     | '/admin/playground'
     | '/admin/skills'
     | '/settings/approvals'
+    | '/settings/async-jobs'
     | '/settings/invoices'
     | '/settings/memory'
     | '/settings/model-access'
@@ -1095,6 +1106,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
     | '/_authed/settings/approvals'
+    | '/_authed/settings/async-jobs'
     | '/_authed/settings/invoices'
     | '/_authed/settings/memory'
     | '/_authed/settings/model-access'
@@ -1419,6 +1431,13 @@ declare module '@tanstack/react-router' {
       path: '/approvals'
       fullPath: '/settings/approvals'
       preLoaderRoute: typeof AuthedSettingsApprovalsRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
+    '/_authed/settings/async-jobs': {
+      id: '/_authed/settings/async-jobs'
+      path: '/async-jobs'
+      fullPath: '/settings/async-jobs'
+      preLoaderRoute: typeof AuthedSettingsAsyncJobsRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
     '/_authed/settings/invoices': {
@@ -1874,6 +1893,7 @@ const AuthedAdminRouteRouteWithChildren =
 
 interface AuthedSettingsRouteRouteChildren {
   AuthedSettingsApprovalsRoute: typeof AuthedSettingsApprovalsRoute
+  AuthedSettingsAsyncJobsRoute: typeof AuthedSettingsAsyncJobsRoute
   AuthedSettingsInvoicesRoute: typeof AuthedSettingsInvoicesRoute
   AuthedSettingsMemoryRoute: typeof AuthedSettingsMemoryRoute
   AuthedSettingsModelAccessRoute: typeof AuthedSettingsModelAccessRoute
@@ -1890,6 +1910,7 @@ interface AuthedSettingsRouteRouteChildren {
 
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
   AuthedSettingsApprovalsRoute: AuthedSettingsApprovalsRoute,
+  AuthedSettingsAsyncJobsRoute: AuthedSettingsAsyncJobsRoute,
   AuthedSettingsInvoicesRoute: AuthedSettingsInvoicesRoute,
   AuthedSettingsMemoryRoute: AuthedSettingsMemoryRoute,
   AuthedSettingsModelAccessRoute: AuthedSettingsModelAccessRoute,

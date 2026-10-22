@@ -290,6 +290,11 @@ describe("Bifrost 14.4 (#313): evidence completed enables the path, and only it"
         path: "/v1/audio/speech",
         stream: false,
         dims: dimsBasis,
+        // 13.4 (#309): the synthesis family consults the tail constraint for the call
+        // mode's response format; "wav" is the constrainable one, so this case keeps
+        // asserting its own subject — the PRICE axis's honest refusal (empty tier table).
+        // The tail axis's own refusals are pinned in speech-tail-availability.test.ts.
+        responseFormat: "wav",
       });
       // The synthesis record is honestly unenableable: its tier table is empty by
       // construction until the wire grows audio fields — the refusal names that.
