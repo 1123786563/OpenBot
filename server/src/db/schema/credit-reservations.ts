@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
@@ -949,5 +950,95 @@ export const creditSettlementDimensionBreakdown = pgTable(
       "credit_settlement_dimension_breakdown_units_check",
       sql`${table.units} >= 0`,
     ),
+  ],
+);
+
+/**
+ * One row per REAL tool call — the tool execution's own billing identity (Bifrost 20.1,
+ * #341). Every real tool call gets a local `tc-` charge id plus the caller's idempotency
+ * key (a replay converges on the row its hold already minted), the entrance it arrived
+ * through (the closed registry in `billing/tool-surcharge-pricing.ts` — MCP, injected,
+ * responses, web search, A2A), the surcharge dimension it bills on, and the attribution
+ * frozen at creation exactly the way `async_jobs` freezes its own. A charged row carries
+ * its reservation's `att-` attempt id — the 07.x bijection — so tool fees and model fees
+ * are distinguishable by construction: the dimension is always a `surcharge_*` member,
+ * and the settlement breakdown's surcharge group says the same thing about the same call.
+ *
+ * `refused` rows never hold a reservation or an attempt — a refusal writes no money rows,
+ * and the refusal reason plus the audit trail carry the attempt; a `charged` row holds the
+ * reservation the call settled against, or carries `pricedFree` when the basis priced the
+ * call exactly zero (free is a price, executable hold-free). The routing-attached
+ * embedding call is deliberately not an entry: it bills on the attached model's own token
+ * dimensions through the request's reservation.
+ */
+export const toolCallCharges = pgTable(
+  "tool_call_charges",
+  {
+    /** The call's local identity, writer-minted — recognisable on sight, like `cr-`/`aj-`. */
+    chargeId: text("charge_id").primaryKey(),
+    /** The caller's durable request identity; a replay answers the existing row. */
+    idempotencyKey: text("idempotency_key").notNull(),
+    /** The entrance id, from the closed tool-execution registry. */
+    entry: text("entry").notNull(),
+    /** What executed: the `<client>-<tool>` pattern, the search tool, or the agent name. */
+    tool: text("tool").notNull(),
+    /** The surcharge dimension this call bills on (never a model dimension). */
+    dimension: text("dimension").notNull(),
+    /** The authorization the call ran under — frozen, like every attribution fact here. */
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => accessGrants.grantId),
+    /** The resolved payer the attribution froze at creation, never the request's spelling. */
+    payerKind: text("payer_kind").notNull(),
+    payerId: text("payer_id").notNull(),
+    /** The admission's own outcome: charged (with its hold, or priced exactly free) or refused. */
+    state: text("state")
+      .$type<"charged" | "refused">()
+      .notNull(),
+    /** The reservation this call's hold minted; absent exactly when no hold formed. */
+    reservationId: text("reservation_id").references(
+      () => creditReservations.id,
+    ),
+    /** True when the basis priced the call exactly zero — charged, hold-free. */
+    pricedFree: boolean("priced_free").notNull().default(false),
+    /** The admission's own refusal code, recorded on the refused row. */
+    refusalReason: text("refusal_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("tool_call_charges_idempotency_key_unique_idx").on(
+      table.idempotencyKey,
+    ),
+    check(
+      "tool_call_charges_entry_check",
+      sql`${table.entry} IN ('mcp.tool_call', 'injected.tool_call', 'injected.web_search', 'responses.tool_call', 'a2a.call')`,
+    ),
+    check(
+      "tool_call_charges_dimension_check",
+      sql`${table.dimension} IN ('surcharge_web_search', 'surcharge_tool_call', 'surcharge_a2a_call')`,
+    ),
+    check(
+      "tool_call_charges_payer_kind_check",
+      sql`${table.payerKind} IN ('personal', 'company', 'legacy_deployment', 'unknown_owner')`,
+    ),
+    check(
+      "tool_call_charges_state_check",
+      sql`${table.state} IN ('charged', 'refused')`,
+    ),
+    check(
+      "tool_call_charges_state_shape_check",
+      sql`(${table.state} = 'charged' AND ${table.refusalReason} IS NULL AND (${table.reservationId} IS NOT NULL OR ${table.pricedFree} = true)) OR (${table.state} = 'refused' AND ${table.reservationId} IS NULL AND ${table.refusalReason} IS NOT NULL AND ${table.pricedFree} = false)`,
+    ),
+    // The user view and the sweep walk a grant's calls oldest first.
+    index("tool_call_charges_grant_idx").on(
+      table.grantId,
+      table.createdAt,
+    ),
+    // One charge per reservation: a hold mints exactly one tool-call identity.
+    uniqueIndex("tool_call_charges_reservation_idx")
+      .on(table.reservationId)
+      .where(sql`${table.reservationId} IS NOT NULL`),
   ],
 );

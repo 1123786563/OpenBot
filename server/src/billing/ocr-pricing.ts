@@ -1,7 +1,8 @@
-import type {
-  PriceDimension,
-  PriceDimensionUnknownReason,
-  PriceSnapshotDims,
+import {
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+  type PriceDimensionUnknownReason,
+  type PriceSnapshotDims,
 } from "../gateway/price-snapshot";
 import type { ConversionRate } from "../gateway/conversion-rate";
 import {
@@ -247,22 +248,7 @@ export function assessOcrEnablement(input: {
   // side, and 0 for every dimension the OCR wire cannot bill (the usage-schema evidence,
   // stated numerically).
   const quantities = Object.fromEntries(
-    (
-      [
-        "input",
-        "output",
-        "reasoning",
-        "image",
-        "image_output",
-        "audio_input",
-        "audio_output",
-        "cache_read",
-        "cache_write",
-        "video",
-        "surcharge_web_search",
-        "surcharge_per_request",
-      ] as const
-    ).map((dimension) => [
+    PRICE_DIMENSIONS.map((dimension) => [
       dimension,
       dimension === "surcharge_per_request"
         ? shape.kind === "document"

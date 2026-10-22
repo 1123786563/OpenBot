@@ -1,5 +1,5 @@
 import { IconHandStop, IconMessageQuestion } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
@@ -17,10 +17,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
-  approvalInboxOptions,
+  ApprovalsUnavailableError,
   decideApprovalMutationOptions,
+  scopedApprovalInboxOptions,
 } from "@/lib/approvals";
-import { queryClient } from "@/query-client";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * Questions and actions waiting on the person, one row each, decided where it is shown: the answer
@@ -30,14 +31,32 @@ import { queryClient } from "@/query-client";
  */
 export function WaitingForYou({ agentId }: { agentId?: string }) {
   const { t } = useTranslation("approvals");
-  const inbox = useQuery(approvalInboxOptions());
+  // The waiting read and every decision ride the scope this screen holds (MT086); a scope that
+  // refuses says so in one line instead of drawing an empty list over a refusal.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const inbox = useQuery(scopedApprovalInboxOptions(queryClient, scope));
   const agents = useQuery(agentListQueryOptions());
   const botName = (id: string) =>
     agents.data?.find((agent) => agent.id === id)?.name ?? id;
-  const decision = useMutation(decideApprovalMutationOptions(queryClient));
+  const decision = useMutation(
+    decideApprovalMutationOptions(queryClient, scope),
+  );
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const answer = useMutation(answerPersonQuestionMutationOptions(queryClient));
+  const answer = useMutation(
+    answerPersonQuestionMutationOptions(queryClient, scope),
+  );
   const ours = (botId: string) => agentId === undefined || botId === agentId;
+  if (inbox.error instanceof ApprovalsUnavailableError) {
+    return (
+      <p
+        className="mt-6 text-muted-foreground text-sm"
+        data-testid="approvals-unavailable"
+      >
+        {t("unavailable")}
+      </p>
+    );
+  }
   const questions = (inbox.data?.questions ?? []).filter((question) =>
     ours(question.conversationBotId ?? question.botId),
   );
@@ -205,7 +224,9 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
  */
 export function BotNeedsYou({ agentId }: { agentId: string }) {
   const { t } = useTranslation("approvals");
-  const inbox = useQuery(approvalInboxOptions());
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const inbox = useQuery(scopedApprovalInboxOptions(queryClient, scope));
   const waiting =
     (inbox.data?.questions ?? []).some(
       (question) => (question.conversationBotId ?? question.botId) === agentId,

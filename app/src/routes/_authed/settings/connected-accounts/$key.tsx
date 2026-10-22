@@ -1,5 +1,5 @@
 import { IconArrowUpRight, IconChevronDown } from "@tabler/icons-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -30,14 +30,18 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { brokerDisplay, isBrokeredProvenance } from "@/lib/brokered-provenance";
 import { useDateTime } from "@/lib/i18n/datetime";
-import { connectAccountMutationOptions } from "@/lib/plugins/mutations";
 import {
-  connectionsQueryOptions,
+  connectAccountMutationOptions,
+  revealConnectionSecretMutationOptions,
+} from "@/lib/plugins/mutations";
+import {
   type PluginServer,
   type PluginsPage,
   personalConnections,
-  pluginsPageQueryOptions,
+  scopedConnectionsQueryOptions,
+  scopedPluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * Whether this server is reached through a BROKER as this person.
@@ -96,12 +100,29 @@ function RouteComponent() {
   const { key } = useParams({
     from: "/_authed/settings/connected-accounts/$key",
   });
-  const plugins = useQuery(pluginsPageQueryOptions());
-  const connections = useQuery(connectionsQueryOptions());
+  // Both reads ride the scope this screen holds (MT088): keyed under the scope's own prefix,
+  // carrying the pair, so every fact below — recorded, verified, what the vendor granted — is the
+  // server's answer under the scope in force.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const plugins = useQuery(scopedPluginsPageQueryOptions(queryClient, scope));
+  const connections = useQuery(
+    scopedConnectionsQueryOptions(queryClient, scope),
+  );
   const [notice, setNotice] = useState<string | null>(null);
+  /*
+   * The one plaintext this screen can ever show, held only in this component (MT088 AC2): the
+   * reveal is an independent, audited action, its answer is cached nowhere, and clearing it — a
+   * navigation, a re-render that remounts this page — is the mask returning.
+   */
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const reveal = useMutation({
+    ...revealConnectionSecretMutationOptions(scope),
+    onError: (thrown: Error) => setNotice(thrown.message),
+  });
 
   const connect = useMutation({
-    ...connectAccountMutationOptions(),
+    ...connectAccountMutationOptions("settings", scope),
     onError: (thrown: Error) => setNotice(thrown.message),
     /*
      * A full page navigation, not a fetch. The consent screen is the vendor's own and has to be shown
@@ -467,6 +488,61 @@ function RouteComponent() {
                 </span>
               </ItemActions>
             </Item>
+            {/*
+             * The secret row exists only where the server says it may (MT088 AC2, the server's own
+             * MT027 contract: usable is not readable). Default is masked — structurally, for every
+             * connection, because the list answer carries no secret field at all — and the reveal
+             * below is its own authorized, audited action, not a property of being connected.
+             */}
+            {connection.canDisclose === true ? (
+              <>
+                <Separator />
+                <Item size="sm">
+                  <ItemContent>
+                    <ItemTitle>
+                      {t("connectedAccounts.secretTitle")}
+                    </ItemTitle>
+                    <ItemDescription className="line-clamp-none">
+                      {revealed ??
+                        t("connectedAccounts.secretMasked", {
+                          vendor: entry.vendor,
+                        })}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    {revealed === null ? (
+                      <Button
+                        disabled={reveal.isPending}
+                        onClick={() => {
+                          setNotice(null);
+                          setRevealed(null);
+                          reveal.mutate(key, {
+                            onSuccess: (secret) => setRevealed(secret),
+                          });
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {t("connectedAccounts.revealSecret")}
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={() => setRevealed(null)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        {t("connectedAccounts.hideSecret")}
+                      </Button>
+                    )}
+                  </ItemActions>
+                </Item>
+                <p className="text-muted-foreground text-xs">
+                  {t("connectedAccounts.revealAudited")}
+                </p>
+              </>
+            ) : null}
           </PageRows>
         </PageSection>
       ) : null}

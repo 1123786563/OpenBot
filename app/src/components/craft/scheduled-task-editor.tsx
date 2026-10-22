@@ -16,11 +16,11 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   craftScheduledTaskKeys,
+  scopedScheduledTaskQueryOptions,
+  scopedScheduledTaskRunsQueryOptions,
   createScheduledTask,
   deleteScheduledTask,
   runScheduledTaskNow,
-  scheduledTaskQueryOptions,
-  scheduledTaskRunsQueryOptions,
   updateScheduledTask,
 } from "@/lib/craft/scheduled-tasks";
 import type {
@@ -30,6 +30,7 @@ import type {
   CraftScheduledTaskRunStatus,
   CraftScheduledTaskStatus,
 } from "@/lib/craft/types";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { relativeTime } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
 
@@ -212,12 +213,17 @@ export function ScheduledTaskEditor({
 }) {
   const { t } = useTranslation("craft");
   const queryClient = useQueryClient();
+  // The editor's reads and writes are the scope's own (MT091 / Issue #134, AC3 — 调度动作提交
+  // 当前范围): the detail, the run history and every save/run/delete ride the selection pair
+  // and settle under the scope's cache prefix.
+  const scope = useScopedCache();
+  const pair = scope.status === "open" ? (scope.selection ?? {}) : undefined;
   const detail = useQuery({
-    ...scheduledTaskQueryOptions(taskId ?? ""),
+    ...scopedScheduledTaskQueryOptions(queryClient, scope, taskId ?? ""),
     enabled: taskId !== undefined,
   });
   const runs = useQuery({
-    ...scheduledTaskRunsQueryOptions(taskId ?? ""),
+    ...scopedScheduledTaskRunsQueryOptions(queryClient, scope, taskId ?? ""),
     enabled: taskId !== undefined,
   });
 
@@ -240,27 +246,39 @@ export function ScheduledTaskEditor({
     await queryClient.invalidateQueries({
       queryKey: craftScheduledTaskKeys.all,
     });
+    if (scope.status === "open") {
+      await queryClient.invalidateQueries({
+        queryKey: [...scope.prefix, ...craftScheduledTaskKeys.all],
+      });
+    }
   };
 
   const save = useMutation({
     mutationFn: async () => {
       if (taskId) {
-        return updateScheduledTask(taskId, {
+        return updateScheduledTask(
+          taskId,
+          {
+            name: form.name,
+            prompt: form.prompt,
+            editor_mode: form.mode,
+            editor_payload: payloadFor(form),
+            status: form.status,
+          },
+          pair,
+        );
+      }
+      return createScheduledTask(
+        {
           name: form.name,
           prompt: form.prompt,
           editor_mode: form.mode,
           editor_payload: payloadFor(form),
           status: form.status,
-        });
-      }
-      return createScheduledTask({
-        name: form.name,
-        prompt: form.prompt,
-        editor_mode: form.mode,
-        editor_payload: payloadFor(form),
-        status: form.status,
-        run_immediately: form.runImmediately,
-      });
+          run_immediately: form.runImmediately,
+        },
+        pair,
+      );
     },
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: async () => {
@@ -271,7 +289,7 @@ export function ScheduledTaskEditor({
   });
 
   const runNow = useMutation({
-    mutationFn: () => runScheduledTaskNow(taskId ?? ""),
+    mutationFn: () => runScheduledTaskNow(taskId ?? "", pair),
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: async () => {
       setError(null);
@@ -280,7 +298,7 @@ export function ScheduledTaskEditor({
   });
 
   const remove = useMutation({
-    mutationFn: () => deleteScheduledTask(taskId ?? ""),
+    mutationFn: () => deleteScheduledTask(taskId ?? "", pair),
     onError: (thrown: Error) => setError(thrown.message),
     onSuccess: async () => {
       setError(null);

@@ -235,12 +235,17 @@ export function teamBotConsentMutationOptions() {
   });
 }
 
-export function clearTeamBotConsentsMutationOptions() {
+export function clearTeamBotConsentsMutationOptions(scope?: ScopedCache) {
   return mutationOptions({
     mutationFn: async () => {
       await client("/api/team-bots/consents", {
         method: "DELETE",
         fallbackKey: "teamBots.clearPreferences",
+        // The connected-accounts page's clear rides the scope it holds (MT088 AC3); the chat-inline
+        // callers keep no scope of their own and submit exactly as before.
+        ...((scope !== undefined && scope.status === "open"
+          ? (scope.selection ?? {})
+          : {}) as { tenantId?: string; workspaceId?: string }),
       });
     },
   });

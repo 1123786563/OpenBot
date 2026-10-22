@@ -43,7 +43,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { grantRoster } from "@/lib/agents/grant-roster";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { brokerDisplay, isBrokeredProvenance } from "@/lib/brokered-provenance";
 import { storeMcpToken } from "@/lib/credentials/mutations";
 import {
@@ -55,12 +55,13 @@ import {
   registerOAuthClientMutationOptions,
   removePluginServerMutationOptions,
 } from "@/lib/plugins/mutations";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   type CatalogueItem,
-  connectionsQueryOptions,
+  scopedConnectionsQueryOptions,
   type PluginServer,
   personalConnections,
-  pluginsPageQueryOptions,
+  scopedPluginsPageQueryOptions,
 } from "@/lib/plugins/queries";
 import {
   botSharedAppsQueryOptions,
@@ -221,7 +222,10 @@ function RouteComponent() {
   const { t } = useTranslation("admin");
   const { key } = useParams({ from: "/_authed/admin/plugins/$key" });
   const queryClient = useQueryClient();
-  const plugins = useQuery(pluginsPageQueryOptions());
+  // The plugin governance face is the scope's own answer (MT094 / Issue #137, AC2): the reads
+  // here carry the selection pair and file under the scope's cache prefix.
+  const scope = useScopedCache();
+  const plugins = useQuery(scopedPluginsPageQueryOptions(queryClient, scope));
   /*
    * The administrator's OWN connections, not the deployment's.
    *
@@ -230,10 +234,14 @@ function RouteComponent() {
    * answer anywhere on this page without it. Nobody else's connection is readable here — the endpoint
    * only ever returns the caller's, so this cannot become a list of who has connected what.
    */
-  const connections = useQuery(connectionsQueryOptions());
-  const { data: agents } = useQuery(agentListQueryOptions());
+  const connections = useQuery(
+    scopedConnectionsQueryOptions(queryClient, scope),
+  );
+  const { data: agents } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   /* The ones this person has hidden, so a grant one of them holds is still on this page. */
-  const { data: hiddenAgents } = useQuery(agentListQueryOptions(true));
+  const { data: hiddenAgents } = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope, true),
+  );
   /*
    * The row itself rather than whether there is one, because the brokered row below wants what the
    * last re-check found and that is written on this same row. Asking a second time for it would be
@@ -299,19 +307,19 @@ function RouteComponent() {
   /* Every write reports into one banner rather than each growing its own handler. */
   const report = { onError: (thrown: Error) => setError(thrown.message) };
   const addCurated = useMutation({
-    ...addCuratedServerMutationOptions(queryClient),
+    ...addCuratedServerMutationOptions(queryClient, scope),
     ...report,
   });
   const registerClient = useMutation({
-    ...registerOAuthClientMutationOptions(queryClient),
+    ...registerOAuthClientMutationOptions(queryClient, scope),
     ...report,
   });
   const refresh = useMutation({
-    ...refreshPluginServerMutationOptions(queryClient),
+    ...refreshPluginServerMutationOptions(queryClient, scope),
     ...report,
   });
   const remove = useMutation({
-    ...removePluginServerMutationOptions(queryClient),
+    ...removePluginServerMutationOptions(queryClient, scope),
     ...report,
   });
   const connectSelf = useMutation({
