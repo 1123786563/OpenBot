@@ -1230,6 +1230,23 @@
       "gateway_readiness_rate_not_configured": "USD→积分兑换比例未配置，付费模型能力被拒绝：管理员需保存合法比例（没有默认值）。",
       "gateway_readiness_rate_unavailable": "兑换比例无法按合法值读取，付费模型能力被拒绝：请修复已存比例后再启用计费。",
       "gateway_readiness_gate_unavailable": "本进程未安装网关就绪门禁，付费模型能力被拒绝。"
+    },
+    "audio": {
+      "title": "音频路径可用性",
+      "description": "网关能严格计费的音频处理路径。证据缺失的路径不可调用，拒绝原因会指明缺什么。",
+      "available": "可用",
+      "unavailable": "不可用",
+      "notAnEntrance": "本网关无此入口",
+      "streamVariant": "流式",
+      "missingIntro": "缺失证据：",
+      "missing": {
+        "no_wire_price_source": "该路径计费的维度在协议上无价格来源",
+        "no_input_meter_wired": "该路径未接入服务端可信的输入计量",
+        "no_admission_wiring": "不存在可准入该路径的 Reserve/Settle 接线",
+        "no_gateway_entrypoint": "网关中不存在该能力族的路由"
+      },
+      "basisMissingDims": "{{ref}}：未定价维度 — {{dimensions}}",
+      "basisEnableable": "{{ref}}：已为该路径定价"
     }
   },
   "billingPage": {

@@ -77,12 +77,18 @@ import type {
   PreferenceRecallServiceConfig,
   PreferenceRecordStore,
 } from "./preference-recall";
+import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
 import {
   type AuthorizationSnapshot,
   readScopedAuthorization,
   type SourceBoundAuthorizationStore,
   type SourceBoundRecordStore,
 } from "./scoped-recall";
+import {
+  type MemoryRevocationStatus,
+  type PersonalMemoryRevocationRecorder,
+  STOPPED_USING_SUMMARY,
+} from "./revocation-ledger";
 
 /** The durable sync-work recorder #384 attaches; structural, so the queue satisfies it. */
 export interface JudgmentWorkRecorder {
@@ -221,13 +227,45 @@ function plainString(value: unknown, field: string, max: number): string {
   return value;
 }
 
+/**
+ * The bank a judgment row's own scope carves (module-level, for raw rows): the user bank for
+ * a general judgment, the restriction's bank otherwise. Exported so the revocation flow
+ * (#390), which blocks judgment rows by direct update, derives each blocked document's bank
+ * exactly the way this seam's retains and deletes do.
+ */
+export function judgmentBankGrantFor(row: {
+  principalId: string;
+  scopeKind: "general" | "team" | "source" | "bot";
+  workspaceId: string | null;
+  sourceId: string | null;
+  agentId: string | null;
+}): HindsightBankGrant {
+  if (row.scopeKind === "general") {
+    return { id: userBankFor(row.principalId), kind: "user" };
+  }
+  if (row.scopeKind === "team") {
+    return { id: teamBankFor(row.workspaceId ?? ""), kind: "team" };
+  }
+  if (row.scopeKind === "source") {
+    return { id: sourceBankFor(row.sourceId ?? ""), kind: "source" };
+  }
+  return { id: botBankFor(row.agentId ?? ""), kind: "bot" };
+}
+
 export function createDerivedJudgmentReviewService(
   preferences: PreferenceRecordStore,
   sourceBound: SourceBoundRecordStore,
   judgments: DerivedJudgmentStore,
   authorizations: SourceBoundAuthorizationStore,
   config: PreferenceRecallServiceConfig,
-  options: { now?: () => Date; work?: JudgmentWorkRecorder } = {},
+  options: {
+    now?: () => Date;
+    work?: JudgmentWorkRecorder;
+    /** The durable revocation ledger #390 attaches; without it the status stays honest anyway. */
+    revocations?: PersonalMemoryRevocationRecorder;
+    /** The person's pause switches (#392); usage-paused answers recall empty before any remote call. */
+    pause?: HindsightPauseControls;
+  } = {},
 ) {
   const now = options.now ?? (() => new Date());
   const doFetch =
@@ -261,19 +299,9 @@ export function createDerivedJudgmentReviewService(
     });
   }
 
-  /** The bank a judgment row's own scope carves; the derivations stay in bank-scope.ts. */
+  /** The bank a judgment row's own scope carves; the derivation lives in judgmentBankGrantFor. */
   function bankGrantFor(row: DerivedJudgmentRow): HindsightBankGrant {
-    const scope = judgmentScopeOf(row);
-    if (scope.kind === "general") {
-      return { id: userBankFor(row.principalId), kind: "user" };
-    }
-    if (scope.kind === "team") {
-      return { id: teamBankFor(scope.workspaceId), kind: "team" };
-    }
-    if (scope.kind === "source") {
-      return { id: sourceBankFor(scope.sourceId), kind: "source" };
-    }
-    return { id: botBankFor(scope.agentId), kind: "bot" };
+    return judgmentBankGrantFor(row);
   }
 
   /**
@@ -312,20 +340,41 @@ export function createDerivedJudgmentReviewService(
     }
   }
 
-  /** Best-effort remote delete of a row's document; a failed delete leaves a hit recall drops. */
-  async function deleteRemote(
+  /**
+   * Best-effort remote delete of one document whose outcome is observable (#390): `attempted`
+   * is false exactly when the service could not be reached; `confirmed` is true on 2xx or 404.
+   * Never thrown — the authority row already stopped every use before this ran.
+   */
+  async function deleteRemoteDocument(
     identity: { tenantId: string; principalId: string },
-    row: DerivedJudgmentRow,
-  ): Promise<void> {
+    bank: HindsightBankGrant,
+    documentId: string,
+  ): Promise<{
+    attempted: boolean;
+    confirmed: boolean;
+    error: string | null;
+  }> {
     try {
-      const bank = bankGrantFor(row);
-      await hindsight(
+      const response = await hindsight(
         backgroundTaskBankScope(identity, bank),
-        `/v1/${HINDSIGHT_TENANT_SEGMENT}/banks/${bank.id}/documents/${encodeURIComponent(row.hindsightDocumentId)}`,
+        `/v1/${HINDSIGHT_TENANT_SEGMENT}/banks/${bank.id}/documents/${encodeURIComponent(documentId)}`,
         { method: "DELETE" },
       );
-    } catch {
-      // Best effort by design; the local state already stops every use.
+      const confirmed = response.ok || response.status === 404;
+      return {
+        attempted: true,
+        confirmed,
+        error: confirmed ? null : `service answered ${response.status}`,
+      };
+    } catch (error) {
+      return {
+        attempted: false,
+        confirmed: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "service could not be reached",
+      };
     }
   }
 
@@ -567,7 +616,13 @@ export function createDerivedJudgmentReviewService(
       row.syncedContentDigest = null;
       row.syncedAt = null;
       await judgments.save(row);
-      if (wasSynced) await deleteRemote(identity, row);
+      if (wasSynced) {
+        await deleteRemoteDocument(
+          identity,
+          bankGrantFor(row),
+          row.hindsightDocumentId,
+        );
+      }
       return {
         id: row.id,
         reviewState: "rejected",
@@ -580,24 +635,59 @@ export function createDerivedJudgmentReviewService(
      * authority table forgets (content cleared, disabled, deleted_at), so no later recall —
      * index hit or SQL read — can resurrect it, and the remote document is deleted
      * best-effort. Forgetting is never blocked by a lost scope authorization or by the review
-     * state: removal must always be possible.
+     * state: removal must always be possible. Since #390 the answer is the honest two-part
+     * status — stopped being used at `stoppedUsingAt` (the block lands before any remote
+     * call), remote cleanup reported separately and never claimed cleared.
      */
     async forgetDerivedJudgment(
       scope: PlatformScope,
       id: string,
-    ): Promise<void> {
+    ): Promise<MemoryRevocationStatus> {
       const identity = resolveHindsightBankScope(scope);
       const row = await loadOwned(scope, id);
       if (!row || row.deletedAt !== null)
         throw new DerivedJudgmentNotFoundError();
-      row.deletedAt = now();
+      const stoppedUsingAt = now();
+      const documentId = row.hindsightDocumentId;
+      const bank = bankGrantFor(row);
+      row.deletedAt = stoppedUsingAt;
       row.enabled = false;
       row.content = "";
       row.syncedContentDigest = null;
       row.syncedAt = null;
-      row.updatedAt = now();
+      row.updatedAt = stoppedUsingAt;
       await judgments.save(row);
-      await deleteRemote(identity, row);
+      if (options.revocations) {
+        await options.revocations.recordBlock({
+          tenantId: identity.tenantId,
+          principalId: identity.principalId,
+          kind: "memory",
+          subjectType: "derived_judgment",
+          targetId: row.id,
+          documentId,
+          bankId: bank.id,
+          bankKind: bank.kind,
+          blockedAt: stoppedUsingAt,
+        });
+      }
+      const deletion = await deleteRemoteDocument(identity, bank, documentId);
+      if (options.revocations) {
+        await options.revocations.noteDeletionOutcome({
+          tenantId: identity.tenantId,
+          documentId,
+          attemptedAt: now(),
+          confirmed: deletion.confirmed,
+          error: deletion.error,
+        });
+      }
+      return {
+        stoppedUsingAt,
+        remoteDeletion: {
+          attempted: deletion.attempted,
+          outstanding: deletion.confirmed ? 0 : 1,
+        },
+        summary: STOPPED_USING_SUMMARY,
+      };
     },
 
     /**
@@ -638,6 +728,9 @@ export function createDerivedJudgmentReviewService(
           AGENT_ID_MAX,
         );
       }
+      // Pause-usage (#392): checked before any bank is resolved or asked, so the degradation
+      // path never runs either; the adopted judgments stay, only their use stops.
+      if (await usagePausedFor(options.pause, scope)) return [];
       const first = await readScopedAuthorization(
         authorizations,
         identity.tenantId,

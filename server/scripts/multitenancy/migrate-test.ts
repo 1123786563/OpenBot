@@ -2690,18 +2690,18 @@ const AUDIT_DOMAIN_TASK: TaskMigrationSpec = {
           '\t"payload" jsonb NOT NULL,\n' +
           '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
           '\tCONSTRAINT "enterprise_audit_events_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
-          '\tCONSTRAINT "enterprise_audit_event_domain" CHECK ("enterprise_audit_events"."domain" in (\'business\',\'identity\',\'platform\')),\n' +
+          "\tCONSTRAINT \"enterprise_audit_event_domain\" CHECK (\"enterprise_audit_events\".\"domain\" in ('business','identity','platform')),\n" +
           '\tCONSTRAINT "enterprise_audit_events_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action\n' +
           ");",
         'CREATE INDEX "enterprise_audit_event_tenant_domain_time" ON "enterprise_audit_events" ("tenant_id","domain","created_at");',
-        "ALTER TABLE \"enterprise_audit_events\" ENABLE ROW LEVEL SECURITY;",
+        'ALTER TABLE "enterprise_audit_events" ENABLE ROW LEVEL SECURITY;',
         'CREATE POLICY "enterprise_audit_event_operator_read" ON "enterprise_audit_events"\n' +
           "  FOR SELECT TO ob_ent_operator\n" +
-          '  USING ("enterprise_audit_events"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+          "  USING (\"enterprise_audit_events\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
         'CREATE POLICY "enterprise_audit_event_operator_insert" ON "enterprise_audit_events"\n' +
           "  FOR INSERT TO ob_ent_operator\n" +
-          '  WITH CHECK ("enterprise_audit_events"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\')\n' +
-          '    AND "enterprise_audit_events"."id" = nullif(current_setting(\'app.operation_id\', true), \'\'));',
+          "  WITH CHECK (\"enterprise_audit_events\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+          "    AND \"enterprise_audit_events\".\"id\" = nullif(current_setting('app.operation_id', true), ''));",
         'GRANT SELECT, INSERT ON TABLE "enterprise_audit_events" TO ob_ent_operator;',
         'ALTER TABLE "enterprise_audit_events" FORCE ROW LEVEL SECURITY;',
       ],
@@ -2729,8 +2729,233 @@ const AUDIT_DOMAIN_TASK: TaskMigrationSpec = {
   ],
 };
 
-export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
+/**
+ * MT061（Issue #104）：OpenMuse 文件/文档/个人工作区域的归属域。expand-only
+ * ——两张新协会表与按既有模式的最小 RLS；不修改任何既有表/策略/角色授权。
+ *
+ *   1. openmuse_file_scopes：一行 = 一个只有 owner_user_id 的文件根记录在
+ *      一个 (公司, 团队, 主体) 三元组上的归属关联（Spec §4.2 逐字形状）。
+ *      file_id 主键 FK → openmuse_files(id) cascade；复合外键钉到
+ *      enterprise_workspaces 与 enterprise_memberships 与 users，均
+ *      cascade；attribution ∈ {'created','import'} CHECK 区分本地上传 pin
+ *      与外部引用（邮件附件导入）pin。
+ *   2. openmuse_document_actions：一行 = 一次 PDF 填写/传输动作的发起归属
+ *      （AC2「保存发起归属，执行时校验」的持久面）。(file_id, action_kind)
+ *      复合主键（同键重放收敛）；action_kind ∈ {'fill','transfer'} CHECK；
+ *      同款复合外键。
+ *   3. RLS 沿 MT059/MT060 既有模式 + MT042 扫描臂：REVOKE PUBLIC + 四能力
+ *      角色 → ENABLE + FORCE → data 租户臂 + restrictive 主体自读 →
+ *      operator 租户 + 主体上下文读/插/删 → operator app.scan_sweep='on'
+ *      跨租户读臂（平台触发重建专用）。目录角色无任何策略与授权。零
+ *      UPDATE 授权——归属不可改写是结构不是纪律。
+ */
+const OPENMUSE_FILE_TENANCY_RLS_STATEMENTS: readonly string[] = [
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_file_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_file_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_file_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_file_scope_data_tenant_read" ON "openmuse_file_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_file_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_data_self_read" ON "openmuse_file_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_file_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_operator_read" ON "openmuse_file_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_file_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_file_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_operator_insert" ON "openmuse_file_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_file_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_file_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_operator_delete" ON "openmuse_file_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_file_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_file_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_file_scope_operator_sweep_read" ON "openmuse_file_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_file_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_file_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_file_scopes" TO ob_ent_operator;',
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_document_actions" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_document_actions" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_document_actions" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_document_action_data_tenant_read" ON "openmuse_document_actions"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_document_actions\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_data_self_read" ON "openmuse_document_actions"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_document_actions\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_operator_read" ON "openmuse_document_actions"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_document_actions\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_document_actions\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_operator_insert" ON "openmuse_document_actions"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_document_actions\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_document_actions\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_operator_delete" ON "openmuse_document_actions"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_document_actions\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_document_actions\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_document_action_operator_sweep_read" ON "openmuse_document_actions"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_document_actions" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_document_actions" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_document_actions" TO ob_ent_operator;',
+];
 
+const OPENMUSE_FILE_TENANCY_TASK: TaskMigrationSpec = {
+  id: "MT061",
+  description:
+    "MT061（Issue #104）：OpenMuse 文件/文档/个人工作区域归属域——新增 openmuse_file_scopes 与 openmuse_document_actions 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "file_scope_tables",
+      impact:
+        "新增 openmuse_file_scopes 与 openmuse_document_actions 表：file_id 主键（FK → openmuse_files cascade）/ (file_id, action_kind) 复合主键；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；attribution 与 action_kind CHECK；范围列表索引。不修改任何既有表。",
+      objects: ["openmuse_file_scopes", "openmuse_document_actions"],
+      statements: [
+        'CREATE TABLE "openmuse_file_scopes" (\n' +
+          '\t"file_id" text PRIMARY KEY NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          "\t\"attribution\" text DEFAULT 'created' NOT NULL,\n" +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "openmuse_file_scopes_attribution" CHECK ("openmuse_file_scopes"."attribution" in (\'created\',\'import\'))\n' +
+          ");",
+        'CREATE INDEX "openmuse_file_scopes_scope_list_idx" ON "openmuse_file_scopes" USING btree ("tenant_id","workspace_id","principal_id","created_at","file_id");',
+        'ALTER TABLE "openmuse_file_scopes" ADD CONSTRAINT "openmuse_file_scopes_file_fk" FOREIGN KEY ("file_id") REFERENCES "public"."openmuse_files"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_file_scopes" ADD CONSTRAINT "openmuse_file_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_file_scopes" ADD CONSTRAINT "openmuse_file_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_file_scopes" ADD CONSTRAINT "openmuse_file_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE TABLE "openmuse_document_actions" (\n' +
+          '\t"file_id" text NOT NULL,\n' +
+          '\t"action_kind" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "openmuse_document_actions_pk" PRIMARY KEY ("file_id","action_kind"),\n' +
+          '\tCONSTRAINT "openmuse_document_actions_kind" CHECK ("openmuse_document_actions"."action_kind" in (\'fill\',\'transfer\'))\n' +
+          ");",
+        'CREATE INDEX "openmuse_document_actions_scope_list_idx" ON "openmuse_document_actions" USING btree ("tenant_id","workspace_id","principal_id","created_at","file_id");',
+        'ALTER TABLE "openmuse_document_actions" ADD CONSTRAINT "openmuse_document_actions_file_fk" FOREIGN KEY ("file_id") REFERENCES "public"."openmuse_files"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_document_actions" ADD CONSTRAINT "openmuse_document_actions_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_document_actions" ADD CONSTRAINT "openmuse_document_actions_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_document_actions" ADD CONSTRAINT "openmuse_document_actions_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "file_scope_rls",
+      impact:
+        "仅对两张新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["openmuse_file_scopes", "openmuse_document_actions"],
+      statements: OPENMUSE_FILE_TENANCY_RLS_STATEMENTS,
+    },
+  ],
+};
+
+/**
+ * MT062（Issue #105）：OpenMuse 个人域（目标/想法/记忆）与财务产物的归属
+ * 域。expand-only——一张新协会表与按既有模式的最小 RLS；不修改任何既有
+ * 表/策略/角色授权。
+ *
+ *   1. openmuse_personal_scopes：一行 = 一个个人域根记录（openmuse_goals /
+ *      openmuse_ideas / openmuse_memories，或作为财务产物 pin 的
+ *      openmuse_files 行 id）在一个 (公司, 团队, 主体) 三元组上的归属关联
+ *      （Spec §4.2 逐字形状）。(object_type, object_id) 复合主键：一个对
+ *      象至多一条归属；三类根表各自的 text 主键无法跨表外键——根行存在
+ *      性与 owner 一致性由服务面 rows 缝核死（诚实披露，见 schema 注释）。
+ *      object_type ∈ {'goal','idea','memory','finance_artifact'} CHECK；
+ *      attribution ∈ {'created','import'} CHECK。
+ *   2. RLS 沿 MT059/MT060 既有模式 + MT042 扫描臂：REVOKE PUBLIC + 四能力
+ *      角色 → ENABLE + FORCE → data 租户臂 + restrictive 主体自读（AC1：
+ *      同团队他人连行都不可见）→ operator 租户 + 主体上下文读/插/删 →
+ *      operator app.scan_sweep='on' 跨租户读臂。目录角色无任何策略与授
+ *      权。零 UPDATE 授权——归属不可改写是结构不是纪律。
+ */
+const OPENMUSE_PERSONAL_TENANCY_RLS_STATEMENTS: readonly string[] = [
+  'REVOKE ALL PRIVILEGES ON TABLE "openmuse_personal_scopes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator;',
+  'ALTER TABLE "openmuse_personal_scopes" ENABLE ROW LEVEL SECURITY;',
+  'ALTER TABLE "openmuse_personal_scopes" FORCE ROW LEVEL SECURITY;',
+  'CREATE POLICY "openmuse_personal_scope_data_tenant_read" ON "openmuse_personal_scopes"\n' +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_personal_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_data_self_read" ON "openmuse_personal_scopes"\n' +
+    "  AS RESTRICTIVE\n" +
+    "  FOR SELECT TO ob_ent_data\n" +
+    "  USING (\"openmuse_personal_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_operator_read" ON "openmuse_personal_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (\"openmuse_personal_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_personal_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_operator_insert" ON "openmuse_personal_scopes"\n' +
+    "  FOR INSERT TO ob_ent_operator\n" +
+    "  WITH CHECK (\"openmuse_personal_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_personal_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_operator_delete" ON "openmuse_personal_scopes"\n' +
+    "  FOR DELETE TO ob_ent_operator\n" +
+    "  USING (\"openmuse_personal_scopes\".\"tenant_id\" = nullif(current_setting('app.tenant_id', true), '')\n" +
+    "    AND \"openmuse_personal_scopes\".\"principal_id\" = nullif(current_setting('app.principal_id', true), ''));",
+  'CREATE POLICY "openmuse_personal_scope_operator_sweep_read" ON "openmuse_personal_scopes"\n' +
+    "  FOR SELECT TO ob_ent_operator\n" +
+    "  USING (current_setting('app.scan_sweep', true) = 'on');",
+  'GRANT SELECT ON TABLE "openmuse_personal_scopes" TO ob_ent_data, ob_ent_operator;',
+  'GRANT INSERT ON TABLE "openmuse_personal_scopes" TO ob_ent_operator;',
+  'GRANT DELETE ON TABLE "openmuse_personal_scopes" TO ob_ent_operator;',
+];
+
+const OPENMUSE_PERSONAL_TENANCY_TASK: TaskMigrationSpec = {
+  id: "MT062",
+  description:
+    "MT062（Issue #105）：OpenMuse 个人域（目标/想法/记忆）与财务产物归属域——新增 openmuse_personal_scopes 协会表（表 + RLS 两步，expand-only，不改既有对象）。",
+  steps: [
+    {
+      slug: "personal_scope_tables",
+      impact:
+        "新增 openmuse_personal_scopes 表：(object_type, object_id) 复合主键；复合外键钉到 enterprise_workspaces、enterprise_memberships 与 users（均 cascade）；object_type 与 attribution CHECK；范围列表索引。不修改任何既有表。",
+      objects: ["openmuse_personal_scopes"],
+      statements: [
+        'CREATE TABLE "openmuse_personal_scopes" (\n' +
+          '\t"object_type" text NOT NULL,\n' +
+          '\t"object_id" text NOT NULL,\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"user_id" text NOT NULL,\n' +
+          "\t\"attribution\" text DEFAULT 'created' NOT NULL,\n" +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "openmuse_personal_scopes_pk" PRIMARY KEY ("object_type","object_id"),\n' +
+          "\tCONSTRAINT \"openmuse_personal_scopes_object_type\" CHECK (\"openmuse_personal_scopes\".\"object_type\" in ('goal','idea','memory','finance_artifact')),\n" +
+          '\tCONSTRAINT "openmuse_personal_scopes_attribution" CHECK ("openmuse_personal_scopes"."attribution" in (\'created\',\'import\'))\n' +
+          ");",
+        'CREATE INDEX "openmuse_personal_scopes_scope_list_idx" ON "openmuse_personal_scopes" USING btree ("tenant_id","workspace_id","principal_id","object_type","created_at","object_id");',
+        'ALTER TABLE "openmuse_personal_scopes" ADD CONSTRAINT "openmuse_personal_scopes_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_personal_scopes" ADD CONSTRAINT "openmuse_personal_scopes_membership_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "openmuse_personal_scopes" ADD CONSTRAINT "openmuse_personal_scopes_user_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "personal_scope_rls",
+      impact:
+        "仅对新表：REVOKE PUBLIC、启用并 FORCE RLS、按既有模式新增最小策略（data 租户范围 SELECT + restrictive 主体自读；operator 租户+主体上下文读/插/删 + app.scan_sweep 扫描臂）及配套最小 GRANT；零 UPDATE 授权。不改动任何既有表策略或既有授权。目录角色无任何策略与授权。",
+      objects: ["openmuse_personal_scopes"],
+      statements: OPENMUSE_PERSONAL_TENANCY_RLS_STATEMENTS,
+    },
+  ],
+};
+
+export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [SELF_CHECK_TASK.id, SELF_CHECK_TASK],
   [WORKSPACE_MEMBERSHIP_TASK.id, WORKSPACE_MEMBERSHIP_TASK],
   [LEGACY_ANCHOR_TASK.id, LEGACY_ANCHOR_TASK],
@@ -2754,6 +2979,8 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],
   [COMPANY_FINANCE_GRANT_TASK.id, COMPANY_FINANCE_GRANT_TASK],
   [OPENMUSE_TASK_TENANCY_TASK.id, OPENMUSE_TASK_TENANCY_TASK],
+  [OPENMUSE_FILE_TENANCY_TASK.id, OPENMUSE_FILE_TENANCY_TASK],
+  [OPENMUSE_PERSONAL_TENANCY_TASK.id, OPENMUSE_PERSONAL_TENANCY_TASK],
   [SHARED_APPROVAL_TASK.id, SHARED_APPROVAL_TASK],
   [DELETION_SEMANTICS_TASK.id, DELETION_SEMANTICS_TASK],
   [HOST_ACCESS_TASK.id, HOST_ACCESS_TASK],

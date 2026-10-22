@@ -125,6 +125,29 @@ describe("capability derivation", () => {
     expect(result.entries).toHaveLength(2);
   });
 
+  test("an OCR supported_methods entry yields the ocr capability (Bifrost 11.5, #300)", () => {
+    // The wire's own request-type token is "ocr" (schemas.OCRRequest); an entry naming
+    // it becomes an ocr ref, so 03.2 can price it and 11.5's dimension mapping can
+    // assess it — the closed set's newest member, on the same supported_methods
+    // evidence every other capability rides.
+    const result = normalizeGatewayModelCatalog({
+      data: [
+        rawModel({
+          id: "mistral/mistral-ocr",
+          supported_methods: ["ocr"],
+        }),
+      ],
+    });
+    expect(result.issues).toEqual([]);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]?.ref).toEqual({
+      provider: "mistral",
+      model: "mistral-ocr",
+      capability: "ocr",
+    });
+    expect(MODEL_CAPABILITIES).toContain("ocr");
+  });
+
   test("capability hints that map to nothing stay unknown, with the reason kept — never chat", () => {
     const result = normalizeGatewayModelCatalog({
       data: [
