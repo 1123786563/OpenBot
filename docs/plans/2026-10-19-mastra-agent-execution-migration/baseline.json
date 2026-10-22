@@ -1,0 +1,171 @@
+{
+  "kind": "planning-only-baseline",
+  "recorded_at": "2026-10-19T14:23:45.956719+00:00",
+  "workspace": "/Users/wuyongjun/trea/OpenBot",
+  "head": "d6123571433bee4e5b98923c8dc50c55dd34e5b6",
+  "branch": "main",
+  "git_status_porcelain": [
+    "A  docs/plans/2026-10-19-mastra-agent-execution-migration-dag.md",
+    "A  docs/plans/2026-10-19-mastra-agent-execution-migration.md"
+  ],
+  "files": [
+    {
+      "path": "CONTEXT.md",
+      "exists": true,
+      "sha256": "c47aed718efca7ba5ae9b99ae517f3fe1feb66094e2a4ad2efc7577d13f01ad1"
+    },
+    {
+      "path": "AGENTS.md",
+      "exists": true,
+      "sha256": "5e5b75b8f31886a0cb2f1e2fd36f2e2c4d40d0d1754a03577a6b89668e8b9ef0"
+    },
+    {
+      "path": "docs/agents/worktrees.md",
+      "exists": true,
+      "sha256": "04dd2cd28736efba9089d06e92537090056eb3eade8638d730c98587be0a66fb"
+    },
+    {
+      "path": "docs/adr/0008-test-runner-tester-army-e2e.md",
+      "exists": true,
+      "sha256": "836dca1fd3d47c2c4d23f3d613df1ccfe83da466c0f5e91d9f4527fbd6ddffa1"
+    },
+    {
+      "path": "docs/adr/0005-self-hosted-hindsight-for-personal-memory.md",
+      "exists": true,
+      "sha256": "d092db73eb403115903d309ce0e3243d158199d3f26948324a5d13f5b2923916"
+    },
+    {
+      "path": "docs/adr/0006-logical-private-bot-scoped-execution.md",
+      "exists": true,
+      "sha256": "5e4340ea99510c8a5877b430a37c4e0d1c258b3f5f586301c1f3fdef312fb4f8"
+    },
+    {
+      "path": "docs/adr/0009-remove-knowledge-base-domain.md",
+      "exists": true,
+      "sha256": "006d295d418019298774efba65d626de4282d767f183b3e2438c9628c84eb143"
+    },
+    {
+      "path": "docs/research/2026-10-19-mastra-agent-migration-assessment.md",
+      "exists": true,
+      "sha256": "0c0316de288c317aa26d77c792d84e24613b34109568bdb7806b99bda4476002"
+    },
+    {
+      "path": "docs/research/2026-10-19-mastra-official-capabilities.md",
+      "exists": true,
+      "sha256": "8f4a63cc764de8ef7f1936ac3f3adba7740874a90c7107a3c370c30c354e544f"
+    },
+    {
+      "path": "server/package.json",
+      "exists": true,
+      "sha256": "615a32d7971a7b00cf079ff1ac66dd8097b96d4d41cf93323a2b091d570a58ad"
+    },
+    {
+      "path": "package.json",
+      "exists": true,
+      "sha256": "658f0419f499e4caf02303df5f9743cbe4ddd3f1a05b0e84608b187a2f4aad18"
+    },
+    {
+      "path": "server/src/copilot.ts",
+      "exists": true,
+      "sha256": "b79a66ff315f6c7ce18b7d02cd80cfd9ea2a64250667c60ad14c201832ae06ca"
+    },
+    {
+      "path": "server/src/index.ts",
+      "exists": true,
+      "sha256": "510ca2f3e4f7598011a8818e687bfb7a9b5a3a061abc8eb1052bd6d0732b2e44"
+    },
+    {
+      "path": "server/src/config.ts",
+      "exists": true,
+      "sha256": "abcb29fb5d02e502541868ace77c9b6f7d9b65e35a4cbd69fd86b8bd1af67c98"
+    },
+    {
+      "path": "server/src/agents/agent-resolver.ts",
+      "exists": true,
+      "sha256": "42f84c1e0e3cc08a406fa7bdef3f55dd190bccd65f335f4108b912af7a70157c"
+    },
+    {
+      "path": "server/src/agents/plan-model.ts",
+      "exists": true,
+      "sha256": "f50799bb932ea9ee2ca50aa0a4f2a3a2672afd447dfaf61f1e6657b62575f0db"
+    },
+    {
+      "path": "server/src/enterprise/runs/runner.ts",
+      "exists": true,
+      "sha256": "ff564d8df8b61f4f3fba72962938a7e9c5589c7470cc87205fb7266d5191e916"
+    },
+    {
+      "path": "server/src/enterprise/runs/governed-execution.ts",
+      "exists": true,
+      "sha256": "3119ed12bcb759a2c97c39449debf22d956556a142ba3e8b17348d0265707aca"
+    },
+    {
+      "path": "server/src/enterprise/models/ai-sdk-v3-gateway-adapter.ts",
+      "exists": true,
+      "sha256": "1a62543c2cba59f2b16c028f3ad76bc6274a0c412f94557a977019b22c22fe2c"
+    },
+    {
+      "path": "server/src/mastra/compatibility.ts",
+      "exists": true,
+      "sha256": "6a2ba13e1fd6d4a844c2ec430675ee85a5933b9430910c199f1bafa8346e4185"
+    },
+    {
+      "path": "server/src/mastra/conversations.ts",
+      "exists": true,
+      "sha256": "6779b68c20d66d2f0c1e2535f83ef577a197a77660afa8a7202f3c474af8a6ab"
+    },
+    {
+      "path": "server/src/mastra/tenant-storage.ts",
+      "exists": true,
+      "sha256": "182c7a760a0faa7d7cd7b764f1da5f243bb967be1ccc843bd63d56698d4a2e86"
+    },
+    {
+      "path": "server/src/enterprise/conversations/service.ts",
+      "exists": true,
+      "sha256": "db2805cc305d952e769c5a37e4a77549476c5aace4f6ee4a441bec29b4dfd60c"
+    },
+    {
+      "path": "server/src/routines/run-turn.ts",
+      "exists": true,
+      "sha256": "e3abe5002d245d55b7a8b02ea07467342621fabedf5f47f0f08d4199a4b3f084"
+    },
+    {
+      "path": "server/src/approvals/native-context.ts",
+      "exists": true,
+      "sha256": "2b0baf707ccee66ec4f94c2a6ad5839aeddbed4188a1ed5517e5fc3ba001d8e6"
+    },
+    {
+      "path": "server/src/approvals/question-resume.ts",
+      "exists": true,
+      "sha256": "182b12bad25bb986caad163635b6db663ae986f536b3cd5b3297db8d6922b1d0"
+    },
+    {
+      "path": "server/src/learning/runtime.ts",
+      "exists": true,
+      "sha256": "81836de70370ac6ff9d59a8026cccbee7941e51b5f45e253ddca699e84fdbc9b"
+    },
+    {
+      "path": "server/src/memory/tools.ts",
+      "exists": true,
+      "sha256": "d3b4147efdb7b48bf15d3e1922526d9857ba9f31d1332d494fd51be9694a3a96"
+    },
+    {
+      "path": "e2e.unit.config.ts",
+      "exists": true,
+      "sha256": "a3ac3790f612730eef2b2bc86e2dea008da6b67a434adc7e064566c8ddd40752"
+    },
+    {
+      "path": "tests/bun-suites.test.ts",
+      "exists": true,
+      "sha256": "05ac8e018b9b4abd737f9617e82f1589757fcaa6de7fcb16b77c4cb83eb43a73"
+    }
+  ],
+  "tests_run": false,
+  "implementation_started": false,
+  "note": "Planning source hashes, not SDD task checkpoints or validation evidence; recapture before implementation.",
+  "concurrent_git_observation": {
+    "observed_at": "2026-10-19T14:25:20.851152+00:00",
+    "head": "c80927fa70d5ce4f6e0114661b513aced3047944",
+    "note": "HEAD advanced during planning; plan and DAG became tracked in external commit c80927fa. This session did not run git add/commit. Preserve external commits and recapture implementation baseline."
+  }
+}

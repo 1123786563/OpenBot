@@ -1119,6 +1119,10 @@
    ]
   }
  ],
+ "directoryIslands": [
+  "server/tests/multitenancy",
+  "app/tests/multitenancy"
+ ],
  "files": [
   "--help",
   "agent-computer/tests/identity.test.ts",
