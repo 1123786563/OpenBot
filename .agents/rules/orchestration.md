@@ -67,4 +67,4 @@ Pi 完成后停止该工作区写入并结算 Dispatch，再启动只读 Claude 
 
 ## 完整交付
 
-所有交付任务已集成且根 Issue 聚合验收通过后，冻结集成分支待审范围，编排者经 Orca 启动新的 Codex Agent，对原始 BASE 至当前集成 HEAD 加未提交交付内容作最终 Spec/质量审核；同时按 [Review/OCR 规范](review.md)完成外层 OCR 覆盖。Codex 或 OCR 的有效问题形成对应修复任务，回到 Pi → Claude → 集成及组合验证，再重新执行完整范围终审。终审与 OCR 通过后，按[审核和交付](orchestration-review.md)关闭已满足验收的 Issue 并清理工作区；提交、GitHub 写入、推送及对外合并仍以当前授权为准。
+所有交付任务已集成且根 Issue 聚合验收通过后，冻结集成分支待审范围，编排者经 Orca 启动新的 Codex Agent，对原始 BASE 至当前集成 HEAD 加未提交交付内容作最终 Spec/质量审核；Codex 通过后由编排者按 [Review/OCR 规范](review.md)对同一完整范围执行外层 OCR。Codex 或 OCR 的有效问题形成对应修复任务，回到 Pi → Claude → 集成及组合验证，再重新执行完整 Codex 终审与 OCR。两项均通过后，按[审核和交付](orchestration-review.md)关闭已满足验收的 Issue 并清理工作区；提交、GitHub 写入、推送及对外合并仍以当前授权为准。
