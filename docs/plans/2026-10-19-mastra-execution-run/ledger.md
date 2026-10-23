@@ -32,6 +32,13 @@ Legend: `pending` | `in_progress` | `implemented` | `verified` | `blocked`.
 | ME16 | 488 | ME15 | backend + frontend | old path removal, final audit | **verified (FINAL review APPROVED_WITH_FINDINGS 6/6 MET; doc-grade fix controller-applied §9; chat wiring + participation + F2/F3/F4/F5 + A01-A20 all reviewer-verified)** | me16/{report,snapshot}/ |
 
 ## Log
+### 2026-10-23T10:2xZ — FINAL STATE: all 16 tickets verified; final-OCR attempt environment-blocked
+
+- Attempted the user-ruled final one-time OCR over the delivery scope: the ocr CLI now fails at startup — `no valid LLM endpoint configured; one of OCR_LLM_URL/OCR_LLM_TOKEN/OCR_LLM_MODEL, ~/.opencodereview/config.json, or ANTHROPIC_* must be set` (its previously-working endpoint config is gone from this environment). Recorded honestly; NOT faked. The obligation attaches to the final-commit moment (user's authorization); when committing, either reconfigure the endpoint and run once, or the user waives it as they did for intermediate rounds.
+- Compensating assurance: EVERY ticket ME01-ME16 closed with an independent review (verdicts in this ledger); the three heaviest increments (ME09 resume spine, ME14 cutover fence, ME16 final) additionally passed reviewer-executed reproductions; A01-A20 matrix in me16/report.md with same-version evidence.
+- Final controller verification (2026-10-23T~09:2xZ): 34-file wave 402 pass / 0 fail; tsc exactly 3 baseline; biome clean; manifest 621/39 zero-drift.
+- Delivery = HEAD 46b4180ed3 (user's 2 chore(sync) commits absorbing ME01-ME10+finish) + uncommitted ME11-ME16 increment; no agent git actions at any point.
+
 ### 2026-10-23T09:4xZ — ME16 FINAL review APPROVED_WITH_FINDINGS; doc fix applied; ME16 CLOSED — ALL 16 TICKETS VERIFIED
 
 - Final reviewer (144 tool uses; independently re-ran 12+ suites incl. both e2e-runner partitions; snapshot 10/10 hashes re-verified): 6/6 AC MET. Chat wiring verified at every consult point (selector only inside governed admission; no-enterprise never asks; legacy branch intact); participation semantics correct (skip ONLY for the {waiting:true} approval sentinel); "legacy" removal zero producers/consumers repo-wide; entry audit 8/9 exact (2 pointers ±12 drift); §1.3 sign-in residual SUBSTANTIVELY TRUE and correctly escalated (routing onResolved through the governed drive is not a one-liner); gates reproduced (tsc 3; biome baselines pre-existing at HEAD; manifest 621/39; audit unmodified).
