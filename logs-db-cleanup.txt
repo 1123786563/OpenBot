@@ -1,5 +1,0 @@
-# DROP DATABASE openbot_a349_c9b76469 WITH (FORCE) via docker exec openbot-test-pg psql -U postgres
-DROP DATABASE
-pg_database recheck: 0
-roles LIKE '%a349%': 0
-# shared containers untouched (no stop/restart/clean)

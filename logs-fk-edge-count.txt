@@ -1,6 +1,0 @@
-# psql on openbot_a349_c9b76469 (full migration chain 0001-0206), frozen baseline e8ea2102
-child_out_parent_estate              |    16
-child_estate_parent_out              |     0
-any_edge_touching_estate_out_of_univ |    16
-# child tables (edge counts): async_jobs 1, batch_jobs 1, billing_account_resolutions 1, billing_call_attributions 1, billing_credit_accounts 1, billing_customer_mappings 1, credit_async_settlement_details 2, credit_batch_settlement_details 1, credit_settlement_details 2, credit_settlement_dimension_breakdown 1, credit_speech_settlement_details 2, realtime_units 1, tool_call_charges 1  (total 16; brief claimed 17 — measured 16)
-# introduced by migrations 0163/0176/0179/0194/0195/0197/0198/0199/0200/0201 per server/drizzle/*.sql REFERENCES scan
