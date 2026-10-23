@@ -1386,6 +1386,7 @@ const HELD_NOTION: HeldConnection = {
   serverId: "notion",
   scope: "read",
   connectedAt: "2026-01-01T00:00:00.000Z",
+  revoked: false,
 };
 
 /**

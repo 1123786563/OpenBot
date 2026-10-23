@@ -57,12 +57,13 @@ import {
   asText,
   forDisplay,
   REFUSAL_MARKER,
+  refusalBody,
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
 import { readTeamBotConsent } from "@/lib/team-bots";
 import {
   readConnectPrompt,
-  refusalBody,
+  refusalBody as markerRefusalBody,
 } from "@openbot/shared/connect-prompt";
 import { cn } from "@/lib/utils";
 import { VOICE_CHAT_ACTIVITY, type VoiceChatEntry } from "@/lib/voice/archive";
@@ -1400,7 +1401,7 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * any guess made here. See REFUSAL_MARKER in server/src/plugins/tools.ts.
    */
   const answer = result === undefined ? undefined : asText(result);
-  const refusal = refusalBody(answer, REFUSAL_MARKER);
+  const refusal = markerRefusalBody(answer, REFUSAL_MARKER);
   const refused = refusal !== null;
   const failed = !refused && toolResultFailed(result);
   /*
@@ -1408,7 +1409,8 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * label and then "Refused." again in the first two words of the body, which is the same fact three
    * times over by the end of the sentence. Stripped here rather than on the server, because the
    * server's copy is what the model is told and "Refused." in front of a reason is right for it —
-   * and the strip is `refusalBody`, the one sequence every reader shares.
+   * and the strip is `markerRefusalBody`, the connect codec's; the fold and the card read the same
+   * envelope off through `refusalBody` in `tool-result`, which decodes before it matches.
    */
   const body = refusal ?? answer;
   // A Team Bot asking to use this person's own account draws its consent card, not the sentence.
@@ -1443,15 +1445,14 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
  * the tool result arrives JSON-encoded and addressed to the model, so it starts with quotes and
  * `Refused.`, while the codec only recognises text that STARTS with its marker — handing it over
  * unstripped would make every card silently undrawable, which is the one failure this seam exists
- * to prevent. The strip itself is `refusalBody`, the one sequence the fold and every reader share.
- * Fail-closed on purpose: a refusal the codec does not fully recognise is drawn as the text it is,
- * which is also what a client without the card would show.
+ * to prevent. The strip itself is `refusalBody` in `tool-result`, the one sequence the fold and
+ * every reader share. Fail-closed on purpose: a refusal the codec does not fully recognise is
+ * drawn as the text it is, which is also what a client without the card would show.
  *
  * Exported so the fail-closed half can be pinned without mounting anything.
  */
 export function connectPromptOf(result: string | undefined) {
-  if (result === undefined) return null;
-  const body = refusalBody(asText(result), REFUSAL_MARKER);
+  const body = refusalBody(result);
   return body === null ? null : readConnectPrompt(body);
 }
 
@@ -1588,9 +1589,12 @@ export function ChatTranscript({
    * dependency never changed, the cached items were kept forever and a reply never appeared. A Bot
    * that answered looked like a Bot that had not.
    *
-   * It was never the expensive part either. Rebuilding this list is a flatMap over messages; the
-   * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
-   * which is where the 25x came from. This runs per render and is not worth guarding.
+   * Rebuilding the list stays per-render work, and cheap where it was measured to be: the flatMap
+   * plus the fold are a walk over messages, while markdown parsing and chart SVGs — the actual
+   * 25x — are skipped by the memoised children below. The one part of the fold that had grown
+   * expensive (JSON-parsing every completed connector result, every frame, to ask whether it is a
+   * question for the person) is cached by result value in `asksThePerson`, so a frame no longer
+   * re-reads history it has already judged.
    */
   const items = groupToolSteps(toVisibleChatItems(messages));
 

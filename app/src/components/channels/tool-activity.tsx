@@ -7,14 +7,11 @@ import { readToolName, type ResearchLabelKey } from "@/lib/plugins/tool-name";
 import {
   asText,
   forDisplay,
-  REFUSAL_MARKER,
+  refusalBody,
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
 import { readTeamBotConsent } from "@/lib/team-bots";
-import {
-  readConnectPrompt,
-  refusalBody,
-} from "../../../../shared/connect-prompt";
+import { readConnectPrompt } from "../../../../shared/connect-prompt";
 import { researchRoleOfTool } from "../../../../shared/research";
 import {
   browserStepDetails,
@@ -85,22 +82,43 @@ function foldable(item: ToolItem): boolean {
 }
 
 /**
+ * Fold verdicts already asked for, keyed by the result's own text.
+ *
+ * `foldable` runs over every item of every render, and a streaming reply re-renders the whole
+ * transcript many times a second — so this used to JSON-parse every completed connector result in
+ * the history again on each frame, only to answer what the previous frame already knew. Keyed by
+ * VALUE because the transcript's arrays are rebuilt as a stream advances and the agent's own is
+ * mutated in place: object identity proves nothing here. A completed result's text never changes,
+ * so its verdict cannot go stale. FIFO-capped so a long session cannot grow it without bound; a
+ * cap-evicted verdict is merely computed once more.
+ */
+const ASK_VERDICTS_LIMIT = 512;
+const askVerdicts = new Map<string, boolean>();
+
+/**
  * Whether this refusal is a question for the person rather than a line about what a Bot did.
  *
  * Both of these draw a card with something to press — a Team Bot asking to act as them, and an app
  * they have not connected — and neither may sit behind a fold for the same reason: a question
  * nobody can see is a conversation that has stopped without saying so. The envelope comes off the
- * one way every reader takes it off (`refusalBody`, the strip `chat-transcript`'s
- * `connectPromptOf` also reads): the result arrives JSON-encoded and addressed to the model, and
- * the markers only recognise text that starts with them.
+ * one way every reader takes it off (`refusalBody` in `tool-result`, the strip
+ * `chat-transcript`'s `connectPromptOf` also reads): the result arrives JSON-encoded and
+ * addressed to the model, and the markers only recognise text that starts with them.
  */
 function asksThePerson(result: string | undefined): boolean {
   if (result === undefined) return false;
-  const body = refusalBody(asText(result), REFUSAL_MARKER);
-  return (
+  const cached = askVerdicts.get(result);
+  if (cached !== undefined) return cached;
+  const body = refusalBody(result);
+  const verdict =
     body !== null &&
-    (readTeamBotConsent(body) !== null || readConnectPrompt(body) !== null)
-  );
+    (readTeamBotConsent(body) !== null || readConnectPrompt(body) !== null);
+  if (askVerdicts.size >= ASK_VERDICTS_LIMIT) {
+    const oldest = askVerdicts.keys().next();
+    if (!oldest.done) askVerdicts.delete(oldest.value);
+  }
+  askVerdicts.set(result, verdict);
+  return verdict;
 }
 
 /**
@@ -225,12 +243,13 @@ export function stepDetails(step: ToolItem): StepDetails {
    * The same reading `ServerToolLine` does: the result arrives JSON-encoded, a refusal carries the
    * server's marker rather than a guessed wording, and everything else is the vendor's answer —
    * which the group shows through `forDisplay` when it is drawn, untrusted envelope and all. The
-   * marker strip is `refusalBody`, the one sequence every reader shares.
+   * marker strip is `refusalBody`, the one sequence every reader shares; the decoded answer is
+   * asked for only when no refusal is carrying the text.
    */
-  const answer = step.result === undefined ? undefined : asText(step.result);
-  const refusal = refusalBody(answer, REFUSAL_MARKER);
+  const refusal = refusalBody(step.result);
   const refused = refusal !== null;
-  const body = refusal ?? answer;
+  const body =
+    refusal ?? (step.result === undefined ? undefined : asText(step.result));
   const [, server = ""] = name.split("__");
   /*
    * A research step is its role first: the label is the role's, the detail is what it acted on,

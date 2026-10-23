@@ -248,13 +248,23 @@ describe("createMastraTools wrapping", () => {
         /MASTRA_TOOL_NAME_RESERVED/,
       );
     }
-    // Invalid tool names (empty, whitespace, path-ish) are named refusals,
-    // never silently mounted.
-    for (const invalid of ["", "has space", "../escape", "a.b"]) {
+    // Invalid tool names (empty, whitespace, path-ish, off-charset) are named
+    // refusals, never silently mounted. Dots are NOT invalid any more — they
+    // are MCP tool-name reality (the positive case below pins that).
+    for (const invalid of ["", "has space", "../escape", "has:colon"]) {
       expect(() => createMastraTools([tool({ name: invalid })])).toThrow(
         /MASTRA_TOOL_NAME_INVALID/,
       );
     }
+    // A dotted brokered name mounts: OpenConnector's action ids are dotted
+    // (`github.get_current_user`), and the minted spelling carries the dot
+    // (`mcp__open-connector-github__github.get_current_user`). The earlier
+    // charset refused every real brokered grant (UP10 integration evidence).
+    expect(() =>
+      createMastraTools([
+        tool({ name: "mcp__open-connector-github__github.get_current_user" }),
+      ]),
+    ).not.toThrow();
     // The length cap is 64: the OpenAI tool-name limit (the strictest
     // provider). Exactly 64 mounts; 65 would be refused at grant time first
     // (see grant_write_refuses... below), and the mount-time check stays as
@@ -300,7 +310,7 @@ describe("createMastraTools wrapping", () => {
     for (const badRef of [
       `server/${"a".repeat(60)}`,
       "server/has space",
-      "server/dots.and.dashes",
+      "server/has:colon",
     ]) {
       await expect(
         plugins.grant("mcp", badRef, "bot-1", "admin@example.com"),
@@ -312,6 +322,18 @@ describe("createMastraTools wrapping", () => {
     await expect(
       plugins.grant("mcp", "server/ok_tool", "bot-1", "admin@example.com"),
     ).rejects.toThrow(/gate must refuse before any grant write/);
+    // A real brokered ref is addressable too: the dotted action id
+    // OpenConnector publishes mints
+    // `mcp__open-connector-github__github.get_current_user`, which passes the
+    // gate and reaches the write — refusing it was the UP10 evidence break.
+    await expect(
+      plugins.grant(
+        "mcp",
+        "open-connector-github/github.get_current_user",
+        "bot-1",
+        "admin@example.com",
+      ),
+    ).rejects.toThrow(/gate must refuse before any grant write/);
     // Skill and bot grants are not model tool names: they skip the gate.
     await expect(
       plugins.grant(
@@ -322,6 +344,6 @@ describe("createMastraTools wrapping", () => {
       ),
     ).rejects.toThrow(/gate must refuse before any grant write/);
     // The mount-time check and the grant-time gate enforce the SAME rule.
-    expect(VALID_TOOL_NAME.source).toBe("^[A-Za-z0-9_-]{1,64}$");
+    expect(VALID_TOOL_NAME.source).toBe("^[A-Za-z0-9._-]{1,64}$");
   });
 });

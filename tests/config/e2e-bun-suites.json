@@ -1856,6 +1856,8 @@
   "server/tests/hindsight-judgment-review.contract.test.ts": "runner named it: wave3 hbc8 #389 套件",
   "server/tests/hindsight-judgment-review.integration.test.ts": "runner named it: wave3 hbc8 #389 套件",
   "app/tests/connect-app-card.test.tsx": "runner named it: bun-test-compat layer: happy-dom component suite using bun:test spyOn/fake timers (jest) for the connect card's tab and poll seams",
+  "app/tests/auto-watch-screen.test.tsx": "runner named it: bun-test-compat layer: happy-dom component suite (GlobalRegistrator + renderHook) over the useAutoWatchScreen seam; #489 UP05 driver-layer addition",
+  "app/tests/computer-screen-announcement.test.ts": "runner named it: bun-test-compat layer: bun:test spyOn suite over the computer-activity announcement/withdrawal seam (no DOM); #489 UP05 driver-layer addition",
   "app/tests/tool-activity.test.tsx": "runner named it: bun-test-compat layer: happy-dom component suite over the transcript's groupToolSteps projection and ToolActivity fold (details/summary, i18n en/zh, streaming identity)",
   "app/tests/sign-in-code-step.test.tsx": "runner named it: L03 A08: the private sign-in form's code step and secret hygiene, on the Bun tier with the other app UI suites",
   "server/tests/audio-capability-evidence.test.ts": "runner named it: wave3 bf10 套件",

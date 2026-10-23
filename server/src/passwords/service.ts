@@ -347,6 +347,9 @@ export function createSignInService(deps: SignInServiceDependencies) {
     const claimed = await store.transition(owner, id, ["code_required"], {
       status: "filling",
       fillingUntil: new Date(Date.now() + FILLING_LEASE_MS),
+      // A claim is a new attempt: the last one's failure sentence comes off the row now, so the
+      // form waiting on this attempt never shows a failure this attempt has not earned yet.
+      outcome: null,
     });
     if (!claimed)
       throw new SignInRefusedError(
@@ -404,25 +407,21 @@ export function createSignInService(deps: SignInServiceDependencies) {
         outcome: failure,
         ...(back === "pending" ? { method: null } : {}),
       });
-      // Only a transition that landed is this attempt's failure to record. A row closed under the
-      // attempt — a concurrent close, a lease that expired into failed — keeps its own ending, and
-      // an audit written past it would contradict the state the trail is supposed to match. The
-      // same gate landUnknown applies.
-      if (reopened)
-        await audit(
-          "computer.sign_in_failed",
-          actor,
-          "computer",
-          claimed.botId,
-          {
-            bot: claimed.botId,
-            request: id,
-            site: claimed.origin,
-            ...(claimed.method ? { method: claimed.method } : {}),
-            step: "code",
-            failure,
-          },
-        );
+      /*
+       * The refusal reaches the trail either way. A row this attempt reopened records the failure
+       * as its own; a row closed under the attempt — a concurrent close, a lease that expired into
+       * failed — keeps its own ending, so the failure is still recorded but marked `superseded`:
+       * the fact of the refusal survives without claiming the row's final state.
+       */
+      await audit("computer.sign_in_failed", actor, "computer", claimed.botId, {
+        bot: claimed.botId,
+        request: id,
+        site: claimed.origin,
+        ...(claimed.method ? { method: claimed.method } : {}),
+        step: "code",
+        failure,
+        ...(reopened ? {} : { superseded: true }),
+      });
       throw new SignInRefusedError(failure, reopened ? 409 : 400);
     }
     const page = result?.url ? scrub(result.url, [code]) : undefined;
@@ -481,6 +480,9 @@ export function createSignInService(deps: SignInServiceDependencies) {
     const claimed = await store.transition(owner, id, ["pending"], {
       status: "filling",
       fillingUntil: new Date(Date.now() + FILLING_LEASE_MS),
+      // A claim is a new attempt: the last one's failure sentence comes off the row now, so the
+      // form waiting on this attempt never shows a failure this attempt has not earned yet.
+      outcome: null,
     });
     if (!claimed)
       throw new SignInRefusedError(
@@ -534,26 +536,23 @@ export function createSignInService(deps: SignInServiceDependencies) {
         fillingUntil: null,
         outcome: failure,
       });
-      // Only a transition that landed is this attempt's failure to record: a row closed under the
-      // attempt (a concurrent close, a lease that expired into failed) keeps its own ending, and
-      // an audit written past it would contradict the state the trail is supposed to match. The
-      // same gate enterCode and landUnknown apply.
-      if (reopened)
-        await audit(
-          "computer.sign_in_failed",
-          actor,
-          "computer",
-          claimed.botId,
-          {
-            bot: claimed.botId,
-            request: id,
-            site: claimed.origin,
-            method,
-            step: "login",
-            ...(extra.loginId ? { savedLogin: extra.loginId } : {}),
-            failure,
-          },
-        );
+      /*
+       * The refusal reaches the trail either way. A row this attempt reopened records the failure
+       * as its own; a row closed under the attempt — a concurrent close, a lease that expired into
+       * failed — keeps its own ending, so the failure is still recorded but marked `superseded`:
+       * the fact of the refusal survives without claiming the row's final state. The same shape
+       * enterCode and landUnknown write.
+       */
+      await audit("computer.sign_in_failed", actor, "computer", claimed.botId, {
+        bot: claimed.botId,
+        request: id,
+        site: claimed.origin,
+        method,
+        step: "login",
+        ...(extra.loginId ? { savedLogin: extra.loginId } : {}),
+        failure,
+        ...(reopened ? {} : { superseded: true }),
+      });
       throw new SignInRefusedError(failure, reopened ? 409 : 400);
     }
     if (method === "saved" && extra.loginId)

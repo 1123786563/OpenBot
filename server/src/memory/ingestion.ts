@@ -217,6 +217,14 @@ export function createMemoryIngestion(options: {
         "Memory sources must use a read-only connected app action.",
       );
     const access = accessFor(server, catalogueEntry(server.id));
+    /*
+     * Row existence, deliberately, revoked included (#489 F01-01 adjudication): upstream's ruling,
+     * quoted from the `connectionsFor` doc this row shape came from — "memory ingestion's existence
+     * check keeps the behaviour it had" (upstream plugin-store/connections.ts). A source stays
+     * configured while its credential is withdrawn; revocation's effect for memory lives one layer
+     * down, where the sync's own `callTool` fails closed on the vault's revoked-credential refusal.
+     * Pinned by server/tests/revoked-connection-consumers.test.ts.
+     */
     if (
       access.credential === "person-oauth" &&
       !(await plugins.connectionsFor(source.ownerUserId)).some(
@@ -411,6 +419,13 @@ export function createMemoryIngestion(options: {
       const servers = await plugins.listServers();
       const personal = await plugins.connectionsFor(ownerUserId);
       const brokered = await plugins.brokeredConnectionsFor(ownerUserId);
+      /*
+       * Row existence, revoked included, for the same upstream reason the authorize check above
+       * keeps it: the row outlives the secret, and "this person has a row for Notion" stays the
+       * fact here (each candidate still passes that authorize, and a later sync fails closed in
+       * the vault on a withdrawn credential). Upstream's default-candidate read spreads both lists
+       * unfiltered the same way (upstream memory/ingestion.ts).
+       */
       const connected = new Set(
         [...personal, ...brokered].map((connection) => connection.serverId),
       );

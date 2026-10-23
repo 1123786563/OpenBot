@@ -387,7 +387,7 @@ describe.skipIf(!liveResearch)("a real research provider, for real", () => {
 describe("the header a deployment token is sent in", () => {
   let server: ReturnType<typeof Bun.serve>;
   let seen: Headers | undefined;
-  beforeAll(() => {
+  beforeAll(async () => {
     server = Bun.serve({
       port: 0,
       fetch(request) {
@@ -395,6 +395,13 @@ describe("the header a deployment token is sent in", () => {
         return new Response("no", { status: 401 });
       },
     });
+    // Bun's serve binds synchronously; the node-compatible shim binds through `server.listen`, so
+    // the ephemeral port is only readable once the bind lands. Waiting here keeps the URLs below
+    // off port 0, where every request would fail before the header under test is ever sent.
+    for (let attempt = 0; server.port === 0 && attempt < 500; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    if (server.port === 0)
+      throw new Error("the stub research server never bound an ephemeral port");
   });
   afterAll(() => server.stop(true));
 

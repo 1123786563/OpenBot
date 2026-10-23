@@ -37,6 +37,28 @@ export function asText(text: string): string {
 }
 
 /**
+ * The human-readable body of a server refusal, or null for any other result.
+ *
+ * ONE STRIP, EVERY READER. A refused tool result reaches the transcript wearing an envelope — the
+ * JSON encoding the runtime adds for the model, `REFUSAL_MARKER` in front, the reason after it —
+ * and several readers ask the same shape of question of it: whether the fold may hide it, what the
+ * card it carries says, what a step's disclosure shows. Each used to decode and strip by hand, and
+ * hands drift — a fold that judges one way while a card reads another would hide a question the
+ * person has to answer, or draw a line where a card belongs. This is the one sequence (`asText`,
+ * then the marker, then the trim) all of them read.
+ *
+ * Fail-closed the same way {@link readConnectPrompt} is: anything that does not start with the
+ * marker once decoded — a plain result, or a vendor's sentence that merely contains it — answers
+ * null, so only a refusal this deployment wrote is ever read as one.
+ */
+export function refusalBody(result: string | undefined): string | null {
+  if (result === undefined) return null;
+  const answer = asText(result);
+  if (!answer.startsWith(REFUSAL_MARKER)) return null;
+  return answer.slice(REFUSAL_MARKER.length).trim();
+}
+
+/**
  * The content inside the untrusted-content envelope, without the notice in front of it.
  *
  * The server marks every connector result as outside data before the model reads it
