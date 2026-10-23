@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { toStandardSchema } from "@mastra/core/schema";
 import { createTool, type Tool } from "@mastra/core/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 // The ONE canonical JSON: the argsDigest is the exactly-once ledger's
 // identity basis, so the formula must not fork per call site (this was the
 // fifth private copy of the same definition).
@@ -8,10 +10,8 @@ import { canonicalJson } from "../ai-observability/datasets";
 import type { ApprovalContinuation } from "../approvals/types";
 import { withApprovalContext } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
-import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { LEARNED_SKILL_TOOL_NAMES } from "../learning/runtime";
-import type { GrantedTool } from "@openbot/toolkit/granted-tool";
-import { REFUSAL_MARKER } from "@openbot/toolkit/granted-tool";
+import { REFUSAL_MARKER } from "../plugins/tools";
 import type { LearnedSkillInvocationSurface } from "./execution-contracts";
 
 /*

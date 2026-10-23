@@ -3,6 +3,7 @@ import { EventType } from "@ag-ui/client";
 import { createOpenAI } from "@ai-sdk/openai";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { z } from "zod";
 import { describe, expect, it } from "../../tests/support/bun-test-compat";
 import {
@@ -25,7 +26,6 @@ import {
   normalizeMastraChunks,
 } from "../src/mastra/stream-events";
 import { argsDigestFor } from "../src/mastra/tools";
-import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import {
   ME06_TOOL_DEFINITION as NAVIGATE_DEFINITION,
   startFrontendProvider,

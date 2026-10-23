@@ -1,7 +1,7 @@
 import type { Message } from "@ag-ui/client";
+import { sanitizeSeededHistory } from "@openbot/toolkit/history-sanitize";
 import { attachmentUrl } from "../../shared/attachments";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
-import { sanitizeSeededHistory } from "../src/agents/history-sanitize";
 import { attachmentIdsIn } from "../src/channels/attachment-parts";
 import {
   agUiMessageFromStoredRow,

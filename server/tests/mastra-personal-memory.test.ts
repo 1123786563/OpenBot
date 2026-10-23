@@ -1,4 +1,5 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { sleep } from "bun";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import { describe, expect, it } from "../../tests/support/bun-test-compat";
@@ -12,7 +13,6 @@ import {
 import type { GovernedModelRequest } from "../src/enterprise/runs/governed-execution";
 import type { RecalledPersonalMemory } from "../src/hindsight/personal-memory-context";
 import { renderPersonalMemoryContext } from "../src/hindsight/personal-memory-context";
-import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { carrier, grantedEchoTool, sse } from "./support/me04-harness";
 
 /*

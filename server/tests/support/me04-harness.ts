@@ -1,3 +1,4 @@
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { z } from "zod";
 import type { PlatformScope, RunService } from "../../src/enterprise/contracts";
 import {
@@ -10,7 +11,7 @@ import {
   type ModelRouteSnapshotInput,
 } from "../../src/enterprise/runs/model-route-catalog";
 import { executeGovernedMastra } from "../../src/mastra/governed-agent";
-import { type GrantedTool, REFUSAL_MARKER } from "@openbot/toolkit/granted-tool";
+import { REFUSAL_MARKER } from "../../src/plugins/tools";
 
 /*
  * ME04 (#476) shared harness: the governed carrier around a synthetic
