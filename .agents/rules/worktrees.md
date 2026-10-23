@@ -13,7 +13,7 @@
 - 使用可追溯且简短的名称，如 `issue-410-write-origin` 或 `review-410`；Orca 新建 Worktree 会同时产生新分支，一个任务只保留一个主执行分支。临时审查或验证优先在主执行工作区只读进行，需要隔离时才创建有用途标识的临时 Worktree。只需要新 Agent 时复用现有分支和 Worktree。
 - 明确仓库与基线。普通独立任务使用 Orca 的 `--no-parent`，省略 `--base-branch` 以采用仓库默认基线，或明确指定仓库默认基线。Orca 多 Agent Run 的任务分支则明确从本轮集成分支当前已验证 HEAD 派生，记录集成 Worktree 为父工作区并核对 Git BASE；`--no-parent` 只决定 Orca 关系，不决定 Git 基线。
 - 有 Issue/PR 时创建时附上引用；记录 Orca 返回的完整 Worktree ID、路径、分支、BASE、拥有的任务和 Agent 到 Ledger。需要在已有工作区启动 Agent 时使用 `orca agent launch`，不为每次新 Agent 另开 Worktree。创建或启动结果不明确时先检查 Orca 与 Git 状态，避免重复创建。
-- 并行实现仅在接口稳定、写入文件及共享测试资源不冲突且集成次序明确时使用多个 Worktree。Orca 多 Agent Run 的 Worktree 数量遵守[编排规范](orchestration.md)的活跃任务上限。主控负责将通过 Claude 审核的任务成果串行合入集成分支，在组合树验证后记录来源与检查点并释放下游。
+- 并行实现仅在接口稳定、写入文件及共享测试资源不冲突且集成次序明确时使用多个 Worktree。Orca 多 Agent Run 的 Worktree 数量遵守[编排规范](orchestration.md)的活跃任务上限。主控按 [Agent 选择](orchestration-agents.md)安排独立审核，将审核通过的任务成果串行合入集成分支，在组合树验证后记录来源与检查点并释放下游。
 
 ## 收尾：核验后关闭
 
