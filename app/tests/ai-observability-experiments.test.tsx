@@ -463,7 +463,11 @@ describe("dataset read availability (P19)", () => {
   test("a dataset read failure is unavailable and offers no submit action", async () => {
     listHandler = () => new Response(null, { status: 502 });
     const view = draw();
-    await view.findAllByText("Upstream unavailable");
+    await view.findByText("Upstream unavailable");
+    expect(view.getAllByText("Upstream unavailable")).toHaveLength(1);
+    expect(
+      view.getByRole("heading", { name: "Run an experiment" }),
+    ).toBeTruthy();
     expect(view.queryByRole("dialog")).toBeNull();
     expect(
       view.queryByRole("button", { name: /Run an experiment/ }),

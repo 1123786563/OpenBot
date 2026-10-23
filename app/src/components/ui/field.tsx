@@ -1,9 +1,13 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import {
   createContext,
+  type Dispatch,
+  type SetStateAction,
   useContext,
+  useEffect,
   useId,
   useMemo,
+  useState,
 } from "react";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -14,8 +18,16 @@ import { cn } from "@/lib/utils";
  * has to hand-wire the pair: when the field is invalid the group references the message with
  * `aria-describedby`, and the message itself is a `role="alert"` region. The control keeps
  * owning its own `aria-invalid` / `aria-describedby`, as the call sites that need it already do.
+ *
+ * The reference only goes into `aria-describedby` once a `FieldError` has actually mounted and
+ * said so (the same registration pattern as the dialog's description slot): whether an error
+ * element exists is decided by the body below, and naming an absent id hands assistive
+ * technology a dangling reference it silently drops.
  */
-const FieldContext = createContext<{ errorId: string } | null>(null);
+const FieldContext = createContext<{
+  errorId: string;
+  setPresent: Dispatch<SetStateAction<boolean>>;
+} | null>(null);
 
 function isInvalid(value: unknown): boolean {
   return value === true || value === "true";
@@ -89,15 +101,17 @@ type FieldProps = React.ComponentProps<"div"> &
     "data-invalid"?: boolean | "true" | "false";
   };
 
-function Field({
-  className,
-  orientation = "vertical",
-  ...props
-}: FieldProps) {
+function Field({ className, orientation = "vertical", ...props }: FieldProps) {
   const errorId = `${useId()}-error`;
   const invalid = isInvalid(props["data-invalid"]);
-  const context = useMemo(() => ({ errorId }), [errorId]);
+  const [hasError, setHasError] = useState(false);
+  const context = useMemo(
+    () => ({ errorId, setPresent: setHasError }),
+    [errorId],
+  );
   const describedBy = props["aria-describedby"];
+  const forwardedProps = { ...props };
+  delete forwardedProps["data-invalid"];
 
   return (
     <FieldContext.Provider value={context}>
@@ -105,11 +119,11 @@ function Field({
         role="group"
         data-slot="field"
         data-orientation={orientation}
-        data-invalid={invalid || undefined}
         className={cn(fieldVariants({ orientation }), className)}
-        {...props}
+        {...forwardedProps}
+        data-invalid={invalid || undefined}
         aria-describedby={
-          invalid
+          invalid && hasError
             ? [describedBy, errorId].filter(Boolean).join(" ")
             : describedBy
         }
@@ -216,6 +230,7 @@ function FieldError({
   errors?: Array<{ message?: string } | undefined>;
 }) {
   const field = useContext(FieldContext);
+  const setPresent = field?.setPresent;
   const content = useMemo(() => {
     if (children) {
       return children;
@@ -242,6 +257,17 @@ function FieldError({
       </ul>
     );
   }, [children, errors]);
+
+  /*
+   * Claim the field's `aria-describedby` slot for exactly as long as this element exists. The
+   * hook stays ahead of the `null` early return — hooks cannot be conditional — but a FieldError
+   * with no content renders nothing and therefore registers nothing.
+   */
+  useEffect(() => {
+    if (!setPresent || !content) return;
+    setPresent(true);
+    return () => setPresent(false);
+  }, [setPresent, content]);
 
   if (!content) {
     return null;

@@ -129,7 +129,7 @@
   "file": "agent-computer/tests/follows-popup.test.ts",
   "status": "error",
   "tests": 1,
-  "error": "agent-computer/tests/follows-popup.test.ts › the page a Bot is on › follows a window the site opens, and comes back when it closes [node]\n"
+  "error": "agent-computer/tests/follows-popup.test.ts \u203a the page a Bot is on \u203a follows a window the site opens, and comes back when it closes [node]\n"
  },
  {
   "file": "agent-computer/tests/handoff-page-restore.test.ts",
@@ -225,7 +225,7 @@
   "file": "agent-computer/tests/session-cookies.test.ts",
   "status": "error",
   "tests": 4,
-  "error": "ss a restart › comes back after the browser is stopped and started again, and after shutdown [node]\nagent-computer/tests/session-cookies.test.ts › a session cookie across a restart › a Bot never receives another Bot's session cookie [node]\n"
+  "error": "ss a restart \u203a comes back after the browser is stopped and started again, and after shutdown [node]\nagent-computer/tests/session-cookies.test.ts \u203a a session cookie across a restart \u203a a Bot never receives another Bot's session cookie [node]\n"
  },
  {
   "file": "agent-computer/tests/sessions.test.ts",
@@ -832,6 +832,12 @@
   "status": "collect_error",
   "tests": 0,
   "error": "COLLECTION_ERROR: failed to collect app/tests/channel-new-error-state.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-"
+ },
+ {
+  "file": "app/tests/channel-new-recipients.test.tsx",
+  "status": "collection_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/channel-new-recipients.test.tsx: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:'"
  },
  {
   "file": "app/tests/channel-order.test.ts",
@@ -2931,7 +2937,7 @@
   "file": "server/tests/craft-mcp-relay.test.ts",
   "status": "error",
   "tests": 14,
-  "error": "sembled craft tree › a session-tagged call reaches the relay without a user session [node]\nserver/tests/craft-mcp-relay.test.ts › mcp block carries no credential bytes › the session's opencode.json mcp entry is url + tag header only [node]\n"
+  "error": "sembled craft tree \u203a a session-tagged call reaches the relay without a user session [node]\nserver/tests/craft-mcp-relay.test.ts \u203a mcp block carries no credential bytes \u203a the session's opencode.json mcp entry is url + tag header only [node]\n"
  },
  {
   "file": "server/tests/craft-mcp-servers.test.ts",

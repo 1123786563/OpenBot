@@ -58,11 +58,11 @@ const SCHEDULES = [
 ] as const;
 
 /**
- * BASE's own `<option value="">`: the schedule reports in this Bot's only conversation. The empty
- * string is the state itself (the schedule payload omits `channelId` for it), and the item stays
- * in the list so a channel can be un-picked — the select is a two-way choice, not a placeholder.
+ * The schedule reports in this Bot's only conversation. This stable internal value is a real
+ * selected item; the payload omits `channelId` for it, and the item stays in the list so a channel
+ * can be un-picked — the select is a two-way choice, not a placeholder.
  */
-const ONLY_CONVERSATION = "";
+const ONLY_CONVERSATION = "__only_conversation__";
 
 /** Save the demonstrated path as a routine that reruns the published skill. */
 function ScheduleSkill({
@@ -77,7 +77,7 @@ function ScheduleSkill({
   const id = useId();
   const [cron, setCron] = useState<string>(SCHEDULES[0].cron);
   const [custom, setCustom] = useState("");
-  const [channelId, setChannelId] = useState("");
+  const [channelId, setChannelId] = useState(ONLY_CONVERSATION);
   const [inputs, setInputs] = useState("");
   const [scheduled, setScheduled] = useState<DemonstrationRoutine | null>(null);
   const channels = useInfiniteQuery(channelListQueryOptions());
@@ -90,7 +90,7 @@ function ScheduleSkill({
       scheduleDemonstration(recording.id, {
         cron: cron === "custom" ? custom : cron,
         timezone,
-        ...(channelId ? { channelId } : {}),
+        ...(channelId && channelId !== ONLY_CONVERSATION ? { channelId } : {}),
         ...(inputs.trim() ? { inputs } : {}),
       }),
     onSuccess: async (routine) => {
@@ -122,6 +122,10 @@ function ScheduleSkill({
       <label htmlFor={`${id}-when`} className="grid gap-1">
         {t("demonstration.whenItRuns", { timezone })}
         <Select
+          items={Object.fromEntries([
+            ...SCHEDULES.map((option) => [option.cron, t(option.label)]),
+            ["custom", t("demonstration.customCron")],
+          ])}
           onValueChange={(value) => {
             // The null guard is the migration contract (H05/H06): React Aria reports an empty
             // selection as null, and the draft keeps its previous schedule rather than a
@@ -178,7 +182,7 @@ function ScheduleSkill({
           value={channelId}
         >
           <SelectTrigger className="w-full" id={`${id}-channel`}>
-            <SelectValue placeholder={t("demonstration.onlyConversation")} />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ONLY_CONVERSATION}>

@@ -1,0 +1,13 @@
+<!doctype html>
+<!-- Local isolated-environment login helper, for MANUAL use only: never move this back into
+app/public/ (files there ship in every build and this page carries throwaway test credentials).
+The Vite-proxy scenario needs you to start the isolated services yourself, or copy the page back
+into public/ yourself for the session. -->
+<html lang="zh-CN"><body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0">
+<p>正在登录测试环境…</p>
+<script>
+fetch('http://127.0.0.1:3002/api/auth/sign-in/email',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({email:'workspace-test@local.test',password:'iso-accept-only-2026'})})
+.then(async r=>{ if(!r.ok){document.body.innerHTML=`<pre>登录失败: ${await r.text()}</pre>`;return;} location.href='http://127.0.0.1:3011/'; })
+.catch(e=>document.body.innerHTML=`<pre>${e}</pre>`);
+</script>
+</body></html>

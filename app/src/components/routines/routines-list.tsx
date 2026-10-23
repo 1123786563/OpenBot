@@ -1,5 +1,6 @@
 import {
   IconClock,
+  IconDots,
   IconHistory,
   IconPlayerPause,
   IconPlayerPlay,
@@ -431,13 +432,22 @@ export function RoutinesList({
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           aria-label={t("actions.moreActions")}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-ob-hover hover:text-ob-hover-foreground"
-                          type="button"
-                        >
-                          <span aria-hidden="true">⋯</span>
-                        </DropdownMenuTrigger>
+                          render={
+                            <Button
+                              aria-label={t("actions.moreActions")}
+                              size="icon"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <IconDots aria-hidden="true" />
+                            </Button>
+                          }
+                        />
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
+                            aria-label={t("actions.historyAria", {
+                              schedule: routine.schedule,
+                            })}
                             onClick={() =>
                               setHistoryId(
                                 historyId === routine.id ? null : routine.id,
@@ -448,6 +458,10 @@ export function RoutinesList({
                             {t("actions.history")}
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            aria-label={t("actions.deleteAria", {
+                              schedule: routine.schedule,
+                            })}
+                            variant="destructive"
                             onClick={() => {
                               deleteRoutine.reset();
                               setConfirmingId(routine.id);

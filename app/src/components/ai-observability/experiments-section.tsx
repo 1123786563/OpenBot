@@ -3,10 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  observationScreenFault,
-  StateNotice,
-} from "@/components/ai-observability/state-notice";
+import { observationScreenFault } from "@/components/ai-observability/state-notice";
 import { PageRows, PageSection } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,7 +102,7 @@ export function ObservationExperimentsSection({ botId }: { botId: string }) {
   const screen = useQuery(observationDatasetsQueryOptions(botId));
 
   // Pending renders nothing (the page's other sections hold the frame); a failed
-  // precondition keeps its own visible state instead of making this section disappear.
+  // precondition keeps the submission frame without repeating the shared read fault.
   if (screen.isPending) return null;
   const fault = observationScreenFault(screen);
   if (fault !== null) {
@@ -113,13 +110,7 @@ export function ObservationExperimentsSection({ botId }: { botId: string }) {
       <PageSection
         description={t("submit.rowDescription")}
         title={t("submit.rowTitle")}
-      >
-        <StateNotice
-          className="mt-6"
-          description={t(`availability.${fault}.description`)}
-          title={t(`availability.${fault}.title`)}
-        />
-      </PageSection>
+      />
     );
   }
   const answer = screen.data;

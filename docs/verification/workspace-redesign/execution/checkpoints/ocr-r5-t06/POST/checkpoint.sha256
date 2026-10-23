@@ -1,0 +1,5 @@
+98945396b9e091e1d64ca44eab2705b6685c8dd0cc02cf8c5702e47e6ef72b26  ./app/src/components/ai-observability/experiments-section.tsx
+54fbfd05be61f4d8ac5b37d46c86eea46e79cfb1ce924cd7f01195b2d35ed697  ./app/tests/ai-observability-experiments.test.tsx
+007874b30411ab6886b56d0311c56d84de34dc77f742d6a394b587685db4c7dc  ./docs/plans/reports/2026-10-23-b1-ocr-repair-05-impl.md
+7c9582d51ca8738f39fa15f3215235686c6f4cd394e6d2de0c6eb9ae412076e1  ./docs/plans/reports/2026-10-23-b1-ocr-repair-05-review.md
+ed40bac2741148155b6e98a374708db187f4d90bdd6f188888aa8abe1cace3de  ./docs/verification/workspace-redesign/execution/checkpoints/ocr-r5-t06/independent-validation.md

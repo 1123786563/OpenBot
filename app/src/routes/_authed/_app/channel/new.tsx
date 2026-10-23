@@ -121,16 +121,25 @@ function RouteComponent() {
           getKey={(profile) => profile.id}
           itemLabel={(profile) => profile.name}
           itemSecondary={(profile) => (
-            <span className="truncate text-muted-foreground ml-1">{profile.title}</span>
+            <span className="truncate text-muted-foreground ml-1">
+              {profile.title}
+            </span>
           )}
-          chipMedia={(profile) => <ChannelAvatar participantIds={[profile.id]} size={16} />}
+          chipMedia={(profile) => (
+            <ChannelAvatar participantIds={[profile.id]} size={16} />
+          )}
           selected={selected}
           onSelectedChange={(ids) => {
-            const idSet = new Set(ids);
-            const next = roster.filter((profile) => idSet.has(profile.id));
+            // The URL-selected profile may be permission-valid without appearing in the roster.
+            // Retain profiles already selected, and resolve only newly picked IDs from the roster.
+            const known = new Map(
+              [...selected, ...roster].map((profile) => [profile.id, profile]),
+            );
             const ordered = ids
-              .map((id) => next.find((profile) => profile.id === id))
-              .filter((profile): profile is AgentProfile => profile !== undefined);
+              .map((id) => known.get(id))
+              .filter(
+                (profile): profile is AgentProfile => profile !== undefined,
+              );
             // toFieldChange caps the tail (kept above the pick-order synthesis) and keeps the
             // escape branch documented in compose-state; RAC never produces that reason.
             const kept = toFieldChange(selected, ordered, "select");

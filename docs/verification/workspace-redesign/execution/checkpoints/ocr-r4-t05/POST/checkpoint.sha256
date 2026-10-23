@@ -1,0 +1,6 @@
+9df7a3f846b2fbb9210eb171bd5a1cd37f7859900bf8c4f6489436ddc71ebb33  ./app/src/components/routines/routines-list.tsx
+81b988f8c87b6cb72974f266991be6feb67726aa51efdd2d13a08ebcad8bf24a  ./app/tests/routines-list.test.tsx
+9df7a3f846b2fbb9210eb171bd5a1cd37f7859900bf8c4f6489436ddc71ebb33  ./app/tests/routines-list.tsx
+818a48b41b90341fe5354af850685736e307ad5af49ab5b7c194c78016952779  ./docs/plans/reports/2026-10-23-b1-ocr-repair-04-impl.md
+35ab9e95d4d56063c9e2925ee030ff1b07e55f5078e715f274061b8be764c52c  ./docs/plans/reports/2026-10-23-b1-ocr-repair-04-review.md
+af15ba146ae7a88bef212e407709d9768ad288ee2ea4ae4cd1010bb30fa4e57b  ./docs/verification/workspace-redesign/execution/checkpoints/ocr-r4-t05/independent-validation.md

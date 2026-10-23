@@ -1,0 +1,705 @@
+{
+  "createdAt": "2026-10-22T17:33:32.494Z",
+  "checkpoint": {
+    "head": "f55d12f899883fc4a5d7bf0e8067bb500b86ee38",
+    "branch": "feat/heroui-v3-migration",
+    "sourceHashes": {
+      "app/src/styles.css": "9a0343b337bd5f762c83eccdd55cfb5234487e998b4be6e8eb0f7a64865d142b",
+      "app/src/styles/heroui-theme.css": "1be30c7181429a026936c886fb72121fb6c50e6686400b96a0668ebe3b177539",
+      "app/src/styles/tokens.css": "a94817966e2235def6be4efd36171ca97d424dc41ec58b4229346fd542171afc",
+      "app/src/components/ui/button.tsx": "bade903e2b4c74456205ed35ec13c5db645a1b600115cdfbbac99d1e222eda55",
+      "app/src/components/ui/sheet.tsx": "e7ddf257463c48386b388dfc47576fdb7378e5cef278a850fa92ed9a48fa08b1",
+      "app/src/components/ui/context-menu.tsx": "4b04a2801604d011a66298c54ba41d382d423fb46be24fa649dc1813b14df317",
+      "app/src/components/ui/dialog.tsx": "758809a85ff02ad024ac7447907c14747dfb9309b2fcd6ad783a280dac62a5de"
+    }
+  },
+  "environment": {
+    "origin": "http://127.0.0.1:3012",
+    "actor": "isolated dev-local-user on disposable tmpfs database",
+    "externalRequestsBlocked": true,
+    "locale": "zh-CN",
+    "colorScheme": "light",
+    "reducedMotion": "reduce"
+  },
+  "pages": [
+    {
+      "id": "P01",
+      "requestedRoute": "/",
+      "url": "http://127.0.0.1:3012/",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nOpenBot\n开始新频道\n随便问点什么\n\n发送给负责此事的同事。输入 @ 自行选择。\n\n探索 Agents\nPrevious slide\nNext slide\nGeneral Assistant\nHelp with everyday work using clear, concise, and accurate answers.\nKnowledge\nHelp answer company knowledge questions and cite sources when available.",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P01-1440x900.png"
+    },
+    {
+      "id": "P02",
+      "requestedRoute": "/channel/new",
+      "url": "http://127.0.0.1:3012/channel/new",
+      "title": "OpenBot",
+      "lang": "en",
+      "theme": "",
+      "bodyText": "",
+      "main": false,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P02-1440x900.png"
+    },
+    {
+      "id": "P05",
+      "requestedRoute": "/bot",
+      "url": "http://127.0.0.1:3012/bot",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\nBots\n技能\nCraft\nDE\ndev@openbot.local",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P05-1440x900.png"
+    },
+    {
+      "id": "P06",
+      "requestedRoute": "/bots",
+      "url": "http://127.0.0.1:3012/bots",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nBots\n新建 Bot\n\n你能触达的每个 Bot：各自在做什么、需要你什么，以及是否已暂停。\n\n你的\n\n你还没有自己的 Bot。\n\n与你共享的\nGeneral Assistant\n\nEveryday Work\n\nKnowledge\n\nCompany Knowledge",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P06-1440x900.png"
+    },
+    {
+      "id": "P07",
+      "requestedRoute": "/bots/general-assistant",
+      "url": "http://127.0.0.1:3012/bots/general-assistant",
+      "title": "OpenBot",
+      "lang": "en",
+      "theme": "",
+      "bodyText": "",
+      "main": false,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P07-1440x900.png"
+    },
+    {
+      "id": "P08",
+      "requestedRoute": "/bots/general-assistant/responsibilities",
+      "url": "http://127.0.0.1:3012/bots/general-assistant/responsibilities",
+      "title": "OpenBot",
+      "lang": "en",
+      "theme": "",
+      "bodyText": "",
+      "main": false,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P08-1440x900.png"
+    },
+    {
+      "id": "P09",
+      "requestedRoute": "/bots/general-assistant/reach",
+      "url": "http://127.0.0.1:3012/bots/general-assistant/reach",
+      "title": "OpenBot",
+      "lang": "en",
+      "theme": "",
+      "bodyText": "",
+      "main": false,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P09-1440x900.png"
+    },
+    {
+      "id": "P10",
+      "requestedRoute": "/bots/general-assistant/memory",
+      "url": "http://127.0.0.1:3012/bots/general-assistant/memory",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\nGeneral Assistant\n记忆\n\n哪些已连接的应用为此 Bot 提供事实，以及它为你做的后台调研。\n\n你的 Bots 关于你的记忆在 设置 → 记忆。\n\n已连接的应用来源\n添加来源\n\n你在自己账号中连接、且此 Bot 可读取的每个应用都会自动成为一个来源，你还可以添加更多。启用的来源每 15 分钟刷新一次，其事实仅对此 Bot 可用。关闭或移除后会保持该状态。\n\n后台调研\n开启调研\n\n只要你开启只与这个 Bot 的对话，它就会默认开启：每四小时浏览一次它已能读取的应用，形成供你审阅的记忆，并提出下一步建议。它只能读取：不能发送消息、不能更改应用中的任何内容，也不能使用浏览器或电脑。关闭或移除后会保持该状态。",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P10-1440x900.png"
+    },
+    {
+      "id": "P11",
+      "requestedRoute": "/bots/general-assistant/approvals",
+      "url": "http://127.0.0.1:3012/bots/general-assistant/approvals",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\nBots\n技能\nCraft\nDE\ndev@openbot.local\nBot\n审批规则\n\n此 Bot 无需先询问你即可做的事情。",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P11-1440x900.png"
+    },
+    {
+      "id": "P12",
+      "requestedRoute": "/bots/general-assistant/routines",
+      "url": "http://127.0.0.1:3012/bots/general-assistant/routines",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\nGeneral Assistant\n例程\n\n此 Bot 按计划为你做的事。可以关掉某个、立即运行或删除它。",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P12-1440x900.png"
+    },
+    {
+      "id": "P13",
+      "requestedRoute": "/bots/general-assistant/access",
+      "url": "http://127.0.0.1:3012/bots/general-assistant/access",
+      "title": "OpenBot",
+      "lang": "en",
+      "theme": "",
+      "bodyText": "",
+      "main": false,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P13-1440x900.png"
+    },
+    {
+      "id": "P14",
+      "requestedRoute": "/bots/general-assistant/sharing",
+      "url": "http://127.0.0.1:3012/bots/general-assistant/sharing",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nGeneral Assistant\n共享\n\n还有谁可以使用此 Bot。与它的每段对话都仅对使用它的人可见。\n\n已发布\n\n尚未发布到团队。它是公开的，部署中的每个人已经可以使用它。",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P14-1440x900.png"
+    },
+    {
+      "id": "P15",
+      "requestedRoute": "/bots/general-assistant/setup",
+      "url": "http://127.0.0.1:3012/bots/general-assistant/setup",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nGeneral Assistant\n设置\n\n此 Bot 是谁、谁能找到它，以及它运行在哪里。\n\n身份\n名称\n\nGeneral Assistant\n\n头衔\n\nEveryday Work\n\n角色\n\nHelp with everyday work using clear, concise, and accurate answers.\n\n可见性\n\n部署中的每个人都可以找到并使用它。\n\n公开\n系统自带\n\n随本部署一同提供，不属于任何个人。\n\n连接\n内置\n\n运行在本部署自带的 Bot 上。无需连接，也无需认证。",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P15-1440x900.png"
+    },
+    {
+      "id": "P16",
+      "requestedRoute": "/bots/general-assistant/runs",
+      "url": "http://127.0.0.1:3012/bots",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nBots\n新建 Bot\n\n你能触达的每个 Bot：各自在做什么、需要你什么，以及是否已暂停。\n\n你的\n\n你还没有自己的 Bot。\n\n与你共享的\nGeneral Assistant\n\nEveryday Work\n\nKnowledge\n\nCompany Knowledge",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P16-1440x900.png"
+    },
+    {
+      "id": "P18",
+      "requestedRoute": "/bots/general-assistant/datasets",
+      "url": "http://127.0.0.1:3012/bots",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nBots\n新建 Bot\n\n你能触达的每个 Bot：各自在做什么、需要你什么，以及是否已暂停。\n\n你的\n\n你还没有自己的 Bot。\n\n与你共享的\nGeneral Assistant\n\nEveryday Work\n\nKnowledge\n\nCompany Knowledge",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P18-1440x900.png"
+    },
+    {
+      "id": "P19",
+      "requestedRoute": "/bots/general-assistant/evaluations",
+      "url": "http://127.0.0.1:3012/bots",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nBots\n新建 Bot\n\n你能触达的每个 Bot：各自在做什么、需要你什么，以及是否已暂停。\n\n你的\n\n你还没有自己的 Bot。\n\n与你共享的\nGeneral Assistant\n\nEveryday Work\n\nKnowledge\n\nCompany Knowledge",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P19-1440x900.png"
+    },
+    {
+      "id": "P20",
+      "requestedRoute": "/bots/general-assistant/experiments",
+      "url": "http://127.0.0.1:3012/",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nOpenBot\n开始新频道\n随便问点什么\n\n发送给负责此事的同事。输入 @ 自行选择。\n\n探索 Agents\nPrevious slide\nNext slide\nGeneral Assistant\nHelp with everyday work using clear, concise, and accurate answers.\nKnowledge\nHelp answer company knowledge questions and cite sources when available.",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P20-1440x900.png"
+    },
+    {
+      "id": "P23",
+      "requestedRoute": "/bots/general-assistant/exports",
+      "url": "http://127.0.0.1:3012/bots",
+      "title": "OpenBot",
+      "lang": "zh-CN",
+      "theme": "",
+      "bodyText": "跳转到主要内容\nOpenBot\n你还没有频道\n开始与 Agent 对话，你的频道将显示在这里。\nBots\n技能\nCraft\nDE\ndev@openbot.local\n\n为你的组织自托管 OpenBot。\n\n联系工程师\nBots\n新建 Bot\n\n你能触达的每个 Bot：各自在做什么、需要你什么，以及是否已暂停。\n\n你的\n\n你还没有自己的 Bot。\n\n与你共享的\nGeneral Assistant\n\nEveryday Work\n\nKnowledge\n\nCompany Knowledge",
+      "main": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scroll": {
+        "width": 1440,
+        "height": 900,
+        "clientWidth": 1440
+      },
+      "horizontalOverflow": false,
+      "screenshot": "P23-1440x900.png"
+    }
+  ],
+  "externalRequestsBlocked": [
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    },
+    {
+      "origin": "https://fonts.googleapis.com",
+      "path": "/css2",
+      "method": "GET"
+    },
+    {
+      "origin": "https://cdn.copilotkit.ai",
+      "path": "/notifications/v1.json",
+      "method": "GET"
+    },
+    {
+      "origin": "https://telemetry.copilotkit.ai",
+      "path": "/ingest",
+      "method": "POST"
+    }
+  ],
+  "consoleAndPageErrors": [
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: net::ERR_FAILED"
+  ]
+}

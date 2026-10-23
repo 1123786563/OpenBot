@@ -2,8 +2,6 @@ import { Checkbox as CheckboxPrimitive } from "@heroui/react";
 import { IconCheck } from "@tabler/icons-react";
 import type { ComponentPropsWithRef, ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
-
 type CheckboxPrimitiveProps = ComponentPropsWithRef<typeof CheckboxPrimitive>;
 
 export type CheckboxProps = Omit<
@@ -68,7 +66,11 @@ function Checkbox({
   return (
     <CheckboxPrimitive
       data-slot="checkbox"
-      className={cn("ob-checkbox", className)}
+      /*
+       * No `ob-checkbox` here: the class named no stylesheet rule anywhere in the app, so the
+       * control wears HeroUI's default checkbox visuals plus whatever the caller passes.
+       */
+      className={className}
       defaultSelected={defaultChecked}
       inputRef={(element) => {
         if (element && id) {
