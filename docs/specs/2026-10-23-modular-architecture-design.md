@@ -31,6 +31,7 @@
 | 跨 Module 怎么调用、哪些信息不能外泄 | [Interface 合同](../plans/modular-architecture/interface-contracts.md) |
 | 聊天/审批/后台/模型/预览等链路如何协作 | [运行链路与一致性](../plans/modular-architecture/runtime-flows.md) |
 | 怎么逐步迁移、与 Issue 怎么衔接、怎样验收 | [迁移与验收方案](../plans/modular-architecture/migration-plan.md) |
+| 选择一张逐步改造的 GitHub Issue | [正式 Issue 索引](../plans/modular-architecture/github-issues.md)；根 [#620](https://github.com/1123786563/OpenBot/issues/620) |
 | Code Agent 的阅读与改动流程 | [架构工作规则](../../.agents/rules/architecture.md) |
 
 仅阅读任务所属分册章节及直接依赖；不默认加载所有实现文件或全部 Issue 正文。
