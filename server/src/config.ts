@@ -49,10 +49,22 @@ const CREDIT_SCALE_FOR_CONFIG = 100;
 
 const log = getLogger("server");
 
+/**
+ * The runtime a deployment composed, read from its environment (ME15 #487).
+ *
+ * `mode: "intelligence"` carries the full Intelligence contract, as before.
+ * `mode: "none"` is new: a deployment that sets NONE of the three Intelligence
+ * settings boots without Intelligence and serves what its other engine — the
+ * governed enterprise path — can serve, while every entrance that does need
+ * Intelligence refuses by name (`IntelligenceUnconfiguredError`) instead of
+ * degrading. `durableHistory` is honest per mode: only the Intelligence mode
+ * holds the platform's durable thread history.
+ */
 export type RuntimeCapabilities = {
-  mode: "intelligence";
-  durableHistory: true;
-  intelligence: IntelligenceSettings;
+  mode: "intelligence" | "none";
+  durableHistory: boolean;
+  /** Present exactly when `mode` is "intelligence" (the block is all-or-nothing). */
+  intelligence?: IntelligenceSettings;
 };
 
 /**
@@ -1156,6 +1168,20 @@ function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
   })
     .filter(([, value]) => !value)
     .map(([name]) => name);
+
+  if (missing.length === 3) {
+    /*
+     * ME15 (#487): the block is ABSENT, not misconfigured. A deployment may
+     * run without Intelligence on the governed enterprise path (the boot gate
+     * in index.ts refuses when neither engine is wired). The projection is
+     * honest about what this mode holds: no durable platform history.
+     */
+    return {
+      mode: "none",
+      durableHistory: false,
+      intelligence: undefined,
+    };
+  }
 
   if (missing.length > 0) {
     throw new Error(

@@ -1,7 +1,9 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
+import { sleep } from "bun";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import { describe, expect, it } from "../../tests/support/bun-test-compat";
 import {
+  buildAgents,
   builtInAgentConfiguration,
   setBuiltinExecutionEngine,
   setMastraConversationRuntime,
@@ -314,6 +316,166 @@ describe("ME07 personal memory on the Mastra execution path", () => {
       expect(dials[0]!.systemText).toContain("Confirmed by the person");
     } finally {
       engineOff();
+    }
+  });
+
+  /*
+   * ME14 (carried ME07 review F1): the middleware is the LEGACY engine's
+   * memory block. On a build the server-side selector routes to the Mastra
+   * engine, the block is rendered from the #395 seams and the legacy loader
+   * must never be mounted — its dead read coupled every mastra run to the
+   * legacy store's availability. The differential proof drives the SAME
+   * runtime entrypoint (`runAgent`, where `.use()` middleware applies):
+   * a mastra-selected build completes its run without ever reading the
+   * loader, while a legacy build's first run fires it.
+   */
+  it("a mastra-selected built-in runs without ever reading the legacy personal-memory loader", async () => {
+    const loads: string[] = [];
+    const loadPersonalMemory = async (botId: string) => {
+      loads.push(botId);
+      return "LEGACY-BLOCK-MUST-NOT-REACH-A-MASTRA-RUN";
+    };
+    const dials: DialRecord[] = [];
+    const harness = await answerRunCarrier(dials);
+    engineOn();
+    try {
+      setMastraPersonalMemoryContext(async () => PREFERENCE_BLOCK);
+      const agents = await buildAgents(
+        [
+          {
+            id: "bot-a",
+            name: "Bot A",
+            type: "built_in" as const,
+            systemPrompt: "Follow the registered Bot instructions.",
+          },
+        ],
+        { provider: "openai", defaultModel: "me01-model" } as never,
+        "synthetic-me14-key",
+        undefined,
+        async () => [] as GrantedTool[],
+        undefined,
+        undefined,
+        async () => [] as readonly string[],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        loadPersonalMemory,
+        harness.governedModel,
+      );
+      const built = agents["bot-a"];
+      if (!built) throw new Error("bot-a was not built");
+      // runAgent relays the AGENT's own message list (the runtime protocol),
+      // not a per-call one — seed the turn the way a client would have.
+      built.addMessage({
+        id: "msg-1",
+        role: "user" as const,
+        content: "what do you recall?",
+      });
+      try {
+        await built.runAgent({
+          threadId: "thread-1",
+          runId: "client-run-1",
+          tools: [],
+          context: [],
+          forwardedProps: {},
+        });
+      } catch {
+        // The run's stream-level protocol (the factory emits its own run
+        // lifecycle inside the AG-UI wrapper's) is not this pin's subject —
+        // the production mastra entries drive the factory directly, and the
+        // runAgent wiring for the chat surface is ME16's engine switch. The
+        // fact under test is the loader, asserted below against the dial
+        // record: no mounted middleware could have kept the loader silent
+        // through a runAgent call, mounted or not.
+      }
+      // The loader NEVER fired — with the middleware mounted it fires before
+      // anything else in the chain.
+      expect(loads).toEqual([]);
+      // What the model actually saw was the #395-rendered block from the
+      // server-side seams, never the legacy loader's answer.
+      expect(dials.length).toBeGreaterThanOrEqual(1);
+      expect(dials[0]!.systemText).toContain(MEMORY_PREFIX);
+      expect(dials[0]!.systemText).not.toContain(
+        "LEGACY-BLOCK-MUST-NOT-REACH-A-MASTRA-RUN",
+      );
+    } finally {
+      engineOff();
+    }
+  });
+
+  it("a legacy-engine built-in still mounts the PersonalMemoryMiddleware (the loader fires on runAgent)", async () => {
+    const loads: string[] = [];
+    const loadPersonalMemory = async (botId: string) => {
+      loads.push(botId);
+      return "legacy block";
+    };
+    // The legacy engine's dial must not leave the machine: the middleware
+    // fires BEFORE the model dial, and this base URL refuses instantly.
+    const previousBaseUrl = process.env.OPENAI_BASE_URL;
+    process.env.OPENAI_BASE_URL = "http://127.0.0.1:9";
+    try {
+      const agents = await buildAgents(
+        [
+          {
+            id: "bot-a",
+            name: "Bot A",
+            type: "built_in" as const,
+            systemPrompt: "Follow the registered Bot instructions.",
+          },
+        ],
+        { provider: "openai", defaultModel: "me01-model" } as never,
+        "synthetic-me14-key",
+        undefined,
+        async () => [] as GrantedTool[],
+        undefined,
+        undefined,
+        async () => [] as readonly string[],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        loadPersonalMemory,
+        // No governedModel: the legacy engine build.
+      );
+      const built = agents["bot-a"];
+      if (!built) throw new Error("bot-a was not built");
+      // The middleware fires BEFORE the legacy engine's dial, so the loader
+      // is observable without waiting for the dial itself: float the run
+      // (its dead-endpoint refusal is this test's environment, not its
+      // subject) and poll for the loader call.
+      const floated = built
+        .runAgent({
+          threadId: "thread-1",
+          runId: "client-run-1",
+          messages: [
+            {
+              id: "msg-1",
+              role: "user" as const,
+              content: "hello",
+            },
+          ],
+          tools: [],
+          context: [],
+          forwardedProps: {},
+        })
+        .catch(() => undefined);
+      for (let waited = 0; waited < 100 && loads.length === 0; waited += 1) {
+        await sleep(10);
+      }
+      expect(loads).toEqual(["bot-a"]);
+      void floated;
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previousBaseUrl;
     }
   });
 });

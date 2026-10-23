@@ -90,10 +90,22 @@ export type LearningThread = {
 
 export function createLearningRuntime(options: {
   store: LearningSettingsStore;
-  client: CopilotKitIntelligence;
+  /**
+   * The Intelligence client, or a lazy accessor for one (ME15 #487).
+   *
+   * Every use is behind the settings read (`selectLearningTarget`), so with
+   * learning disabled the client is never resolved and never constructed —
+   * the deployment that switched learning off holds no Intelligence client
+   * because of this runtime. Pass the accessor from
+   * `lazyIntelligenceClient` here, not its result.
+   */
+  client: CopilotKitIntelligence | (() => CopilotKitIntelligence);
   freshnessWindowMs?: number;
 }) {
-  const { store, client } = options;
+  const { store } = options;
+  const clientOption = options.client;
+  const clientOf = (): CopilotKitIntelligence =>
+    typeof clientOption === "function" ? clientOption() : clientOption;
   const registries = new Map<string, SkillRegistry>();
   const registryKey = (target: LearningTarget) =>
     JSON.stringify([target.containerId, target.revision]);
@@ -102,7 +114,7 @@ export function createLearningRuntime(options: {
     let registry = registries.get(key);
     if (!registry) {
       registry = new SkillRegistry({
-        client,
+        client: clientOf(),
         containerId: target.containerId,
         ...(target.revision ? { revision: target.revision } : {}),
         ...(options.freshnessWindowMs === undefined
@@ -155,7 +167,7 @@ export function createLearningRuntime(options: {
       if (!target) return undefined;
       let exists = false;
       try {
-        await client.getThread({
+        await clientOf().getThread({
           threadId: input.threadId,
           userId: input.userId,
         });
@@ -198,7 +210,7 @@ export function createLearningRuntime(options: {
     },
     inspect: (
       input: Parameters<CopilotKitIntelligence["getInspectorLearning"]>[0],
-    ) => client.getInspectorLearning(input),
+    ) => clientOf().getInspectorLearning(input),
   };
 }
 export type LearningRuntime = ReturnType<typeof createLearningRuntime>;

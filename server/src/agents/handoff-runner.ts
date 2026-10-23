@@ -17,6 +17,8 @@ import {
   recordAuditEvent,
 } from "../audit";
 import { cutAtCodeUnits } from "../channels/text";
+import { HANDOFF_HOP_REFUSALS } from "../mastra/handoff-delivery";
+import { GovernedHeadlessRefusal } from "../mastra/headless";
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { HANDOFF_KIND } from "./handoff";
 import { ThreadBusyError } from "./handoff-delivery";
@@ -41,6 +43,14 @@ export type HandoffWork = {
   fromName?: string;
   /** The addressed Bot's display name, for the same reason. */
   toName?: string;
+  /**
+   * The governed delivery's scratch conversation for this hop, when one was resolved.
+   *
+   * Written back onto the hop row by the governed record resolver
+   * (mastra/handoff-delivery.ts) so a redelivery reuses the SAME conversation instead of
+   * creating a second one. The legacy platform delivery never sets it.
+   */
+  scratchThreadId?: string;
   /**
    * Where the answer belongs, when it is not the addressed Bot's own conversation.
    *
@@ -83,6 +93,14 @@ export type HandoffDelivery = {
     shown?: string;
     /** The signed statement of the run it is starting, carrying its depth. */
     assertion: string;
+    /**
+     * The queue claim this delivery is running under, when the caller holds one.
+     *
+     * The governed delivery (mastra/handoff-delivery.ts) keys the hop's ONE advance intent on this
+     * identity, so a redelivery converges on the first advance instead of minting a second run.
+     * The legacy platform delivery ignores it and keeps deriving identity from the platform lock.
+     */
+    claim?: { key: string; owner: string };
   }) => Promise<{ answer: string | null }>;
 };
 
@@ -111,7 +129,14 @@ const REAP_OLDER_THAN_MS = 24 * 60 * 60 * 1_000;
 
 export function createHandoffRunner(options: {
   queue: WorkQueue;
-  delivery: HandoffDelivery;
+  /**
+   * The delivery, or a lazy accessor for one (ME15 #487). Resolved only at the
+   * moment a claimed hop actually delivers, so a boot-time runner assembly
+   * never constructs what sits behind the accessor — the legacy platform
+   * delivery holds an Intelligence runner, and a deployment without
+   * Intelligence must not build one just by starting.
+   */
+  delivery: HandoffDelivery | (() => HandoffDelivery);
   /** Who this replica is, for the lease. */
   owner: string;
   /** How the deployment signs what the addressed Bot's run is. */
@@ -134,7 +159,7 @@ export function createHandoffRunner(options: {
 }) {
   const {
     queue,
-    delivery,
+    delivery: deliveryOption,
     owner,
     sign,
     auditStore,
@@ -143,6 +168,9 @@ export function createHandoffRunner(options: {
     maxAttempts = DEFAULT_MAX_ATTEMPTS,
     renewEveryMs = RENEW_EVERY_MS,
   } = options;
+  // Resolved per delivery, never at assembly (ME15 #487).
+  const deliveryOf = () =>
+    typeof deliveryOption === "function" ? deliveryOption() : deliveryOption;
 
   /**
    * Put the failure in front of the person, by running the Bot that asked in the conversation they
@@ -369,11 +397,12 @@ export function createHandoffRunner(options: {
 
           try {
             const shown = summarise(work);
-            const { answer } = await delivery.deliver({
+            const { answer } = await deliveryOf().deliver({
               work,
               message: attribute(work),
               ...(shown ? { shown } : {}),
               assertion: sign(work, { key: item.key, owner }),
+              claim: { key: item.key, owner },
             });
             const kept = await queue.finish({
               kind: HANDOFF_KIND,
@@ -458,8 +487,20 @@ export function createHandoffRunner(options: {
              */
             // The deployment's controls refused it (Use Bots, the model allowlist). Trying again in a
             // minute gets the same answer, so this is the last try, whatever the count says.
+            // A WAITING target is the other final outcome: the governed turn parked durably on an
+            // approval/participation wait, so its advance intent already exists and a retry would
+            // only meet it — the hop ends here and the asker is told the target is waiting.
+            // ME14 (carried ME11 F1 cleanup): a hop the governed delivery names NOT_ADVANCEABLE is
+            // terminal too — its row is gone, finished, or its advance intent was already claimed,
+            // so every retry is the same refusal. Releasing it for another round only printed the
+            // same handoff_failed audit row until maxAttempts; finish it and tell the asker now.
             const refused =
-              error instanceof Error && error.name === "CapabilityRefusedError";
+              error instanceof Error &&
+              (error.name === "CapabilityRefusedError" ||
+                error.name === "HandoffTargetWaitingError" ||
+                (error instanceof GovernedHeadlessRefusal &&
+                  error.code === HANDOFF_HOP_REFUSALS.hopNotAdvanceable));
+
             if ((refused || item.attempts >= maxAttempts) && !work.answerIn) {
               await tell(work, item.key, reason).catch((failure) => {
                 // A notice that cannot be queued must not take the release with it: leaving the row
@@ -565,8 +606,11 @@ function forThePerson(reason: string): string {
  * The parts stay parts. The asking model was made to name the task, its constraints and what a good
  * answer looks like precisely so the receiving one does not have to infer them out of a paragraph,
  * and flattening them back into prose here would throw that away at the last step.
+ *
+ * Exported for the governed delivery's record adapter (mastra/handoff-delivery.ts), which composes
+ * the addressed Bot's instruction from the hop ROW with these same words — one wording, two engines.
  */
-function attribute(work: HandoffWork): string {
+export function attribute(work: HandoffWork): string {
   /*
    * A notice is not a request for help, and must not read as one.
    *

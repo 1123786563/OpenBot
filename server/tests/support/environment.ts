@@ -19,7 +19,11 @@ export function testEnvironment(
     BETTER_AUTH_URL: "http://localhost:3001",
     // Required whenever a provider is configured: nothing else grants the administrator role.
     INITIAL_ADMIN_EMAILS: "admin@openbot.test",
-    // Required. See server/src/config.ts: there is no runtime without Intelligence.
+    // The Intelligence contract. Since ME15 (#487) a deployment may omit it
+    // entirely (mode "none") and boot on the governed enterprise path; tests
+    // here keep it because the default fixture is an Intelligence-mode
+    // deployment. Omit all three together or none of them — a partial block
+    // is a config refusal.
     INTELLIGENCE_API_URL: "http://localhost:7100",
     INTELLIGENCE_GATEWAY_WS_URL: "ws://localhost:7103",
     INTELLIGENCE_API_KEY: "tenant-api-key",

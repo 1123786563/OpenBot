@@ -277,8 +277,16 @@ export function drawnComponents(messages: Message[]): DrawnComponent[] {
 export { frameFiring };
 
 export function createTurnRunner(options: {
-  intelligence: IntelligenceLike;
-  runner: RunnerLike;
+  /**
+   * The platform client, or a lazy accessor for one (ME15 #487). Both forms
+   * are touched only inside the turn, so an assembly that never runs a turn
+   * never resolves — and never constructs — the client behind it. A deployment
+   * without Intelligence passes an accessor that refuses by name on the first
+   * actual turn; the assembly itself stays bootable.
+   */
+  intelligence: IntelligenceLike | (() => IntelligenceLike);
+  /** The runner, under the same lazy contract as `intelligence`. */
+  runner: RunnerLike | (() => RunnerLike);
   learningContainerForThread?: (input: {
     threadId: string;
     agentId: string;
@@ -311,8 +319,8 @@ export function createTurnRunner(options: {
   abortGraceMs?: number;
 }): TurnRunner {
   const {
-    intelligence,
-    runner,
+    intelligence: intelligenceOption,
+    runner: runnerOption,
     buildAgentFor,
     learningContainerForThread,
     toolsForTurn,
@@ -322,6 +330,15 @@ export function createTurnRunner(options: {
     heartbeatMs = DEFAULT_HEARTBEAT_MS,
     abortGraceMs = DEFAULT_ABORT_GRACE_MS,
   } = options;
+  // Resolved inside the turn, never at assembly: the lazy form keeps boot
+  // client-free, and the refusal for a missing client is raised on the first
+  // turn that actually needs one.
+  const intelligence = () =>
+    typeof intelligenceOption === "function"
+      ? intelligenceOption()
+      : intelligenceOption;
+  const runner = () =>
+    typeof runnerOption === "function" ? runnerOption() : runnerOption;
 
   return async ({
     ownerUserId,
@@ -384,7 +401,7 @@ export function createTurnRunner(options: {
       agentId,
       userId: ownerUserId,
     });
-    await intelligence.getOrCreateThread({
+    await intelligence().getOrCreateThread({
       threadId,
       userId: ownerUserId,
       agentId,
@@ -404,7 +421,7 @@ export function createTurnRunner(options: {
      * between a routine that survives one interrupted chat turn and one that never fires again.
      */
     const history = await historyOrEmpty(
-      () => intelligence.getThreadMessages({ threadId, userId: ownerUserId }),
+      () => intelligence().getThreadMessages({ threadId, userId: ownerUserId }),
       { messages: [] as ThreadHistoryMessage[] },
     );
 
@@ -544,7 +561,7 @@ export function createTurnRunner(options: {
         : {}),
     });
 
-    await intelligence.ɵacquireThreadLock({
+    await intelligence().ɵacquireThreadLock({
       threadId,
       runId,
       userId: ownerUserId,
@@ -587,12 +604,22 @@ export function createTurnRunner(options: {
         // it sets `stopRequested`, which is what makes `finalizeRunEvents` close the run as
         // stopped rather than leaving it open for ever on the platform.
       }
-      stopPromise ??= runner.stop({ threadId, runId }).catch(() => undefined);
+      stopPromise ??= Promise.resolve()
+        .then(() => runner().stop({ threadId, runId }))
+        .catch(() => undefined);
     };
 
     heartbeat = setInterval(() => {
-      void intelligence
-        .ɵrenewThreadLock({ threadId, runId, ttlSeconds: lockTtlSeconds })
+      // Promise-wrapped so a refusing lazy client (ME15) lands in the catch —
+      // the same lock-lost handling — instead of crashing the interval.
+      void Promise.resolve()
+        .then(() =>
+          intelligence().ɵrenewThreadLock({
+            threadId,
+            runId,
+            ttlSeconds: lockTtlSeconds,
+          }),
+        )
         .catch((error: unknown) => {
           if (heartbeat === undefined) return;
           /*
@@ -619,7 +646,7 @@ export function createTurnRunner(options: {
       });
       const completed = new Promise<void>((resolve, reject) => {
         let terminal: Error | undefined;
-        runner
+        runner()
           .run({ threadId, agent, input, persistedInputMessages })
           .subscribe({
             /*
@@ -692,8 +719,8 @@ export function createTurnRunner(options: {
       if (deadline !== undefined) clearTimeout(deadline);
       if (backstop !== undefined) clearTimeout(backstop);
       spoken.unsubscribe();
-      await intelligence
-        .ɵcleanupThreadLock({ threadId, runId })
+      await Promise.resolve()
+        .then(() => intelligence().ɵcleanupThreadLock({ threadId, runId }))
         .catch(() => undefined);
     }
 

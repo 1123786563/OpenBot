@@ -23,15 +23,96 @@ Legend: `pending` | `in_progress` | `implemented` | `verified` | `blocked`.
 | ME07 | 479 | ME04, #395 | backend | memory context assembly | **verified (review APPROVED_WITH_FINDINGS, 6/6 AC MET, 0 blocking; wave 231/0/1157)** | me07/{brief,report}.md + review in ledger 19:4xZ |
 | ME08 | 480 | ME05 | backend | learning provider adapter | **verified (review APPROVED_WITH_FINDINGS; both required fixes were documentation-grade and applied by controller with direct verification; wave 178/0/868 reviewer-reproduced)** | me08/{brief,report}.md + review in ledger 17:2xZ |
 | ME09 | 481 | ME06, ME07, ME08 | backend | headless turn, routines | **verified (review APPROVED_WITH_FINDINGS; fix round 1 all 3 required; re-review FIXES_VERIFIED; wave 273/0/1350 ×2 controller + reviewer-reproduced suites)** | me09/{brief,report,fix-round-1-report}.md + checkpoints/me09-review/ |
-| ME10 | 482 | ME09 | backend | responsibilities/delivery/wakeup/approval continuation | **implemented (after 1 toolset-degraded dispatch); controller-verified (25-file wave 285/3-flake → all standalone-green); EXTERNAL EVENT: user committed entire tree as 0b0b36c14 mid-run; independent review pending** | me10/{brief,report}.md |
-| ME11 | 483 | ME10 | backend | handoff/reaper | pending | - |
-| ME12 | 484 | ME09 | backend | OpenMuse/Workshop adapters | pending | - |
+| ME10 | 482 | ME09 | backend | responsibilities/delivery/wakeup/approval continuation | **verified (review VERDICT: APPROVED — 6/6 MET, F4 chain genuine end-to-end, 3 resume-bug fixes server-authoritative; all findings non-blocking)** | me10/{brief,report}.md |
+| ME11 | 483 | ME10 | backend | handoff/reaper | **verified (review APPROVED_WITH_FINDINGS 6/6 MET; both required fixes report-grade, controller-applied; reviewer reproduced both suites + legacy neighbors)** | me11/report.md §7 fix log |
+| ME12 | 484 | ME09 | backend | OpenMuse/Workshop adapters | **verified (review APPROVED_WITH_FINDINGS 5/5 MET; P3 count fix controller-applied; R1 tenancy block + residual register carried to ME14/ME16)** | me12/report.md §7 fix log |
 | ME13 | 485 | ME03, ME05 | backend | legacy import + cutover tooling | **verified (review APPROVED_WITH_FINDINGS 6/6 MET; required F4 probe fix applied by controller + suite re-green 31/0/107; reviewer re-ran both suites exact-match)** | me13/{brief,report}.md + review in ledger 18:1xZ |
-| ME14 | 486 | ME11, ME12, ME13 | backend | cutover/rollback runbook | pending | - |
-| ME15 | 487 | ME14 | backend + frontend | config/observability/no-Intelligence boot | pending | - |
-| ME16 | 488 | ME15 | backend + frontend | old path removal, final audit | pending | - |
+| ME14 | 486 | ME11, ME12, ME13 | backend | cutover/rollback runbook | **verified (review APPROVED_WITH_FINDINGS 7/7 MET, fence SQL-level verified; F1 disposition-enum fix round 1 applied 40/0/123+15/0/64, wave 379/0/1782 ×2; F2-F5 registered)** | me14/{report,runbook,fix-round-1-report}.md |
+| ME15 | 487 | ME14 | backend + frontend | config/observability/no-Intelligence boot | **verified (review APPROVED_WITH_FINDINGS 6/6 MET, reviewer independently reproduced both suites + positive boot; both required fixes mechanical, controller-applied; legacy-only register → ME16)** | me15/report.md §8 fix log |
+| ME16 | 488 | ME15 | backend + frontend | old path removal, final audit | **verified (FINAL review APPROVED_WITH_FINDINGS 6/6 MET; doc-grade fix controller-applied §9; chat wiring + participation + F2/F3/F4/F5 + A01-A20 all reviewer-verified)** | me16/{report,snapshot}/ |
 
 ## Log
+### 2026-10-23T09:4xZ — ME16 FINAL review APPROVED_WITH_FINDINGS; doc fix applied; ME16 CLOSED — ALL 16 TICKETS VERIFIED
+
+- Final reviewer (144 tool uses; independently re-ran 12+ suites incl. both e2e-runner partitions; snapshot 10/10 hashes re-verified): 6/6 AC MET. Chat wiring verified at every consult point (selector only inside governed admission; no-enterprise never asks; legacy branch intact); participation semantics correct (skip ONLY for the {waiting:true} approval sentinel); "legacy" removal zero producers/consumers repo-wide; entry audit 8/9 exact (2 pointers ±12 drift); §1.3 sign-in residual SUBSTANTIVELY TRUE and correctly escalated (routing onResolved through the governed drive is not a one-liner); gates reproduced (tsc 3; biome baselines pre-existing at HEAD; manifest 621/39; audit unmodified).
+- Required (doc-grade): §1.3 absolute claim corrected (state.engine HAS readers on the approvals path; the sign-in path never consults it) — controller-applied with §9 correction log.
+- **ALL 16 TICKETS (ME01-ME16) NOW VERIFIED/CLOSED.** Next: final one-time OCR over the full delivery per the user's final-commit-only ruling (workspace mode for uncommitted ME11-ME16 + range bcf51633f..46b4180ed3 for the absorbed ME01-ME10), then the final delivery report.
+
+### 2026-10-23T08:0xZ — ME15 review APPROVED_WITH_FINDINGS; mechanical fixes controller-applied; ME15 CLOSED; ME16 dispatched (FINAL)
+
+- Reviewer (110 tool uses; independently reran unit 12/0/39 + integration 3/0/14 on live PG; verified HEAD-copy baselines): 6/6 AC MET. Lazy-construction sound (failure not cached; three independent short-circuits for learning-disabled; 8 production call sites pass uncalled accessors); boot gates flush-then-exit with real-subprocess proofs (both refusals + positive boot serving /ready 200 + honest capabilities); leakage clean (names only, subprocess-asserted); no tautologies; baseline-red attribution methodology sound.
+- Required (both mechanical, controller-applied): F1 index.ts had 2 NEW biome violations contradicting the report claim — formatted back to the exact HEAD 6-diagnostic set, report §8 corrected; F2 legacy-delivery deferral misdescribed (??-IIFE evaluates at boot in legacy-only Intelligence deployments, same as HEAD; no-Intelligence boots never evaluate it) — comment + report corrected; dual-shape thunk branch has no production caller (disclosed).
+- Minor: "12 call sites" → 8 production (+9 test). INFO: channel-summaries 10s refusal-log noise → ME16; wide exit-code assert.
+- ME15 CLOSED. ME16 dispatched — the FINAL ticket (old-path exit + full-entry acceptance + final OCR ruling per user's final-commit-only decision).
+
+### 2026-10-23T07:5xZ — ME15 implemented (backend), 6/6 AC evidence, wave 396/0/1846 ×2
+
+- Intelligence → optional service. config mode "none" (full-absence; partial still refuses); five construction sites lazified via new `server/src/intelligence-optional.ts` (memoized accessor + named `INTELLIGENCE_UNCONFIGURED` refusal); createTurnRunner/createHandoffRunner/createLearningRuntime take value-or-thunk; legacy handoff delivery arm thunked; two boot gates AGENT_RUNTIME_UNCONFIGURED (config-level) / AGENT_RUNTIME_UNVERIFIED (post-verification), each `await log.flush()` then exit 1 (pino buffer would otherwise swallow the record — found by child-process test).
+- Evidence: unit 12/0/39; child-process boot suite 3/0/14 (refusal ×2, positive boot on me03 fixture: /ready 200, /api/capabilities honestly mode:"none"/durableHistory:false, zero client constructions); 35-file wave 396/0/1846 ×2; neighbors via e2e runner 9/0, 216/0, 108/0, 26/0, 3/0; tsc = 3 baseline; biome mastra clean + touched files clean + index/copilot same finding sets as baseline (0 new).
+- Baseline reds re-verified NOT mine: self-host-banner 1 red and runner-production 42/5 reproduce identically with the relevant files reverted to HEAD (enterprise env group family).
+- Registered: add-driven ×1 per call (620→621 driven/39 groups), audit exit 0, manifest regenerated; new suites in `server/tests part 9` (unit) and `part 6` (integration).
+- Registered deviations: proactive/group/channel-summaries remain legacy-only — named per-turn refusal without Intelligence (governed-arm migration is beyond this ticket's scope; controller ruling welcome, ME16 candidate); config.test.ts "absent entirely" case updated to the new contract per AC1 (partial-missing refusals kept verbatim); frontend copy of capabilities belongs to ME16.
+- UNVERIFIED: real Intelligence service / production-shaped deployment; worker container standalone boot (same lazy seam as index).
+### 2026-10-23T07:0xZ — ME14 review APPROVED_WITH_FINDINGS; F1 fixed; ME14 CLOSED; ME15 dispatched
+
+- Review (attempt 3 after two TOOLSET MISSING; 71 tool uses): 7/7 AC MET. Fence verified at SQL level (same advisory-lock key as prepare/write; READ COMMITTED subquery sound; three old-writer refusals traced; zero-overwrite holds). runCutover ordering/resume honest; rollback zero-delete verified by grep (backend never repointed); all 5 carried fixes real (F1 pending-intent precheck, F2 classifyThread re-run, F3 path hardening, ME11-F1 terminal, ME12-R4 jsonb, ME07-F1 middleware skip both-direction pinned). 50 tests no tautologies; dual-instance genuine.
+- Required F1 (Medium): disposition/effect enum validation (typo `isloate` silently excluded a thread). Fix round 1: named refusals invalid_disposition/invalid_effect + CLI parseInFlightDispositions gate; 5 new tests incl. zero-bump e2e refusal; unit 40/0/123, integration 15/0/64, 32-file wave 379/0/1782 ×2; tsc 3 baseline; biome clean.
+- F2 (partial-switch no maintenance exit) / F3 (library runRollback phase guard) / F4 (preserved.newMemoryRows naming) / F5 (cosmetics) → registered for ME16 hardening.
+- ME14 CLOSED. ME15 dispatched (无 Intelligence 部署可运行 + 诊断).
+
+### 2026-10-23T0x:xxZ — ME14 implemented（单写切换 fence + 在途处置账本 + 无数据损失回滚；携带修复全 RED→GREEN）
+
+- 交付：`cutover.ts` fence 核心（`CUTOVER_ENTRY_IDS` 八项入口清单核对、`classifyInFlight` 在途处置账本、`evaluateCutoverGates` 五门、`runCutover` 逐线程 advisory-lock CAS 版本 bump（可中断续切不重复 bump）、`runCutoverRollback` 零删除/零指回旧库（保全清单对账进 receipt；不可证安全 → maintenance+可诊断 reason，工具终态））；CLI 第六子命令 `cutover`（ME13 apply 双门 + tenant/workspace/entry-inventory/dispositions 输入），`rollback` 对 switched 状态路由 fence 回滚（同双门）；`conversations/service.ts` finalize UPDATE 增"行当前版本"子查询 fence（关闭切换提交于写事务中段的竞态窗口，+10 行）；`legacy-import.ts` 携带 F1（staging 预检计 pending 外来 intent，新端口 `foreignPendingIntentCount`）F2（resume 重跑 classifyThread 收敛不变量）F3（runId 路径硬化）+ fence phase（switched/maintenance）与 apply/verify 具名拒绝。
+- 携带修复（全部 RED→GREEN 实证）：ME11 F1 `HANDOFF_HOP_NOT_ADVANCEABLE` 终态化（native runner 26/26，RED 1 failed）；ME12 R4 wake-up settle `::text::jsonb`（真库 RED：invalid concatenation → GREEN）；ME07 F1 PersonalMemoryMiddleware 跳过 mastra-selected 构建（copilot.ts 双向 pin：mastra 选择下 loader 从未被读 + legacy 挂载照旧）；ME12 R1 groupConversations tenancy 决策点**只登记**于 runbook §2；conformance-evidence 指纹确认为纯 main 侧 stale（绑定的计费模块随 a789f6a43 变更），重录需重跑 22.3/22.4 验证 = 产品决策，登记不代办。
+- 门禁：新套件双件 add-driven ×2（每调用一件 → 619 driven/39 groups）+ audit 后台再生；**33 文件 mastra 波（ME12 31 + 本票 2）376 pass / 0 fail / 1767 expect() ×2**；本票套件独跑 35/0/97 + 15/0/64 ×2；tsc 恰 3 条基线；biome 本票全部触达文件 clean（copilot.ts 与 HEAD 同集合 10 条，新增行 0 告警）。
+- 票面四案例真库演练（me03-fixture 一次性库，双实例=双连接池）：混合 fixture（running/waiting+suspended×2）、旧写者拒绝（CONVERSATION_BACKEND_CHANGED，intent 留 pending 零覆盖）、apply 中断续切（fence 逐线程记录、不重复 bump）、新消息后 rollback（行数/intents/history 逐项存活 + receipt 落账）；另 finalize SQL 探针、过期 lease、跨实例 continuation 转换、maintenance 两路、staging 拒切。
+- Runbook：`me14/runbook.md`（责任人/恢复门槛/入口清单/处置表/命令序列/维护态退出；生产执行另获授权）。Report：`me14/report.md` 由 implementer 政策阻断写入 → 完整文本在 dispatch final message，由 controller 落盘。
+- 无生产 apply/切换/停机；无 commit/push/stash；ME11+ME12 未提交增量零触碰（handoff-runner.ts 为 ME11 增量上的叠加，index.ts/openmuse-task-entry 等零触碰）。
+### 2026-10-23T04:3xZ — ME12 review APPROVED_WITH_FINDINGS; P3 fix applied; ME12 CLOSED; ME14 unblocked
+
+- Reviewer (79 tool uses): 5/5 AC MET. Inventory independently reproduced (openMuseTaskRunner the ONLY assembled bot-turn caller; run_workshop_turn test-only; craft executor out of scope). R1 structural claim TRUE (group threads only in group_bot_threads; resolveForThread structurally refuses — migration needs a tenancy product decision → ME14/ME16). manual-<uuid> deviation verified SOUND (stable intent would break T07 recovery; row CAS was always the only legacy dedup). jsonb fix REAL (12 sites; corruption corroborated by impossible-otherwise assertions). No tautologies. Required: P3 count correction 13→12 (13th grep hit = the explanatory comment) — controller applied to report §5+§7 and ledger.
+- INFO disclosures added: approval-parked task rows still settle FAILED with waiting text (legacy-parity, no regression); revoked case = never-onboarded (same refusal seam); T07 recovery mints new run rows (new generation = new run, by design).
+- ME12 CLOSED. All three ME14 prerequisites done (ME11 ✅ ME12 ✅ ME13 ✅). ME14 dispatched next.
+
+### 2026-10-23T04:1xZ — ME12 implemented（OpenMuse Task 入口上受控 turn；groupConversations/Workshop 处置登记）
+
+- 入口清单落盘（me12/report.md §0）：真实装配的 OpenMuse/Workshop Bot-turn 调用仅 `openMuseTaskRunner.runTurn` 一处 → 已迁移（selector 同族：enterprise → governed，缺 capabilities 保 legacy）。groupConversations 登记为不迁移（结构性阻塞：group bot 线程无 enterprise tenancy 行，resolveForThread/conversations.append 必拒——需产品级登记为 ME14/ME16 决策）；Workshop 无 Bot 模型 turn 调用（headless door 未挂载；orchestrator/schedule-executor 走 sandbox 执行器，票面边界外）；proactive engine 维持 ME10 登记不变。
+- 交付：`server/src/mastra/openmuse-task-entry.ts`（任务行记录权威适配器）+ index.ts selector（5165/5205）+ 新双套件（unit 7/0/22；enterprise 真 PG 4/0/27 ×3）。31 文件 mastra 波 324/0/1601 独跑全绿（含本票两件与既往 child-spawn 抖动族）；tsc 恰 3 条基线；biome 本票文件 clean、index.ts 与基线同 6 条；add-driven ×2 → audit 再生（本票两件为 bun: collect_error 同族 613）→ bun manifest 617 driven / 39 groups。
+- **实施期发现的既有缺陷（已修，同 ME10 §5 先例）**：`openmuse-tasks/store.ts` updateTask/retryTask/openTaskWait/openTaskReviewWait 的 13 处 `${JSON.stringify(x)}::jsonb` 绑定在 Bun SQL 下双重编码——真实 PG 上每次 settle 的 steps/evidence/artifactIds jsonb 均被写成字符串元素（单测假库掩盖）。修复：统一 `::text::jsonb`（gateway/price-snapshot 同款先例），integration 全链验证。**同型残差登记（未修，非本票面）**：`agents/wake-up.ts:297`（payload || JSON.stringify — 对象上拼接将抛错）、`enterprise/experts/version-catalog.ts:184`、`enterprise/runs/model-route-catalog.ts:349`（写双重编码但读路径对称 parse，功能未坏，登记待收口）。
+- ME11 增量（handoff-delivery.ts、handoff-runner.ts、mastra-handoff 双套件、index.ts 交接装配、ledger 既有行）零触碰。无 commit/push/stash。
+
+### 2026-10-23T03:2xZ — Toolset outage recurrence: 2× ME12 dispatches TOOLSET MISSING
+
+- Same provisioning outage family as 01:20-02:05 (that one recovered after ~45min). ME12 brief is fully prepared in the dispatch prompt; recovery = single re-dispatch. Controller backing off ~15min then retrying.
+
+### 2026-10-23T03:1xZ — ME11 review APPROVED_WITH_FINDINGS (report-grade fixes applied); ME11 CLOSED; ME12 dispatched
+
+- Reviewer (80 tool uses; reproduced unit 14/0/49 + integration 6/0/50 + legacy neighbors 5/0+5/0): 6/6 AC MET. Decision half provably zero-change (empty diffs; handoff-runner 2-line in-place transforms). Roster chain verified unspoofable (signed assertion → authoriseCoordinationRun → desk against asking person's roster; forged assertion degrades to depth-0 checks). Sub-Bot surface keyed to target bot (grants/credentials/memory own-scope). No tautologies. Deviations all true and acceptable.
+- Required (both report-grade, controller-applied to report §7): F1 disclose once-only-advance semantics (intent written even on failed first advance; model-failed hops never re-dialed vs legacy maxAttempts; notice always true) + cleanup candidate (hopNotAdvanceable as terminal) registered for ME12/ME14; F2 qualify "invisible scratch" claim (enterprise route CAN enumerate; roster hiding = ME14/ME16 decision).
+- Non-blocking: transcript-UX follow-up (relay text as user bubble); cross-team letter gap; assertion tightening.
+- ME11 CLOSED. ME12 dispatched (OpenMuse/Workshop adapters — last implementation ticket before ME14).
+
+### 2026-10-23T03:0xZ — ME11 controller verification + external sync commit #2 + review dispatch
+
+- External event #2: user committed `46b4180ed3` (chore(sync), 01:07) absorbing ME10's finish; ME11 increment = the 7-entry uncommitted delta on top. Nothing lost; no agent git action.
+- Controller persisted the report (agent's write was policy-blocked) and re-verified: **27-file wave 308/0/1517 + engine-wiring 5/0 = 313 pass / 0 fail** (all green; count delta vs agent's 311 = post-wave test additions).
+- Independent review dispatched (toolset-outage history this evening: 4 attempts for the implementer).
+
+### 2026-10-23T02:5xZ — ME11 implemented (handoff/reaper on the governed turn)
+
+- Delivery half migrated: `server/src/mastra/handoff-delivery.ts` (hop-row record authority, ONE advance intent `routine-adv:handoff:<hopKey>:<hopKey>`, once-per-hop scratch conversation with payload write-back, honest waiting/busy/final-refusal translation, desk-gated message_bot surface tools at the carried depth). Desk/tool/private-share/depth zero-changed. Selector at index.ts handoff runner: enterprise → governed, else legacy Intelligence delivery unchanged; reaper has no selector (purge runs no turn).
+- Gates: tsc exactly 3 baseline; biome server/src/mastra clean + handoff files clean + index.ts 0 new findings; add-driven ×2 (one call each) → audit regen 1201 entries → bun-manifest 615 driven / 39 groups. Wave = manifest 28 bun-driven mastra files: 311 pass / 0 fail / 1541 expects ×2 (child-spawn 5s flake family green standalone 2/0/22 and 5/0/58 after load subsided; note roster+model are Node-driven and must stay out of the bun wave). Legacy handoff integration 10/0; ME10-adjacent 17/0.
+- Findings logged: enterprise_conversations cascade on membership delete (revocation test uses suspend); gateway adapter dual doStream/doGenerate protocol matters for stubbed upstreams.
+### 2026-10-23T01:5xZ — Subagent toolset provisioning outage (persistent): 3× ME11 dispatches returned TOOLSET MISSING
+
+- Explore-type AND claude-type dispatches both toolless since ~01:20 (earlier evening flaps recovered in minutes; this one persists ~35min). Controller waiting one longer window then retrying; if still down, ME11 falls back to controller-inline implementation (ME01 precedent after platform failures) with honest attribution.
+
+### 2026-10-23T01:1xZ — ME10 review: VERDICT APPROVED; ME10 CLOSED; ME11 dispatched
+
+- Reviewer (Explore retry after one TOOLSET MISSING; 96 tool uses; verified against the pinned @mastra/core dist by reading): 6/6 AC MET. F4 parking chain verified at EVERY hop (ALS-gated approval gate opens only for governed runs; browser path provably unchanged; save-before-waiting; lease-fenced waiting_approval; six gates; FOR-UPDATE reactivation; own route facts; settle gate; decline fail-closed at 3 layers; no path executes an approval-requiring grant without parking). The 3 ME09 bug fixes correct and unspoofable (settledTokens computed server-side in the reactivation transaction). F6 disposer race-sound (FOR UPDATE serialization both sides) + RLS-scoped. No tautologies; F4 integration test = first true cross-stack full-chain proof. Report honest (resumed-segment write-back boundary disclosed 3×; not an AC breach — ME09's 回写 contract covers routine turns which still persist).
+- Non-blocking carried: LOW settledTokens status-filter divergence (latent, unreachable, conservative); LOW composed wrapper review-verified only; LOW responsibility/wake-up adapter closures untested (index.ts seam cost); INFO declined-responsibility settles succeeded; INFO dead scaffolding; INFO legacy sibling query owner filter (pre-existing).
+- ME11 dispatched next (handoff/reaper over the governed turn).
+
 ### 2026-10-23T0x:xxZ — EXTERNAL COMMIT EVENT + ME10 implemented; controller verified; review dispatching
 
 - **External event (disclosed by implementer, verified by controller)**: user wuyj committed the ENTIRE uncommitted tree as `chore(sync): 保存 mastra-exec2-2 worktree 未提交工作以合并 main` (commit `0b0b36c14b`, 2026-10-23 00:10:57 +0800) — absorbing all ME01-ME09/ME13 work + in-progress ME10. Nothing lost; subsequent uncommitted deltas are now over 0b0b36c14. No agent commit/push/stash action occurred.

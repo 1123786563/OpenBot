@@ -798,6 +798,16 @@ export function createConversationService({
               eq(mastraMessageIntents.threadId, threadId),
               eq(mastraMessageIntents.clientMessageKey, clientMessageKey),
               eq(mastraMessageIntents.state, "pending"),
+              // ME14 (#486) write fence: the intent finalizes only against
+              // the conversation row's CURRENT backend_version. The
+              // transaction's earlier version re-read can be stale when a
+              // cutover switch commits mid-transaction (the advisory lock
+              // serializes whole writers, but this transaction may have
+              // passed its check before the switch took the lock), so the
+              // fence's last word is the database's own comparison here: an
+              // intent prepared against an older writer generation never
+              // lands after the switch.
+              sql`${mastraMessageIntents.backendVersion} = (select ${enterpriseConversations.backendVersion} from ${enterpriseConversations} where ${enterpriseConversations.tenantId} = ${scope.tenantId} and ${enterpriseConversations.threadId} = ${threadId})`,
             ),
           )
           .returning({
