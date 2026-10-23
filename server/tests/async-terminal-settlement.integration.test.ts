@@ -254,6 +254,7 @@ const TERMINAL_USAGE = {
   cache_read: 0,
   cache_write: 0,
   video: 60,
+  video_input: 0,
   surcharge_web_search: 0,
   surcharge_per_request: 0,
   surcharge_tool_call: 0,

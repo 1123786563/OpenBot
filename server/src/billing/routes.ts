@@ -54,14 +54,6 @@ import {
 } from "./rewards";
 import type { BillingStatements } from "./statements";
 import { BillingError, type BillingService } from "./types";
-import {
-  DISPOSAL_REFUSAL_SENTENCES,
-  createRecoveryDisposal,
-} from "./recovery-disposal";
-// The reasons list is used only as a type here (`typeof` for the status map's key union).
-import type { DISPOSAL_REFUSAL_REASONS } from "./recovery-disposal";
-import type { ConversionRate } from "../gateway/conversion-rate";
-import type { RealtimeUsageReader } from "./realtime-usage";
 import type {
   AsyncJobDisplayState,
   AsyncJobsViewReader,

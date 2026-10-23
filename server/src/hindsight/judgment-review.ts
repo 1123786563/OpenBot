@@ -90,13 +90,6 @@ import {
   type SourceBoundAuthorizationStore,
   type SourceBoundRecordStore,
 } from "./scoped-recall";
-import {
-  type MemoryRevocationStatus,
-  type PersonalMemoryRevocationRecorder,
-  STOPPED_USING_SUMMARY,
-} from "./revocation-ledger";
-
-/** The durable sync-work recorder #384 attaches; structural, so the queue satisfies it. */
 export interface JudgmentWorkRecorder {
   record(input: {
     subjectType: "derived_judgment";

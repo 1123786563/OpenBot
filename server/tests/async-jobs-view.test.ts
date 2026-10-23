@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import {

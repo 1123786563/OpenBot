@@ -1672,6 +1672,504 @@ const PLUGIN_CATALOG_TASK: TaskMigrationSpec = {
   ],
 };
 
+const PACKAGE_INSTALL_TASK: TaskMigrationSpec = {
+  id: "PKG02",
+  description:
+    "PKG02（Issue #461）：新增插件包范围安装存储（installs/revisions/plans/resource links/changes，expand-only，最小 RLS 与追加写授权；为 MT031 连接器安装表补范围唯一索引）。",
+  steps: [
+    {
+      slug: "package_tables",
+      impact:
+        "新增五张包安装表：install（范围+包唯一、正数 generation/revision、tombstone status）、revision（不可变版本/digest/闭形 config）、plan（actor/principal/操作/输入摘要/10 分钟过期/消费与结果）、resource link（种类互斥 CHECK，连接器复合外键指向 MT031 install 表）、change（追加回执 + 非空幂等键部分唯一）。并为 enterprise_plugin_installs 补 (tenant_id, workspace_id, id) 唯一索引（资源链接复合外键所需）。不改既有表列/策略。",
+      objects: [
+        "enterprise_package_installs",
+        "enterprise_package_revisions",
+        "enterprise_package_plans",
+        "enterprise_package_resource_links",
+        "enterprise_package_changes",
+        "enterprise_plugin_installs",
+      ],
+      statements: [
+        'CREATE TABLE "enterprise_package_installs" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"package_key" text NOT NULL,\n' +
+          '\t"current_version" text NOT NULL,\n' +
+          "\t\"status\" text DEFAULT 'enabled' NOT NULL,\n" +
+          '\t"generation" integer DEFAULT 1 NOT NULL,\n' +
+          '\t"revision" integer DEFAULT 1 NOT NULL,\n' +
+          '\t"installed_by" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"updated_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_package_installs_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_package_install_status\" CHECK (\"enterprise_package_installs\".\"status\" in ('enabled','disabled','uninstalled')),\n" +
+          '\tCONSTRAINT "enterprise_package_install_counters" CHECK ("enterprise_package_installs"."generation" > 0 and "enterprise_package_installs"."revision" > 0),\n' +
+          '\tCONSTRAINT "enterprise_package_install_package_key" CHECK (char_length("enterprise_package_installs"."package_key") between 3 and 129 and "enterprise_package_installs"."package_key" like \'%/%\')\n' +
+          ");",
+        'ALTER TABLE "enterprise_package_installs" ADD CONSTRAINT "enterprise_package_installs_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_installs" ADD CONSTRAINT "enterprise_package_installs_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_installs" ADD CONSTRAINT "enterprise_package_installs_tenant_id_installed_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","installed_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE UNIQUE INDEX "enterprise_package_install_scope_key_uq" ON "enterprise_package_installs" ("tenant_id","workspace_id","package_key");',
+        'CREATE INDEX "enterprise_package_install_workspace_idx" ON "enterprise_package_installs" ("tenant_id","workspace_id","package_key");',
+        'CREATE UNIQUE INDEX "enterprise_plugin_install_scope_id_uq" ON "enterprise_plugin_installs" ("tenant_id","workspace_id","id");',
+        'CREATE TABLE "enterprise_package_revisions" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"revision" integer NOT NULL,\n' +
+          '\t"release_version" text NOT NULL,\n' +
+          '\t"artifact_digest" text NOT NULL,\n' +
+          '\t"config" jsonb NOT NULL,\n' +
+          '\t"created_by" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_package_revisions_tenant_id_install_id_revision_pk" PRIMARY KEY("tenant_id","install_id","revision"),\n' +
+          '\tCONSTRAINT "enterprise_package_revision_positive" CHECK ("enterprise_package_revisions"."revision" > 0),\n' +
+          '\tCONSTRAINT "enterprise_package_revision_digest" CHECK ("enterprise_package_revisions"."artifact_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
+          "\tCONSTRAINT \"enterprise_package_revision_config_shape\" CHECK (jsonb_typeof(\"enterprise_package_revisions\".\"config\") = 'object' and not \"enterprise_package_revisions\".\"config\" ?| array['envelope','plaintext','secret','password','token','apiKey','api_key','secretRef','encryptedValue','encrypted_value'])\n" +
+          ");",
+        'ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revisions_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revisions_tenant_id_install_id_enterprise_package_installs_tenant_id_id_fk" FOREIGN KEY ("tenant_id","install_id") REFERENCES "public"."enterprise_package_installs"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revisions_tenant_id_created_by_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","created_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_package_revision_install_idx" ON "enterprise_package_revisions" ("tenant_id","install_id","revision");',
+        'CREATE TABLE "enterprise_package_plans" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"actor_id" text NOT NULL,\n' +
+          '\t"principal_id" text NOT NULL,\n' +
+          '\t"operation" text NOT NULL,\n' +
+          '\t"package_key" text NOT NULL,\n' +
+          '\t"version" text NOT NULL,\n' +
+          '\t"artifact_digest" text NOT NULL,\n' +
+          '\t"expected_revision" integer,\n' +
+          '\t"canonical_input" jsonb NOT NULL,\n' +
+          '\t"input_digest" text NOT NULL,\n' +
+          '\t"preview" jsonb NOT NULL,\n' +
+          '\t"expires_at" timestamp with time zone NOT NULL,\n' +
+          '\t"consumed_at" timestamp with time zone,\n' +
+          '\t"result" jsonb,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_package_plans_tenant_id_id_pk" PRIMARY KEY("tenant_id","id"),\n' +
+          "\tCONSTRAINT \"enterprise_package_plan_operation\" CHECK (\"enterprise_package_plans\".\"operation\" in ('install','upgrade','rollback')),\n" +
+          '\tCONSTRAINT "enterprise_package_plan_expected_revision" CHECK ("enterprise_package_plans"."expected_revision" is null or "enterprise_package_plans"."expected_revision" > 0),\n' +
+          '\tCONSTRAINT "enterprise_package_plan_actor_shape" CHECK (char_length("enterprise_package_plans"."actor_id") between 1 and 128 and char_length("enterprise_package_plans"."principal_id") between 1 and 128),\n' +
+          '\tCONSTRAINT "enterprise_package_plan_digests" CHECK ("enterprise_package_plans"."artifact_digest" ~ \'^[0-9a-f]{64}$\' and "enterprise_package_plans"."input_digest" ~ \'^[0-9a-f]{64}$\')\n' +
+          ");",
+        'ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plans_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plans_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plans_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id","principal_id") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE INDEX "enterprise_package_plan_expiry_idx" ON "enterprise_package_plans" ("tenant_id","expires_at");',
+        'CREATE TABLE "enterprise_package_resource_links" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"revision" integer NOT NULL,\n' +
+          '\t"resource_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"kind" text NOT NULL,\n' +
+          '\t"existing_skill_id" text,\n' +
+          '\t"connector_install_id" text,\n' +
+          '\t"expert_template_ref" text,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_package_link_pk" PRIMARY KEY("tenant_id","install_id","revision","resource_id"),\n' +
+          "\tCONSTRAINT \"enterprise_package_link_kind\" CHECK (\"enterprise_package_resource_links\".\"kind\" in ('skill','expertTemplate','managedConnector')),\n" +
+          '\tCONSTRAINT "enterprise_package_link_reference_shape" CHECK (("enterprise_package_resource_links"."kind" = \'skill\' and "enterprise_package_resource_links"."existing_skill_id" is null and "enterprise_package_resource_links"."connector_install_id" is null and "enterprise_package_resource_links"."expert_template_ref" is null) or ("enterprise_package_resource_links"."kind" = \'managedConnector\' and "enterprise_package_resource_links"."existing_skill_id" is null and "enterprise_package_resource_links"."connector_install_id" is not null and "enterprise_package_resource_links"."expert_template_ref" is null) or ("enterprise_package_resource_links"."kind" = \'expertTemplate\' and "enterprise_package_resource_links"."existing_skill_id" is null and "enterprise_package_resource_links"."connector_install_id" is null and "enterprise_package_resource_links"."expert_template_ref" is not null))\n' +
+          ");",
+        'ALTER TABLE "enterprise_package_resource_links" ADD CONSTRAINT "enterprise_package_link_tenant_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_resource_links" ADD CONSTRAINT "enterprise_package_link_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_resource_links" ADD CONSTRAINT "enterprise_package_link_revision_fk" FOREIGN KEY ("tenant_id","install_id","revision") REFERENCES "public"."enterprise_package_revisions"("tenant_id","install_id","revision") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_resource_links" ADD CONSTRAINT "enterprise_package_link_connector_fk" FOREIGN KEY ("tenant_id","workspace_id","connector_install_id") REFERENCES "public"."enterprise_plugin_installs"("tenant_id","workspace_id","id") ON DELETE restrict ON UPDATE no action;',
+        'CREATE INDEX "enterprise_package_link_revision_idx" ON "enterprise_package_resource_links" ("tenant_id","install_id","revision");',
+        'CREATE TABLE "enterprise_package_changes" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"change_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"revision" integer NOT NULL,\n' +
+          '\t"actor_id" text NOT NULL,\n' +
+          '\t"action" text NOT NULL,\n' +
+          '\t"diff" jsonb NOT NULL,\n' +
+          "\t\"idempotency_key\" text DEFAULT '' NOT NULL,\n" +
+          '\t"request_digest" text NOT NULL,\n' +
+          '\t"result_json" jsonb NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_package_changes_tenant_id_change_id_pk" PRIMARY KEY("tenant_id","change_id"),\n' +
+          "\tCONSTRAINT \"enterprise_package_change_action\" CHECK (\"enterprise_package_changes\".\"action\" in ('install','upgrade','rollback')),\n" +
+          '\tCONSTRAINT "enterprise_package_change_key" CHECK (char_length("enterprise_package_changes"."idempotency_key") <= 128 and "enterprise_package_changes"."request_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
+          "\tCONSTRAINT \"enterprise_package_change_diff_shape\" CHECK (jsonb_typeof(\"enterprise_package_changes\".\"diff\") = 'object' and not \"enterprise_package_changes\".\"diff\" ?| array['envelope','plaintext','secret','password','token','apiKey','api_key','secretRef','encryptedValue','encrypted_value'])\n" +
+          ");",
+        'ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_changes_tenant_id_enterprise_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_changes_tenant_id_workspace_id_enterprise_workspaces_tenant_id_id_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_changes_tenant_id_install_id_revision_enterprise_package_revisions_tenant_id_install_id_revision_fk" FOREIGN KEY ("tenant_id","install_id","revision") REFERENCES "public"."enterprise_package_revisions"("tenant_id","install_id","revision") ON DELETE cascade ON UPDATE no action;',
+        'CREATE UNIQUE INDEX "enterprise_package_change_idempotency_uq" ON "enterprise_package_changes" ("tenant_id","workspace_id","actor_id","idempotency_key") WHERE "idempotency_key" <> \'\';',
+        'CREATE INDEX "enterprise_package_change_install_idx" ON "enterprise_package_changes" ("tenant_id","install_id","revision");',
+      ],
+    },
+    {
+      slug: "package_rls_policies",
+      impact:
+        "五张新表的 FORCE RLS 与最小授权：data 角色只读（租户臂 + 团队臂；revision 经 install 团队存在性）；operator 角色 install/plan 可读可写（plan 仅 UPDATE 消费）、revision/link/change 追加写（INSERT+SELECT，无 UPDATE/DELETE）；directory 零授权。",
+      objects: [
+        "enterprise_package_installs",
+        "enterprise_package_revisions",
+        "enterprise_package_plans",
+        "enterprise_package_resource_links",
+        "enterprise_package_changes",
+      ],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_installs" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_package_installs" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_package_installs" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_package_install_data_read" ON "enterprise_package_installs"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_installs"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_install_operator_read" ON "enterprise_package_installs"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_install_operator_insert" ON "enterprise_package_installs"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_install_operator_update" ON "enterprise_package_installs"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_package_installs"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_package_installs" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT, UPDATE ON TABLE "enterprise_package_installs" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_revisions" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_package_revisions" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_package_revisions" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_package_revision_data_read" ON "enterprise_package_revisions"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_revisions"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND exists (select 1 from "enterprise_package_installs" i where i."tenant_id" = "enterprise_package_revisions"."tenant_id" and i."id" = "enterprise_package_revisions"."install_id" and i."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\')));',
+        'CREATE POLICY "enterprise_package_revision_operator_read" ON "enterprise_package_revisions"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_revisions"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_revision_operator_insert" ON "enterprise_package_revisions"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_revisions"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_package_revisions" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT ON TABLE "enterprise_package_revisions" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_plans" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_package_plans" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_package_plans" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_package_plan_data_read" ON "enterprise_package_plans"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_plans"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_plan_operator_read" ON "enterprise_package_plans"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_plan_operator_insert" ON "enterprise_package_plans"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_plan_operator_update" ON "enterprise_package_plans"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_package_plans"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_package_plans" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT, UPDATE ON TABLE "enterprise_package_plans" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_resource_links" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_package_resource_links" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_package_resource_links" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_package_link_data_read" ON "enterprise_package_resource_links"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_resource_links"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_resource_links"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_link_operator_read" ON "enterprise_package_resource_links"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_resource_links"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_link_operator_insert" ON "enterprise_package_resource_links"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_resource_links"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_package_resource_links" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT ON TABLE "enterprise_package_resource_links" TO ob_ent_operator;',
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_changes" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_package_changes" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_package_changes" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_package_change_data_read" ON "enterprise_package_changes"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_changes"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_changes"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_change_operator_read" ON "enterprise_package_changes"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_changes"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_change_operator_insert" ON "enterprise_package_changes"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_changes"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_package_changes" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT ON TABLE "enterprise_package_changes" TO ob_ent_operator;',
+      ],
+    },
+    {
+      slug: "package_hardening",
+      impact:
+        '加固（追加步骤，不重写已应用的 0001/0002）：删除与主键/唯一索引重复的三个索引；把 revision config、change diff 的秘密载体 CHECK 改为递归检查任意深度的键（旧 CHECK 只看顶层键，嵌套 {"nested":{"token":…}} 可通过）；为 plan 的 canonical_input 新增同样的闭形与递归秘密 CHECK。',
+      objects: [
+        "enterprise_package_installs",
+        "enterprise_package_revisions",
+        "enterprise_package_plans",
+        "enterprise_package_resource_links",
+        "enterprise_package_changes",
+      ],
+      statements: [
+        // The three indexes below duplicate a PK or UNIQUE prefix.
+        'DROP INDEX IF EXISTS "enterprise_package_install_workspace_idx";',
+        'DROP INDEX IF EXISTS "enterprise_package_revision_install_idx";',
+        'DROP INDEX IF EXISTS "enterprise_package_link_revision_idx";',
+        'ALTER TABLE "enterprise_package_revisions" DROP CONSTRAINT IF EXISTS "enterprise_package_revision_config_shape";',
+        `ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revision_config_shape" CHECK (jsonb_typeof("enterprise_package_revisions"."config") = 'object' and not jsonb_path_exists("enterprise_package_revisions"."config", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$")'));`,
+        'ALTER TABLE "enterprise_package_plans" DROP CONSTRAINT IF EXISTS "enterprise_package_plan_input_shape";',
+        `ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plan_input_shape" CHECK (jsonb_typeof("enterprise_package_plans"."canonical_input") = 'object' and not jsonb_path_exists("enterprise_package_plans"."canonical_input", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$")'));`,
+        'ALTER TABLE "enterprise_package_changes" DROP CONSTRAINT IF EXISTS "enterprise_package_change_diff_shape";',
+        `ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_change_diff_shape" CHECK (jsonb_typeof("enterprise_package_changes"."diff") = 'object' and not jsonb_path_exists("enterprise_package_changes"."diff", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$")'));`,
+      ],
+    },
+    {
+      slug: "package_hardening_case_insensitive",
+      impact:
+        "R5-4（OCR round5，追加步骤，不改已入账步骤）：package_hardening 的三个递归秘密载体 CHECK（revision config / plans canonical_input / changes diff）的 like_regex 补 flag \"i\"——键名大小写变体（\"Token\"/\"API_KEY\"/\"SecretRef\"）此前可穿透 DB 级防线，与 PKG04 强化函数（package_expert_create_function_hardening）属同一漏洞家族。约束名不变，仅 DROP+重建；CHECK 只约束新写入，既有行不受影响。",
+      objects: [
+        "enterprise_package_revisions",
+        "enterprise_package_plans",
+        "enterprise_package_changes",
+      ],
+      statements: [
+        'ALTER TABLE "enterprise_package_revisions" DROP CONSTRAINT IF EXISTS "enterprise_package_revision_config_shape";',
+        `ALTER TABLE "enterprise_package_revisions" ADD CONSTRAINT "enterprise_package_revision_config_shape" CHECK (jsonb_typeof("enterprise_package_revisions"."config") = 'object' and not jsonb_path_exists("enterprise_package_revisions"."config", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$" flag "i")'));`,
+        'ALTER TABLE "enterprise_package_plans" DROP CONSTRAINT IF EXISTS "enterprise_package_plan_input_shape";',
+        `ALTER TABLE "enterprise_package_plans" ADD CONSTRAINT "enterprise_package_plan_input_shape" CHECK (jsonb_typeof("enterprise_package_plans"."canonical_input") = 'object' and not jsonb_path_exists("enterprise_package_plans"."canonical_input", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$" flag "i")'));`,
+        'ALTER TABLE "enterprise_package_changes" DROP CONSTRAINT IF EXISTS "enterprise_package_change_diff_shape";',
+        `ALTER TABLE "enterprise_package_changes" ADD CONSTRAINT "enterprise_package_change_diff_shape" CHECK (jsonb_typeof("enterprise_package_changes"."diff") = 'object' and not jsonb_path_exists("enterprise_package_changes"."diff", '$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value)$" flag "i")'));`,
+      ],
+    },
+  ],
+};
+
+const PACKAGE_GRANT_TASK: TaskMigrationSpec = {
+  id: "PKG03",
+  description:
+    "PKG03（Issue #462）：新增插件包 Bot 授权表 enterprise_package_grants（expand-only，最小 RLS 与授权；为包安装表补范围唯一索引；changes 动作 CHECK 扩到 grant/revoke）。",
+  steps: [
+    {
+      slug: "package_grant_table",
+      impact:
+        "新增 enterprise_package_grants 表：主键 (tenant_id, install_id, generation, bot_id, resource_id)；resource_kind/tool_ref 两面 CHECK（skill 行 tool_ref 固定空串，connectorTool 行必须非空）；generation 正数 CHECK；复合外键钉 tenants/workspaces/包安装表/MT016 Bot 归属/公司成员关系；活跃授权 (tenant, install, bot, resource, tool_ref) 部分唯一。并为 enterprise_package_installs 补 (tenant_id, workspace_id, id) 唯一索引（授权复合外键所需）。不改既有表列/策略。",
+      objects: ["enterprise_package_grants", "enterprise_package_installs"],
+      statements: [
+        'CREATE UNIQUE INDEX "enterprise_package_install_scope_id_uq" ON "enterprise_package_installs" ("tenant_id","workspace_id","id");',
+        'CREATE TABLE "enterprise_package_grants" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"generation" integer NOT NULL,\n' +
+          '\t"bot_id" text NOT NULL,\n' +
+          '\t"resource_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          "\t\"resource_kind\" text DEFAULT 'skill' NOT NULL,\n" +
+          "\t\"tool_ref\" text DEFAULT '' NOT NULL,\n" +
+          '\t"granted_by" text NOT NULL,\n' +
+          '\t"granted_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\t"revoked_at" timestamp with time zone,\n' +
+          '\tCONSTRAINT "enterprise_package_grant_pk" PRIMARY KEY("tenant_id","install_id","generation","bot_id","resource_id"),\n' +
+          '\tCONSTRAINT "enterprise_package_grant_generation" CHECK ("enterprise_package_grants"."generation" > 0),\n' +
+          '\tCONSTRAINT "enterprise_package_grant_tool_ref" CHECK (("enterprise_package_grants"."resource_kind" = \'skill\' and "enterprise_package_grants"."tool_ref" = \'\') or ("enterprise_package_grants"."resource_kind" = \'connectorTool\' and "enterprise_package_grants"."tool_ref" <> \'\')),\n' +
+          '\tCONSTRAINT "enterprise_package_grant_ids" CHECK (char_length("enterprise_package_grants"."resource_id") between 1 and 64 and char_length("enterprise_package_grants"."bot_id") between 1 and 256)\n' +
+          ");",
+        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_tenant_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_install_fk" FOREIGN KEY ("tenant_id","workspace_id","install_id") REFERENCES "public"."enterprise_package_installs"("tenant_id","workspace_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_bot_fk" FOREIGN KEY ("tenant_id","bot_id") REFERENCES "public"."enterprise_bot_ownership"("tenant_id","agent_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_granted_by_fk" FOREIGN KEY ("tenant_id","granted_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+        'CREATE UNIQUE INDEX "enterprise_package_grant_active_uq" ON "enterprise_package_grants" ("tenant_id","install_id","bot_id","resource_id","tool_ref") WHERE "revoked_at" is null;',
+      ],
+    },
+    {
+      slug: "package_grant_rls",
+      impact:
+        "enterprise_package_grants 的 FORCE RLS 与最小授权：data 只读（租户臂 + 团队臂）；operator 租户臂读 + INSERT + UPDATE（撤销写 revoked_at 所需，无 DELETE）；directory 零授权。",
+      objects: ["enterprise_package_grants"],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_grants" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_package_grants" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_package_grants" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_package_grant_data_read" ON "enterprise_package_grants"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_grants"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_grant_operator_read" ON "enterprise_package_grants"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_grant_operator_insert" ON "enterprise_package_grants"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_grant_operator_update" ON "enterprise_package_grants"\n  FOR UPDATE TO ob_ent_operator\n  USING ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'))\n  WITH CHECK ("enterprise_package_grants"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_package_grants" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT, UPDATE ON TABLE "enterprise_package_grants" TO ob_ent_operator;',
+      ],
+    },
+    {
+      slug: "package_changes_grant_actions",
+      impact:
+        "把 enterprise_package_changes 的动作 CHECK 从 ('install','upgrade','rollback') 扩到含 'grant'/'revoke'（授权与撤权回执与领域变更同事务追加；约束只放宽不收紧，expand-only）。",
+      objects: ["enterprise_package_changes"],
+      statements: [
+        'ALTER TABLE "enterprise_package_changes" DROP CONSTRAINT "enterprise_package_change_action";',
+        "ALTER TABLE \"enterprise_package_changes\" ADD CONSTRAINT \"enterprise_package_change_action\" CHECK (\"enterprise_package_changes\".\"action\" in ('install','upgrade','rollback','grant','revoke'));",
+      ],
+    },
+    {
+      slug: "package_run_pin_table",
+      impact:
+        "slice B：新增 enterprise_run_package_pins（Run 准入经包运行时模块写入的钉扎表）。主键 (tenant_id, run_id, attempt_generation, install_id)；attempt_generation/revision/grant_revision 正数 CHECK；release_digest 64 位十六进制 CHECK；allowed_resource_ids jsonb 数组（≤256）CHECK；复合外键钉 tenants/workspaces/enterprise_runs/包安装表（复用 PKG03 第 1 步的范围唯一索引）。不可变行：无 UPDATE/DELETE 通道。",
+      objects: ["enterprise_run_package_pins", "enterprise_runs"],
+      statements: [
+        'CREATE TABLE "enterprise_run_package_pins" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"run_id" uuid NOT NULL,\n' +
+          '\t"attempt_generation" integer NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"revision" integer NOT NULL,\n' +
+          '\t"release_digest" text NOT NULL,\n' +
+          '\t"grant_revision" integer NOT NULL,\n' +
+          '\t"allowed_resource_ids" jsonb NOT NULL,\n' +
+          '\t"pinned_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_run_package_pin_pk" PRIMARY KEY("tenant_id","run_id","attempt_generation","install_id"),\n' +
+          '\tCONSTRAINT "enterprise_run_package_pin_generation" CHECK ("enterprise_run_package_pins"."attempt_generation" > 0),\n' +
+          '\tCONSTRAINT "enterprise_run_package_pin_revision" CHECK ("enterprise_run_package_pins"."revision" > 0 and "enterprise_run_package_pins"."grant_revision" > 0),\n' +
+          '\tCONSTRAINT "enterprise_run_package_pin_digest" CHECK ("enterprise_run_package_pins"."release_digest" ~ \'^[0-9a-f]{64}$\'),\n' +
+          '\tCONSTRAINT "enterprise_run_package_pin_allowed_shape" CHECK (jsonb_typeof("enterprise_run_package_pins"."allowed_resource_ids") = \'array\' and jsonb_array_length("enterprise_run_package_pins"."allowed_resource_ids") <= 256)\n' +
+          ");",
+        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_tenant_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_run_fk" FOREIGN KEY ("tenant_id","run_id") REFERENCES "public"."enterprise_runs"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_install_fk" FOREIGN KEY ("tenant_id","workspace_id","install_id") REFERENCES "public"."enterprise_package_installs"("tenant_id","workspace_id","id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "package_run_pin_rls",
+      impact:
+        "enterprise_run_package_pins 的 FORCE RLS 与最小授权：data 读租户+团队臂 + 最小 INSERT（租户+团队臂——Run 写事务与 pin 同事务提交，规范 §6/§9）；operator 仅读+INSERT（租户臂，装配与测试通道）；无 UPDATE/DELETE；directory 零授权。",
+      objects: ["enterprise_run_package_pins"],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_run_package_pins" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_run_package_pins" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_run_package_pins" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_run_package_pin_data_read" ON "enterprise_run_package_pins"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_run_package_pins"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_run_package_pins"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_run_package_pin_data_insert" ON "enterprise_run_package_pins"\n  FOR INSERT TO ob_ent_data\n  WITH CHECK ("enterprise_run_package_pins"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_run_package_pins"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_run_package_pin_operator_read" ON "enterprise_run_package_pins"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_run_package_pins"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_run_package_pin_operator_insert" ON "enterprise_run_package_pins"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_run_package_pins"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_run_package_pins" TO ob_ent_data;',
+        'GRANT SELECT, INSERT ON TABLE "enterprise_run_package_pins" TO ob_ent_operator;',
+      ],
+    },
+    {
+      slug: "package_grant_pk_tool_ref",
+      impact:
+        "R4-2（OCR round4，追加步骤）：把 enterprise_package_grants 的主键从五列 (tenant_id, install_id, generation, bot_id, resource_id) 重建为含 tool_ref 的六列，与活跃唯一索引 (tenant, install, bot, resource, tool_ref) 及其 one-connector-resource-grants-per-tool 语义一致。既有行 tool_ref 全为空串（slice A 只写 skill 行），旧主键唯一 ⇒ 新主键唯一：对存量等价，唯一性只放宽（expand-compatible）。",
+      objects: ["enterprise_package_grants"],
+      statements: [
+        'ALTER TABLE "enterprise_package_grants" DROP CONSTRAINT "enterprise_package_grant_pk";',
+        'ALTER TABLE "enterprise_package_grants" ADD CONSTRAINT "enterprise_package_grant_pk" PRIMARY KEY("tenant_id","install_id","generation","bot_id","resource_id","tool_ref");',
+      ],
+    },
+  ],
+};
+
+const PACKAGE_EXPERT_TASK: TaskMigrationSpec = {
+  id: "PKG04",
+  description:
+    "PKG04（Issue #463）：新增插件包专家来源表 enterprise_package_experts 与受限创建函数 openbot_create_package_expert（expand-only：新表+最小 RLS、changes 动作 CHECK 追加 'createExpert'、受控函数授权）。",
+  steps: [
+    {
+      slug: "package_expert_table",
+      impact:
+        "新增 enterprise_package_experts 表：主键 (tenant_id, agent_id)；revision 正数与列长 CHECK；复合外键钉 tenants/workspaces/包安装表/MT016 Bot 归属/公司成员关系。不修改既有表列/策略。",
+      objects: ["enterprise_package_experts"],
+      statements: [
+        'CREATE TABLE "enterprise_package_experts" (\n' +
+          '\t"tenant_id" text NOT NULL,\n' +
+          '\t"workspace_id" text NOT NULL,\n' +
+          '\t"agent_id" text NOT NULL,\n' +
+          '\t"install_id" text NOT NULL,\n' +
+          '\t"revision" integer NOT NULL,\n' +
+          '\t"resource_id" text NOT NULL,\n' +
+          '\t"expert_template_ref" text NOT NULL,\n' +
+          '\t"created_by" text NOT NULL,\n' +
+          '\t"created_at" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+          '\tCONSTRAINT "enterprise_package_expert_pk" PRIMARY KEY("tenant_id","agent_id"),\n' +
+          '\tCONSTRAINT "enterprise_package_expert_revision" CHECK ("enterprise_package_experts"."revision" > 0),\n' +
+          '\tCONSTRAINT "enterprise_package_expert_ids" CHECK (char_length("enterprise_package_experts"."agent_id") between 1 and 256 and char_length("enterprise_package_experts"."resource_id") between 1 and 64 and char_length("enterprise_package_experts"."expert_template_ref") between 1 and 256)\n' +
+          ");",
+        'ALTER TABLE "enterprise_package_experts" ADD CONSTRAINT "enterprise_package_expert_tenant_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."enterprise_tenants"("id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_experts" ADD CONSTRAINT "enterprise_package_expert_workspace_fk" FOREIGN KEY ("tenant_id","workspace_id") REFERENCES "public"."enterprise_workspaces"("tenant_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_experts" ADD CONSTRAINT "enterprise_package_expert_install_fk" FOREIGN KEY ("tenant_id","workspace_id","install_id") REFERENCES "public"."enterprise_package_installs"("tenant_id","workspace_id","id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_experts" ADD CONSTRAINT "enterprise_package_expert_bot_fk" FOREIGN KEY ("tenant_id","agent_id") REFERENCES "public"."enterprise_bot_ownership"("tenant_id","agent_id") ON DELETE cascade ON UPDATE no action;',
+        'ALTER TABLE "enterprise_package_experts" ADD CONSTRAINT "enterprise_package_expert_created_by_fk" FOREIGN KEY ("tenant_id","created_by") REFERENCES "public"."enterprise_memberships"("tenant_id","principal_id") ON DELETE cascade ON UPDATE no action;',
+      ],
+    },
+    {
+      slug: "package_expert_rls",
+      impact:
+        "enterprise_package_experts 的 FORCE RLS 与最小授权：data 只读（租户+团队臂）；operator 租户臂读 + INSERT；无 UPDATE/DELETE（来源行不可变）；directory 零授权。",
+      objects: ["enterprise_package_experts"],
+      statements: [
+        'REVOKE ALL PRIVILEGES ON TABLE "enterprise_package_experts" FROM PUBLIC, ob_ent_directory, ob_ent_data, ob_ent_operator;',
+        'ALTER TABLE "enterprise_package_experts" ENABLE ROW LEVEL SECURITY;',
+        'ALTER TABLE "enterprise_package_experts" FORCE ROW LEVEL SECURITY;',
+        'CREATE POLICY "enterprise_package_expert_data_read" ON "enterprise_package_experts"\n  FOR SELECT TO ob_ent_data\n  USING ("enterprise_package_experts"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\') AND "enterprise_package_experts"."workspace_id" = nullif(current_setting(\'app.workspace_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_expert_operator_read" ON "enterprise_package_experts"\n  FOR SELECT TO ob_ent_operator\n  USING ("enterprise_package_experts"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'CREATE POLICY "enterprise_package_expert_operator_insert" ON "enterprise_package_experts"\n  FOR INSERT TO ob_ent_operator\n  WITH CHECK ("enterprise_package_experts"."tenant_id" = nullif(current_setting(\'app.tenant_id\', true), \'\'));',
+        'GRANT SELECT ON TABLE "enterprise_package_experts" TO ob_ent_data, ob_ent_operator;',
+        'GRANT INSERT ON TABLE "enterprise_package_experts" TO ob_ent_operator;',
+      ],
+    },
+    {
+      slug: "package_changes_create_expert_action",
+      impact:
+        "把 enterprise_package_changes 的动作 CHECK 从 ('install','upgrade','rollback','grant','revoke') 扩到含 'createExpert'（专家创建回执与领域变更同事务追加；幂等复用既有 (tenant, workspace, actor, key) 唯一；约束只放宽不收紧，expand-only）。",
+      objects: ["enterprise_package_changes"],
+      statements: [
+        'ALTER TABLE "enterprise_package_changes" DROP CONSTRAINT "enterprise_package_change_action";',
+        "ALTER TABLE \"enterprise_package_changes\" ADD CONSTRAINT \"enterprise_package_change_action\" CHECK (\"enterprise_package_changes\".\"action\" in ('install','upgrade','rollback','grant','revoke','createExpert'));",
+      ],
+    },
+    {
+      slug: "package_expert_create_function",
+      impact:
+        "受限创建函数 openbot_create_package_expert：plpgsql、固定 search_path=pg_catalog、全限定表名、无动态 SQL；重验 app.tenant_id/app.workspace_id 与调用参数一致、强制 default_config 为携带 agentType='built_in' 的对象并拒绝 endpoint/auth 类键后才 INSERT enterprise_bot_ownership（内置 active/revision=1/acl_epoch=1）。PUBLIC 零 EXECUTE，仅 ob_ent_operator 获 EXECUTE；不授予任何额外表权限（INVOKER，RLS 照常生效）。",
+      objects: ["openbot_create_package_expert"],
+      statements: [
+        'CREATE FUNCTION "public"."openbot_create_package_expert"("p_tenant_id" text, "p_agent_id" text, "p_workspace_id" text, "p_owner_principal_id" text, "p_display_name" text, "p_default_config" jsonb) RETURNS text\n' +
+          "LANGUAGE plpgsql\n" +
+          "SET search_path = pg_catalog\n" +
+          "AS $function$\n" +
+          "BEGIN\n" +
+          '  IF "p_tenant_id" IS NULL OR "p_tenant_id" = \'\' OR char_length("p_tenant_id") > 256\n' +
+          '     OR "p_agent_id" IS NULL OR "p_agent_id" = \'\' OR char_length("p_agent_id") > 256\n' +
+          '     OR "p_workspace_id" IS NULL OR "p_workspace_id" = \'\' OR char_length("p_workspace_id") > 256\n' +
+          '     OR "p_owner_principal_id" IS NULL OR "p_owner_principal_id" = \'\' OR char_length("p_owner_principal_id") > 256\n' +
+          '     OR "p_display_name" IS NULL OR char_length("p_display_name") NOT BETWEEN 1 AND 256 THEN\n' +
+          "    RAISE EXCEPTION 'PKG_EXPERT_INPUT_INVALID';\n" +
+          "  END IF;\n" +
+          "  IF \"p_tenant_id\" IS DISTINCT FROM nullif(current_setting('app.tenant_id', true), '')\n" +
+          "     OR \"p_workspace_id\" IS DISTINCT FROM nullif(current_setting('app.workspace_id', true), '') THEN\n" +
+          "    RAISE EXCEPTION 'PKG_EXPERT_CONTEXT_MISMATCH';\n" +
+          "  END IF;\n" +
+          '  IF "p_default_config" IS NULL OR jsonb_typeof("p_default_config") <> \'object\' THEN\n' +
+          "    RAISE EXCEPTION 'PKG_EXPERT_CONFIG_INVALID';\n" +
+          "  END IF;\n" +
+          "  IF \"p_default_config\" ?| array['endpoint','auth','authorization','apiKey','api_key','remoteAgentId','bearer']\n" +
+          "     OR \"p_default_config\" ->> 'agentType' IS DISTINCT FROM 'built_in' THEN\n" +
+          "    RAISE EXCEPTION 'PKG_EXPERT_REMOTE_FORBIDDEN';\n" +
+          "  END IF;\n" +
+          '  INSERT INTO "public"."enterprise_bot_ownership"\n' +
+          '    ("tenant_id", "agent_id", "workspace_id", "owner_principal_id", "display_name", "default_config", "status", "revision", "acl_epoch")\n' +
+          "  VALUES\n" +
+          '    ("p_tenant_id", "p_agent_id", "p_workspace_id", "p_owner_principal_id", "p_display_name", "p_default_config", \'active\', 1, 1);\n' +
+          '  RETURN "p_agent_id";\n' +
+          "END\n" +
+          "$function$;",
+        'REVOKE ALL ON FUNCTION "public"."openbot_create_package_expert"(text, text, text, text, text, jsonb) FROM PUBLIC;',
+        'GRANT EXECUTE ON FUNCTION "public"."openbot_create_package_expert"(text, text, text, text, text, jsonb) TO ob_ent_operator;',
+      ],
+    },
+    {
+      slug: "package_expert_create_function_hardening",
+      impact:
+        "R4-4（OCR round4，追加步骤，CREATE OR REPLACE 不改已入账步骤）：openbot_create_package_expert 的敏感键防线从顶层 ?|（大小写敏感）强化为递归 + 键名大小写不敏感扫描（对齐 package_hardening 的 $.** keyvalue 递归风格，flag \"i\"）；拒绝键集合并入原 endpoint/auth 列表与秘密载体列表。agentType='built_in' 判定与函数签名、search_path、上下文重验、RLS/授权全部保持不变（OR REPLACE 保留既有 ACL）。",
+      objects: ["openbot_create_package_expert"],
+      statements: [
+        'CREATE OR REPLACE FUNCTION "public"."openbot_create_package_expert"("p_tenant_id" text, "p_agent_id" text, "p_workspace_id" text, "p_owner_principal_id" text, "p_display_name" text, "p_default_config" jsonb) RETURNS text\n' +
+          "LANGUAGE plpgsql\n" +
+          "SET search_path = pg_catalog\n" +
+          "AS $function$\n" +
+          "BEGIN\n" +
+          '  IF "p_tenant_id" IS NULL OR "p_tenant_id" = \'\' OR char_length("p_tenant_id") > 256\n' +
+          '     OR "p_agent_id" IS NULL OR "p_agent_id" = \'\' OR char_length("p_agent_id") > 256\n' +
+          '     OR "p_workspace_id" IS NULL OR "p_workspace_id" = \'\' OR char_length("p_workspace_id") > 256\n' +
+          '     OR "p_owner_principal_id" IS NULL OR "p_owner_principal_id" = \'\' OR char_length("p_owner_principal_id") > 256\n' +
+          '     OR "p_display_name" IS NULL OR char_length("p_display_name") NOT BETWEEN 1 AND 256 THEN\n' +
+          "    RAISE EXCEPTION 'PKG_EXPERT_INPUT_INVALID';\n" +
+          "  END IF;\n" +
+          "  IF \"p_tenant_id\" IS DISTINCT FROM nullif(current_setting('app.tenant_id', true), '')\n" +
+          "     OR \"p_workspace_id\" IS DISTINCT FROM nullif(current_setting('app.workspace_id', true), '') THEN\n" +
+          "    RAISE EXCEPTION 'PKG_EXPERT_CONTEXT_MISMATCH';\n" +
+          "  END IF;\n" +
+          '  IF "p_default_config" IS NULL OR jsonb_typeof("p_default_config") <> \'object\' THEN\n' +
+          "    RAISE EXCEPTION 'PKG_EXPERT_CONFIG_INVALID';\n" +
+          "  END IF;\n" +
+          "  IF jsonb_path_exists(\n" +
+          '       "p_default_config",\n' +
+          '       \'$.** ? (@.type() == "object").keyvalue() ? (@.key like_regex "^(envelope|plaintext|secret|password|token|apiKey|api_key|secretRef|encryptedValue|encrypted_value|endpoint|auth|authorization|remoteAgentId|bearer)$" flag "i")\'\n' +
+          "     )\n" +
+          "     OR \"p_default_config\" ->> 'agentType' IS DISTINCT FROM 'built_in' THEN\n" +
+          "    RAISE EXCEPTION 'PKG_EXPERT_REMOTE_FORBIDDEN';\n" +
+          "  END IF;\n" +
+          '  INSERT INTO "public"."enterprise_bot_ownership"\n' +
+          '    ("tenant_id", "agent_id", "workspace_id", "owner_principal_id", "display_name", "default_config", "status", "revision", "acl_epoch")\n' +
+          "  VALUES\n" +
+          '    ("p_tenant_id", "p_agent_id", "p_workspace_id", "p_owner_principal_id", "p_display_name", "p_default_config", \'active\', 1, 1);\n' +
+          '  RETURN "p_agent_id";\n' +
+          "END\n" +
+          "$function$;",
+      ],
+    },
+  ],
+};
+
 /**
  * MT042（Issue #85）：平台扫描作用域重建。expand-only——为 MT041 的
  * job_ownership 表追加一条 ob_ent_operator SELECT 策略臂：仅当事务本地上下文

@@ -68,9 +68,7 @@ import {
   createEnterpriseGatewayPriceSnapshotStore,
   type GatewayPriceSnapshotStore,
 } from "./price-snapshot";
-import { type ModelRef, modelRefKey } from "./catalog";
 import { summarizeCapabilityAvailability } from "./capability-availability";
-import { enterpriseControls } from "../admin/controls";
 import { speechTailAvailabilityView } from "../billing/speech-tail-availability";
 
 /** The services the route asks; the real mount resolves the gateway ones lazily per request. */

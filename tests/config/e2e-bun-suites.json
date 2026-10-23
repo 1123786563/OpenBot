@@ -264,7 +264,6 @@
     "server/tests/approvals-store.integration.test.ts",
     "server/tests/async-cancel-semantics.integration.test.ts",
     "server/tests/async-job-identity.integration.test.ts",
-    "server/tests/async-jobs-view.test.ts",
     "server/tests/async-lost-jobid.integration.test.ts",
     "server/tests/async-settle-once.integration.test.ts"
    ]
@@ -1310,7 +1309,6 @@
   "server/tests/approvals-store.integration.test.ts",
   "server/tests/async-cancel-semantics.integration.test.ts",
   "server/tests/async-job-identity.integration.test.ts",
-  "server/tests/async-jobs-view.test.ts",
   "server/tests/async-lost-jobid.integration.test.ts",
   "server/tests/async-settle-once.integration.test.ts",
   "server/tests/async-status-authz.test.ts",

@@ -22,7 +22,7 @@ import {
   type SpeechTailUnavailableReason,
   type SpeechTailVerdict,
 } from "./speech-tail-availability";
-import type { PriceDimension, PriceSnapshotDims } from "../gateway/price-snapshot";
+import { speechTierPriceTableFromSnapshot } from "./speech-pricing";
 
 /*
  * The audio path admission gate (Bifrost 14.4, #313): the door an audio request lands on
