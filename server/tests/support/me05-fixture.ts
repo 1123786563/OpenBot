@@ -19,7 +19,7 @@ import {
  * suspended execution touches —
  *
  *  1. the OpenBot continuation + receipt tables, created by applying the REAL
- *     drizzle migration `0207_mastra_execution_continuations.sql` (so the
+ *     drizzle migration `0208_mastra_execution_continuations.sql` (so the
  *     migration itself is what the tests exercise), granted to a restricted
  *     runtime login role, and
  *  2. the Mastra PostgresStore the durable toolCallStep persists suspension
@@ -63,7 +63,7 @@ export function createMe05Database(): Promise<Me05Database> {
           "..",
           "..",
           "drizzle",
-          "0207_mastra_execution_continuations.sql",
+          "0208_mastra_execution_continuations.sql",
         ),
         "utf8",
       );
