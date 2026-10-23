@@ -32,6 +32,15 @@ Legend: `pending` | `in_progress` | `implemented` | `verified` | `blocked`.
 | ME16 | 488 | ME15 | backend + frontend | old path removal, final audit | **verified (FINAL review APPROVED_WITH_FINDINGS 6/6 MET; doc-grade fix controller-applied §9; chat wiring + participation + F2/F3/F4/F5 + A01-A20 all reviewer-verified)** | me16/{report,snapshot}/ |
 
 ## Log
+### 2026-10-23T11:xxZ — MERGED TO MAIN (user order): all 16 tickets on main; two merge collisions found+fixed; final main verification green
+
+- User ordered "16 张子 Issue 实现 全部合并到 main". Discovery: the user's own 3rd chore(sync) c818c310ac + merge 638960ff19 had already landed ME11-ME16 on main; my final ledger commit 8955869fd7 entered via the next parallel merge window ("Already up to date").
+- Main-tip verification (detached worktree /tmp/main-verify @ main) exposed TWO REAL MERGE COLLISIONS with parallel waves, both fixed by controller with commits merged into main:
+  1. **Drizzle number collision (the reviews' F2 warning materialized)**: parallel wave took 0207_async_cancel_semantics with the IDENTICAL when-value (both used "prev+1000"); the merge dropped our journal entry — mastra_execution_continuations NEVER CREATED on main (every continuation suite red). Fix commit be604098cd: renumber to 0208, journal idx 208 appended, fixture ref updated. Verified: fresh-DB migrate creates both tables.
+  2. **Toolkit-extraction wave missed the mastra test surface**: HeadlessToolSuspension/GrantedTool/history-sanitize/run-turn moved to @openbot/toolkit/*; 12+ test files + computer-scope still imported the old paths (REFUSAL_MARKER & createHeadlessComputerTools stay in their origin modules); toolkit createTurnRunner gained a REQUIRED admission param — 2 unit assemblies updated. Fix commit fbe4a25e68 (merge 6abb02c13b).
+- Final main-tip verification: **mastra wave 402 pass / 0 fail / 1851 expects across 34 files; mastra-scope typecheck 0 errors**; all governance symbols present; journal ends 0208_mastra_execution_continuations. Remaining 94 server typecheck errors on main are OUTSIDE migration scope (billing/hindsight/gateway/multitenancy — parallel waves' own debt, attributed by file).
+- main tip after merges: 6abb02c13b (local; NOT pushed — push not authorized).
+
 ### 2026-10-23T10:2xZ — FINAL STATE: all 16 tickets verified; final-OCR attempt environment-blocked
 
 - Attempted the user-ruled final one-time OCR over the delivery scope: the ocr CLI now fails at startup — `no valid LLM endpoint configured; one of OCR_LLM_URL/OCR_LLM_TOKEN/OCR_LLM_MODEL, ~/.opencodereview/config.json, or ANTHROPIC_* must be set` (its previously-working endpoint config is gone from this environment). Recorded honestly; NOT faked. The obligation attaches to the final-commit moment (user's authorization); when committing, either reconfigure the endpoint and run once, or the user waives it as they did for intermediate rounds.
