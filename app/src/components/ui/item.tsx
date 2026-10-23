@@ -64,7 +64,10 @@ const EVENT_PROP = /^on[A-Z]/;
  * keeps the contract visible: the element's props win, classes and styles are combined, and two
  * handlers on the same event both run — the element's first, then Item's.
  */
-function mergeItemProps(resolved: PropsRecord, element: PropsRecord): PropsRecord {
+function mergeItemProps(
+  resolved: PropsRecord,
+  element: PropsRecord,
+): PropsRecord {
   const merged: PropsRecord = { ...resolved, ...element };
   for (const key of new Set([
     ...Object.keys(resolved),
@@ -73,11 +76,14 @@ function mergeItemProps(resolved: PropsRecord, element: PropsRecord): PropsRecor
     const ours = resolved[key];
     const theirs = element[key];
     if (key === "className") {
-      merged[key] = cn(theirs as string | undefined, ours as string | undefined);
+      merged[key] = cn(
+        ours as string | undefined,
+        theirs as string | undefined,
+      );
     } else if (key === "style") {
       merged[key] = {
-        ...(theirs as React.CSSProperties | undefined),
         ...(ours as React.CSSProperties | undefined),
+        ...(theirs as React.CSSProperties | undefined),
       };
     } else if (
       EVENT_PROP.test(key) &&

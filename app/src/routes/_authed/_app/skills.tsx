@@ -118,12 +118,21 @@ function SkillsPage() {
       detail={
         showCreate ? (
           <NewSkill
+            key="new"
             draftDirty={currentDraft?.dirty}
             draftValues={currentDraft?.values}
             onDraftChange={saveDraft}
           />
         ) : editingSlug ? (
           <EditSkill
+            /*
+             * Keyed by the target so a direct switch (`edit:alpha → edit:beta`, panel never
+             * closing) remounts the form: `useForm` reads `defaultValues` once at mount, so a
+             * reused instance would keep alpha's typed values — and submit them under beta's
+             * slug. The route-level draft is keyed per target already; this keys the instance
+             * that outlives a navigation the same way.
+             */
+            key={editingSlug}
             draftDirty={currentDraft?.dirty}
             draftValues={currentDraft?.values}
             onDraftChange={saveDraft}

@@ -74,11 +74,21 @@ test("routine history and delete are available from the secondary actions menu",
     }),
   ).toBeTruthy();
   const trigger = view.getByRole("button", { name: "More actions" });
+  expect(trigger.className).toContain("focus-visible:outline-2");
+  expect(trigger.className).toContain("pointer-coarse:min-h-11");
+  expect(trigger.querySelector("svg")).toBeTruthy();
   await user.click(trigger);
-  await user.click(await view.findByRole("menuitem", { name: "History" }));
+  const historyItem = await view.findByRole("menuitem", {
+    name: "Run history for the routine scheduled Every day",
+  });
+  await user.click(historyItem);
   await waitFor(() => expect(view.getByText("No runs yet.")).toBeTruthy());
   await user.click(trigger);
-  await user.click(await view.findByRole("menuitem", { name: "Delete" }));
+  const deleteItem = await view.findByRole("menuitem", {
+    name: "Delete the routine scheduled Every day",
+  });
+  expect(deleteItem.getAttribute("data-variant")).toBe("destructive");
+  await user.click(deleteItem);
   expect(
     await view.findByRole("dialog", { name: 'Delete "Every day"?' }),
   ).toBeTruthy();

@@ -2,11 +2,10 @@ import { Switch as SwitchPrimitive } from "@heroui/react";
 import {
   type ComponentPropsWithRef,
   type ReactNode,
+  useCallback,
   useEffect,
   useRef,
 } from "react";
-
-import { cn } from "@/lib/utils";
 
 type SwitchPrimitiveProps = ComponentPropsWithRef<typeof SwitchPrimitive>;
 
@@ -34,13 +33,13 @@ export type SwitchProps = Omit<
 };
 
 /**
- * The app's switch: a 32×18.4 track that fills brand teal when ON, with a light thumb.
+ * The app's switch, on HeroUI's default visuals as themed by the `--ob-*` variables in
+ * `styles/tokens.css`: the app layer adds no track-size or on-colour override of its own. An
+ * earlier comment pointed at an `.ob-switch` rule in `styles/heroui-theme.css` that never
+ * existed, so the claim was deleted rather than styling invented for it.
  *
  * Same construction as `Checkbox`: the Control must sit inside HeroUI's clickable `Content`
- * label, or the track is a picture of a switch rather than a switch. The visual dimensions and
- * the teal-on state are restored in `styles/heroui-theme.css` under `.ob-switch`, because
- * WorkBuddy's track is smaller than HeroUI's and its ON colour is the brand, not the action
- * black (`--accent`).
+ * label, or the track is a picture of a switch rather than a switch.
  *
  * `id` is written to the hidden input so the "Hybrid search" row's `<Label htmlFor>` keeps
  * toggling the control; React Aria strips `id` from the field root on purpose.
@@ -76,40 +75,55 @@ function Switch({
     element.toggleAttribute("data-disabled", off);
   }, [selected, off]);
 
+  /*
+   * A stable ref callback, not an inline one: React re-runs a changed ref with `null` and then the
+   * element on every render, and this callback also registers the uncontrolled-mirror change
+   * listener — an inline version stacked one more listener onto the same hidden input per render.
+   */
+  const connectInput = useCallback(
+    (element: HTMLInputElement | null) => {
+      hiddenInput.current = element;
+      if (element && id) {
+        element.id = id;
+      }
+      /*
+       * React Aria names a switch from its visible label. A caller that supplies `aria-label`
+       * and no children (the update-routing rows) expects that name on the control itself.
+       */
+      if (element && ariaLabel) {
+        element.setAttribute("aria-label", ariaLabel);
+      }
+      if (typeof inputRef === "function") inputRef(element);
+      else if (inputRef) inputRef.current = element;
+      /*
+       * The mirror effect runs when PROPS move. An uncontrolled switch (`defaultChecked`, no
+       * `checked`) changes state without a prop, so its `aria-checked`/`data-checked` would go
+       * stale after the first click; the input's own change event is the one signal that fires
+       * there too. (H14, closing the H02 review's uncontrolled-mirror gap.)
+       */
+      if (element) {
+        element.addEventListener("change", () => {
+          element.setAttribute("aria-checked", String(element.checked));
+          element.toggleAttribute("data-checked", element.checked);
+        });
+      }
+    },
+    // `hiddenInput` is a ref: stable by construction, and Biome flags listing it.
+    [ariaLabel, id, inputRef],
+  );
+
   return (
     <SwitchPrimitive
       data-slot="switch"
       data-size={size}
-      className={cn("ob-switch", className)}
+      /*
+       * No `ob-switch` here: like `ob-checkbox` it never named a stylesheet rule, so the track is
+       * HeroUI's default at the `--ob-*` variable values rather than a promise of a custom one.
+       */
+      className={className}
       defaultSelected={defaultChecked}
       aria-label={ariaLabel}
-      inputRef={(element) => {
-        hiddenInput.current = element;
-        if (element && id) {
-          element.id = id;
-        }
-        /*
-         * React Aria names a switch from its visible label. A caller that supplies `aria-label`
-         * and no children (the update-routing rows) expects that name on the control itself.
-         */
-        if (element && ariaLabel) {
-          element.setAttribute("aria-label", ariaLabel);
-        }
-        if (typeof inputRef === "function") inputRef(element);
-        else if (inputRef) inputRef.current = element;
-        /*
-         * The mirror effect runs when PROPS move. An uncontrolled switch (`defaultChecked`, no
-         * `checked`) changes state without a prop, so its `aria-checked`/`data-checked` would go
-         * stale after the first click; the input's own change event is the one signal that fires
-         * there too. (H14, closing the H02 review's uncontrolled-mirror gap.)
-         */
-        if (element) {
-          element.addEventListener("change", () => {
-            element.setAttribute("aria-checked", String(element.checked));
-            element.toggleAttribute("data-checked", element.checked);
-          });
-        }
-      }}
+      inputRef={connectInput}
       isDisabled={isDisabled ?? disabled}
       isSelected={checked}
       onChange={onCheckedChange}

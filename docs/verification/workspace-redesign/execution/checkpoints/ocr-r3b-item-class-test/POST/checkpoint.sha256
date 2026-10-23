@@ -1,0 +1,14 @@
+89e0fb6b8f22cb239a64cc5e112a4a0c366b3c3f53fe539886b52ccf906eec73  ./app/src/components/ui/field.tsx
+95829e4c97a39c267d062cb6a2295c435f9d6e41ae256cbf2ed5d04c632a70ae  ./app/src/components/ui/input.tsx
+0bbd4287436c5ebb2595e7d6358b96a39b0b6396a7a2588b1fdd28e46a1f7b71  ./app/src/components/ui/item.tsx
+e9dd7622e4f300efbcc1859e2e3746e4376b013f8e6f20aded74e5849f43aab5  ./app/src/components/ui/questionnaire.tsx
+ca1b99e548d345927cd693183f4f1966f63854a2c46d6994048969b4f2d4aff3  ./app/tests/item-disabled.test.tsx
+ec77d996ec27256543ba3a631b6df4835ad384c7c5ca66c416f044650581c9dd  ./app/tests/ui-wrapper-merge.test.tsx
+6ae4658f263076a5bc2473176a1df7f790e4c24ac70d4261d4e0d292e626dfce  ./docs/plans/reports/2026-10-23-b1-ocr-repair-03-impl.md
+7a538d7e3f99bf297458891ec934404487f90136f3594d702e31decf697ce6c2  ./docs/plans/reports/2026-10-23-b1-ocr-repair-03-review.md
+8809e363c398bcdffe42630918ebe5ce0cebd9ecf0753ac1d3840cccb1425534  ./docs/plans/reports/2026-10-23-b1-ocr-repair-03a-impl.md
+1bedf42112967c4d39df879443873901133418c50987e75d395f32f00af8a172  ./docs/plans/reports/2026-10-23-b1-ocr-repair-03b-impl.md
+a65bc2d54abe635fa1cd3cce22532d84aab252252dd5359d709c2f504f953b79  ./docs/verification/workspace-redesign/execution/checkpoints/ocr-r3-t02/POST-independent.sha256
+5cca725ecf686fcf93ef3fb5cdbe10844a36ae6bd5c848781f2c7cf587b5015e  ./docs/verification/workspace-redesign/execution/checkpoints/ocr-r3-t02/independent-validation.md
+fa048aded16cff6b2d6565fd4740009880d76ee1d3a53050532c2c6d77489da8  ./docs/verification/workspace-redesign/execution/checkpoints/ocr-r3a-field-test/independent-validation.md
+910fa26076c2ee84be74a6130d884f699bf00aa6d000840f460d31943fc884fd  ./docs/verification/workspace-redesign/execution/checkpoints/ocr-r3b-item-class-test/independent-validation.md

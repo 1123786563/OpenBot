@@ -1,0 +1,5630 @@
+[
+ {
+  "file": "agent-bot/tests/history.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/action-barrier.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/aria-snapshot.test.ts",
+  "status": "collected",
+  "tests": 35,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/authorisation.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/bot-id.test.ts",
+  "status": "collected",
+  "tests": 27,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/browser-close-announcement.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/browser-eviction.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/browser-mode.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/browser-runtime.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/challenge.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/control-handoff-page.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/control-http.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/control-lease.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/control-store.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/control.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/demonstration-live.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/demonstration.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/egress-connect.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/egress-policy.test.ts",
+  "status": "collected",
+  "tests": 21,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/egress.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/file-download-http.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/follows-popup.test.ts",
+  "status": "error",
+  "tests": 1,
+  "error": "agent-computer/tests/follows-popup.test.ts › the page a Bot is on › follows a window the site opens, and comes back when it closes [node]\n"
+ },
+ {
+  "file": "agent-computer/tests/handoff-page-restore.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/headed-browser.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/identity.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/live-page.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/live-screen.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/local-chrome-startup.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/navigation-recovery.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/number-from-env.test.ts",
+  "status": "collected",
+  "tests": 28,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/profile-launch-options.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/profile-listing.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/request-validation.test.ts",
+  "status": "collected",
+  "tests": 44,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/reset-run.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/residential-proxy.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/runtime-hardening.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/screencast.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/session-cookies.test.ts",
+  "status": "error",
+  "tests": 4,
+  "error": "ss a restart › comes back after the browser is stopped and started again, and after shutdown [node]\nagent-computer/tests/session-cookies.test.ts › a session cookie across a restart › a Bot never receives another Bot's session cookie [node]\n"
+ },
+ {
+  "file": "agent-computer/tests/sessions.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/shell.test.ts",
+  "status": "collected",
+  "tests": 27,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/sign-in.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/viewer.test.ts",
+  "status": "collected",
+  "tests": 31,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/virtual-display.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/web-bot-auth-browser.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/web-bot-auth.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/webrtc-proxy.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/workspace-download.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "agent-computer/tests/workspace.test.ts",
+  "status": "collected",
+  "tests": 32,
+  "error": ""
+ },
+ {
+  "file": "agent-langgraph/tests/deltas.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "agent-langgraph/tests/google-oauth-proxy.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "agent-langgraph/tests/history.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "agent-langgraph/tests/model-options.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "agent-langgraph/tests/stream.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "agent-langgraph/tests/tool-answer.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "agent-mastra/src/mastra/index.test.ts",
+  "status": "collected",
+  "tests": 34,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/bot-runtimes.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/devserver.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/env.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/events.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/opencode-config.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/proxy.test.ts",
+  "status": "collected",
+  "tests": 25,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/snapshot.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/sse.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "agent-sandbox/tests/webapp.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/src/components/channels/chat-origin.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/src/components/channels/composer/draft.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "app/src/components/channels/composer/picked-files.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "app/src/components/channels/composer/queue.test.ts",
+  "status": "collected",
+  "tests": 46,
+  "error": ""
+ },
+ {
+  "file": "app/src/components/settings/linked-accounts.test.tsx",
+  "status": "collected",
+  "tests": 31,
+  "error": ""
+ },
+ {
+  "file": "app/src/components/settings/linked-notice.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "app/src/lib/identity/mutations.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "app/src/lib/identity/queries.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/src/lib/knowledge-format.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/src/lib/knowledge-sorting.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "app/src/lib/team-bots.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/src/lib/upload-queue/queue.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "app/src/lib/upload-queue/state.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "app/src/lib/workshop/stream-machine.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/a2ui.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/account-mode-dialog.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/admin-catalog-sync-ui.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/admin-credit-grant-ui.test.tsx",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/admin-gateway-readiness.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/agent-api-path.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/agent-roster-error.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/agent-roster-error.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/"
+ },
+ {
+  "file": "app/tests/agent-shared-with-you.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/agents.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/app-resilience-guards.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "app/tests/approval-team-settings.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/approval-tools.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/approval-tools.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/dist"
+ },
+ {
+  "file": "app/tests/approvals-rules.test.tsx",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "app/tests/audit-dry-run-label.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/audit-export-truncated.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/audit-export-url.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/audit-outcome.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "app/tests/audit-silence.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/auth-client.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/auth-client.test.ts: Invalid base URL: null. Please provide a valid base URL. "
+ },
+ {
+  "file": "app/tests/auth-queries.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/authoring-tool-cards.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/authoring-tool-cards.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-cor"
+ },
+ {
+  "file": "app/tests/billing-credits-ui.test.tsx",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "app/tests/billing-format.test.tsx",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/billing-invoice-shared.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/billing-payments.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-access-skills.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-app-grants-screen.test.tsx",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-app-grants.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-approval-rules.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-creator-slug.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-manage.test.tsx",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-memory.test.tsx",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-needs-you.test.tsx",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-profile-active.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-profile-notice.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-reaching-you.test.tsx",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-responsibilities.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-roster-groups.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-roster.test.tsx",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-route-default-agent.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/bot-route-default-agent.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-"
+ },
+ {
+  "file": "app/tests/bot-settings-rows.test.tsx",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-setup.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-sharing.test.tsx",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-summaries.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-thread.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bot-tool-answers.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/bots-nav-badge.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/boundaries-read-failure.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/brokered-account-row.test.tsx",
+  "status": "collected",
+  "tests": 43,
+  "error": ""
+ },
+ {
+  "file": "app/tests/brokered-connection-card.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/browser-activity.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/build-cache.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "app/tests/button-native.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/carousel-keyboard.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/channel-chat.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/channel-chat.test.ts: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/dist/v2"
+ },
+ {
+  "file": "app/tests/channel-event-patch.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "app/tests/channel-history-notice.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/channel-history-notice.test.ts: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-co"
+ },
+ {
+  "file": "app/tests/channel-history-refresh.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/channel-history-refresh.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-"
+ },
+ {
+  "file": "app/tests/channel-label.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/channel-menu-mutations.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/channel-new-error-state.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/channel-new-error-state.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-"
+ },
+ {
+  "file": "app/tests/channel-order.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/channel-pagination.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/channel-search.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/channel-socket-message.test.ts",
+  "status": "collected",
+  "tests": 32,
+  "error": ""
+ },
+ {
+  "file": "app/tests/channel-unread.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/chat-messages.test.ts",
+  "status": "collected",
+  "tests": 37,
+  "error": ""
+ },
+ {
+  "file": "app/tests/component-preview.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/component-preview.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/d"
+ },
+ {
+  "file": "app/tests/compose-state.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "app/tests/composer-attachment-lifecycle.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-attachment-lifecycle.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/"
+ },
+ {
+  "file": "app/tests/composer-attachment-strip.test.tsx",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/composer-attachments-ui.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-attachments-ui.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-"
+ },
+ {
+  "file": "app/tests/composer-attachments.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "app/tests/composer-collapse.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/composer-dictation.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-dictation.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/"
+ },
+ {
+  "file": "app/tests/composer-drop-guard.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-drop-guard.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core"
+ },
+ {
+  "file": "app/tests/composer-dropped-attachments.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-dropped-attachments.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/r"
+ },
+ {
+  "file": "app/tests/composer-inflight-removal.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-inflight-removal.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/reac"
+ },
+ {
+  "file": "app/tests/composer-insecure-context.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-insecure-context.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/reac"
+ },
+ {
+  "file": "app/tests/composer-paste.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-paste.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/dist"
+ },
+ {
+  "file": "app/tests/composer-queue-attachments.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-queue-attachments.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/rea"
+ },
+ {
+  "file": "app/tests/composer-rejected-files-gap.test.tsx",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/composer-rejected-files.test.tsx",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/composer-send-failure.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-send-failure.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-co"
+ },
+ {
+  "file": "app/tests/composer-unnamed-mime.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-unnamed-mime.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-co"
+ },
+ {
+  "file": "app/tests/composer-upload-group.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/composer-upload-group.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-co"
+ },
+ {
+  "file": "app/tests/composing-enter.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/composio-picker-add-error.test.tsx",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/composio-picker.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/computer-activity.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/computer-activity.test.ts: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/di"
+ },
+ {
+  "file": "app/tests/computer-control-button.test.tsx",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "app/tests/computer-driving-local-fields.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/computer-handoff-rejoin.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/computer-handoff.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "app/tests/computer-preview-visibility.test.tsx",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/computer-reset-clears-activity.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/computer-tool-refusals.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/computer-tool-refusals.test.ts: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-co"
+ },
+ {
+  "file": "app/tests/connected-accounts-list.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/connection-fields.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/craft-files-tab-outputs.test.tsx",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/craft-preview-tab.test.tsx",
+  "status": "collected",
+  "tests": 79,
+  "error": ""
+ },
+ {
+  "file": "app/tests/craft-session-title.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/credential-form.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/declared-bot.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/default-agent.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/detail-panel.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/devices-settings.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/dictation-draft.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/dictation-session.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/enterprise-client.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/enterprise-session.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "app/tests/failed-send-attachments.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/failed-send-attachments.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-"
+ },
+ {
+  "file": "app/tests/form-submit-controls.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/gallery-components.test.tsx",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/github-sources-settings.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/grant-roster.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/group-people.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/handoff-resume.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/handoff-roster.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/home-fallback-routing.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/home-fallback-routing.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-co"
+ },
+ {
+  "file": "app/tests/host-access.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/hotkey-layouts.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/item-disabled.test.tsx",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/join-thread.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/learning-admin.test.tsx",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/legacy-agent-routes.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/live-screen-app-shortcuts.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/live-screen-keyboard.test.tsx",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "app/tests/live-screen-mouse.test.tsx",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/mark-open-channel-read.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/markdown-chips.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/memory-settings.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/model-picker-ui.test.tsx",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/new-id.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/open-connector-picker.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/person-sent-message.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/person-sent-message.test.ts: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/"
+ },
+ {
+  "file": "app/tests/personal-credits-ui.test.tsx",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/personal-orders-ui.test.tsx",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "app/tests/playground-json.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/playground-json.test.ts: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/dist"
+ },
+ {
+  "file": "app/tests/plugin-grants.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/plugin-logo.test.tsx",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/plugin-mutation-refresh.test.ts",
+  "status": "collected",
+  "tests": 32,
+  "error": ""
+ },
+ {
+  "file": "app/tests/plugin-read-failure.test.tsx",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/proposed-bot-card.test.tsx",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "app/tests/proposed-skill-card.test.tsx",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/query-client.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/repair-history.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "app/tests/root-drop-guard.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/root-drop-guard.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@fontsource-variable+inter@5.3.0/node_modules/@fontsource-variable/inter/wght.css "
+ },
+ {
+  "file": "app/tests/route-long-message.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/router.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/router.test.ts: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@fontsource-variable+inter@5.3.0/node_modules/@fontsource-variable/inter/wght.css "
+ },
+ {
+  "file": "app/tests/routines-no-worker.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/screen-connection.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/self-host-banner.test.tsx",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/serve.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/serve.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/app/serve.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "app/tests/shared-app-notice.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/shared-connected-accounts.test.tsx",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/shared-grant-dialog.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/shared-use-client.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/shared-use-requests.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/sidebar-preference.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/sidebar-shortcut-layouts.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/sign-in-card.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/sign-in-card.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/dist/v"
+ },
+ {
+  "file": "app/tests/skill-creator-slug.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/skill-form.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "app/tests/skill-proposal.test.ts",
+  "status": "collected",
+  "tests": 23,
+  "error": ""
+ },
+ {
+  "file": "app/tests/skills-read-failure.test.tsx",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/socket-url.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "app/tests/start-chosen.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/start-group.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/stopped-turn.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/stopped-turn.test.ts: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-core/dist/v2"
+ },
+ {
+  "file": "app/tests/take-the-wheel.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/theme-preference.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "app/tests/thread-messages.test.ts",
+  "status": "collected",
+  "tests": 21,
+  "error": ""
+ },
+ {
+  "file": "app/tests/tool-name.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "app/tests/tool-result.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "app/tests/transcript-attachments.test.tsx",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect app/tests/transcript-attachments.test.tsx: Unknown file extension \".css\" for /Users/wuyongjun/trea/OpenBot/node_modules/.bun/@copilotkit+react-core@1.77.0+c1cf6deaf62e1f2e/node_modules/@copilotkit/react-c"
+ },
+ {
+  "file": "app/tests/transcript-messages.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "app/tests/typed-reveal.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/update-routing-configured.test.tsx",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "app/tests/update-routing-settings.test.tsx",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/user-authorizations-ui.test.tsx",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/user-preferences.test.tsx",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "app/tests/voice-archive.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/tests/voice-context.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "app/tests/voice-outbox.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "app/tests/voice-session.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "app/tests/voice-transcript.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "app/vite-listen-port.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts: describe is not defined "
+ },
+ {
+  "file": "deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.ios.spec.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.ios.spec.ts: describe is not defined "
+ },
+ {
+  "file": "deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.spec.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.spec.ts: describe is not defined "
+ },
+ {
+  "file": "deliverables/mobile-e2e-qa/tests/e2e/specs/interruption.spec.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect deliverables/mobile-e2e-qa/tests/e2e/specs/interruption.spec.ts: describe is not defined "
+ },
+ {
+  "file": "deliverables/mobile-e2e-qa/tests/e2e/specs/offline.spec.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect deliverables/mobile-e2e-qa/tests/e2e/specs/offline.spec.ts: describe is not defined "
+ },
+ {
+  "file": "deliverables/mobile-e2e-qa/tests/e2e/specs/order.spec.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect deliverables/mobile-e2e-qa/tests/e2e/specs/order.spec.ts: describe is not defined "
+ },
+ {
+  "file": "desktop/scripts/desktop-version.test.ts",
+  "status": "collected",
+  "tests": 22,
+  "error": ""
+ },
+ {
+  "file": "desktop/src/App.test.tsx",
+  "status": "collected",
+  "tests": 100,
+  "error": ""
+ },
+ {
+  "file": "desktop/src/Problem.test.tsx",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "desktop/src/ProviderPicker.test.tsx",
+  "status": "collected",
+  "tests": 39,
+  "error": ""
+ },
+ {
+  "file": "desktop/src/telemetry.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "scripts/processes.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "scripts/self-hosted-learning.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "scripts/setup-learning.test.ts",
+  "status": "collected",
+  "tests": 20,
+  "error": ""
+ },
+ {
+  "file": "scripts/start-restart-guard.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "scripts/test-ci.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "scripts/tls-pipeline.test.ts",
+  "status": "collected",
+  "tests": 99,
+  "error": ""
+ },
+ {
+  "file": "server/src/desktop-telemetry.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/application/repository/retriever/qdrant/roundtrip.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/application/repository/retriever/qdrant/vector.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/application/service/delete-cascade.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/application/service/kb-search.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/application/service/retriever/composite.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/config/index.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/handler/wire.test.ts",
+  "status": "collected",
+  "tests": 20,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/chunker/heading-splitter.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/chunker/heuristic-splitter.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/chunker/splitter.test.ts",
+  "status": "collected",
+  "tests": 20,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/chunker/strategy.test.ts",
+  "status": "collected",
+  "tests": 20,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/chunker/tokens.test.ts",
+  "status": "collected",
+  "tests": 26,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/docparser/docparser.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/qdrant/client.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/qdrant/collections.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/sanitize.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/infrastructure/ssrf.test.ts",
+  "status": "collected",
+  "tests": 32,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/middleware/auth.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/middleware/kb-access.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/models/embedding/embedding.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/models/rerank/openai-compat.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/reranking/mmr.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/reranking/passage.test.ts",
+  "status": "collected",
+  "tests": 19,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/reranking/rerank.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/router/routes.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/src/kb/tasks/document-process.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/src/knowledge/circuit.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/src/knowledge/middleware.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/src/knowledge/qa-verify.test.ts",
+  "status": "collected",
+  "tests": 19,
+  "error": ""
+ },
+ {
+  "file": "server/src/knowledge/retrieval.test.ts",
+  "status": "collected",
+  "tests": 21,
+  "error": ""
+ },
+ {
+  "file": "server/src/knowledge/tools.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/access-grant-revoke.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/access-grant-revoke.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/access-grant.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/access-grant.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/account-mode.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/account-mode.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/admin-credit-grant.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/admin-credit-grant.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/admin-people-credentials-validation.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-auth-header.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-callback-token.test.ts",
+  "status": "collected",
+  "tests": 34,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-connection-live.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-endpoint.test.ts",
+  "status": "collected",
+  "tests": 47,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-escalation.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-handoff-delivery.test.ts",
+  "status": "collected",
+  "tests": 26,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-handoff-endtoend.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/agent-handoff-endtoend.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/agent-handoff-runner.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/agent-handoff-runner.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/agent-handoff-runner.test.ts",
+  "status": "collected",
+  "tests": 25,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-handoff-tool.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-handoff.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/agent-handoff.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/agent-handoff.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-key-rotation.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/agent-key-rotation.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/agent-profile-policy.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-profile-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/agent-profile-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/agent-registry.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-resolver.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-routes.test.ts",
+  "status": "collected",
+  "tests": 50,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-test-connection-headers.test.ts",
+  "status": "collected",
+  "tests": 26,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agent-tool-call-input.test.ts",
+  "status": "collected",
+  "tests": 26,
+  "error": ""
+ },
+ {
+  "file": "server/tests/agents/expert-descriptor.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/agents/expert-descriptor.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/"
+ },
+ {
+  "file": "server/tests/approvals-execute.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/approvals-frontend.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/approvals-interactive.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/approvals-interactive.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/approvals-native.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/approvals-policy.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/approvals-policy.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/approvals-policy.test.ts",
+  "status": "collected",
+  "tests": 30,
+  "error": ""
+ },
+ {
+  "file": "server/tests/approvals-question-resume.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/approvals-question-resume.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun"
+ },
+ {
+  "file": "server/tests/approvals-questions.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/approvals-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/approvals-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/approvals.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/attachment-mime.test.ts",
+  "status": "collected",
+  "tests": 29,
+  "error": ""
+ },
+ {
+  "file": "server/tests/attachment-parts.test.ts",
+  "status": "collected",
+  "tests": 33,
+  "error": ""
+ },
+ {
+  "file": "server/tests/attachment-routes.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/attachment-routes.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/attachment-store.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/attachment-store.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/attachment-sweeper.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/attachment-sweeper.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/audit-cursor.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/audit-cursor.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/audit-cursor.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/audit-export.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/audit-initiator.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/audit-initiator.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/audit-limit.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "server/tests/audit-retention.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/audit-retention.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/audit.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/auth-expo-scheme.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/auth-localhost-fetch.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/auth-mobile-scheme.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/auth-mobile-scheme.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/authorization-impersonation.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/authorization-impersonation.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/billing-capacity.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-config.test.ts",
+  "status": "collected",
+  "tests": 41,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-credits-consumption.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/billing-credits-consumption.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev b"
+ },
+ {
+  "file": "server/tests/billing-credits-summary.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/billing-credits-summary.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/billing-credits-writer.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/billing-credits-writer.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/billing-credits.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-entitlement.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-input-bound.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-lago-client.test.ts",
+  "status": "collected",
+  "tests": 48,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-outbound.test.ts",
+  "status": "collected",
+  "tests": 81,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-reconcile.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/billing-reconcile.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/billing-routes.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-statements.test.ts",
+  "status": "collected",
+  "tests": 23,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/billing-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/billing-store.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-sync.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-usage-daily.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-usage-delivery.test.ts",
+  "status": "collected",
+  "tests": 25,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-usage-evidence.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-usage-outbox.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/billing-usage-outbox.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/billing-webhook-signature.test.ts",
+  "status": "collected",
+  "tests": 32,
+  "error": ""
+ },
+ {
+  "file": "server/tests/billing-webhook.test.ts",
+  "status": "collected",
+  "tests": 31,
+  "error": ""
+ },
+ {
+  "file": "server/tests/binding-code-hardening.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/binding-code-hardening.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/binding-code-issuance.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/binding-code-issuance.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/bot-access.test.ts",
+  "status": "collected",
+  "tests": 31,
+  "error": ""
+ },
+ {
+  "file": "server/tests/bot-lifecycle-audit.test.ts",
+  "status": "collected",
+  "tests": 23,
+  "error": ""
+ },
+ {
+  "file": "server/tests/bot-lifecycle-routes.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/bot-lifecycle-watcher.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/bot-lifecycle.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/bot-lifecycle.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/bot-service-auth.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/bot-service-auth.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/bot-service-credential-routes.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/bot-service-credential-routes.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/bot-service-registry.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/bot-service-registry.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/bot-service-routes.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/builtin-routines.test.ts",
+  "status": "collected",
+  "tests": 31,
+  "error": ""
+ },
+ {
+  "file": "server/tests/bunfig-preload.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/catalog-auto-sync.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/catalog-auto-sync.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/catalog-fetch.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/catalog-fetch.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/catalog-freshness-gate.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/catalog-freshness-gate.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/catalog-manual-sync.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/catalog-manual-sync.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/catalog-model-ref.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/channel-activity-input.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/channel-activity.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/channel-activity.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/channel-cursor.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/channel-events.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/channel-events.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/channel-one-line.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/channel-routes.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/channel-routes.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/channel-summary.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/channel-summary.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/channel-titler.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/checkin-rewards.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/checkin-rewards.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/cleanup-classification.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/cleanup-classification.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/cleanup-dry-run.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/cleanup-dry-run.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/cleanup-enumeration.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/cleanup-enumeration.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/cleanup-guards.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/cleanup-guards.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/cleanup-rehearsal.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/cleanup-rehearsal.integration.test.ts: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:' "
+ },
+ {
+  "file": "server/tests/cleanup-relations.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/cleanup-relations.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/code-run-store.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/code-run-store.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/codesandbox-client.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/codesandbox-gateway.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "server/tests/codesandbox-routes.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/component-catalogue-entries.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/component-catalogue.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/component-decision-functions.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/component-decision.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/component-grants-skills-validation.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/component-publication.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/component-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/component-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/composio-access.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/composio-adapter.test.ts",
+  "status": "collected",
+  "tests": 241,
+  "error": ""
+ },
+ {
+  "file": "server/tests/composio-broker-seam.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/composio-classify.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/composio-connection-kinds.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/composio-connection-kinds.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/composio-connections.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/composio-connections.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/composio-live.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/composio-transport.test.ts",
+  "status": "collected",
+  "tests": 110,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-capacity.test.ts",
+  "status": "collected",
+  "tests": 25,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-client.test.ts",
+  "status": "collected",
+  "tests": 29,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-culler.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/computer-culler.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/computer-download-routes.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-exec-timeout.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-fleet-route.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-gateway.test.ts",
+  "status": "collected",
+  "tests": 75,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-handoff-contract.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-human-input.test.ts",
+  "status": "collected",
+  "tests": 19,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-page-frame-route.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-page-frame-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/computer-page-frame-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun"
+ },
+ {
+  "file": "server/tests/computer-policy-dry-run-limit.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-policy-route.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-policy.test.ts",
+  "status": "collected",
+  "tests": 52,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-provider.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-routes.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-sandbox.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-scroll-delta.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-session-guard-replicas.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/computer-session-guard-replicas.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-d"
+ },
+ {
+  "file": "server/tests/computer-session-guard.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-snapshot-id.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-snapshot-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/computer-snapshot-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/computer-snapshot-store.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-stream-path.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-supervisor.test.ts",
+  "status": "collected",
+  "tests": 23,
+  "error": ""
+ },
+ {
+  "file": "server/tests/computer-target.test.ts",
+  "status": "collected",
+  "tests": 41,
+  "error": ""
+ },
+ {
+  "file": "server/tests/config-github-app.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/config.test.ts",
+  "status": "collected",
+  "tests": 144,
+  "error": ""
+ },
+ {
+  "file": "server/tests/connector-tokens-never-reach-computer.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/content-governance.test.ts",
+  "status": "collected",
+  "tests": 42,
+  "error": ""
+ },
+ {
+  "file": "server/tests/control-lease-routes.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/control-refusal-end-to-end.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/copilot-usage-meter.test.ts",
+  "status": "collected",
+  "tests": 35,
+  "error": ""
+ },
+ {
+  "file": "server/tests/copilot.test.ts",
+  "status": "collected",
+  "tests": 73,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-agents-template.test.ts",
+  "status": "collected",
+  "tests": 27,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-approval-producer.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-approvals.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-artifacts.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-attachments-section.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-builtin-skills.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-config.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-connect-app.test.ts",
+  "status": "collected",
+  "tests": 30,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-export.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-file-routes.test.ts",
+  "status": "collected",
+  "tests": 30,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-idle-reaper.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-kb-search-relay.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-managed-content.test.ts",
+  "status": "collected",
+  "tests": 26,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-mcp-relay.test.ts",
+  "status": "error",
+  "tests": 14,
+  "error": "sembled craft tree › a session-tagged call reaches the relay without a user session [node]\nserver/tests/craft-mcp-relay.test.ts › mcp block carries no credential bytes › the session's opencode.json mcp entry is url + tag header only [node]\n"
+ },
+ {
+  "file": "server/tests/craft-mcp-servers.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-opencode-config-mcp.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-plugin-sdk-paths.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-preview-origin.test.ts",
+  "status": "collected",
+  "tests": 101,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-preview-pass.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-preview-rejection.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-preview-ticket.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-routes-assembly.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-scheduled-runs.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-scheduled-tasks.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-send-message.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-session-config-mcp.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-session-provisioning.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-skills-reload.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-skills.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-snapshot.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-streaming-persist.test.ts",
+  "status": "collected",
+  "tests": 20,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-subagent-routes.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-subagent-streaming.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-translate.test.ts",
+  "status": "collected",
+  "tests": 51,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-turn-budget.test.ts",
+  "status": "collected",
+  "tests": 19,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-turn-sse-attach.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-turn-state.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-webapp-generation.test.ts",
+  "status": "collected",
+  "tests": 28,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-webapp-hmr.test.ts",
+  "status": "collected",
+  "tests": 39,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-webapp-proxy.test.ts",
+  "status": "collected",
+  "tests": 85,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-webapp-template.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/craft-webapp-tool.test.ts",
+  "status": "collected",
+  "tests": 55,
+  "error": ""
+ },
+ {
+  "file": "server/tests/credential-bundle-boundary.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/credential-bundle-boundary.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/credential-rotation-leak.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/credential-rotation-leak.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/credentials.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/credentials.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/credit-remainder.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/credit-remainder.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/credit-service-auth.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/credit-service-auth.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/credit-views.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/credit-views.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/cull-sweep-wiring.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/customer-provision-recovery.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/customer-provision-recovery.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/database.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/database.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/db-client-address.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/db-client-address.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/delivery-providers.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/delivery-router.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/delivery-routes.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "server/tests/delivery-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/delivery-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/delivery-turn.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/demonstrations-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/demonstrations-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/demonstrations.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/deployment-route-bot-end-to-end.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/desktop-connection-failure.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/dev-actor.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/dev-actor.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/dictation-provider.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/dictation-routes.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/duplicate-run.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/egress-policy-on-wake.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/email-domain.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/encrypt-sso-config.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise-controls.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/enterprise-controls.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/enterprise-controls.test.ts",
+  "status": "collected",
+  "tests": 33,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise-list-query-validation.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
+  "status": "collected",
+  "tests": 28,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/authz.integration.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/contract-schema.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/conversations.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/enterprise/conversations.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/enterprise/enterprise-role-preflight.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/enterprise-test-database.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/expert-run-admission.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/expert-version-catalog.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/governed-execution.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/intelligence-contracts.test.ts",
+  "status": "collected",
+  "tests": 22,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/legacy-channel-scope.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/login-reprovision.integration.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/mastra-compatibility.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/mastra-model.integration.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/mastra-model.test.ts",
+  "status": "collected",
+  "tests": 87,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/mastra-storage.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/enterprise/mastra-storage.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun"
+ },
+ {
+  "file": "server/tests/enterprise/migration-entrypoints.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/migration-role-preflight.integration.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/migration-runner-guard.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/mobile/contracts.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/model-gateway.test.ts",
+  "status": "collected",
+  "tests": 44,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/model-route-catalog.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/model-route-rebind.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/run-active-lookup.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/run-execution-failure.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/run-failure-contract.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/run-output-ceiling.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/run-success-contract.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/runner-events.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/enterprise/runner-events.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/enterprise/runner-events.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/runner-production.test.ts",
+  "status": "collected",
+  "tests": 47,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/runner-scope.test.ts",
+  "status": "collected",
+  "tests": 34,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/runs.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/enterprise/runs.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/enterprise/runtime-artifacts.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/schema-migration-r2.integration.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/sdk-compatibility.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/tenancy-connections.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/enterprise/tenancy-rls.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/enterprise/tenancy-rls.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/enterprise/tenancy.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/enterprise/tenancy.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/enterprise/tenancy/auth-config-compat.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/entra-profile.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/exposure-change.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/gateway-admin-routes.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-admin-routes.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/gateway-capability-negotiation.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-capability-negotiation.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-de"
+ },
+ {
+  "file": "server/tests/gateway-capability-negotiation.test.ts",
+  "status": "collected",
+  "tests": 25,
+  "error": ""
+ },
+ {
+  "file": "server/tests/gateway-conversion-rate.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-conversion-rate.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/gateway-credential.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-credential.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/gateway-credential.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/gateway-customer-provisioning.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-customer-provisioning.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev"
+ },
+ {
+  "file": "server/tests/gateway-endpoint-config.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-endpoint-config.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/gateway-endpoint-config.test.ts",
+  "status": "collected",
+  "tests": 25,
+  "error": ""
+ },
+ {
+  "file": "server/tests/gateway-probe.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-probe.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/gateway-probe.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "server/tests/gateway-rate-version.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-rate-version.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/gateway-readiness-gate.test.ts",
+  "status": "collected",
+  "tests": 20,
+  "error": ""
+ },
+ {
+  "file": "server/tests/gateway-readiness.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/gateway-readiness.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/google-drive-rest.test.ts",
+  "status": "collected",
+  "tests": 27,
+  "error": ""
+ },
+ {
+  "file": "server/tests/google-oauth-transport.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/group-conversations.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/group-conversations.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/group-conversations.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/guards.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/handoff-caps-defaults.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/handoff-origin.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/headless-components.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/headless-components.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/headless-components.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/headless-tools.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/health.test.ts",
+  "status": "collected",
+  "tests": 19,
+  "error": ""
+ },
+ {
+  "file": "server/tests/hindsight-config.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/hindsight-health.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/history-sanitize.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/host-access-broker.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/host-access-callback-route.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/host-access-routes.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/host-access-schema.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/host-access-tools.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/human-input-end-to-end.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-app-wiring.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-audit-failure.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-challenges.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/identity-challenges.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/identity-github-callback.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/identity-github-callback.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/identity-github-callback.test.ts",
+  "status": "collected",
+  "tests": 26,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-github-oauth.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-provider-audit.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-providers.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-retire.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/identity-retire.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/identity-routes.test.ts",
+  "status": "collected",
+  "tests": 19,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-schema.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/identity-schema.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/identity-slack-redeem.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/identity-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/identity-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/intelligence-authentication.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/intelligence-memory.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/jsonb-encoding.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/jsonb-encoding.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/key-drift-handling.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/key-drift-handling.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/key-expiry.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/key-expiry.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/key-issuance.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/key-issuance.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/key-renewal.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/key-renewal.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/key-state-sync.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/key-state-sync.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/last-sign-in-backfill.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/last-sign-in-backfill.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/learning-agent.integration.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-auto-assign.test.ts",
+  "status": "collected",
+  "tests": 33,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-config.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-ensure-container.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-handoff.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-langgraph.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-mastra.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-remote.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-routes.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-runtime.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/learning-settings.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/learning-settings.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/learning-settings.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/marketplace-routes.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/mastra-roster.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/mcp-grant-removal.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/mcp-grant-removal.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/mcp-listing.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/mcp-protocol.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/mcp-result.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "server/tests/memory-default-source-tool.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/memory-defaults.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/memory-defaults.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/memory-expiry.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/memory-expiry.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/memory-intelligence.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/memory-intelligence.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/memory-runtime.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/memory-sensitivity.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/memory-sensitivity.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/memory-shared-source.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/memory-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/memory-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/memory.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/migration-journal.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/mobile-bff.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "server/tests/model-capability-filter.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/model-capability-filter.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/model-capability-filter.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/model-discovery-api.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/model-discovery-api.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/model-preference.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/model-preference.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/model-providers.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/model-scope.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/model-scope.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/model-selection-routes.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/oauth-refresh-redirect.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/offboarding-retirement.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/offboarding-retirement.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/onboarding-routes.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openconnector-access.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openconnector-adapter.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openconnector-transport.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-activity.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/openmuse-activity.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/openmuse-bot.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-calendar.test.ts",
+  "status": "collected",
+  "tests": 31,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-deletion.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/openmuse-deletion.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/openmuse-documents.test.ts",
+  "status": "collected",
+  "tests": 59,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-files.test.ts",
+  "status": "collected",
+  "tests": 63,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-finance.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-goals.test.ts",
+  "status": "collected",
+  "tests": 29,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-google-oauth.test.ts",
+  "status": "collected",
+  "tests": 54,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-ideas.test.ts",
+  "status": "collected",
+  "tests": 38,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-mail.test.ts",
+  "status": "collected",
+  "tests": 47,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-memories.test.ts",
+  "status": "collected",
+  "tests": 31,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-notifications.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-ops-signals.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-personal-tools.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-reviewed-actions-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/openmuse-reviewed-actions-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-d"
+ },
+ {
+  "file": "server/tests/openmuse-reviewed-actions.test.ts",
+  "status": "collected",
+  "tests": 107,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-task-capacity.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-task-lease-recovery.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-task-runner.test.ts",
+  "status": "collected",
+  "tests": 80,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-tasks.test.ts",
+  "status": "collected",
+  "tests": 87,
+  "error": ""
+ },
+ {
+  "file": "server/tests/openmuse-template-revision.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/order-ownership.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/order-ownership.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/organization-auth.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/organization-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/organization-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/otel-export-scrubbing.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/page-frame-retention.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/page-frame-retention.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/paging.test.ts",
+  "status": "collected",
+  "tests": 14,
+  "error": ""
+ },
+ {
+  "file": "server/tests/parallel-research.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/passwords-sign-in.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/passwords-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/passwords-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/payer-account.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payer-account.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/payer-company-resolution.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payer-company-resolution.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/payer-company-resolution.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payer-legacy-mapping.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payer-legacy-mapping.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/payer-no-fallback.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payer-no-fallback.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/payer-personal-resolution.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payer-personal-resolution.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun"
+ },
+ {
+  "file": "server/tests/payer-personal-resolution.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payer-ref.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payment-alipay.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payment-callback-ownership.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payment-callback-ownership.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bu"
+ },
+ {
+  "file": "server/tests/payment-config.test.ts",
+  "status": "collected",
+  "tests": 26,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payment-crypto.test.ts",
+  "status": "collected",
+  "tests": 20,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payment-mount.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payment-ordering-migration.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payment-ordering-migration.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bu"
+ },
+ {
+  "file": "server/tests/payment-routes.test.ts",
+  "status": "collected",
+  "tests": 22,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payment-service.test.ts",
+  "status": "collected",
+  "tests": 64,
+  "error": ""
+ },
+ {
+  "file": "server/tests/payment-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payment-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/payment-wechat.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/payment-wechat.test.ts: require is not defined in ES module scope, you can use import instead "
+ },
+ {
+  "file": "server/tests/people-last-sign-in.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/people-last-sign-in.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/people-paging.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/people-paging.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/people-routes.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/personal-credits-read.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/personal-credits-read.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/picked-harness-auth.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/picked-harness-auth.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/node_modules/.bun/drizzle-orm@0.45.2+ccdf444a0bcfd91c/node_modules/drizzle-orm/bun-sql/drive"
+ },
+ {
+  "file": "server/tests/plan-credits-personal.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/plan-credits-personal.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/plan-model.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plan-renewal-grantor.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-call-args-validation.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-catalogue.test.ts",
+  "status": "collected",
+  "tests": 46,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-connect-route.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-credential-binding.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/plugin-credential-binding.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun"
+ },
+ {
+  "file": "server/tests/plugin-credential-rotation.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/plugin-credential-rotation.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bu"
+ },
+ {
+  "file": "server/tests/plugin-curated-credential.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/plugin-curated-credential.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun"
+ },
+ {
+  "file": "server/tests/plugin-grants-validation.test.ts",
+  "status": "collected",
+  "tests": 37,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-logos.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/plugin-logos.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/plugin-mcp-authorization.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-oauth-callback.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-oauth.test.ts",
+  "status": "collected",
+  "tests": 42,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-routes.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/plugin-routes.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/plugin-routes.test.ts",
+  "status": "collected",
+  "tests": 86,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-selection.test.ts",
+  "status": "collected",
+  "tests": 25,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-servers-validation.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-share-target.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/plugin-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/plugin-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/plugin-user-credential.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/plugin-user-credential.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/policy-dry-run.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/policy-durability.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/policy-durability.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/policy-fanout.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/policy-fanout.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/price-snapshot.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/price-snapshot.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/price-snapshot.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/price-status-classification.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/price-status-classification.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev b"
+ },
+ {
+  "file": "server/tests/price-status-classification.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "server/tests/private-share-group.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/proactive-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/proactive-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/proactive.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/production-loader-boundary.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/provider-oauth.test.ts",
+  "status": "collected",
+  "tests": 25,
+  "error": ""
+ },
+ {
+  "file": "server/tests/qa-batch1-billing-routes.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/qa-batch1-credits-writer.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/qa-batch1-credits-writer.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/qa-batch1-duplicate-paid.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/qa-batch1-duplicate-paid.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/qa-batch1-llm-meter-id.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/qa-batch1-migration-0071.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/qa-batch1-migration-0071.test.ts: ENOENT: no such file or directory, open '/Users/wuyongjun/trea/OpenBot/server/drizzle/0071_billing_idempotency.sql' "
+ },
+ {
+  "file": "server/tests/qa-batch1-payment-service.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/qa-batch1-payment-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/qa-batch1-payment-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/qa-batch1-replay-storm.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/qa-batch1-replay-storm.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/qa-batch2-cycle-config-qr.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/qa-batch2-t5-semantics.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/qa-batch2-t5-semantics.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/qa-batch2-unreadable-fourth.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/qa-batch2-unreadable-fourth.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev b"
+ },
+ {
+  "file": "server/tests/qa-batch3-reconcile.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/qa-batch3-reconcile.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/ready.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/recovery-scan.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/recovery-scan.integration.test.ts: Only URLs with a scheme in: file, data, and node are supported by the default ESM loader. Received protocol 'bun:' "
+ },
+ {
+  "file": "server/tests/redis-port.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/release-semantics.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/release-semantics.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/remote-approval-context.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "server/tests/remote-bot-handoff.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/remote-bot-handoff.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/remote-coordination.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/remote-coordination.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/remote-coordination.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "server/tests/request-tracking.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/reservation-status.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/reservation-status.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/reserve-bound-rounding.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/reserve-concurrency.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/reserve-concurrency.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/reserve-payer-tampering.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/reserve-payer-tampering.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/reserve-revalidation.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/reserve-revalidation.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/reserve-version-locking.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/reserve-version-locking.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/responsibilities-engine.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/responsibilities-github.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/responsibilities-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/responsibilities-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/responsibility-routes-shared.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/responsibility-trigger-tools.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/responsibility-triggers.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/responsibility-triggers.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/responsibility-triggers.test.ts",
+  "status": "collected",
+  "tests": 28,
+  "error": ""
+ },
+ {
+  "file": "server/tests/roles.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "server/tests/route-ids-validation.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routine-endpoint.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routine-routes.test.ts",
+  "status": "collected",
+  "tests": 17,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routine-run-now.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/routine-run-now.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/routine-run-now.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routine-run-turn.test.ts",
+  "status": "collected",
+  "tests": 34,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routine-runner.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routine-schedule.test.ts",
+  "status": "collected",
+  "tests": 28,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routine-sweep-liveness.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routine-sweep.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/routine-sweep.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/routines-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/routines-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/routing-classify.test.ts",
+  "status": "collected",
+  "tests": 27,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routing-limits-validation.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routing-model-url.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routing-routes.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/routing-service.test.ts",
+  "status": "collected",
+  "tests": 37,
+  "error": ""
+ },
+ {
+  "file": "server/tests/run-built-agent-cancellation.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/runtime-agents.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/runtime-agents.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/sandbox-state.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/sandbox-state.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/sandbox-supervisor.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/sandboxed-components.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/sandboxed-components.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/sandboxed-publication.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/sandboxed-publication.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/sandboxed-routes.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/sandboxed-save-fields.test.ts",
+  "status": "collected",
+  "tests": 22,
+  "error": ""
+ },
+ {
+  "file": "server/tests/schema.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/self-host-banner.test.ts",
+  "status": "collected",
+  "tests": 22,
+  "error": ""
+ },
+ {
+  "file": "server/tests/server-side-tools.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/server-side-tools.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/settings-instructions-routes.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "server/tests/settle-conflict-grant-expiry.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/settle-conflict-grant-expiry.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev "
+ },
+ {
+  "file": "server/tests/settle-idempotency.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/settle-idempotency.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/shared-accounts.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/shared-brokered-routes.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/shared-brokered-routes.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/shared-brokered-schema.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/shared-brokered-schema.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/shared-brokered-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/shared-brokered-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/shared-computer-run.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/shared-computer-run.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/shared-gated-mode.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/shared-gated-mode.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/shared-use-routes.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/shared-use-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/shared-use-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/shared-use.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "server/tests/shared-wiring.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/shared-wiring.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/single-user.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/skill-ownership.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/skill-ownership.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/skill-tools.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/skill-tools.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/skill-uninstall-grants.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/skill-uninstall-grants.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/sso-required-sessions.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/sso-required-sessions.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/stall-guard.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/stream-auth.test.ts",
+  "status": "collected",
+  "tests": 11,
+  "error": ""
+ },
+ {
+  "file": "server/tests/subscription-ownership.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/subscription-ownership.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/support/database.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/team-bot-routes-shared.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "server/tests/team-bots.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/team-bots.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/tenant-package-agent-files.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/tenant-package-duplicates.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/tenant-package.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/tenant-package.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/test-database-url.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/test-database-url.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/thread-history.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/thread-identity.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/thread-routes.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/thread-status.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/tool-selection-environment-restoration-driver.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/tool-selection-environment-restoration.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/tool-selection.integration.test.ts",
+  "status": "collected",
+  "tests": 15,
+  "error": ""
+ },
+ {
+  "file": "server/tests/trace-middleware.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/trace-outbound.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "server/tests/trace.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/turn-watchdog.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/unknown-hold-no-reclaim.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/unknown-hold-no-reclaim.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/untrusted-content.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/usage-outbox.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/usage-outbox.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/user-instructions.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/user-instructions.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/user-preferences-routes.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/user-preferences.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/user-preferences.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/voice-provider.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/voice-routes.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/voice-session-preview.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/voice-session-preview.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/voice-session-routes.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/voice-session-store.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/voice-session-store.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/voice-sessions.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/voice-summary-model.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/web-bot-auth.test.ts",
+  "status": "collected",
+  "tests": 30,
+  "error": ""
+ },
+ {
+  "file": "server/tests/work-loop.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "server/tests/work-queue.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/work-queue.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/workbench-gateway-routing.integration.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workbench-implicit-grant.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/workbench-implicit-grant.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/workshop-artifacts.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/workshop-artifacts.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "server/tests/workshop-bus.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-events.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-files.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-headless.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-locks.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-metering.test.ts",
+  "status": "collected",
+  "tests": 13,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-orchestrator.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-preview.test.ts",
+  "status": "collected",
+  "tests": 9,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-public-routes.test.ts",
+  "status": "collected",
+  "tests": 7,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-routes.test.ts",
+  "status": "collected",
+  "tests": 16,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-schedule-executor.integration.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/workshop-schedule-executor.integration.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bu"
+ },
+ {
+  "file": "server/tests/workshop-schedule-routes.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-schedule.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-sharing.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "server/tests/workshop-store.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect server/tests/workshop-store.test.ts: Cannot find package 'bun' imported from /Users/wuyongjun/trea/OpenBot/server/src/db/client.ts; add it to the project: npm install --save-dev bun "
+ },
+ {
+  "file": "shared/agent-authorisation.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "shared/attachments.test.ts",
+  "status": "collected",
+  "tests": 35,
+  "error": ""
+ },
+ {
+  "file": "shared/bot-prompt.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "shared/enterprise/mobile-schemas.test.ts",
+  "status": "collected",
+  "tests": 12,
+  "error": ""
+ },
+ {
+  "file": "shared/file-download.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "shared/listen-port.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "shared/logger.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "shared/model-providers.test.ts",
+  "status": "collected",
+  "tests": 30,
+  "error": ""
+ },
+ {
+  "file": "shared/responsibility-turn.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "shared/routine-firing.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "shared/src/brokered-provenance.test.ts",
+  "status": "collected",
+  "tests": 2,
+  "error": ""
+ },
+ {
+  "file": "shared/user-content-hardening.test.ts",
+  "status": "collected",
+  "tests": 6,
+  "error": ""
+ },
+ {
+  "file": "shared/work-owner.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "supervisor/tests/authorisation.test.ts",
+  "status": "collected",
+  "tests": 10,
+  "error": ""
+ },
+ {
+  "file": "supervisor/tests/computer-memory-bytes.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "supervisor/tests/docker.integration.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "supervisor/tests/environment-hardening.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "supervisor/tests/environment.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "supervisor/tests/listen-port.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "supervisor/tests/names.test.ts",
+  "status": "collected",
+  "tests": 8,
+  "error": ""
+ },
+ {
+  "file": "tests/agent-bot.test.ts",
+  "status": "collected",
+  "tests": 3,
+  "error": ""
+ },
+ {
+  "file": "tests/bun-suites.test.ts",
+  "status": "collect_error",
+  "tests": 0,
+  "error": "COLLECTION_ERROR: failed to collect tests/bun-suites.test.ts: groups is not defined "
+ },
+ {
+  "file": "tests/clean-checkout.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "tests/compose.test.ts",
+  "status": "collected",
+  "tests": 24,
+  "error": ""
+ },
+ {
+  "file": "tests/e2e/api.e2e.test.ts",
+  "status": "collected",
+  "tests": 43,
+  "error": ""
+ },
+ {
+  "file": "tests/fintech-package.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ },
+ {
+  "file": "tests/smoke/journey.test.ts",
+  "status": "collected",
+  "tests": 5,
+  "error": ""
+ },
+ {
+  "file": "tests/workspace.test.ts",
+  "status": "collected",
+  "tests": 4,
+  "error": ""
+ },
+ {
+  "file": "worker/tests/env.test.ts",
+  "status": "collected",
+  "tests": 18,
+  "error": ""
+ },
+ {
+  "file": "worker/tests/status.test.ts",
+  "status": "collected",
+  "tests": 1,
+  "error": ""
+ }
+]

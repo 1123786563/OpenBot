@@ -345,6 +345,26 @@ function recorder() {
   return { view, user };
 }
 
+test("schedule Select triggers show translated labels for every preset and custom cron", async () => {
+  const { view, user } = recorder();
+  await view.findByText(/Find an invoice/);
+  await user.click(view.getByRole("button", { name: "Run on a schedule" }));
+
+  const trigger = () => view.getByRole("button", { name: /when it runs/i });
+  expect(trigger().textContent).toContain("Every weekday at 09:00");
+  for (const [label] of [
+    ["Every day at 09:00", "0 9 * * *"],
+    ["Every Monday at 09:00", "0 9 * * 1"],
+    ["Every hour", "0 * * * *"],
+    ["Every weekday at 09:00", "0 9 * * 1-5"],
+    ["Custom cron expression", "custom"],
+  ]) {
+    await user.click(trigger());
+    await user.click(await view.findByRole("option", { name: label }));
+    expect(trigger().textContent).toContain(label);
+  }
+});
+
 test("a schedule reported to a channel can go back to this Bot's only conversation", async () => {
   const { view, user } = recorder();
   await view.findByText(/Find an invoice/);
@@ -353,6 +373,7 @@ test("a schedule reported to a channel can go back to this Bot's only conversati
   // Until a channel is picked, the trigger says the conversation-only sentence (BASE's `value=""`).
   const trigger = () => view.getByRole("button", { name: "Report in" });
   expect(trigger().textContent).toContain("This Bot's only conversation");
+  expect(trigger().hasAttribute("data-placeholder")).toBe(false);
 
   await user.click(trigger());
   await user.click(await view.findByRole("option", { name: "Billing" }));

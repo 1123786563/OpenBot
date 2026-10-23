@@ -23,6 +23,9 @@
  * Domain ids flow through as strings (`getKey`) — never `String()`-coerced numbers, no `any`.
  */
 
+import { IconCheck, IconChevronDown, IconX } from "@tabler/icons-react";
+import * as React from "react";
+import type { Key } from "react-aria-components";
 import {
   Input,
   ListBox,
@@ -30,9 +33,6 @@ import {
   Popover,
   useFilter,
 } from "react-aria-components";
-import type { Key } from "react-aria-components";
-import { IconCheck, IconChevronDown, IconX } from "@tabler/icons-react";
-import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export interface ComboboxProps<T> {
@@ -81,7 +81,8 @@ export function Combobox<T>({
   }, [open]);
   const contains = useFilter({ sensitivity: "base" }).contains;
   const filtered = React.useMemo(
-    () => (query ? items.filter((item) => contains(itemLabel(item), query)) : items),
+    () =>
+      query ? items.filter((item) => contains(itemLabel(item), query)) : items,
     [items, query, contains, itemLabel],
   );
   const selectedIds = React.useMemo(
@@ -93,7 +94,11 @@ export function Combobox<T>({
     // Keep the caller's order, append newcomers in roster order, cap at the tail.
     const ordered = [
       ...selected.filter((item) => idSet.has(getKey(item))).map(getKey),
-      ...items.filter((item) => idSet.has(getKey(item)) && !selectedIds.has(getKey(item))).map(getKey),
+      ...items
+        .filter(
+          (item) => idSet.has(getKey(item)) && !selectedIds.has(getKey(item)),
+        )
+        .map(getKey),
     ].slice(maxSelected !== undefined && maxSelected > 0 ? -maxSelected : 0);
     onSelectedChange(ordered);
   };
@@ -115,7 +120,15 @@ export function Combobox<T>({
         data-slot="combobox-trigger"
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen(true)}
+        /*
+         * Toggle, not just open, so a direct press on an already-open list closes it. Two paths
+         * reach the same closed state and both are fine: in a real browser the modal underlay's
+         * outside-press dismissal handles presses that land on the overlay (the pinned React Aria
+         * Popover has no trigger exclusion, so this handler may not even see those), while direct
+         * dispatch on the button — happy-dom's fireEvent, keyboard activation, any non-modal host
+         * of this trigger — is handled here. Verified open-then-press closes under both paths.
+         */
+        onClick={() => setOpen((value) => !value)}
         className="flex min-h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-[var(--ob-control-border)] bg-[var(--ob-field-background)] px-2.5 py-1 text-left text-sm transition-colors focus-visible:border-[var(--ob-focus)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ob-focus)] pointer-coarse:min-h-11 disabled:cursor-not-allowed disabled:border-[var(--ob-control-border)] disabled:bg-[var(--ob-disabled-background)] disabled:text-[var(--ob-disabled-foreground)] disabled:opacity-100 aria-invalid:border-[var(--ob-danger)] aria-invalid:bg-[var(--ob-field-background)]"
       >
         <span

@@ -1,0 +1,502 @@
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { SkillFields } from "@/components/skills/skill-fields";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { channelListQueryOptions } from "@/lib/channels/queries";
+import {
+  type Demonstration,
+  type DemonstrationDraft,
+  type DemonstrationRoutine,
+  deleteDemonstration,
+  demonstrationKeys,
+  demonstrationsQueryOptions,
+  draftDemonstration,
+  publishDemonstration,
+  scheduleDemonstration,
+  startDemonstration,
+  stopDemonstration,
+} from "@/lib/demonstrations";
+import { useDateTime } from "@/lib/i18n/datetime";
+import {
+  grantPlugin,
+  invalidatePlugins,
+  saveSkillMutationOptions,
+} from "@/lib/plugins/mutations";
+import { routineKeys } from "@/lib/routines/queries";
+import { queryClient } from "@/query-client";
+
+/** Seconds left before the server stops a recording, ticking once a second. */
+function useSecondsLeft(expiresAt: string | undefined) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt]);
+  if (!expiresAt) return null;
+  return Math.max(0, Math.ceil((Date.parse(expiresAt) - now) / 1000));
+}
+
+const clock = (seconds: number) =>
+  `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+const SCHEDULES = [
+  { label: "demonstration.schedules.weekdayAt9", cron: "0 9 * * 1-5" },
+  { label: "demonstration.schedules.everyDayAt9", cron: "0 9 * * *" },
+  { label: "demonstration.schedules.mondayAt9", cron: "0 9 * * 1" },
+  { label: "demonstration.schedules.everyHour", cron: "0 * * * *" },
+] as const;
+
+/**
+ * The schedule reports in this Bot's only conversation. This stable internal value is a real
+ * selected item; the payload omits `channelId` for it, and the item stays in the list so a channel
+ * can be un-picked — the select is a two-way choice, not a placeholder.
+ */
+const ONLY_CONVERSATION = "__only_conversation__";
+
+/** Save the demonstrated path as a routine that reruns the published skill. */
+function ScheduleSkill({
+  recording,
+  onDone,
+}: {
+  recording: Demonstration;
+  onDone: () => void;
+}) {
+  const { t } = useTranslation("computer");
+  const { formatDateTime } = useDateTime();
+  const id = useId();
+  const [cron, setCron] = useState<string>(SCHEDULES[0].cron);
+  const [custom, setCustom] = useState("");
+  const [channelId, setChannelId] = useState(ONLY_CONVERSATION);
+  const [inputs, setInputs] = useState("");
+  const [scheduled, setScheduled] = useState<DemonstrationRoutine | null>(null);
+  const channels = useInfiniteQuery(channelListQueryOptions());
+  const botChannels = (channels.data ?? []).filter(
+    (channel) => channel.active && channel.agentIds.includes(recording.botId),
+  );
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const schedule = useMutation({
+    mutationFn: () =>
+      scheduleDemonstration(recording.id, {
+        cron: cron === "custom" ? custom : cron,
+        timezone,
+        ...(channelId && channelId !== ONLY_CONVERSATION ? { channelId } : {}),
+        ...(inputs.trim() ? { inputs } : {}),
+      }),
+    onSuccess: async (routine) => {
+      setScheduled(routine);
+      await queryClient.invalidateQueries({ queryKey: routineKeys.all });
+    },
+  });
+  if (scheduled)
+    return (
+      <p className="w-full text-xs">
+        {t("demonstration.scheduledLead")} /{recording.skillSlug}{" "}
+        {t("demonstration.nextRuns")} {formatDateTime(scheduled.nextRunAt)}.{" "}
+        <Link to="/routines" className="underline">
+          {t("demonstration.seeRoutines")}
+        </Link>{" "}
+        <Button variant="link" size="sm" onClick={onDone}>
+          {t("demonstration.close")}
+        </Button>
+      </p>
+    );
+  return (
+    <form
+      className="grid w-full gap-2 rounded-md border p-3 text-xs"
+      onSubmit={(event) => {
+        event.preventDefault();
+        schedule.mutate();
+      }}
+    >
+      <label htmlFor={`${id}-when`} className="grid gap-1">
+        {t("demonstration.whenItRuns", { timezone })}
+        <Select
+          items={Object.fromEntries([
+            ...SCHEDULES.map((option) => [option.cron, t(option.label)]),
+            ["custom", t("demonstration.customCron")],
+          ])}
+          onValueChange={(value) => {
+            // The null guard is the migration contract (H05/H06): React Aria reports an empty
+            // selection as null, and the draft keeps its previous schedule rather than a
+            // stringified absence.
+            if (value !== null) setCron(value);
+          }}
+          value={cron}
+        >
+          <SelectTrigger className="w-full" id={`${id}-when`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SCHEDULES.map((option) => (
+              <SelectItem key={option.cron} value={option.cron}>
+                {t(option.label)}
+              </SelectItem>
+            ))}
+            <SelectItem value="custom">
+              {t("demonstration.customCron")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </label>
+      {cron === "custom" && (
+        <label htmlFor={`${id}-cron`} className="grid gap-1">
+          {t("demonstration.cronFormat")}
+          <Input
+            id={`${id}-cron`}
+            required
+            maxLength={120}
+            value={custom}
+            onChange={(event) => setCustom(event.target.value)}
+            placeholder="30 8 * * 1-5"
+          />
+        </label>
+      )}
+      <label htmlFor={`${id}-channel`} className="grid gap-1">
+        {t("demonstration.reportIn")}
+        <Select
+          items={{
+            [ONLY_CONVERSATION]: t("demonstration.onlyConversation"),
+            ...Object.fromEntries(
+              botChannels.map((channel) => [channel.id, channel.name]),
+            ),
+          }}
+          onValueChange={(value) => {
+            // The H05/H06 null guard means one thing only: closing the list without choosing
+            // keeps the schedule as it was. "" is not that — it is BASE's own
+            // `<option value="">` ("report in this Bot's only conversation"), a real item that
+            // stays selectable after a channel was picked, so the choice remains two-way.
+            if (value === null) return;
+            setChannelId(value);
+          }}
+          value={channelId}
+        >
+          <SelectTrigger className="w-full" id={`${id}-channel`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ONLY_CONVERSATION}>
+              {t("demonstration.onlyConversation")}
+            </SelectItem>
+            {botChannels.map((channel) => (
+              <SelectItem key={channel.id} value={channel.id}>
+                {channel.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+      <label htmlFor={`${id}-inputs`} className="grid gap-1">
+        {t("demonstration.inputsLabel")}
+        <Input
+          id={`${id}-inputs`}
+          maxLength={1000}
+          value={inputs}
+          onChange={(event) => setInputs(event.target.value)}
+          placeholder={t("demonstration.inputsPlaceholder")}
+        />
+      </label>
+      {schedule.error && (
+        <p role="alert" className="mt-2 text-destructive text-sm">
+          {schedule.error.message}
+        </p>
+      )}
+      <div className="flex gap-2">
+        {/* Base UI's Button defaults to type="button", which never submits the form. */}
+        <Button
+          size="sm"
+          type="submit"
+          disabled={schedule.isPending || (cron === "custom" && !custom.trim())}
+        >
+          {t("demonstration.schedule")}
+        </Button>
+        <Button size="sm" variant="ghost" type="button" onClick={onDone}>
+          {t("demonstration.cancel")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+export function DemonstrationRecorder({
+  botId,
+  driving,
+  onRecordingChange,
+}: {
+  botId: string;
+  driving: boolean;
+  onRecordingChange: () => void;
+}) {
+  const { t } = useTranslation("computer");
+  const id = useId();
+  const [title, setTitle] = useState("");
+  const [draft, setDraft] = useState<DemonstrationDraft | null>(null);
+  const [savedSlug, setSavedSlug] = useState("");
+  const [saveError, setSaveError] = useState<Error | null>(null);
+  const recordings = useQuery(demonstrationsQueryOptions(botId));
+  const active = recordings.data?.find(
+    (recording) => recording.status === "recording",
+  );
+  const [scheduling, setScheduling] = useState("");
+  const secondsLeft = useSecondsLeft(active?.expiresAt);
+  const refresh = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: demonstrationKeys.bot(botId),
+    });
+  };
+  /*
+   * The server stops a recording at ten minutes. When the countdown runs out, or a poll shows the
+   * active recording gone, re-read and reconnect the stream so it stops carrying the recording id.
+   */
+  const wasActive = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (wasActive.current && !active) onRecordingChange();
+    wasActive.current = active?.id;
+  }, [active, onRecordingChange]);
+  useEffect(() => {
+    if (secondsLeft === 0)
+      void queryClient.invalidateQueries({
+        queryKey: demonstrationKeys.bot(botId),
+      });
+  }, [secondsLeft, botId]);
+  const start = useMutation({
+    mutationFn: () => startDemonstration(botId, title),
+    onSuccess: async () => {
+      await refresh();
+      onRecordingChange();
+    },
+  });
+  const stop = useMutation({
+    mutationFn: (recordingId: string) => stopDemonstration(recordingId),
+    onSuccess: async () => {
+      await refresh();
+      onRecordingChange();
+    },
+  });
+  const generate = useMutation({
+    mutationFn: draftDemonstration,
+    onSuccess: async (value) => {
+      setDraft(value);
+      setSavedSlug("");
+      setSaveError(null);
+      await refresh();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: deleteDemonstration,
+    onSuccess: async () => {
+      await refresh();
+      onRecordingChange();
+    },
+  });
+  const save = useMutation(saveSkillMutationOptions(queryClient));
+  return (
+    <section className="mt-4 grid gap-3 rounded-lg border p-4 text-left">
+      <div>
+        <h3 className="font-semibold">{t("demonstration.title")}</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("demonstration.intro")}
+        </p>
+      </div>
+      {active ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm">
+            {t("demonstration.recordingLine", {
+              title: active.title,
+              count: active.actions.length,
+            })}
+          </span>
+          {secondsLeft !== null && (
+            <span
+              aria-live={secondsLeft <= 60 ? "polite" : "off"}
+              className={
+                secondsLeft <= 60
+                  ? "text-sm font-medium text-destructive tabular-nums"
+                  : "text-sm text-muted-foreground tabular-nums"
+              }
+            >
+              {secondsLeft > 0
+                ? t("demonstration.timeLeft", { time: clock(secondsLeft) })
+                : t("demonstration.timeLimitReached")}
+            </span>
+          )}
+          <Button
+            size="sm"
+            disabled={stop.isPending}
+            onClick={() => stop.mutate(active.id)}
+          >
+            {t("demonstration.stopRecording")}
+          </Button>
+        </div>
+      ) : (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            start.mutate();
+          }}
+        >
+          <label htmlFor={id} className="grid grow gap-1 text-xs">
+            {t("demonstration.workflowName")}
+            <Input
+              id={id}
+              required
+              maxLength={120}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder={t("demonstration.workflowPlaceholder")}
+            />
+          </label>
+          {/* Base UI's Button defaults to type="button", which never submits the form. */}
+          <Button
+            size="sm"
+            type="submit"
+            disabled={!driving || start.isPending || !title.trim()}
+          >
+            {t("demonstration.recordSteps")}
+          </Button>
+          {!driving && (
+            <p className="w-full text-xs text-muted-foreground">
+              {t("demonstration.takeControlFirst")}
+            </p>
+          )}
+        </form>
+      )}
+      {(start.error ||
+        stop.error ||
+        generate.error ||
+        remove.error ||
+        recordings.error) && (
+        <p role="alert" className="text-sm text-destructive">
+          {start.error?.message ||
+            stop.error?.message ||
+            generate.error?.message ||
+            remove.error?.message ||
+            recordings.error?.message}
+        </p>
+      )}
+      {recordings.data
+        ?.filter((recording) => recording.status !== "recording")
+        .slice(0, 5)
+        .map((recording) => (
+          <div
+            key={recording.id}
+            className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm"
+          >
+            <span>
+              {recording.title} · {recording.actions.length}{" "}
+              {t("demonstration.stepsUnit")}
+              {recording.reachedTimeLimit && (
+                <span className="text-xs text-muted-foreground">
+                  {" "}
+                  {t("demonstration.stoppedAtLimit")}
+                </span>
+              )}
+            </span>
+            <div className="flex gap-2">
+              {recording.status === "published" && recording.skillSlug ? (
+                <>
+                  <Link
+                    to="/skills"
+                    search={{ edit: recording.skillSlug }}
+                    className="text-xs underline"
+                  >
+                    {t("demonstration.edit")} /{recording.skillSlug}
+                  </Link>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setScheduling((current) =>
+                        current === recording.id ? "" : recording.id,
+                      )
+                    }
+                  >
+                    {t("demonstration.runOnSchedule")}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!recording.actions.length || generate.isPending}
+                  onClick={() => generate.mutate(recording.id)}
+                >
+                  {t("demonstration.reviewDraft")}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={remove.isPending}
+                onClick={() => remove.mutate(recording.id)}
+              >
+                {t("demonstration.delete")}
+              </Button>
+            </div>
+            {scheduling === recording.id && (
+              <ScheduleSkill
+                recording={recording}
+                onDone={() => setScheduling("")}
+              />
+            )}
+          </div>
+        ))}
+      {draft && (
+        <div className="grid gap-3 border-t pt-4">
+          <h3 className="font-semibold">{t("demonstration.reviewTitle")}</h3>
+          <p className="text-xs text-muted-foreground">
+            {t("demonstration.reviewIntro")}
+          </p>
+          <SkillFields
+            key={draft.sourceRecordingId}
+            defaultValues={draft}
+            submitLabel={t("demonstration.saveAndUse")}
+            error={saveError || save.error}
+            onCancel={() => setDraft(null)}
+            onSubmit={async (values) => {
+              setSaveError(null);
+              try {
+                await save.mutateAsync(values);
+                await grantPlugin({
+                  kind: "skill",
+                  ref: values.slug,
+                  agentId: botId,
+                });
+                await publishDemonstration(
+                  draft.sourceRecordingId,
+                  values.slug,
+                );
+                await invalidatePlugins(queryClient);
+                await refresh();
+                setSavedSlug(values.slug);
+                setDraft(null);
+              } catch (error) {
+                setSaveError(
+                  error instanceof Error
+                    ? error
+                    : new Error(t("demonstration.couldNotSave")),
+                );
+                await refresh();
+              }
+            }}
+          />
+        </div>
+      )}
+      {savedSlug && (
+        <p className="text-sm">
+          {t("demonstration.savedReady", { slug: savedSlug })}
+        </p>
+      )}
+    </section>
+  );
+}
