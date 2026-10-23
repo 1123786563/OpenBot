@@ -2,7 +2,7 @@
 
 在 OpenBot 中使用 Orca 协调多个 Agent 时读取。本文件是实施流程入口；执行状态、资源与故障细则见 [编排协议](orchestration-protocol.md)，Review 与 Issue 收尾见 [审核和交付](orchestration-review.md)。同时遵守 [Issue 摄取](issue-delivery.md)、[执行](execution.md)、[Worktree](worktrees.md)、[验证](testing.md)、[Review/OCR](review.md) 与[产物归处](artifacts.md)中适用的要求。多 Agent 代码实施须绑定根 Issue；只读研究、仅计划和仅 Review 遵守用户限定范围，不启动实施、集成或关闭 Issue 的阶段。
 
-Orca 是工作区、Agent 与监督式 Task/Dispatch 的事实源。开始前读取当前会话的 `orca-cli` 和 `orchestration` 技能及版本匹配指南；命令、Agent ID、能力与回执以当前 Orca 版本为准。2026-10-18 的[旧工具实施计划](../../docs/plans/2026-10-18-orca-dag-orchestration.md)保留设计和开发历史，不作为本流程的运行状态或权限来源。
+Orca 是工作区、Agent 与监督式 Task/Dispatch 的事实源。开始前读取当前会话的 `orca-cli` 和 `orchestration` 技能及版本匹配指南；命令、Agent ID、能力与回执以当前 Orca 版本为准。
 
 ## 运行边界与职责
 
