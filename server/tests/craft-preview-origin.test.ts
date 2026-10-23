@@ -1019,6 +1019,36 @@ describe("preview origin admission", () => {
     }
   });
 
+  // ── #415: a wildcard `*` in the base is refused on both faces ────────────
+  //
+  // WHATWG's URL parser parses `*` into a hostname happily (it is not a
+  // forbidden domain code point), so before this pin parseTemplate served
+  // `https://{session}.*.example.com` and originFor minted
+  // `<label>.*.example.com` — a host no DNS zone spells and no certificate
+  // pipeline answers for, while the sidecar's derive_preview_host refuses
+  // the same template (its base charset never admits `*`) and crash-loops
+  // against an origin the server keeps serving (the fix-ocr18 #9 divergence
+  // class, the serving direction). The two faces now refuse it together.
+  test("#415: a wildcard `*` label in the base is refused — both faces, same verdict", () => {
+    for (const template of [
+      "https://{session}.*.example.com",
+      "https://{session}.x.*.example.com",
+    ]) {
+      const broken = originWith({ previewOriginTemplate: template });
+      const admission = broken.admission();
+      // RED: admission held ok before — `*` parsed and only the dot-count
+      // checks ran on the base.
+      expect(admission.ok).toBe(false);
+      if (!admission.ok) {
+        expect(admission.reason).toContain(
+          "OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE",
+        );
+      }
+      expect(() => broken.originFor(SESSION_ID)).toThrow();
+      expect(broken.handlesRequest(new Request("https://x.*.example.com/"))).toBe(false);
+    }
+  });
+
   test("fix-ocr5 D: multi-label bases and exactly localhost stay ok", () => {
     for (const template of [
       "https://{session}.example.com",
