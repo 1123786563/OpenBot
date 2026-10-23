@@ -1,15 +1,6 @@
-import { useTranslation } from "react-i18next";
-import { PendingApprovals } from "@/components/approvals/inline-approval";
 import type { VisibleChatItem } from "./chat-messages";
-import { ToolLine } from "./tool-line";
 
 type BrowserStep = Extract<VisibleChatItem, { kind: "tool" }>;
-export type BrowserGroup = {
-  kind: "browser";
-  id: string;
-  steps: BrowserStep[];
-};
-export type TranscriptItem = VisibleChatItem | BrowserGroup;
 
 type StepLabelKey =
   | "browser.step.navigate"
@@ -36,29 +27,12 @@ const labelKeys: Record<string, StepLabelKey> = {
 /**
  * Whether a tool call is a browsing step this file knows how to draw.
  *
- * One answer for both groupers, so a step can never be a browser step to one and an unknown tool to
- * the other: `groupBrowserSteps` folds on it, and the transcript-wide `groupToolSteps` folds on it
- * too.
+ * One answer for the transcript's grouper and its step renderer, so a step can never be a browser
+ * step to one and an unknown tool to the other: `groupToolSteps` folds on it, and `stepDetails`
+ * reads its shape through {@link browserStepDetails}.
  */
 export function isBrowserStep(step: BrowserStep): boolean {
   return Object.hasOwn(labelKeys, step.toolCall.function.name);
-}
-
-/** Group adjacent browsing steps without moving messages or hiding requests for human help. */
-export function groupBrowserSteps(
-  items: readonly VisibleChatItem[],
-): TranscriptItem[] {
-  const grouped: TranscriptItem[] = [];
-  for (const item of items) {
-    if (item.kind !== "tool" || !isBrowserStep(item)) {
-      grouped.push(item);
-      continue;
-    }
-    const last = grouped.at(-1);
-    if (last?.kind === "browser") last.steps.push(item);
-    else grouped.push({ kind: "browser", id: item.id, steps: [item] });
-  }
-  return grouped;
 }
 
 function objectOf(value: string | undefined): Record<string, unknown> {
@@ -103,82 +77,4 @@ export function browserStepDetails(step: BrowserStep) {
     visited: navigation && result.ok === true,
     pending: step.result === undefined,
   };
-}
-
-export function BrowserActivity({
-  group,
-  active,
-}: {
-  group: BrowserGroup;
-  active: boolean;
-}) {
-  const { t } = useTranslation("channels");
-  const steps = group.steps.map((step) => ({
-    id: step.id,
-    ...browserStepDetails(step),
-  }));
-  const pages = steps.filter((step) => step.visited).length;
-  const issues = steps.filter((step) => step.failed).length;
-  const running = active && steps.some((step) => step.pending);
-  // The folded line draws its own steps, so a waiting approval gets its card beside it, not inside.
-  return (
-    <>
-      <ToolLine
-        label={
-          running
-            ? t("browser.browsing")
-            : pages
-              ? pages === 1
-                ? t("browser.browsedOne")
-                : t("browser.browsedMany", { pages })
-              : t("browser.activity")
-        }
-        detail={
-          issues
-            ? issues === 1
-              ? t("browser.issueOne")
-              : t("browser.issueMany", { issues })
-            : undefined
-        }
-        running={running}
-      >
-        <ol className="space-y-2 py-1">
-          {steps.map((step) => (
-            <li key={step.id} className="min-w-0">
-              <div className="flex min-w-0 items-baseline gap-2">
-                <span className="shrink-0 text-muted-foreground">
-                  {t(step.labelKey)}
-                </span>
-                {step.href ? (
-                  <a
-                    href={step.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="truncate underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-current"
-                  >
-                    {step.title ?? step.href}
-                  </a>
-                ) : null}
-                {step.pending && (
-                  <span className="text-muted-foreground">
-                    {active
-                      ? t("browser.inProgress")
-                      : t("browser.notCompleted")}
-                  </span>
-                )}
-              </div>
-              {step.failed && (
-                <p className="mt-0.5 text-destructive">
-                  {step.reason ?? t("browser.stepFailed")}
-                </p>
-              )}
-            </li>
-          ))}
-        </ol>
-      </ToolLine>
-      <PendingApprovals
-        toolCallIds={group.steps.map((step) => step.toolCall.id)}
-      />
-    </>
-  );
 }

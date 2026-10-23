@@ -252,8 +252,18 @@ export function ConnectAppCard({
         </p>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          {/* The heading above already names the app; the button says what pressing it does. */}
-          <Button disabled={connect.isPending} onClick={open} size="sm">
+          {/*
+           * The heading above already names the app; the button says what pressing it does. Disabled
+           * through the wait too: the button's own label is the waiting text, and a second press
+           * would open a second about:blank tab and start a second connect, leaving the first —
+           * already navigating to the authorization page — orphaned. Retrying has its own entries:
+           * Stop waiting, or the timed-out ending's fresh press.
+           */}
+          <Button
+            disabled={connect.isPending || waiting}
+            onClick={open}
+            size="sm"
+          >
             {waiting
               ? t("connectCard.waitingButton", { title })
               : t("connectCard.connect")}
