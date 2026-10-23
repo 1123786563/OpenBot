@@ -15,6 +15,7 @@
 | 查询、创建、拆分或更新 Issue | [Issue tracker](.agents/rules/issue-tracker.md) |
 | 使用或修改领域术语、进入子模块 | [领域上下文](.agents/rules/domain.md) |
 | 设计、Spec、ADR、任务拆分或需求冲突 | [设计与事实源](.agents/rules/design.md) |
+| 新增 Module、调整 Interface、跨 Module 调用、迁移目录或更换 Adapter | [模块架构](.agents/rules/architecture.md) |
 | 用户要求实现单个、父级或一组 Issues | [Issue 摄取与 DAG](.agents/rules/issue-delivery.md)，随后读执行、测试和审查规范 |
 | 编写实施计划、派发、实现、修复或恢复任务 | [执行与上下文](.agents/rules/execution.md) |
 | 使用 Orca 协调多个 Agent，或规划、审查、恢复编排 Run | [Orca 多 Agent 编排](.agents/rules/orchestration.md) |
