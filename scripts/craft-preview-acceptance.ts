@@ -45,6 +45,25 @@
  *   CRAFT_ACCEPTANCE_SANDBOX_GATEWAY / _SANDBOX_TOKEN / _SANDBOX_BOT
  *   CRAFT_ACCEPTANCE_SERVER_LOG（可选）/ _SHOT_DIR / _CLEANUP_SESSIONS=1（跑完删会话）
  *
+ * #416 same-site 拓扑 profile（CRAFT_ACCEPTANCE_TOPOLOGY=same-site）：主站与
+ * preview 同 eTLD+1 的生产形态（preview 是主站的子域，SameSite 无从扣留）。
+ * 需要部署側起 host-form server：OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE=
+ *   https://{session}.preview.localhost（server 监听 :3221，
+ *   *.preview.localhost 都解析到 127.0.0.1），并用 #412 的参考 TLS 拓扑
+ *   （docker/compose/preview-tls.yml，OPENBOT_PREVIEW_UPSTREAM=
+ *   http://host.docker.internal:3221，TLS 文件指向 server
+ *   OPENBOT_TLS_STATUS_FILE 读得到的状态文件——host form 准入只看该文件
+ *   的 health 标量，自签/本地签发写 health:ok 即开门）在 127.0.0.1:443 终止
+ *   TLS（X-Forwarded-Proto: https）。脚本期望：
+ *   CRAFT_ACCEPTANCE_APP_ORIGIN=https://localhost（主站同 443）、
+ *   PREVIEW 段在 https://<label>.preview.localhost。该 profile 下追加
+ *   AC1-same-site 步骤：主站登录 → 顶层进入 preview → 同 site 凭证写
+ *   （POST）主站 /api/craft/sessions → 断言 #410 服务端 guard 403（cookie
+ *   在 SameSite 拦不住时由 origin-guard 扣住）——主站 cookie 不会被
+ *   preview 静默读写。dev（默认）profile 下该步骤 SKIP 并写明前提（SameSite
+ *   在跨站拓扑本来就不随行；dev form 的 Origin 不可识别是 write-origin-guard
+ *   记录在案的已知缺口，见 server/src/craft/write-origin-guard.ts 头注）。
+ *
  * 两个已知上游缺口会在结果里以 FINDING 形式出现（不修，只报）：
  *   F-1 预览域 D9 cookie（SameSite=Lax）在跨站 iframe 兑换跳里被浏览器拒收 →
  *       预览面板 iframe 停在 401 拒绝页（回退 #362/#360）。
@@ -133,6 +152,45 @@ const CLEANUP = process.env.CRAFT_ACCEPTANCE_CLEANUP_SESSIONS === "1";
 const SANDBOX_CONTAINER =
   process.env.CRAFT_ACCEPTANCE_SANDBOX_CONTAINER ?? "openbot-agent-sandbox-1";
 
+/**
+ * #416 拓扑 profile：dev（默认，跨站拓扑，preview 在 http://127.0.0.1/<label>）
+ * 或 same-site（生产形态，preview 是主站的子域——同 eTLD+1，SameSite 拦不住
+ * 主站 cookie 的随行，隔离只剩 #410 服务端 origin-guard 与 CSP）。same-site
+ * 由部署側的 host-form server（OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE=
+ * https://{session}.preview.localhost）+#412 参考 TLS 终止承载，脚本只按
+ * CRAFT_ACCEPTANCE_PREVIEW_ORIGIN 指定的实际地址跑并改变 AC1 的期望（见
+ * 头注与下方 devTopology 型标注）。非法值 fail-fast：拓扑拼错不是可静默
+ * 回退的配置（AC 断言口径随 profile 变化，拼错拼成了 dev 会把 same-site
+ * 的事故静默放过）。
+ */
+const TOPOLOGY = (() => {
+  const raw = (process.env.CRAFT_ACCEPTANCE_TOPOLOGY ?? "dev").trim();
+  if (raw === "dev" || raw === "same-site") return raw;
+  throw new Error(
+    `CRAFT_ACCEPTANCE_TOPOLOGY 只认 dev|same-site，收到 ${JSON.stringify(raw)}（拓扑决定 AC1 断言口径，拼错不能静默回退）`,
+  );
+})();
+const PREVIEW_ORIGIN_OVERRIDE =
+  process.env.CRAFT_ACCEPTANCE_PREVIEW_ORIGIN?.trim() ?? "";
+/**
+ * preview 基准 origin：same-site profile 下必填（host form 地址由部署拓扑
+ * 决定，脚本无从默认——https://<label>.preview.localhost 形态，443 端口被
+ * WHATWG 序列化丢弃）；dev profile 下恒为 http://127.0.0.1:<API 端口>，
+ * override 非空即拒绝（防把 same-site 的地址拼进跨站断言里）。
+ */
+const PREVIEW_BASE =
+  TOPOLOGY === "same-site" ? PREVIEW_ORIGIN_OVERRIDE : "";
+if (TOPOLOGY === "same-site" && PREVIEW_BASE === "") {
+  throw new Error(
+    "same-site profile 需要 CRAFT_ACCEPTANCE_PREVIEW_ORIGIN（host-form preview 基准地址，如 https://preview.localhost —— label 会拼为子域）",
+  );
+}
+if (TOPOLOGY === "dev" && PREVIEW_BASE !== "") {
+  throw new Error(
+    "dev profile 不接受 CRAFT_ACCEPTANCE_PREVIEW_ORIGIN（dev 地址由 API 端口派生，见头注）",
+  );
+}
+
 const T = 45_000;
 const SESSION_PREFIX = "#365 probe";
 /**
@@ -143,6 +201,59 @@ const SESSION_PREFIX = "#365 probe";
  * 两端拼写漂移时，断言会如实 FAIL（cookie 找不到），不会静默放过。
  */
 const PREVIEW_SESSION_COOKIE = "openbot_preview_session";
+
+/**
+ * #416：preview 地址形态的拓扑抽象 —— dev（http://127.0.0.1:<port>/<label>，
+ * label 在路径首段）vs same-site/host（https://<label>.<base>，label 在主机名
+ * 首段，应用在根路径）。previewOrigin 形态由 PREVIEW_BASE（same-site）派生、
+ * dev 由 API 端口派生；label 从服务器铸造的 webapp_url 提取（同一事实源，
+ * 永不本地重算 HMAC）。dev 形态的 20-hex label 正则对 host 形态同样成立
+ * （同一 previewLabel 派生），但主机名形态的期望在 expectOrigin 内逐分支写死，
+ * 不靠正则碰巧兼容。
+ */
+/**
+ * host 形态地址拼装（R2-F9，OCR R2）：从 PREVIEW_BASE 派生协议/主机名/端口，
+ * label 拼进主机名首段。旧代码在 expectOrigin 与 preflight bogus 探测两处手写
+ * 同款拼法，单边漂移会让断言与探测口径分裂 —— 与 PREVIEW_SESSION_COOKIE 同一
+ * 治理惯例（收敛到单一事实源）。仅在 same-site 拓扑下调用（dev 形态 label 在
+ * 路径首段，不走这里）。
+ */
+function hostFormOrigin(name: string): string {
+  const base = new URL(PREVIEW_BASE);
+  // 主机名首段挂 label；base 带端口时保留（非 443 的本地 TLS 拓扑），
+  // 443 被 WHATWG 序列化丢弃的形态由 base 本身携带。
+  const port = base.port === "" ? "" : `:${base.port}`;
+  return `${base.protocol}//${name}.${base.hostname}${port}`;
+}
+
+function expectOrigin(label: string): string {
+  if (TOPOLOGY === "same-site") {
+    return hostFormOrigin(label);
+  }
+  return `${PREVIEW_ORIGIN}/${label}`;
+}
+/** preview 基准（无 label）：拓扑感知 —— preflight 探测与 bogus-label 回落断言用。 */
+function previewBaseOrigin(): string {
+  return TOPOLOGY === "same-site" ? PREVIEW_BASE : PREVIEW_ORIGIN;
+}
+/**
+ * 预览应用的 URL 前缀（#416）：host 形态应用在 origin 根（无前缀），dev
+ * 形态挂 /<label> basePath。页面内相对 fetch 与直连端口的就绪门都用它。
+ */
+function appPrefix(label: string): string {
+  return TOPOLOGY === "same-site" ? "" : `/${label}`;
+}
+/**
+ * 预览通行证 cookie 的 jar domain（#416）：host 形态是 <label>.<base host>
+ * （host-only，无 Domain 属性），dev 形态是 127.0.0.1。CDP 全量 jar 按
+ * domain 精确匹配（cdpDomainCookies 的 === domain），两种形态各自命名。
+ */
+function previewCookieDomain(label: string): string {
+  if (TOPOLOGY === "same-site") {
+    return `${label}.${new URL(PREVIEW_BASE).hostname}`;
+  }
+  return "127.0.0.1";
+}
 
 /**
  * label 形状正则（fix-ocr25 #12）：脚本内两处断言（webapp_url 解析与 D7
@@ -159,7 +270,13 @@ const LABEL_SHAPE = /^[0-9a-f]{20}$/;
  * 形态自然落成 wss）。
  */
 function hmrWsUrl(label: string): string {
-  return `${PREVIEW_ORIGIN.replace(/^http/, "ws")}/${label}/_next/webpack-hmr`;
+  // #416 拓扑感知：host 形态应用在根路径，HMR socket 在 /_next/webpack-hmr；
+  // dev 形态挂在 /<label> basePath 下。注意 dev 不能用 expectOrigin(label)（它已含
+  // label 路径，再拼 basePath 会双 label —— run10 实测 ws=…/label/label/_next/
+  // webpack-hmr，FAIL 归因于此）；base 用裸 PREVIEW_ORIGIN。
+  const origin = TOPOLOGY === "same-site" ? expectOrigin(label) : PREVIEW_ORIGIN;
+  const basePath = TOPOLOGY === "same-site" ? "" : `/${label}`;
+  return `${origin.replace(/^http/, "ws")}${basePath}/_next/webpack-hmr`;
 }
 const RUN_STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
@@ -188,6 +305,7 @@ const AC_OF_STEP: ReadonlyArray<{ match: string; acs: readonly string[] }> = [
   { match: "AC1 生成代码跨 origin 调主站 API", acs: ["AC1"] },
   { match: "F-1 预览 CSP form-action", acs: ["AC1"] },
   { match: "AC1 协议层", acs: ["AC1"] },
+  { match: "AC1 same-site", acs: ["AC1"] },
   { match: "可交互：应用自身 API", acs: ["AC2"] },
   { match: "点击 → POST → 200", acs: ["AC2"] },
   { match: "Server Actions", acs: ["AC2"] },
@@ -278,6 +396,7 @@ function writeSummary(verdictNotes: string): void {
   const screenshots = readdirSync(SHOT_DIR).filter((f) => f.endsWith(".png"));
   const summary = {
     run: `craft-preview-origin-browser-${VERIFICATION_STAMP}`,
+    topology: TOPOLOGY,
     generated_at: new Date().toISOString(),
     code_commit: codeCommit,
     verdict_notes: redactTicket(verdictNotes),
@@ -841,16 +960,17 @@ async function installProbeApp(
     let nonMarkerStreak = 0;
     while (Date.now() < attemptDeadline) {
       // F-2 后 dev server 挂在 /<label> basePath 下：直连端口的就绪门也必须
-      // 走 label 前缀（端口根只回 404）。
+      // 走 label 前缀（端口根只回 404）。#416：host 形态（same-site profile）
+      // 应用在根路径，appPrefix 收敛两种形态的前缀拼法。
       const probe = await fetch(
-        `http://127.0.0.1:${session.port}/${session.label}/api/probe`,
+        `http://127.0.0.1:${session.port}${appPrefix(session.label)}/api/probe`,
       ).catch(() => null);
       const probeBody = probe?.ok ? await probe.json().catch(() => null) : null;
       // fix-ocr18 #19：改名 pageHtml —— 本地变量原本遮蔽模块级 playwright
       // 的 page: Page（本文件其后所有 page.* 都是 Page 语义），同名异型是
       // 阅读陷阱。3+1 处引用（声明 + 3 使用）同步改名。
       const pageHtml = await fetch(
-        `http://127.0.0.1:${session.port}/${session.label}/`,
+        `http://127.0.0.1:${session.port}${appPrefix(session.label)}/`,
       )
         .then((r) => r.text())
         .catch(() => "");
@@ -980,19 +1100,43 @@ try {
         .then((r) => r.status)
         .catch(() => 0);
       assert(gw === 200, `sandbox gateway ${GATEWAY} /health → ${gw}`);
-      const bogus = await fetch(`${PREVIEW_ORIGIN}/definitely-not-a-label/`)
+      // #416：拓扑感知的预览基准探测与 bogus 回落断言。host 形态对未知
+      // label 子域断言预览拒绝文案（apex/base 域名命中预览命名空间，
+      // 未注册 label → "Unknown preview host"，claimsPreviewHost 的
+      // fail-closed 语义）；dev 形态保持旧契约（未注册首段回落主站，
+      // fix-ocr21 #2 —— 响应不得携带预览拒绝文案）。
+      const base = previewBaseOrigin();
+      // host 形态探测未注册 label 子域（fail-closed：404 + 预览拒绝文案）；
+      // dev 形态探测未注册首段（回落主站，不带预览文案）。
+      // fix-ocr26 F5（OCR R1）：same-site 的 bogus 探测地址必须是「未注册
+      // label 拼成子域」——旧代码把 label 拼进了路径（${origin}/label.${host}/），
+      // 对不覆盖 apex 的通配符证书（#412）TLS 校验直接失败 → status 0 →
+      // 断言恒 FAIL。R2-F9（OCR R2）：与 expectOrigin 同款拼法收敛进
+      // hostFormOrigin，不再手写（保留 base 协议与端口，label 进主机名首段）。
+      const bogusUrl =
+        TOPOLOGY === "same-site"
+          ? `${hostFormOrigin("definitely-not-a-label")}/`
+          : `${base}/definitely-not-a-label/`;
+      const bogus = await fetch(bogusUrl, { redirect: "manual" })
         .then(async (r) => ({ status: r.status, body: await r.text() }))
         .catch(() => ({ status: 0, body: "" }));
-      // fix-ocr21 #2: fix-ocr3 之后 handlesRequest 只认领「hostname 命中 +
-      // 已注册 label 首段」——未注册首段回落主站（Hono 的主站 404 不带预览
-      // 文案）。断言回落契约本身：响应不得携带预览拒绝文案。"Unknown
-      // preview host" 只对 hostname 命中而 label 未注册的 host 形态可达；
-      // path 形态断言它，会在正确部署上永远 FAIL（验收退出码恒 1）。
-      assert(
-        !bogus.body.includes("Unknown preview host"),
-        `preview origin ${PREVIEW_ORIGIN} 对未知 label 应回落主站（响应不得携带预览拒绝文案），实际 ${bogus.status} ${bogus.body.slice(0, 60)}`,
-      );
-      return `preview origin ${PREVIEW_ORIGIN} 就绪`;
+      if (TOPOLOGY === "same-site") {
+        assert(
+          bogus.status === 404 && bogus.body.includes("Unknown preview host"),
+          `preview base ${base} 对未注册 label 子域应 404 Unknown preview host，实际 ${bogus.status} ${bogus.body.slice(0, 60)}`,
+        );
+      } else {
+        // fix-ocr21 #2: fix-ocr3 之后 handlesRequest 只认领「hostname 命中 +
+        // 已注册 label 首段」——未注册首段回落主站（Hono 的主站 404 不带预览
+        // 文案）。断言回落契约本身：响应不得携带预览拒绝文案。"Unknown
+        // preview host" 只对 hostname 命中而 label 未注册的 host 形态可达；
+        // path 形态断言它，会在正确部署上永远 FAIL（验收退出码恒 1）。
+        assert(
+          !bogus.body.includes("Unknown preview host"),
+          `preview origin ${PREVIEW_ORIGIN} 对未知 label 应回落主站（响应不得携带预览拒绝文案），实际 ${bogus.status} ${bogus.body.slice(0, 60)}`,
+        );
+      }
+      return `preview ${TOPOLOGY} 拓扑就绪（base=${base}）`;
     },
   );
 
@@ -1134,13 +1278,33 @@ try {
       );
       // 建会话后立即取 webapp_url：label 是服务端 HMAC 派生的确定性值，
       // 不依赖 webapp ready —— 探针安装与直连端口就绪门都需要它（F-2 basePath）。
+      // #416：地址期望拓扑感知 —— host 形态 https://<label>.<base>，dev 形态
+      // http://127.0.0.1:<port>/<label>；服务器铸造的地址是唯一事实源。
       const early = await api.craft(`sessions/${row.id}/webapp-info`);
       const origin = String(early.body?.webapp_url ?? "");
+      // R2-F8（OCR R2）：旧代码在断言前直接 new URL(origin)，空/相对 origin 扡裸
+      // TypeError（“Invalid URL”），把真实原因（webapp-info 响应异常）藏掉。先
+      // 断言非空，再单独捕获解析失败，两条路径都给出携带原始值与响应形状的
+      // 可读信息；严格相等断言保持不变（不放宽回 startsWith）。
       assert(
-        origin.startsWith(`${PREVIEW_ORIGIN}/`),
-        `webapp_url=${origin} 不是 preview origin 绝对地址`,
+        origin !== "",
+        `webapp_url 为空（webapp-info 响应：${JSON.stringify(early.body).slice(0, 160)}）`,
       );
-      const label = new URL(origin).pathname.slice(1).split("/")[0];
+      try {
+        new URL(origin);
+      } catch {
+        throw new Error(
+          `webapp_url=${JSON.stringify(origin)} 不是绝对地址（期望 ${expectOrigin("<label>")} 形态；webapp-info 响应：${JSON.stringify(early.body).slice(0, 160)}）`,
+        );
+      }
+      const label =
+        TOPOLOGY === "same-site"
+          ? (new URL(origin).hostname.split(".")[0] ?? "")
+          : new URL(origin).pathname.slice(1).split("/")[0];
+      assert(
+        origin === expectOrigin(label),
+        `webapp_url=${origin} 不是本拓扑（${TOPOLOGY}）期望的 preview 地址形状（期望 ${expectOrigin(label)} 形态）`,
+      );
       // fix-ocr23 #4：空/畸形 label 放行的话，installProbeApp 的探测 URL 变
       // 成 //api/probe 双斜杠形态，最终以 5×60s 就绪门慢失败收场且误指
       // nextjs.log 尾部 —— 形状断言前移到安装之前（下方 D7 步骤同款），
@@ -1212,10 +1376,15 @@ try {
       });
       await page.waitForSelector("iframe[title]", { timeout: T });
       const iframe = page.locator("iframe[title]");
-      const entrySrc = await iframe.getAttribute("src");
+      const entrySrc = (await iframe.getAttribute("src")) ?? "";
+      // #416：拓扑感知的入口 src 期望 —— 两种形态都应在各自 preview origin 上
+      // 且带票（dev：http://127.0.0.1:<port>/<label>?ticket=…；host：
+      // https://<label>.<base>/?ticket=…）。用 expectOrigin 派生的地址做前缀，
+      // 防两种拓扑的断言口径漂移。
+      const expectedEntry = expectOrigin(sessionA.label);
       assert(
-        entrySrc?.startsWith(`${PREVIEW_ORIGIN}/`),
-        `iframe src 不在 preview origin：${entrySrc}`,
+        entrySrc.startsWith(expectedEntry),
+        `iframe src 不在本拓扑（${TOPOLOGY}）的 preview origin：${entrySrc}（期望 ${expectedEntry}…）`,
       );
       assert(
         entrySrc.includes("ticket="),
@@ -1227,7 +1396,12 @@ try {
         .locator("body")
         .innerText({ timeout: 15_000 })
         .catch(() => "");
-      const pass = await cdpDomainCookies(page, "127.0.0.1");
+      // #416：拓扑感知的通行证 jar domain（host：<label>.<base host>，
+      // dev：127.0.0.1）。
+      const pass = await cdpDomainCookies(
+        page,
+        previewCookieDomain(sessionA.label),
+      );
       paneObserved = true;
       panePassSeen = pass.some((c) => c.name === PREVIEW_SESSION_COOKIE);
       paneFrameText = text;
@@ -1327,8 +1501,12 @@ try {
       const url = previewPage.url();
       assert(!url.includes("ticket="), `票据留在最终 URL：${url}`);
       // 通行证存在性走 CDP 全量 jar（context.cookies() 对 http 不返回 Secure
-      // cookie，见头注）；并断言 F-1 的形状与行为学可达。
-      const passes = await cdpDomainCookies(previewPage, "127.0.0.1");
+      // cookie，见头注）；并断言 F-1 的形状与行为学可达。#416：jar domain
+      // 拓扑感知（host：<label>.<base host>；dev：127.0.0.1）。
+      const passes = await cdpDomainCookies(
+        previewPage,
+        previewCookieDomain(sessionA.label),
+      );
       const pass = passes.find((c) => c.name === PREVIEW_SESSION_COOKIE);
       assert(
         pass,
@@ -1341,16 +1519,17 @@ try {
         `通行证形状不是 F-1 的 HttpOnly; SameSite=None; Secure：${JSON.stringify(pass)}`,
       );
       // 行为学：通行证真的随请求走 —— 预览页同源 fetch 自身受保护的 API 必须通
-      // （无通行证的对照是 AC3 的 401）。
-      const probed = await previewPage.evaluate(async (label) => {
-        const r = await fetch(`/${label}/api/probe`, {
+      // （无通行证的对照是 AC3 的 401）。#416：host 形态应用在根路径，
+      // 相对路径无 /<label> 前缀；dev 形态挂 basePath。
+      const probed = await previewPage.evaluate(async (prefix) => {
+        const r = await fetch(`${prefix}/api/probe`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: "{}",
         });
         const b = (await r.json().catch(() => ({}))) as { ok?: boolean };
         return { status: r.status, ok: b.ok === true };
-      }, sessionA.label);
+      }, appPrefix(sessionA.label));
       assert(
         probed.status === 200 && probed.ok,
         `预览页同源 fetch 未携带通行证：${JSON.stringify(probed)}`,
@@ -1387,11 +1566,12 @@ try {
       try {
         // 种伪造 cookie：值 = session id 本身（修复前的合法凭据形状），
         // Path=/ 覆盖包括 /<label>/… 在内的全部路径，与真攻击者的最简手写一致。
+        // #416：种点跟随拓扑（host 形态种在预览 host 自己的 origin 上）。
         await forged.addCookies([
           {
             name: PREVIEW_SESSION_COOKIE,
             value: sessionA.id,
-            url: `${PREVIEW_ORIGIN}/`,
+            url: `${sessionA.origin}/`,
           },
         ]);
         const fpage = await forged.newPage();
@@ -1459,8 +1639,12 @@ try {
       assert(previewPage, "前置失败");
       const main = await context.cookies([APP_ORIGIN]);
       assert(main.length > 0, "主站 cookie jar 为空（未登录？）");
-      // 预览 host 侧用 CDP 全量 jar（context.cookies() 看不到 Secure cookie，见头注）
-      const preview = await cdpDomainCookies(previewPage, "127.0.0.1");
+      // 预览 host 侧用 CDP 全量 jar（context.cookies() 看不到 Secure cookie，见头注）。
+      // #416：jar domain 拓扑感知。
+      const preview = await cdpDomainCookies(
+        previewPage,
+        previewCookieDomain(sessionA.label),
+      );
       const previewNames = preview.map((c) => c.name);
       // fix-ocr20 #11：every 对空数组恒真 —— 前置失败（兑换/种 cookie 没发生）
       // 时 jar 为空，下面的 every 会误报 PASS。先钉住通行证必须真的在 jar 里，
@@ -1473,17 +1657,29 @@ try {
         previewNames.every((n) => n === PREVIEW_SESSION_COOKIE),
         `预览 host 出现非通行证 cookie：${JSON.stringify(previewNames)}`,
       );
-      const leaked = await cdpDomainCookies(previewPage, "localhost");
+      // #416：通行证不得落在主站 host。same-site 拓扑下主站与预览同
+      // eTLD+1，这里断言主站 host（APP_ORIGIN 的 hostname）上无通行证 ——
+      // host-only 落点 + 主站会话 cookie 的隔离。dev 拓扑保持旧双向断言
+      // （127.0.0.1 vs localhost）。
+      const mainHost = new URL(APP_ORIGIN).hostname;
+      const leaked = await cdpDomainCookies(previewPage, mainHost);
       assert(
         !leaked.some((c) => c.name === PREVIEW_SESSION_COOKIE),
         "通行证种到了主站 host",
       );
+      if (TOPOLOGY === "dev") {
+        const previewSide = await cdpDomainCookies(previewPage, "localhost");
+        assert(
+          !previewSide.some((c) => c.name === PREVIEW_SESSION_COOKIE),
+          "通行证种到了主站 host",
+        );
+      }
       const mainNames = main.map((c) => c.name);
       assert(
         !mainNames.includes(PREVIEW_SESSION_COOKIE),
         "通行证种到了主站 host",
       );
-      return `主站=${JSON.stringify(mainNames.slice(0, 4))}… 预览（CDP）=${JSON.stringify(previewNames)}`;
+      return `主站=${JSON.stringify(mainNames.slice(0, 4))}… 预览（CDP ${previewCookieDomain(sessionA.label)}）=${JSON.stringify(previewNames)}`;
     },
   );
 
@@ -1613,9 +1809,14 @@ try {
         outcome.violation === "form-action",
         `同 site 表单提交未被 form-action 拦截（violation=${JSON.stringify(outcome.violation)}）——若提交已发往主站 ${APP_ORIGIN}，即 F-1 洞开`,
       );
+      // OCR fullrange 终门 + R5 复审：断言拓扑感知且单一事实源——期望 host
+      // 从服务器铸造的 webapp_url 提取的 sessionA.label（既有约定）派生，
+      // expectOrigin 本身已拓扑感知（dev 返回 `${PREVIEW_ORIGIN}/${label}`），
+      // 不从被测页面 URL 现场提取（那会让期望与观测同源、断言恒真）。
+      const expectedHost = new URL(expectOrigin(sessionA.label)).host;
       assert(
-        outcome.host === new URL(PREVIEW_ORIGIN).host,
-        `观测文档离开了 preview host：${outcome.host}`,
+        outcome.host === expectedHost,
+        `观测文档离开了 preview host：${outcome.host}（期望 ${expectedHost}，拓扑 ${TOPOLOGY}）`,
       );
       return `提交 ${APP_ORIGIN}/（POST, 同 site）→ securitypolicyviolation(form-action) 就地拦截，页面仍在 preview host`;
     },
@@ -1646,10 +1847,12 @@ try {
       const bare = await context.newPage();
       const bareCdp = await context.newCDPSession(bare);
       await bareCdp.send("Page.setBypassCSP", { enabled: true });
-      await bare.goto(`${PREVIEW_ORIGIN}/${sessionA.label}/probe-ac1-context`, {
-        waitUntil: "domcontentloaded",
-        timeout: T,
-      });
+      // #416：取证页地址拓扑感知 —— host 形态在预览 host 根路径下取一个
+      // 应用内不存在的路径，dev 形态在 /<label>/… 下（appPrefix 已收敛）。
+      await bare.goto(
+        `${expectOrigin(sessionA.label)}${appPrefix(sessionA.label)}/probe-ac1-context`,
+        { waitUntil: "domcontentloaded", timeout: T },
+      );
       // 增量归因（OCR 轮 2 修复）：全量 grep 会把紧邻上一步的 401 与跨轮累积的
       // 日志都算进来——bare 页请求若未达 server 也照样 PASS。发请求前记录日志
       // 字节偏移，只对新增行断言。
@@ -1691,6 +1894,117 @@ try {
     },
   );
 
+  // ── AC1 same-site（#416）：主站 cookie 不会被 preview 静默读写 ───────────
+  // same-site 拓扑（preview 是主站子域，SameSite 拦不住主站 cookie 随行）下，
+  // 隔离的最后防线是 #410 服务端 origin-guard：预览页发同 site 凭证写
+  // （POST）主站 /api/craft/* → 403。dev（默认，跨站）拓扑下本步骤 SKIP
+  // 并写明前提：跨站拓扑 SameSite=Lax 本来就不随行（协议层 401 已由上一步
+  // 钉住），且 dev form 的 Origin 不可识别是 write-origin-guard 头注记录在案
+  // 的已知缺口（路径 label 不进 Origin 头）——断言在 dev 拓扑下会误伤主站
+  // 自己的写，不是可测面。这个 SKIP 是拓扑前置的诚实标注，不是 AC 关键项
+  // 被结构性跳过：same-site profile 下同一 步骤是 pass 类断言。
+  await step(
+    "pass",
+    "AC1 same-site：主站 cookie 不被 preview 静默读写（同 site 凭证写被 origin-guard 403）",
+    async () => {
+      if (TOPOLOGY !== "same-site") {
+        throw new SkipSignal(
+          "dev 拓扑下不可测：跨站 SameSite=Lax 不随行（协议层 401 已由上一步钉住）；dev form 的 Origin 不可识别是 write-origin-guard 已知缺口。CRAFT_ACCEPTANCE_TOPOLOGY=same-site 下本步骤是 pass 类断言。",
+        );
+      }
+      assert(previewPage, "前置失败（顶层预览页未建立）");
+      // 预览页在预览 host 上，向主站发凭证写。两面拦截先于可观测判决：
+      // 页面 CSP connect-src 'self'（#409 浏览器半边）会就地拦截，且跨 origin
+      // 响应无 ACAO 不可读（fetch 拋 TypeError）。要观测的是 #410 服务端
+      // origin-guard 的判决，所以用 CDP 绕过 CSP 的取证页发请求（与上一步
+      // AC1 协议层同款手法，不改变被测的 cookie 随行/SameSite 行为），
+      // 判决由 server 日志增量归因钉住（guard 的 warn 行带 verdict:preview）。
+      // 这需要 CRAFT_ACCEPTANCE_SERVER_LOG（脚本头说明第 5 步；same-site
+      // profile 的运行说明里已列为前置）。
+      if (!SERVER_LOG || !existsSync(SERVER_LOG)) {
+        throw new SkipSignal(
+          "same-site 拓扑下需要 CRAFT_ACCEPTANCE_SERVER_LOG（判决在 server 日志里：跨 origin 响应无 ACAO 不可读，同 AC1 协议层步骤的前置）",
+        );
+      }
+      // 1) 攻击前提成立：主站会话 cookie 在本 context 的 jar 里，且主站与
+      //    预览同 eTLD+1（同 site，凭证写会携带主站 cookie——这正是要被
+      //    guard 扣住的写面）。
+      const mainHost = new URL(APP_ORIGIN).hostname;
+      const previewHost = new URL(sessionA.origin).hostname;
+      const sameSite =
+        mainHost === "localhost"
+          ? previewHost.endsWith(".localhost")
+          : previewHost.endsWith(`.${mainHost.split(".").slice(-2).join(".")}`);
+      assert(
+        sameSite,
+        `拓扑前提不成立：主站 ${mainHost} 与预览 ${previewHost} 不同 eTLD+1，本步骤验的不是 same-site 形态`,
+      );
+      const mainCookies = await context.cookies([APP_ORIGIN]);
+      assert(
+        mainCookies.length > 0,
+        "主站 cookie jar 为空（登录前置丢失）——同 site 携带无从验证",
+      );
+      // 2) 服务端防线：取证页（预览 host 上、CSP 绕过）向主站发凭证写；
+      //    cookie 会随行（同 site），guard 必须 403（preview namespace 先于
+      //    allow-list 拒绝）。判决读 server 日志增量（guard 的 warn 行 +
+      //    请求日志的 403）。
+      const guardPage = await context.newPage();
+      const guardCdp = await context.newCDPSession(guardPage);
+      await guardCdp.send("Page.setBypassCSP", { enabled: true });
+      await guardPage.goto(sessionA.origin, {
+        waitUntil: "domcontentloaded",
+        timeout: T,
+      });
+      const logOffset = statSync(SERVER_LOG).size;
+      const sent = await guardPage.evaluate(async (target) => {
+        // 默认 cors 模式：响应无 ACAO 不可读（fetch 拋 TypeError），但请求
+        // 已过网（同 site 下主站 cookie 随行）——判决由 server 日志钉住。
+        try {
+          await fetch(target, {
+            method: "POST",
+            credentials: "include",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: "#416 same-site guard probe" }),
+          });
+          return "readable";
+        } catch (error) {
+          return `blocked-at-read:${(error as Error).name}`;
+        }
+      }, `${APP_ORIGIN}/api/craft/sessions`);
+      await new Promise((r) => setTimeout(r, 2500));
+      // LOW-9：取证页是 guardPage——截图必须先于 close（shot 对已关闭页面的
+      // screenshot 会 reject 且被 catch 静默吞掉，08 取证图将永远缺失）。
+      await shot("08-same-site-guard", guardPage);
+      await guardPage.close().catch(() => {});
+      // 增量归因（与 AC1 协议层同款）：只读新增字节，首行非行首丢弃。
+      const whole = readFileSync(SERVER_LOG);
+      const freshLines = whole.subarray(logOffset).toString("utf8").split("\n");
+      if (logOffset > 0 && whole[logOffset - 1] !== 0x0a) freshLines.shift();
+      const pathHits = freshLines.filter((line) =>
+        line.includes('"path":"/api/craft/sessions"'),
+      );
+      assert(
+        pathHits.length > 0,
+        "server 日志新增行未观测到该次请求（增量窗口内无该路径记录）——请求未达主站，无从判决",
+      );
+      const refused403 = pathHits.filter((line) => line.includes('"status":403'));
+      assert(
+        refused403.length > 0,
+        `同 site 凭证写未被拒绝（增量窗口内无 403）：${sent}——主站 cookie 在 same-site 拓扑下会随行，这是 #410 要扣住的写面`,
+      );
+      // 归因到 #410 guard 本身（而非别的 403 源）：guard 的 warn 行带
+      // verdict:"preview" 与拒绝文案。
+      const guardLine = freshLines.find((line) =>
+        line.includes("cookie-authenticated write refused by origin"),
+      );
+      assert(
+        guardLine !== undefined && guardLine.includes('"verdict":"preview"'),
+        `403 但非 #410 origin-guard 判决（无 verdict:preview 的 warn 行）——需归因：${guardLine?.slice(0, 160) ?? "（无 guard warn 行）"}`,
+      );
+      return `同 site（${previewHost} → ${mainHost}）凭证写 ${sent} → server 日志 403 ×${refused403.length} + guard verdict=preview（主站 cookie 随行但被服务端扣住）`;
+    },
+  );
+
   // ── AC2 面（可交互不回退）：应用自身 API 四动词经过 preview origin 代理 ────
   await step(
     "pass",
@@ -1700,8 +2014,8 @@ try {
       const verdicts: string[] = [];
       for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
         const verdict = await previewPage.evaluate(
-          async ({ label, method }) => {
-            const response = await fetch(`/${label}/api/probe`, {
+          async ({ prefix, method }) => {
+            const response = await fetch(`${prefix}/api/probe`, {
               method,
               headers: { "content-type": "application/json" },
               body:
@@ -1713,7 +2027,7 @@ try {
             };
             return `${method}:${response.status}/${body.ok === true && body.method === method ? "reached" : "wrong"}`;
           },
-          { label: sessionA.label, method },
+          { prefix: appPrefix(sessionA.label), method },
         );
         verdicts.push(verdict);
       }
@@ -1775,11 +2089,11 @@ try {
     async () => {
       assert(previewPage, "前置失败");
       const checks = await previewPage.evaluate(
-        async ({ labelB }) => {
+        async ({ prefixB }) => {
           const outcomes: Record<string, unknown> = {};
-          const get = await fetch(`/${labelB}/`).catch(() => null);
+          const get = await fetch(`${prefixB}/`).catch(() => null);
           outcomes.docRoot = get ? get.status : "network-error";
-          const post = await fetch(`/${labelB}/api/probe`, {
+          const post = await fetch(`${prefixB}/api/probe`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ try: "write-into-b" }),
@@ -1795,7 +2109,7 @@ try {
           // 非浏览器客户端）属后续工作，本验收不伪装。
           return outcomes;
         },
-        { labelB: sessionB.label },
+        { prefixB: appPrefix(sessionB.label) },
       );
       assert(
         checks.docRoot === 401,

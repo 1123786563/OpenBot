@@ -4,6 +4,23 @@ on:
   pull_request:
   push:
     branches: [main]
+  # #416: the nightly craft-preview full-stack e2e (same-site topology + HMR +
+  # Server Actions) re-run. A scheduled event fires EVERY job in this file, so
+  # every other job below carries the gate `github.event_name != 'schedule' &&
+  # !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)`
+  # — the nightly runs the one job it exists for, not a second copy of the whole
+  # CI bill. Manual dispatch keeps today's run-everything behaviour unless the
+  # input opts into the e2e-only shape.
+  schedule:
+    # 19:31 UTC (03:31 +08:00) — off-peak, before the working day that would act
+    # on a red nightly.
+    - cron: "31 19 * * *"
+  workflow_dispatch:
+    inputs:
+      only-craft-preview-e2e:
+        description: "Run only the craft-preview e2e job (the nightly shape)"
+        type: boolean
+        default: false
   # Callable, so publishing a release runs these same checks against the release commit rather than
   # trusting that they ran somewhere earlier.
   workflow_call:
@@ -13,8 +30,12 @@ permissions:
   contents: read
 
 # The newest push on a branch wins; main runs are retained for badge and release history.
+# #416: scheduled and dispatched runs get their own concurrency group — a
+# scheduled event's github.ref is the default branch, and without the
+# event_name suffix the nightly would join the main-push group and the two
+# would cancel each other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -28,6 +49,12 @@ jobs:
   submodule:
     name: submodule pin fetchable
     runs-on: ubuntu-latest
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,6 +77,14 @@ jobs:
     name: format, lint, types
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,6 +146,14 @@ jobs:
     name: types (${{ matrix.package }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     strategy:
       # One red package must not hide whether the other is red too.
       fail-fast: false
@@ -138,6 +181,14 @@ jobs:
     name: native types
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -161,6 +212,14 @@ jobs:
     name: computer (real browser)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -204,6 +263,14 @@ jobs:
     name: chart (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     strategy:
       # One red target must not hide whether another is red too.
       fail-fast: false
@@ -356,6 +423,14 @@ jobs:
     name: tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     # The suite includes a real database integration test. Without a database it fails on every run,
     # including on main, which trains everyone to read a red CI as normal. pgvector rather than plain
     # postgres because the knowledge schema uses the extension.
@@ -457,16 +532,24 @@ jobs:
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.
       - run: bun run test:ci
-      # #407: the TLS pipeline suite spawns real bash/openssl/drill processes, so its slow cases ride
-      # an explicit 30 s per-test budget (see jest.setTimeout in the file) rather than bun's 5 s
-      # default. Running it through the named script keeps the flag and the file's own budget in one
-      # place, instead of a bare `bun test` line drifting from what `test:tls` does locally.
-      - run: bun run test:tls
+      # #407 + F6 (OCR R1): the TLS pipeline suite is already driven by `test:ci` above
+      # (tests/config/e2e-bun-suites.json drives scripts/tls-pipeline.test.ts). The explicit
+      # `test:tls` entry used to live here behind a step-level nightly/e2e-only condition that
+      # was unreachable — this job's if is the exact complement of that condition. R2-F7 (OCR R2)
+      # moved the explicit entry into the craft-preview-e2e job, which runs only on that path.
 
   startup:
     name: startup (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     strategy:
       fail-fast: false
       matrix:
@@ -487,6 +570,14 @@ jobs:
     name: python harness regressions
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -586,6 +677,14 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -603,6 +702,14 @@ jobs:
     name: migrations
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # #416 nightly gate: a scheduled event fires every job in this file, so every
+    # other job stays off the nightly run — the schedule exists for the one
+    # craft-preview-e2e job below, not a second copy of the whole CI bill.
+    # Skipped counts as passing for `verify`, which itself carries the same gate,
+    # so the nightly run reports exactly the e2e job.
+    if: >-
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
     services:
       # A real database built by the migration chain alone — the generate probe compared
       # schema ↔ snapshot and was blind to a snapshot drifted from the SQL (#436: 38 tables
@@ -674,9 +781,15 @@ jobs:
     # is actually a merge candidate. On main and through the release workflow_call it always runs, so
     # nothing reaches a release without it. `verify` treats a skipped job as passing, so an unlabelled
     # PR is green on the cheap checks alone.
+    # #416 nightly gate prepended to the existing cost gate (same shape as every
+    # other job: off the schedule and the e2e-only dispatch).
     if: >-
-      github.event_name != 'pull_request' ||
-      contains(github.event.pull_request.labels.*.name, 'full-ci')
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e) &&
+      (
+        github.event_name != 'pull_request' ||
+        contains(github.event.pull_request.labels.*.name, 'full-ci')
+      )
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -786,9 +899,15 @@ jobs:
     # The same cost gate as `image` above, and for the same reason: `agent-computer` pulls
     # Playwright's base and `server` builds the app, so this is minutes rather than seconds. On main
     # and through the release's workflow_call it always runs.
+    # #416 nightly gate prepended to the existing cost gate (same shape as every
+    # other job: off the schedule and the e2e-only dispatch).
     if: >-
-      github.event_name != 'pull_request' ||
-      contains(github.event.pull_request.labels.*.name, 'full-ci')
+      github.event_name != 'schedule' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e) &&
+      (
+        github.event_name != 'pull_request' ||
+        contains(github.event.pull_request.labels.*.name, 'full-ci')
+      )
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -838,14 +957,81 @@ jobs:
           docker logs computer-ci || true
           exit 1
 
+  # #416: the nightly full-stack craft-preview e2e (same-site topology + HMR +
+  # Server Actions) re-run — the one job the schedule exists for. Every other
+  # job carries the schedule/dispatch gate; this job runs on ubuntu-latest and
+  # leans on the suite's own fail-loud preflight: until a four-stack staging
+  # environment is reachable from the runner (postgres+Casdoor, agent-sandbox
+  # gateway, API server, app dev server, TLS termination for same-site), the
+  # CRAFT_E2E_* vars below are unset and the npm preflight exits 1 with the
+  # explicit prerequisites message. A red nightly on an unconfigured
+  # environment is the honest signal; a queued-forever self-hosted group or a
+  # silent skip would both read as "nothing to report".
+  craft-preview-e2e:
+    name: craft-preview e2e (same-site + HMR + Server Actions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # The inverse of every other gate: THIS job runs on the schedule and on the
+    # e2e-only dispatch, and stays off ordinary push/PR runs (the four-stack
+    # cost is nightly business, not per-PR).
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      # R2-F7 (OCR R2): the explicit TLS pipeline entry moved here from the `test` job —
+      # its old step-level nightly/e2e-only condition was unreachable there (this job's
+      # if is exactly that condition, and `test` carries its complement), so on any
+      # event either the step or the job was skipped. This job runs only on the
+      # nightly/e2e-only path, so no step-level condition is needed; running the
+      # named `test:tls` entry (#407: the 30 s per-test budget for the real
+      # bash/openssl/drill cases) before the acceptance suite keeps the entry
+      # exercised on every run of the job whose topology it underwrites.
+      - name: TLS pipeline suite (explicit entry)
+        run: bun run test:tls
+      - name: Run the acceptance suite against the staging stack
+        env:
+          # #416: the same-site topology profile (AC1 same-site step is a pass
+          # class assertion there). The runner carries the four-stack staging
+          # deployment: until the CRAFT_E2E_* vars/secrets below are configured
+          # the npm preflight fails with the explicit prerequisites message —
+          # the nightly is RED on an unconfigured environment, never silently
+          # green on nothing.
+          CRAFT_ACCEPTANCE_TOPOLOGY: same-site
+          CRAFT_ACCEPTANCE_APP_ORIGIN: ${{ vars.CRAFT_E2E_APP_ORIGIN }}
+          CRAFT_ACCEPTANCE_API_ORIGIN: ${{ vars.CRAFT_E2E_API_ORIGIN }}
+          CRAFT_ACCEPTANCE_PREVIEW_ORIGIN: ${{ vars.CRAFT_E2E_PREVIEW_ORIGIN }}
+          CRAFT_ACCEPTANCE_SERVER_LOG: ${{ vars.CRAFT_E2E_SERVER_LOG }}
+          CRAFT_ACCEPTANCE_SANDBOX_GATEWAY: ${{ vars.CRAFT_E2E_SANDBOX_GATEWAY }}
+          CRAFT_ACCEPTANCE_SANDBOX_TOKEN: ${{ secrets.CRAFT_E2E_SANDBOX_TOKEN }}
+          CRAFT_ACCEPTANCE_CASDOOR_USER: ${{ vars.CRAFT_E2E_CASDOOR_USER }}
+          CRAFT_ACCEPTANCE_CASDOOR_PASSWORD: ${{ secrets.CRAFT_E2E_CASDOOR_PASSWORD }}
+        run: bun run test:craft-preview-e2e
+      - name: Archive the evidence bundle
+        if: always()
+        uses: actions/upload-artifact@330a01c3d88c704b4f927c5b4c9283643fb0c660 # v5.0.0
+        with:
+          name: craft-preview-e2e-${{ github.run_id }}
+          path: .archive/runs/craft-preview/verification/
+          if-no-files-found: warn
+
   # One check for branch protection to require. A new job above is covered by this without anybody
   # remembering to add it to a list, and a job that was skipped for the wrong reason is not a pass.
   verify:
     name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: always()
-    needs: [static, deployables, mobile, computer-browser, chart, test, startup, python-harness, build, migrations, image, component-dockerfiles, submodule]
+    # #416 nightly gate (same as every other job) folded with always(): `verify`
+    # still reports on every run it participates in, and the nightly reports the
+    # e2e job's own result.
+    if: always() && github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.only-craft-preview-e2e)
+    needs: [static, deployables, mobile, computer-browser, chart, test, startup, python-harness, build, migrations, image, component-dockerfiles, submodule, craft-preview-e2e]
     steps:
       - name: Require every check
         env:

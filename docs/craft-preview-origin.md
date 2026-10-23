@@ -123,6 +123,32 @@ fix-ocr13）：探针必须同源——跨源 fetch 无 CORS 头时 status 不�
 30 秒票据流买一张 schema 迁移不值——恢复代价是一次点击。多副本部署或运维反馈
 "重启丢预览"成为真实痛点时再迁移（见 preview-origin.ts 头注释）。
 
+### 多副本契约：单副本或 sticky 路由，否则跨实例 404（#418，Option B）
+
+同一份进程内状态（label registry 与 preview ticket 表）在多副本/负载均衡下的另一个
+代价：**签票落在副本 A，兑换落在副本 B** 时，B 的 registry 从未见过该 label，请求
+得到 404 "Unknown preview host."，与重启空窗（M-2）同形，但**不会自愈**——会话没有
+重启，重新走票也会被负载均衡再次分到别的副本。Redis（若配了）救不了它：registry
+与 ticket 表都不在 Redis 里，Redis 只服务 workshop 域的锁与总线。
+
+部署形态因此是二选一，显式写在启动日志里：
+
+- **单副本**：本服务当前支持的目标形态（D-4：仅在生产要求 HA 时再做共享存储）。
+- **多副本 + sticky 路由**：负载均衡器必须把同一预览会话的流量固定到同一实例
+ （host 形态按 `<label>.<preview-base>` 子域哈希分发即可，dev 形态按源 IP）。没有
+ sticky 的多副本不在支持范围内。
+
+启动检查（#418）：preview origin 开启时，启动日志必打一条
+`single-replica contract: the preview origin's label registry and ticket table are in-process …`
+（info 级）；当检测到 `OPENBOT_REDIS_URL` 已设（部署自己的多副本信号，与 workshop
+域读同一个变量）而 registry 仍是进程内状态时，升为 **warn** 并点名 sticky 路由。
+craft 关闭或 preview origin 关闭时不打——关闭的 origin 没有 preview host 可路由错。
+
+可观测信号：preview origin 暴露 `registryStats()`（返回
+`{"registeredLabels": N}`，只计数，永不枚举 label 或 session id，AC9）。健康检查/
+日志采集器可用「活跃预览存在但本实例 registeredLabels=0」这一形状定位多副本路由
+切错的实例——这是 Option B 代替共享存储的观测面：不修 404，但让 404 可被归因。
+
 ### 浏览器兼容：Safari/WebKit 拒收明文 http 的 Secure cookie（记录不修）
 
 预览 pass cookie 为 `SameSite=None; Secure`（Chromium 语义必需：跨站 iframe 上下文里
@@ -389,3 +415,66 @@ unknown 的代价只是多一次重试。
    协议层 401 只能用顶层面板或 curl 形状复现。建议 AC1 明确两层各自可接受
    的证据形状。影响面：验收证据的判读方式；行为不变（两层都已由本 SHA 的
    单元与真实栈证据覆盖）。
+
+## 可复跑全栈 e2e（#416）
+
+验收脚本 `scripts/craft-preview-acceptance.ts` 支持两种拓扑 profile，用
+`CRAFT_ACCEPTANCE_TOPOLOGY` 选择（非法值 fail-fast，不静默回退）：
+
+| profile | 值 | 形态 | AC1 same-site 步骤 |
+| --- | --- | --- | --- |
+| dev（默认） | `dev` | 跨站拓扑，预览在 `http://127.0.0.1:<API 端口>/<label>` | SKIP（跨站 SameSite=Lax 不随行；dev form 的 Origin 不可识别是 #410 已知缺口） |
+| same-site | `same-site` | 生产形态，预览是主站子域（同 eTLD+1） | pass 类断言：预览页同 site 凭证写主站 → #410 origin-guard 403（server 日志增量归因 `verdict:"preview"`） |
+
+### 运行入口
+
+- `bun run test:live-craft-preview`：原入口（环境预检 app :3220 / API :3221
+  → 脚本 preflight 含 Casdoor :8000 / sandbox gateway :4300）。
+- `bun run test:craft-preview-e2e`（#416）：拓扑感知入口——校验
+  `CRAFT_ACCEPTANCE_TOPOLOGY` 与 `CRAFT_ACCEPTANCE_PREVIEW_ORIGIN`（same-site
+  必填，如 `https://preview.localhost`）后转入同一 live 预检。
+
+### same-site profile 的部署前置
+
+1. host-form server：`OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE=https://{session}.preview.localhost`
+   （`*.preview.localhost` 与 `localhost` 都解析到 127.0.0.1，无需 wildcard DNS）；
+   TLS 准入走 `OPENBOT_TLS_STATUS_FILE` 指向的状态文件（health 标量 `ok` 即开门，
+   本地签发写 `{"health":"ok"}` 即可）。
+2. #412 参考 TLS 终止（`docker/compose/preview-tls.yml`）：
+   `OPENBOT_PREVIEW_UPSTREAM=http://host.docker.internal:<server 端口>`，443 终止
+   并注入 `X-Forwarded-Proto: https`（通行证 cookie 是 `SameSite=None; Secure`，
+   需要 https 形态）。
+3. 主站与预览同 443（如 `https://localhost` 与 `https://<label>.preview.localhost`），
+   Chrome/Playwright 信任 localhost 族的自签形态。
+4. `CRAFT_ACCEPTANCE_SERVER_LOG` 指向 API server stdout 日志（AC1 协议层与
+   same-site 步骤的判决增量归因都读它）。
+
+### 拓扑差异的断言口径（脚本内同一事实源派生）
+
+- 地址形状：`expectOrigin(label)`（host：`https://<label>.<base>`；dev：
+  `http://127.0.0.1:<port>/<label>`）；label 永远从服务器铸造的 `webapp_url`
+  提取，不在脚本侧重算 HMAC。
+- 应用路径前缀：`appPrefix(label)`（host：根路径无前缀；dev：`/<label>`）。
+- 通行证 jar domain：`previewCookieDomain(label)`（host：`<label>.<base host>`；
+  dev：`127.0.0.1`）。
+- HMR socket：`hmrWsUrl(label)`（host：`wss://<label>.<base>/_next/webpack-hmr`；
+  dev：`ws://127.0.0.1:<port>/<label>/_next/webpack-hmr`）。
+- preflight 的 bogus 断言：host 形态断言未注册 label 子域 404 "Unknown preview
+  host"（fail-closed）；dev 形态保持旧契约（未注册首段回落主站，响应不带预览
+  拒绝文案）。
+
+### nightly / staging 接线
+
+`.github/workflows/ci.yml`（#416）：`schedule`（每日 19:31 UTC）+
+`workflow_dispatch`（`only-craft-preview-e2e` 输入）触发唯一的
+`craft-preview-e2e` job（same-site topology，`CRAFT_E2E_*` vars/secrets 命名
+staging 栈；证据 artifact 归档 `.archive/runs/craft-preview/verification/`）。
+其余 job 带 schedule/e2e-only 门，nightly 不重跑整份 CI。staging 环境接入前，
+该 job 由脚本自身的 fail-loud 预检保持 RED（环境未配置时显式失败，绝不静默
+绿灯）。
+
+### 证据归档
+
+运行产物（截图、`summary.json`、server 日志切片）落
+`.archive/runs/craft-preview/verification/<UTC 时间戳>/`，`summary.json` 含
+`topology` 字段标记本次 profile；票面 AC 回勾只认这里归档的产物。

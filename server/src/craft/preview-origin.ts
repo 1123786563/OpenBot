@@ -55,6 +55,7 @@
  */
 
 import { createHmac } from "node:crypto";
+import { getLogger } from "../../../shared/logger";
 import type { CraftConfig } from "./config";
 import { createPreviewPassCodec, type PreviewPassCodec } from "./preview-pass";
 import {
@@ -74,6 +75,63 @@ import { refuseResponse } from "./refusal";
 export type PreviewOriginAdmission =
   | { ok: true }
   | { ok: false; reason: string };
+
+/**
+ * #418 Option B — the deployment-level observability shape of the registry:
+ * a COUNT, never an enumeration. The registry is per-process state (the
+ * single-replica contract), so "0 registered labels on this instance while
+ * previews are active elsewhere" is exactly the wrong-instance signature a
+ * multi-replica deployment with no sticky routing produces — health checks
+ * and log collectors can read this number and tell that shape apart from a
+ * bare 404. Discloses no session ids and no labels (AC9).
+ */
+export type PreviewRegistryStats = { registeredLabels: number };
+
+/**
+ * #418 Option B — the single line the boot log prints about the preview
+ * origin's replica contract. The preview origin is ENABLED but its
+ * label→session registry (and the ticket table) live in THIS process, so a
+ * deployment that scales past one replica must front the replicas with
+ * sticky routing or the preview traffic lands on an instance whose registry
+ * never saw the label — a 404 "Unknown preview host." with no signal to
+ * tell it from a restart (M-2). The notice states the contract at startup;
+ * when OPENBOT_REDIS_URL is set (the deployment's own multi-replica signal —
+ * the same variable the workshop layer reads) it escalates to warn, because
+ * Redis configured but no sticky routing is precisely the half-migrated
+ * shape that produces silent cross-instance 404s. Disabled origins stay
+ * silent: a closed origin has no preview hosts to route wrong.
+ */
+export function singleReplicaStartupNotice(deps: {
+  previewOriginEnabled: boolean;
+  /** The raw OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE — only its host/dev shape is named. */
+  template: string;
+  /** The deployment's multi-replica signal; unset = single-replica. */
+  redisUrl?: string | undefined;
+  /** The same stats method the origin instance exposes — one derivation. */
+  registryStats: () => PreviewRegistryStats;
+}): void {
+  if (!deps.previewOriginEnabled) return;
+  const log = getLogger("server");
+  const stats = deps.registryStats();
+  const template = deps.template.trim();
+  const form = template === "" ? "dev" : "host";
+  if (deps.redisUrl?.trim()) {
+    log.warn(
+      {
+        contract: "single-replica",
+        multiReplicaSignal: true,
+        form,
+        ...stats,
+      },
+      "single-replica contract: the preview origin's label registry and ticket table are in-process, but OPENBOT_REDIS_URL is set (a multi-replica deployment signal) — route preview traffic with sticky routing or previews will 404 'Unknown preview host.' on the instances that never saw the label",
+    );
+    return;
+  }
+  log.info(
+    { contract: "single-replica", multiReplicaSignal: false, form, ...stats },
+    "single-replica contract: the preview origin's label registry and ticket table are in-process — multi-replica deployments require sticky routing or a shared store (none configured)",
+  );
+}
 
 /** Host header → session id: `{ sessionId }`, or the refusal the dispatcher answers. */
 export type PreviewRequestResolution =
@@ -178,6 +236,16 @@ export type PreviewOrigin = {
    * by a restart" (M-2) — exactly the verdict the pane re-enters from.
    */
   hasSession(sessionId: string): boolean;
+  /**
+   * #418 Option B — the registry's deployment-level observability surface: a
+   * COUNT of registered labels (never the labels/session ids themselves,
+   * AC9). The boot log's single-replica notice reads the same number, so a
+   * health check correlating "active previews exist but registeredLabels=0
+   * on this instance" has found the wrong-instance/multi-replica shape —
+   * the alternative to shipping a shared store was making the contract
+   * visible, and this is the visible half.
+   */
+  registryStats(): PreviewRegistryStats;
   /** Whether the request belongs to the preview namespace at all — the
    * dispatcher's branch gate: claimed requests NEVER fall through to main
    * routes. The host form claims the whole wildcard base (fail-closed); the
@@ -831,6 +899,12 @@ export function createPreviewOrigin(deps: {
       // mapped id — a fresh registry (the restart state, M-2) answers false
       // for every session, which is the probe's restart verdict.
       return registry.get(previewLabel(deps.secret, sessionId)) === sessionId;
+    },
+
+    registryStats() {
+      // #418 Option B: the count only — the observability surface never
+      // enumerates labels or session ids (AC9).
+      return { registeredLabels: registry.size };
     },
 
     handlesRequest(request) {

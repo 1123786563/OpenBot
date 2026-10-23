@@ -1,0 +1,124 @@
+{
+  "$schema": "https://openbot.invalid/schemas/tls-template-golden-v1.json",
+  "issue": 415,
+  "purpose": "The ONE shared golden set for OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE: the same template must get the same open/closed/derived verdict from the server's parseTemplate (server/src/craft/preview-origin.ts) and the sidecar's derive_preview_host (docker/compose/certs/lib.sh). Read by BOTH suites — server/tests/craft-preview-origin.test.ts (the server face) and scripts/tls-pipeline.test.ts (the sidecar face) — so a tightening on either face must update this file, and this file only, to keep the two faces locked in step. Before #415 each face carried its own inline golden list and the lockstep was enforced by cross-referencing comments alone; the ticket's cross cases (a `*` the server once served, a `..` the sidecar once certified) fell exactly in that seam.",
+  "verdicts": {
+    "server": {
+      "open": "admission().ok is true; `derived` (when present) is the address originFor mints, with the 20-hex session label spelled {label}",
+      "closed": "admission().ok is false with a reason naming OPENBOT_CRAFT_PREVIEW_ORIGIN_TEMPLATE; originFor throws"
+    },
+    "sidecar": {
+      "ok": "lib.sh __derive exits 0 and prints `ok|<scheme>|<baseHostname>`; `derived` pins that exact line",
+      "skip": "lib.sh __derive exits 0 and prints `skip|<reason>`; `reasonContains` pins the reason",
+      "invalid": "lib.sh __derive exits 1 and prints `invalid|<reason>`"
+    }
+  },
+  "cases": [
+    {
+      "id": "dev-empty",
+      "template": "",
+      "note": "The dev form (D5): no wildcard certificate exists to derive on either face.",
+      "server": { "verdict": "open", "derived": "http://127.0.0.1:3001/{label}" },
+      "sidecar": { "verdict": "skip", "reasonContains": "dev" }
+    },
+    {
+      "id": "canonical-https",
+      "template": "https://{session}.preview.example.com",
+      "server": { "verdict": "open", "derived": "https://{label}.preview.example.com" },
+      "sidecar": { "verdict": "ok", "derived": "ok|https|preview.example.com" }
+    },
+    {
+      "id": "wildcard-star",
+      "template": "https://{session}.*.example.com",
+      "note": "#415 ticket case: `*` parses as a WHATWG hostname, so the server needed its own explicit refusal; the sidecar's base charset never admitted it. Neither face serves it.",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "wildcard-star-deep",
+      "template": "https://{session}.x.*.example.com",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "empty-label-interior",
+      "template": "https://{session}.preview..example.com",
+      "note": "#415 ticket case (`preview..example.com`): empty interior labels mint degenerate wildcards; fix-ocr27 #2 refused the server face, #415 the sidecar face.",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "empty-label-localhost",
+      "template": "https://{session}..localhost",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "boundary-hyphen",
+      "template": "https://{session}.a-.b",
+      "note": "WHATWG domain-to-ASCII accepts a boundary hyphen (fix-ocr19 #9 measured it), so both faces serve it — pinned so a future tightening stays two-faced.",
+      "server": { "verdict": "open", "derived": "https://{label}.a-.b" },
+      "sidecar": { "verdict": "ok", "derived": "ok|https|a-.b" }
+    },
+    {
+      "id": "empty-label-short",
+      "template": "https://{session}.a..b",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "idn-unicode",
+      "template": "https://{session}.预览.example.com",
+      "note": "IDN must be configured punycode (xn--): a unicode SAN never matches the wire; the certificate pipeline sees the ASCII form only.",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "userinfo",
+      "template": "https://user@{session}.preview.example.com",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "userinfo-password",
+      "template": "https://user:pw@{session}.preview.example.com",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "port-zero",
+      "template": "https://{session}.preview.example.com:0",
+      "note": "Port 0 has no serving meaning; refused on both faces since fix-ocr26 #9.",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "port-over-range",
+      "template": "https://{session}.preview.example.com:70000",
+      "note": "WHATWG's port range ends at 65535; the divergence class fix-ocr18 #8 closed.",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    },
+    {
+      "id": "localhost-base",
+      "template": "https://{session}.localhost:3001",
+      "note": "RECORDED DIVERGENCE (harmless by construction): the server serves the local testing form; no public CA can issue for the reserved .localhost domain, so the sidecar skips rather than crash-looping (fix-ocr18 #9).",
+      "server": { "verdict": "open", "derived": "https://{label}.localhost:3001" },
+      "sidecar": { "verdict": "skip", "reasonContains": "localhost" }
+    },
+    {
+      "id": "single-label-base",
+      "template": "https://{session}.com",
+      "note": "RECORDED DIVERGENCE (harmless, pinned on preview-origin.ts:623): the server refuses a single-label base — it would claim an entire public suffix — while the sidecar stays laxer (LE refuses to issue for a bare public suffix anyway).",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "ok", "derived": "ok|https|com" }
+    },
+    {
+      "id": "http-template",
+      "template": "http://{session}.preview.example.com",
+      "note": "The preview pass cookie is SameSite=None; Secure — a plain-http origin can never accept it (fix-ocr4 #9 / fix-ocr18 #9, both faces).",
+      "server": { "verdict": "closed" },
+      "sidecar": { "verdict": "invalid" }
+    }
+  ]
+}

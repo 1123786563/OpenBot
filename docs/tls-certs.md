@@ -194,6 +194,98 @@ terminator, and as of `bbea87ba` no deployment evidence in this repo shows that 
 running in production (see #419: AC8 is `partial` — pipeline implemented, production run
 not yet proven).
 
+## Reference TLS termination topology (#412)
+
+The consumer side now ships as a runnable reference: `docker/compose/preview-tls.yml`
+(its own compose project, `openbot-preview-tls`) runs `nginx:1.27-alpine` as the TLS
+terminator for `*.<preview-host>` — one catch-all 443 server presenting the wildcard,
+SNI-aware, forwarding plaintext HTTP (websocket-upgrade aware) to the OpenBot server.
+What is in `docker/compose/preview-tls/`:
+
+- `nginx.conf.template` — rendered at container start by the image's envsubst
+  (`OPENBOT_PREVIEW_UPSTREAM`, default `http://host.docker.internal:3001` — the
+  OpenBot server's port (DEFAULT_PORT=3001) published on the docker host; point it
+  at a compose service name when the terminator shares the server's network;
+  `OPENBOT_PREVIEW_TLS_SERVER_NAME`, default `_` = the only 443 server =
+  default_server). It also serves a loopback-only `:8080/healthz` so the container
+  healthcheck never depends on the certificate or the upstream.
+- `reload-watcher.sh` — the **reload.stamp consumer**: polls the stamp's mtime (default
+  every 15s, `OPENBOT_PREVIEW_TLS_RELOAD_POLL_SECONDS`) and turns a bump into
+  `nginx -t && nginx -s reload` (a SIGHUP: listeners, in-flight requests and websocket
+  upgrades survive; the next TLS accept uses the new certificate). A failed
+  `nginx -t` — e.g. a half-written cert pair — logs a WARN and leaves the OLD
+  certificate serving; the next bump retries. This is the AC8 "old cert keeps
+  serving" behavior on the terminator side.
+- `start.sh` — the container command: watcher in the background, `nginx` foreground.
+
+**Reload hooks are alternatives — pick one.** This watcher consumes mechanism 1
+directly: it watches `reload.stamp`. `OPENBOT_TLS_RELOAD_URL` (mechanism 2) is for
+terminators with an HTTP reload endpoint (Traefik/Caddy admin
+APIs, managed balancers) — nginx has none, so leave it **unset** in this topology;
+otherwise the sidecar logs a harmless WARN per renewal. Never configure both.
+
+**Permissions note (deliberate tradeoff):** `key.pem` stays 0600 owned by
+`OPENBOT_TLS_UID:GID`; the stock nginx image's **master** process runs as root and
+reads the key exactly once per load, and the nginx-user workers never open it — the
+standard official-image posture. The non-root alternative: `user:
+"<OPENBOT_TLS_UID>:<OPENBOT_TLS_GID>"` on the service plus `cap_add:
+[NET_BIND_SERVICE]` (443 is privileged) and a key owned by that same uid — workable,
+but depends on the deployment's uid matching and on the capability being granted, so
+it is not the default.
+
+### Startup order and verification
+
+```bash
+# 1. Certificates first — the terminator is fail-closed: nginx refuses to start
+#    without tls/cert.pem + key.pem, so a certificate-less preview origin never
+#    serves anything (not even a wrong-cert handshake).
+docker compose --project-directory . -f docker/compose/certs.yml up -d
+docker logs -f openbot-tls        # wait for the first issuance
+
+# 2. Terminator beside the main stack (its own project, not the shared one).
+docker compose --project-directory . -f docker/compose/preview-tls.yml up -d
+
+# 3. Verify the wildcard is what TLS clients see (AC8 form):
+openssl s_client -connect 127.0.0.1:443 -servername abc123.preview.example.com \
+  </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName
+# expect: CN = *.preview.example.com covering DNS:*.preview.example.com
+```
+
+### Hot-reload verification (new cert → live, no restart)
+
+```bash
+# Baseline: the serial of the certificate currently served.
+S1=$(openssl s_client -connect 127.0.0.1:443 -servername abc123.preview.example.com \
+  </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2)
+
+# Simulate a renewal: replace the pair and bump the stamp exactly like
+# docker/compose/certs/reload.sh does (cert 0644, key 0600, touch).
+cp tls/cert.pem /tmp/backup-cert.pem; cp tls/key.pem /tmp/backup-key.pem
+# ... swap in the renewed cert.pem/key.pem from your issuance/renewal run ...
+touch tls/reload.stamp
+
+# Within one poll interval (15s default) the watcher reloads nginx — check the log:
+docker logs openbot-preview-tls --since 1m   # "[openbot-preview-tls] nginx reloaded ..."
+
+# Next TLS connection already serves the new serial; the container never restarted.
+S2=$(openssl s_client -connect 127.0.0.1:443 -servername abc123.preview.example.com \
+  </dev/null 2>/dev/null | openssl x509 -noout -serial | cut -d= -f2)
+[ "$S1" != "$S2" ] && echo "hot reload OK" || echo "still old cert — check watcher log"
+```
+
+### Interplay with #411 admission closure
+
+The terminator and the server close independently, and the combination fails safe:
+when the certificate is missing/expired/renewal-failing, `renewal-status.json` goes
+red and the **server** closes preview-origin admission (#411, reads the same `./tls`
+mount) with the guard's `healthReason` as the sentence — while the terminator either
+keeps serving the still-valid old certificate (renewal failing, cert fine) or, if the
+files themselves are gone, fails closed too (nginx will not start / workers stop on a
+bad reload). There is no window where a closed origin serves traffic through the
+terminator. A `critical` guard page plus a still-serving old certificate is exactly
+the drilled AC8 outcome (`docker/compose/certs/drill-renewal-failure.sh`); the
+live-staging evidence remains deployment-side (see Known gaps below).
+
 ## Private-key and credential hygiene
 
 - `key.pem` is 0600, owned by `OPENBOT_TLS_UID:GID` — the uid that needs to read the
