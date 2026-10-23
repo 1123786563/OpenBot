@@ -1,5 +1,6 @@
 import type { AbstractAgent } from "@ag-ui/client";
 import type { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
+import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import type { LearningSettings } from "../../shared/learning";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { loadConfig } from "../src/config";
@@ -10,7 +11,6 @@ import {
 } from "../src/intelligence-optional";
 import { createLearningRuntime } from "../src/learning/runtime";
 import type { LearningSettingsStore } from "../src/learning/settings";
-import { createTurnRunner } from "../src/routines/run-turn";
 
 /*
  * ME15 (#487): a deployment that has not configured Intelligence must boot,
@@ -178,6 +178,7 @@ describe("createTurnRunner with lazy intelligence and runner", () => {
         runnerBuilt++;
         throw new Error("runner must not be constructed at assembly");
       },
+      admission: async () => ({ ok: true as const }),
       buildAgentFor,
     });
     expect(intelligenceBuilt).toBe(0);
@@ -209,6 +210,7 @@ describe("createTurnRunner with lazy intelligence and runner", () => {
         ɵcleanupThreadLock: async () => undefined,
       },
       runner: { run: async () => ({}), stop: async () => undefined },
+      admission: async () => ({ ok: true as const }),
       buildAgentFor,
     });
     await expect(

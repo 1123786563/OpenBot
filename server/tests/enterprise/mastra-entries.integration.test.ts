@@ -7,7 +7,7 @@ import {
   expect,
   test,
 } from "../../../tests/support/bun-test-compat";
-import { HeadlessToolSuspension } from "../../src/computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { Database } from "../../src/db/client";
 import { enterprisePrincipals, users } from "../../src/db/schema";
 import { enterpriseRuns } from "../../src/db/schema/enterprise-runs";
@@ -42,7 +42,7 @@ import {
 import { createMastraResumeDriver } from "../../src/mastra/resume-driver";
 import { createTenantMastraStorage } from "../../src/mastra/tenant-storage";
 import { argsDigestFor, createMastraTools } from "../../src/mastra/tools";
-import type { GrantedTool } from "../../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createMe03Fixture, type Me03Fixture } from "../support/me03-fixture";
 
 /*

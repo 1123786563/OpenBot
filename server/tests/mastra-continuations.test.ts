@@ -30,7 +30,7 @@ import type {
 } from "../src/mastra/execution-contracts";
 import { createMastraResumeDriver } from "../src/mastra/resume-driver";
 import { argsDigestFor } from "../src/mastra/tools";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import {
   createCountingControlledModel,
   startFakeProvider,

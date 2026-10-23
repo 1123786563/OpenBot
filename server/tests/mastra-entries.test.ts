@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FIRING_FRAME } from "../../shared/routine-firing";
 import { describe, expect, it } from "../../tests/support/bun-test-compat";
 import { currentApprovalContext } from "../src/approvals/types";
-import { HeadlessToolSuspension } from "../src/computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type {
   PlatformScope,
   RunDTO,
@@ -24,7 +24,7 @@ import {
   governedFiringIntentKey,
 } from "../src/mastra/headless";
 import { createMastraTools, MastraToolRefusal } from "../src/mastra/tools";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 
 /*
  * ME10 (#482) unit suite: the four unattended entries (responsibility

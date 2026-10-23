@@ -23,7 +23,7 @@ import {
   createMastraLearnedTools,
   type MastraToolOperation,
 } from "../src/mastra/tools";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { skillSnapshot } from "./fixtures/learned-skills";
 import { carrier, sse } from "./support/me04-harness";
 
