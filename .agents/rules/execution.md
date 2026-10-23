@@ -28,7 +28,7 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 
 保留内置 default、worker、explorer；探索优先 researcher，若用 explorer，按当前可用目录核实 `gpt-5.6-luna / low`，不可用时报告并选择已验证模型。派发实现前检查专业角色，派发后核对实际 agent_type、模型和推理等级，不以提示词中的角色名称代替实际配置。固定角色配置可能覆盖 spawn 参数；升级改用 default 并传专业约束。Ledger 写明具体障碍、升级原因、模型与受影响 Task；数量多、并行或主控模型强都不是升级理由。
 
-以上 agent_type 路由用于非 Orca 编排的子 Agent。Orca 多 Agent 流程按 [编排规范](orchestration.md)由 Pi 实施、Claude 任务审核、Codex 最终审核；后端/前端专业职责仍写入 Brief，记录实际 Orca Agent 身份，不能将非 Orca 子 Agent 当作满足该流程的派发证据。
+以上 agent_type 路由用于非 Orca 编排的子 Agent。Orca 多 Agent 流程按 [编排规范](orchestration.md)为每个任务选择 Pi 或 OpenCode 实施、Claude 或当前 Orca 主机支持的 Kimi 做独立任务审核、Codex 最终审核；后端/前端专业职责仍写入 Brief，记录实际 Orca Agent 身份，不能将非 Orca 子 Agent 当作满足该流程的派发证据。
 
 实现者负责适用的 RED → GREEN → REFACTOR、针对性检查和自查，不批准自己的实现。验证者只读业务代码及测试源文件，可写缓存、构建产物和指定报告；复用同一代码版本有效证据，仅补缺失验收。前后端验证按实际范围选择。Reviewer 独立输出 Spec compliance 与 code quality；测试不能替代 Review。
 
