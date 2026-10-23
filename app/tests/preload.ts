@@ -23,6 +23,8 @@
  * no module under `src/` imports Base UI any more, so there is nothing left to evaluate early.)
  */
 
+import { createRequire } from "node:module";
+
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 /*
@@ -75,7 +77,6 @@ globalThis.BunTEST_ORIGINAL_FETCH = globalThis.fetch;
  * `GlobalRegistrator.register()` — they all flush again, and the driven layer's capture is the
  * equally-live global one.
  */
-await import("react-dom/client");
 
 /*
  * react-aria makes the same one-shot decision Base UI does, one package further out:
@@ -88,10 +89,31 @@ await import("react-dom/client");
  * and its focus scope leaves `aria-hidden` on every sibling — the next test's dialogs are found but
  * unreadable. `@heroui/react/modal` is the component that pulls react-aria in; it is evaluated in
  * this first, short-lived window, so the real effect is what every later file imports.
+ *
+ * The whole warm therefore runs as a SYNCHRONOUS critical section where the runtime allows it
+ * (`createRequire` plus Node 22's synchronous `require(esm)`). The `await import`s this replaces
+ * each parked this module mid-chain, and the runner's execution process imports suite files
+ * concurrently — a suite graph slipping in through that gap got its first evaluation while
+ * `document` was still undefined, exactly the state that freezes the one-shot decision above into
+ * a no-op for the rest of the process. Synchronously there is no gap to lose, and the order is the
+ * invariant it always was: react-dom BEFORE any window exists, the modal INSIDE one. Where the
+ * synchronous path is unavailable (a runtime without synchronous `require(esm)`, such as Bun), the
+ * original await chain runs instead — after unregistering a window a failed attempt may have left
+ * registered.
  */
-GlobalRegistrator.register();
-await import("@heroui/react/modal");
-GlobalRegistrator.unregister();
+try {
+  const nodeRequire = createRequire(import.meta.url);
+  void nodeRequire("react-dom/client");
+  GlobalRegistrator.register();
+  void nodeRequire("@heroui/react/modal");
+  GlobalRegistrator.unregister();
+} catch {
+  if (GlobalRegistrator.isRegistered) await GlobalRegistrator.unregister();
+  await import("react-dom/client");
+  GlobalRegistrator.register();
+  await import("@heroui/react/modal");
+  GlobalRegistrator.unregister();
+}
 
 /*
  * i18n is initialized while the DOM exists so language detection can read localStorage and
@@ -102,3 +124,4 @@ GlobalRegistrator.unregister();
 GlobalRegistrator.register();
 await import("../src/lib/i18n");
 GlobalRegistrator.unregister();
+

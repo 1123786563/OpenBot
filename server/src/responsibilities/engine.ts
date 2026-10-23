@@ -1,5 +1,5 @@
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
-import { HeadlessToolSuspension } from "../computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import {
   GOVERNED_HEADLESS_REFUSALS,
   GovernedHeadlessRefusal,

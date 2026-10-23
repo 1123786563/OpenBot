@@ -61,10 +61,10 @@
 // 不可见语义：canonical { outcome: "deny", code: "RESOURCE_NOT_FOUND" }
 // 冻结实例（MT011 唯一事实源，逐字节同形——不存在/跨团队/跨公司/他人/
 // 撤权对外不可区分）。哨兵码（确定性、零回显）：
-// CRAFT_SCHEDULE_RECORD_MISSING / CRAFT_SCHEDULE_SCOPE_MISMATCH /
-// CRAFT_SCHEDULE_PARENT_NOT_FOUND / CRAFT_SCHEDULE_LEASE_DENIED /
-// CRAFT_SCHEDULE_LEASE_HELD / CRAFT_SCHEDULE_WORKSPACE_MEMBERSHIP_REQUIRED /
-// SCOPE_REVOKED。
+// CRAFT_SCHEDULE_RECORD_MISSING / CRAFT_SCHEDULE_TASK_CANCELLED /
+// CRAFT_SCHEDULE_SCOPE_MISMATCH / CRAFT_SCHEDULE_PARENT_NOT_FOUND /
+// CRAFT_SCHEDULE_LEASE_DENIED / CRAFT_SCHEDULE_LEASE_HELD /
+// CRAFT_SCHEDULE_WORKSPACE_MEMBERSHIP_REQUIRED / SCOPE_REVOKED。
 //
 // 边界（诚实披露）：
 //   - 本票不接 HTTP 路由与调度器装配（服务面供下游接线票复用，
@@ -122,6 +122,11 @@ export const CRAFT_SCHEDULE_SCOPE_MISMATCH = "CRAFT_SCHEDULE_SCOPE_MISMATCH";
 export const CRAFT_SCHEDULE_PARENT_NOT_FOUND =
   "CRAFT_SCHEDULE_PARENT_NOT_FOUND";
 export const CRAFT_SCHEDULE_RECORD_MISSING = "CRAFT_SCHEDULE_RECORD_MISSING";
+/**
+ * 触发重建的权威任务行已被取消（软删除）：陈旧队列消息在 cancelSchedule
+ * 之后到达时重建拒绝——已删除的任务不产出执行事实（fix2）。
+ */
+export const CRAFT_SCHEDULE_TASK_CANCELLED = "CRAFT_SCHEDULE_TASK_CANCELLED";
 export const CRAFT_SCHEDULE_LEASE_DENIED = "CRAFT_SCHEDULE_LEASE_DENIED";
 export const CRAFT_SCHEDULE_LEASE_HELD = "CRAFT_SCHEDULE_LEASE_HELD";
 export const CRAFT_SCHEDULE_WORKSPACE_MEMBERSHIP_REQUIRED =
@@ -574,14 +579,25 @@ export function createCraftSchedulesService(deps: {
       return scopeViewOf(row);
     });
 
-  /** AC4 重建（MT042 同构）：权威协会行经扫描臂读取；hint 从不参与。 */
+  /**
+   * AC4 重建（MT042 同构）：权威协会行经扫描臂读取；hint 从不参与。
+   * 重建前先核权威任务行状态：cancelSchedule 的软删除是取消的事实源，
+   * 协会行只是归属——已删除的任务拒绝重建（陈旧队列消息不能复活它）。
+   */
   const rebuildFacts = async (
     taskId: string,
   ): Promise<
     | { ok: true; facts: CraftScheduleExecutionFacts }
     | { ok: false; code: string }
-  > =>
-    operator.transaction(async (tx) => {
+  > => {
+    const task = await rows.getTaskById(taskId);
+    if (task === undefined) {
+      return { ok: false as const, code: CRAFT_SCHEDULE_RECORD_MISSING };
+    }
+    if (task.deleted) {
+      return { ok: false as const, code: CRAFT_SCHEDULE_TASK_CANCELLED };
+    }
+    return operator.transaction(async (tx) => {
       await tx.execute(READ_TX_SETUP);
       for (const timeout of TIMEOUTS) await tx.execute(timeout);
       await tx.execute(sql`select set_config('app.scan_sweep', 'on', true)`);
@@ -628,6 +644,7 @@ export function createCraftSchedulesService(deps: {
         },
       };
     });
+  };
 
   const requireMachine = (machine: unknown): object => {
     if (

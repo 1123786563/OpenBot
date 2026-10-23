@@ -19,7 +19,9 @@
   {
    "name": "agent-langgraph/tests",
    "files": [
+    "agent-langgraph/tests/google-oauth-proxy.test.ts",
     "agent-langgraph/tests/governed-export-bytes.test.ts",
+    "agent-langgraph/tests/governed-tracing.test.ts",
     "agent-langgraph/tests/trace-chain.test.ts"
    ]
   },
@@ -115,6 +117,9 @@
     "app/tests/computer-tool-refusals.test.ts",
     "app/tests/connect-app-card.test.tsx",
     "app/tests/craft-session-title.test.tsx",
+    "app/tests/create-agent-endpoint.test.tsx",
+    "app/tests/create-agent-kind.test.tsx",
+    "app/tests/create-agent-steps.test.tsx",
     "app/tests/failed-send-attachments.test.tsx",
     "app/tests/form-submit-controls.test.ts",
     "app/tests/github-sources-settings.test.tsx",
@@ -210,6 +215,11 @@
   {
    "name": "desktop/src",
    "files": [
+    "desktop/src/App.test.tsx",
+    "desktop/src/CompanySelection.test.tsx",
+    "desktop/src/LocalStateIsolation.test.tsx",
+    "desktop/src/Problem.test.tsx",
+    "desktop/src/ProviderPicker.test.tsx",
     "desktop/src/telemetry.test.ts"
    ]
   },
@@ -286,7 +296,9 @@
     "server/tests/billing-credits-writer.integration.test.ts",
     "server/tests/billing-period-fulfillment.integration.test.ts",
     "server/tests/billing-reconcile.integration.test.ts",
-    "server/tests/billing-resolution.integration.test.ts"
+    "server/tests/billing-resolution.integration.test.ts",
+    "server/tests/enterprise/mastra-entries.integration.test.ts",
+    "server/tests/mastra-entries.test.ts"
    ]
   },
   {
@@ -989,6 +1001,7 @@
   {
    "name": "server/tests/multitenancy part 2",
    "files": [
+    "server/tests/multitenancy/bots-ownership.test.ts",
     "server/tests/multitenancy/coverage-billing.test.ts",
     "server/tests/multitenancy/coverage-bots-conversations.test.ts",
     "server/tests/multitenancy/coverage-craft-openmuse.test.ts",
@@ -1122,6 +1135,12 @@
     "server/tests/multitenancy/workshop-scope.test.ts",
     "server/tests/multitenancy/workspace-scope.test.ts"
    ]
+  },
+  {
+   "name": "shared",
+   "files": [
+    "shared/harnesses.test.ts"
+   ]
   }
  ],
  "directoryIslands": [
@@ -1210,6 +1229,9 @@
   "app/tests/computer-tool-refusals.test.ts",
   "app/tests/connect-app-card.test.tsx",
   "app/tests/craft-session-title.test.tsx",
+  "app/tests/create-agent-endpoint.test.tsx",
+  "app/tests/create-agent-kind.test.tsx",
+  "app/tests/create-agent-steps.test.tsx",
   "app/tests/failed-send-attachments.test.tsx",
   "app/tests/form-submit-controls.test.ts",
   "app/tests/github-sources-settings.test.tsx",
@@ -1775,7 +1797,8 @@
   "server/tests/workshop-metering.test.ts",
   "server/tests/workshop-preview.test.ts",
   "server/tests/workshop-schedule-executor.integration.test.ts",
-  "server/tests/workshop-store.test.ts"
+  "server/tests/workshop-store.test.ts",
+  "shared/harnesses.test.ts"
  ],
  "artifacts": [
   "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
@@ -1912,9 +1935,5 @@
   "server/tests/multitenancy/workshop-scope.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/multitenancy/share-tokens.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）"
- },
- "directoryIslands": [
-  "server/tests/multitenancy",
-  "app/tests/multitenancy"
- ]
+ }
 }

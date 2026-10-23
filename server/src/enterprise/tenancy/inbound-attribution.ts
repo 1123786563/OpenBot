@@ -51,7 +51,7 @@
 
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { HeadlessToolSuspension } from "../../computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { Database } from "../../db/client";
 import { responsibilityInboundQuarantine } from "../../db/schema/responsibilities";
 import { fitPayload } from "../../responsibilities/triggers";

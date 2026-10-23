@@ -1,14 +1,18 @@
 import { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
+import { getLogger } from "@openbot/shared/logger";
 import {
   AUTOMATIC_LEARNING_CONTAINER_ID,
   type LearningAutoAssignState,
-} from "../../../shared/learning";
+} from "@openbot/shared/learning";
 import {
   type AuditStore,
   DEPLOYMENT_INITIATOR,
   recordAuditEvent,
 } from "../audit";
 import type { LearningSettingsStore } from "./settings";
+
+const defaultLog = (entry: Record<string, unknown>) =>
+  getLogger("server").warn(JSON.stringify(entry));
 
 /** What asking Intelligence about one container found. */
 export type ContainerProbe =
@@ -228,7 +232,7 @@ export function createLearningAutoAssign(options: {
   const containerId = options.containerId ?? AUTOMATIC_LEARNING_CONTAINER_ID;
   const now = options.now ?? Date.now;
   const minIntervalMs = options.minIntervalMs ?? MIN_INTERVAL_MS;
-  const log = options.log ?? ((entry) => console.warn(JSON.stringify(entry)));
+  const log = options.log ?? defaultLog;
   let current: LearningAutoAssignState = options.enabled
     ? { state: "pending" }
     : { state: "off" };

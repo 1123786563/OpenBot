@@ -95,6 +95,40 @@ beforeAll(async () => {
         return page(`<form method="post" action="/session">
           <input name="email" type="email" value="${url.searchParams.get("username") ?? ""}">
           <input name="password" type="password"></form>`);
+      // A site that asks for a one-time code only once the password is accepted, the way MFA works.
+      if (url.pathname === "/mfa-login")
+        return page(`<form method="post" action="/mfa-session">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/mfa-session" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? Response.redirect(`${origin}/mfa-code`, 303)
+          : Response.redirect(`${origin}/mfa-login`, 303);
+      }
+      if (url.pathname === "/mfa-code")
+        return page(`<p>We sent a code to your phone.</p>
+          <form method="post" action="/mfa-verify">
+          <label>Verification code <input name="otp" autocomplete="one-time-code" inputmode="numeric"></label>
+          <button>Verify</button></form>`);
+      // The same, with the code field drawn as a password input, as some sites do.
+      if (url.pathname === "/masked-login")
+        return page(`<form method="post" action="/masked-session">
+          <input name="email" type="email"><input name="password" type="password">
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/masked-session" && request.method === "POST")
+        return page(`<form method="post" action="/mfa-verify">
+          <input name="otp" type="password" autocomplete="one-time-code">
+          <button>Verify</button></form>`);
+      if (url.pathname === "/mfa-verify" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("otp") === CODE
+          ? Response.redirect(`${origin}/home`, 303)
+          : page(`<p>That code is not right.</p>
+              <form method="post" action="/mfa-verify">
+              <input name="otp" autocomplete="one-time-code"><button>Verify</button></form>`);
+      }
       if (url.pathname === "/home") return page("<h1>Welcome back</h1>");
       // A login whose password is answered with a one-time-code page on this origin.
       if (url.pathname === "/login-2fa")
@@ -529,6 +563,23 @@ describe.skipIf(!asked)(
       expect(
         await tab.locator("input[autocomplete=one-time-code]").inputValue(),
       ).toBe("");
+      await tab.close();
+    });
+
+    test("a code field drawn as a password input is the code step, not a refused login", async () => {
+      const tab = await open("/masked-login");
+      const login = await fillSignIn(tab, {
+        origin,
+        username: "a@example.test",
+        password: PASSWORD,
+      });
+      expect(login).toMatchObject({
+        submitted: true,
+        passwordFieldVisible: false,
+        codeRequested: true,
+      });
+      const finished = await fillSignInCode(tab, { origin, code: CODE });
+      expect(finished.url).toBe(`${origin}/home`);
       await tab.close();
     });
   },

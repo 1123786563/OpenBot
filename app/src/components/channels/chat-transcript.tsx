@@ -60,12 +60,12 @@ import {
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
 import { readTeamBotConsent } from "@/lib/team-bots";
-import { cn } from "@/lib/utils";
-import { VOICE_CHAT_ACTIVITY, type VoiceChatEntry } from "@/lib/voice/archive";
 import {
   readConnectPrompt,
   refusalBody,
-} from "../../../../shared/connect-prompt";
+} from "@openbot/shared/connect-prompt";
+import { cn } from "@/lib/utils";
+import { VOICE_CHAT_ACTIVITY, type VoiceChatEntry } from "@/lib/voice/archive";
 import {
   attachmentModality,
   type SentAttachment,

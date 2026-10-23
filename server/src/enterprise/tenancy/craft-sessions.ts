@@ -198,10 +198,13 @@ export type CraftSessionsRows = {
   ): Promise<CraftSessionRow | undefined>;
   /** 无属主检查的行读（范围门认证后属主从行取——store 自有纪律）。 */
   findSessionById(sessionId: string): Promise<CraftSessionRow | undefined>;
-  /** 属主的会话列表（列表 join 面按协会行收窄后委托）。 */
-  listUserSessions(
-    userId: string,
-    limit?: number,
+  /**
+   * 按页内协会行点名的权威行批量读（列表 join 面）。不沿
+   * listUserSessions 的最新-100 便利窗——那是个人侧边栏的分页，不是
+   * 企业列表的 join 契约：协会行收窄过的页里每一行都必须可达。
+   */
+  findSessionsByIds(
+    sessionIds: readonly string[],
   ): Promise<readonly CraftSessionRow[]>;
   updateSession(
     sessionId: string,
@@ -645,13 +648,18 @@ export function createCraftSessionsService(deps: {
           .limit(page.limit + 1);
       });
       const pageRows = scopeRows.slice(0, page.limit);
-      const authoritative = await rows.listUserSessions(scope.actorId);
+      const authoritative = await rows.findSessionsByIds(
+        pageRows.map((scopeRow) => scopeRow.sessionId),
+      );
       const authoritativeById = new Map(
         authoritative.map((row) => [row.id, row]),
       );
       const sessions = pageRows.flatMap((scopeRow) => {
         const session = authoritativeById.get(scopeRow.sessionId);
-        if (!session) return [];
+        // 权威行已删除 = 不可见（既有语义）。origin 过滤与
+        // store.listUserSessions 同语义对齐：非交互起源不出现在 craft
+        // 列表面（join 不放宽也不收紧）。
+        if (session?.origin !== "INTERACTIVE") return [];
         return [
           {
             sessionId: session.id,

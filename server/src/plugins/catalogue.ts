@@ -31,6 +31,10 @@
 import { isNeverAllowedHostname } from "../computer/target";
 // Type-only, so naming the transport here creates no import cycle with the registry that resolves it.
 import type { CuratedTransportKind } from "./transport";
+import {
+  type ResearchRole,
+  researchRoleOfTool,
+} from "@openbot/shared/research";
 
 export type CatalogueAuth =
   /** Answers without any credential at all. */
@@ -159,6 +163,15 @@ export type CatalogueEntry = {
   readTools?: readonly string[];
   docsUrl: string;
 };
+
+/** The research role a granted `serverId/toolName` ref plays, or null when it plays none. */
+export function researchRoleFor(ref: string): ResearchRole | null {
+  // A tool without a ref plays no role. Bot instructions are built from this, so it never throws.
+  if (typeof ref !== "string") return null;
+  const slash = ref.indexOf("/");
+  if (slash <= 0) return null;
+  return researchRoleOfTool(ref.slice(0, slash), ref.slice(slash + 1));
+}
 
 /**
  * Exa's research and multi-step agent tools spend credits, so only the three that read are reads.

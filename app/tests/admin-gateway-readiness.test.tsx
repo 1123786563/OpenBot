@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,6 +10,14 @@ import {
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/lib/i18n";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /*
@@ -33,26 +40,41 @@ import { settleReactWork } from "./settle-react-work";
  * server/tests/gateway-admin-routes.test.ts).
  */
 
-mock.module("@/components/ui/dialog", () => {
-  const pass = ({ children }: { children?: React.ReactNode }) =>
-    children ?? null;
-  return {
-    Dialog: pass,
-    DialogContent: pass,
-    DialogHeader: pass,
-    DialogBody: pass,
-    DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: React.ReactNode }) => (
-      <h2>{children}</h2>
-    ),
-    DialogDescription: ({ children }: { children?: React.ReactNode }) => (
-      <p>{children}</p>
-    ),
-    DialogClose: pass,
-    DialogOverlay: pass,
-    DialogPortal: pass,
-    DialogTrigger: pass,
-  };
+const uninstallDialogMock: unknown = mock.module(
+  "@/components/ui/dialog",
+  () => {
+    const pass = ({ children }: { children?: React.ReactNode }) =>
+      children ?? null;
+    return {
+      Dialog: pass,
+      DialogContent: pass,
+      DialogHeader: pass,
+      DialogBody: pass,
+      DialogFooter: pass,
+      DialogTitle: ({ children }: { children?: React.ReactNode }) => (
+        <h2>{children}</h2>
+      ),
+      DialogDescription: ({ children }: { children?: React.ReactNode }) => (
+        <p>{children}</p>
+      ),
+      DialogClose: pass,
+      DialogOverlay: pass,
+      DialogPortal: pass,
+      DialogTrigger: pass,
+    };
+  },
+);
+
+/*
+ * Give the registry entry back at suite end — where the runtime allows it. Bun's mock.module is
+ * process-wide, but as of Bun 1.4.2 it returns no restore handle (probed: undefined), so this
+ * registration is inert here and starts unregistering the day Bun ships the handle; until then
+ * the passthrough shell stays behind for the later files of this group's single `bun test`
+ * process, all of which run (and pass) under it.
+ */
+afterAll(() => {
+  if (typeof uninstallDialogMock === "function")
+    (uninstallDialogMock as () => void)();
 });
 
 const { Route } = await import("@/routes/_authed/admin/gateway");
@@ -88,7 +110,12 @@ type Deployment = {
     configVersion: number;
   } | null;
   credential:
-    | { state: "configured"; configVersion: number; fingerprint: string; updatedAt: string }
+    | {
+        state: "configured";
+        configVersion: number;
+        fingerprint: string;
+        updatedAt: string;
+      }
     | { state: "unconfigured" };
   probe: {
     status: string;
@@ -208,8 +235,7 @@ function installFetchStub() {
         baseUrl: string;
         requestTimeoutMs?: number;
       };
-      const configVersion =
-        (deployment.endpoint?.configVersion ?? 0) + 1;
+      const configVersion = (deployment.endpoint?.configVersion ?? 0) + 1;
       deployment = {
         ...deployment,
         endpoint: {
@@ -355,12 +381,15 @@ test("saving the endpoint, the rate and the credential refreshes what the page s
   // The endpoint: type the address, save, and the saved address + its version appear.
   // TYPED RATHER THAN SET — the input reads keystrokes, not dispatched change
   // events (connection-fields.test.tsx documents the same trap).
-  await userEvent.type(view.getByLabelText("Gateway address"), "https://bifrost.internal");
+  await userEvent.type(
+    view.getByLabelText("Gateway address"),
+    "https://bifrost.internal",
+  );
   fireEvent.click(view.getByRole("button", { name: "Save address" }));
   await waitFor(() =>
-    expect(
-      view.getByTestId("gateway-endpoint-saved").textContent,
-    ).toContain("https://bifrost.internal"),
+    expect(view.getByTestId("gateway-endpoint-saved").textContent).toContain(
+      "https://bifrost.internal",
+    ),
   );
   await waitFor(() =>
     expect(view.getByTestId("gateway-config-version").textContent).toContain(

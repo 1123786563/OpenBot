@@ -8,9 +8,10 @@ import { canonicalJson } from "../ai-observability/datasets";
 import type { ApprovalContinuation } from "../approvals/types";
 import { withApprovalContext } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
-import { HeadlessToolSuspension } from "../computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { LEARNED_SKILL_TOOL_NAMES } from "../learning/runtime";
-import { type GrantedTool, REFUSAL_MARKER } from "../plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
+import { REFUSAL_MARKER } from "../plugins/tools";
 import type { LearnedSkillInvocationSurface } from "./execution-contracts";
 
 /*

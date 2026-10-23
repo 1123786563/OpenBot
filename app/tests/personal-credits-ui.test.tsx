@@ -43,11 +43,11 @@ const CloseContext = createContext<() => void>(() => {});
 
 /* Base UI dialogs never mount under happy-dom (the portal rides browser transition APIs the DOM
  * shim does not implement), so the dialog shell is replaced with a SHAPE-COMPATIBLE passthrough —
- * the same mock billing-credits-ui.test.tsx installs, because mock.module is registry-level and
- * OUTLIVES THIS FILE: a simpler shell registered here would clobber the richer semantics later
- * files (dialog-heavy suites like bot-approval-rules) rely on — a closed dialog must mount
- * nothing, a trigger's child always renders, and DialogContent keeps a real close button.
- * Content renders inline instead of into a portal — the only part happy-dom cannot do. */
+ * the same mock billing-credits-ui.test.tsx installs. mock.module is registry level, but each
+ * installer unregisters its handle at its own afterAll, so the passthrough never outlives the
+ * file that set it and later files get the real module's richer semantics back: a closed dialog
+ * must mount nothing, a trigger's child always renders, and DialogContent keeps a real close
+ * button. Content renders inline instead of into a portal — the only part happy-dom cannot do. */
 mock.module("@/components/ui/dialog", () => {
   const pass = ({ children }: { children?: ReactNode }) => children ?? null;
   const DialogTriggerMock = ({

@@ -14,7 +14,7 @@ import {
   ingestSlackEvent,
   type SlackTriggerEvent,
 } from "../responsibilities/slack";
-import type { DrawnComponent } from "../routines/runner";
+import type { DrawnComponent } from "@openbot/toolkit/run-turn";
 import {
   agUiStream,
   approvalFields,
@@ -137,7 +137,7 @@ async function withoutLinkCodes(
       try {
         await deps.identity.discard(code);
       } catch (error) {
-        console.error(
+        log.error(
           JSON.stringify({
             type: "opentag-link-code-discard-error",
             errorType: error instanceof Error ? error.name : "UnknownError",

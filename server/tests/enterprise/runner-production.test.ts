@@ -55,7 +55,7 @@ import {
   verifyDirectoryDatabase,
 } from "../../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../../src/enterprise/tenancy/store";
-import { type GrantedTool, parametersFor } from "../../src/plugins/tools";
+import { type GrantedTool, parametersFor } from "@openbot/toolkit/granted-tool";
 
 const capabilityCheck = {
   current_user_matches: true,

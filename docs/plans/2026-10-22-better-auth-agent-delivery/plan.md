@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将已完成14项缺陷整改的候选设计拆为可在独立上下文中交付、可验证、可审查的细粒度Issue，并保持原P01–P25及BA01–BA20全部需求。
+**Goal:** 将已完成24项缺陷整改的候选设计（v2.3，含第三轮F-01–F-10）拆为可在独立上下文中交付、可验证、可审查的细粒度Issue，并保持原P01–P25及BA01–BA20全部需求。
 
 **Architecture:** 沿原Spec T01–T08业务切片，叶子Issue按已冻结接口串行交接。先完成固定版可行性、事务/authority及M0–M3工具，再迁入gate/写路径；企业Mobile先交付OpenBot authority和保留OpenMuse server的BFF，再接真实App。最后演练M4切换与恢复，独立验收和Review/OCR通过后只形成发布准备包。
 
@@ -213,6 +213,16 @@ T01.01 → T01.02 → T01.03 → T01.04 → T01.05 → T01.06 → T01.07 → T01
 | F2 | T05.12 T05.13 T07.05 T07.06 T07.07 T07.17 T07.18 T07.19 T07.10 T07.11 T07.12 T07.13 | OpenBot authority+保留OpenMuse BFF原Workspace，真实App登录/workspace/流/媒体/追加认证；断线失败且accessKey不得兜底 |
 | F3 | T01.04 T02.09 T02.12 T04.04 T04.05 T04.06 T05.14 | 真实reset邮件/唯一消费/3600秒/安全代际及旧session/proof/能力失效；吞错和迟到callback不能半提交 |
 | F4 | T04.12 T07.13 T08.04 | 默认/BA Web/BA Mobile互斥收集，强制origin/digest/target preflight；零网络负例 |
+| F-01 | T01.03 T02.08 T02.11 T08.04 T08.05 | 原生HTTP目录写由ingress转auth.api于外层事务；executor禁止auth.handler；直写清单扫描一致；handler可达写端点为失败 |
+| F-02 | T05.05 T05.06 T02.14 | organizationProvisioning disabled硬前提并启动拒绝；ingress拒客户端organizationId；回调不产生member；M2核验sso_providers.organization_id为空 |
+| F-03 | T01.03 T04.01 T08.04 T08.05 | 固定版不经ALS直写清单逐项处置；resend不走原生分支；包升级清单外直写失败 |
+| F-04 | T02.13 T04.03 T05.06 T08.02 | legacy目录写入者静态清单为必需产物；deletion-semantics/root-backfill/enterprise-runtime-seed逐项处置 |
+| F-05 | T02.13 T02.14 T03.03 | BA slug按interfaces §2派生/归一化/碰撞/幂等；重放不重派；check-slug同规则 |
+| F-06 | T04.08 | 不新增同形DELETE成员路由；path ID固定OpenBot principalId，服务端解析BA userId |
+| F-07 | T01.08 T01.09 | 组织组件不调X类原生GET；ui-source.json逐组件声明注入adapter或不复用 |
+| F-08 | T01.04 T02.12 T04.04 | link-account dispatchVerificationEmail按通知类登记并由outbox接管，启用前先接管 |
+| F-09 | T02.02 | 既有epoch integer与新建bigint版本列逐列固定，Number.isSafeInteger比较不失效 |
+| F-10 | T02.06 | auth-writer→principals、data→clocks/assurance最小GRANT；缺授权启动/反例失败 |
 | H1 | T01.03 T01.04 T02.08 T02.12 T05.05 T05.06 | pendingHooks分类且不丢；原子写进finalizer、通知进outbox；全局连接写拒绝；事务配置不依赖SCIM开关 |
 | H2 | T01.06 T01.07 T05.01 T05.02 T05.03 T05.04 | 签名OIDC/SAML真实认证时间/强度及state/nonce/RelayState/InResponseTo，固定版本不可行则阻断 |
 | H3 | T02.11 T05.04 T08.04 T08.05 | 每个原生Organization GET均有暂停成员/暂停公司/缺证明反例或后端关闭 |
@@ -250,12 +260,12 @@ T01.01 → T01.02 → T01.03 → T01.04 → T01.05 → T01.06 → T01.07 → T01
 | BA07 | 删除再加入/恢复不复活旧 Scope/资源及财务 Grant/审批/lease、凭据动作及个人凭据；新 Scope 也不能凭旧来源签新 lease/解密；幂等不增版 | P03, P04, P05, P09, P14, P16, P18 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA08 | Principal/BA/clock/投影/审计/outbox 每阶段故障全回滚；Identity 的 User/Principal/代际/session/proof 同样全回滚；BA 权威下 HTTP/auth.api/SCIM/JIT/Admin/CLI/startup 无信封不可写；延迟 hook 不丢、不用全局连接补写，SCIM HTTP 首建故障 roles/SCIM投影/member/clock 全回滚 | P01, P04, P08, P12, P23 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA09 | 真实受限角色/RLS/复合 FK、池复用、存储/授权故障及 schema mismatch | P03, P05, P14, P23 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
-| BA10 | 密码/A IdP session 不满足 B proof；SCIM A deactivate 保留 B；无邀请/无 Principal 首次 provisioning；批准规则团队加入、撤规则/跨公司/能力跨请求拒绝；每个原生目录 GET 的暂停成员/暂停公司/缺 proof 反例；OIDC/SAML 签名断言时间与 state/RelayState 绑定；已启用真实 IdP/SCIM 测试租户 | P01, P04, P11, P12, P23 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
+| BA10 | 密码/A IdP session 不满足 B proof；SCIM A deactivate 保留 B；无邀请/无 Principal 首次 provisioning；批准规则团队加入、撤规则/跨公司/能力跨请求拒绝；每个原生目录 GET 的暂停成员/暂停公司/缺 proof 反例；OIDC/SAML 签名断言时间与 state/RelayState 绑定；已启用真实 IdP/SCIM 测试租户；SSO 回调携带 provider.organizationId 不创建 member（organizationProvisioning 禁用） | P01, P04, P11, P12, P23 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA11 | 真 Run/Job 领取重放/重试/恢复/离职保持 payer，proof 到期挂起，外部事实不重复 | P16, P18 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA12 | 多团队同余额并发、个人 Key/账户分离、财务动作与用量账本对账 | P18, P21 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA13 | 真实 Mobile App/MuseApi/CopilotKit/媒体接线及 Web 多标签、Desktop、启用 iOS/Android 的真实回调/切换/登出/撤权；适配层测试不能替代 native | P07, P19, P20, P21 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA14 | 实际存储旧 URL/CDN、代理新请求/HEAD/Range/批次、lease、沙箱/浏览器/Memory/观测 | P14, P15, P17, P21 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
-| BA15 | 同名/重复 workspace ID 保留、集合/哈希/FK/payer/owner、legacy/ba/paused 读写、M3→M4 同请求矩阵和真实备份恢复/回退 | P03, P04, P22, P25 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
+| BA15 | 同名/重复 workspace ID 保留、集合/哈希/FK/payer/owner、legacy/ba/paused 读写、M3→M4 同请求矩阵和真实备份恢复/回退；legacy tenant 回填获得按 interfaces §2 规则派生的确定性唯一 slug | P03, P04, P22, P25 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA16 | 固定版所有 Admin/Organization 读写逐项处置，删除/模拟登录/动态角色后端拒绝；全部实际路由/consumer/client/启用 provider 有正反证据；无未知例外 | P17, P23, P24 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA17 | 从公司管理 API 授予/撤销/重授新团队 Grant 后，普通 member 仅甲团队成功，乙/公司角色/外部邀请/原生 BA 入口拒绝；不得自行委派，双身份/规则来源审计 | P01, P09, P10 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
 | BA18 | 实际 adapter 合法中间顺序可提交；缺 member/缺终结/故障无半份状态或提前邮件 | P01, P04, P08 → 本表叶子；T08.06/T08.07汇总实际同版证据 |
@@ -291,9 +301,9 @@ T06.11与T06.12共同采用 `POST /api/gateway/identity-admission`、credit_serv
 
 | 事实源 | SHA-256 |
 | --- | --- |
-| `docs/specs/2026-10-22-better-auth-full-integration-design.md` | `9f65183a641bc85cf24fa8f7c41704fe76f34689f3fec338196804b6144c63d2` |
-| `docs/plans/2026-10-22-better-auth-full-integration/interfaces.md` | `de021f09b062355f581674ef05caf2b7406e3dd02f53ee830b4b4098eee3c766` |
-| `docs/plans/2026-10-22-better-auth-full-integration/plan.md` | `d11d4452819459e5568ec361a3a4a39cba0d5724ac41fb4257b2cd7043f60d51` |
-| `docs/plans/2026-10-22-better-auth-full-integration/acceptance.md` | `db7aa1cf4937542d7e3dcd1ac04eec2f47f7cc14a0087e4ff2960c3b7b3a8db9` |
+| `docs/specs/2026-10-22-better-auth-full-integration-design.md` | `bafef820abcfcbb0e5fb5a18a21f395e3ec50fd30cdbb90f5fa55ffe4243e47c` |
+| `docs/plans/2026-10-22-better-auth-full-integration/interfaces.md` | `66952d99c0c252c60d39683aab94b185949d2ad52e5d6943aa8ebdd66770a7d1` |
+| `docs/plans/2026-10-22-better-auth-full-integration/plan.md` | `60cdc7063d3f950a7d6c1ed1a0e9c21890a228052206dc36266b1f154da9fde6` |
+| `docs/plans/2026-10-22-better-auth-full-integration/acceptance.md` | `3bb52a6ec451a2e670454309c50e4dc635f945bfb69d0a02a4f8078c4158e968` |
 
 这些hash锚定本轮规划输入；未来批准/修订后主控重新生成检查点，不能将过期hash上的验证报告搬到新代码。发布Issue与关系的读取时间、响应与验证结果归档于本轮run的receipts/verification，不在docs登记“已实施”。

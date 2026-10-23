@@ -1,5 +1,4 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -11,6 +10,14 @@ import {
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/lib/i18n";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { settleReactWork } from "./settle-react-work";
 
 /*
@@ -35,26 +42,41 @@ import { settleReactWork } from "./settle-react-work";
  * the 01.8 gateway screen tests use.
  */
 
-mock.module("@/components/ui/dialog", () => {
-  const pass = ({ children }: { children?: React.ReactNode }) =>
-    children ?? null;
-  return {
-    Dialog: pass,
-    DialogContent: pass,
-    DialogHeader: pass,
-    DialogBody: pass,
-    DialogFooter: pass,
-    DialogTitle: ({ children }: { children?: React.ReactNode }) => (
-      <h2>{children}</h2>
-    ),
-    DialogDescription: ({ children }: { children?: React.ReactNode }) => (
-      <p>{children}</p>
-    ),
-    DialogClose: pass,
-    DialogOverlay: pass,
-    DialogPortal: pass,
-    DialogTrigger: pass,
-  };
+const uninstallDialogMock: unknown = mock.module(
+  "@/components/ui/dialog",
+  () => {
+    const pass = ({ children }: { children?: React.ReactNode }) =>
+      children ?? null;
+    return {
+      Dialog: pass,
+      DialogContent: pass,
+      DialogHeader: pass,
+      DialogBody: pass,
+      DialogFooter: pass,
+      DialogTitle: ({ children }: { children?: React.ReactNode }) => (
+        <h2>{children}</h2>
+      ),
+      DialogDescription: ({ children }: { children?: React.ReactNode }) => (
+        <p>{children}</p>
+      ),
+      DialogClose: pass,
+      DialogOverlay: pass,
+      DialogPortal: pass,
+      DialogTrigger: pass,
+    };
+  },
+);
+
+/*
+ * Give the registry entry back at suite end — where the runtime allows it. Bun's mock.module is
+ * process-wide, but as of Bun 1.4.2 it returns no restore handle (probed: undefined), so this
+ * registration is inert here and starts unregistering the day Bun ships the handle; until then
+ * the passthrough shell stays behind for the later files of this group's single `bun test`
+ * process, all of which run (and pass) under it.
+ */
+afterAll(() => {
+  if (typeof uninstallDialogMock === "function")
+    (uninstallDialogMock as () => void)();
 });
 
 const { Route } = await import("@/routes/_authed/admin/model-catalog");
@@ -210,13 +232,9 @@ test("the sync button fires the manual route, reports the outcome and re-reads t
   await waitFor(() => expect(syncPosts).toBe(1));
   // The outcome is displayed with the synced time and the snapshot counts.
   await waitFor(() =>
-    expect(view.getByTestId("catalog-sync-result").textContent).toContain(
-      "2",
-    ),
+    expect(view.getByTestId("catalog-sync-result").textContent).toContain("2"),
   );
-  expect(
-    view.getByTestId("catalog-sync-result").textContent,
-  ).toContain("2026");
+  expect(view.getByTestId("catalog-sync-result").textContent).toContain("2026");
   // The catalog was re-read: what the server now holds is what is listed.
   await waitFor(() =>
     expect(view.queryByText(/has not synced any models yet/)).toBeNull(),
@@ -241,7 +259,9 @@ test("a failed sync shows the server's fixed reason, never a success sentence", 
 
   await waitFor(() => expect(syncPosts).toBe(1));
   const result = view.getByTestId("catalog-sync-result");
-  await waitFor(() => expect(result.textContent).toContain("catalog_fetch_unreachable"));
+  await waitFor(() =>
+    expect(result.textContent).toContain("catalog_fetch_unreachable"),
+  );
   expect(result.textContent).not.toContain("Synced");
 });
 
@@ -267,7 +287,12 @@ test("a running sync disables the button, so double-clicking fires no second req
   const release = holdSync as unknown as () => void;
   holdSync = null;
   release();
-  await waitFor(() => expect((view.getByRole("button", { name: "Sync now" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() =>
+    expect(
+      (view.getByRole("button", { name: "Sync now" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
 });
 
 test("a process without the sync service says the trigger is unavailable", async () => {
@@ -282,7 +307,5 @@ test("a process without the sync service says the trigger is unavailable", async
 
   await waitFor(() => expect(syncPosts).toBe(1));
   const result = view.getByTestId("catalog-sync-result");
-  await waitFor(() =>
-    expect(result.textContent).toContain("unavailable"),
-  );
+  await waitFor(() => expect(result.textContent).toContain("unavailable"));
 });

@@ -54,6 +54,7 @@ import { enterpriseTestDatabaseUrlFrom } from "../../support/enterprise-database
 import {
   type CredentialsFixture,
   createCredentialsFixture,
+  type MemoryVault,
 } from "./credentials-ownership";
 import type { FixtureIdentity } from "./fixture";
 import type { TeamKey } from "./resource-policy";
@@ -177,8 +178,7 @@ export async function createCraftTenancyFixture(): Promise<CraftTenancyFixture> 
     rows: {
       findSession: (sessionId, userId) => craft.findSession(sessionId, userId),
       findSessionById: (sessionId) => craft.findSessionById(sessionId),
-      listUserSessions: (userId, limit) =>
-        craft.listUserSessions(userId, limit),
+      findSessionsByIds: (sessionIds) => craft.findSessionsByIds(sessionIds),
       updateSession: (sessionId, patch) =>
         craft.updateSession(sessionId, patch),
       deleteSession: (sessionId, userId) =>

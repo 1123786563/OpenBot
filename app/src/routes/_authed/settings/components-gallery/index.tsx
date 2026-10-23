@@ -11,8 +11,8 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { scopedComponentListQueryOptions } from "@/lib/components/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { cn } from "@/lib/utils";
 
 /**
@@ -71,7 +71,7 @@ function RouteComponent() {
               data-testid={`component-${component.name}`}
               key={component.name}
               params={{ name: component.name }}
-              to="/admin/components/$name"
+              to="/settings/components-gallery/$name"
             >
               <div className="min-h-28 p-4">
                 <div className="flex flex-row items-center gap-2">

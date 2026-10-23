@@ -1,26 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
 import {
-  createAsyncCancelService,
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
+import {
   type AsyncCancelOutcome,
+  createAsyncCancelService,
   type ProviderCancelOutcome,
 } from "../src/billing/async-cancel";
+import { createAsyncJobStatusService } from "../src/billing/async-job-status";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
-import {
-  createAsyncJobStatusService,
-} from "../src/billing/async-job-status";
-import {
-  createAsyncTerminalSettleService,
-} from "../src/billing/async-terminal";
+import { createAsyncTerminalSettleService } from "../src/billing/async-terminal";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  createEnterpriseGatewayPriceSnapshotStore,
-} from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
 import {
   accessGrants,
@@ -35,6 +32,10 @@ import {
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -460,7 +461,7 @@ describe("17.7 AC-2 — only the provider's own unbilled evidence releases", () 
     });
   });
 
-  test("\"取消已接受\" without billing confirmation releases nothing", async () => {
+  test('"取消已接受" without billing confirmation releases nothing', async () => {
     const world = await seedJobWorld();
     const provider = scriptedProvider([{ kind: "succeeded_no_evidence" }]);
     const service = cancelWith(provider, makeAudit());
@@ -507,7 +508,11 @@ describe("17.7 AC-2 — only the provider's own unbilled evidence releases", () 
       cancelIdempotencyKey: `${world.jobId}-cancel-1`,
       jobId: world.jobId,
     });
-    expect(replay).toMatchObject({ status: "answered", asked: false, conclusion: "hold_kept" });
+    expect(replay).toMatchObject({
+      status: "answered",
+      asked: false,
+      conclusion: "hold_kept",
+    });
     expect(provider.calls).toHaveLength(1);
 
     // A NEW key is a genuine retry; the evidenced answer moves the conclusion to released.
@@ -613,7 +618,10 @@ describe("17.7 AC-4 — the seam stays honest around the cancel lane", () => {
       revokedAt: null,
     });
     const provider = scriptedProvider([
-      { kind: "succeeded_unbilled_evidenced", evidenceReference: "should-not-release" },
+      {
+        kind: "succeeded_unbilled_evidenced",
+        evidenceReference: "should-not-release",
+      },
     ]);
     const service = cancelWith(provider, makeAudit());
 
@@ -638,7 +646,11 @@ describe("17.7 AC-4 — the seam stays honest around the cancel lane", () => {
     const settledUsage = Object.fromEntries(
       Object.keys(V1_AMOUNTS).map((dimension) => [
         dimension,
-        dimension === "video" ? 25 : dimension === "surcharge_per_request" ? 1 : 0,
+        dimension === "video"
+          ? 25
+          : dimension === "surcharge_per_request"
+            ? 1
+            : 0,
       ]),
     );
     const settled = await terminalService.settleTerminal({
@@ -679,7 +691,11 @@ describe("17.7 AC-4 — the seam stays honest around the cancel lane", () => {
     const usage = Object.fromEntries(
       Object.keys(V1_AMOUNTS).map((dimension) => [
         dimension,
-        dimension === "video" ? 25 : dimension === "surcharge_per_request" ? 1 : 0,
+        dimension === "video"
+          ? 25
+          : dimension === "surcharge_per_request"
+            ? 1
+            : 0,
       ]),
     );
     const terminal = await terminalService.settleTerminal({
@@ -729,5 +745,111 @@ describe("17.7 AC-4 — the seam stays honest around the cancel lane", () => {
       conclusion: "hold_unknown",
       evidenceReference: receipt,
     });
+  });
+});
+
+describe("17.7 fix2 — concurrent cancels serialize on the record row", () => {
+  test("two racing new-key cancels both land: the requests counter counts every ask", async () => {
+    const world = await seedJobWorld();
+    // Both asks must pass their pre-read before either conclusion lands: the
+    // provider gate holds every ask until the second one arrives.
+    let asks = 0;
+    const bothAsked = Promise.withResolvers<void>();
+    const calls: unknown[] = [];
+    const service = createAsyncCancelService({
+      database,
+      cancelAtProvider: async (input) => {
+        calls.push(input);
+        asks += 1;
+        if (asks === 2) bothAsked.resolve();
+        await bothAsked.promise;
+        return { kind: "unsupported" };
+      },
+      audit: makeAudit().store as never,
+    });
+
+    const [a, b] = await Promise.all([
+      service.cancelJob({
+        grantId: world.grantId,
+        cancelIdempotencyKey: `${world.jobId}-cancel-1`,
+        jobId: world.jobId,
+      }),
+      service.cancelJob({
+        grantId: world.grantId,
+        cancelIdempotencyKey: `${world.jobId}-cancel-2`,
+        jobId: world.jobId,
+      }),
+    ]);
+    expect(a).toMatchObject({ status: "answered", asked: true });
+    expect(b).toMatchObject({ status: "answered", asked: true });
+    expect(calls).toHaveLength(2); // two NEW keys = two asks, by design
+
+    // The row is one; the counter is two. A lost-update here used to answer
+    // "1" — the retry storm invisible exactly when it storms.
+    const row = await cancelRowOf(world.jobId);
+    expect(row?.requests).toBe(2);
+    expect(row?.conclusion).toBe("hold_kept");
+  });
+
+  test("a weaker conclusion racing a terminal release never overwrites it", async () => {
+    const world = await seedJobWorld();
+    const receipt = `fix2-terminal-${world.jobId}`;
+    // Ask 1 releases on evidence; ask 2 (unsupported) returns only after the
+    // release's record is visible — its own pre-read predates that record.
+    let asks = 0;
+    const calls: unknown[] = [];
+    const service = createAsyncCancelService({
+      database,
+      cancelAtProvider: async (input) => {
+        calls.push(input);
+        asks += 1;
+        if (asks === 1) {
+          return {
+            kind: "succeeded_unbilled_evidenced",
+            evidenceReference: receipt,
+          };
+        }
+        for (let i = 0; i < 200; i += 1) {
+          const row = await cancelRowOf(world.jobId);
+          if (row?.conclusion === "released_on_evidence") break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        return { kind: "unsupported" };
+      },
+      audit: makeAudit().store as never,
+    });
+
+    const [released, weaker] = await Promise.all([
+      service.cancelJob({
+        grantId: world.grantId,
+        cancelIdempotencyKey: `${world.jobId}-cancel-1`,
+        jobId: world.jobId,
+      }),
+      service.cancelJob({
+        grantId: world.grantId,
+        cancelIdempotencyKey: `${world.jobId}-cancel-2`,
+        jobId: world.jobId,
+      }),
+    ]);
+    expect(released).toMatchObject({ conclusion: "released_on_evidence" });
+
+    // The record answers for both asks: terminal stands, the ask still counts,
+    // and the audit says "released" exactly once (never re-audited as held).
+    const row = await cancelRowOf(world.jobId);
+    expect(row).toMatchObject({
+      conclusion: "released_on_evidence",
+      releasedCredits: world.maximumCredits,
+      evidenceReference: receipt,
+      evidenceKind: "no_usage",
+      requests: 2,
+    });
+    expect(weaker).toMatchObject({
+      status: "answered",
+      asked: true,
+      conclusion: "released_on_evidence",
+    });
+    const hold = await holdOf(world.reservationId);
+    expect(hold.status).toBe("released");
+    expect(hold.released).toBe(world.maximumCredits);
   });
 });

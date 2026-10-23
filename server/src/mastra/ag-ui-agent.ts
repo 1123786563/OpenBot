@@ -2,7 +2,7 @@ import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent } from "@ag-ui/client";
 import { Observable, throwError } from "rxjs";
 import type { GovernedModelRequest } from "../enterprise/runs/governed-execution";
-import type { GrantedTool } from "../plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import type {
   ExecuteMastra,
   ExecutionBinding,

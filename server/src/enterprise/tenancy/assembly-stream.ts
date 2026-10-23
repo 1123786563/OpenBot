@@ -181,6 +181,17 @@ export function createStreamEntryRoutes({
       );
     }
 
+    /*
+     * 客户端离开的传播面（fix2）：cancel() 是流对「读端已消失」的唯一通
+     * 知。离开信号立刻唤醒等待中的循环（不等下一个事件到来），此后任何
+     * 迟到的事件都直接丢弃——绝不再过判定面，也绝不再投递。
+     */
+    let departed = false;
+    let signalDeparture: (() => void) | null = null;
+    const departure = new Promise<null>((resolve) => {
+      signalDeparture = () => resolve(null);
+    });
+
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const encoder = new TextEncoder();
@@ -188,9 +199,27 @@ export function createStreamEntryRoutes({
           // 探针帧即首帧（真实 push 判定过的正文）。
           controller.enqueue(encoder.encode(sseFrame(probe.body)));
           for (;;) {
-            // 网络半边：等待下一事件。此刻没有打开的事务（AC3）。
-            const body = await events.nextEvent(subscriptionId);
-            if (body === null) break;
+            if (departed) break;
+            /*
+             * 背压检查（fix2）：desiredSize ≤ 0 = 消费端队列已满（探针帧
+             * 还没被读走）；null = 流已关/已取消。满了就等消费者腾出空间
+             * 再拉下一个事件——不把无界的事件队列堆给一个不读的客户端；
+             * 等待期间离开信号随时可以打断。
+             */
+            for (
+              let size = controller.desiredSize;
+              size !== null && size <= 0 && !departed;
+              size = controller.desiredSize
+            ) {
+              await new Promise((resolve) => setTimeout(resolve, 25));
+            }
+            if (departed) break;
+            // 网络半边：等待下一事件。此刻没有打开的事务（AC3）。等待与
+            // 离开信号赛跑——读端消失时循环立即释放，不等下一个事件。
+            const next = events.nextEvent(subscriptionId);
+            next.catch(() => {}); // 输掉赛跑后端口的拒绝不是循环的问题
+            const body = await Promise.race([next, departure]);
+            if (body === null || departed) break;
             // 判定半边：短事务重验（订阅行 + 订阅者事实）。
             const outcome = await service.pushEvent(
               scope,
@@ -203,8 +232,17 @@ export function createStreamEntryRoutes({
         } catch {
           // 传输端异常：流结束（判定面无默认放行）。
         } finally {
-          controller.close();
+          // 读端已取消时流已闭——close() 会抛，那不是要上报的异常。
+          try {
+            controller.close();
+          } catch {
+            // already closed by cancellation
+          }
         }
+      },
+      cancel() {
+        departed = true;
+        signalDeparture?.();
       },
     });
     return context.body(stream, 200, {

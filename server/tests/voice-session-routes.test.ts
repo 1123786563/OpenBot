@@ -1,6 +1,6 @@
 import { expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
-import type { VoiceSessionRecord } from "../../shared/voice-session";
+import type { VoiceSessionRecord } from "@openbot/shared/voice-session";
 import type { AppVariables } from "../src/auth/guards";
 import { createVoiceRoutes } from "../src/voice/routes";
 import {

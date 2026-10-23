@@ -1,6 +1,6 @@
+import type { SaveVoiceSessionInput } from "@openbot/shared/voice-session";
 import { type AuthenticatedUser, authKeys } from "@/lib/auth/queries";
 import { queryClient } from "@/query-client";
-import type { SaveVoiceSessionInput } from "../../../../shared/voice-session";
 
 const PREFIX = "openbot:voice-outbox:";
 export const voiceCallOwner = () =>

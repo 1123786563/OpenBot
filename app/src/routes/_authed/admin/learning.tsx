@@ -29,7 +29,7 @@ import type {
   LearningAutoAssignState,
   LearningSettings,
   LearningTarget,
-} from "../../../../../shared/learning";
+} from "@openbot/shared/learning";
 
 export const Route = createFileRoute("/_authed/admin/learning")({
   component: LearningPage,

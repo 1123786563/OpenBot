@@ -2,14 +2,15 @@
   "version": "2026-10-22",
   "spec_status": "candidate-not-approved",
   "source": {
-    "read_at": "2026-10-22T14:32:09.136315+00:00",
+    "read_at": "2026-10-23T01:00:00+08:00",
     "base": "bcf51633f16201aa453ed5f4dbe81007f498de55",
     "files": {
-      "docs/specs/2026-10-22-better-auth-full-integration-design.md": "9f65183a641bc85cf24fa8f7c41704fe76f34689f3fec338196804b6144c63d2",
-      "docs/plans/2026-10-22-better-auth-full-integration/interfaces.md": "de021f09b062355f581674ef05caf2b7406e3dd02f53ee830b4b4098eee3c766",
-      "docs/plans/2026-10-22-better-auth-full-integration/plan.md": "d11d4452819459e5568ec361a3a4a39cba0d5724ac41fb4257b2cd7043f60d51",
-      "docs/plans/2026-10-22-better-auth-full-integration/acceptance.md": "db7aa1cf4937542d7e3dcd1ac04eec2f47f7cc14a0087e4ff2960c3b7b3a8db9"
-    }
+      "docs/specs/2026-10-22-better-auth-full-integration-design.md": "bafef820abcfcbb0e5fb5a18a21f395e3ec50fd30cdbb90f5fa55ffe4243e47c",
+      "docs/plans/2026-10-22-better-auth-full-integration/interfaces.md": "66952d99c0c252c60d39683aab94b185949d2ad52e5d6943aa8ebdd66770a7d1",
+      "docs/plans/2026-10-22-better-auth-full-integration/plan.md": "60cdc7063d3f950a7d6c1ed1a0e9c21890a228052206dc36266b1f154da9fde6",
+      "docs/plans/2026-10-22-better-auth-full-integration/acceptance.md": "3bb52a6ec451a2e670454309c50e4dc635f945bfb69d0a02a4f8078c4158e968"
+    },
+    "note": "v2.3 (F-01–F-10 写回后)；v2.2 快照保留于 sources/manifest.json + sources/docs/"
   },
   "epics": {
     "T01": [
@@ -257,7 +258,7 @@
         "server/src/auth/directory/contracts.ts",
         "server/src/auth/directory/transaction-adapter.ts"
       ],
-      "contract": "TransactionBoundBa.run<T>(tx,operation):Promise<BaTxOutcome<T>>；核心/adapter/SSO/SCIM/原生配套包精确锁定经核验兼容1.7.1；嵌套ALS不自带savepoint，补偿不得以25P02覆盖首个SQLSTATE。",
+      "contract": "TransactionBoundBa.run<T>(tx,operation):Promise<BaTxOutcome<T>>；核心/adapter/SSO/SCIM/原生配套包精确锁定经核验兼容1.7.1；嵌套ALS不自带savepoint，补偿不得以25P02覆盖首个SQLSTATE。 auth.handler每请求经runWithAdapter以{adapter,pendingHooks:[],isTransactionActive:false}新建ALS store覆盖外层并另开事务，禁止作为事务内写路径；目录写入口形态固定为外层事务内auth.api.<endpoint>({headers,body,query,asResponse})；以源码扫描生成固定版不经ALS的ctx.context.adapter直写清单并与interfaces §3.1逐项一致，包升级引入清单外直写失败。",
       "actions": [
         "用实际安装依赖核对版本后锁定，禁止其他包漂移",
         "实现请求局部tx adapter，记录连接与事务身份",
@@ -265,7 +266,8 @@
       ],
       "cases": [
         "two_parallel_requests_never_share_tx: 两HTTP并行 expect(txA).not.toBe(txB)",
-        "invite_accept_nested_tx_rolls_back_every_write: 故障后 expect(after).toEqual(before)，expect(error.code).toBe(originalSqlstate)"
+        "invite_accept_nested_tx_rolls_back_every_write: 故障后 expect(after).toEqual(before)，expect(error.code).toBe(originalSqlstate)",
+        "native_http_handler_is_never_used_for_directory_writes: 每条目录写端点发真实HTTP请求，请求内BA写与executor外层事务expect(txid).toBe(outerTxid)，仅auth.api夹具为假阳性"
       ],
       "test_file": "server/tests/better-auth/transaction-contract.test.ts",
       "kind": "db",
@@ -273,6 +275,8 @@
       "refs": "Spec §5.2/5.2.1；interfaces §3；H1/L1",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-01",
+        "F-03",
         "H1",
         "L1"
       ],
@@ -301,7 +305,7 @@
         "server/src/auth/directory/contracts.ts",
         "server/tests/better-auth/support/fixture.ts"
       ],
-      "contract": "executor独占pendingHooks；原子写finalizer、通知outbox、read-only/disabled-cache-noop提交后一次。禁secondaryStorage/cookieCache/background handler，session/verification存DB。原生成功不等于邮件callback成功。",
+      "contract": "executor独占pendingHooks；原子写finalizer、通知outbox、read-only/disabled-cache-noop提交后一次。禁secondaryStorage/cookieCache/background handler，session/verification存DB。原生成功不等于邮件callback成功。 第四处after-hook来源：oauth2/link-account的dispatchVerificationEmail在SSO resolveUser(deferNonDatabaseWrites)为真时入pendingHooks且实际发信；按通知类登记并由outbox接管，当前配置未触发，启用相关邮件配置前必须先完成接管。",
       "actions": [
         "登记databaseHooks与三个固定内部缓存来源，拒绝未知/全局连接DML",
         "证明无存储refresh no-op仍登记、回滚不drain，反配置route前拒绝",
@@ -319,6 +323,7 @@
       "validator_role": "backend_validator",
       "finding_ids": [
         "F3",
+        "F-08",
         "H1"
       ],
       "commands": [
@@ -472,7 +477,7 @@
         "app/src/lib/auth/ui-source.json",
         "app/src/lib/auth/ui-provider.tsx"
       ],
-      "contract": "OpenBotAuthProvider({children}:PropsWithChildren):ReactElement复用现有Router/QueryClient；registry文件固定在app/src/components/auth/，organization子目录；来源URL/commit或digest/许可证/逐文件hash存ui-source.json。",
+      "contract": "OpenBotAuthProvider({children}:PropsWithChildren):ReactElement复用现有Router/QueryClient；registry文件固定在app/src/components/auth/，organization子目录；来源URL/commit或digest/许可证/逐文件hash存ui-source.json。 ui-source.json对每个组织组件显式声明\"注入OpenBot adapter\"或\"不复用该组件\"，未声明组件不得进入渲染树。",
       "actions": [
         "核验固定版本registry与现有React19/Router/Query兼容",
         "冻结完整来源manifest，但本Issue只导入Provider/Auth入口最小闭包（最多8个生成组件）；后续页面各自导入自己已列清单内的组件，不在此批量搬全库",
@@ -480,14 +485,17 @@
       ],
       "cases": [
         "auth_ui_uses_existing_router_and_query_provider: expect(queryClientCount).toBe(1)",
-        "incompatible_or_unpinned_registry_is_rejected: 缺来源digest expect(check.exitCode).not.toBe(0)"
+        "incompatible_or_unpinned_registry_is_rejected: 缺来源digest expect(check.exitCode).not.toBe(0)",
+        "organization_components_do_not_call_x_class_endpoints: OrganizationSwitcher/Members等组件树expect(xClassCalls).toEqual([])"
       ],
       "test_file": "app/src/lib/auth/ui-compatibility.test.tsx",
       "kind": "web",
       "owner_role": "frontend_implementer",
       "refs": "P02；Spec §8/12",
       "validator_role": "frontend_validator",
-      "finding_ids": [],
+      "finding_ids": [
+        "F-07"
+      ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.08/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts app/src/lib/auth/ui-compatibility.test.tsx",
         "node scripts/e2e-coverage-audit.mjs",
@@ -512,7 +520,7 @@
         "app/src/lib/auth/organization-plugin.tsx",
         "app/src/lib/auth/auth-plugin.ts"
       ],
-      "contract": "固定organizationClient与本地organizationPlugin/auth plugin glue；公司/团队switcher只发受控选择意图；创建个人空间、动态角色、裸删除和模拟登录无可调用动作。",
+      "contract": "固定organizationClient与本地organizationPlugin/auth plugin glue；公司/团队switcher只发受控选择意图；创建个人空间、动态角色、裸删除和模拟登录无可调用动作。 组件默认读取的X类原生GET(/organization/list、list-user-teams、get-invitation、list-user-invitations)由注入adapter替代，不经原生端点。",
       "actions": [
         "按registry真实导出接client方法，保持原SSO与启用登录",
         "将路由viewPath交给现有TanStack Router",
@@ -527,7 +535,9 @@
       "owner_role": "frontend_implementer",
       "refs": "P02；interfaces §1",
       "validator_role": "frontend_validator",
-      "finding_ids": [],
+      "finding_ids": [
+        "F-07"
+      ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.09/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts app/src/lib/auth/ui-client-adapters.test.tsx",
         "node scripts/e2e-coverage-audit.mjs",
@@ -642,7 +652,7 @@
         "server/src/db/schema/index.ts",
         "server/drizzle.config.ts"
       ],
-      "contract": "一User一Principal；clock以tenant/principal/kind/scope稳定键保存epoch/generation/tombstone；Version为0..9007199254740991安全整数，不随成员删除或投影重建重置。",
+      "contract": "一User一Principal；clock以tenant/principal/kind/scope稳定键保存epoch/generation/tombstone；Version为0..9007199254740991安全整数，不随成员删除或投影重建重置。 列类型逐列固定：既有enterprise_memberships.epoch/enterprise_workspace_memberships.epoch为integer保持不变、迁移不改列类型，新建clock/代际列用bigint(interfaces §2)，应用层比较统一Number.isSafeInteger。",
       "actions": [
         "追加identityGeneration和company/team clock，不给历史缺值补1",
         "声明稳定唯一键、状态及安全整数约束",
@@ -657,7 +667,9 @@
       "owner_role": "backend_implementer",
       "refs": "Spec §4.2/4.4；interfaces §2",
       "validator_role": "backend_validator",
-      "finding_ids": [],
+      "finding_ids": [
+        "F-09"
+      ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.02/green E2E_BUN_ONLY=server/tests/better-auth:T02.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -806,7 +818,7 @@
         "server/src/db/schema/auth-directory.ts",
         "server/src/config.ts"
       ],
-      "contract": "AuthDirectoryDatabase区分writer/reader/data/operator；受保护投影/clock只由固定search_path、撤PUBLIC EXECUTE的受控函数写。M1保留legacy writer，M4才收权；最终关联用DEFERRABLE约束校验。",
+      "contract": "AuthDirectoryDatabase区分writer/reader/data/operator；受保护投影/clock只由固定search_path、撤PUBLIC EXECUTE的受控函数写。M1保留legacy writer，M4才收权；最终关联用DEFERRABLE约束校验。 明确PrincipalRegistry与CompanyAssurance.require的角色GRANT：auth-writer经受控函数获得principals必要写、data角色获得clocks/assurance受控读，缺授权在schema-roles反例与启动检查失败。",
       "actions": [
         "显式配置auth-writer与受限能力连接，启动验证角色/schema",
         "安装检查command/actor/target/action的DML guard与变更键登记",
@@ -814,14 +826,17 @@
       ],
       "cases": [
         "runtime_roles_cannot_write_projections_or_reset_clocks: 每种角色expect(denied).toBe(true)",
-        "valid_intermediate_order_requires_finalization: 合法顺序可提交、漏终结expect(committed).toBe(false)"
+        "valid_intermediate_order_requires_finalization: 合法顺序可提交、漏终结expect(committed).toBe(false)",
+        "missing_role_grants_fail_startup_and_schema_roles: 缺授权expect(baStarted).toBe(false)，schema-roles反例expect(denied).toBe(true)"
       ],
       "test_file": "server/tests/better-auth/schema-roles.test.ts",
       "kind": "db",
       "owner_role": "backend_implementer",
       "refs": "Spec §5.2.1/10；P03",
       "validator_role": "backend_validator",
-      "finding_ids": [],
+      "finding_ids": [
+        "F-10"
+      ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.06/green E2E_BUN_ONLY=server/tests/better-auth:T02.06 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -886,7 +901,7 @@
         "server/src/auth/directory/contracts.ts",
         "server/src/auth/directory/transaction-adapter.ts"
       ],
-      "contract": "Directory.execute(actor,command):Promise<DirectoryResult>按tenant排他→user/principal→member/team锁；锁内授权/幂等，BA同步→分类hook→finalizer→具名SET CONSTRAINTS IMMEDIATE→commit→允许hook。",
+      "contract": "Directory.execute(actor,command):Promise<DirectoryResult>按tenant排他→user/principal→member/team锁；锁内授权/幂等，BA同步→分类hook→finalizer→具名SET CONSTRAINTS IMMEDIATE→commit→允许hook。 executor事务内禁止调用auth.handler；目录写只经ingress转译的auth.api或命令入口进入同事务。",
       "actions": [
         "实现命令receipt同键同payload重放且重验当前权限",
         "finalizer按最终BA集合先存根/公司成员再团队投影、clock/审计/outbox",
@@ -902,6 +917,7 @@
       "refs": "interfaces §2/3；Spec §5.2",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-01",
         "H1"
       ],
       "commands": [
@@ -1023,7 +1039,7 @@
         "server/src/auth/index.ts",
         "server/src/app.ts"
       ],
-      "contract": "interfaces §3.2 的51 HTTP端点和无path addMember逐项D/I/R/S/P/X；每个Organization GET检查暂停成员/公司/缺proof或直接X；未知method/path拒绝。allowUserToCreateOrganization:false、disableOrganizationDeletion:true、无impersonate/dynamic roles。",
+      "contract": "interfaces §3.2 的51 Admin/Organization HTTP端点和无path addMember逐项D/I/R/S/P/X；每个Organization GET检查暂停成员/公司/缺proof或直接X；未知method/path拒绝。allowUserToCreateOrganization:false、disableOrganizationDeletion:true、无impersonate/dynamic roles。 原生HTTP目录写请求(含SCIM PUT/PATCH/DELETE)一律由ingress转译为外层事务内auth.api.<endpoint>({headers,body,query,asResponse})调用（auth.api不经runWithAdapter）；SSO 10个管理/登录端点+回调族与SCIM 9个资源路径按interfaces §3.2新增全表逐项D/I/R/S/P/X处置，写方法一律转译、不直挂handler。",
       "actions": [
         "按固定源码生成逐端点处置登记，HTTP与auth.api不得裸写",
         "实现DirectoryReadGate同tx核验lifecycle/proof及原动作权限",
@@ -1039,6 +1055,7 @@
       "refs": "interfaces §3.1/3.2；H1/H3/M1",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-01",
         "H3",
         "M1"
       ],
@@ -1071,7 +1088,8 @@
       "actions": [
         "实现当前tx capability与outbox登记、完成receipt和提交围栏",
         "对callback吞错保留原异常后回滚，未知邮箱无新token无需receipt",
-        "实现提交后幂等delivery调度与失败重试，不让通知决定准入"
+        "实现提交后幂等delivery调度与失败重试，不让通知决定准入",
+        "将link-account dispatchVerificationEmail登记为通知类outbox意图并接管投递；启用相关邮件配置前先完成接管，未启用保持配置反例"
       ],
       "cases": [
         "outbox_is_not_delivered_before_commit: expect(sentBeforeCommit).toHaveLength(0)",
@@ -1084,6 +1102,7 @@
       "validator_role": "backend_validator",
       "finding_ids": [
         "F3",
+        "F-08",
         "H1"
       ],
       "commands": [
@@ -1109,7 +1128,7 @@
       "owned_files": [
         "server/scripts/better-auth/inventory.ts"
       ],
-      "contract": "inventory CLI默认dry-run、显式目标URL/phase；输出稳定user/principal/company/team映射、owner/payer/授权来源、未知归属与撤权高水位；不读取秘密、不执行通知或修复。",
+      "contract": "inventory CLI默认dry-run、显式目标URL/phase；输出稳定user/principal/company/team映射、owner/payer/授权来源、未知归属与撤权高水位；不读取秘密、不执行通知或修复。 同时产出legacy目录写入者静态清单：覆盖UI/API/CLI/SCIM/JIT/startup及非路由写入者(t:deletion-semantics.ts的operator直删团队行/停用成员、root-backfill.ts的raw SQL insert principals/memberships、server/scripts/enterprise-runtime-seed.ts启动种子)，逐项写明处置阶段，清单外写入者被扫描发现即失败；BA organization.slug回填的派生/归一化/碰撞/幂等规则(interfaces §2)纳入前置盘点。",
       "actions": [
         "复用既有inventory入口模型并新增BA专属只读输出",
         "个人Grant/Key和长期能力逐条记录可核验来源/缺失",
@@ -1117,7 +1136,8 @@
       ],
       "cases": [
         "m0_inventory_is_read_only_and_keeps_ids: expect(databaseAfter).toEqual(databaseBefore)",
-        "unknown_owner_or_generation_blocks_migration: expect(canMigrate).toBe(false)"
+        "unknown_owner_or_generation_blocks_migration: expect(canMigrate).toBe(false)",
+        "legacy_writer_static_list_covers_non_route_writers: 清单含deletion-semantics/root-backfill/enterprise-runtime-seed expect(missingWriters).toEqual([])"
       ],
       "test_file": "server/tests/better-auth/migration-inventory.test.ts",
       "kind": "db",
@@ -1125,6 +1145,8 @@
       "refs": "P25；Spec §13.2",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-04",
+        "F-05",
         "H4"
       ],
       "commands": [
@@ -1149,7 +1171,7 @@
         "server/scripts/better-auth/migrate-directory.ts",
         "server/src/auth/directory/authority.ts"
       ],
-      "contract": "M1 legacy继续原能力；M2统一暂停UI/API/CLI/SCIM/JIT/startup及会生成目录的业务写后，离线migration actor幂等回填BA与稳定映射；不产生运行期双写。",
+      "contract": "M1 legacy继续原能力；M2统一暂停UI/API/CLI/SCIM/JIT/startup及会生成目录的业务写后，离线migration actor幂等回填BA与稳定映射；不产生运行期双写。 M2 inventory核验sso_providers.organization_id存量为空，非空阻断回填。 BA organization.slug按interfaces §2规则派生：显示名归一化(trim/小写/折叠非法字符)、空回退tenant-<稳定摘要>、冲突按tenant创建时间/ID稳定排序加后缀、以tenant_id为键持久映射重放不重派、BA唯一约束冲突阻断。",
       "actions": [
         "实现显式phase和authorityVersion CAS驱动，不默认生产URL",
         "停写后在一致快照按稳定ID回填，保留历史FK/payer",
@@ -1157,7 +1179,8 @@
       ],
       "cases": [
         "paused_authority_rejects_all_directory_writers: 每入口expect(status).toBe(503)",
-        "repeated_backfill_preserves_ids_and_versions: expect(secondSnapshot).toEqual(firstSnapshot)"
+        "repeated_backfill_preserves_ids_and_versions: expect(secondSnapshot).toEqual(firstSnapshot)",
+        "legacy_tenants_receive_deterministic_unique_slugs: 每个回填tenant获得归一化唯一幂等slug expect(recheck).toEqual(first)，冲突稳定后缀，唯一约束违例expect(backfillBlocked).toBe(true)"
       ],
       "test_file": "server/tests/better-auth/migration-expand.test.ts",
       "kind": "db",
@@ -1165,6 +1188,8 @@
       "refs": "Spec §13.2；interfaces §3.3/5.3；H4",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-02",
+        "F-05",
         "H4"
       ],
       "commands": [
@@ -1329,7 +1354,7 @@
         "server/src/billing/payer-binding.ts",
         "server/src/app.ts"
       ],
-      "contract": "POST /api/enterprise/companies接{name,slug,ownerUserId,defaultTeamName}+幂等头，仅平台；Directory.company.provision创建稳定目录/默认团队/owner/Principal与payer绑定，本地先provisioning、外部幂等初始化就绪才active。",
+      "contract": "POST /api/enterprise/companies接{name,slug,ownerUserId,defaultTeamName}+幂等头，仅平台；Directory.company.provision创建稳定目录/默认团队/owner/Principal与payer绑定，本地先provisioning、外部幂等初始化就绪才active。 check-slug与后续slug变更沿用interfaces §2同一归一化规则，slug变更后旧slug不可解析到其他公司。",
       "actions": [
         "服务器核验指定owner，不选首个用户，锁内ensure Principal",
         "本地状态同tx，Customer等外部动作只写幂等outbox",
@@ -1344,7 +1369,9 @@
       "owner_role": "backend_implementer",
       "refs": "P06；Spec §7/11",
       "validator_role": "backend_validator",
-      "finding_ids": [],
+      "finding_ids": [
+        "F-05"
+      ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T03.03/green E2E_BUN_ONLY=server/tests/better-auth:T03.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -1538,7 +1565,7 @@
         "server/src/auth/directory/ingress.ts",
         "server/src/enterprise/tenancy/workspace-scope-routes.ts"
       ],
-      "contract": "invitation.create/cancel/resend走Directory；role只admin/member/auditor且不可授owner/finance/platform；自有GET /api/enterprise/invitations及/:id只见本人，未登录仅最小状态，原生邀请GET保持关闭。",
+      "contract": "invitation.create/cancel/resend走Directory；role只admin/member/auditor且不可授owner/finance/platform；自有GET /api/enterprise/invitations及/:id只见本人，未登录仅最小状态，原生邀请GET保持关闭。 invitation.resend由OpenBot受控命令实现(取消旧记录、新建邀请并保留审计)，不进入原生invite-member resend分支——该分支经ctx.context.adapter直写expiresAt在executor事务外提交(interfaces §3.1直写清单)。",
       "actions": [
         "实现目标公司/团队/邮箱/可委派角色锁内校验",
         "取消/重发为受控命令，重发不复活旧过期/取消记录",
@@ -1553,7 +1580,9 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2/3.2；P08",
       "validator_role": "backend_validator",
-      "finding_ids": [],
+      "finding_ids": [
+        "F-03"
+      ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.01/green E2E_BUN_ONLY=server/tests/better-auth:T04.01 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -1620,9 +1649,10 @@
         "server/src/auth/directory/membership.ts",
         "server/src/enterprise/tenancy/workspace-admin.ts",
         "server/src/enterprise/tenancy/company-admin-routes.ts",
-        "server/src/enterprise/tenancy/people-lifecycle.ts"
+        "server/src/enterprise/tenancy/people-lifecycle.ts",
+        "server/src/enterprise/tenancy/deletion-semantics.ts"
       ],
-      "contract": "member.role.set/suspend/restore/remove/leave/owner.transfer锁内保护最后active owner；remove清该公司所有team关系但保留历史FK/clock；恢复不复活旧Grant/lease/凭据，legacy旧受控写保持。",
+      "contract": "member.role.set/suspend/restore/remove/leave/owner.transfer锁内保护最后active owner；remove清该公司所有team关系但保留历史FK/clock；恢复不复活旧Grant/lease/凭据，legacy旧受控写保持。 deletion-semantics.ts的operator直删团队行/停用成员按T02.13静态清单处置：ba分支经Directory命令，legacy保持原路径。",
       "actions": [
         "在同一tenant锁内覆盖owner新增/交接/降级/退出/暂停/移除",
         "清理最终team关系并推进适用持久代际",
@@ -1637,7 +1667,9 @@
       "owner_role": "backend_implementer",
       "refs": "P08；Spec §4.3/5.4/6",
       "validator_role": "backend_validator",
-      "finding_ids": [],
+      "finding_ids": [
+        "F-04"
+      ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.03/green E2E_BUN_ONLY=server/tests/better-auth:T04.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -1665,7 +1697,7 @@
         "server/src/config.ts",
         "server/src/auth/directory/outbox.ts"
       ],
-      "contract": "createAuthMail(deps)返回sendVerificationEmail/sendResetPassword与AuthMailDelivery；send({to,subject,text,html,idempotencyKey}):Promise<{providerMessageId}>；URL/token加密，真实投递仅commit后。",
+      "contract": "createAuthMail(deps)返回sendVerificationEmail/sendResetPassword与AuthMailDelivery；send({to,subject,text,html,idempotencyKey}):Promise<{providerMessageId}>；URL/token加密，真实投递仅commit后。 link-account dispatchVerificationEmail的投递由outbox接管(interfaces §3.1)，启用相关邮件配置前先完成接管。",
       "actions": [
         "接固定版验证URL、限流/重发、邮箱变化/过期检查",
         "在注册/验证账户事务中登记加密邮件并用callback完成receipt围栏防吞错",
@@ -1682,7 +1714,8 @@
       "refs": "interfaces §5.1；P08；F3/H1",
       "validator_role": "backend_validator",
       "finding_ids": [
-        "F3"
+        "F3",
+        "F-08"
       ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.04/green E2E_BUN_ONLY=server/tests/better-auth:T04.04 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
@@ -1846,9 +1879,10 @@
         "server/src/auth/directory/team-extension.ts",
         "server/src/auth/directory/executor.ts",
         "server/src/enterprise/tenancy/workspace-admin.ts",
-        "server/src/enterprise/tenancy/workspace-scope-routes.ts"
+        "server/src/enterprise/tenancy/workspace-scope-routes.ts",
+        "server/src/enterprise/tenancy/assembly-enterprise.ts"
       ],
-      "contract": "team.member.add/remove区分company-role/team-grant；锁内重验Grant/status/generation与用户/公司/团队来源，内部单次capability精确绑定target；不创建公司成员/改角色/邀请外部人。",
+      "contract": "team.member.add/remove区分company-role/team-grant；锁内重验Grant/status/generation与用户/公司/团队来源，内部单次capability精确绑定target；不创建公司成员/改角色/邀请外部人。 团队成员增删不新增与既有DELETE /api/enterprise/workspace-scope/admin/teams/:workspaceId/members/:principalId同形的路由(Hono把:userId与:principalId视为同一模式)；扩展转译既有POST .../admin/teams/:workspaceId/members与DELETE .../members/:principalId，path参数固定为OpenBot稳定业务principalId，服务端经PrincipalRegistry/binding解析为BA userId后构造team.member.add/remove，不接受客户端直接给BA member.id/userId(interfaces §3)。",
       "actions": [
         "把真实团队管理route接受控extension而非原生组织级权限旁路",
         "Grant撤销/换目标/receipt重放均重验",
@@ -1856,7 +1890,8 @@
       ],
       "cases": [
         "scoped_team_admin_can_manage_only_team_a: 甲成功乙expect(status).toBe(403)",
-        "revoked_grant_cannot_replay_success_receipt: expect(secondStatus).toBe(403)"
+        "revoked_grant_cannot_replay_success_receipt: expect(secondStatus).toBe(403)",
+        "no_second_same_shape_member_route_is_registered: expect(sameShapeRoutes).toHaveLength(1)"
       ],
       "test_file": "server/tests/better-auth/scoped-team-admin.test.ts",
       "kind": "db",
@@ -1864,6 +1899,7 @@
       "refs": "Spec §6.4；P09；BA17",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-06",
         "H4",
         "L2"
       ],
@@ -2252,7 +2288,7 @@
         "server/src/auth/directory/executor.ts",
         "server/src/app.ts"
       ],
-      "contract": "已验证SCIM token/connection固定公司；GET/POST/PUT/PATCH/DELETE映射实际操作，首次member.provision+Principal，无邀请也合法；停用仅本公司，不能全局disable或影响B/个人账户。",
+      "contract": "已验证SCIM token/connection固定公司；GET/POST/PUT/PATCH/DELETE映射实际操作，首次member.provision+Principal，无邀请也合法；停用仅本公司，不能全局disable或影响B/个人账户。 SSO factory硬前提固定sso({organizationProvisioning:{disabled:true}})，缺失或被改启动拒绝。",
       "actions": [
         "逐方法替换旧reconciler直接SQL写，保留固定externalId/binding维度",
         "多团队变化同一原子事件，角色最低member并重验批准规则",
@@ -2268,6 +2304,7 @@
       "refs": "P12；Spec §8；H1",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-02",
         "H1"
       ],
       "commands": [
@@ -2295,9 +2332,10 @@
         "server/src/auth/roles.ts",
         "server/src/enterprise/tenancy/company-admin-routes.ts",
         "server/src/auth/directory/team-extension.ts",
-        "server/src/auth/directory/executor.ts"
+        "server/src/auth/directory/executor.ts",
+        "server/scripts/enterprise-runtime-seed.ts"
       ],
-      "contract": "provisioning.rule.approve/revoke仅当前公司owner/admin；规则固定binding/externalGroup/teams/最低member与revision，scim/jit无批准权；事件的团队能力绑定rule revision/company/event/tx/target。",
+      "contract": "provisioning.rule.approve/revoke仅当前公司owner/admin；规则固定binding/externalGroup/teams/最低member与revision，scim/jit无批准权；事件的团队能力绑定rule revision/company/event/tx/target。 ingress对/sso/register、/sso/update-provider等受控配置写剥离并拒绝客户端提交的organizationId，provider↔公司绑定只由服务器按固定binding写入；带organizationId的OIDC/SAML回调不产生member行(固定版assignOrganization分支不可达)。 server/scripts/enterprise-runtime-seed.ts启动种子写入按T02.13静态清单处置，ba分支不独立写目录。",
       "actions": [
         "实现现有公司管理配置对规则审批/撤销的受控命令",
         "JIT从验过的issuer+subject/binding构造actor，不按邮箱授资格",
@@ -2306,7 +2344,8 @@
       "cases": [
         "approved_rule_adds_team_and_revoked_rule_rejects: expect(allowedAfterRevoke).toBe(false)",
         "provisioning_capability_cannot_cross_company_or_request: expect(status).toBe(403)",
-        "ordinary_login_cannot_reapply_initial_admin: expect(role).toBe(\"user\")"
+        "ordinary_login_cannot_reapply_initial_admin: expect(role).toBe(\"user\")",
+        "sso_callback_with_provider_organization_id_never_creates_member: provider带organizationId回调expect(memberRows).toHaveLength(0)"
       ],
       "test_file": "server/tests/better-auth/provisioning-global-admin.test.ts",
       "kind": "db",
@@ -2314,6 +2353,8 @@
       "refs": "interfaces §2/3；P12；H1",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-02",
+        "F-04",
         "H1"
       ],
       "commands": [
@@ -4460,9 +4501,10 @@
       "owned_files": [
         "server/scripts/better-auth/rebuild-projections.ts",
         "server/src/enterprise/tenancy/backfill-consistency.ts",
-        "server/src/enterprise/tenancy/external-files-migration.ts"
+        "server/src/enterprise/tenancy/external-files-migration.ts",
+        "server/src/enterprise/tenancy/root-backfill.ts"
       ],
-      "contract": "重建仅替换派生列，保留身份/binding/FK/payer、durable clock/tombstone和旧新Grant/审批/lease来源；无历史证据不补有效版本，不发邮件/支付/模型调用。",
+      "contract": "重建仅替换派生列，保留身份/binding/FK/payer、durable clock/tombstone和旧新Grant/审批/lease来源；无历史证据不补有效版本，不发邮件/支付/模型调用。 root-backfill.ts的raw SQL insert principals/memberships按T02.13静态清单处置，ba分支经Directory命令/迁移工具，不独立写目录。",
       "actions": [
         "从BA目录及OpenBot生命周期/持久撤权事实一致重建",
         "覆盖旧个人授权与凭据use/disclose/owner来源，重签或撤销决定可追溯",
@@ -4477,7 +4519,9 @@
       "owner_role": "backend_implementer",
       "refs": "P22；BA15/BA19",
       "validator_role": "backend_validator",
-      "finding_ids": [],
+      "finding_ids": [
+        "F-04"
+      ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T08.02/green E2E_BUN_ONLY=server/tests/better-auth:T08.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -4542,7 +4586,7 @@
         "scripts/check-better-auth-surfaces.ts",
         "server/src/auth/directory/ingress.ts"
       ],
-      "contract": "每surface含id/实际route-method或consumer/scopeKind/ownerTask/auth entry/enabledBy-authorityPhase/nativeDisposition/positiveTest/negativeTest/externalEvidence；51原生HTTP及无path server API精确对账，每Organization GET三类反例。",
+      "contract": "每surface含id/实际route-method或consumer/scopeKind/ownerTask/auth entry/enabledBy-authorityPhase/nativeDisposition/positiveTest/negativeTest/externalEvidence；51原生HTTP及无path server API精确对账，每Organization GET三类反例。 仍可达auth.handler的写端点(含SCIM PUT/PATCH/DELETE)全部列为失败；SSO 10端点+SCIM 9资源路径(interfaces §3.2)与源码扫描直写清单(interfaces §3.1)纳入对账。",
       "actions": [
         "从实际注册/consumer调用点核验已实现清单，不只列手工预期",
         "新增未知入口、漏GET反例、错target/过期检查点非零失败",
@@ -4559,6 +4603,8 @@
       "validator_role": "backend_validator",
       "finding_ids": [
         "F4",
+        "F-01",
+        "F-03",
         "H3",
         "M1",
         "M3"
@@ -4591,7 +4637,7 @@
         "server/src/enterprise/tenancy/startup-checks.ts",
         "server/src/enterprise/tenancy/worker-assembly.ts"
       ],
-      "contract": "createApp/bootstrap注入Directory/Identity/PrincipalRegistry/proof/authority与全部业务gate；普通运行期不持离线operator，错version/schema/role/必需服务入口503或启动拒写；legacy保留既有能力，release不代替authority。",
+      "contract": "createApp/bootstrap注入Directory/Identity/PrincipalRegistry/proof/authority与全部业务gate；普通运行期不持离线operator，错version/schema/role/必需服务入口503或启动拒写；legacy保留既有能力，release不代替authority。 以源码扫描核对固定版不经ALS的ctx.context.adapter直写清单，清单外新增直写拒绝BA启用。",
       "actions": [
         "实际创建完整app/worker实例并核验装配顺序、SCIM所有方法、后台CLI/seed入口",
         "运行时发现裸写、旧member writer或未知consumer拒绝BA启用",
@@ -4608,6 +4654,8 @@
       "refs": "P23；BA08/BA09/BA16；附属assembly文件由此任务冻结",
       "validator_role": "backend_validator",
       "finding_ids": [
+        "F-01",
+        "F-03",
         "H3"
       ],
       "commands": [
@@ -4629,7 +4677,7 @@
         "T08.05"
       ],
       "owned_files": [],
-      "contract": "只读业务代码/测试源，仅写verification报告；复用同检查点有效证据，补BA01–BA12/BA14–BA19、14finding、OIDC/SAML签名及已启用真实IdP、真实收信、旧URL存储响应、Bifrost dispatch证据，缺环境blocked。",
+      "contract": "只读业务代码/测试源，仅写verification报告；复用同检查点有效证据，补BA01–BA12/BA14–BA19、14finding及第三轮F-01–F-10、OIDC/SAML签名及已启用真实IdP、真实收信、旧URL存储响应、Bifrost dispatch证据，缺环境blocked。",
       "actions": [
         "冻结superproject/子模块检查点与实际版本",
         "执行V-B/V-I/V-Q适用数据库和外部行为验收，记录真实用例数/skip/退出码",
@@ -5606,7 +5654,7 @@
         "T08.04",
         "T08.05"
       ],
-      "criterion": "密码/A IdP session 不满足 B proof；SCIM A deactivate 保留 B；无邀请/无 Principal 首次 provisioning；批准规则团队加入、撤规则/跨公司/能力跨请求拒绝；每个原生目录 GET 的暂停成员/暂停公司/缺 proof 反例；OIDC/SAML 签名断言时间与 state/RelayState 绑定；已启用真实 IdP/SCIM 测试租户"
+      "criterion": "密码/A IdP session 不满足 B proof；SCIM A deactivate 保留 B；无邀请/无 Principal 首次 provisioning；批准规则团队加入、撤规则/跨公司/能力跨请求拒绝；每个原生目录 GET 的暂停成员/暂停公司/缺 proof 反例；OIDC/SAML 签名断言时间与 state/RelayState 绑定；已启用真实 IdP/SCIM 测试租户；SSO 回调携带 provider.organizationId 不创建 member（organizationProvisioning 禁用）"
     },
     "BA11": {
       "original_tasks": [
@@ -5727,7 +5775,7 @@
         "T08.02",
         "T08.03"
       ],
-      "criterion": "同名/重复 workspace ID 保留、集合/哈希/FK/payer/owner、legacy/ba/paused 读写、M3→M4 同请求矩阵和真实备份恢复/回退"
+      "criterion": "同名/重复 workspace ID 保留、集合/哈希/FK/payer/owner、legacy/ba/paused 读写、M3→M4 同请求矩阵和真实备份恢复/回退；legacy tenant 回填获得按 interfaces §2 规则派生的确定性唯一 slug"
     },
     "BA16": {
       "original_tasks": [
@@ -5912,6 +5960,83 @@
         "T08.04"
       ],
       "criterion": "默认/BA Web/BA Mobile互斥收集，强制origin/digest/target preflight；零网络负例"
+    },
+    "F-01": {
+      "tasks": [
+        "T01.03",
+        "T02.08",
+        "T02.11",
+        "T08.04",
+        "T08.05"
+      ],
+      "criterion": "原生HTTP目录写由ingress转auth.api于外层事务；executor禁止auth.handler；直写清单扫描一致；handler可达写端点为失败"
+    },
+    "F-02": {
+      "tasks": [
+        "T05.05",
+        "T05.06",
+        "T02.14"
+      ],
+      "criterion": "organizationProvisioning disabled硬前提并启动拒绝；ingress拒客户端organizationId；回调不产生member；M2核验sso_providers.organization_id为空"
+    },
+    "F-03": {
+      "tasks": [
+        "T01.03",
+        "T04.01",
+        "T08.04",
+        "T08.05"
+      ],
+      "criterion": "固定版不经ALS直写清单逐项处置；resend不走原生分支；包升级清单外直写失败"
+    },
+    "F-04": {
+      "tasks": [
+        "T02.13",
+        "T04.03",
+        "T05.06",
+        "T08.02"
+      ],
+      "criterion": "legacy目录写入者静态清单为必需产物；deletion-semantics/root-backfill/enterprise-runtime-seed逐项处置"
+    },
+    "F-05": {
+      "tasks": [
+        "T02.13",
+        "T02.14",
+        "T03.03"
+      ],
+      "criterion": "BA slug按interfaces §2派生/归一化/碰撞/幂等；重放不重派；check-slug同规则"
+    },
+    "F-06": {
+      "tasks": [
+        "T04.08"
+      ],
+      "criterion": "不新增同形DELETE成员路由；path ID固定OpenBot principalId，服务端解析BA userId"
+    },
+    "F-07": {
+      "tasks": [
+        "T01.08",
+        "T01.09"
+      ],
+      "criterion": "组织组件不调X类原生GET；ui-source.json逐组件声明注入adapter或不复用"
+    },
+    "F-08": {
+      "tasks": [
+        "T01.04",
+        "T02.12",
+        "T04.04"
+      ],
+      "criterion": "link-account dispatchVerificationEmail按通知类登记并由outbox接管，启用前先接管"
+    },
+    "F-09": {
+      "tasks": [
+        "T02.02"
+      ],
+      "criterion": "既有epoch integer与新建bigint版本列逐列固定，Number.isSafeInteger比较不失效"
+    },
+    "F-10": {
+      "tasks": [
+        "T02.06"
+      ],
+      "criterion": "auth-writer→principals、data→clocks/assurance最小GRANT；缺授权启动/反例失败"
     },
     "H1": {
       "tasks": [
