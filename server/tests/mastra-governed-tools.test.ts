@@ -11,7 +11,7 @@ import {
   createMastraTools,
   type MastraToolOperation,
 } from "../src/mastra/tools";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createMe01Database } from "./support/me01-fixture";
 import {
   buildRequest,

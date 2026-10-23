@@ -4,7 +4,7 @@ import { ThreadBusyError } from "../src/agents/handoff-delivery";
 import type { HandoffWork } from "../src/agents/handoff-runner";
 import { createHandoffRunner } from "../src/agents/handoff-runner";
 import { HANDOFF_TOOL } from "../src/agents/handoff-tool";
-import { HeadlessToolSuspension } from "../src/computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type {
   PlatformScope,
   RunDTO,
@@ -32,7 +32,7 @@ import {
   GovernedHeadlessRefusal,
   governedFiringIntentKey,
 } from "../src/mastra/headless";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import type { WorkQueue } from "../src/work/queue";
 
 /*

@@ -20,7 +20,7 @@ import {
 } from "../src/enterprise/runs/model-route-catalog";
 import { executeGovernedMastra } from "../src/mastra/governed-agent";
 import { buildInstructions } from "../src/mastra/instructions";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { UNTRUSTED_GUIDANCE } from "../src/untrusted-content";
 
 /*

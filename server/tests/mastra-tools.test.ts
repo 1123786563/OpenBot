@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { describe, expect, it } from "../../tests/support/bun-test-compat";
-import { HeadlessToolSuspension } from "../src/computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import {
   argsDigestFor,
   createMastraTools,
@@ -9,7 +9,7 @@ import {
   VALID_TOOL_NAME,
 } from "../src/mastra/tools";
 import { createPluginStore } from "../src/plugins/store";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { markUntrusted } from "../src/untrusted-content";
 
 /*

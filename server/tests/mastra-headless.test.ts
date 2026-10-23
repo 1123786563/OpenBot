@@ -2,7 +2,7 @@ import type { Message } from "@ag-ui/client";
 import { z } from "zod";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import { describe, expect, it } from "../../tests/support/bun-test-compat";
-import { HeadlessToolSuspension } from "../src/computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type {
   PlatformScope,
   RunDTO,
@@ -32,7 +32,7 @@ import {
   MASTRA_RESUME_SETTLE_REFUSALS,
   settleResumedRun,
 } from "../src/mastra/headless";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { UNTRUSTED_GUIDANCE } from "../src/untrusted-content";
 
 /*

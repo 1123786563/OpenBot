@@ -12,7 +12,7 @@ import {
 import type { GovernedModelRequest } from "../src/enterprise/runs/governed-execution";
 import type { RecalledPersonalMemory } from "../src/hindsight/personal-memory-context";
 import { renderPersonalMemoryContext } from "../src/hindsight/personal-memory-context";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { carrier, grantedEchoTool, sse } from "./support/me04-harness";
 
 /*

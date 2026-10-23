@@ -25,7 +25,7 @@ import {
   normalizeMastraChunks,
 } from "../src/mastra/stream-events";
 import { argsDigestFor } from "../src/mastra/tools";
-import type { GrantedTool } from "../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import {
   ME06_TOOL_DEFINITION as NAVIGATE_DEFINITION,
   startFrontendProvider,

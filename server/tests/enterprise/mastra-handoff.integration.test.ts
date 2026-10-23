@@ -14,7 +14,7 @@ import { handoffTool } from "../../src/agents/handoff-tool";
 import { createAgentProfileStore } from "../../src/agents/profile-store";
 import { createApprovalStore } from "../../src/approvals/store";
 import { createAuditStore } from "../../src/audit";
-import { HeadlessToolSuspension } from "../../src/computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type { Database } from "../../src/db/client";
 import {
   agentProfiles,
@@ -52,7 +52,7 @@ import {
   governedFiringIntentKey,
 } from "../../src/mastra/headless";
 import { createTenantMastraStorage } from "../../src/mastra/tenant-storage";
-import type { GrantedTool } from "../../src/plugins/tools";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createPrivateShareCheck } from "../../src/proactive/private-share";
 import { createWorkQueue } from "../../src/work/queue";
 import { createMe03Fixture, type Me03Fixture } from "../support/me03-fixture";
