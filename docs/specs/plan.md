@@ -10,11 +10,11 @@
 
 **Spec / 规范依据:**
 
-- [移动端集成规格](../../../trea/OpenBot/docs/specs/superpowers/OpenMuse-Mobile-OpenBot-Backend.md)
-- [企业总计划：决策、共同契约、门禁唯一注册](../../../trea/OpenBot/docs/plans/superpowers/2026-10-09-enterprise-ai-00-master.md)
-- [企业租户与独立入口计划](../../../trea/OpenBot/docs/plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md)
-- [企业运行候选计划](../../../trea/OpenBot/docs/plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md)
-- [OpenMuse 旧适配器说明](../../../trea/openmuse/docs/OPENBOT-INTEGRATION.md)
+- [移动端集成规格](OpenMuse-Mobile-OpenBot-Backend.md)
+- [企业总计划：决策、共同契约、门禁唯一注册](../plans/superpowers/2026-10-09-enterprise-ai-00-master.md)
+- [企业租户与独立入口计划](../plans/superpowers/2026-10-09-enterprise-ai-02-tenancy.md)
+- [企业运行候选计划](../plans/superpowers/2026-10-09-enterprise-ai-01-runtime.md)
+- [OpenMuse 旧适配器说明](../../apps/openmuse/docs/OPENBOT-INTEGRATION.md)
 
 发生冲突时，以企业总计划的安全契约为约束，先登记差异并取得修订批准；本计划不能自行降低 G1b/G2。
 
@@ -799,7 +799,7 @@ bunx tsc --noEmit -p server/tsconfig.enterprise-tests.json
 - 两个原工作区的文件与分支未修改；原未提交改动未带入隔离 worktree。
 - 恢复隔离目录缺失依赖，未修改已跟踪文件；OpenBot 使用 manifest 指定的 Bun 1.3.14，而非系统 Bun 1.4.2。
 - 基线结果：OpenBot Scope 单元测试 9/9；OpenMuse 现有队列测试 4/4；OpenMuse mobile typecheck 退出码 0。它们不是 Native/SSO/RLS/企业门禁通过的证据。
-- 脱敏基线与精确命令保存在 [implementation-baseline.json](files/implementation-baseline.json)。
+- 脱敏基线与精确命令保存在 `implementation-baseline.json`（该基线文件未随仓库保留）。
 - 尚未提供隔离 `TEST_DATABASE_URL`、SSO 测试部署与真机测试目标。C01 Native 联调和 F01 数据库集成必须取得这些输入；不能从原 `.env` 复制或自行使用生产库。
 - 未开始功能编码、数据库操作或生产部署，未创建 Git 提交。
 

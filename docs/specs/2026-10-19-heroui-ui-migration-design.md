@@ -12,7 +12,7 @@
 - 默认视觉：保留现有 WorkBuddy 方向、信息架构和密度；HeroUI 提供组件行为和基础样式，再由 OpenBot 主题统一。若用户选择整体重设计，需先补页面视觉稿和更新 `app/DESIGN.md`，工期另计。
 - 框架替换指公共交互控件底座统一；不意味着替换 React、Vite、TanStack、CopilotKit、聊天编辑器、Markdown 或图表引擎。
 - 全程使用 v3 文档与锁定版本；不引入 HeroUI v2 的 Provider、Tailwind 插件或组件 API。
-- 实施开始前重新核验 npm 版本和 peer dependencies。研究时 `@heroui/react` 的 npm latest 为 `3.2.6`；`@heroui/styles` 单独核验兼容版本后固定，不能推定所有包版本一致。[研究记录](../research/2026-10-19-heroui-official-research.md)
+- 实施开始前重新核验 npm 版本和 peer dependencies。研究时 `@heroui/react` 的 npm latest 为 `3.2.6`；`@heroui/styles` 单独核验兼容版本后固定，不能推定所有包版本一致。[研究记录(../plans/research/2026-10-19-heroui-official-research.md)
 
 用户尚未明确的两项偏好为“是否整体视觉重设计”“是否覆盖其他前端”；当前建议按以上默认值评审，不把默认值记录为用户批准。
 
@@ -321,7 +321,7 @@ bun run test:ui
 
 ## 10. 具体 Issue 拆分（取代 §6 的粗粒度排期）
 
-用户本轮要求把方案细化为具体 Issue。§6 的 T0–T8 保留为设计演进背景，实际 Ticket 范围、主所有权和硬依赖以本节及 [Issue 拆分清单](../tickets/heroui-migration/README.md) / [manifest](../tickets/heroui-migration/manifest.json) 为准。
+用户本轮要求把方案细化为具体 Issue。§6 的 T0–T8 保留为设计演进背景，实际 Ticket 范围、主所有权和硬依赖以本节及 [Issue 拆分清单(../plans/tickets/heroui-migration/README.md) / [manifest(../plans/tickets/heroui-migration/manifest.json) 为准。
 
 T0/T1 合并为 H01；T2 对应 H02；T3 对应 H03；T4 拆为 H04–H08，并明确 H12/H13 的评估运维和画廊市场；T5 对应 H09；T6 拆为 H10/H11；T7 对应 H14；T8 对应 H15。由此避免“大设置管理任务”覆盖过宽或遗漏 Craft、评估和市场。
 

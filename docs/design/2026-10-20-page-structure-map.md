@@ -239,8 +239,8 @@ Bot 例行任务、Craft 计划任务和聊天工作坊计划任务是不同入�
 | `/_authed/admin/gateway` | [gateway.tsx](../../app/src/routes/_authed/admin/gateway.tsx) | PageShell, PageSection, PageRowsSkeleton, ReadinessView, Input |
 | `/_authed/admin/identity-providers` | [identity-providers.tsx](../../app/src/routes/_authed/admin/identity-providers.tsx) | PageShell, PageSection, PageRowsSkeleton, PageEmpty, PageRows |
 | `/_authed/admin/` | [index.tsx](../../app/src/routes/_authed/admin/index.tsx) | PageShell, PageSection, PageRows, StaggerItem, Separator |
-| `/_authed/admin/knowledge/$kbId` | [knowledge.$kbId.tsx](../../app/src/routes/_authed/admin/knowledge.$kbId.tsx) | PageShell, AddDocument, UploadTasksPanel, DocumentList, RetrievalTest |
-| `/_authed/admin/knowledge/` | [knowledge.index.tsx](../../app/src/routes/_authed/admin/knowledge.index.tsx) | KnowledgeBase, PageShell, PageSection, PageRows, Separator |
+| `/_authed/admin/knowledge/$kbId` | `knowledge.$kbId.tsx`（已随 ADR 0009 删除） | PageShell, AddDocument, UploadTasksPanel, DocumentList, RetrievalTest |
+| `/_authed/admin/knowledge/` | `knowledge.index.tsx`（已随 ADR 0009 删除） | KnowledgeBase, PageShell, PageSection, PageRows, Separator |
 | `/_authed/admin/learning` | [learning.tsx](../../app/src/routes/_authed/admin/learning.tsx) | Input, LearningSettings, PageShell, PageSection, Checkbox |
 | `/_authed/admin/market` | [market.tsx](../../app/src/routes/_authed/admin/market.tsx) | Tab, SkillSubject, SidebarToggleBar, WbSecondaryButton, WbCardSkeleton |
 | `/_authed/admin/model-catalog` | [model-catalog.tsx](../../app/src/routes/_authed/admin/model-catalog.tsx) | PageShell, PageSection, PageRowsSkeleton, PageEmpty, PageRows |

@@ -444,7 +444,7 @@ the key in the last column.
 | SCIM provisioning                | `config.scim.enabled`                             | `connectionId`                                            | `scim-bearer-token` (required), `scim-bearer-token-next` (optional) |
 | Inbound email triggers           | `config.inboundEmail.domain` and `snsTopicArns`   | both needed, or the route is not mounted                  |                                                                |
 | OpenTelemetry export             | `config.otel.endpoint` or `logsEndpoint`          | `serviceName`, `paused`                                   | `otel-logs-headers`, `otel-headers` (optional)                 |
-| Composio app catalogue           | `secrets.composioApiKey` (the key is the switch)  |                                                           | `composio-api-key` (server only; see [Composio](../../docs/plugins/composio.md)) |
+| Composio app catalogue           | `secrets.composioApiKey` (the key is the switch)  |                                                           | `composio-api-key` (server only; see [Composio](../../reference/plugins/composio.md)) |
 
 ```yaml
 config:

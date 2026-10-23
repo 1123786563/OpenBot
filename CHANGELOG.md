@@ -79,7 +79,7 @@ app draws itself stay outside the fold.
 Four new catalogue entries give a Bot public-web search and page reading without its browser:
 **Exa Search** (free, rate-limited), **Exa Search (API key)**, **Firecrawl** (free) and **Firecrawl
 (API key)**. They sit beside the two Parallel entries, and nothing is granted to any Bot until an administrator does it.
-See [docs/web-research.md](docs/web-research.md).
+See [docs/web-research.md](reference/web-research.md).
 
 - **The research guidance follows whichever provider a Bot holds.** It used to switch on only for
   Parallel's two tools. Now a Bot holding any provider's search and fetch tools is told how to use

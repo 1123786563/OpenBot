@@ -6,13 +6,13 @@
 
 来源：用户要求基于现有设计补充“企业个人 Agent 产品与权限规格”；本稿承接此前对设计缺口的讨论，以及下列仓库事实源。用户已授权编写文档，并于 2026-10-16 明确选择 C01 的“保留逻辑私有 Bot，隔离实际执行环境、工具和个人上下文”方案；其他新增建议按 §15 分别保留原确认状态。本稿不证明任何代码、迁移、隔离、供应商调用或生产部署已经完成。
 
-v0.2 修订依据：对照本地 OpenMuse 完整产品规格、已接受 ADR 及后续多租户/记忆设计完成一致性审核，补回原有产品合同，区分仍需裁定的跨规格映射。审核记录见[本轮审核报告](../reviews/2026-10-16-enterprise-personal-agent-spec-review.md)。
+v0.2 修订依据：对照本地 OpenMuse 完整产品规格、已接受 ADR 及后续多租户/记忆设计完成一致性审核，补回原有产品合同，区分仍需裁定的跨规格映射。审核记录见[本轮审核报告(../../.archive/reviews/2026-10-16-enterprise-personal-agent-spec-review.md)。
 
 v0.3 修订依据：记录用户对 C01 的明确选择，补充 §4.1 的范围解析、环境/工具/上下文隔离及验收；同步 [ADR 0006](../adr/0006-logical-private-bot-scoped-execution.md)及已确认术语。其余产品建议未因本次选择自动获得批准。
 
 v0.4 修订依据：用户指出跨几天、几个月的任务设计不足。新增[长任务生命周期专项草案](2026-10-16-long-running-task-lifecycle-spec.md)，区分业务持续时间、逐轮执行、等待与授权期限，补充长期推进的评审范围，不将这些新增建议标为已批准。
 
-v0.5 修订依据：用户明确产品主要面向个人和小型企业。结合本地规格复核与官方市场资料，记录个人完整业务模式及付款的未闭合项 C07/D10，补充小团队的角色兼任说明。详细缺口、优先级和资料见[个人/小型企业产品适配审核](../reviews/2026-10-16-personal-smb-product-fit-review.md)，其他市场建议不自动成为已批准功能。
+v0.5 修订依据：用户明确产品主要面向个人和小型企业。结合本地规格复核与官方市场资料，记录个人完整业务模式及付款的未闭合项 C07/D10，补充小团队的角色兼任说明。详细缺口、优先级和资料见[个人/小型企业产品适配审核(../../.archive/reviews/2026-10-16-personal-smb-product-fit-review.md)，其他市场建议不自动成为已批准功能。
 
 v0.6 修订依据：用户要求“把这些规划更新进去”。G01–G10 已纳入[产品规划与验收](2026-10-16-personal-smb-product-roadmap.md)，明确个人模式/付款、入门、工具链、费用、自助恢复、成果、协作、今日工作、项目与数据可迁移；本稿同步范围、入口、付款、验收及依赖。个人空间的推荐架构记录为 proposed 的 ADR 0007，首发地域/部署方式保留明确决策项，未启动实施或迁移。
 
@@ -27,7 +27,7 @@ v0.7 审核修订：按用户要求处理本轮六项审核意见，区分不可
 | 依据 | 本稿沿用的约束 |
 | --- | --- |
 | [CONTEXT.md](../../CONTEXT.md) | Tenant 是公司，Workspace 是团队；个人记忆、模型授权、付款账户等既有术语。 |
-| [OpenMuse 完整产品规格](../superpowers/specs/2026-10-12-openmuse-on-openbot-spec.md)、[完整集成设计](../superpowers/specs/2026-10-12-openmuse-frontend-openbot-backend-design.md) | 本地发布规格规定私有 Bot 首次进入时幂等创建、专用 Task 模块及五类任务、Reviewed action/Policy approval 分离、个人 Files/PDF/finance、30 天账号删除恢复及单业务后端；集成设计单独保持 proposed 状态。 |
+| [OpenMuse 完整产品规格(2026-10-12-openmuse-on-openbot-spec.md)、[完整集成设计(2026-10-12-openmuse-frontend-openbot-backend-design.md) | 本地发布规格规定私有 Bot 首次进入时幂等创建、专用 Task 模块及五类任务、Reviewed action/Policy approval 分离、个人 Files/PDF/finance、30 天账号删除恢复及单业务后端；集成设计单独保持 proposed 状态。 |
 | OpenMuse 已接受 [私有 Bot ADR](../../apps/openmuse/docs/adr/0004-private-openmuse-bot-per-user.md)、[Task ADR](../../apps/openmuse/docs/adr/0006-dedicated-openmuse-task-module.md)、[个人上下文 ADR](../../apps/openmuse/docs/adr/0007-openbot-owns-personal-context-and-task-notifications.md)、[删除 ADR](../../apps/openmuse/docs/adr/0008-account-deletion-grace-period.md)、[单后端 ADR](../../apps/openmuse/docs/adr/0009-openbot-as-sole-backend.md) | 保留既有产品职责及决策类型；后续多租户/记忆 Spec 只按其明确范围修订，不自动扩大到所有个人上下文。 |
 | [公司与团队多租户设计](2026-10-14-company-team-multitenancy-design.md)、[ADR 0004](../adr/0004-company-team-tenancy.md) | 多公司隔离、团队默认隔离、个人内容独立授权、管理权不等于内容读取权、全功能隔离后统一开放多租户。 |
 | [ADR 0006](../adr/0006-logical-private-bot-scoped-execution.md) | C01 已确认：保留逻辑私有 Bot，实际执行环境、工具和个人上下文按业务范围隔离；Bot ID 不单独提供授权或确定物理环境。 |
@@ -35,9 +35,9 @@ v0.7 审核修订：按用户要求处理本轮六项审核意见，区分不可
 | [长任务生命周期草案](2026-10-16-long-running-task-lifecycle-spec.md) | v0.4 新增建议：Task 可跨日/跨月存活，以多轮有界执行和持久等待推进；计划、唤醒、工作检查点、授权续期和累计预算须补充具体合同，尚未批准或实现。 |
 | [个人记忆设计](2026-10-15-hindsight-personal-memory-design.md)、[ADR 0005](../adr/0005-self-hosted-hindsight-for-personal-memory.md) | OpenBot 管来源、审核、权限和遗忘；Hindsight 是内部检索适配器；未审核记忆不得跨会话使用。 |
 | [Bifrost 集成设计](2026-10-14-bifrost-integration-design.md)、[付款与交付设计](2026-10-15-billing-payment-account-and-fulfillment-design.md) | 公司工作台使用公司余额；外部 Bot 的个人模型授权使用个人余额；付款账户固定，余额不足不切换；模型 Key 不授予业务内容权限。 |
-| [企业平台设计](../superpowers/specs/2026-10-09-enterprise-ai-platform-design.md) | 授权、审批、预算、Run、回执、版本及恢复的治理方向；其中未冻结或待验证部分仍保持该状态。 |
-| [移动端计划](../superpowers/specs/plan.md)、[子系统草案](../superpowers/specs/enterprise-mobile-subsystem-specs-draft.md)、[会话规格](../superpowers/specs/enterprise-conversations-subsystem.md) | 企业入口与授权的补充依据；保留其开放问题。这些文件不覆盖完整 OpenMuse 产品规格，也不能替代五类任务、双决策类型或删除恢复验收。 |
-| [Coworkers](../coworkers.md)、[Routines](../routines.md)、[Automatic Learning](../automatic-learning.md) | 既有功能及迁移参考，不将旧部署的公开范围、账号共享或学习默认值直接提升为企业权限合同。 |
+| [企业平台设计(2026-10-09-enterprise-ai-platform-design.md) | 授权、审批、预算、Run、回执、版本及恢复的治理方向；其中未冻结或待验证部分仍保持该状态。 |
+| [移动端计划(plan.md)、[子系统草案(enterprise-mobile-subsystem-specs-draft.md)、[会话规格(enterprise-conversations-subsystem.md) | 企业入口与授权的补充依据；保留其开放问题。这些文件不覆盖完整 OpenMuse 产品规格，也不能替代五类任务、双决策类型或删除恢复验收。 |
+| [Coworkers(../../reference/coworkers.md)、[Routines(../../reference/routines.md)、[Automatic Learning(../../reference/automatic-learning.md) | 既有功能及迁移参考，不将旧部署的公开范围、账号共享或学习默认值直接提升为企业权限合同。 |
 
 本稿中的“必须”表示拟纳入验收的规范要求。与上述已批准 Spec/ADR 一致的规则属于沿用约束；新增选择汇总于 §15，须经评审确认后才成为实施依据。若发现与已批准约束冲突，应登记并裁定，不能用本文的较新日期自动覆盖原决定。
 

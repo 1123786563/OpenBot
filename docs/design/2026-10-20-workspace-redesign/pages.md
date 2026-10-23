@@ -811,7 +811,7 @@ V = 视觉统一；L = 布局/局部交互提案；I = 导航/信息架构建议
 
 ### P58 · 知识库
 
-- 路由：`/admin/knowledge`。源码：[knowledge.index.tsx](../../../app/src/routes/_authed/admin/knowledge.index.tsx)。
+- 路由：`/admin/knowledge`。源码：`knowledge.index.tsx`（已随 ADR 0009 删除）。
 - 模板：B · 对象列表（`list`）；范围：V。
 - 目标布局：标题与单一主动作 → 作用范围/已有筛选 → 成组行列表；状态在同一对齐列。
 - 内容顺序：知识库标题与新建 → 名称、描述等现有字段 → 打开详情与删除确认。
@@ -825,7 +825,7 @@ V = 视觉统一；L = 布局/局部交互提案；I = 导航/信息架构建议
 
 ### P59 · 知识库详情
 
-- 路由：`/admin/knowledge/$kbId`。源码：[knowledge.$kbId.tsx](../../../app/src/routes/_authed/admin/knowledge.$kbId.tsx)。
+- 路由：`/admin/knowledge/$kbId`。源码：`knowledge.$kbId.tsx`（已随 ADR 0009 删除）。
 - 模板：B/D · 资源管理（`knowledge`）；范围：VL。
 - 目标布局：文档添加与上传反馈 → 文档管理主区 → 检索验证辅助区；不让测试表单压过文档。
 - 内容顺序：返回列表与知识库身份 → 添加文档 → 上传任务状态 → 文档筛选/排序与列表 → 检索测试输入与结果。

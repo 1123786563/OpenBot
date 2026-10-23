@@ -25,17 +25,17 @@ Chrome headless 本地文件，76 页面 × 2 主题 × 2 布局 = 304 次 DOM �
 
 截图抽查：Bots 暗色、Craft 暗色、设置亮色、知识库窄屏；PNG 已打开检查。初轮发现索引 Grid 的自动最小宽度引发窄屏横溢，增加 grid item min-width:0 后复验通过。
 
-证据：[browser-check.json](./review/browser-check.json)。检查脚本通过独立 headless Chrome 与原生 CDP 执行，无新增项目依赖。
+证据：[browser-check.json](../../../.archive/runs/2026-10-20-workspace-redesign-b1/reviews/design/browser-check.json)。检查脚本通过独立 headless Chrome 与原生 CDP 执行，无新增项目依赖。
 
 ## 候选配色对比度
 
 共 42 个指定色对，正文/辅助文字/语义文字目标 4.5:1、必要控件边界目标 3:1，全部达到目标。最小文字配对 4.87:1。
 
-证据：[contrast.json](./review/contrast.json)。不包含半透明叠色、实际字体渲染、所有交互态和生产 DOM；不能据此宣称全产品通过 WCAG 审核。
+证据：[contrast.json](../../../.archive/runs/2026-10-20-workspace-redesign-b1/reviews/design/contrast.json)。不包含半透明叠色、实际字体渲染、所有交互态和生产 DOM；不能据此宣称全产品通过 WCAG 审核。
 
 ## 设计检测记录
 
-静态检测退出码 2，唯一 finding 为 `overused-font`（Inter 常见字体，warning）。保留：项目已有 Inter + 中文回退字体是本方案明确继承的约束；本轮不为设计索引换字体。不存在其他检测项。原始结果：[design-detector.json](./review/design-detector.json)。这项是有记录的取舍，不把检测称为全绿。
+静态检测退出码 2，唯一 finding 为 `overused-font`（Inter 常见字体，warning）。保留：项目已有 Inter + 中文回退字体是本方案明确继承的约束；本轮不为设计索引换字体。不存在其他检测项。原始结果：[design-detector.json](../../../.archive/runs/2026-10-20-workspace-redesign-b1/reviews/design/design-detector.json)。这项是有记录的取舍，不把检测称为全绿。
 
 ## 未执行/限制
 

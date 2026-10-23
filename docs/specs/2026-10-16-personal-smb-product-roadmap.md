@@ -12,9 +12,9 @@
 
 - [产品与权限主规格](2026-10-16-enterprise-personal-agent-product-permissions-spec.md)：统一身份、权限、审批、Task、产物、费用和发布约束。
 - [长任务专项](2026-10-16-long-running-task-lifecycle-spec.md)：跨日/跨月的计划、等待、唤醒、检查点、续期、预算和结项。
-- [产品适配审核](../reviews/2026-10-16-personal-smb-product-fit-review.md)：本轮缺口及 G01–G10 来源；[市场来源](../research/2026-10-16-personal-smb-agent-market-sources.md)是调研依据，不是功能验收证据。
+- [产品适配审核(../../.archive/reviews/2026-10-16-personal-smb-product-fit-review.md)：本轮缺口及 G01–G10 来源；[市场来源(../plans/research/2026-10-16-personal-smb-agent-market-sources.md)是调研依据，不是功能验收证据。
 - [公司团队设计](2026-10-14-company-team-multitenancy-design.md)、[付款设计](2026-10-15-billing-payment-account-and-fulfillment-design.md)、[记忆设计](2026-10-15-hindsight-personal-memory-design.md)、[ADR 0006](../adr/0006-logical-private-bot-scoped-execution.md)：已批准约束继续适用。
-- [OpenMuse 完整产品合同](../superpowers/specs/2026-10-12-openmuse-on-openbot-spec.md)、[Craft/Workshop 设计](../superpowers/specs/2026-10-10-craft-workshop-design.md)及[部署说明](../deployment.md)：复用已有业务所有者，新增入口不能形成第二套文件、任务、连接或费用权威。
+- [OpenMuse 完整产品合同(2026-10-12-openmuse-on-openbot-spec.md)、[Craft/Workshop 设计(2026-10-10-craft-workshop-design.md)及[部署说明(../../reference/deployment.md)：复用已有业务所有者，新增入口不能形成第二套文件、任务、连接或费用权威。
 
 以下 M0–M3 是产品细化与验收顺序，不是已批准的逐文件实施计划，也不表示分阶段达到原方案的完整交付条件。OpenMuse 完整切换和全功能多租户统一开放的门槛保留；既有功能不能因暂未进入入门模板而跳过隔离或验收。
 

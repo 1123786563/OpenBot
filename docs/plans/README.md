@@ -56,7 +56,7 @@ Issue 摄取和 DAG 规则见 [Issue 摄取与执行 DAG](../../.agents/rules/is
 
 ## 迁移状态
 
-- 2026-10-23 第五轮整理（[台账](../../.archive/runs/2026-10-23-docs-plans-track-reorg/index.md)）：根级 94 个方案 `.md`、19 个日期目录和 4 个固定目录按专题归入 `bifrost/`、`mastra/`、`craft/`、`workspace-redesign/`、`better-auth/`、`hindsight/`、`upstream-sync/`、`opik/`、`heroui/`、`plugin-marketplace/`、`standalone/`；根目录只保留本 README 与固定分类。文件名保持原样，116 项旧→新映射与逐文件 SHA-256 见该 Run 的 `migration-manifest.tsv`。
+- 2026-10-23 第五轮整理（[台账](../../.archive/runs/2026-10-23-docs-plans-track-reorg/index.md)）：根级 94 个方案 `.md`、19 个日期目录和 4 个固定目录按专题归入 `bifrost/`、`mastra/`、`craft/`、`workspace-redesign/`、`better-auth/`、`hindsight/`、`upstream-sync/`、`opik/`、`heroui/`、`plugin-marketplace/`、`standalone/`；根目录只保留本 README 与固定分类。文件名保持原样，116 项旧→新映射与逐文件 SHA-256 见该 Run 的 `migration-manifest.tsv`；同一轮修复当前文档 39 个历史断链。
 - 2026-10-23 第三、四轮（[台账](../../.archive/runs/2026-10-23-docs-reorganization/index.md)）：orca wave2/run-all/mt-bifrost、mastra-execution-run、plugin-package-marketplace 的 Run 目录整体迁入 `.archive/runs/<run-key>/`；`docs/verification/` 删除，heroui 迁移证据整簇迁入 `.archive/runs/2026-10-19-heroui-migration/`；superpowers 修复轮 Brief 迁入 `.archive/runs/legacy-plans/superpowers-briefs/`。
 - 2026-10-20 及更早轮次：`docs/agents/` 移到 `.agents/rules/`；原 `docs/superpowers/plans`、`docs/tickets`、`docs/research` 合并到本目录；`docs/craft-port` 拆分为 `craft/port/` 与 `.archive/runs/craft-port/`；产品/部署参考移到 `reference/`，测试配置移到 `tests/config/`。
 - 多租户方案已于 2026-10-22 随 Issue #6 整体作废（not planned），原文归档在 `.archive/runs/2026-10-22-issue6-void/`；残留的 `standalone/2026-10-22-mt051-054/` 是作废前的 C 类实施计划，仅作历史参考，不再派发。

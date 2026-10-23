@@ -7,7 +7,7 @@
 1. [先细化的完整提示词](./CODE-AGENT-PROMPT.md)：交给新 Code Agent，核对源码并交付实施 Spec 与计划草案，当前只写独占文档目录。
 2. [后续实施提示词](./IMPLEMENTATION-PROMPT.md)：具体实施范围获授权后使用；保留既有会话授权，按批次 SDD/验证/Review/OCR。
 3. [用户参考图布局合同](./layout-contract.md)：五张图逐一说明哪些结构进入产品、哪些是评审工具。
-4. [交接源码基线](./source-baseline.json)：HEAD、当前分支、已存在脏改动与文件哈希；不是可盲目恢复的备份。
+4. [交接源码基线](../../../../.archive/runs/2026-10-20-workspace-redesign-b1/source-baseline.json)：HEAD、当前分支、已存在脏改动与文件哈希；不是可盲目恢复的备份。
 
 ## 推荐首批
 
