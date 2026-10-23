@@ -812,7 +812,7 @@ describe("a sign-in that is being entered", () => {
     expect(context.computer.fills).toEqual([]);
   });
 
-  test("a row closed under the login attempt takes no failed audit its state contradicts", async () => {
+  test("a row closed under the login attempt still records the failure, marked superseded", async () => {
     const context = setup({ fill: { passwordFieldVisible: true } });
     const request = await context.service.request({
       ownerUserId: "owner",
@@ -844,13 +844,52 @@ describe("a sign-in that is being entered", () => {
     expect((await context.store.request("owner", request.id))?.status).toBe(
       "failed",
     );
-    // And nothing failed is audited: the row's own ending is the trail's answer, and a
-    // `sign_in_failed` written past it would contradict the state it claims to describe.
+    // But the refusal is no longer silent: the trail keeps the failed attempt, marked superseded
+    // because the row's own ending is the concurrent close this failure must not contradict.
     expect(
-      context.trail.rows.some(
+      context.trail.rows.find(
         (row) => row.eventType === "computer.sign_in_failed",
-      ),
-    ).toBe(false);
+      )?.payload,
+    ).toMatchObject({ request: request.id, step: "login", superseded: true });
+  });
+
+  test("claiming the lease clears the previous attempt's failure sentence", async () => {
+    const fill = { passwordFieldVisible: true };
+    const context = setup({ fill });
+    const request = await context.service.request({
+      ownerUserId: "owner",
+      botId: "bot",
+      site: "example.com",
+      actor,
+    });
+    // A first attempt fails and leaves its sentence on the row.
+    await expect(
+      context.service.submit("owner", request.id, actor, {
+        username: USERNAME,
+        password: PASSWORD,
+      }),
+    ).rejects.toThrow(/password field/);
+    expect((await context.store.request("owner", request.id))?.outcome).toMatch(
+      /password field/,
+    );
+    // The retry is a new attempt: its claim into `filling` clears the stale sentence, so the form
+    // never shows last attempt's failure while this one is still running.
+    let claimed: SignInRequestRecord | undefined;
+    const transition = context.store.transition.bind(context.store);
+    context.store.transition = async (
+      ...args: Parameters<typeof transition>
+    ) => {
+      const row = await transition(...args);
+      if (row?.status === "filling") claimed = row;
+      return row;
+    };
+    fill.passwordFieldVisible = false;
+    const done = await context.service.submit("owner", request.id, actor, {
+      username: USERNAME,
+      password: PASSWORD,
+    });
+    expect(done.status).toBe("signed_in");
+    expect(claimed?.outcome).toBeNull();
   });
 });
 
@@ -985,7 +1024,7 @@ describe("a verification code the site asks for after the password", () => {
     expect(computer.codes).toHaveLength(1);
   });
 
-  test("a row closed under the code attempt takes no failed audit its state contradicts", async () => {
+  test("a row closed under the code attempt still records the failure, marked superseded", async () => {
     const { service, request, store, trail, computer } = await withCodeStep({
       fill: { codeRequested: true },
       code: { codeFieldVisible: true },
@@ -1007,11 +1046,41 @@ describe("a verification code the site asks for after the password", () => {
     ).rejects.toThrow(/did not accept that code/);
     // The concurrent close keeps the row: this attempt's failure did not reopen it.
     expect((await store.request("owner", request.id))?.status).toBe("failed");
-    // And nothing failed is audited: the row's own ending is the trail's answer, and a
-    // `sign_in_failed` written past it would contradict the state it claims to describe.
+    // But the refusal is no longer silent: the trail keeps the failed attempt, marked superseded
+    // because the row's own ending is the concurrent close this failure must not contradict.
     expect(
-      trail.rows.some((row) => row.eventType === "computer.sign_in_failed"),
-    ).toBe(false);
+      trail.rows.find((row) => row.eventType === "computer.sign_in_failed")
+        ?.payload,
+    ).toMatchObject({ request: request.id, step: "code", superseded: true });
+  });
+
+  test("claiming the code step clears the previous attempt's failure sentence", async () => {
+    const code = { codeFieldVisible: true, passwordFieldVisible: false };
+    const { service, request, store } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.outcome).toMatch(
+      /did not accept/,
+    );
+    // The retry is a new attempt: its claim into `filling` clears the stale sentence, so the form
+    // never shows last attempt's failure while this one is still running.
+    let claimed: SignInRequestRecord | undefined;
+    const transition = store.transition.bind(store);
+    store.transition = async (...args: Parameters<typeof transition>) => {
+      const row = await transition(...args);
+      if (row?.status === "filling") claimed = row;
+      return row;
+    };
+    code.codeFieldVisible = false;
+    const done = await service.submitCode("owner", request.id, actor, {
+      code: CODE,
+    });
+    expect(done.status).toBe("signed_in");
+    expect(claimed?.outcome).toBeNull();
   });
 
   test("a code is only taken from a request the site has brought to the code step", async () => {

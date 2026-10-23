@@ -53,6 +53,13 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
    * password interactively, does not swallow the flag that follows it. And each ends where its
    * command does: at a line break, which starts another command whose `-p` is a port again, though
    * not at a line continued with a backslash, which is the same command.
+   *
+   * A quoted argument is consumed whole, quotes and all. The scan still stops at a line break
+   * inside the quotes — a quote that spans lines is a quote the shell itself would not keep to one
+   * command — but a `;`, `|` or `&` inside the quotes belongs to the quoted word, not to the shell
+   * listing commands, so it must not end the sweep before the flag is found
+   * (`mysql -e "SELECT 1;" -p…`, `docker login -u "a&b" -p…`). An unclosed quote just ends the
+   * scan there, as a shell still inside the quote would read no further command either.
    */
   // `-psecret` for mysql and friends. Nothing separates them: a space means the password is asked for
   // at the prompt and the word after `-p` is the database, so only the attached form is redacted.
@@ -60,7 +67,7 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // port (`mysql -h db -P3306`), and upstream's `i` reads it as a password — redacting the port while
   // a real `-phunter2` later in the same command line survives.
   [
-    /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
+    /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `docker login -p secret`, where `-p` is the password rather than a port. docker's grammar puts
@@ -69,14 +76,22 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // subcommand cannot: `run` is not a flag, which is what keeps `docker run login -p 8080:80` a
   // port mapping instead of a registry password.
   [
-    /(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
+    /(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `sshpass -p secret ssh user@host`, where `-p` is the password handed to ssh. Only sshpass's own
   // options are read, `-f file`, `-d fd` and `-P prompt` with the word after them, so the command it
   // wraps keeps its `-p` and `-P`, which are ports. Case matters here: `-P` is sshpass's prompt.
+  //
+  // The bare-flag arm reads one cluster with no `p` in it (`-[^\sp]+`, with no unconstrained tail):
+  // getopt folds `-v` into the next option, so `-vp hunter2` is `-v -p hunter2`, and a tail like
+  // `\S*` would swallow the whole cluster — `p` and all — and never reach the password. Instead the
+  // cluster's `p` is where the lead ends: the terminator matches a `-p` on its own or at the end of
+  // such a cluster (`-[^\sfdP]*p`), with `f`, `d` and `P` kept out of the cluster so `-Pprompt`
+  // stays a prompt value rather than reading as a cluster ending in a password flag. The cluster
+  // arm still takes a lowercase `p` only; uppercase `-P` never ends the lead as one.
   [
-    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:"[^"]*"|'[^']*'|[^\s'"-]\S*)|-[^\sp]\S*))*?(?:[ \t]|\\\r?\n)+-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
+    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:"[^"]*"|'[^']*'|[^\s'"-]\S*)|-[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdP]*p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `SSHPASS=secret sshpass -e ssh host`: the env form sshpass itself recommends over `-p`, because
@@ -89,7 +104,7 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   ],
   // `redis-cli -a secret`, `-asecret` and `--pass secret`, the same shape under redis-cli's names.
   [
-    /(\bredis-cli\b(?:[^|;&\\\r\n]|\\[\s\S])*?(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
+    /(\bredis-cli\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // A quoted key in a JSON body: `-d '{"password":"x"}'`, or `-d "{\\"password\\":\\"x\\"}"` once the

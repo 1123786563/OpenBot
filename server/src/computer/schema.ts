@@ -343,7 +343,14 @@ export type SignInFillResult = {
    * for", never as a code step to guess at.
    */
   codeRequested?: boolean;
-  url: string;
+  /**
+   * The page the browser is on after the attempt, which the caller scrubs before storing or
+   * showing. Optional for the same reason `codeRequested` is: an agent-computer that has not been
+   * redeployed reports only `{ submitted, passwordFieldVisible }` and no url at all, so a required
+   * `url` would have the type promise a page the runtime never received. Treat absent as "the page
+   * is unknown", never as a URL to build on.
+   */
+  url?: string;
   error?: string;
 };
 
