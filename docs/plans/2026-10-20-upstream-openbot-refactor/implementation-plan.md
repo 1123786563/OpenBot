@@ -361,7 +361,7 @@ reportIntelligenceEntitlement(options: {
 ### Task R02：MCP 认证、skill ref 和治理执行
 
 **角色：** backend_implementer / backend_validator。**依赖：** R01。
-**Files：** `server/src/plugins/{mcp,tools,store,selection}.ts`（只修改实际使用到的入口）、`server/tests/parallel-research.test.ts`、新 `server/tests/web-research.test.ts`、现有 plugin selection/MCP authorization tests；文档 `.env.example`, `docs/web-research.md`。
+**Files：** `server/src/plugins/{mcp,tools,store,selection}.ts`（只修改实际使用到的入口）、`server/tests/parallel-research.test.ts`、新 `server/tests/web-research.test.ts`、现有 plugin selection/MCP authorization tests；文档 `.env.example`, `reference/web-research.md`。
 **Consumes/Produces：** I4 角色、reviewed header → 已授予工具的研究提示和正常 MCP 调用。
 
 - [ ] RED：tokenHeaderFor 正确发送供应商指定 header；无 key 不发送请求；旧 Parallel 使用原认证行为；日志/审计无 header token。

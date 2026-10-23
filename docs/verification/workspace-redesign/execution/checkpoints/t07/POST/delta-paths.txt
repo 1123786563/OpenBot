@@ -1,4 +1,0 @@
-app/src/components/channels/chat-transcript.tsx
-app/src/components/channels/conversation-view.tsx
-app/src/components/channels/group-chat.tsx
-app/src/routes/_authed/_app/index.tsx

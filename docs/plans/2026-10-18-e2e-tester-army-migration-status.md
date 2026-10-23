@@ -318,7 +318,7 @@ CI 的 `test` job 自带两个数据库服务：`postgres`（镜像带 pgvector�
 单文件复跑里复现，且组内 >8 文件时不假装"独自重跑过"）；而"驱动层整体是否等于迁移前的通过集合"
 只有在 ci.yml `test` job 那套服务（postgres 带 pgvector + enterprise-postgres + 多库）里才能测出来。
 第四档已经把这套服务在本地复刻出来了（私有端口 55433/55434，不碰 5432/5435/55432），
-测量与夹具形状见 `docs/verification/e2e-driven-tier-ci-fixture-2026-10-18.md`：
+测量与夹具形状见 `.archive/runs/legacy-plans/2026-10-18-e2e-tester-army/reports/e2e-driven-tier-ci-fixture-2026-10-18.md`：
 **21 / 30 组过，红的 9 组在旧运行器上同样全红**，`DATABASE_CAPABILITY_CHECK_FAILED` 那类夹具缺项消失。
 在真 CI 上再落一次仍然没做——那需要往共享分支推 / 开 PR，是要授权的动作，我不擅自做。
 
@@ -378,7 +378,7 @@ bun run test                                        # 全量；用 E2E_UNIT_OUTP
 | 未过项 | 解锁它需要的东西 | 精确动作 |
 | --- | --- | --- |
 | 7 引擎层运行时（`tests/e2e/*.e2e.ts`，10 文件 / 28 条，至今只验到收集） | 一次 `bash scripts/start.sh` 的许可（它会 `docker compose up -d --build` 整叠服务） | 10-19 静态核查后把这件事说清了：**这 28 条不使用任何模型能力** —— 全部是 `screen.getByRole`(56) / `getByLabel`(17) / `getByText`(13) / `getByTestId`(2) / `expect(browser).toHaveURL`(8) 这类确定性定位，`e2e.config.ts:23-29` 声明的 `agents.default` 是 persona，没被这些用例调用；`auth.setup.e2e.ts` 用 `test.setup(..., {sessions:["admin","admin-auth"]})` 由框架管先后，不是靠字母序。所以真正的门槛是栈：`scripts/start.sh` 起 postgres(+`casdoor/init-db.sql`)、migrate、agents、app 于 `:3010`，然后 `bun run test:ui`。它只读 `.env`（现版本没有写 `.env` 的代码），但会构建镜像并占用共享 compose 项目与 3001/3010 端口，因此仍要点头；为把"可能花钱"这条不确定性去掉，跑的时候把 `OPENAI_BASE_URL` 指到一个死端口即可保证零调用 |
-| 在真 CI 上落一次 | 往共享分支推送或开 PR 的许可 | 推送后看 ci.yml `test` job 第 443 行那一步（`bun run test:ci`）；本地已用等价夹具测过，见 `docs/verification/e2e-driven-tier-ci-fixture-2026-10-18.md` |
+| 在真 CI 上落一次 | 往共享分支推送或开 PR 的许可 | 推送后看 ci.yml `test` job 第 443 行那一步（`bun run test:ci`）；本地已用等价夹具测过，见 `.archive/runs/legacy-plans/2026-10-18-e2e-tester-army/reports/e2e-driven-tier-ci-fixture-2026-10-18.md` |
 
 第 8 条（180 条红）与第 9 条（`server/src/config.ts` 两处 `gateway?:`）属别的波次，红点已全部点名，
 不由我改绿。

@@ -50,7 +50,7 @@
 
 默认拓扑顺序 T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 → T9 → T10。此表为拆票前技术参考。正式实施须读取父 Issue #459 与正式子 Issue，领取顺序和业务依赖以 Issue DAG 为准，不能把本表当作已批准的实施派发。
 
-实施记录写入 docs/plans/2026-10-19-plugin-package-marketplace/ledger.md，每任务保存 HEAD、before/after 快照哈希、拥有文件、验证输出和 Review 状态。前置 verified 且检查点内容集成后才执行下游。
+实施记录写入 .archive/runs/2026-10-19-plugin-package-marketplace/ledger.md，每任务保存 HEAD、before/after 快照哈希、拥有文件、验证输出和 Review 状态。前置 verified 且检查点内容集成后才执行下游。
 
 测试先读 ADR 0008：纯函数/Node 可收集套件直接进入 e2e；Bun 数据层套件登记 Bun-driven manifest。native 命令示例：
 ~~~sh
@@ -174,7 +174,7 @@ E2E_BUN_ONLY=server/tests/multitenancy E2E_UNIT_OUTPUT=.e2e/package-t2 bunx e2e 
 
 ### Task 10: 验收、独立审查与交付记录
 
-**Files / ownership:** 创建 docs/plans/2026-10-19-plugin-package-marketplace/{ledger,acceptance,entrypoints,verification}.md 与各轮 Review/OCR 报告。验证者只能写指定报告和运行产物。
+**Files / ownership:** 创建 .archive/runs/2026-10-19-plugin-package-marketplace/{ledger,acceptance,entrypoints,verification}.md 与各轮 Review/OCR 报告。验证者只能写指定报告和运行产物。
 
 - [ ] A01–A12 关联测试、截图和检查点哈希；列出 blocked/skip。没有真实受限 DB 证据不得将 T2/T5/T6 verified。
 - [ ] 执行受影响 native/driven 与 node scripts/e2e-coverage-audit.mjs 对账；测试数大于 0，每轮使用独立报告目录。

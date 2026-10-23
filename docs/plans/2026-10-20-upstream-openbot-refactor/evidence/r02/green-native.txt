@@ -1,6 +1,0 @@
- Test Files  6 passed (6)
-      Tests  120 passed | 2 skipped (122)
- 175 pass
- 0 fail
- 590 expect() calls
-Ran 175 tests across 6 files. [3.10s]

@@ -12,8 +12,8 @@
 - 子 Issue：`issues/up01.md` 至 `issues/up12.md`，每票独立含行为、验收、边界、验证与交接。
 - `tickets.json`：真实依赖、验收映射、内部 Task 对应及发布状态。
 - `EXECUTION-PROMPT.md`：用户审阅后复制其中正文给另一 Code Agent。
-- 发布核验 JSON 已归档至 `.archive/runs/legacy-plans/tickets/upstream-openbot-update/publication-verification.json`，记录 GitHub 正文、标签、12 条父子关系和 13 条依赖的回读证据。
-- `validation.json` 已归档至 `.archive/runs/legacy-plans/tickets/upstream-openbot-update/validation.json`，是本地文档与发布回执一致性校验，不代表产品测试通过。
+- `publication-verification.json`：GitHub 正文、标签、12 条父子关系和 13 条依赖的回读证据。
+- `validation.json`：本地文档与发布回执一致性校验，不代表产品测试通过。
 
 ## 业务票拆分
 
@@ -83,10 +83,10 @@ S00 是共享的开工准备，只执行一次，不是要重复实现的业务�
 
 ## 交接到另一 Agent
 
-执行提示词已标注正式父 Issue，读取 `tickets.json` 中实际编号，无需手动替换 UP key。交接压缩包和校验材料已归档到 `.archive/runs/legacy-plans/tickets/upstream-openbot-update/`；新 worktree/其他机器不会自动获得，跨工作区时需显式复制并核对哈希。
+执行提示词已标注正式父 Issue，读取 manifest 中实际编号，无需手动替换 UP key。交接文档当前未提交，新 worktree/其他机器不会自动获得；请传递本目录、Spec、实施计划目录及必要约束，或使用同目录 handoff-bundle.tar.gz。
 
 交接包只含文档/票据和生成工具，不含 .env、真实密钥、数据库、node_modules 或 Git 历史；它不是代码仓库副本。另一 Agent 仍需 checkout 同一个仓库，核验 BASE 并处理后续代码漂移。不要覆盖其已有改动。
 
 ## 生成与校验
 
-历史生成工具已归档；它只生成本地父/子票和 manifest，不调用 GitHub。用户编辑已生成票据后应相应更新源数据与 hash；发布后不能无检查运行生成工具覆盖真实编号。
+`python3 docs/tickets/upstream-openbot-update/build.py` 只生成本地父/子票和 manifest，不调用 GitHub。用户编辑已生成票据后应相应更新源数据与 hash；发布后不能无检查运行生成工具覆盖真实编号。

@@ -1,1 +1,0 @@
-c733dccc4b875e212e94b333e65aadf968a9fafc96d3307a1a0d38402bdc308b  docs/verification/workspace-redesign/p15-error-focus/checkpoints/textarea-review-fix/PRE/files/app/tests/bot-setup.test.tsx

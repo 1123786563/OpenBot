@@ -1,4 +1,0 @@
-63f99bf6aedfe1886bb663074c7d2ca0c956b44edd90287f5d493a1a5cf43514  app/src/components/craft/scheduled-task-editor.tsx
-cc5ea9d8f45b6406d8f83a941434d1c54853d1b1c8316f3f1408d6db52b31f9a  app/tests/detail-panel.test.tsx
-ccbf4097794c1e2eadff4cd2ece0f0cd85d505699e9da2fcdfa6e809874a64fe  docs/plans/reports/T03-P28-layout-repair-impl.md
-baabfa81ac68a83982a0ed68328889816e9458695719946153c68593529318dd  docs/plans/reports/T03-P28-layout-repair-review.md

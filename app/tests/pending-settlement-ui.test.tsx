@@ -3,7 +3,7 @@ import "./preload";
  * The runner is bun:test behind the repo's compat door (tests/support/bun-test-compat — the
  * same import the sibling bun-driven app suites use), because the ticket's prescribed
  * verification command is `bun test app/tests/pending-settlement-ui.test.tsx` and this file
- * is registered in docs/verification/e2e-bun-suites.json as a Bun-executed suite (ADR 0008:
+ * is registered in tests/config/e2e-bun-suites.json as a Bun-executed suite (ADR 0008:
  * the driven layer). The happy-dom registration below is the bun:test shape.
  */
 import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";

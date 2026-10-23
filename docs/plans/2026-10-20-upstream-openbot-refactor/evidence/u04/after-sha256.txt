@@ -1,7 +1,0 @@
-30053e59d8e113382bc3fc26826443bb0249bbb445beb7c31769971382ea88d4  app/src/components/channels/tool-activity.tsx
-de3e50546feb429fb6306c8a7611f9b59afc214da601862e4c6982c8dfc7aebc  app/tests/tool-activity.test.tsx
-75dedfeeb4761345c3a0886a9493a977cd20917f90d0ff9e7e273fc1f567dd72  app/src/components/channels/browser-activity.tsx
-bf39b07196be5d454c2387e96d47e65c82d02f423331c3274226ca60c761c0f2  app/src/components/channels/chat-transcript.tsx
-0dfa56dc8539c653d2373132e4cff4c7e140595d993563b19c9d161566b7fc93  app/src/locales/en/channels.json
-8219b89552840151438d79ea5fa51799e7dd73dcb94a24b1ae82914b530319f0  app/src/locales/zh-CN/channels.json
-5e4bc14a4bd7fb79abc254c446d1f50ba689279d4a9d544a27a6f850c5fcaa97  docs/verification/e2e-bun-suites.json

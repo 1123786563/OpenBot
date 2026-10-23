@@ -1,3 +1,0 @@
-[ocr]   ✘ file_read failed: invalid line range: start_line 378 is greater than end_line 185
-[ocr]   ✘ file_read failed: invalid line range: start_line 480 is greater than end_line 280
-[ocr]   ✘ code_search failed: git grep failed: exit status 1: warning: could not open directory 'server/src/audit/': No such file or directory

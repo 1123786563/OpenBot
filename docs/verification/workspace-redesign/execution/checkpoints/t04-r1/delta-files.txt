@@ -1,2 +1,0 @@
-app/src/components/bot-profile/profile.tsx
-app/tests/bot-profile-active.test.tsx

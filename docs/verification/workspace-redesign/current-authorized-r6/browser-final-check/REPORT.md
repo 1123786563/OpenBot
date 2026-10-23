@@ -1,7 +1,0 @@
-# Current checkpoint route smoke — not page acceptance
-
-Date: 2026-10-23 (Asia/Shanghai). Worktree HEAD at capture: `f55d12f899883fc4a5d7bf0e8067bb500b86ee38`. The browser runner used the existing local Playwright Core dependency and an isolated headless Google Chrome process, with a fresh context, `zh-CN`, light color scheme, reduced motion, 1440×900 viewport, and all non-loopback requests blocked. It used the dedicated local Vite origin `http://127.0.0.1:3012` and isolated `dev-local-user` against the disposable tmpfs DB.
-
-`route-smoke-1440x900.json` and its PNGs record navigation attempts for 18 routes (P01, P02, P05–P20 selected routes, P23). The output is **not acceptance evidence**: 84 console/page errors were recorded, 39 external requests were blocked, and several routes did not settle to a main landmark or redirected to the list/home fallback. No P03/P04 channels or dynamic IDs were created, and no mutation or message send was attempted in this run. The screenshots are retained to show the attempted rendering and must not be read as successful page validation. Existing earlier authenticated browser evidence remains at its recorded historical checkpoints; P01–P23 remain PARTIAL.
-
-The JSON binds the 7 shared source hashes and exact HEAD. The run did not validate permissions, populated states, streaming, attachments, keyboard flows, all viewports/themes/locales, or exact page-specific acceptance.

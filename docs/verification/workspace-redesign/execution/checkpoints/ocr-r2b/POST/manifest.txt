@@ -1,4 +1,0 @@
-eeab39b4e986b04b1c09401eecb43a97d0d60567fb1bb0cca4dd85697a820ac7  app/tests/channel-new-recipients.test.tsx
-8bc18c65a10b13b8a32e2e38562609f2c0c087c69fb4d034bd293263267ad8b6  docs/plans/reports/2026-10-23-b1-ocr-repair-02b-impl.md
-4d86bef331343735d4234def1432f56571f37fd6c2e2878fde5a4ebd54cf9303  app/src/routes/_authed/_app/channel/new.tsx
-0ac1a62ccf2fb1be1e3d00cc87eca67bfea0347776337bbe2ad79a0647dcfa3a  docs/verification/workspace-redesign/execution/checkpoints/ocr-r2-runner/R2A-report.md

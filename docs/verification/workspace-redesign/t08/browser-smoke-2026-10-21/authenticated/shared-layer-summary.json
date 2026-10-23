@@ -1,8 +1,0 @@
-{
-  "date": "2026-10-21",
-  "identity": "isolated authenticated admin",
-  "checks": 20,
-  "passed": 20,
-  "failures": [],
-  "notes": "P71 redirects to the authenticated app. P59 KB service is intentionally unconfigured; only the route error state is covered."
-}

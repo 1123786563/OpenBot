@@ -27,13 +27,13 @@
 ## Task 2 — Independent Validation
 
 - **Role:** `frontend_validator`.
-- **Files:** `docs/verification/workspace-redesign/p15-error-focus/VALIDATION.md` only.
+- **Files:** `.archive/runs/2026-10-20-workspace-redesign-b1/verification/p15-error-focus/VALIDATION.md` only.
 - **Checks:** focused prescribed E2E file, scoped Biome, hash stability, isolated browser 390px light/dark. Intercept only `PATCH /api/agents/<fixture-id>` with 503; assert alert, 120-character Title retained, focus within dialog, Escape closes and trigger receives focus, no horizontal overflow. No API writes.
 
 ## Task 3 — Independent Spec and Quality Review
 
 - **Role:** `reviewer`.
-- **Files:** `docs/plans/reports/T05-P15-error-focus-review.md` only.
+- **Files:** `.archive/runs/2026-10-20-workspace-redesign-b1/reports/T05-P15-error-focus-review.md` only.
 - **Checks:** separate Spec compliance and code quality verdicts; report exact files and hashes; inspect focus lifecycle, async state, validation behavior and test coverage. Do not run OCR.
 
 ## Review Focus

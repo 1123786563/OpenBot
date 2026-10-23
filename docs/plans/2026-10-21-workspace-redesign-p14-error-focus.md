@@ -6,7 +6,7 @@
 - Scope: `app/src/components/bot-profile/sharing.tsx` and focused regression `app/tests/bot-sharing.test.tsx`; evidence/report artifacts permitted. No shared Dialog or server changes.
 - Constraint: preserve all existing dirty changes. No commit, external publication, dependency install, or OCR.
 - Task owner `frontend_implementer`; independent `frontend_validator` and `reviewer`; serial.
-- PRE source byte copy/hash: `docs/verification/workspace-redesign/b1-share-failure/checkpoints/PRE/`.
+- PRE source byte copy/hash: `.archive/runs/2026-10-20-workspace-redesign-b1/verification/b1-share-failure/checkpoints/PRE/`.
 
 ## Task 1
 

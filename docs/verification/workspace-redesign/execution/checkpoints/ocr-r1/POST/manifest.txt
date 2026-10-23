@@ -1,4 +1,0 @@
-3fcad698309d77d64db3c84e054d642fda619bc847d8942f0f2d7cbf7ce82c6c  docs/verification/workspace-redesign/ocr/2026-10-23-b1-range-SUPERSEDED-aborted.md
-3a277c968bc944e66d586ef948504203d9d3e80014c9dff4c0e426d2f12d5b29  docs/plans/reports/2026-10-23-b1-ocr-repair-01-impl.md
-4b8ee1bec886a0dbbacb2eedc7c2ccd9b63e08eac6722d37dfd1f603994bdc8b  docs/plans/2026-10-23-b1-ocr-repair-01.md
-9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa  docs/verification/workspace-redesign/execution/checkpoints/ocr-r1/build.exit

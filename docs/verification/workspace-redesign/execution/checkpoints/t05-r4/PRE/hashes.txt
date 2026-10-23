@@ -1,1 +1,0 @@
-e04b22805b31a48a22a6109797e0c3702770a86b9516213bd918d6f47b702a27  docs/verification/workspace-redesign/execution/checkpoints/t05-r4/PRE/files/app/tests/bot-reaching-you.test.tsx

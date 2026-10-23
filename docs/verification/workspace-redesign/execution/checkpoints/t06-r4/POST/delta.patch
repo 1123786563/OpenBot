@@ -1,8 +1,0 @@
---- a/app/tests/ai-observability-run-steps.test.tsx
-+++ b/app/tests/ai-observability-run-steps.test.tsx
-@@ omitted fixture 1 @@
--            input: { state: "omitted" },
-+            input: { state: "omitted", reason: "unhandled_free_text" },
-@@ omitted fixture 2 @@
--            input: { state: "omitted" },
-+            input: { state: "omitted", reason: "unhandled_free_text" },

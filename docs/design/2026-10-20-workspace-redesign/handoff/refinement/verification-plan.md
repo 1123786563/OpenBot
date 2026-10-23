@@ -4,7 +4,7 @@
 
 ## 1. 每个 Task 使用的真实命令
 
-以下命令在仓库根运行。执行前把 `t01/r01` 替换成当前 task/round 的字面值；每轮独立目录，禁止覆盖前轮 report。未来授权实施后可写 `docs/verification/workspace-redesign/`；本轮仅 refinement/ 可写。根 `build/typecheck` 会覆盖所有工作区，前端日常使用 app script。app 的 prebuild/pretypecheck 会执行 generate:app-config，因此检查点需要在命令后重新核对，任何生成文件变更都不能漏记。
+以下命令在仓库根运行。执行前把 `t01/r01` 替换成当前 task/round 的字面值；每轮独立目录，禁止覆盖前轮 report。未来授权实施后可写 `.archive/runs/2026-10-20-workspace-redesign-b1/verification/`；本轮仅 refinement/ 可写。根 `build/typecheck` 会覆盖所有工作区，前端日常使用 app script。app 的 prebuild/pretypecheck 会执行 generate:app-config，因此检查点需要在命令后重新核对，任何生成文件变更都不能漏记。
 
 **V-STATIC**
 
@@ -18,7 +18,7 @@ bun run --cwd app build
 **V-NATIVE**
 
 ```bash
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t01/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t01/r01/native bunx e2e run --config e2e.unit.config.ts
 ```
 
 预期 exit0、非零用例，report.json 中 app 原生文件被收集。按 config，清单中的 driven 文件会被排除；此命令**不能**代替 driven 验证。需要缩小到现有原生文件时可在命令末追加该文件，先在清单确认其不是 driven，否则会收集0条。
@@ -26,7 +26,7 @@ E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t01/r01/
 **V-DRIVEN**
 
 ```bash
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t01/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t01/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 该选择器按 group.name.includes 筛选，当前匹配 app/tests part1–4、app/tests/ai-observability、app/tests/multitenancy，共6组。预期6组实际执行、每组非零用例、exit0；driver 中存在超时/重试上限，不能把 skipped/no group 认作通过。`app/src` 组另用 `E2E_BUN_ONLY=app/src`，T16上传队列行为涉及它时追加独立输出目录。单个 driven 文件诊断可用 `bun test ./app/tests/button-native.test.tsx`，必须从根 cwd 读取 bunfig/preload；它是诊断，不替代 e2e 汇总入口。

@@ -1,2 +1,0 @@
-9ebfec43eba5b2eef0c39667674109238ab522032a8c65762487cd10ad5f1c49  app/src/components/bot-profile/setup.tsx
-ffd8ff923883c499d1e918d43167f08458318ccad6b391ec4d10e26b5ee01aab  app/tests/bot-setup.test.tsx

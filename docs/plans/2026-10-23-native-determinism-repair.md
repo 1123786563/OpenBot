@@ -99,7 +99,7 @@ RED 基线(修复前已录): `final-closure-r7/native`(1006/1008)、
   按 R-01 保护规则以边界化修复任务处理: sole writer = frontend_implementer,
   只读验证 = frontend_validator,独立复审 = reviewer。
 - PRE: 各目标文件的 HEAD(599613c6)字节哈希与副本,存
-  `docs/verification/workspace-redesign/final-closure-r7/repair/PRE/`。
+  `.archive/runs/2026-10-20-workspace-redesign-b1/verification/final-closure-r7/repair/PRE/`。
 - POST: 修复后哈希 + diff,同目录 `POST/`。
 - 验证与复审绑定同一 POST 哈希;内容再变更则补做。
 

@@ -1,4 +1,0 @@
-      Tests  1 passed (1)
-   Start at  19:34:24
-   Duration  2.18s
-

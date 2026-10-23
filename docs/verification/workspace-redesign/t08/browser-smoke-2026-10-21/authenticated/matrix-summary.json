@@ -1,8 +1,0 @@
-{
-  "date": "2026-10-21",
-  "identity": "isolated authenticated admin",
-  "botId": "agent_023d30c3-2e68-4bd4-a4ab-e2bba67c9fcc",
-  "checks": 64,
-  "passed": 64,
-  "failures": []
-}

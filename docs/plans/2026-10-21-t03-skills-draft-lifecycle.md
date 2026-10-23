@@ -8,7 +8,7 @@
 
 **Tech Stack:** React, TanStack Router, TanStack Query, tester-army `e2e`, repository E2E compatibility layer, Happy DOM.
 
-**Spec:** `docs/design/2026-10-20-workspace-redesign/handoff/refinement/implementation-detail.md` §4–6; `docs/plans/2026-10-20-workspace-redesign-b1.md` T03; `docs/verification/workspace-redesign/t08/page-acceptance.md` shared-layer smoke scope.
+**Spec:** `docs/design/2026-10-20-workspace-redesign/handoff/refinement/implementation-detail.md` §4–6; `docs/plans/2026-10-20-workspace-redesign-b1.md` T03; `.archive/runs/2026-10-20-workspace-redesign-b1/verification/t08/page-acceptance.md` shared-layer smoke scope.
 
 ## Global Constraints
 
@@ -36,17 +36,17 @@
 
 **Files:**
 - Create: `app/tests/skills-draft-lifecycle.test.tsx`
-- Create: `docs/plans/task-briefs/T03-skills-draft-lifecycle.md`
-- Create: `docs/plans/reports/T03-skills-draft-lifecycle-impl.md`
-- Create: `docs/verification/workspace-redesign/t03-skills-draft-lifecycle/independent-validation.md`
-- Create: `docs/plans/reports/T03-skills-draft-lifecycle-review.md`
+- Create: `.archive/runs/2026-10-20-workspace-redesign-b1/briefs/T03-skills-draft-lifecycle.md`
+- Create: `.archive/runs/2026-10-20-workspace-redesign-b1/reports/T03-skills-draft-lifecycle-impl.md`
+- Create: `.archive/runs/2026-10-20-workspace-redesign-b1/verification/t03-skills-draft-lifecycle/independent-validation.md`
+- Create: `.archive/runs/2026-10-20-workspace-redesign-b1/reports/T03-skills-draft-lifecycle-review.md`
 
 **Interfaces:**
 - Consumes production `SkillsRoute` from `@/routes/_authed/_app/skills`, `pluginKeys.page()`, `authKeys.currentUser()` (or query option key), the public search contract `{ new: true }`, and `DetailPanel`'s 400px detail width / 480px main threshold.
 - Produces one native `e2e` test that renders `/skills?new=true`, seeds the existing query cache, edits the title field using Testing Library, drives observed content width 880→879→880, and asserts visible field value and `data-dirty="true"` remain inside both branches. Subscribe to memory history after initial route resolution and assert the resize sequence emits no navigation event; also assert the route remains open at each width.
 
 **PRE / ownership:**
-- Before implementation, coordinator records HEAD/status and a PRE hash/copy of the new file path (absent state) in `docs/verification/workspace-redesign/execution/checkpoints/t03-skills-draft-lifecycle/PRE/`.
+- Before implementation, coordinator records HEAD/status and a PRE hash/copy of the new file path (absent state) in `.archive/runs/2026-10-20-workspace-redesign-b1/verification/execution/checkpoints/t03-skills-draft-lifecycle/PRE/`.
 - Only this Task's implementer may create the test file. Production source is read-only unless the test demonstrates a defect in the already-authorized T03 state handoff; any such change requires an explicit bounded follow-up checkpoint and affected validation.
 
 **Steps:**

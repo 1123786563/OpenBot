@@ -14,9 +14,8 @@
 | Ticket 与派发材料 | `docs/plans/tickets/` | Issue 拆分、派发或交接时 |
 | 规范性设计 | `docs/specs/`、`docs/adr/` | 需求、架构或接口冲突时 |
 | 静态 DAG / 任务清单 | 方案入口旁的 `.json`、`.md` | 建立或核对 DAG 时 |
-| 活跃 Run 兼容区 | `2026-10-19-orca-*`、`2026-10-20-orca-dag-wave3/` | 只在该 Run 对账、恢复或交接时 |
 
-活跃 Run 兼容区是历史编排器仍在读取的过渡状态，不是新规范。它们内部的 `state.json`、`scope.json`、`receipts/`、`workers/`、`reports/` 等不会再扩展；新 Run 的等价产物写入 `.archive/runs/`。迁移前必须停止或交接 Run，并更新所有脚本、Brief 和恢复引用。
+历史活跃 Run 兼容区（`2026-10-19-orca-*`、`2026-10-20-orca-dag-wave3/` 的运行状态）已于 2026-10-23 停止并交接后整体迁入 `.archive/runs/<run-key>/`，本目录不再保留过渡区；`docs/verification/heroui-migration/` 因 worktree 仍在执行暂留原路径，见下方迁移状态。
 
 ## 方案文件的最小结构
 
@@ -42,4 +41,9 @@ Issue 摄取和 DAG 规则见 [Issue 摄取与执行 DAG](../../.agents/rules/is
 - 多租户方案已于 2026-10-22 随 Issue #6 整体作废（not planned）：方案正文、执行目录、i6-mt001 review fixes 与 `tickets/multitenancy/` 已删除，spec 与 ADR 0004 以 tombstone 覆写；原文归档在 `.archive/runs/2026-10-22-issue6-void/`。
 - Hindsight/Mastra 旧方案中的 Ledger、Issue 快照、库存清单和 baseline 已移到 `.archive/runs/legacy-plans/`；方案正文仍保留在本目录。
 - Ticket 目录中的发布脚本、发布日志、验证/校验 JSON、handoff 压缩包、Checkpoints 和原始来源快照已移到 `.archive/runs/legacy-plans/tickets/`；Ticket 正文、父 Issue、manifest 和派发说明仍保留。
-- 活跃 Run 尚未批量移动。每项迁移须先核对读取方和当前未提交状态，记录在对应 `.archive/runs/` 迁移索引中。
+- 2026-10-23 第三轮整理（[台账](../../.archive/runs/2026-10-23-docs-reorganization/index.md)）：orca wave2/run-all/mt-bifrost、mastra-execution-run、plugin-package-marketplace 的 Run 目录整体迁入 `.archive/runs/<run-key>/`；wave3 只留 hindsight 方案，`state.json`/`scope.json`/`issues/` 等运行状态入该 Run 归档；upstream-openbot-refactor 同规则拆分。方案正文与根部 `*-implementation.md` 保留。
+- workspace-redesign b1 的验证、OCR、报告、Brief 与 Ledger（原 `docs/verification/workspace-redesign/`、`docs/plans/reports/`、`docs/plans/task-briefs/` 及根部 b1 修复 brief）迁入 `.archive/runs/2026-10-20-workspace-redesign-b1/`；design 阶段 review 截图与检查入该 Run `reviews/design/`。
+- `docs/tickets/` 在 #489 与 mastra 派发期间重新出现的两套 Ticket 目录已按新版本合并回 `docs/plans/tickets/`，被覆盖的旧版本存 `.archive/runs/legacy-plans/superseded/`。
+- 根部历史 fix/repair brief 与执行 DAG 状态（`*-dag.json`）归入 `.archive/runs/legacy-plans/<plan-key>/`；`docs/` 根的 `tls-certs.md`、`web-research.md`、`craft-preview-origin.md` 分流到 `reference/`。
+- `docs/verification/heroui-migration/` 暂留：heroui worktree 仍有 Agent 在执行。停止或交接后按同规则迁入 `.archive/runs/2026-10-19-heroui-migration/`，迁移前不要在该路径新增产物。
+- 每次迁移的旧→新映射与移动前后 SHA-256 见对应 Run 的 `migration-manifest.tsv`；本轮为 `.archive/runs/2026-10-23-docs-reorganization/migration-manifest.tsv`。

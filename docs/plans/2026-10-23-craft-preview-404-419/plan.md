@@ -19,7 +19,7 @@
 - **Wave 1（并行）**：N00-audit（researcher，只读）｜N01-407（backend_implementer）｜N02-415（backend_implementer）
   - owned_files 检查：N00 只写 .archive；N01 写 `scripts/tls-pipeline.test.ts`+`package.json`+`.github/workflows/ci.yml`；N02 写 `server/tests/craft-preview-origin.test.ts`+`scripts/tls-pipeline.test.ts`+`docker/compose/certs/lib.sh`+`scripts/fixtures/tls-template-golden.json`。
   - **冲突裁决：N01 与 N02 都写 `scripts/tls-pipeline.test.ts` → 串行：N01 先行，N02 后行**（execution.md：两个 Task 写同一文件必须合并所有权或先拆接口；此处按串行解决）。故 Wave 1 = N00 ∥ N01，N02 在 N01 verified 后启动。
-- **Wave 2（并行，无文件交集）**：N03-418（preview-origin.ts/index.ts/docs）、N04-412（docker/compose/preview-tls*、docs/tls-certs.md）
+- **Wave 2（并行，无文件交集）**：N03-418（preview-origin.ts/index.ts/docs）、N04-412（docker/compose/preview-tls*、reference/tls-certs.md）
 - **Wave 3**：N05-416（依赖 N00 的缺口清单）
 - **Wave 4**：N06-419（依赖全部前序 verified）
 
@@ -51,24 +51,24 @@
 ## Task N03-418 — 多副本单副本契约（Option B）
 
 - 角色：backend_implementer
-- owned_files：`server/src/craft/preview-origin.ts`、`server/src/index.ts`、`docs/craft-preview-origin.md`、`.env.example`、`server/tests/craft-preview-origin.test.ts`（只追加新 case 段）
+- owned_files：`server/src/craft/preview-origin.ts`、`server/src/index.ts`、`reference/craft-preview-origin.md`、`.env.example`、`server/tests/craft-preview-origin.test.ts`（只追加新 case 段）
 - 决策依据：#403 D-4「仅在生产要求 HA 时做共享存储」→ 选 B：文档+启动检查显式化
-- 步骤：1) 启动日志/健康面提示「preview label registry 是进程内状态，多副本需 sticky 或单副本」；2) docs/craft-preview-origin.md 增加多副本章节（不静默 404 的含义与排查）；3) .env.example 注释；4) 新测试：启动提示存在且不误报
+- 步骤：1) 启动日志/健康面提示「preview label registry 是进程内状态，多副本需 sticky 或单副本」；2) reference/craft-preview-origin.md 增加多副本章节（不静默 404 的含义与排查）；3) .env.example 注释；4) 新测试：启动提示存在且不误报
 - 验收：文档明确；启动检查可观察；不引入 Redis/DB 迁移；现有测试不回归
 - 提交策略：单提交 `feat(craft): #418 单副本 preview 契约显式化`
 
 ## Task N04-412 — TLS 消费参考交付
 
 - 角色：backend_implementer
-- owned_files：`docker/compose/preview-tls.yml`（新）、`docker/compose/preview-tls/`（新目录，nginx 参考配置）、`docs/tls-certs.md`
-- 步骤：1) nginx 参考配置：挂 `./tls`、监听 reload.stamp（inotify 轮询 SIGHUP）、代理到 server；2) compose 文件（独立 project 名 openbot-preview-tls）；3) docs/tls-certs.md 增加真实拓扑章节与可复跑步骤；4) `docker compose -f preview-tls.yml config` 校验
+- owned_files：`docker/compose/preview-tls.yml`（新）、`docker/compose/preview-tls/`（新目录，nginx 参考配置）、`reference/tls-certs.md`
+- 步骤：1) nginx 参考配置：挂 `./tls`、监听 reload.stamp（inotify 轮询 SIGHUP）、代理到 server；2) compose 文件（独立 project 名 openbot-preview-tls）；3) reference/tls-certs.md 增加真实拓扑章节与可复跑步骤；4) `docker compose -f preview-tls.yml config` 校验
 - 验收：配置存在且 config 校验通过；文档步骤可复跑；live staging 证据标注为部署方输入（票面 Out of scope 保留）
 - 提交策略：单提交 `feat(deploy): #412 preview TLS 终止参考拓扑`
 
 ## Task N05-416 — 全栈 e2e 收口
 
 - 角色：backend_implementer；依赖：N00-audit（缺口清单）
-- owned_files：`scripts/craft-preview-acceptance.ts`、`package.json`、`docs/craft-preview-origin.md`
+- owned_files：`scripts/craft-preview-acceptance.ts`、`package.json`、`reference/craft-preview-origin.md`
 - 步骤：1) 按 N00 缺口补 same-site 拓扑 profile（env 驱动）；2) 确认无 AC 关键 skip；3) 尝试 live 运行（Casdoor :8000 + sandbox :4300 + server :3221 + app :3220），不可得则记录 blocked(env) 与前置条件；4) artifact 路径落到 Run 目录
 - 验收：脚本可复跑或阻塞如实记录；无 AC 关键 skip；证据可追溯
 - 提交策略：单提交 `test(craft): #416 same-site e2e profile 与无 skip 收口`

@@ -35,7 +35,7 @@
 
 - **Role:** `frontend_validator`
 - **Depends on:** Task 1 post-edit checkpoint reviewed for hash stability
-- **Files:** report under `docs/verification/workspace-redesign/p28-layout-repair/`; no source/test edits.
+- **Files:** report under `.archive/runs/2026-10-20-workspace-redesign-b1/verification/p28-layout-repair/`; no source/test edits.
 - **Verification:** run the focused native suite and scoped Biome against the exact post-edit hash. In the isolated authenticated browser, measure the actual `DetailPanel` container at 879 and 880px, verify Sheet then inline structure, retain name/prompt/dirty state and `?new=true` through 880→879→880, and confirm document overflow stays absent. Also verify 1440px provides the expected inline panel. Never submit.
 - **Acceptance:** all targeted checks pass on unchanged hashes; any failure or inability is recorded precisely.
 
@@ -43,7 +43,7 @@
 
 - **Role:** `reviewer`
 - **Depends on:** Tasks 1 and 2
-- **Files:** read-only report under `docs/plans/reports/`.
+- **Files:** read-only report under `.archive/runs/2026-10-20-workspace-redesign-b1/reports/`.
 - **Review focus:** P28 shared-panel contract, layout ownership, flex shrink/overflow, responsive boundary behavior, URL and scheduled-task draft preservation, regression test quality, and change scope. Return separate Spec compliance and code-quality conclusions.
 - **Acceptance:** both conclusions pass with no actionable finding, or a bounded follow-up plan is required.
 

@@ -1,6 +1,0 @@
-55a15701683fa1113a1b9d3cedef7f0b662f81a62b96a81e6188569ee2fe01a5  app/src/lib/theme.ts
-a489f92edebea0a5ef36abc4b0b1d0ec59dc1ba5c3a13e9f1945566ce4e6c01f  app/src/components/layout/page-shell.tsx
-aeff9e04c90e9a3a2dc327050217ac8d5878645a583698aa05bcca0721daea3d  app/src/components/ui/context-menu.tsx
-df0f9d3e01b888d056b3c68c4ce6b343a6eafc6d70c8e66c240e5f61e762f65d  app/src/components/ui/dialog.tsx
-2ead1965b1a33a97203e8c9de9ba1be2da327c036362db76d0cdf64cc9edaab5  app/src/components/craft/scheduled-task-editor.tsx
-b29c63f4a43553097261b120be17cd397ae60073a18a0f85c01122c994821d73  app/tests/detail-panel.test.tsx

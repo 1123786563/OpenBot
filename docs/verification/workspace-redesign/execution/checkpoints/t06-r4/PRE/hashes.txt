@@ -1,5 +1,0 @@
-152705df29f3800851654d5358760b77094a5c3524f898131ca0e44addd2829f  docs/verification/workspace-redesign/execution/checkpoints/t06-r4/PRE/HEAD.txt
-12f77c5f497820ecb85cdaf4ebf47aa97adba01580530d2756bfc6f8cd63abd4  docs/verification/workspace-redesign/execution/checkpoints/t06-r4/PRE/ai-observability-run-steps.test.tsx
-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  docs/verification/workspace-redesign/execution/checkpoints/t06-r4/PRE/staged.patch
-aae0507a64d6376e2ec63ce1e1b038d454e9b8246c6d66fafe8a12b2d68f80ff  docs/verification/workspace-redesign/execution/checkpoints/t06-r4/PRE/status.txt
-25a6b5cd6281edafd5bf95c449d4c4cbef30f8658aa8e4603dc78a74b1774be0  docs/verification/workspace-redesign/execution/checkpoints/t06-r4/PRE/unstaged.patch

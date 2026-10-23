@@ -1,5 +1,0 @@
-152705df29f3800851654d5358760b77094a5c3524f898131ca0e44addd2829f  docs/verification/workspace-redesign/execution/checkpoints/t07-r1/PRE/HEAD.txt
-36d257c77b0173bb9e808b9c29e7a7006444b856d39ad559b281238a70d4062f  docs/verification/workspace-redesign/execution/checkpoints/t07-r1/PRE/index.tsx
-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  docs/verification/workspace-redesign/execution/checkpoints/t07-r1/PRE/staged.patch
-a44347d6738d5640cf83e08c62e328d221f14221d56d5ffac522a5a92526f86c  docs/verification/workspace-redesign/execution/checkpoints/t07-r1/PRE/status.txt
-95092735c323f8f257a194d0de62d95dcb83495570f8f96eedf15fc2cf0a80ad  docs/verification/workspace-redesign/execution/checkpoints/t07-r1/PRE/unstaged.patch

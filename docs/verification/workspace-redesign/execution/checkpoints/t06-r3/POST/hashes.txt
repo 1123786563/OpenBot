@@ -1,7 +1,0 @@
-152705df29f3800851654d5358760b77094a5c3524f898131ca0e44addd2829f  docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/HEAD.txt
-99ad0d667d001073fb911f8b7d2ecbc091dca076ce188978ffb29e8ed1abed1e  docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/ai-observability-experiments.test.tsx
-12f77c5f497820ecb85cdaf4ebf47aa97adba01580530d2756bfc6f8cd63abd4  docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/ai-observability-run-steps.test.tsx
-4b5c352092d49c325e4bbd2515f35df6c1baba6cc8881f1106dc4565846413e4  docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/en-ai-observability-runs.json
-de3cdd4a2a015cfef44da32b6e62a1207a8559056041a93fcb254c42bd22df19  docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/run-steps.tsx
-ec8250b13c7a830b38162137bea35aef5037b31b8ff2e183f13672fbc7967aea  docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/status.txt
-5c284649f727c08565c3cfbd147fcdb8d4e23328193087ca42081c6d97953ac0  docs/verification/workspace-redesign/execution/checkpoints/t06-r3/POST/zh-CN-ai-observability-runs.json

@@ -4,7 +4,7 @@
 - **Spec:** P01–P05 acceptance in `docs/design/2026-10-20-workspace-redesign/handoff/refinement/route-acceptance.json`, `implementation-spec.md`, `implementation-detail.md` §§3–6, `verification-plan.md`; runtime and terminology from `CONTEXT.md`; test partitions from ADR 0008.
 - **Scope:** T07 only, after T06 source/test verification and independent review. No server API, chat protocol, permission, tenant, channel, computer runtime, or later-page redesign changes.
 - **Owner / gate:** one `frontend_implementer`, then independent `frontend_validator` and `reviewer`; no commits.
-- **PRE:** all 42 owned source/test paths plus HEAD/status/staged and unstaged binary patches are captured at `docs/verification/workspace-redesign/execution/checkpoints/t07/PRE/`.
+- **PRE:** all 42 owned source/test paths plus HEAD/status/staged and unstaged binary patches are captured at `.archive/runs/2026-10-20-workspace-redesign-b1/verification/execution/checkpoints/t07/PRE/`.
 
 ## Requirements and interfaces
 
@@ -24,7 +24,7 @@ All `owned_files` and `test_files` for T07 in `tasks.json` are exclusive to this
 
 1. Audit existing current UI against P01–P05; implement only visual/layout changes needed by the spec while preserving existing event, state and route contracts. Add or update behavior regressions only in owned tests where a requirement lacks coverage.
 2. Run changed behavior suites through ADR 0008 native or driven partition. For driven Bun files, a direct Bun run is diagnostic; the final task evidence is the relevant `e2e.unit.config.ts` group and nonzero selected counts. Run changed-path `bunx biome check`, `git diff --check`, app typecheck, and app build if T07 implementation changes app production sources; report pre-existing errors against baseline.
-3. Recheck coverage audit if test files or test manifest entries change. Capture POST snapshots, byte hashes, and a real PRE→POST package including untracked additions/deletions. Persist exact commands/results in `docs/verification/workspace-redesign/t07/`.
+3. Recheck coverage audit if test files or test manifest entries change. Capture POST snapshots, byte hashes, and a real PRE→POST package including untracked additions/deletions. Persist exact commands/results in `.archive/runs/2026-10-20-workspace-redesign-b1/verification/t07/`.
 4. Independent validator and reviewer verify the same POST hash. Real browser/runtime/identity verification is deferred to user testing and remains pending; do not claim that source tests prove it.
 
 ## Failure handling

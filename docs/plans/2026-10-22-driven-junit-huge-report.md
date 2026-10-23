@@ -4,7 +4,7 @@
 
 ## 背景
 
-`docs/verification/workspace-redesign/current-session/driven-app-tests/report.json` 记录 app/tests part 1 driver 以
+`.archive/runs/2026-10-20-workspace-redesign-b1/verification/current-session/driven-app-tests/report.json` 记录 app/tests part 1 driver 以
 `Cannot create a string longer than 0x1fffffe8 characters` 失败。复现证据：
 
 - 完整 part 1（26 文件，单进程）组合运行产出 6,091 MB 的 junit.xml（`bun test --reporter=junit`）。
@@ -45,7 +45,7 @@
 
 - 单元验证：对本次 6 GB 报告的截取副本（前 64 MB + 头部）与新解析路径的输出做一致性抽查（testsuites 计数与
   failingFiles 集合）。
-- 端到端验证：`E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/current-session/driven-app-tests-r2 bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts`，
+- 端到端验证：`E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/current-session/driven-app-tests-r2 bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts`，
   期望 6/6 组有结论（part 1 走 alone-re-run：approvals-rules/bot-setup 等孤立绿 → 判 interfered 或 pass，符合
   ADR0008 语义；stderr 记录共享进程警告）。
 - 独立 review：bounded 只读 reviewer 审查该单文件 delta。

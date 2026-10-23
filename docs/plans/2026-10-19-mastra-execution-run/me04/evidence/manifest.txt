@@ -1,5 +1,0 @@
-1035 files audited
-467 kept on the Bun runtime, in 33 driven group(s)
-5 deliverable artifacts, not executable here: deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts, deliverables/mobile-e2e-qa/tests/e2e/specs/env.smoke.spec.ts, deliverables/mobile-e2e-qa/tests/e2e/specs/interruption.spec.ts, deliverables/mobile-e2e-qa/tests/e2e/specs/offline.spec.ts, deliverables/mobile-e2e-qa/tests/e2e/specs/order.spec.ts
-1 still ours to fix:
-     1  COLLECTION_ERROR: failed to collect app/tests/auth-client.test.ts: Invalid base URL: null. Pleas

@@ -4,7 +4,7 @@
 
 **Goal:** Make the computed border for shared fields, select/combobox triggers, and outline buttons resolve to `--ob-control-border` as specified.
 
-**Facts:** `implementation-spec.md` §2 and §3 require the control boundary token. Authenticated browser evidence in `docs/verification/workspace-redesign/t01/` shows Input, Textarea, Select, Combobox and outline Button currently compute `--ob-border` in both themes despite wrapper utility classes. CSS matched-rule inspection identified an unlayered HeroUI base reset competing with layered wrapper utilities.
+**Facts:** `implementation-spec.md` §2 and §3 require the control boundary token. Authenticated browser evidence in `.archive/runs/2026-10-20-workspace-redesign-b1/verification/t01/` shows Input, Textarea, Select, Combobox and outline Button currently compute `--ob-border` in both themes despite wrapper utility classes. CSS matched-rule inspection identified an unlayered HeroUI base reset competing with layered wrapper utilities.
 
 ## Global Constraints
 

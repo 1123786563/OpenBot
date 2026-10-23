@@ -1,2 +1,0 @@
-[ocr]   ✘ file_read failed: file "tsconfig.json" not found: read file "tsconfig.json": open /Users/wuyongjun/trea/OpenBot/.worktrees/plugin-package-market/tsconfig.json: no such file or directory
-[ocr]   ✘ file_read failed: invalid line range: start_line 160 is greater than end_line 115

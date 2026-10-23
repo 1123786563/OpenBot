@@ -20,7 +20,7 @@ import {
  * runner's default), that constant says "server": the router never mounts its client-side
  * Transitioner and RouterProvider crashes in Matches ("Cannot read properties of undefined
  * (reading '0')") — the same signature that routed the repo's other router-rendering suites to the
- * driven layer (docs/verification/e2e-bun-suites.json, the admin-catalog-sync-ui entry). bun test
+ * driven layer (tests/config/e2e-bun-suites.json, the admin-catalog-sync-ui entry). bun test
  * sets NODE_ENV=test on the driven layer, so the router behaves there; the fact is now stated
  * process-wide in `preload.ts` (H14 — the full-native sweep caught this file losing the
  * module-eval race against `button-native.test.tsx`, which imports the router statically), and

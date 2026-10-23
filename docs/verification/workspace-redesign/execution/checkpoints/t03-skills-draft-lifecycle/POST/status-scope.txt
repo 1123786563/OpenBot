@@ -1,2 +1,0 @@
-?? app/tests/skills-draft-lifecycle.test.tsx
-?? docs/plans/reports/T03-skills-draft-lifecycle-impl.md

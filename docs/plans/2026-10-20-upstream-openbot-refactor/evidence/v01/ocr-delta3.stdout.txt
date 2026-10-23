@@ -1,3 +1,0 @@
-[ocr] Summary: 1 file(s) reviewed, 2 comment(s), ~186928 token(s) used (input: ~165545, output: ~21383), cache(read: ~130816, write: ~0), 6m36s elapsed
-[ocr] Session: 4bef27f8-9b9b-4c0d-988a-4bac6085c910
-[ocr] Results written to docs/plans/2026-10-20-upstream-openbot-refactor/evidence/v01/ocr-delta3.txt

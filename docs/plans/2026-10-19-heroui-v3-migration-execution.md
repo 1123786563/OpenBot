@@ -8,7 +8,7 @@
 - 仓库：`1123786563/OpenBot`（origin），参考副本 `CopilotKit/OpenBot`（upstream）。
 - 执行工作区：`/Users/wuyongjun/trea/OpenBot/.worktrees/heroui-migration`，分支 `feat/heroui-v3-migration`。
 - BASE：`203d0f0244b2f898218fa12027089c631e8448d9`（`main`，工作区干净，仅 `bifrost` 子模块有本地修改，未带入本任务）。
-- 设计：`docs/specs/2026-10-19-heroui-ui-migration-design.md`；研究：`docs/research/2026-10-19-heroui-official-research.md`；Ticket：`docs/tickets/heroui-migration/`。
+- 设计：`docs/specs/2026-10-19-heroui-ui-migration-design.md`；研究：`docs/research/2026-10-19-heroui-official-research.md`；Ticket：`docs/plans/tickets/heroui-migration/`。
 - 测试规范：`docs/adr/0008-test-runner-tester-army-e2e.md`（native/driven/engine 分层，`bun test` 不是入口）。
 - 远端读取：2026-10-19T12:54Z，`gh -R 1123786563/OpenBot` 确认父 Issue #443 与子 Issue #444–#458 均为 OPEN、无实现。`gh` 默认解析到 upstream（CopilotKit/OpenBot）会读到无关 Issue，查询必须显式 `-R`。
 

@@ -1,2 +1,0 @@
-46667d593fd4c5cb9a31c66b9634c0b6e9085f63c8abf183988c412f88239dd4  app/tests/bot-setup.test.tsx
-46667d593fd4c5cb9a31c66b9634c0b6e9085f63c8abf183988c412f88239dd4  docs/verification/workspace-redesign/p15-error-focus/checkpoints/textarea/PRE/bot-setup.test.tsx

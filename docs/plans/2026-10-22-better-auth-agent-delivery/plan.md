@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun/Hono、Better Auth 1.7.1候选固定版本、Drizzle/PostgreSQL、React/Vite/TanStack、Mastra/Worker、Tauri、Expo/OpenMuse及Bifrost Go；tester-army e2e统一根调度。
 
-**Spec:** [v2.2候选设计](../../specs/2026-10-22-better-auth-full-integration-design.md)；[原25任务计划](../2026-10-22-better-auth-full-integration/plan.md)、[冻结接口](../2026-10-22-better-auth-full-integration/interfaces.md)、[验收合同](../2026-10-22-better-auth-full-integration/acceptance.md)。本轮仅编写计划与GitHub Issues，**不批准Spec、不实施生产代码、不提交/推送/合并/发布**。
+**Spec:** [v2.3候选设计](../../specs/2026-10-22-better-auth-full-integration-design.md)；[原25任务计划](../2026-10-22-better-auth-full-integration/plan.md)、[冻结接口](../2026-10-22-better-auth-full-integration/interfaces.md)、[验收合同](../2026-10-22-better-auth-full-integration/acceptance.md)。本轮仅编写计划与GitHub Issues，**不批准Spec、不实施生产代码、不提交/推送/合并/发布**。
 
 ## Global Constraints
 
@@ -23,7 +23,7 @@
 - 个人Model Access Grant/Key保存身份来源代际，claim/renew与实际Bifrost包括免费模型的新dispatch在线检查；outbox停机仍拒绝，restore不复活旧能力。原payer及历史费用不改，未知费用不自动退款。
 - 密码部署sendResetPassword、3600秒token及真实邮件必需；原生POST唯一消费token和写hash，同事务Identity finalizer推进代际、撤全部session/proof。纯SSO不开放密码恢复。
 - 移动enterprise保留OpenMuse server及原Workspace DTO；PKCE code120秒单次、handle不超过1800秒、媒体定位票据不超过60秒且每次pull在线检查。App/MuseApi/CopilotKit/媒体/回调实际接线，accessKey/sample/local-user不兜底。
-- 原生Admin/Organization51个HTTP及无path addMember逐项处置，所有Organization GET有三类反例；删除/模拟登录/动态角色后端拒绝。默认/Web/Mobile测试收集互斥，缺origin在任何导航前失败。
+- 原生Admin/Organization51个HTTP及无path addMember、SSO单方法11行及回调族、SCIM9个资源路径逐项处置，所有Organization GET有三类反例；删除/模拟登录/动态角色后端拒绝。默认/Web/Mobile测试收集互斥，缺origin在任何导航前失败。
 - 无提交授权时使用完整未提交检查点，转移依赖源码并校验hash；ready-for-agent不是未阻塞。用户其他staged/unstaged/untracked改动保留，禁止共享stash协调。
 
 ## Review Focus
@@ -65,6 +65,10 @@
 命令中的 `.archive/runs/ba-execution` 是本计划给出的默认执行run根，主控开工可换为实际run-key并在Brief明确展开；不是待定接口。RED/GREEN和Task输出隔离。每个BA DB测试稳定组名为 `server/tests/better-auth:TaskId`，由T01.01生成而非手工维护files/groups。外部子模块先由T01.10建立根固定白名单driver，再由消费者登记本任务已存在测试。
 
 每个相关后端任务都要加入 `legacy_authority_keeps_existing_tenancy_green` 矩阵；每个前端以authority广告选择原adapter或BA adapter。合入时的新环境变量不应破坏legacy模式。所有原P任务覆盖包含本职责内的schema、接线、测试和登记，不留到末尾“统一补测试”。
+
+P01与生产装配的证据明确分开：原P01 Step4要求“在隔离的固定插件配置中证明各入口可受事务包装”，原interfaces §1允许最小finalizer测试支架。T01.03因此显式拥有 `support/transaction-http-harness.ts`，通过真实Hono HTTP、实际固定插件/adapter和PG证明全量可达写方法的外层txid一致，故意换成auth.handler必须使测试失败；这个最小测试执行器不导入T02.08/T02.11未来生产文件，不是auth.api-only夹具。T02.11在生产executor/ingress就绪后重新跑真实createApp矩阵；尚未接线项只可证明拒绝且零DML，对应owner启用时及T08.05做全量复验，P01支架不能计作生产装配通过。
+
+T01.03同时交付 `scripts/check-better-auth-adapter-writes.mjs` 与版本化扫描manifest；注入临时包源码清单外直写必须非零，T08.04审计和T08.05真实启动分别消费该结果。T05.05/T08.05分别覆盖SSO organizationProvisioning缺失及disabled:false；T02.12定义通知转译，T04.04在启用邮件配置的真实link-account回调验证提交/回滚/幂等重试，T05.06在生产SSO接线复验，避免只靠通用邮件测试。
 
 T08.06–T08.08是验收/汇总Issue，不是让一个代码Agent重做整个系统；主控复用各叶子当前hash的独立证据，按模块发窄范围审查包并汇总全范围OCR，缺项则阻断，不修改源“修到通过”。
 
@@ -142,7 +146,7 @@ flowchart LR
 | T05.03 | [接通 SAML 公司证明自有 SP 与 ACS](../tickets/better-auth/T05.03.md) | T05.01, T01.07 | backend_implementer / backend_validator | P11 |
 | T05.04 | [在目录与业务 gate 中实时验证公司证明](../tickets/better-auth/T05.04.md) | T05.02, T05.03 | backend_implementer / backend_validator | P11 |
 | T05.05 | [把 SCIM 全方法接入原子目录命令](../tickets/better-auth/T05.05.md) | T05.04, T04.08 | backend_implementer / backend_validator | P12 |
-| T05.06 | [把 JIT 与批准组规则接入单次团队能力](../tickets/better-auth/T05.06.md) | T05.05 | backend_implementer / backend_validator | P12 |
+| T05.06 | [把 JIT 与批准组规则接入单次团队能力](../tickets/better-auth/T05.06.md) | T05.05, T04.04 | backend_implementer / backend_validator | P12 |
 | T05.07 | [接通全局禁用恢复角色与会话撤销真实入口](../tickets/better-auth/T05.07.md) | T05.06, T02.09 | backend_implementer / backend_validator | P12 |
 | T05.08 | [接通平台用户创建资料编辑与管理员密码重置](../tickets/better-auth/T05.08.md) | T05.07, T04.06 | backend_implementer / backend_validator | P12 |
 | T05.09 | [固定跨部署 issuer+subject 与原生回调身份](../tickets/better-auth/T05.09.md) | T05.07 | backend_implementer / backend_validator | P12 |
@@ -214,13 +218,13 @@ T01.01 → T01.02 → T01.03 → T01.04 → T01.05 → T01.06 → T01.07 → T01
 | F3 | T01.04 T02.09 T02.12 T04.04 T04.05 T04.06 T05.14 | 真实reset邮件/唯一消费/3600秒/安全代际及旧session/proof/能力失效；吞错和迟到callback不能半提交 |
 | F4 | T04.12 T07.13 T08.04 | 默认/BA Web/BA Mobile互斥收集，强制origin/digest/target preflight；零网络负例 |
 | F-01 | T01.03 T02.08 T02.11 T08.04 T08.05 | 原生HTTP目录写由ingress转auth.api于外层事务；executor禁止auth.handler；直写清单扫描一致；handler可达写端点为失败 |
-| F-02 | T05.05 T05.06 T02.14 | organizationProvisioning disabled硬前提并启动拒绝；ingress拒客户端organizationId；回调不产生member；M2核验sso_providers.organization_id为空 |
+| F-02 | T05.05 T05.06 T02.14 T08.05 | organizationProvisioning disabled硬前提并在缺失/false配置下启动拒绝；ingress拒客户端organizationId；回调不产生member；M2核验sso_providers.organization_id为空 |
 | F-03 | T01.03 T04.01 T08.04 T08.05 | 固定版不经ALS直写清单逐项处置；resend不走原生分支；包升级清单外直写失败 |
 | F-04 | T02.13 T04.03 T05.06 T08.02 | legacy目录写入者静态清单为必需产物；deletion-semantics/root-backfill/enterprise-runtime-seed逐项处置 |
 | F-05 | T02.13 T02.14 T03.03 | BA slug按interfaces §2派生/归一化/碰撞/幂等；重放不重派；check-slug同规则 |
 | F-06 | T04.08 | 不新增同形DELETE成员路由；path ID固定OpenBot principalId，服务端解析BA userId |
 | F-07 | T01.08 T01.09 | 组织组件不调X类原生GET；ui-source.json逐组件声明注入adapter或不复用 |
-| F-08 | T01.04 T02.12 T04.04 | link-account dispatchVerificationEmail按通知类登记并由outbox接管，启用前先接管 |
+| F-08 | T01.04 T02.12 T04.04 T05.06 | link-account dispatchVerificationEmail按通知类转为事务内outbox；真实启用配置callback验证提交/回滚/幂等重试，缺转换器启动拒绝，生产SSO再复验 |
 | F-09 | T02.02 | 既有epoch integer与新建bigint版本列逐列固定，Number.isSafeInteger比较不失效 |
 | F-10 | T02.06 | auth-writer→principals、data→clocks/assurance最小GRANT；缺授权启动/反例失败 |
 | H1 | T01.03 T01.04 T02.08 T02.12 T05.05 T05.06 | pendingHooks分类且不丢；原子写进finalizer、通知进outbox；全局连接写拒绝；事务配置不依赖SCIM开关 |

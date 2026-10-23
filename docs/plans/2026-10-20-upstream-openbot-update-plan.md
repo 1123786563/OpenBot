@@ -207,7 +207,7 @@ flowchart TD
 
 ### Task 8：Exa/Firecrawl 与 Parallel 统一研究能力
 
-**Files:** 新增本地 `shared/research.ts`；修改 `server/src/plugins/catalogue.ts`、`tools.ts`、MCP 注册/角色适配入口；新增/扩展 research 测试，前端工具活动标签、locales、`.env.example` 和 `docs/web-research.md`。上游真实参考为 `shared/research.ts`、plugins 模块和 `server/tests/web-research.test.ts`。
+**Files:** 新增本地 `shared/research.ts`；修改 `server/src/plugins/catalogue.ts`、`tools.ts`、MCP 注册/角色适配入口；新增/扩展 research 测试，前端工具活动标签、locales、`.env.example` 和 `reference/web-research.md`。上游真实参考为 `shared/research.ts`、plugins 模块和 `server/tests/web-research.test.ts`。
 
 **Interfaces:** provider 角色表统一 provider、search/fetch/notes 工具名与认证需求；以固定上游类型为参考、映射本地 GrantedTool 类型。保留工具真实名字、部署连接 ID、实际 actor/payer 和调用审计。
 

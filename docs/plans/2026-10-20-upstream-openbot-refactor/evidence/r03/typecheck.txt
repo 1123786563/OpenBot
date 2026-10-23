@@ -1,4 +1,0 @@
-app pretypecheck: $ bun scripts/generate-app-config.ts
-app pretypecheck: Exited with code 0
-app typecheck: Exited with code 0
-typecheck exit: 0

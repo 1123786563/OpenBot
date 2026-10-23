@@ -1,7 +1,7 @@
 # E01 后续架构与客户端差距评估（UP11 / AC A12）
 
 - 日期：2026-10-20。角色：architect（只读生产代码与文档；唯一写入为本文件与 `evidence/e01/architect-report.md`）。
-- 正式 Issue：[#498](https://github.com/1123786563/OpenBot/issues/498)（本地票 `docs/tickets/upstream-openbot-update/issues/up11.md`）；父 Spec：[#489](https://github.com/1123786563/OpenBot/issues/489)（本地 `docs/specs/2026-10-20-upstream-openbot-adoption-design.md` §8）。
+- 正式 Issue：[#498](https://github.com/1123786563/OpenBot/issues/498)（本地票 `docs/plans/tickets/upstream-openbot-update/issues/up11.md`）；父 Spec：[#489](https://github.com/1123786563/OpenBot/issues/489)（本地 `docs/specs/2026-10-20-upstream-openbot-adoption-design.md` §8）。
 - **本文件是评估与采用/延期决定，不宣称任何功能已上线。** Out of Scope（父 Spec §Out of Scope）继续成立：不新建第二套移动客户端、不实装 Antigravity、不做 toolkit 拆包。
 
 ## 固定对象与证据路径约定

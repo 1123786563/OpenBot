@@ -1,3 +1,0 @@
-[ocr] Summary: 1 file(s) reviewed, 0 comment(s), ~51542 token(s) used (input: ~47314, output: ~4228), cache(read: ~37504, write: ~0), 1m29s elapsed
-[ocr] Session: 24b4ade9-1a18-4cf9-b26c-fa32b9f7a504
-Review complete: 0 finding(s) across 1 selected item(s).

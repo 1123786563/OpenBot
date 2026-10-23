@@ -17,7 +17,7 @@
 - 不提交/推送/合并/发布、不安装产品依赖、不创建对外Issue。未来实施采用未提交检查点。
 - 保护baseline.json中的既有脏基线；只审查真实增量，完整交付范围另行覆盖。
 - 保留路由/权限/个人与公司归属；I-01/02/03不进入基础实施；不新增搜索/指标/API。
-- 当前所有权仅refinement/，本轮不执行以下生产步骤；用户已授权B1 T01–T08。本文现为历史细化参考，不作为活跃任务状态源；正式执行计划唯一来源：`docs/plans/2026-10-20-workspace-redesign-b1.md`，执行状态唯一来源：`docs/plans/2026-10-20-workspace-redesign-b1-ledger.md`。范围外T09–T21仍未授权。
+- 当前所有权仅refinement/，本轮不执行以下生产步骤；用户已授权B1 T01–T08。本文现为历史细化参考，不作为活跃任务状态源；正式执行计划唯一来源：`docs/plans/2026-10-20-workspace-redesign-b1.md`，执行状态唯一来源：`.archive/runs/2026-10-20-workspace-redesign-b1/ledger.md`。范围外T09–T21仍未授权。
 - 原H01–H15不是本计划Task，不重新迁移组件底座。批准来源需在未来ledger记录。
 
 ## Review Focus
@@ -88,8 +88,8 @@
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t01/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t01/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t01/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t01/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -155,8 +155,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t01/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t02/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t02/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t02/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t02/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -221,8 +221,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t02/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t03/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t03/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t03/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t03/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -278,8 +278,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t03/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t04/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t04/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t04/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t04/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -346,8 +346,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t04/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t05/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t05/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t05/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t05/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -412,8 +412,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t05/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t06/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t06/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t06/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t06/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -501,8 +501,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t06/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t07/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t07/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t07/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t07/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -530,7 +530,7 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t07/
 
 **Files / owned_files:**
 
-- 仅未来指定的验证/审查报告目录 `docs/verification/workspace-redesign/t08/`；不写生产/测试源文件。
+- 仅未来指定的验证/审查报告目录 `.archive/runs/2026-10-20-workspace-redesign-b1/verification/t08/`；不写生产/测试源文件。
 
 **Interfaces:**
 
@@ -548,8 +548,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t07/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t08/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t08/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t08/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t08/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -606,8 +606,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t08/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t09/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t09/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t09/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t09/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -674,8 +674,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t09/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t10/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t10/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t10/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t10/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -735,8 +735,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t10/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t11/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t11/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t11/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t11/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -784,8 +784,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t11/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t12/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t12/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t12/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t12/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -830,8 +830,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t12/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t13/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t13/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t13/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t13/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -885,8 +885,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t13/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t14/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t14/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t14/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t14/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -940,8 +940,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t14/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t15/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t15/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t15/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t15/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -990,9 +990,9 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t15/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t16/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t16/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
-E2E_BUN_ONLY=app/src E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t16/r01/driven-src bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t16/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t16/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_BUN_ONLY=app/src E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t16/r01/driven-src bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -1039,8 +1039,8 @@ E2E_BUN_ONLY=app/src E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t16/r0
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t17/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t17/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t17/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t17/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -1085,8 +1085,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t17/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t18/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t18/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t18/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t18/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -1130,8 +1130,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t18/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t19/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t19/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t19/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t19/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -1183,8 +1183,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t19/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t20/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t20/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t20/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t20/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 ```
 
 **变更文件静态检查:** `bunx biome check` 加本Task真实变更的owned_files参数数组；禁止 --write；预期exit0或有逐项基线归因。
@@ -1207,7 +1207,7 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t20/
 
 **Files / owned_files:**
 
-- 仅未来指定的验证/审查报告目录 `docs/verification/workspace-redesign/t21/`；不写生产/测试源文件。
+- 仅未来指定的验证/审查报告目录 `.archive/runs/2026-10-20-workspace-redesign-b1/verification/t21/`；不写生产/测试源文件。
 
 **Interfaces:**
 
@@ -1226,8 +1226,8 @@ E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t20/
 ```bash
 bun run --cwd app typecheck
 bun run --cwd app build
-E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t21/r01/native bunx e2e run --config e2e.unit.config.ts
-E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=docs/verification/workspace-redesign/t21/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
+E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t21/r01/native bunx e2e run --config e2e.unit.config.ts
+E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=.archive/runs/2026-10-20-workspace-redesign-b1/verification/t21/r01/driven bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
 bun run test:ci
 ```
 

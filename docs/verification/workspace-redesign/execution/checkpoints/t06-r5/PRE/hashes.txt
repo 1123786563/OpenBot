@@ -1,5 +1,0 @@
-152705df29f3800851654d5358760b77094a5c3524f898131ca0e44addd2829f  docs/verification/workspace-redesign/execution/checkpoints/t06-r5/PRE/HEAD.txt
-69cfc828d85bbeda51d446501b9d93267b6cad186b8b504f5d0a1f5b0198fa72  docs/verification/workspace-redesign/execution/checkpoints/t06-r5/PRE/observability-route-guards.test.tsx
-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  docs/verification/workspace-redesign/execution/checkpoints/t06-r5/PRE/staged.patch
-f5574b28141a1c9c723ee7a97a7004627e0aa4e6aaab1d2b4465a6a02984608e  docs/verification/workspace-redesign/execution/checkpoints/t06-r5/PRE/status.txt
-b515364e851116be831cc449a2a94bc9e9e9acb3fd33dfcdce9e9dab950b8eb4  docs/verification/workspace-redesign/execution/checkpoints/t06-r5/PRE/unstaged.patch

@@ -256,18 +256,24 @@
         "app/package.json",
         "bun.lock",
         "server/src/auth/directory/contracts.ts",
-        "server/src/auth/directory/transaction-adapter.ts"
+        "server/src/auth/directory/transaction-adapter.ts",
+        "server/tests/better-auth/support/transaction-http-harness.ts",
+        "scripts/check-better-auth-adapter-writes.mjs",
+        "tests/config/better-auth-adapter-writes.json"
       ],
-      "contract": "TransactionBoundBa.run<T>(tx,operation):Promise<BaTxOutcome<T>>；核心/adapter/SSO/SCIM/原生配套包精确锁定经核验兼容1.7.1；嵌套ALS不自带savepoint，补偿不得以25P02覆盖首个SQLSTATE。 auth.handler每请求经runWithAdapter以{adapter,pendingHooks:[],isTransactionActive:false}新建ALS store覆盖外层并另开事务，禁止作为事务内写路径；目录写入口形态固定为外层事务内auth.api.<endpoint>({headers,body,query,asResponse})；以源码扫描生成固定版不经ALS的ctx.context.adapter直写清单并与interfaces §3.1逐项一致，包升级引入清单外直写失败。",
+      "contract": "TransactionBoundBa.run<T>(tx,operation):Promise<BaTxOutcome<T>>；核心/adapter/SSO/SCIM/原生配套包精确锁定经核验兼容1.7.1；嵌套ALS不自带savepoint，补偿不得以25P02覆盖首个SQLSTATE。 auth.handler每请求经runWithAdapter以{adapter,pendingHooks:[],isTransactionActive:false}新建ALS store覆盖外层并另开事务，禁止作为事务内写路径；目录写入口形态固定为外层事务内auth.api.<endpoint>({headers,body,query,asResponse})；以源码扫描生成固定版不经ALS的ctx.context.adapter直写清单并与interfaces §3.1逐项一致，包升级引入清单外直写失败。 本Task显式创建仅测试的transaction-http-harness：真实Hono HTTP ingress+最小命令执行器，使用本Task TransactionBoundBa、固定版真实插件/adapter与隔离PG，不导入下游P04生产executor/ingress；每条真实可达目录写方法从HTTP发起并比对同请求BA DML和支架外层txid_current，关闭项证明拒绝/零DML。该支架仅P01可行性证据，不能算OpenBot生产装配。",
       "actions": [
         "用实际安装依赖核对版本后锁定，禁止其他包漂移",
         "实现请求局部tx adapter，记录连接与事务身份",
-        "真实accept-invitation中途SQL故障保留首错，显式savepoint或整命令回滚"
+        "真实accept-invitation中途SQL故障保留首错，显式savepoint或整命令回滚",
+        "创建并真实启动本Task的HTTP测试支架，逐固定插件方法送HTTP请求；在支架内记录外层与真实BA DML txid，故意切换handler证明测试能失败；最终生产装配由T02.11/T08.05另验",
+        "实现auditBetterAuthAdapterWrites({packageRoot,expectedManifest})与固定安装包的只读扫描CLI，生成版本化better-auth-adapter-writes.json；与interfaces §3.1精确对账，复制真实源码到临时目录注入清单外直写，扫描必须非零"
       ],
       "cases": [
         "two_parallel_requests_never_share_tx: 两HTTP并行 expect(txA).not.toBe(txB)",
         "invite_accept_nested_tx_rolls_back_every_write: 故障后 expect(after).toEqual(before)，expect(error.code).toBe(originalSqlstate)",
-        "native_http_handler_is_never_used_for_directory_writes: 每条目录写端点发真实HTTP请求，请求内BA写与executor外层事务expect(txid).toBe(outerTxid)，仅auth.api夹具为假阳性"
+        "native_http_handler_is_never_used_for_directory_writes: 固定版插件全量真实HTTP方法通过本Task新建的测试ingress/最小执行器，expect(baDmlTxid).toBe(harnessOuterTxid)；故意替换为auth.handler expect(observedTxidMismatch).toBe(true)；不导入P04生产executor，不以auth.api-only夹具代替HTTP",
+        "unlisted_direct_adapter_write_fails_fixed_package_scan: 在临时固定包源码注入新增ctx.context.adapter写调用，expect(scanExitCode).not.toBe(0)，未改实际node_modules；真实固定包与manifest逐项相等"
       ],
       "test_file": "server/tests/better-auth/transaction-contract.test.ts",
       "kind": "db",
@@ -282,7 +288,8 @@
       ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.03/green E2E_BUN_ONLY=server/tests/better-auth:T01.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
-        "node scripts/e2e-coverage-audit.mjs"
+        "node scripts/e2e-coverage-audit.mjs",
+        "node scripts/check-better-auth-adapter-writes.mjs"
       ],
       "interface_fragments": [
         "tx"
@@ -1039,7 +1046,7 @@
         "server/src/auth/index.ts",
         "server/src/app.ts"
       ],
-      "contract": "interfaces §3.2 的51 Admin/Organization HTTP端点和无path addMember逐项D/I/R/S/P/X；每个Organization GET检查暂停成员/公司/缺proof或直接X；未知method/path拒绝。allowUserToCreateOrganization:false、disableOrganizationDeletion:true、无impersonate/dynamic roles。 原生HTTP目录写请求(含SCIM PUT/PATCH/DELETE)一律由ingress转译为外层事务内auth.api.<endpoint>({headers,body,query,asResponse})调用（auth.api不经runWithAdapter）；SSO 10个管理/登录端点+回调族与SCIM 9个资源路径按interfaces §3.2新增全表逐项D/I/R/S/P/X处置，写方法一律转译、不直挂handler。",
+      "contract": "interfaces §3.2 的51 Admin/Organization HTTP端点和无path addMember逐项D/I/R/S/P/X；每个Organization GET检查暂停成员/公司/缺proof或直接X；未知method/path拒绝。allowUserToCreateOrganization:false、disableOrganizationDeletion:true、无impersonate/dynamic roles。 原生HTTP目录写请求(含SCIM PUT/PATCH/DELETE)一律由ingress转译为外层事务内auth.api.<endpoint>({headers,body,query,asResponse})调用（auth.api不经runWithAdapter）；SSO 10个管理/登录端点+回调族与SCIM 9个资源路径按interfaces §3.2新增全表逐项D/I/R/S/P/X处置，写方法一律转译、不直挂handler。 真实createApp及本Task已就绪的生产executor/ingress必须重新跑全量HTTP写入口txid矩阵；P01测试支架结果不能当生产装配。当前未启用的动作必须拒绝且零DML，后续ownerTask启用时和T08.05复验同一清单。",
       "actions": [
         "按固定源码生成逐端点处置登记，HTTP与auth.api不得裸写",
         "实现DirectoryReadGate同tx核验lifecycle/proof及原动作权限",
@@ -1047,7 +1054,8 @@
       ],
       "cases": [
         "native_directory_get_matrix_checks_lifecycle_and_assurance: 每GET三类session expect([403,404]).toContain(status)",
-        "disabled_native_admin_and_deletion_routes_are_refused: 删除/模拟登录/未知方法expect(status).not.toBe(200)"
+        "disabled_native_admin_and_deletion_routes_are_refused: 删除/模拟登录/未知方法expect(status).not.toBe(200)",
+        "mounted_directory_http_writes_share_production_executor_tx: 用真实createApp生产ingress/executor逐当前可达写方法HTTP请求，expect(baDmlTxid).toBe(productionOuterTxid)，未接线项expect(dmlCount).toBe(0)且拒绝"
       ],
       "test_file": "server/tests/better-auth/ingress-coverage.test.ts",
       "kind": "db",
@@ -1084,7 +1092,7 @@
         "server/src/auth/directory/outbox.ts",
         "server/src/auth/directory/contracts.ts"
       ],
-      "contract": "事务内登记加密outbox/内部receipt，request-local callback开始/完成/原错；finalizer在commit前逐token对账。投递只消费已commit意图、稳定幂等key；late callback tx已关闭即拒绝。",
+      "contract": "事务内登记加密outbox/内部receipt，request-local callback开始/完成/原错；finalizer在commit前逐token对账。投递只消费已commit意图、稳定幂等key；late callback tx已关闭即拒绝。 通知转译合同enqueueAuthMailIntent(tx,intent):Promise<OutboxReceipt>供T04.04消费；kind含link-account.verify，内部校验活跃tx、稳定事件幂等键并加密URL/token。通知类hook在提交前只经受控sender转译为意图/receipt，原发信closure不进入提交后drain；只有delivery在commit后外发，转换失败由receipt围栏回滚。",
       "actions": [
         "实现当前tx capability与outbox登记、完成receipt和提交围栏",
         "对callback吞错保留原异常后回滚，未知邮箱无新token无需receipt",
@@ -1093,7 +1101,8 @@
       ],
       "cases": [
         "outbox_is_not_delivered_before_commit: expect(sentBeforeCommit).toHaveLength(0)",
-        "late_or_failed_callback_cannot_leave_token_without_intent: expect(tokenCount).toBe(intentCount)"
+        "late_or_failed_callback_cannot_leave_token_without_intent: expect(tokenCount).toBe(intentCount)",
+        "deferred_link_account_notification_becomes_atomic_outbox_intent: 受控通知转换commit后expect(intents).toHaveLength(1)，rollback后expect(intents).toHaveLength(0)，转换/排队阶段expect(externalSends).toBe(0)"
       ],
       "test_file": "server/tests/better-auth/outbox-fence.test.ts",
       "kind": "db",
@@ -1701,12 +1710,15 @@
       "actions": [
         "接固定版验证URL、限流/重发、邮箱变化/过期检查",
         "在注册/验证账户事务中登记加密邮件并用callback完成receipt围栏防吞错",
-        "真实邮件接收器验证signup→verify→accept，不把邮箱验证当公司proof"
+        "真实邮件接收器验证signup→verify→accept，不把邮箱验证当公司proof",
+        "用签名测试IdP的真实SSO/link-account HTTP回调，分别启用sendOnSignUp/sendOnSignIn使deferNonDatabaseWrites通知分支真实可达；提交前走T02.12意图转换，回滚不外发、提交后投递重试沿同幂等键，未装转换器则相关配置启动拒绝"
       ],
       "cases": [
         "password_signup_verify_then_accept_invitation: expect(member.status).toBe(\"active\")",
         "expired_or_changed_email_verification_is_refused: expect(status).not.toBe(200)",
-        "verification_mail_is_not_sent_before_user_commit: expect(sentBeforeCommit).toHaveLength(0)"
+        "verification_mail_is_not_sent_before_user_commit: expect(sentBeforeCommit).toHaveLength(0)",
+        "enabled_link_account_mail_uses_outbox_and_rollback_sends_nothing: 在真实link-account回调启用相关配置，commit前expect(sent).toHaveLength(0)，rollback后expect(intents).toHaveLength(0)，commit后只经outbox投递",
+        "link_account_mail_retry_is_idempotent_and_missing_conversion_blocks_startup: 注入投递失败再重试expect(deliveredIdempotencyKeys).toEqual([expectedKey])，启用邮件却缺转换器expect(started).toBe(false)"
       ],
       "test_file": "server/tests/better-auth/email-verification.test.ts",
       "kind": "db",
@@ -2292,11 +2304,13 @@
       "actions": [
         "逐方法替换旧reconciler直接SQL写，保留固定externalId/binding维度",
         "多团队变化同一原子事件，角色最低member并重验批准规则",
-        "将recordProvisioned/role投影迁同tx finalizer，实际HTTP逐步故障全回滚"
+        "将recordProvisioned/role投影迁同tx finalizer，实际HTTP逐步故障全回滚",
+        "在factory测试中分别删除organizationProvisioning及设disabled:false，均必须在route可用前拒绝启动；disabled:true为可启动正向"
       ],
       "cases": [
         "scim_a_deactivate_preserves_b_and_personal_account: expect(bActive).toBe(true)",
-        "scim_first_provision_hook_failure_rolls_back_roles_projection_members_and_clocks: expect(after).toEqual(before)"
+        "scim_first_provision_hook_failure_rolls_back_roles_projection_members_and_clocks: expect(after).toEqual(before)",
+        "sso_factory_missing_or_false_disabled_flag_blocks_startup: 分别缺organizationProvisioning或disabled:false expect(started).toBe(false)，disabled:true配置正向expect(started).toBe(true)"
       ],
       "test_file": "server/tests/better-auth/scim-provisioning.test.ts",
       "kind": "db",
@@ -2325,7 +2339,8 @@
       "epic": "T05",
       "title": "把 JIT 与批准组规则接入单次团队能力",
       "depends_on": [
-        "T05.05"
+        "T05.05",
+        "T04.04"
       ],
       "owned_files": [
         "server/src/auth/index.ts",
@@ -2335,7 +2350,7 @@
         "server/src/auth/directory/executor.ts",
         "server/scripts/enterprise-runtime-seed.ts"
       ],
-      "contract": "provisioning.rule.approve/revoke仅当前公司owner/admin；规则固定binding/externalGroup/teams/最低member与revision，scim/jit无批准权；事件的团队能力绑定rule revision/company/event/tx/target。 ingress对/sso/register、/sso/update-provider等受控配置写剥离并拒绝客户端提交的organizationId，provider↔公司绑定只由服务器按固定binding写入；带organizationId的OIDC/SAML回调不产生member行(固定版assignOrganization分支不可达)。 server/scripts/enterprise-runtime-seed.ts启动种子写入按T02.13静态清单处置，ba分支不独立写目录。",
+      "contract": "provisioning.rule.approve/revoke仅当前公司owner/admin；规则固定binding/externalGroup/teams/最低member与revision，scim/jit无批准权；事件的团队能力绑定rule revision/company/event/tx/target。 ingress对/sso/register、/sso/update-provider等受控配置写剥离并拒绝客户端提交的organizationId，provider↔公司绑定只由服务器按固定binding写入；带organizationId的OIDC/SAML回调不产生member行(固定版assignOrganization分支不可达)。 server/scripts/enterprise-runtime-seed.ts启动种子写入按T02.13静态清单处置，ba分支不独立写目录。 显式消费T04.04已审查的createAuthMail与auth/index.ts邮件factory/outbox接线检查点，再启用生产SSO邮件复验；T04.04未verified时本Task不得ready，不以测试内模拟sender替代该接线。",
       "actions": [
         "实现现有公司管理配置对规则审批/撤销的受控命令",
         "JIT从验过的issuer+subject/binding构造actor，不按邮箱授资格",
@@ -2345,7 +2360,8 @@
         "approved_rule_adds_team_and_revoked_rule_rejects: expect(allowedAfterRevoke).toBe(false)",
         "provisioning_capability_cannot_cross_company_or_request: expect(status).toBe(403)",
         "ordinary_login_cannot_reapply_initial_admin: expect(role).toBe(\"user\")",
-        "sso_callback_with_provider_organization_id_never_creates_member: provider带organizationId回调expect(memberRows).toHaveLength(0)"
+        "sso_callback_with_provider_organization_id_never_creates_member: provider带organizationId回调expect(memberRows).toHaveLength(0)",
+        "mounted_sso_link_account_mail_has_no_post_commit_callback_bypass: 在生产SSO callback接线重跑启用邮件配置与回滚/重试，expect(rawCallbackSends).toBe(0)，只允许已提交outbox delivery外发"
       ],
       "test_file": "server/tests/better-auth/provisioning-global-admin.test.ts",
       "kind": "db",
@@ -2355,6 +2371,7 @@
       "finding_ids": [
         "F-02",
         "F-04",
+        "F-08",
         "H1"
       ],
       "commands": [
@@ -4590,11 +4607,13 @@
       "actions": [
         "从实际注册/consumer调用点核验已实现清单，不只列手工预期",
         "新增未知入口、漏GET反例、错target/过期检查点非零失败",
-        "公共例外写明确理由，清单留版本控制而非archive"
+        "公共例外写明确理由，清单留版本控制而非archive",
+        "消费T01.03版本化直写扫描器与manifest，注入固定包清单外ctx.context.adapter写调用证明审计非零，不只检查HTTP surface新增"
       ],
       "cases": [
         "unknown_mounted_route_or_missing_native_get_counterexample_fails_audit: expect(exitCode).not.toBe(0)",
-        "every_enabled_surface_has_current_positive_and_negative_test: expect(unclassified).toEqual([])"
+        "every_enabled_surface_has_current_positive_and_negative_test: expect(unclassified).toEqual([])",
+        "source_scan_detects_unlisted_direct_adapter_write: 临时包源码增加清单外直接adapter写入，expect(auditExitCode).not.toBe(0)"
       ],
       "test_file": "tests/better-auth-surface-audit.test.ts",
       "kind": "node",
@@ -4611,7 +4630,8 @@
       ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T08.04/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-surface-audit.test.ts",
-        "node scripts/e2e-coverage-audit.mjs"
+        "node scripts/e2e-coverage-audit.mjs",
+        "node scripts/check-better-auth-adapter-writes.mjs"
       ],
       "interface_fragments": [
         "native"
@@ -4646,7 +4666,10 @@
       "cases": [
         "unwrapped_auth_write_or_old_member_writer_blocks_startup: expect(baStarted).toBe(false)",
         "mixed_authority_process_cannot_write: expect(oldProcessWrites).toBe(0)",
-        "every_mounted_business_surface_has_positive_and_negative_case: expect(unclassified).toEqual([])"
+        "every_mounted_business_surface_has_positive_and_negative_case: expect(unclassified).toEqual([])",
+        "all_enabled_http_directory_writes_use_production_transaction: 全量已启用Admin/Organization/SSO/SCIM方法经真实createApp和生产executor，expect(baDmlTxid).toBe(outerTxid)，handler可达或仍未接线均失败",
+        "mounted_app_rejects_unsafe_sso_provisioning_config: 对真实createApp分别注入缺失或disabled:false配置，expect(appStarted).toBe(false)，不能仅用mock factory检查",
+        "unlisted_package_adapter_write_blocks_real_startup: 注入清单外包源码直写并运行真实启动检查，expect(appStarted).toBe(false)"
       ],
       "test_file": "server/tests/better-auth/mounted-assembly.test.ts",
       "kind": "db",
@@ -4655,12 +4678,14 @@
       "validator_role": "backend_validator",
       "finding_ids": [
         "F-01",
+        "F-02",
         "F-03",
         "H3"
       ],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T08.05/green E2E_BUN_ONLY=server/tests/better-auth:T08.05 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
-        "node scripts/e2e-coverage-audit.mjs"
+        "node scripts/e2e-coverage-audit.mjs",
+        "node scripts/check-better-auth-adapter-writes.mjs"
       ],
       "interface_fragments": [],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
@@ -5975,9 +6000,10 @@
       "tasks": [
         "T05.05",
         "T05.06",
-        "T02.14"
+        "T02.14",
+        "T08.05"
       ],
-      "criterion": "organizationProvisioning disabled硬前提并启动拒绝；ingress拒客户端organizationId；回调不产生member；M2核验sso_providers.organization_id为空"
+      "criterion": "organizationProvisioning disabled硬前提并在缺失/false配置下启动拒绝；ingress拒客户端organizationId；回调不产生member；M2核验sso_providers.organization_id为空"
     },
     "F-03": {
       "tasks": [
@@ -6022,9 +6048,10 @@
       "tasks": [
         "T01.04",
         "T02.12",
-        "T04.04"
+        "T04.04",
+        "T05.06"
       ],
-      "criterion": "link-account dispatchVerificationEmail按通知类登记并由outbox接管，启用前先接管"
+      "criterion": "link-account dispatchVerificationEmail按通知类转为事务内outbox；真实启用配置callback验证提交/回滚/幂等重试，缺转换器启动拒绝，生产SSO再复验"
     },
     "F-09": {
       "tasks": [
