@@ -20,13 +20,18 @@ describe("naming a tool call", () => {
       "mcp__parallel__web_search",
       "mcp__firecrawl__firecrawl_search",
     ]) {
-      expect(readToolName(name)).toEqual({ label: "Search the web" });
+      expect(readToolName(name)).toEqual({
+        label: "Search the web",
+        labelKey: "tools.researchSearch",
+      });
     }
     expect(readToolName("mcp__exa__web_fetch_exa")).toEqual({
       label: "Read web pages",
+      labelKey: "tools.researchFetch",
     });
     expect(readToolName("mcp__firecrawl__firecrawl_scrape")).toEqual({
       label: "Read web pages",
+      labelKey: "tools.researchFetch",
     });
     // Only the research pair is relabelled; a provider's other tools keep their own names.
     expect(readToolName("mcp__firecrawl__firecrawl_map").label).toBe(

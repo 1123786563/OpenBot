@@ -6,6 +6,7 @@ import { createAuditStore } from "../src/audit";
 import { createCredentialStore } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import { agents, users } from "../src/db/schema/core";
+import { credentials as credentialRows } from "../src/db/schema/core";
 import { agentProfiles } from "../src/db/schema/coworker";
 import { defaultOptOuts } from "../src/db/schema/defaults";
 import { memorySources } from "../src/db/schema/memory";
@@ -13,6 +14,7 @@ import {
   brokeredConnections,
   mcpServers,
   mcpTools,
+  mcpUserCredentials,
 } from "../src/db/schema/plugins";
 import { proactiveSettings } from "../src/db/schema/proactive";
 import {
@@ -21,6 +23,7 @@ import {
   lockDefaults,
 } from "../src/memory/defaults";
 import { createMemoryIngestion } from "../src/memory/ingestion";
+import { MemoryRefusedError } from "../src/memory/types";
 import { createMemoryStore } from "../src/memory/store";
 import { createPluginStore } from "../src/plugins/store";
 import { createProactiveStore } from "../src/proactive/store";
@@ -469,5 +472,206 @@ describe("background research, on by default", () => {
     }
     expect(await researchOf(owner, bot)).toHaveLength(1);
     expect(await sourcesOf(owner, bot)).toHaveLength(1);
+  });
+});
+
+/*
+ * #489 F01-01 adjudication, pinned behaviourally: memory ingestion KEEPS upstream's row-existence
+ * semantics for a withdrawn credential. Upstream's connectionsFor doc — the row shape T6 adopted —
+ * rules it outright: "Reported rather than filtered. A caller that wants 'connected' asks for a row
+ * that is not revoked; one that wants to draw every app somebody has ever connected still can, and
+ * memory ingestion's existence check keeps the behaviour it had" (upstream
+ * plugin-store/connections.ts). So a revoked row still passes the authorize existence check and
+ * still yields a default source candidate — the source stays configured, and revocation's effect
+ * lives one layer down, where the sync's own callTool fails closed on the vault's revoked-credential
+ * refusal. The contrast case (the row gone) proves the check itself is alive and it is the row that
+ * decides. The surfaces that DO drop revoked rows (craft) are pinned separately in
+ * server/tests/revoked-connection-consumers.test.ts.
+ */
+describe("a revoked connection keeps upstream's row-existence semantics (#489 F01-01)", () => {
+  const revokedOwner = `revoked-owner-${suite}`;
+  const revokedBot = `revoked-bot-${suite}`;
+  // A real catalogue key, because the authorize check runs only for `user-oauth` servers and the
+  // auth kind comes from the catalogue entry for the row's id (plugin-user-credential's precedent).
+  const oauthServerId = "google-drive";
+  const oauthToolName = `list_drive_everything_${suite}`;
+  const oauthRef = `${oauthServerId}/${oauthToolName}`;
+  const credentialIds: string[] = [];
+  let suiteCreatedServerRow = false;
+  let suiteCreatedToolRow = false;
+
+  /** A connected-then-withdrawn personal connection, written directly so no vendor is reached. */
+  async function connectRevoked(userId: string) {
+    const [credential] = await database
+      .insert(credentialRows)
+      .values({
+        kind: "mcp_user_token",
+        provider: oauthServerId,
+        keyId: userId,
+        metadata: {},
+        // Never decrypted on these paths: connectionsFor joins for revokedAt only, and neither
+        // authorize nor defaultSourceCandidates reads the vault.
+        encryptedValue: "cmV2b2tlZC1maXh0dXJlLW5vdC1hLXNlY3JldA==",
+      })
+      .returning({ id: credentialRows.id });
+    if (!credential) throw new Error("credential was not stored");
+    credentialIds.push(credential.id);
+    await database
+      .insert(mcpUserCredentials)
+      .values({
+        serverId: oauthServerId,
+        userId,
+        credentialId: credential.id,
+        scope: "https://www.googleapis.com/auth/drive.readonly",
+      })
+      .onConflictDoUpdate({
+        target: [mcpUserCredentials.serverId, mcpUserCredentials.userId],
+        set: { credentialId: credential.id },
+      });
+    const revokedAt = new Date();
+    await database
+      .update(credentialRows)
+      .set({ revokedAt, updatedAt: revokedAt })
+      .where(eq(credentialRows.id, credential.id));
+    return credential.id;
+  }
+
+  beforeAll(async () => {
+    await database.insert(users).values({
+      id: revokedOwner,
+      email: `${revokedOwner}@example.test`,
+    });
+    await database.insert(agents).values({
+      id: revokedBot,
+      name: revokedBot,
+      type: "built_in",
+      configuration: {},
+    });
+    await database.insert(agentProfiles).values({
+      agentId: revokedBot,
+      ownerUserId: revokedOwner,
+      title: revokedBot,
+      roleDescription: "Assist",
+      avatarSeed: revokedBot,
+      visibility: "private",
+    });
+    const [existingServer] = await database
+      .select({ id: mcpServers.id })
+      .from(mcpServers)
+      .where(eq(mcpServers.id, oauthServerId));
+    if (!existingServer) {
+      await database
+        .insert(mcpServers)
+        .values({
+          id: oauthServerId,
+          title: "Google Drive",
+          vendor: "Google",
+          url: "https://www.googleapis.com/drive/v3",
+          provenance: "first-party",
+        })
+        .onConflictDoNothing();
+      suiteCreatedServerRow = true;
+    }
+    const [existingTool] = await database
+      .select({ name: mcpTools.name })
+      .from(mcpTools)
+      .where(eq(mcpTools.serverId, oauthServerId));
+    if (!existingTool) {
+      suiteCreatedToolRow = true;
+    }
+    await database
+      .insert(mcpTools)
+      .values({
+        serverId: oauthServerId,
+        name: oauthToolName,
+        description: "List everything, asking nothing.",
+        effect: "read",
+        inputSchema: { type: "object" },
+      })
+      .onConflictDoNothing();
+    await plugins.grant("mcp", oauthRef, revokedBot, revokedOwner);
+  });
+
+  afterAll(async () => {
+    await database
+      .delete(mcpUserCredentials)
+      .where(
+        and(
+          eq(mcpUserCredentials.serverId, oauthServerId),
+          eq(mcpUserCredentials.userId, revokedOwner),
+        ),
+      );
+    if (credentialIds.length)
+      await database
+        .delete(credentialRows)
+        .where(inArray(credentialRows.id, credentialIds));
+    await database
+      .delete(mcpTools)
+      .where(
+        and(
+          eq(mcpTools.serverId, oauthServerId),
+          eq(mcpTools.name, oauthToolName),
+        ),
+      );
+    if (suiteCreatedToolRow && !suiteCreatedServerRow) {
+      // This run advertised a tool on a server it did not create: the tool row above is already
+      // gone; nothing further to tidy on a row another deployment owns.
+    }
+    if (suiteCreatedServerRow)
+      await database
+        .delete(mcpServers)
+        .where(eq(mcpServers.id, oauthServerId));
+    await database
+      .delete(agents)
+      .where(inArray(agents.id, [revokedBot]));
+    await database
+      .delete(users)
+      .where(inArray(users.id, [revokedOwner]));
+  });
+
+  test("the store reports the row as revoked, not as gone (T6's seam)", async () => {
+    await connectRevoked(revokedOwner);
+    await expect(plugins.connectionsFor(revokedOwner)).resolves.toMatchObject(
+      [{ serverId: oauthServerId, revoked: true }],
+    );
+  });
+
+  test("authorize still passes on a revoked row's existence, still refuses on no row", async () => {
+    // The existence check asks "does a row exist", never "is it live" — upstream's kept behaviour.
+    await expect(
+      ingestion.authorize({
+        ownerUserId: revokedOwner,
+        agentId: revokedBot,
+        toolRef: oauthRef,
+      }),
+    ).resolves.toBeTruthy();
+    // The contrast: the SAME person, the SAME server, the row gone — the refusal the check exists
+    // to give. It proves the check ran above and it is the row that decided, not a skip.
+    await database
+      .delete(mcpUserCredentials)
+      .where(
+        and(
+          eq(mcpUserCredentials.serverId, oauthServerId),
+          eq(mcpUserCredentials.userId, revokedOwner),
+        ),
+      );
+    await expect(
+      ingestion.authorize({
+        ownerUserId: revokedOwner,
+        agentId: revokedBot,
+        toolRef: oauthRef,
+      }),
+    ).rejects.toThrow(new MemoryRefusedError("Reconnect this app to use its memories."));
+  });
+
+  test("default candidates follow the same row fact while the row exists", async () => {
+    await connectRevoked(revokedOwner);
+    const candidates = await ingestion.defaultSourceCandidates(
+      revokedOwner,
+      revokedBot,
+    );
+    expect(candidates.map((candidate) => candidate.serverId)).toContain(
+      oauthServerId,
+    );
   });
 });

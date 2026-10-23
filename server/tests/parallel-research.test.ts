@@ -2,6 +2,7 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { z } from "zod";
+import { RESEARCH_TOOLS, researchRoleOf } from "../../shared/research";
 import {
   catalogueEntry,
   classifyTool,
@@ -74,7 +75,7 @@ describe("Parallel public-web research", () => {
     expect(guidance).toContain("Parallel: Generate one session_id");
     expect(guidance).toContain("Parallel: Omit model_name");
   });
-  test("ships a Research Desk declaration referencing catalogue tools without granting access", () => {
+  test("ships a Research Desk declaration referencing research roles without granting access", () => {
     const skills = parse(
       readFileSync(
         new URL("../../examples/fintech/skills.yaml", import.meta.url),
@@ -84,12 +85,24 @@ describe("Parallel public-web research", () => {
     const skill = skills.find(
       (item: { slug: string }) => item.slug === "research-public-web",
     );
-    expect(skill.tools).toEqual([
-      "parallel/web_search",
-      "parallel/web_fetch",
-      "parallel-authenticated/web_search",
-      "parallel-authenticated/web_fetch",
-    ]);
+    // The shipped skill declares the two research roles and nothing else. A declaration is a
+    // claim about which roles a Bot needs, intersected with the tools it already holds at
+    // selection time (pinned in web-research.test.ts), so it grants nobody anything by existing.
+    expect(skill.tools).toEqual(["@research/search", "@research/fetch"]);
+    for (const ref of skill.tools as string[])
+      expect(researchRoleOf(ref)).not.toBeNull();
+    // The roles still resolve onto Parallel's own real tool names at both catalogue spellings, so
+    // grants of the original real refs keep working beside role declarations.
+    expect(RESEARCH_TOOLS.parallel).toMatchObject({
+      search: "web_search",
+      fetch: "web_fetch",
+    });
+    expect(RESEARCH_TOOLS["parallel-authenticated"]).toMatchObject({
+      search: "web_search",
+      fetch: "web_fetch",
+    });
+    for (const key of ["parallel", "parallel-authenticated"])
+      expect(catalogueEntry(key)).not.toBeNull();
     const desk = parse(
       readFileSync(
         new URL(

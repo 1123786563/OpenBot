@@ -96,14 +96,22 @@ export interface MastraToolGuard {
  * `mcp__<server>__<tool>` (selection and grants are written in the `ref`
  * spelling; `toolNameFor` converts once, in plugins). Anything outside this
  * charset — or past 64 characters, the OpenAI tool-name cap (the strictest
- * provider; Anthropic allows 128, which is no reason to admit names OpenAI
- * would refuse) — cannot be addressed safely by every provider and refuses.
+ * provider) — refuses.
+ *
+ * The dot is admitted (UP10/#489 integration evidence chain): MCP tool
+ * naming legally carries it and real brokered servers use it — OpenConnector's
+ * action ids are dotted (`github.get_current_user`), and the brokered enable/
+ * grant flow offers exactly those names, so the earlier `[A-Za-z0-9_-]`
+ * charset refused every real OpenConnector grant at configuration time. The
+ * 64-character cap and every other character stay as they were; a dot makes
+ * no path (a `/` is still refused) and no prototype (mount records are
+ * null-prototype) on this runtime.
  *
  * Exported so the grant write (plugins/store.ts, where `toolNameFor` mints
  * the name) enforces the SAME rule at configuration time; this mount-time
  * check stays as defense in depth for grants written before that gate.
  */
-export const VALID_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+export const VALID_TOOL_NAME = /^[A-Za-z0-9._-]{1,64}$/;
 
 export function isReservedToolName(name: string): boolean {
   // The runtime's own system tools: the learned-skill pair (ME08 mounts them

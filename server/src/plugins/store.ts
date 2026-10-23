@@ -5208,7 +5208,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         const modelToolName = toolNameFor(ref);
         if (!VALID_TOOL_NAME.test(modelToolName)) {
           throw new PluginRefusedError(
-            `GRANT_TOOL_NAME_INVALID: ${modelToolName} cannot be offered to a model (a tool name is 1-64 characters of A-Z, a-z, 0-9, "_" and "-"; the server and tool halves of the ref spell it).`,
+            `GRANT_TOOL_NAME_INVALID: ${modelToolName} cannot be offered to a model (a tool name is 1-64 characters of A-Z, a-z, 0-9, ".", "_" and "-"; the server and tool halves of the ref spell it).`,
             null,
           );
         }
@@ -5474,16 +5474,47 @@ export function createPluginStore(options: PluginStoreOptions) {
     oauthClientFor: storedOAuthClient,
 
     /** Which `user-oauth` servers this person has connected, for their own settings page. */
-    async connectionsFor(
-      userId: string,
-    ): Promise<{ serverId: string; scope: string; connectedAt: string }[]> {
+    async connectionsFor(userId: string): Promise<
+      {
+        serverId: string;
+        scope: string;
+        connectedAt: string;
+        /**
+         * Whether the credential this row points at has been withdrawn.
+         *
+         * THE ROW OUTLIVES THE SECRET, and until this field existed the two were impossible to tell
+         * apart from outside. Revoking a credential sets `revoked_at` on the credential; it does not
+         * delete the row here, which goes on pointing at it — so "this person has a row for Notion"
+         * and "this person can use Notion" are different facts, and every reader of this list was
+         * getting the first while asking the second. A reconnection does not settle it either: the
+         * upsert moves `credential_id` and `updated_at` and leaves `connected_at` where it was, so
+         * nothing in the shape this used to return changes when access comes back.
+         *
+         * Reported rather than filtered. A caller that wants "connected" asks for a row that is not
+         * revoked; one that wants to draw every app somebody has ever connected still can, and
+         * memory ingestion's existence check keeps the behaviour it had.
+         */
+        revoked: boolean;
+      }[]
+    > {
       const rows = await database
         .select({
           serverId: mcpUserCredentials.serverId,
           scope: mcpUserCredentials.scope,
           connectedAt: mcpUserCredentials.connectedAt,
+          revokedAt: credentialRows.revokedAt,
         })
         .from(mcpUserCredentials)
+        /*
+         * Inner, and total because of the foreign key: `credential_id` is a real reference that
+         * does not cascade, so a join row cannot outlive the credential it points at — a deletion
+         * is refused while the row is there. That is why there is no "the credential is gone" case
+         * to report here, and why a revoked credential is the only way this answer goes false.
+         */
+        .innerJoin(
+          credentialRows,
+          eq(credentialRows.id, mcpUserCredentials.credentialId),
+        )
         .where(eq(mcpUserCredentials.userId, userId))
         .orderBy(asc(mcpUserCredentials.serverId));
 
@@ -5491,6 +5522,7 @@ export function createPluginStore(options: PluginStoreOptions) {
         serverId: row.serverId,
         scope: row.scope,
         connectedAt: iso(row.connectedAt) ?? "",
+        revoked: row.revokedAt !== null,
       }));
     },
 

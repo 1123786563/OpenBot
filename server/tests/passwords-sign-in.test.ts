@@ -8,6 +8,7 @@ import {
 } from "@ag-ui/client";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
+import { serverTurnAdmission } from "../src/agents/turn-admission";
 import { parseApprovalContinuation } from "../src/approvals/types";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
@@ -16,10 +17,8 @@ import {
   ComputerUnreachableError,
 } from "../src/computer/client";
 import type { ComputerGateway } from "../src/computer/gateway";
-import {
-  createHeadlessComputerTools,
-  HeadlessToolSuspension,
-} from "../src/computer/headless-tools";
+import { createHeadlessComputerTools } from "../src/computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type {
   SignInCodeInput,
   SignInCodeResult,
@@ -37,7 +36,7 @@ import {
 } from "../src/passwords/service";
 import { createMemoryPasswordStore } from "../src/passwords/store";
 import { originOf, type SignInRequestRecord } from "../src/passwords/types";
-import { createTurnRunner, type RunnerLike } from "../src/routines/run-turn";
+import { createTurnRunner, type RunnerLike } from "@openbot/toolkit/run-turn";
 
 /**
  * The private sign-in request and the Passwords vault, as properties:
@@ -629,6 +628,7 @@ describe("an unattended turn that needs a sign-in", () => {
       stop: async () => true,
     };
     const run = createTurnRunner({
+      admission: serverTurnAdmission,
       intelligence: {
         getOrCreateThread: async () => undefined,
         getThreadMessages: async () => ({ messages: [] }),

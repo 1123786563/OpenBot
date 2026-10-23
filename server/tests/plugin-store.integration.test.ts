@@ -4476,7 +4476,7 @@ test("a Composio call by somebody who has not connected the app is refused with 
       botId: "bot_helper",
       actorId: "user_asker",
     }),
-  ).rejects.toThrow(/connect it and ask again/i);
+  ).rejects.toThrow(/connect it in settings and ask again/i);
 
   // Refused here rather than at Composio, so a person is told what to do instead of being shown
   // somebody else's error, and so no call is spent finding out.
@@ -4514,7 +4514,7 @@ test("a refusal nobody but the asker can clear carries the app to connect", asyn
     serverId: "gmail",
     title: "Gmail",
     message:
-      "You have not connected your Gmail account. Connect it and ask again.",
+      "You have not connected your Gmail account. Connect it in Settings and ask again.",
   });
 });
 
@@ -4555,7 +4555,7 @@ test("a Composio call by somebody who has not connected the app is refused even 
       botId: "bot_helper",
       actorId: "user_stranger",
     }),
-  ).rejects.toThrow(/connect it and ask again/i);
+  ).rejects.toThrow(/connect it in settings and ask again/i);
 
   // Never dialled, which is the half that matters: a call let through here is spent at the broker
   // in a stranger's name, and the person asking sees somebody else's mailbox or somebody else's
@@ -4623,7 +4623,7 @@ test("a Composio call whose row id and url name different apps is refused", asyn
       botId: "bot_helper",
       actorId: "user_asker",
     }),
-  ).rejects.toThrow(/connect it and ask again/i);
+  ).rejects.toThrow(/connect it in settings and ask again/i);
 
   // The gate keys on the app the url names, because that is the app the transport dials. Keyed on
   // the row id, this call completed: it ran a Slack action against a Gmail connection, sent the
@@ -4699,7 +4699,7 @@ test("an app whose accounts are somebody's still refuses without a row, and name
       botId: "bot_helper",
       actorId: "user_asker",
     }),
-  ).rejects.toThrow(/connect it and ask again/i);
+  ).rejects.toThrow(/connect it in settings and ask again/i);
 
   // Never dialled. The refusal is local so the person is told their own next step instead of shown
   // the broker's error about an account it cannot find, and no call is spent finding that out.

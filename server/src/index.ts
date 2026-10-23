@@ -2529,6 +2529,16 @@ const memoryIngestion = createMemoryIngestion({
 // Proactive research may only read; see proactive/restriction.ts. Read from the catalogue per call.
 const proactiveReadOnlyRefs = createReadOnlyClassifier(pluginStore);
 /** Team Bots: published Bots, their audiences, and teammates' consent to their own accounts. */
+/*
+ * Row existence, deliberately, revoked included (#489 F01-01 adjudication): upstream's own ruling
+ * for this exact wiring is that a Team Bot's call "go[es] out on the owner's account wherever the
+ * owner has one — connected, withdrawn or refused alike, exactly as `credentialActorFor` decides
+ * from `connectedServers`" (upstream plugin-store/app-access.ts, `describe`), and upstream's boot
+ * spreads `connectionsFor` into this set unfiltered the same way. A withdrawn owner row keeps the
+ * routing — and with it the failure that names the real cause — rather than silently switching the
+ * call onto the teammate's account; the call itself still fails closed in the vault, where a revoked
+ * credential is refused before anything leaves. Pinned by server/tests/revoked-connection-consumers.test.ts.
+ */
 const teamBots = createTeamBots({
   database,
   connectedServers: async (userId) =>
@@ -6803,66 +6813,76 @@ const craftMcpRelayBaseUrl =
  * An unwired knowledge service holds the skill back entirely (null) — the
  * AGENTS.md Company-knowledge section stays out with it.
  */
+/*
+ * The valid-connection fact every craft resolver below reads (#489 F01-01: revocation stays
+ * effective). `connectionsFor` REPORTS a withdrawn credential rather than filtering it — upstream's
+ * deliberate shape, because the settings page wants every app a person ever connected — but craft
+ * offers no settings view: each of its three surfaces rides on a connection a call would actually
+ * go out on, and the relay refuses to forward on a revoked credential (`mcpWireConnectionFor` goes
+ * through `connectionTokenFor`, which turns a revoked credential into a refusal). An entry offered
+ * over a revoked row would be exactly the permanently failed MCP client `mcpWireServersFor`'s own
+ * invariant refuses to create — the offered set and the forwardable set are the same set — and a
+ * connector skill shipped over one would name tools no call can use. Counting only unrevoked rows
+ * also puts the withdrawn app back on the connectable list, which is the reconnect advice the
+ * connect flow already gives. Upstream has no craft surface, so the ruling here is #489 Spec's, not
+ * upstream's report-don't-filter stance. Brokered rows carry no revoked state at all (a brokered
+ * disconnect deletes the row), so only the vault side filters. Pinned by
+ * server/tests/revoked-connection-consumers.test.ts.
+ */
+const craftConnectedServerIdsFor = async (
+  userId: string,
+): Promise<Set<string>> => {
+  const [held, brokered] = await Promise.all([
+    pluginStore.connectionsFor(userId),
+    pluginStore.brokeredConnectionsFor(userId),
+  ]);
+  return new Set([
+    ...held.filter((row) => !row.revoked).map((row) => row.serverId),
+    ...brokered.map((row) => row.serverId),
+  ]);
+};
 const craftManagedContentFor = createCraftManagedContentResolver({
   connectableAppsFor: async (userId) => {
-    const [servers, held, brokered] = await Promise.all([
-      pluginStore.listServers(),
-      pluginStore.connectionsFor(userId),
-      pluginStore.brokeredConnectionsFor(userId),
-    ]);
+    const servers = await pluginStore.listServers();
     return personalUnconnectedApps(
       servers,
-      new Set([
-        ...held.map((row) => row.serverId),
-        ...brokered.map((row) => row.serverId),
-      ]),
+      await craftConnectedServerIdsFor(userId),
     );
   },
   /*
    * The builtin skills (onyx's $ONYX/skills/builtin): pptx and
    * craft-documentation ship to everyone; a connector skill ships only when
-   * the user has connected the matching MCP server (onyx's
-   * connected-apps-only rule) — the personal connection set above is the same
-   * fact the connectable list inverts. company-search ships when the
-   * knowledge domain backs it, its sources section rendering the deployment's
-   * knowledge bases (onyx renders the user's connector sources; OpenBot's KB
-   * domain is deployment-tenant — the ruled D1 shape).
+   * the user has a live connection to the matching MCP server (onyx's
+   * connected-apps-only rule) — the same valid-connection fact
+   * {@link craftConnectedServerIdsFor} reads, which the connectable list
+   * inverts. company-search ships when the knowledge domain backs it, its
+   * sources section rendering the deployment's knowledge bases (onyx renders
+   * the user's connector sources; OpenBot's KB domain is deployment-tenant —
+   * the ruled D1 shape).
    */
-  skillFilesFor: async (userId) => {
-    const [held, brokered] = await Promise.all([
-      pluginStore.connectionsFor(userId),
-      pluginStore.brokeredConnectionsFor(userId),
-    ]);
-    return builtinSkillFilesFor({
-      connectedServerIds: new Set([
-        ...held.map((row) => row.serverId),
-        ...brokered.map((row) => row.serverId),
-      ]),
-    });
-  },
+  skillFilesFor: async (userId) =>
+    builtinSkillFilesFor({
+      connectedServerIds: await craftConnectedServerIdsFor(userId),
+    }),
   /*
    * The per-user craft MCP set (the contract's C3 ruling): personal-account
-   * servers the user HAS connected — the same connection fact the connectable
-   * list inverts. Each entry's url is the RELAY route, never the vendor
-   * endpoint: the credential attaches on the server side (mcp-relay.ts), so
-   * none can enter a workspace file. Unconnected servers are dropped entirely,
-   * onyx's unauthenticated-drop, because the relay would refuse their calls.
+   * servers the user has a live connection to — the same valid-connection
+   * fact {@link craftConnectedServerIdsFor} reads, which the connectable list
+   * inverts, so a withdrawn credential drops the entry rather than offering a
+   * server the relay would refuse. Each entry's url is the RELAY route, never
+   * the vendor endpoint: the credential attaches on the server side
+   * (mcp-relay.ts), so none can enter a workspace file. Unconnected servers
+   * are dropped entirely, onyx's unauthenticated-drop, because the relay
+   * would refuse their calls.
    */
   mcpServersFor: async (userId) => {
-    const [wireServers, held, brokered] = await Promise.all([
-      pluginStore.mcpWireServersFor(),
-      pluginStore.connectionsFor(userId),
-      pluginStore.brokeredConnectionsFor(userId),
-    ]);
+    const wireServers = await pluginStore.mcpWireServersFor();
     return resolveCraftMcpServers({
       servers: wireServers.map((server) => ({
         id: server.id,
         name: server.title,
       })),
-      connectedServerIds: new Set([
-        ...held.map((row) => row.serverId),
-        ...brokered.map((row) => row.serverId),
-      ]),
+      connectedServerIds: await craftConnectedServerIdsFor(userId),
       relayBaseUrl: craftMcpRelayBaseUrl,
     });
   },
