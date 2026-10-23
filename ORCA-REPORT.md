@@ -1,153 +1,143 @@
-# [bf-B3] Bifrost B 类核验 — #279 / #287 / #295 / #325 / #341
+# [mt-M4] 批次核验报告：#121、#143、#146、#155、#167（MT078/100/103/112/124）
 
-批次：bf-B3（Bifrost 域，B 类）。Worktree：`1123786563/bf027`（BASE `3ca32d49`）。
-DB：`TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5561/bf027`（容器 `orca-all-bf027-pg`，保留未删）；另为本批新建 `openbot_enterprise_bf027`（同容器，MT 族专用库，已跑 `scripts/migrate.ts` + MT069/MT070 任务迁移，保留）。
-本批改动：**仅 1 处测试侧漂移修复（#287 佐证面，+6 行）**，产品侧零改动（IMPLEMENTED 配额 0/1）。
-上一批遗留的 `server/tests/recovery-unacked-replay.integration.test.ts` 4 行 spy 断言保留未动（复核：main `origin/main` 尚未含该 4 行，仍在未提交区）。
-本报告覆盖 bf-B2 旧报告（旧批 #264/#270/#272/#273/#278 已结算）。
+批次：[mt-M4]，worktree `1123786563/mt011` @ HEAD `3ca32d49`。日期：2026-10-19。
+零代码改动（`git status` 仅本报告未跟踪；本报告覆盖上一批 [mt-M3] 报告，票号见标题）。
+执行中断说明：17:39 一次 API 断连后按协调器指令续跑；所有核验证据在断连前后连续取得，无重做。
 
-## 总览
+## 结论速览
 
-| 票 | 标题 | 结论 |
+| 票 | MT | 结论 | 一句话 |
+|---|---|---|---|
+| #121 | MT078 | **BLOCKED-GAP** | 审计分域/审计查询授权/计费管理动作授权整域未实施；且依赖 #116 的验证件在 HEAD 上红 |
+| #143 | MT100 | **BLOCKED-GAP** | 桌面组织切换的媒体/缓存/订阅清理未实施（依赖 MT098/099 已绿） |
+| #146 | MT103 | **SATISFIED（零改动）** | 报告票：归档报告+哈希链完整，AC1–4 实证；今日复核 gitlink 仍 pre-adapter |
+| #155 | MT112 | **SATISFIED（零改动）** | 路径漂移到 legacy-anchor.test.ts，四条 AC 逐条对应，21/21 全绿 |
+| #167 | MT124 | **BLOCKED-GAP** | 企业入口逐路由统一上下文装配+清单回写缺失（依赖 MT122/123 已绿） |
+
+本批无产品侧 IMPLEMENTED（三张缺口票均远超 20 行且跨文件域，按硬约束留专项派发）。
+
+---
+
+## #155 [T] MT112 创建原有公司与默认团队并建立映射 —— SATISFIED（零改动）
+
+**路径漂移**：票面 `server/tests/multitenancy/legacy-company.test.ts` 不存在；实际落地 `server/tests/multitenancy/legacy-anchor.test.ts`（文件头第 2 行明确 "MT112（执行轮 Ticket）"，四条 AC 逐条写在头部注释）。交付模块：迁移四步（0001 建表 enterprise_deployment_anchors / 0002 RLS / 0003 锚点行 / 0004 映射行）经 MT003 工具（migrate-test.ts）真实执行；`docs/plans/2026-10-15-company-team-multitenancy-execution/briefs/MT112-brief.md` 与 `MT112-review-brief.md` 在档。均已在 main。
+
+### AC 逐条实证（legacy-anchor.test.ts，21/21 pass / 0 fail / 0 skip，真实 PostgreSQL）
+
+| AC | 用例组 | 实证 |
 |---|---|---|
-| #279 | Bifrost 08.4 后台重试与失败次数记录 | **SATISFIED（零改动）** |
-| #287 | Bifrost 09.2 公司 payer 贯穿全链路 | **BLOCKED-GAP（另附 1 处测试侧漂移修复）** |
-| #295 | Bifrost 10.6 个人订单与 Grant 追溯页面 | **SATISFIED（零改动）** |
-| #325 | Bifrost 17.1 异步任务身份持久化 | **SATISFIED（零改动）** |
-| #341 | Bifrost 20.1 工具/路由附加调用计价维度纳入 | **SATISFIED（零改动）** |
+| 1. 幂等创建，重复执行不产生重复实体 | `criterion 1` describe | ON CONFLICT DO NOTHING / DO UPDATE 路径 + 重放 `up-to-date`（appliedCount=4） |
+| 2. 与部署身份及计费 Customer 映射唯一可核验 | `criterion 2` describe | deployment_packages.tenant_id（UNIQUE）+ billing_customers 外部键派生 `openbot-deployment-<tenant_id>`，唯一索引 + 派生 CHECK |
+| 3. dry-run 预览、manifest 执行 apply | `criterion 3` describe | dry-run 预告全部步骤；manifest 漂移在产生任何 DB 效果前 refused（stage: manifest） |
+| 4. 创建后既有单租户行为不变 | `criterion 4` describe | expand-only 对照（只允许锚点表+journal 新增）、legacy 行数/时间戳不动、策略基线不漂移 |
 
-**前置说明（票号勘误）**：批次说明称 "#341（cleanup relations 345-348 线）曾有 b5-347/348 计划记录"。实取 `gh issue view 341` 为 **Bifrost 20.1 工具/路由附加调用计价维度纳入**；cleanup relations 线是 #345-348（`docs/plans/2026-10-17-b5-345/347/348-*.md`），不在本批票单。本批按票单实际票号核验，#341 的 Go 侧+DB 侧等价测试要求仍照做（见该节）。
+### 命令与输出
 
-## #279 Bifrost 08.4 后台重试与失败次数记录 — SATISFIED（零改动）
+```sh
+source /tmp/mt011-env.sh   # TEST_DATABASE_URL + 三受限角色（127.0.0.1:5562/openbot_enterprise_mt011）
+bun test ./server/tests/multitenancy/legacy-anchor.test.ts
+# 首跑：19 pass / 2 fail（见下）；重跑：21 pass / 0 fail / 0 skip，320 expect() calls
+```
+
+**首跑 2 fail 的定性（非产品缺陷，不修改）**：共享长寿命测试库上 journal 与 schema 状态错位（enterprise_deployment_anchors 表/策略已在而 mt_task_migration_journal 对 MT112 记录不全），首跑落入"schema 在、journal 不全"的过渡态——`dry-run previews` 与策略基线两个断言按"全新库"分支走而实际是收敛库。本次运行恰好把 journal 补齐，重跑 21/21 稳定。测试自身已含 `up-to-date` 重放分支设计；CI 门禁库（ee5efd3d）为干净库，不走此过渡态。无代码改动必要。
+
+### 改动文件
+无。
+
+---
+
+## #146 [R] MT103 移动端 submodule 基线核对 —— SATISFIED（零改动，报告型票）
+
+**交付物定位**：
+- 基线说明（worktree 内，git tracked）：`docs/plans/2026-10-15-company-team-multitenancy-execution/mt103-canonical-mobile-baseline.md`
+- 完整差异报告：`archive/plans/multitenancy-execution/reports/MT103.md`（含 §5 MT104 前提/风险、§6 独立复核命令）
+- 复核包：`archive/plans/multitenancy-execution/checkpoints/MT103/`（before/after.json、verification.txt、pin-vs-canonical.diffstat.txt、manifest.sha256、final-hashes.sha256）
+- dag.md 状态 `verified`（独立复审过，reports/MT103-review.md 在档）。
 
 ### AC 逐条实证
 
-- **AC1 重试按退避策略执行，failureCount 与最近原因可查询**：✅ 等价实现＝`usage-delivery.ts` 的投递重试策略（生产已接线 `startUsageDeliverySweeps`，30s 扫描、`MAX_DELIVERY_ATTEMPTS=8`、`MIN_BLOCK_AGE_MS=24h` 双门槛、非重试码立即终态）+ `recovery-replay.ts` 失败计数（`failure_count +1`、`last_reason` 只存稳定 snake_case 码）。`RecoveryItem`（`recovery-scan.ts:105`）携带 failureCount/lastReason 可查询。测试：`billing-usage-delivery.test.ts` 25/25（"a transient failure stays pending until the attempt ceiling, then blocks"、"an exhausted row older than the block age blocks"）；`recovery-unacked-replay.integration.test.ts` 7/7（`failureCount=1`、`lastReason=reservation_released/transient_test_failure`）。
-- **AC2 重试期间预留持续占用可用积分**：✅ `recovery-scan.integration.test.ts:358` 断言 unknown hold 仍占用（`held=500`）；replay 失败用例断言 ledger 零行（不结算也不释放）。
-- **AC3 超过阈值后进入人工处置队列**：✅ attempts≥8 且 age>24h → `blocked` 终态（`usage-delivery.ts:219-228`），`reconcile.ts` 报表含 `blockedLago/blockedCredits` 人工处置面；`recovery-replay.ts` 对 blocked 项保留不碰。
-- **AC4 重试不产生重复结算或重复派发**：✅ replay 用同一 `requestId=eventId` 幂等收敛；测试 "exactly one settlement at the original amount"、"a replay over an already-settled hold converges on the first settlement"。
+| AC | 实证 |
+|---|---|
+| 1. 报告列明 gitlink 与 canonical 差异（含缺失适配层） | 报告 §0/§1：pin `4679233` vs canonical main `81d0d3a1`，差 2 commits（`6e3a131` 适配层、`81d0d3a` review 修复），161 files +17162/−28；缺失 `apps/mobile/src/openbot/`（33 源文件）+ 20 测试套件，pin 检出中不存在 |
+| 2. 任务专用工作区基线；未改外部主工作区、未重建旧目录 | 报告记录专用 worktree（BASE `f0520524`）；本仓各工作区 `apps/` 下无 `openmuse-mobile`（实测）；专用工作区已按 Orca 生命周期清理（归档证据接管可复核性） |
+| 3. 后续 Ticket 前提与风险清单 | §5.1 五条前提（gitlink 前移、MT083 核验、跨仓两步提交流程、EXPO 配置、CI 布线决策）+ §5.2 六条风险（stale pin 再发、A11 取证路径漂移、适配层零租户语义、双包管理器、无 tag 锚点、canonicity 依赖网络） |
+| 4. 结论可独立复核（命令与版本标识） | §6 全套命令 + 完整 SHA 锚点；**本轮独立复核**见下 |
 
-### 命令与输出摘要
+**哈希链核验（本轮）**：final-hashes.sha256 记录值 vs 实测——reports/MT103.md `64c51951…`✓、reports/MT103-review.md `395109c1…`✓、checkpoints/after.json `74eb76a2…`✓、verification.txt `f0b4356b…`✓、pin-vs-canonical.diffstat.txt `c7c6b246…`✓。基线说明文档哈希与记录值不同（`4779a083`≠`acf0f7de`），来源为 ad7aff56「证据出清」提交重写归档相对路径（`git log -S` 定位），良性漂移。
 
+**今日钉定状态复核（票面要求的当前状态核对）**：
+- 当前 gitlink = `491d6215`（fb66bd11，2026-10-18「同步两个子模块的本地开发提交」将 `4679233`→`491d6215`）。
+- 在外部主工作区 submodule 检出实测：`491d621` = `4679233` + 单个 docs(agents) 提交；`git merge-base --is-ancestor 81d0d3a1 491d6215` → **不是祖先**——pin 仍为 pre-adapter，MT103 结论与 MT104 第一前提（gitlink 前移）继续成立。
+- ⚠️ 新风险：`491d621` 在 canonical 历史本地 clone（`/Users/wuyongjun/trea/openmuse` @ `81d0d3a`）中不存在；github.com 443 当前不可达，无法 `ls-remote` 判定其是否已推送。若未推送，main 的 gitlink 指向一个仅存在于本地工作区的提交。建议 MT104 派发前先确认。
+
+### 改动文件
+无。
+
+---
+
+## #121 [O] MT078 业务审计与身份审计分域，计费管理需明确授权 —— BLOCKED-GAP
+
+**核验**：票面 `server/tests/multitenancy/audit-domains.test.ts` 不存在；`server/src/enterprise/tenancy/` 53 个模块中无审计域模块；全仓无 audit-domains/审计分域实现。dag.md 标 `blocked`，从未派发。
+
+**既有相邻交付（不构成等价实现）**：
+- MT075（#118，admin-separation）：`enterprise_security_events` + `recordManagementAuditEvent`——只覆盖管理动作审计，非业务/身份/平台三分域查询面；
+- MT074（#117，vendor-billing）：供应商调用/回调留审计——供应商面，非管理动作；
+- legacy `server/src/audit.ts`（auditQueryFromUrl / auditEventsToCsv）——单租户审计查询与导出，无租户范围门控；
+- 计费管理动作（发放/调整/退款）：`server/src/billing/routes.ts` 只有 rewards 认领流与 admin 快照/同步，无"明确授权的管理动作"面。
+
+**缺口**：审计事件分域模型 + 分域 RLS + 范围门控查询/导出（脱敏）+ 计费管理动作授权与审计 + 专用测试——整域新建，远超 20 行。
+
+**依赖状态（实测）**：
+- #118 MT075：`bun test ./server/tests/multitenancy/admin-separation.test.ts` → 25/25 pass ✓
+- #116 MT073：`bun test ./server/tests/multitenancy/billing-visibility.test.ts` → **套件级 fail（beforeAll）**：fixture 调 `store.insertOrder` 未传 `ownerPayerRef`，撞上 `server/src/billing/payments/store.ts:63` 的 TypeError。`git log -S ownerPayerRef` 定位该 API 要求由 5192c33c（2026-10-17 bifrost-5 集成）引入，MT073 fixture 未跟上——**先于本批存在的测试侧破损，属 MT073 域，本批不越界修**。#121 领取方需先让 #116 验证件回绿。
+
+### 改动文件
+无。
+
+---
+
+## #143 [Q] MT100 桌面切换或退出组织时清理公司媒体与订阅状态 —— BLOCKED-GAP
+
+**核验**：`grep -rn org_switch_cleanup desktop/` 零命中；`desktop/src/OrgSwitchCleanup.test.tsx` 不存在（desktop/src 仅有 App/Problem/ProviderPicker 三套 React 测试）；desktop 源码无媒体/缓存/订阅的组织级清理实现。dag.md 标 `blocked`，从未派发。
+
+**依赖状态（实测，cargo 全量）**：
+```sh
+cargo test --manifest-path desktop/src-tauri/Cargo.toml        # 592+149 pass / 0 fail（8+1 ignored 平台既有）
+cargo test --manifest-path desktop/src-tauri/Cargo.toml org_context            # 33/33（MT098 #141 ✓）
+cargo test --manifest-path desktop/src-tauri/Cargo.toml credential_namespace   # 21/21（MT099 #142 ✓）
 ```
-bun test ./server/tests/billing-usage-delivery.test.ts                     → 25 pass
-TEST_DATABASE_URL=…5561/bf027 bun test ./server/tests/recovery-unacked-replay.integration.test.ts → 7 pass
-TEST_DATABASE_URL=…5561/bf027 bun test ./server/tests/recovery-scan.integration.test.ts          → 11 pass
-```
+`credential_namespace.rs:160` 已写明 MT100 的清理边界契约（"cleanup never reaches past its target"）并有 `ns11/ns16` 反向用例——但那只覆盖凭据命名空间；媒体、业务缓存、订阅状态的清理半边完全没有。
 
-### 遗留（记录，不阻塞 AC）
+**缺口**：Rust 侧组织切换/退出清理流程（半清理回滚+可重试+日志无明文）+ React 侧测试——跨双语言产品工作，远超 20 行。
 
-- "退避"是**封顶策略**（固定间隔+次数上限+年龄双门槛），非指数退避；`intervalMs` 可配，`MAX_DELIVERY_ATTEMPTS`/`MIN_BLOCK_AGE_MS` 为编译常量（代码注释记录了该设计取舍，audit C1）。
-- `createRecoveryReplay`（08.2 处理器）本身未接线为后台 sweep（`index.ts` 只接了 08.1 扫描）；结算重试由 usage-delivery sweeper 生产承担，recovery item 的 failureCount 由 handler 驱动。属 08 组后续票（08.5/08.9/告警）与产品决策范围。
-- 票面 Verification 的 `recovery-retry.test.ts` 不存在；等价证据分散在上述三套件。
+### 改动文件
+无。
 
-## #287 Bifrost 09.2 公司 payer 贯穿全链路 — BLOCKED-GAP（+1 处测试侧漂移修复）
+---
 
-### 结论
+## #167 [T] MT124 企业入口装配接入统一上下文与授权 —— BLOCKED-GAP
 
-本票核心交付（内置工作台消费路径的面级公司 payer 绑定）**未实施**，且仓库内多处代码注释明确把它记为待办：
-- `server/src/billing/payer-binding.ts:199`："until group 09 (09.2) wires per-surface payer resolution"；
-- `server/src/index.ts:4271`："the branch group 09 (09.2) replaces with per-surface payer resolution"；
-- `docs/plans/2026-10-16-b5-219-payer-no-fallback.md` R1：部署默认绑定是 "09.2 的文档化移除点"；
-- `docs/plans/2026-10-16-bifrost-5-ledger.md:628`：#286 review 把两条范围裁定移交 "09.2+ 公司 payer 收口票"。
+**核验**：票面 `server/tests/multitenancy/assembly-enterprise.test.ts` 不存在；全测试目录无 MT124 引用。dag.md 标 `blocked`，从未派发。
 
-实证缺口：`withPayerBinding`/`resolvePayerForCompanyContext`/`resolveCompanyPayerAccount` 在 `server/src/` **零生产调用方**（仅各自测试引用）——公司工作台请求到达消费 gate（`index.ts:4400` `resolveConsumptionPayerBinding`）时仍解析到部署绑定，不是公司账户。
+**现状（源码定位）**：
+- 企业入口路由（`/api/enterprise/conversations`、`/api/enterprise/workspace-scope`）注册在 `server/src/app.ts:958-970`，位于 MT122 统一 entryContext 中间件挂载点（`app.ts:1092`，注释明言 "capabilities/auth/enterprise surfaces registered above keep their own context establishment"）**之上**——企业入口走各自 `scopes` resolver，不经统一中间件；
+- MT122 已做到共享闭包（`index.ts:1053` 注释：entry factory 与企业 scopes 同 directory/data/`authenticateEnterpriseRequest`），这是 AC2 的架构半边；
+- 缺：企业入口**逐路由**验证（缺上下文拒绝/越权不可见）、企业接口 DTO 对照测试、处置结果回写入口清单（MT001 清单回写目前只有 MT075 的 managementPlanes 半边）。
 
-### AC 逐条实证（现有等价面）
+**依赖状态（实测）**：
+- #165 MT122：`bun test ./server/tests/multitenancy/entry-context.test.ts` → 21/21 ✓
+- #166 MT123：`bun test ./server/tests/multitenancy/startup-defaults.test.ts` → 24/24 ✓
 
-- **AC1 公司调用只变公司余额、个人不变**：❌ 工作台路径未绑公司 payer。seam 级已有：`multitenancy/company-reservation.test.ts`（MT070）16/16 全绿——公司余额原子预扣、公司 A 不能动公司 B、个人账户对照不动。
-- **AC2 准入/用量/结算与尾差同一公司 PayerRef**：半✅ "一个请求一个 payer、不切换" 不变量已钉死（`payer-no-fallback.test.ts` 28/28，含 "reserve, settle and remainder all carry the same external customer id"）；但工作台公司请求的 payer 不是公司账户。
-- **AC3 用量记录包含团队与使用人维度**：半✅ `billing_call_attributions`（MT070）按公司/团队/使用人/Bot/调用标识记录，测试绿；`usage_outbox` 有 ownerUserId/botId 无 workspace 维度；均未接到工作台计量路径。
-- **AC4 余额不足拒绝不回退个人账户**：✅ 完整（#219/B5-219 交付）：`payer-no-fallback.test.ts` "the hold is refused on the bound account only, with no second resolution"、AC13-forbidden shape 反面钉死。
+**缺口**：新测试文件 + 可能的企业路由装配改线——超 20 行，且是"统一上线"关键闭环（阻断 MT130），留专项。
 
-### 命令与输出摘要
+### 改动文件
+无。
 
-```
-TEST_DATABASE_URL=…5561/bf027 bun test ./server/tests/payer-no-fallback.test.ts                       → 28 pass
-TEST_DATABASE_URL=…5561/bf027 bunx e2e run --config e2e.unit.config.ts server/tests/payer-company-resolution.test.ts → 8 pass
-TEST_DATABASE_URL=…5561/bf027 bun test ./server/tests/payer-company-resolution.integration.test.ts    → 5 pass（修复后）
-TEST_DATABASE_URL=…5561/openbot_enterprise_bf027 bun test ./server/tests/multitenancy/company-reservation.test.ts → 16 pass
-```
+---
 
-### 缺口（需专项派发，>20 行且跨票）
+## 遗留与建议
 
-1. 工作台（公司 scope）请求在消费 gate 前绑定公司 PayerRef（`withPayerBinding(bindPayer(resolvePayerForCompanyContext(scope)))` 面级接线）；
-2. 绑定后移除该面的部署默认解析分支（b5-219 清单测试钉住的移除点）；
-3. 工作台计量路径补 workspace/使用人归因维度（可复用 `billing_call_attributions`）；
-4. 公司/个人双账户余额端到端集成测试（票面 Tests to write）。
-
-### 本批就地修复（测试侧，+6 行）
-
-`server/tests/payer-company-resolution.integration.test.ts:98-108`：受控目录种子行补 `status: "active"`。根因：commit `253bf7e5`（MT005 workspace 资格检查）给 `store.ts` 的 scope 铸造加了 workspace-membership 查询，单测版夹具（`payer-company-resolution.test.ts:85`）同步修过、集成版漏改，导致 4/5 用例稳定 `WORKSPACE_FORBIDDEN`。修复后 5/5 绿，biome lint 干净，`bun run --filter server typecheck` 通过。
-
-## #295 Bifrost 10.6 个人订单与 Grant 追溯页面 — SATISFIED（零改动）
-
-### AC 逐条实证（`app/tests/personal-orders-ui.test.tsx` 8 用例全绿，须整组跑）
-
-- **AC1 追溯来源订单/发放动作**：✅ `orderIdOfPlanGrant traces a plan grant to its funding order`；渲染用例断言 trace-cg-plan 含 `po_123` 与其资金状态、签到/活动发放不名订单、off-format plan grant 追溯到空而非臆猜订单号。
-- **AC2 他人订单/订阅/Grant 不可读取**：✅ UI："页面不携带任何账户标识，仅请求本人作用域读取"（URL 审计无 userId/payerId/tenantId 等）；服务端：`billing-statements.test.ts`（原生层 23/23）"statement reads only expose orders created by the authenticated actor"、"bill list and detail return only the signed-in actor's orders"、"a signed-out caller is refused on both reads"（401）。读侧统一走 `billingReadScopeOf(context)`（`server/src/billing/routes.ts:50`）。
-- **AC3 Grant 来源与有效期与后端一致**：✅ "Grant 过期状态与服务器一致"；渲染用例断言来源词（套餐/签到奖励/活动/管理员发放）与到期时间原样呈现、页面不自行推导。
-- **AC4 订单状态变化在页面正确反映**：✅ "订单状态变化在页面正确反映：pending → paid 经刷新后更新"。
-
-### 命令与输出摘要
-
-```
-E2E_UNIT_SCOPE=app bunx e2e run --config e2e.unit.config.ts   → 128 files / 967 tests 全绿（含本票 8 用例）
-bunx e2e run --config e2e.unit.config.ts server/tests/billing-statements.test.ts → 23 pass
-```
-
-注意：该 app UI 文件**独跑必红**（进程偶合，happy-dom/preload 时序，已知坑），取证必须 `E2E_UNIT_SCOPE=app` 整组跑；独跑红不代表回归。
-
-## #325 Bifrost 17.1 异步任务身份持久化 — SATISFIED（零改动）
-
-### AC 逐条实证
-
-- **AC1 稳定本地身份与固定归属**：✅ Go：`TableProviderJob`（`bifrost/framework/configstore/tables/batchjob.go`）稳定主键 `ProviderJobID(kind,provider,jobID)`（kind+provider+jobID，sweeper/结算/reconciler 同一行）+ fenced 归属列（SelectedKeyID/VirtualKeyID/CustomerID/UserID/TeamID）。openbot：reservation 为锚、`attemptIdForReservation` 纯函数（06.7），replay 同 id（`reservation-status.integration.test.ts` 14/14，含 "a reserve replay after a lost response returns the original reservation and the same attempt id"）。
-- **AC2 providerJobID 与本地 jobId 双向映射，允许暂缺**：✅ 等价形态——Go 侧 `JobID` 列+复合主键即映射；openbot 侧 status API 双向可查（"by reservationId" 与 "by attemptId answers the same reservation"）；"允许暂缺"＝`dispatch_result_unknown` 恢复项在无 provider 结果/ID 时仍可命名与恢复（recovery-scan unknown-mark 路径，11/11 绿）。
-- **AC3 归属不随会话、Key 或调用方变化**：✅ Go：`TestAccountBatchResults_PrefersBatchJobAttributionOverFetcher`（batch_test.go:1564）——创建者 key/vk 归属在他人 fetch 时不变；openbot："a status query stays answerable after the grant is revoked" + recovery item 固定原 payer（"fixed original reservation, payment account"）。
-- **AC4 任务记录含恢复所需预留与版本信息**：✅ `credit_recovery_items` 携带 reservationId/maximum/provider/model/capability/snapshotVersion/rateVersion（全有或全无 CHECK）；Go 侧 `Params` 提交时捕获（video 定价恢复的唯一来源，字段注释明说 load-bearing）。
-
-### 命令与输出摘要
-
-```
-cd bifrost/framework && go test ./jobaccounting/...  → ok  0.875s（全模块）
-TEST_DATABASE_URL=…5561/bf027 bun test ./server/tests/reservation-status.integration.test.ts → 14 pass
-TEST_DATABASE_URL=…5561/bf027 bun test ./server/tests/recovery-scan.integration.test.ts     → 11 pass（#279 节已列）
-```
-
-环境注：本机 `GOSUMDB=off`（go env 全局）挡住 GOTOOLCHAIN 自动下载 1.27；用已缓存工具链直跑：`/Users/wuyongjun/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go test`。后续批次跑 Go 同此法。
-
-## #341 Bifrost 20.1 工具/路由附加调用计价维度纳入 — SATISFIED（零改动）
-
-### AC 逐条实证
-
-- **AC1 全部附加费用调用类型枚举并映射维度**：✅ openbot：`PRICE_DIMENSIONS` 封闭维度表含 `surcharge_web_search`（gateway `pricing.web_search`）与 `surcharge_per_request`（`pricing.request`）——即 v1 wire 实际定价的全部附加字段（`price-snapshot.test.ts` "covers input, output, reasoning, image, audio, cache, video and surcharges"）；Go：MCP 工具执行按 `mcpcatalog` `CostPerExecution`（server+tool 键）、路由/嵌入成本单独计费（`routingembedcost_test.go` 3 用例）、A2A/PreMCP hook 每调用治理点齐备。枚举锚定 wire 字段与 hook 调用点而非工具名清单（符合 Resume hint）。未定价但会收费的供应商工具按 Q20 默认禁用，属 20.2 "可强制限额才启用" 范围。
-- **AC2 surcharge 进价格快照，缺项 unknown 非 0**：✅ `price-snapshot.test.ts`（原生层 15/15）："dimensions the manifest does not price are unknown, never 0"、"an unreadable dimension can never be mistaken for free"；未知原因固定码 `price_dim_no_source`/`price_dim_unreadable`。
-- **AC3 每次真实工具调用独立计费身份与归属**：✅ Go：`PostMCPHook` 为每次工具执行发 `UsageUpdate{RequestID, BillingNonce, Budgets, RateLimits}`（独立身份+归属，`main.go:1830`）；`dispatchcommitment_test.go` 5 用例（claim 先于 dispatch、重复 claim 拒绝、重启存活、并发单赢）；`accounting_test.go`（retry attempts each billed）。openbot：每次 admitted 调用一个 reservation+attemptId（06.7，见 #325 节）。
-- **AC4 工具费用与模型费用数据模型可区分**：✅ 快照维度表 surcharge_* 与 token 维度分立；Go 结算映射 `ToolUsage.WebSearch.NumRequests → SurchargeWebSearch` 与 token usage 分列（`settlementoutbox_test.go:718-725`）。
-- 上限包含附加费用（Implementation step 4）：✅ `reserve-bound-rounding.test.ts`（Bun 15/15）——surcharge 维度进 ceiling（"prices every dimension of the vocabulary, not only input and output"）、unknown 维度拒绝（"unknown is never a zero cost"，quantity 为 0 也拒）。
-
-### 命令与输出摘要
-
-```
-bunx e2e run --config e2e.unit.config.ts server/tests/price-snapshot.test.ts → 15 pass
-bun test ./server/tests/reserve-bound-rounding.test.ts                      → 15 pass
-cd bifrost/plugins/governance && go test ./...（1.27.0 工具链直跑）          → ok  16.149s
-cd bifrost/framework && go test ./jobaccounting/...                          → ok  0.875s
-```
-
-### 遗留（记录）
-
-- 票面 Verification 的 `server/tests/tool-surcharge-pricing.test.ts` 不存在；等价证据在 price-snapshot / reserve-bound-rounding / governance Go 套件。
-- 用户明细区分模型与附加费用是下游 20.3 的交付，本票仅数据模型可区分（已满足）。
-
-## 本批改动文件
-
-- `server/tests/payer-company-resolution.integration.test.ts`（+6 行，测试侧漂移修复，#287 节详述；未提交）
-- `server/tests/recovery-unacked-replay.integration.test.ts`（上一批遗留 4 行，保留未动）
-
-## 全批统一验证
-
-- `bun run --filter server typecheck` → 通过（exit 0）。
-- `bunx biome lint --error-on-warnings server/tests/payer-company-resolution.integration.test.ts` → 干净。
-- DB 容器 `orca-all-bf027-pg`（5561）与新库 `openbot_enterprise_bf027` 均保留未删。
+1. **（高）MT073 验证件红**（本批发现，非本批票）：billing-visibility fixture 缺 `ownerPayerRef`，5192c33c 起 API 要求归属先行。测试侧小修，但属 #116 域，建议单独派发；它同时卡住 #121 的依赖核验。
+2. **（高）openmuse gitlink `491d621` 可达性**：github 不可达期间无法判定是否已推送；若未推送则 main 引用仅存本地的提交。MT104 派发前确认并按 MT103 §5.1 前移到含适配层的 SHA。
+3. 三张 BLOCKED-GAP（#121/#143/#167）依赖侧均已核验绿（除 1），可按票直接专项派发。
+4. 环境未清理：5562 容器（orca-all-mt011-pg）按批次说明保留；`/tmp/mt011-env.sh` 沿用。
