@@ -17,6 +17,7 @@
 | 设计、Spec、ADR、任务拆分或需求冲突 | [设计与事实源](.agents/rules/design.md) |
 | 用户要求实现单个、父级或一组 Issues | [Issue 摄取与 DAG](.agents/rules/issue-delivery.md)，随后读执行、测试和审查规范 |
 | 编写实施计划、派发、实现、修复或恢复任务 | [执行与上下文](.agents/rules/execution.md) |
+| 使用 Orca 协调多个 Agent，或规划、审查、恢复编排 Run | [Orca 多 Agent 编排](.agents/rules/orchestration.md) |
 | 创建、复用、收尾 Orca Worktree 或分支 | [Worktree](.agents/rules/worktrees.md) |
 | 运行测试、类型检查、Lint、构建或验收验证 | [验证与测试资源](.agents/rules/testing.md)，再读该文件指定的测试 ADR |
 | 审查、处理 finding、最终交付 | [Review 与 OCR](.agents/rules/review.md) |

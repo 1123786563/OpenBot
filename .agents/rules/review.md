@@ -4,19 +4,19 @@
 
 ## 任务 Review
 
-SDD 负责每 Task 的独立 Spec compliance 与 code quality Review。Reviewer 默认只读；验证者和实现者自查不能替代独立 Review。完整分支审查按风险使用当前已验证可用的 Sol high 或 Astra high；角色/升级遵守 [execution.md](execution.md)。
+普通 SDD 负责每 Task 的独立 Spec compliance 与 code quality Review。Reviewer 默认只读；验证者和实现者自查不能替代独立 Review。Orca 多 Agent Run 改由 Orca 启动的 Claude 做每轮任务审核、Codex 做集成分支完整终审，具体门禁见[编排审核与交付](orchestration-review.md)。非 Orca 的完整分支审查按风险使用当前已验证可用的 Sol high 或 Astra high；角色/升级遵守 [execution.md](execution.md)。
 
 遵守 SDD 每任务最多 5 轮等规则；第 4–5 轮至少升级一档。真实阻塞问题全部解决后才能交付。连续两轮同一 finding 无进展时，触发 `systematic-debugging`，换新上下文并升级到已验证的 Sol/Astra，重新判断根因和边界；缺权限、环境或必要输入时记录阻塞与恢复条件。
 
 ## OCR 外层关卡
 
-SDD 验证及独立 Review 后，由主控按 `open-code-review` Skill 直接执行 OCR，始终 `--audience agent`，提供 Issue、验收、接口和范围背景，不先探测安装情况。未安装按技能安装；不支持 `--output` 按技能升级要求处理；provider/凭据失败报告所需配置，禁止编造凭据或盲重试。`review_model` 不配置 OCR provider，不能假定 Codex 模型别名可用于 OCR。
+SDD 或 Orca Claude 的任务验证及独立 Review 后，由主控按 `open-code-review` Skill 直接执行 OCR，始终 `--audience agent`，提供 Issue、验收、接口和范围背景，不先探测安装情况。Orca Run 先集成、验证并由 Codex 审查完整范围，再完成外层 OCR。未安装按技能安装；不支持 `--output` 按技能升级要求处理；provider/凭据失败报告所需配置，禁止编造凭据或盲重试。`review_model` 不配置 OCR provider，不能假定 Codex 模型别名可用于 OCR。
 
 - 已提交范围使用真实记录的 BASE、HEAD：`ocr review --audience agent --background "业务背景" --from <BASE> --to <HEAD> --output <本轮报告路径>`，执行前替换真实参数。
 - 有未提交交付时使用 workspace 模式覆盖 staged、unstaged 和 untracked；混合交付同时审查原始 BASE..HEAD，不能遗漏已提交部分。
 - 每轮单独保存范围、SHA/检查点、退出码、警告、跳过与失败文件。exit 0、超时或预算不足不能替代完整覆盖。
 - critical/high/medium 核实证据、位置及验收影响，保留 finding ID、有效性裁决与理由；误报须有证据。low 按影响处理或明确延期。
-- 有效问题生成只覆盖 finding 的编号修复 DAG/方案，使用 writing-plans 与 SDD，由对应专业实现者修复、验证者验证、reviewer 复审；主控不绕过 SDD 自修生产代码。
+- 有效问题生成只覆盖 finding 的编号修复 DAG/方案，使用 writing-plans；普通实施走 SDD 专业实现者、验证者、reviewer，Orca 多 Agent Run 走 Pi 整改、Claude 任务复审及 Codex 完整终审。主控不绕过已选流程自修生产代码。
 - 修复后重新 OCR，确认原问题消除；最终对原始 BASE..HEAD 加全部未提交交付取得覆盖完整的通过报告。外层新编号修复方案不受单次 SDD “一次修复波次”限制，也不重派原已完成 Task。
 
 所有审查、修复验证和裁决证据写入 `.archive/runs/<run-key>/`，方案写到 `docs/plans/`；具体布局见 [artifacts.md](artifacts.md)。

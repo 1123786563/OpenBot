@@ -10,7 +10,7 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 
 每 Task 写清依赖、角色、owned_files、Consumes/Produces、具体步骤、适用测试与预期结果、验收和失败处理，不留 TODO/TBD。派发前完成需求覆盖、共享文件/接口和任务内部一致性预检。用户已要求端到端实施时，保存并展示方案后直接执行，常规修复不增加确认门槛。
 
-默认沿 DAG 串行派发。只读探索或无共享状态的验证可并行；并行实施需已有明确授权、独立 Worktree、不相交写权限、稳定接口及集成次序。数据库、端口、缓存和产物目录均属共享状态。工作区细则见 [worktrees.md](worktrees.md)。
+普通实施默认沿 DAG 串行派发。使用 Orca 协调多个 Agent 实施 Issue 时，按 [Orca 多 Agent 编排](orchestration.md)的活跃任务上限及派发门禁执行，仍须满足依赖、独立 Worktree、不相交写权限、稳定接口、资源容量及集成次序。数据库、端口、缓存和产物目录均属共享状态。工作区细则见 [worktrees.md](worktrees.md)。
 
 ## 角色与独立性
 
@@ -28,6 +28,8 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 
 保留内置 default、worker、explorer；探索优先 researcher，若用 explorer，按当前可用目录核实 `gpt-5.6-luna / low`，不可用时报告并选择已验证模型。派发实现前检查专业角色，派发后核对实际 agent_type、模型和推理等级，不以提示词中的角色名称代替实际配置。固定角色配置可能覆盖 spawn 参数；升级改用 default 并传专业约束。Ledger 写明具体障碍、升级原因、模型与受影响 Task；数量多、并行或主控模型强都不是升级理由。
 
+以上 agent_type 路由用于非 Orca 编排的子 Agent。Orca 多 Agent 流程按 [编排规范](orchestration.md)由 Pi 实施、Claude 任务审核、Codex 最终审核；后端/前端专业职责仍写入 Brief，记录实际 Orca Agent 身份，不能将非 Orca 子 Agent 当作满足该流程的派发证据。
+
 实现者负责适用的 RED → GREEN → REFACTOR、针对性检查和自查，不批准自己的实现。验证者只读业务代码及测试源文件，可写缓存、构建产物和指定报告；复用同一代码版本有效证据，仅补缺失验收。前后端验证按实际范围选择。Reviewer 独立输出 Spec compliance 与 code quality；测试不能替代 Review。
 
 ## Brief 与上下文
@@ -38,7 +40,7 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 - 同一会话复用未变化材料；新会话、压缩或恢复后先读当前 Ledger 摘要、活动尝试、Git 和相关回执，再按缺口读取历史。摘要保留全部未解决问题，不能替代原始证据。
 - 已确认决定及时写入 Spec、ADR 或 `CONTEXT.md`；上下文容量不影响持久化要求。
 
-Orca DAG 工具的具体 Brief/消息/恢复契约见 [专用上下文协议](../../docs/plans/2026-10-18-orca-dag-orchestration/context.md)，仅开发或运行该工具时读取。
+使用 Orca 协调多个 Agent 实施 Issue 或恢复编排 Run 时读取 [Orca 多 Agent 编排](orchestration.md)；开发原 Orca DAG 工具时再读取历史方案中的专用契约。
 
 ## 提交与检查点
 
