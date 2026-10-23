@@ -45,7 +45,7 @@
 - 事实源：批准 Spec → `docs/adr/0001-conservative-input-bound.md` → `CONTEXT.md` → Git → 本计划/DAG/Ledger。最新主工作区领域快照保存在 `evidence/2026-10-14-opik/source-context.md`；Bifrost 在设计中的快照仅作兼容参考，不是批准 Spec。
 - `AGENTS.md` 引用的 `docs/agents/domain.md`、`docs/agents/issue-tracker.md` 在 BASE 不存在；使用根 `CONTEXT.md` 和用户提供的规则。没有目标 Issue，`source_issues=[]`，不声称读取过 Issue 树，也不自动创建 Issue。
 - 基线：`bun install --frozen-lockfile` 成功；6 个相关文件 42 pass / 0 fail，日志在 `evidence/2026-10-14-opik/baseline-tests.log`。这是针对性基线，不等于全仓测试通过。
-- 机器可恢复 DAG：`docs/plans/2026-10-14-opik-integration-dag.json`；执行账本：`.archive/runs/legacy-plans/ledgers/2026-10-14-opik-integration-ledger.md`。
+- 机器可恢复 DAG：`.archive/runs/legacy-plans/dags/2026-10-14-opik-integration-dag.json`；执行账本：`.archive/runs/legacy-plans/ledgers/2026-10-14-opik-integration-ledger.md`。
 - 每个 Task 的本节、Global Constraints、Interfaces 和验收组成 Task Brief。派发时只提供该 Brief、必要事实源、前置接口、文件所有权和报告路径；`fork_turns=none`，实现者知道自己不是唯一工作者，不得撤销他人改动。
 - 共享文件只有当前 Task 可以写。前置任务 verified 且已审查的检查点在同一工作区后，主控才能放行下游。就绪节点仍默认串行。
 - 每 Task 前后记录 HEAD、staged/unstaged diff、任务新增文件完整内容及哈希，输出增量 Review Package；报告与验证绑定检查点哈希。空 BASE..HEAD 不能代替未提交审查。

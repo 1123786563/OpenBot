@@ -1,7 +1,7 @@
 # Craft 预览修复波次（#403–#419）索引与决策记录 — 重建件
 
 > **来源与诚实声明**：本文件是从 GitHub 票面**重建的索引**，不是被覆盖的原件。
-> 原波次计划文档位于同一路径族（`docs/plans/2026-10-17-craft-preview-*.md`），已于 2026-10-17 19:24:46 被另一会话的写入覆盖且事前未读取。已核实的不可恢复证据：`git log --all --diff-filter=A -- docs/plans/2026-10-17-craft-preview-remediation.md` 为空（从未提交到任何 ref）；APFS 本地快照列表为空；`~/.qoder/file-history` 无该文件条目；全盘 3 处同名文件哈希与 mtime 均为覆盖后那份的下游同步。
+> 原波次计划文档位于同一路径族（`docs/plans/2026-10-17-craft-preview-*.md`），已于 2026-10-17 19:24:46 被另一会话的写入覆盖且事前未读取。已核实的不可恢复证据：`git log --all --diff-filter=A -- docs/plans/craft/preview/2026-10-17-craft-preview-remediation.md` 为空（从未提交到任何 ref）；APFS 本地快照列表为空；`~/.qoder/file-history` 无该文件条目；全盘 3 处同名文件哈希与 mtime 均为覆盖后那份的下游同步。
 > 唯一残余可能：写它的会话自身上下文。
 >
 > 记录时间：2026-10-17（UTC 12:2x）。代码基线：`origin/main` = `44754feb`。
@@ -63,8 +63,8 @@
 | #428 R09 | #415（锁步）+ #406（acme 输出脱敏） |
 | #429 R10 | #411 |
 | #430 R11 | #407 |
-| **#425 R06** | **保留独立 OPEN**：legacy 同源预览的部署级开关（CP 波次无对应项；#417 是另一问题）→ 拆解见 `docs/plans/2026-10-17-craft-preview-issue-425-legacy-preview-gate.md` |
-| **#427 R08** | **保留独立 OPEN**：通行证改为不透明 token + 索引 → 拆解见 `docs/plans/2026-10-17-craft-preview-issue-427-opaque-pass.md` |
+| **#425 R06** | **保留独立 OPEN**：legacy 同源预览的部署级开关（CP 波次无对应项；#417 是另一问题）→ 拆解见 `docs/plans/craft/preview/2026-10-17-craft-preview-issue-425-legacy-preview-gate.md` |
+| **#427 R08** | **保留独立 OPEN**：通行证改为不透明 token + 索引 → 拆解见 `docs/plans/craft/preview/2026-10-17-craft-preview-issue-427-opaque-pass.md` |
 
 9 张关闭票使用 `state_reason=duplicate`（该仓库/API 版本未暴露原生 `POST /issues/{n}/duplicate`，返回 404），因此 GitHub UI 不显示 "closed as duplicate of" 自动链接，归属在关闭评论与票面「与并发票集的关系」一节。
 

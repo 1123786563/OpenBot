@@ -47,7 +47,7 @@ BASE: `bab7c0b9`（工作区含前置票已集成的未提交改动；本票在 
 | `app/src/routes/_authed/settings/model-access.tsx` | 修改：挂载 `<ModelPicker />` 区块（标题复用现有 PageSection 模式） |
 | `app/src/locales/en/settings.json` `app/src/locales/zh-CN/settings.json` | 修改：`modelPicker.*` 句子（来源层级、5 个不可用原因、写入拒绝、价格标签、空态、错误态） |
 | `app/tests/model-picker-ui.test.tsx` | 新增（happy-dom + 网络桩）：三层来源徽章渲染；不可用报错渲染（原因句+重选提示）；**无静默替换断言**（available:false 时原 ref 仍为生效显示、列表不自动选中他者）；**未知价格展示断言**（price_unknown → 「价格未知」句、无「免费」字样；free → 「免费」、known → 「按用量计费」） |
-| `docs/plans/2026-10-17-b5-232-model-picker-unavailable-errors.md` | 本计划 |
+| `docs/plans/bifrost/ticket-plans/2026-10-17-b5-232-model-picker-unavailable-errors.md` | 本计划 |
 
 ## RED→GREEN 任务序列（TDD）
 

@@ -39,14 +39,14 @@
 
 ## 产物位置
 
-- 本方案：`docs/plans/2026-10-22-closed-issue-independent-audit.md`。
+- 本方案：`docs/plans/standalone/2026-10-22-closed-issue-independent-audit.md`。
 - 本次 Run：`.archive/runs/<date>-closed-issue-audit/`，含 `index.md`、`scope.json`、`issues/`、`ledger.md`、`verification/`、`reviews/`、`logs/`。每项报告命名为 `reviews/issue-<number>.md`，证据用 Issue 编号分目录。
 - `.archive/` 是本地忽略目录；若结果需跨工作区或分享，须显式复制脱敏证据、核对哈希并记录接收位置。
 
 ## 给主控 Agent 的提示词
 
 ```text
-请对 GitHub 仓库 1123786563/OpenBot 的已关闭 Issue 发起独立审计。按 docs/plans/2026-10-22-closed-issue-independent-audit.md 执行。先分页获取完整 closed 清单并固定目标分支 SHA、子模块 SHA 与工作区基线；不要把查询上限当总数。维护最多 3 个子 Agent 槽位的滚动队列；每个 Issue（包括父 Issue）都是独立任务，一个子 Agent 同时只审一个 Issue。其报告和证据完成、主控确认任务结束后，复用空闲子 Agent 领取下一项，并提供新的单 Issue Brief。不得合并多个 Issue 的结论；隔离验证资源，恢复时先对账任务状态。
+请对 GitHub 仓库 1123786563/OpenBot 的已关闭 Issue 发起独立审计。按 docs/plans/standalone/2026-10-22-closed-issue-independent-audit.md 执行。先分页获取完整 closed 清单并固定目标分支 SHA、子模块 SHA 与工作区基线；不要把查询上限当总数。维护最多 3 个子 Agent 槽位的滚动队列；每个 Issue（包括父 Issue）都是独立任务，一个子 Agent 同时只审一个 Issue。其报告和证据完成、主控确认任务结束后，复用空闲子 Agent 领取下一项，并提供新的单 Issue Brief。不得合并多个 Issue 的结论；隔离验证资源，恢复时先对账任务状态。
 
 每个 Agent 必须读取 Issue 验收和关联事实源，追溯当前 SHA 的代码，完成独立代码审查和可运行验收，保存真实命令、退出码、用例数、原始日志、环境及证据哈希。不能运行的条款标 blocked/unproven，不得声称通过。遵守 .agents/rules/issue-tracker.md、design.md、testing.md、review.md、artifacts.md 及 ADR 0008。全程不改业务代码、测试或 Issue 状态。主控最后逐项对账清单和报告，做父级集成核验；仅给符合方案贴标规则的 Issue 添加现有 agent:ready-for-review 标签，并保存 GitHub 回执。输出未验证与缺陷清单。若无法完成全部范围，给出已经审计的确切编号和未完成编号，不宣布全量完成。
 ```

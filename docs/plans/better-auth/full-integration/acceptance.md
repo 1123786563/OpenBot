@@ -1,6 +1,6 @@
 # Better Auth 接入：验收映射与验证方法
 
-本文件是 [主计划](plan.md) 的验收方法，不是测试执行报告。所有编号来自 [v2.3 Spec](../../specs/2026-10-22-better-auth-full-integration-design.md)，旧规格/旧 Issue 的测试注释仅作为现有实现背景，不能充当此次需求或通过证据。
+本文件是 [主计划](plan.md) 的验收方法，不是测试执行报告。所有编号来自 [v2.3 Spec](../../../specs/2026-10-22-better-auth-full-integration-design.md)，旧规格/旧 Issue 的测试注释仅作为现有实现背景，不能充当此次需求或通过证据。
 
 ## 1. 候选需求覆盖
 

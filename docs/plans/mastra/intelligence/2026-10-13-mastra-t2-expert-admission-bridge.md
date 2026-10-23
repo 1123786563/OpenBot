@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Drizzle PostgreSQL (injected DB-free tests now; isolated PostgreSQL gate later).
 
-**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 in `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; prerequisite `docs/plans/2026-10-13-mastra-t2-expert-version-prerequisite.md`; read-only reports `task-2-source-preflight.md` and `task-2-admission-architecture.md` under `.superpowers/sdd/2026-10-13-mastra-t2-expert-version-prerequisite/reports/`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 in `docs/plans/mastra/intelligence/2026-10-11-mastra-intelligence-only-dag.md`; prerequisite `docs/plans/mastra/intelligence/2026-10-13-mastra-t2-expert-version-prerequisite.md`; read-only reports `task-2-source-preflight.md` and `task-2-admission-architecture.md` under `.superpowers/sdd/2026-10-13-mastra-t2-expert-version-prerequisite/reports/`.
 
 ## Global Constraints
 
@@ -61,4 +61,4 @@ Task A owns runtime loader/resolver/Copilot type exposure and focused tests. Tas
 
 ## Failure handling and continuation
 
-If Task A exposes a provenance classification conflict, stop that Task's source edits and record exact row facts for a scoped plan correction; never guess source from visibility. If Task B cannot reuse the current Run transaction handle, stop instead of accepting a separate pre-read as equivalent. Valid review findings get numbered repair plans and fresh same-hash gates. After Task B's reviewed checkpoint, update the existing `docs/plans/2026-10-12-mastra-t2-runner-sse-admission.md` Brief to consume the trusted bridge, then resume Runner/SSE production mounting. Isolated database gates remain unverified until the user-configured test database is ready.
+If Task A exposes a provenance classification conflict, stop that Task's source edits and record exact row facts for a scoped plan correction; never guess source from visibility. If Task B cannot reuse the current Run transaction handle, stop instead of accepting a separate pre-read as equivalent. Valid review findings get numbered repair plans and fresh same-hash gates. After Task B's reviewed checkpoint, update the existing `docs/plans/mastra/intelligence/2026-10-12-mastra-t2-runner-sse-admission.md` Brief to consume the trusted bridge, then resume Runner/SSE production mounting. Isolated database gates remain unverified until the user-configured test database is ready.

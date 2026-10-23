@@ -1,6 +1,6 @@
 # T07 Implementation — Home, New Session, Direct Chat and Group Chat
 
-- **Parent plan:** `docs/plans/2026-10-20-workspace-redesign-b1.md` Task 7.
+- **Parent plan:** `docs/plans/workspace-redesign/b1/2026-10-20-workspace-redesign-b1.md` Task 7.
 - **Spec:** P01–P05 acceptance in `docs/design/2026-10-20-workspace-redesign/handoff/refinement/route-acceptance.json`, `implementation-spec.md`, `implementation-detail.md` §§3–6, `verification-plan.md`; runtime and terminology from `CONTEXT.md`; test partitions from ADR 0008.
 - **Scope:** T07 only, after T06 source/test verification and independent review. No server API, chat protocol, permission, tenant, channel, computer runtime, or later-page redesign changes.
 - **Owner / gate:** one `frontend_implementer`, then independent `frontend_validator` and `reviewer`; no commits.

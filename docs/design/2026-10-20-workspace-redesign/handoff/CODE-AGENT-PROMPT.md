@@ -20,7 +20,7 @@
 
 分析某个页面时才读 `pages.json` 中对应页、`pages.md` 对应条目及 `source` 文件和必要下钻组件。87 个路由声明对应 76 页面、4 布局、7 跳转，需要重扫核对而非盲信缓存。
 看视觉时打开 `handoff/references/` 中相关图片；`visual-atlas.html` 是结构草案，不是生产 HeroUI 页面或逐像素验收母版。
-查已有迁移验证时读 `docs/plans/2026-10-19-heroui-v3-migration-execution.md` 和 `.archive/runs/2026-10-19-heroui-migration/` 的相关报告；不要重派已完成的组件迁移任务。
+查已有迁移验证时读 `docs/plans/heroui/2026-10-19-heroui-v3-migration-execution.md` 和 `.archive/runs/2026-10-19-heroui-migration/` 的相关报告；不要重派已完成的组件迁移任务。
 制定验证命令前必须读 `docs/adr/0008-test-runner-tester-army-e2e.md`、`e2e.unit.config.ts` 和 `tests/config/e2e-bun-suites.json`。
 
 ## 必须完成的细化

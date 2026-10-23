@@ -32,7 +32,7 @@ const AUTHORIZED_PREFIXES = [
   "server/src/billing/",
   "server/src/ai-observability/",
   "server/tests/",
-  "docs/plans/2026-10-22-bf20-bifrost-352-357/",
+  "docs/plans/bifrost/waves/2026-10-22-bf20-bifrost-352-357/",
   "reports/",
   // The shared driven-suite manifest: baseline-modified already; this batch's addition
   // is the six suite registrations the e2e-add-driven audit carries.

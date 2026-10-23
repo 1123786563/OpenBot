@@ -2,7 +2,7 @@
 
 > Task 1 交付物。本文档把 Onyx 源(pinned commit)的**可观察契约**钉死为 Tasks 2–6 的实现基线:仓库基线、链路源码图(带 file:line)、六项被裁能力的确切契约、`port-parity.md` §五全部差异的裁决表、fixture → Task 映射与无环性证明。
 > 同目录 fixture:`fixtures/agents-md-rendering.md`、`fixtures/opencode-config-mcp.md`、`fixtures/approvals-and-connect-app.md`、`fixtures/webapp-tool.md`、`fixtures/zip-download.md`。
-> 规则:Onyx CODE wins。凡先前文档(`docs/plans/craft-port/*`)与 Onyx 源冲突处,以本文档为准并在 §6 记录勘误。
+> 规则:Onyx CODE wins。凡先前文档(`docs/plans/craft/port/*`)与 Onyx 源冲突处,以本文档为准并在 §6 记录勘误。
 
 ---
 
@@ -15,7 +15,7 @@
 | OpenBot repo | `/Users/wuyongjun/trea/OpenBot`,BASE = branch `craft-port-verify` HEAD `3c690410608bc8ef1c299998ccb7ce0981336bdd`(本任务提交的父) |
 | OpenBot craft 根 | `server/src/craft/` |
 | 提交时 dirty(禁止触碰/暂存) | `docs/specs/superpowers/OpenMuse-Mobile-OpenBot-Backend{,-Architecture,-GoLive}.md`(M)、`AGENTS.md`、`docs/plans/`、`docs/specs/superpowers/2026-10-12-openmuse-*.md`(??) |
-| 本任务新增文件 | 仅 `docs/plans/craft-port/`(本文件 + `fixtures/`) |
+| 本任务新增文件 | 仅 `docs/plans/craft/port/`(本文件 + `fixtures/`) |
 | 无 secret | 本文档与 fixtures 只含代码常量与示例字符串,无凭证 |
 
 ---

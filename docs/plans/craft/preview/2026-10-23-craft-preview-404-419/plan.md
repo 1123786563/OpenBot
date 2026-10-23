@@ -76,7 +76,7 @@
 ## Task N06-419 — 证据收口与 #358 汇总
 
 - 角色：mechanical_worker；依赖：全部前序 verified
-- owned_files：`docs/plans/2026-10-23-craft-preview-404-419/closeout.md`（执行工作区）；GitHub 写：#358 正文勾选修正、各子票收口评论
+- owned_files：`docs/plans/craft/preview/2026-10-23-craft-preview-404-419/closeout.md`（执行工作区）；GitHub 写：#358 正文勾选修正、各子票收口评论
 - 步骤：1) 汇总各节点验证报告成逐 AC 证据表；2) 修 #358 正文 [x] 与实际状态一致（implemented→勾选+证据链接；partial→保持未勾+缺口）；3) 子票逐张评论证据与去向（不关票，除非用户授权）；4) closeout.md 归档
 - 验收：状态、AC、证据三方一致；不以文档勾选替代测试证据（表里每行有验证命令引用）
 - 提交策略：单提交 `docs(craft): #419 证据收口汇总`

@@ -58,7 +58,7 @@
 - 后台：`routines/run-turn.ts`、`index.ts` 的 createTurnRunner 调用及 routineIntelligence 历史读取仍依赖 Intelligence。
 - 学习：`learning/runtime.ts` 使用 `@copilotkit/runtime/internal/learned-skills`，快照/归档/撤销能力有实际依赖，不能以 Mastra skills 名称相似推断可替换。
 - 仅确认 `CheckpointService/RecoveryService` 声明存在，没有据此认定持久恢复实现可用；Task 6 必须验证实际存储。
-- 旧 `docs/plans/2026-10-13-mastra-orca-continuation.md` 引用的 `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` 在规划读取时缺失。Task 0 登记此缺口；不能静默沿用其“已批准”标签扩大本计划范围。
+- 旧 `docs/plans/mastra/intelligence/2026-10-13-mastra-orca-continuation.md` 引用的 `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` 在规划读取时缺失。Task 0 登记此缺口；不能静默沿用其“已批准”标签扩大本计划范围。
 - 当前 manifest 声明 `@mastra/core=1.64.0`、`@mastra/client-js=1.43.0`、`@mastra/memory=1.20.0`、`@mastra/pg=1.25.0`、`@mastra/hono=1.5.0`、`@ag-ui/mastra=1.1.6`、server `ai=6.0.264`。根目录为另一 AI SDK 主版本。Task 1 核实 lockfile 与实际解析，不直接使用最新文档 API。
 
 官方参考与读取日期见 `docs/plans/research/2026-10-19-mastra-official-capabilities.md`。Agent HITL、流协议和 durable 特性以实际锁定版本探针为准。

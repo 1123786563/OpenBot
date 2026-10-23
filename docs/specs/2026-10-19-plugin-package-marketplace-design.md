@@ -7,9 +7,9 @@
 
 用户可以把一组 Skill、专家模板和受管连接器作为一个明确版本的插件包安装、配置并授予 Bot 使用。管理员能从一次调用追溯包版本、安装范围、操作者、Bot、连接账号、授权、审批和实际结果。
 
-本次形成两份交付物：本文冻结推荐技术选择；[实施计划](../plans/2026-10-19-plugin-package-marketplace-implementation.md)规定任务、接口、文件归属、顺序和验证。文档中的“冻结”指本方案内部选定一种做法，审批状态仍为评审稿。
+本次形成两份交付物：本文冻结推荐技术选择；[实施计划](../plans/plugin-marketplace/2026-10-19-plugin-package-marketplace-implementation.md)规定任务、接口、文件归属、顺序和验证。文档中的“冻结”指本方案内部选定一种做法，审批状态仍为评审稿。
 
-依据：根 `CONTEXT.md`；已接受 [ADR 0004](../adr/0004-company-team-tenancy.md)、[ADR 0006](../adr/0006-logical-private-bot-scoped-execution.md)、[ADR 0008](../adr/0008-test-runner-tester-army-e2e.md)；[企业平台规划 §8](../superpowers/specs/2026-10-09-enterprise-ai-platform-design.md)；[个人与小企业产品规格](2026-10-16-enterprise-personal-agent-product-permissions-spec.md)。后两份中的提议不因本稿自动获批。[ADR 0007](../adr/0007-personal-space-business-scope-and-payer.md)仍为 proposed。
+依据：根 `CONTEXT.md`；已接受 [ADR 0004](../adr/0004-company-team-tenancy.md)、[ADR 0006](../adr/0006-logical-private-bot-scoped-execution.md)、[ADR 0008](../adr/0008-test-runner-tester-army-e2e.md)；[企业平台规划 §8](2026-10-09-enterprise-ai-platform-design.md)；[个人与小企业产品规格](2026-10-16-enterprise-personal-agent-product-permissions-spec.md)。后两份中的提议不因本稿自动获批。[ADR 0007](../adr/0007-personal-space-business-scope-and-payer.md)仍为 proposed。
 
 外部参考于本次会话读取：[Cursor 插件 Schema](https://github.com/cursor/plugins/blob/main/schemas/plugin.schema.json)、[市场 Schema](https://github.com/cursor/plugins/blob/main/schemas/marketplace.schema.json)、[OpenAI 插件格式说明](https://github.com/openai/plugins/blob/main/.agents/skills/plugin-creator/references/plugin-json-spec.md)、[OpenAI 市场](https://github.com/openai/plugins/blob/main/.agents/plugins/marketplace.json)。借鉴两层清单和能力组合，不据此承诺两种格式的完整运行时兼容。
 
@@ -292,4 +292,4 @@ V1 的规范运行格式为 openbot.plugin.json。V2 可增加离线 Cursor/Code
 
 ## 15. 完成判据
 
-[实施计划](../plans/2026-10-19-plugin-package-marketplace-implementation.md)中 V1 所有任务 verified；A01–A12 有同一交付版本上的证据；受限角色真实 DB 测试和入口行为通过；独立 Spec/质量 Review 与完整范围 OCR 无有效 critical/high/medium；最终 diff 范围明确。个人模式、外部导入和开放发行分别记录后续范围，不计入 V1 已支持能力。
+[实施计划](../plans/plugin-marketplace/2026-10-19-plugin-package-marketplace-implementation.md)中 V1 所有任务 verified；A01–A12 有同一交付版本上的证据；受限角色真实 DB 测试和入口行为通过；独立 Spec/质量 Review 与完整范围 OCR 无有效 critical/high/medium；最终 diff 范围明确。个人模式、外部导入和开放发行分别记录后续范围，不计入 V1 已支持能力。

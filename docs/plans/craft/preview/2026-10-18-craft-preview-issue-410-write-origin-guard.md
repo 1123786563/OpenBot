@@ -2,7 +2,7 @@
 
 - 票面：<https://github.com/1123786563/OpenBot/issues/410>（Parent #358，Priority P0，AC: AC1，Related #362，Dependencies CP-03）
 - 基线提交：`bbea87ba`（本轮全部证据都在该提交的工作树上产出；改动尚未提交）
-- 设计事实源：`docs/specs/2026-10-15-craft-preview-origin-design.md`（AC1/D1/D3/D5/D7）、`docs/plans/2026-10-17-craft-preview-cp-wave-index.md`（CP-03 → #410 的映射，D-5 落点）
+- 设计事实源：`docs/specs/2026-10-15-craft-preview-origin-design.md`（AC1/D1/D3/D5/D7）、`docs/plans/craft/preview/2026-10-17-craft-preview-cp-wave-index.md`（CP-03 → #410 的映射，D-5 落点）
 - 记录时间：2026-10-18
 
 ## 1. 这轮补的是哪一层

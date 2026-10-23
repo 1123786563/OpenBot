@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, CopilotKit SSE, Mastra, Drizzle/PostgreSQL, Orca supervised Claude workers, OCR.
 
-**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; DAG and acceptance map `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; recovery plan `docs/plans/2026-10-13-mastra-migration-recovery-execution.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; DAG and acceptance map `docs/plans/mastra/intelligence/2026-10-11-mastra-intelligence-only-dag.md`; recovery plan `docs/plans/mastra/intelligence/2026-10-13-mastra-migration-recovery-execution.md`.
 
 ## Global Constraints
 
@@ -33,12 +33,12 @@ The parent Ledger is `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/p
 
 | Node | Depends on | Status | Owner / validator | Plan and output |
 | --- | --- | --- | --- | --- |
-| A-F1 | Task A initial reviewed checkpoint | verified at test SHA256 `c7bc545c9bd9241186f43710da78d7a9bcfc98d4bce248a045c9b4cd38e262de` | backend implementer / backend validator | `docs/plans/2026-10-13-mastra-t2-expert-descriptor-fix1.md`; test-only checkpoint closing A1/A2 |
+| A-F1 | Task A initial reviewed checkpoint | verified at test SHA256 `c7bc545c9bd9241186f43710da78d7a9bcfc98d4bce248a045c9b4cd38e262de` | backend implementer / backend validator | `.archive/runs/legacy-plans/2026-10-13-mastra/briefs/2026-10-13-mastra-t2-expert-descriptor-fix1.md`; test-only checkpoint closing A1/A2 |
 | A-R | A-F1 frozen checkpoint | verified; Spec PASS / Quality PASS | independent reviewer | Separate report `task-a-fix1-reviewer-report.md` |
-| B | A-R pass, Expert catalog Task 1 verified | verified for DB-free scope; Spec PASS / Quality PASS | backend implementer / backend validator | Task B of `docs/plans/2026-10-13-mastra-t2-expert-admission-bridge.md`; distinct immutable Expert ref at Run admission |
-| SSE | B reviewed checkpoint, request failure Fix3, route catalog Fix2 | verified DB-free; validator PASS, Spec PASS, Quality PASS | backend implementer / backend validator | `docs/plans/2026-10-12-mastra-t2-runner-sse-admission.md`; mounted durable Runner/SSE and intent gate, database gates open |
-| Remote tests | accepted Task A fail-closed ruling and SSE frozen checkpoint | verified DB-free; validator PASS, Spec PASS, Quality PASS | backend implementer / backend validator | `docs/plans/2026-10-13-mastra-remote-stale-tests-fix1.md`; repaired 18 stale assertions without production edits; low evidence-format note in Ledger |
-| T2-GOV | SSE reviewed checkpoint | success, route and built-in execution plans ready; first implementation pending | backend implementer / backend validator | `docs/plans/2026-10-13-mastra-governed-run-success.md`, `docs/plans/2026-10-13-mastra-governed-route-rebind.md`, `docs/plans/2026-10-13-mastra-governed-built-in-execution.md` |
+| B | A-R pass, Expert catalog Task 1 verified | verified for DB-free scope; Spec PASS / Quality PASS | backend implementer / backend validator | Task B of `docs/plans/mastra/intelligence/2026-10-13-mastra-t2-expert-admission-bridge.md`; distinct immutable Expert ref at Run admission |
+| SSE | B reviewed checkpoint, request failure Fix3, route catalog Fix2 | verified DB-free; validator PASS, Spec PASS, Quality PASS | backend implementer / backend validator | `docs/plans/mastra/intelligence/2026-10-12-mastra-t2-runner-sse-admission.md`; mounted durable Runner/SSE and intent gate, database gates open |
+| Remote tests | accepted Task A fail-closed ruling and SSE frozen checkpoint | verified DB-free; validator PASS, Spec PASS, Quality PASS | backend implementer / backend validator | `.archive/runs/legacy-plans/2026-10-13-mastra/briefs/2026-10-13-mastra-remote-stale-tests-fix1.md`; repaired 18 stale assertions without production edits; low evidence-format note in Ledger |
+| T2-GOV | SSE reviewed checkpoint | success, route and built-in execution plans ready; first implementation pending | backend implementer / backend validator | `docs/plans/mastra/intelligence/2026-10-13-mastra-governed-run-success.md`, `docs/plans/mastra/intelligence/2026-10-13-mastra-governed-route-rebind.md`, `docs/plans/mastra/intelligence/2026-10-13-mastra-governed-built-in-execution.md` |
 | T3-CORE | T1, SSE, T2-GOV reviewed code checkpoints | pending | backend implementer / backend validator | full-parts Mastra history and intents; DB acceptance separate |
 | T2-HEADLESS | T2-GOV and T3-CORE reviewed code checkpoints | pending | backend implementer / backend validator | existing routine/responsibility/handoff consumers use OpenBot Runner/API and full-fidelity history |
 | T4–T6 | parent DAG prerequisites and reviewed T3-CORE/T2-HEADLESS interfaces | pending | backend implementer / backend validator | memory, learning and execution adapters per parent plan; aggregate database gates remain open |
@@ -54,7 +54,7 @@ The shared workspace runs source edits serially. Read-only mapping and disjoint,
 **Interfaces:** Consumes `createRuntimeAgentLoader`, `createActorAgentResolver`, the built-in Agent prompt seam and the reviewed Task A descriptor. Produces evidence that loader provenance, actor filtering, off-roster denial and prompt identity are exercised.
 
 - [ ] Confirm baseline hashes, save complete before inventory and focused file content.
-- [ ] Follow every step and assertion in `docs/plans/2026-10-13-mastra-t2-expert-descriptor-fix1.md` and `.superpowers/sdd/2026-10-13-mastra-t2-expert-version-prerequisite/task-a-fix1-brief.md` using `superpowers:executing-plans`.
+- [ ] Follow every step and assertion in `.archive/runs/legacy-plans/2026-10-13-mastra/briefs/2026-10-13-mastra-t2-expert-descriptor-fix1.md` and `.superpowers/sdd/2026-10-13-mastra-t2-expert-version-prerequisite/task-a-fix1-brief.md` using `superpowers:executing-plans`.
 - [ ] Run the new focused test before any product edit and record the actual result. If it reveals a product defect, stop and report for a new source-fix plan.
 - [ ] Run focused descriptor/resolver checks, scoped Biome and diff check. Save after hashes, exact increment, command outputs and implementation report. Do not access a database.
 - [ ] Coordinator dispatches independent backend validation and review against the same hash. Only Spec PASS and Quality PASS close A1/A2; otherwise create a numbered fix plan and repeat.

@@ -7,7 +7,7 @@
   "publication_authorized": true,
   "implementation_started": false,
   "spec": "docs/specs/2026-10-20-upstream-openbot-adoption-design.md",
-  "implementation_plan": "docs/plans/2026-10-20-upstream-openbot-refactor/implementation-plan.md",
+  "implementation_plan": "docs/plans/upstream-sync/2026-10-20-upstream-openbot-refactor/implementation-plan.md",
   "proposed_labels": [
     "enhancement",
     "ready-for-agent"

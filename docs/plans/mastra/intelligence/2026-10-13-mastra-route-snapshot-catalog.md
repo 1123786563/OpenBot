@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Drizzle ORM, PostgreSQL, Vitest, existing enterprise DataDatabase/RLS patterns.
 
-**Spec:** Approved Mastra Intelligence-only design `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent DAG `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; Task 2 Brief `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/briefs/task-2.md`; current T2 Runner/SSE plan `docs/plans/2026-10-12-mastra-t2-runner-sse-admission.md`; route evidence `.superpowers/sdd/2026-10-12-mastra-t2-active-run-lookup/reports/route-registry-architecture.md`, `route-source-research.md`, `route-registry-addendum.md`, and `route-contract-gate-reassessment.md`.
+**Spec:** Approved Mastra Intelligence-only design `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent DAG `docs/plans/mastra/intelligence/2026-10-11-mastra-intelligence-only-dag.md`; Task 2 Brief `.superpowers/sdd/2026-10-11-mastra-intelligence-only-dag/briefs/task-2.md`; current T2 Runner/SSE plan `docs/plans/mastra/intelligence/2026-10-12-mastra-t2-runner-sse-admission.md`; route evidence `.superpowers/sdd/2026-10-12-mastra-t2-active-run-lookup/reports/route-registry-architecture.md`, `route-source-research.md`, `route-registry-addendum.md`, and `route-contract-gate-reassessment.md`.
 
 ## Global Constraints
 

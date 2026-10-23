@@ -1,6 +1,6 @@
 # P11 Approval Rule Save-Error Focus Repair
 
-- **Parent:** `docs/plans/2026-10-20-workspace-redesign-b1.md` T05/P11; route acceptance P11; B1-E/B1-I verification cases.
+- **Parent:** `docs/plans/workspace-redesign/b1/2026-10-20-workspace-redesign-b1.md` T05/P11; route acceptance P11; B1-E/B1-I verification cases.
 - **Finding:** In the isolated authenticated browser, a controlled 400 from `POST /api/approvals/rules` retains the typed rule and alert, but `document.activeElement` becomes `BODY`; Escape leaves the controlled Add a rule dialog open. Cancel closes it and restores focus. No rule write was accepted.
 - **Goal:** Keep keyboard focus on the rule editor after save rejection so the draft can be corrected and Escape can dismiss the dialog.
 - **Scope:** `app/src/components/approvals/rules.tsx`, its existing focused behavior test `app/tests/approvals-rules.test.tsx`, and evidence/report files listed in the Task Brief.

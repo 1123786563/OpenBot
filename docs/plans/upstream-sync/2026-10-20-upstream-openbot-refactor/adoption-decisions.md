@@ -23,7 +23,7 @@
 | 记忆镜像"部分具备（未找到定期迁移式同步）" | **已具备**：`server/src/memory/store.ts` 有明确的镜像资格谓词与逐人单飞镜像流程，仅镜像本人已确认（`confirmed`/`edited`）、启用、未删除、非空的个人记忆到 Intelligence | `server/src/memory/store.ts:65-71`（`mirrorEligible` SQL 与谓词）、`:111`（"the person has accepted is mirrored there"）、`:129-130`（one mirror pass per person）；`server/src/memory/intelligence.ts:18-22`（GRANT `user: read-write, project: none`） |
 | 网页研究上游路径 `server/src/web-research.ts` | **路径错误**：上游 `e8bb2736` 不存在 `server/src/web-research.ts`；实际为根级共享模块 `shared/research.ts`（server 与 app 共用），配套 `server/tests/web-research.test.ts`，server 侧集成在 `server/src/plugins/*` | `git show e8bb2736:shared/research.ts:2`（"by role rather than by provider, shared by the server and the app"）；`git ls-tree e8bb2736 server/tests/`（`web-research.test.ts`）；`git show e8bb2736:server/src/web-research.ts` → fatal 不存在 |
 
-本地对研究角色的吸收（A10）由本轮 R01–R03 在途任务交付（`docs/plans/2026-10-20-upstream-openbot-refactor/implementation-plan.md:49`），worktree 已出现未提交的 `shared/research.ts`、`shared/research.test.ts`，不在本评估重复判定。
+本地对研究角色的吸收（A10）由本轮 R01–R03 在途任务交付（`docs/plans/upstream-sync/2026-10-20-upstream-openbot-refactor/implementation-plan.md:49`），worktree 已出现未提交的 `shared/research.ts`、`shared/research.test.ts`，不在本评估重复判定。
 
 ---
 

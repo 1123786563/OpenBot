@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun/Hono、Better Auth 1.7.1（候选固定版本，P01 核验）、Drizzle/PostgreSQL、React/Vite/TanStack Router/Query、现有 shadcn 体系、现有 Mastra/Worker、Tauri/已启用移动端；tester-army e2e 统一调度。
 
-**Spec:** [2026-10-22-better-auth-full-integration-design.md](../../specs/2026-10-22-better-auth-full-integration-design.md)，v2.3、尚未批准实施；本计划按用户要求提前展开，**不改变 Spec 批准状态，也不启动实施**。
+**Spec:** [2026-10-22-better-auth-full-integration-design.md](../../../specs/2026-10-22-better-auth-full-integration-design.md)，v2.3、尚未批准实施；本计划按用户要求提前展开，**不改变 Spec 批准状态，也不启动实施**。
 
 ## Global Constraints
 
@@ -41,7 +41,7 @@
 
 本轮只交付计划。规划基线为 2026-10-22 本地 HEAD `bcf51633f16201aa453ed5f4dbe81007f498de55` 加当前工作区；Spec 中 e8ea2102 是其历史读取基线，不能直接当作执行 BASE。当前 `main` 含用户及其他工作的 staged/unstaged/untracked 改动，部分 tenancy 文件仍在变化；计划列出的是复用位置，不证明现有能力已完成。恢复或开工必须重核 Git、文件内容、适用规则及新的批准事实源。
 
-事实源：Spec → [ADR 0011](../../adr/0011-better-auth-identity-and-membership-authority.md) 的已接受选型 → [CONTEXT.md](../../../CONTEXT.md) → 相邻职责 ADR。读取 [ADR 0006](../../adr/0006-logical-private-bot-scoped-execution.md)、[0007](../../adr/0007-personal-space-business-scope-and-payer.md)、[0008](../../adr/0008-test-runner-tester-army-e2e.md)、[0009](../../adr/0009-remove-knowledge-base-domain.md)、[0010](../../adr/0010-mastra-execution-openbot-governance.md) 的适用条款；proposed 个人空间不因本计划变为批准。
+事实源：Spec → [ADR 0011](../../../adr/0011-better-auth-identity-and-membership-authority.md) 的已接受选型 → [CONTEXT.md](../../../../CONTEXT.md) → 相邻职责 ADR。读取 [ADR 0006](../../../adr/0006-logical-private-bot-scoped-execution.md)、[0007](../../../adr/0007-personal-space-business-scope-and-payer.md)、[0008](../../../adr/0008-test-runner-tester-army-e2e.md)、[0009](../../../adr/0009-remove-knowledge-base-domain.md)、[0010](../../../adr/0010-mastra-execution-openbot-governance.md) 的适用条款；proposed 个人空间不因本计划变为批准。
 
 未指定新 Issue，本计划 `source_issues=[]`，不声称已摄取远端 Issue，不复活旧 Issue #6。如果后续以新 Issue 执行，先完整读取其树、讨论和依赖，解决与获批 Spec 的差异，再生成快照及执行 DAG。
 
@@ -142,7 +142,7 @@
 
 用户当前要求将审核修正方案写回设计及配套计划，结束于方案文档交付。若后续明确要求执行，按现有工程规则默认 SDD 沿 DAG 串行推进；无需再就执行方式重复确认。先完成 G0，P01/P02 取得可行性证据后再进入目录与业务接入，任一可行性阻塞先修订事实源，不把尚未批准 Spec 默认为已批准。
 
-实施时以数字 1–25 调用 SDD `task-brief`，P01–P25 是 DAG 稳定 ID；Task 25/P25 物理放在 Task 4 之后，拓扑顺序 P01→P02/P03→P04→P25→P05…，编号不代表执行顺序。例如 `bash <技能目录>/scripts/task-brief docs/plans/2026-10-22-better-auth-full-integration/plan.md 1 .archive/runs/<执行 run>/briefs/P01-brief.md`；先创建目标目录，替换路径参数。使用其第三个输出参数，避免报告误落默认临时目录。Review Package/独立 Report/验证证据全部按项目规则归档；工具必须创建的 scratch 只作临时位置，Ledger 以本次 Run 为事实源并核对计划身份。每份 Brief 另带原文 Global Constraints、必要接口及前置检查点，不给实现者整份主会话。规划自查不代替开工后的共享文件/接口逐对预检。
+实施时以数字 1–25 调用 SDD `task-brief`，P01–P25 是 DAG 稳定 ID；Task 25/P25 物理放在 Task 4 之后，拓扑顺序 P01→P02/P03→P04→P25→P05…，编号不代表执行顺序。例如 `bash <技能目录>/scripts/task-brief docs/plans/better-auth/full-integration/plan.md 1 .archive/runs/<执行 run>/briefs/P01-brief.md`；先创建目标目录，替换路径参数。使用其第三个输出参数，避免报告误落默认临时目录。Review Package/独立 Report/验证证据全部按项目规则归档；工具必须创建的 scratch 只作临时位置，Ledger 以本次 Run 为事实源并核对计划身份。每份 Brief 另带原文 Global Constraints、必要接口及前置检查点，不给实现者整份主会话。规划自查不代替开工后的共享文件/接口逐对预检。
 
 ## 5. 详细任务
 

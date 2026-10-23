@@ -51,7 +51,7 @@
 - ADR 0004/0006 与 CONTEXT.md：公司、团队、本人、逻辑 Bot 范围仍由 OpenBot 确定；resource/thread/context 标识不能替代授权和数据库隔离。
 - ADR 0005：个人长期记忆的审核与 Hindsight 边界不能随框架替换静默改变。
 - `docs/specs/2026-10-16-long-running-task-lifecycle-spec.md` 是评审草案，不能视为已经批准的长任务实现需求。
-- `docs/plans/2026-10-13-mastra-orca-continuation.md` 描述的是 Intelligence 迁移，明确保留 OpenBot Agent 执行；本次“执行引擎迁移”比该历史计划范围更大。该计划引用的 `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` 在本工作区缺失，未核验原批准 Spec。不能从历史计划推断当前所有任务状态。
+- `docs/plans/mastra/intelligence/2026-10-13-mastra-orca-continuation.md` 描述的是 Intelligence 迁移，明确保留 OpenBot Agent 执行；本次“执行引擎迁移”比该历史计划范围更大。该计划引用的 `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md` 在本工作区缺失，未核验原批准 Spec。不能从历史计划推断当前所有任务状态。
 - 既有数据库隔离、重启和多实例验收是否已经通过，本次没有核验；仅确认相关实现存在。
 
 ## 官方依据

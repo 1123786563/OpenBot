@@ -57,7 +57,7 @@ export const DELIVERY_BASELINE = {
   tickets: {
     parent: "#5",
     batch: ["#352", "#353", "#354", "#355", "#356", "#357"],
-    plan: "docs/plans/2026-10-22-bf20-bifrost-352-357/plan.md",
+    plan: "docs/plans/bifrost/waves/2026-10-22-bf20-bifrost-352-357/plan.md",
     report: "reports/orca-dag-wave3-bf20.md",
   },
 } as const;

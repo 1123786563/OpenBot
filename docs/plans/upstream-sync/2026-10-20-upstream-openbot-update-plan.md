@@ -10,7 +10,7 @@
 
 **Tech Stack:** Bun（当前 packageManager 为 `bun@1.4.3`）、TypeScript、React、Hono、Drizzle/PostgreSQL、Tauri/Rust、Python agent harness、AG-UI；测试遵循 ADR 0008 的 native/driven 两层。
 
-**Spec:** 本次用户要求“详细的更新方案”，承接 [逐功能比较](../research/2026-10-20-upstream-openbot-feature-matrix.md)。该对照表只是调查输入，并非批准需求。本计划的需求边界由下文定义；架构约束来自根 `CONTEXT.md`、ADR 0002–0010，以及 [Mastra 迁移 Spec](../specs/2026-10-19-mastra-agent-execution-migration-design.md)。用户已于 2026-10-20 采用详细设计并授权发布 Issue；正式父 Spec 为 #489，未授权本轮启动实施或上线。
+**Spec:** 本次用户要求“详细的更新方案”，承接 [逐功能比较](../research/2026-10-20-upstream-openbot-feature-matrix.md)。该对照表只是调查输入，并非批准需求。本计划的需求边界由下文定义；架构约束来自根 `CONTEXT.md`、ADR 0002–0010，以及 [Mastra 迁移 Spec](../../specs/2026-10-19-mastra-agent-execution-migration-design.md)。用户已于 2026-10-20 采用详细设计并授权发布 Issue；正式父 Spec 为 #489，未授权本轮启动实施或上线。
 
 ## Global Constraints
 

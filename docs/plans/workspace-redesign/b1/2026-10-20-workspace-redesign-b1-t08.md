@@ -1,6 +1,6 @@
 # T08 Implementation — B1 Final Verification and Review Gate
 
-- **Parent plan:** `docs/plans/2026-10-20-workspace-redesign-b1.md` Task 8.
+- **Parent plan:** `docs/plans/workspace-redesign/b1/2026-10-20-workspace-redesign-b1.md` Task 8.
 - **Scope:** evidence and review for T01–T07 and P01–P23 only. No production or test source edits; bounded corrections require a new scoped SDD plan and ownership record.
 - **Facts:** accepted refinement handoff, `CONTEXT.md`, ADR 0008, task ledger, T01–T07 PRE/POST packages, implementation reports and independent reviews.
 - **Owner/sequence:** coordinator produces full app verification and page matrix; independent validator checks evidence; independent reviewer returns Spec and quality verdicts; coordinator runs OCR workspace review. No commits.

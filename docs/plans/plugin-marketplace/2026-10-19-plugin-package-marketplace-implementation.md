@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript、Bun/Hono、Zod、Drizzle/PostgreSQL、React/TanStack Query、现有 MCP/OpenConnector/Composio transport；tester-army e2e 为统一测试入口。
 
-**Spec:** [详细技术方案](../specs/2026-10-19-plugin-package-marketplace-design.md)。同时阅读根 CONTEXT.md、ADR 0004/0006/0008；ADR 0007 未批准，Personal Space 是后续接入依赖。
+**Spec:** [详细技术方案](../../specs/2026-10-19-plugin-package-marketplace-design.md)。同时阅读根 CONTEXT.md、ADR 0004/0006/0008；ADR 0007 未批准，Personal Space 是后续接入依赖。
 
 **Issue 拆解更新（2026-10-19）：** 用户随后要求拆为具体 Issue，已发布父方案 [#459](https://github.com/1123786563/OpenBot/issues/459) 与 12 张纵向业务票；[真实依赖与验收映射](../tickets/plugin-package-marketplace/README.md) 取代本文 T1–T10 作为 Issue 领取顺序。本文仍作技术实现参考，执行单个 Issue 时只提取它需要的 Task，不把整套水平任务提前实施。
 

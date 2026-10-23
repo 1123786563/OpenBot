@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, Drizzle, PostgreSQL, existing CopilotKit/AG-UI execution integrations, pinned Mastra packages and storage. Exact supported Mastra APIs must be proven against the lockfile before implementation consumes them.
 
-**Spec:** [Mastra Intelligence-only design](../superpowers/specs/2026-10-11-mastra-intelligence-only-design.md), approved by user 2026-10-11. Existing enterprise requirements remain governed by [enterprise AI platform design](../superpowers/specs/2026-10-09-enterprise-ai-platform-design.md). No Issue was supplied; this plan uses the approved spec and current code as source. The previous [Mastra unified runtime plan](../superpowers/plans/2026-10-10-mastra-intelligence-migration.md) is superseded wherever it assigns product Agent execution, tools, HITL, or recovery to Mastra.
+**Spec:** [Mastra Intelligence-only design](../superpowers/specs/2026-10-11-mastra-intelligence-only-design.md), approved by user 2026-10-11. Existing enterprise requirements remain governed by [enterprise AI platform design](../../../specs/2026-10-09-enterprise-ai-platform-design.md). No Issue was supplied; this plan uses the approved spec and current code as source. The previous [Mastra unified runtime plan](../../superpowers/2026-10-10-mastra-intelligence-migration.md) is superseded wherever it assigns product Agent execution, tools, HITL, or recovery to Mastra.
 
 ## Global Constraints
 

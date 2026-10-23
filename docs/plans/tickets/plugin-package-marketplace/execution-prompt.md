@@ -23,7 +23,7 @@
    - docs/specs/2026-10-19-plugin-package-marketplace-design.md
    - docs/plans/tickets/plugin-package-marketplace/README.md
    - docs/plans/tickets/plugin-package-marketplace/manifest.json
-   - docs/plans/2026-10-19-plugin-package-marketplace-implementation.md
+   - docs/plans/plugin-marketplace/2026-10-19-plugin-package-marketplace-implementation.md
    文件缺失时从父 Issue 完整快照与子 Issue 正文恢复所需依据，不假定未提交文档已在远端。
 5. 原计划 T1–T10 是技术参考；正式业务拆分以 #460–#471 和当前 Issue DAG 为准。每张业务票内部再拆 Task，不能为做前一张票提前实施后续全部功能。
 6. 核对 Git、已有 Worktree、Ledger、检查点及审查记录。已完成并集成的能力先验证复用，不能按 open/closed 或 ready-for-agent 标签直接判断完成。

@@ -1,6 +1,6 @@
 # P28 DetailPanel Width Repair
 
-- **Parent plan:** `docs/plans/2026-10-20-workspace-redesign-b1.md` (T03 shared detail-panel compatibility; T08 rendered regression acceptance).
+- **Parent plan:** `docs/plans/workspace-redesign/b1/2026-10-20-workspace-redesign-b1.md` (T03 shared detail-panel compatibility; T08 rendered regression acceptance).
 - **Evidence:** authenticated browser capture of `/craft/tasks?new=true` at 1440×900 showed the Craft session roster at 256px and the editor's `DetailPanel` root at only 408px inside the 920px app content area. The new-task Sheet therefore remains modal at desktop width, leaving the expected inline breakpoint unreachable. The parent route is a flex row; `CraftTaskEditorPresenter` currently contributes a non-growing flex item.
 - **Goal:** make the P28 task editor's shared DetailPanel consume the remaining width after the Craft session roster. Preserve the existing 879/880px 400px-panel threshold, query-owned open state, draft lifetime, task API behavior, and all other layouts.
 - **Out of scope:** changing panel breakpoints, changing task editing/product behavior, redesigning P28, touching the general DetailPanel unless the bounded implementation proves that necessary, or changing persistent data.

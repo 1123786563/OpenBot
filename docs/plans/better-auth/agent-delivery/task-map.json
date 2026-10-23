@@ -6,9 +6,9 @@
     "base": "bcf51633f16201aa453ed5f4dbe81007f498de55",
     "files": {
       "docs/specs/2026-10-22-better-auth-full-integration-design.md": "bafef820abcfcbb0e5fb5a18a21f395e3ec50fd30cdbb90f5fa55ffe4243e47c",
-      "docs/plans/2026-10-22-better-auth-full-integration/interfaces.md": "66952d99c0c252c60d39683aab94b185949d2ad52e5d6943aa8ebdd66770a7d1",
-      "docs/plans/2026-10-22-better-auth-full-integration/plan.md": "60cdc7063d3f950a7d6c1ed1a0e9c21890a228052206dc36266b1f154da9fde6",
-      "docs/plans/2026-10-22-better-auth-full-integration/acceptance.md": "3bb52a6ec451a2e670454309c50e4dc635f945bfb69d0a02a4f8078c4158e968"
+      "docs/plans/better-auth/full-integration/interfaces.md": "66952d99c0c252c60d39683aab94b185949d2ad52e5d6943aa8ebdd66770a7d1",
+      "docs/plans/better-auth/full-integration/plan.md": "60cdc7063d3f950a7d6c1ed1a0e9c21890a228052206dc36266b1f154da9fde6",
+      "docs/plans/better-auth/full-integration/acceptance.md": "3bb52a6ec451a2e670454309c50e4dc635f945bfb69d0a02a4f8078c4158e968"
     },
     "note": "v2.3 (F-01–F-10 写回后)；v2.2 快照保留于 sources/manifest.json + sources/docs/"
   },

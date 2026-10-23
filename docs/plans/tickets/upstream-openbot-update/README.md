@@ -7,7 +7,7 @@
 ## 阅读入口
 
 - 产品设计：`docs/specs/2026-10-20-upstream-openbot-adoption-design.md`。
-- 实施细节：`docs/plans/2026-10-20-upstream-openbot-refactor/implementation-plan.md`（18 个内部 Task）。
+- 实施细节：`docs/plans/upstream-sync/2026-10-20-upstream-openbot-refactor/implementation-plan.md`（18 个内部 Task）。
 - 父 Issue 正文：`parent-issue.md`。
 - 子 Issue：`issues/up01.md` 至 `issues/up12.md`，每票独立含行为、验收、边界、验证与交接。
 - `tickets.json`：真实依赖、验收映射、内部 Task 对应及发布状态。

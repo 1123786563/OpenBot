@@ -1,6 +1,6 @@
 # P15 Role Textarea Regression Review Fix
 
-- **Parent:** `docs/plans/2026-10-21-workspace-redesign-p15-error-focus.md` Task 3 follow-up.
+- **Parent:** `docs/plans/workspace-redesign/b1/2026-10-21-workspace-redesign-p15-error-focus.md` Task 3 follow-up.
 - **Finding:** `.archive/runs/2026-10-20-workspace-redesign-b1/reports/T05-P15-textarea-test-review.md` low T05-P15-TEXTAREA-Q1: the `HTMLTextAreaElement` assertion is erased at runtime, so the regression does not prove the Role editor is actually rendered as a textarea.
 - **Goal:** Make the rejected-save regression fail if the Role editor renders as an input.
 - **Scope:** `app/tests/bot-setup.test.tsx` only, plus a task report and PRE/POST evidence.

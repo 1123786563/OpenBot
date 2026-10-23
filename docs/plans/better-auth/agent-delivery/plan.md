@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun/Hono、Better Auth 1.7.1候选固定版本、Drizzle/PostgreSQL、React/Vite/TanStack、Mastra/Worker、Tauri、Expo/OpenMuse及Bifrost Go；tester-army e2e统一根调度。
 
-**Spec:** [v2.3候选设计](../../specs/2026-10-22-better-auth-full-integration-design.md)；[原25任务计划](../2026-10-22-better-auth-full-integration/plan.md)、[冻结接口](../2026-10-22-better-auth-full-integration/interfaces.md)、[验收合同](../2026-10-22-better-auth-full-integration/acceptance.md)。本轮仅编写计划与GitHub Issues，**不批准Spec、不实施生产代码、不提交/推送/合并/发布**。
+**Spec:** [v2.3候选设计](../../../specs/2026-10-22-better-auth-full-integration-design.md)；[原25任务计划](../full-integration/plan.md)、[冻结接口](../full-integration/interfaces.md)、[验收合同](../full-integration/acceptance.md)。本轮仅编写计划与GitHub Issues，**不批准Spec、不实施生产代码、不提交/推送/合并/发布**。
 
 ## Global Constraints
 
@@ -97,111 +97,111 @@ flowchart LR
 
 | Task | 目标 / 详细步骤 | 直接前置 | 实现 / 验证 | 原任务 |
 | --- | --- | --- | --- | --- |
-| T01.01 | [让 Bun 清单与实际执行严格对账](../tickets/better-auth/T01.01.md) | G0 | backend_implementer / backend_validator | P01 |
-| T01.02 | [为 BA 套件提供独立数据库角色与真实 HTTP 夹具](../tickets/better-auth/T01.02.md) | T01.01 | backend_implementer / backend_validator | P01 |
-| T01.03 | [证明固定版 BA 同连接事务与邀请原错误保留](../tickets/better-auth/T01.03.md) | T01.02 | backend_implementer / backend_validator | P01 |
-| T01.04 | [证明延迟 hook 与邮件吞错均可被提交围栏控制](../tickets/better-auth/T01.04.md) | T01.03 | backend_implementer / backend_validator | P01 |
-| T01.05 | [证明普通成员的精确团队命令无需管理员会话](../tickets/better-auth/T01.05.md) | T01.03 | backend_implementer / backend_validator | P01 |
-| T01.06 | [证明 OIDC 原始签名证据可绑定公司挑战](../tickets/better-auth/T01.06.md) | T01.02 | backend_implementer / backend_validator | P01 |
-| T01.07 | [证明 SAML 原断言与 RelayState 可用于公司证明](../tickets/better-auth/T01.07.md) | T01.02, T01.06 | backend_implementer / backend_validator | P01 |
-| T01.08 | [固定 BA UI 来源并接入现有 React Provider](../tickets/better-auth/T01.08.md) | T01.03 | frontend_implementer / frontend_validator | P02 |
-| T01.09 | [接通固定 UI 的 Organization 与账户 client adapter](../tickets/better-auth/T01.09.md) | T01.08 | frontend_implementer / frontend_validator | P02 |
-| T01.10 | [先交付子模块测试的根调度与固定白名单合同](../tickets/better-auth/T01.10.md) | T01.01 | backend_implementer / backend_validator | P01, P17, P20 |
-| T02.01 | [扩展 BA 目录与稳定业务 ID 映射](../tickets/better-auth/T02.01.md) | T01.04, T01.05, T01.06, T01.07 | backend_implementer / backend_validator | P03 |
-| T02.02 | [建立 Principal 身份代际与持久资格 clock](../tickets/better-auth/T02.02.md) | T02.01 | backend_implementer / backend_validator | P03 |
-| T02.03 | [建立命令终结、authority 与 outbox 持久模型](../tickets/better-auth/T02.03.md) | T02.02 | backend_implementer / backend_validator | P03 |
-| T02.04 | [为长期授权与个人模型凭据追加来源代际](../tickets/better-auth/T02.04.md) | T02.02 | backend_implementer / backend_validator | P03 |
-| T02.05 | [建立公司认证 challenge 与 proof 存储](../tickets/better-auth/T02.05.md) | T02.03 | backend_implementer / backend_validator | P03 |
-| T02.06 | [落实受限连接、DML guard 与延迟约束](../tickets/better-auth/T02.06.md) | T02.03, T02.04, T02.05 | backend_implementer / backend_validator | P03 |
-| T02.07 | [实现无公司前提的 PrincipalRegistry](../tickets/better-auth/T02.07.md) | T02.06 | backend_implementer / backend_validator | P04 |
-| T02.08 | [完成 Directory 同事务命令 executor 与 finalizer](../tickets/better-auth/T02.08.md) | T02.07, T02.10, T02.12 | backend_implementer / backend_validator | P04 |
-| T02.09 | [建立独立 Identity 命令与恢复事务内核](../tickets/better-auth/T02.09.md) | T02.07, T02.10, T02.12, T02.08 | backend_implementer / backend_validator | P04 |
-| T02.10 | [产出 authority 分支与关闭的 CompanyAssurance](../tickets/better-auth/T02.10.md) | T02.06 | backend_implementer / backend_validator | P04 |
-| T02.11 | [为原生 Admin/Organization 入口建立强制分类与读 gate](../tickets/better-auth/T02.11.md) | T02.08, T02.09 | backend_implementer / backend_validator | P04 |
-| T02.12 | [提供事务内 outbox 与 callback 完成 receipt 围栏](../tickets/better-auth/T02.12.md) | T02.06, T01.04 | backend_implementer / backend_validator | P04 |
-| T02.13 | [交付 M0 目录与授权来源只读盘点](../tickets/better-auth/T02.13.md) | T02.08, T02.09, T02.11 | backend_implementer / backend_validator | P25 |
-| T02.14 | [实现 M1 expand 与 M2 停写回填工具](../tickets/better-auth/T02.14.md) | T02.13 | backend_implementer / backend_validator | P25 |
-| T02.15 | [交付 M3 对账与后续任务可复用 authority 矩阵](../tickets/better-auth/T02.15.md) | T02.14 | backend_implementer / backend_validator | P25 |
-| T03.01 | [让真实 Scope gate 比较持久身份和两层资格版本](../tickets/better-auth/T03.01.md) | T02.15 | backend_implementer / backend_validator | P05 |
-| T03.02 | [提供稳定 ID 的公司团队发现和选择校验接口](../tickets/better-auth/T03.02.md) | T03.01 | backend_implementer / backend_validator | P05 |
-| T03.03 | [从平台入口原子开通公司并固定 payer](../tickets/better-auth/T03.03.md) | T03.02 | backend_implementer / backend_validator | P06 |
-| T03.04 | [实现公司暂停恢复及安全删除申请](../tickets/better-auth/T03.04.md) | T03.03 | backend_implementer / backend_validator | P06 |
-| T03.05 | [实现 Web 唯一公司团队切换协调器](../tickets/better-auth/T03.05.md) | T01.09, T03.02, T03.04 | frontend_implementer / frontend_validator | P07 |
-| T03.06 | [让 Web 缓存多标签和长流随选择代际清理](../tickets/better-auth/T03.06.md) | T03.05 | frontend_implementer / frontend_validator | P07 |
-| T03.07 | [接通真实 Web 壳和公司团队空态](../tickets/better-auth/T03.07.md) | T03.06 | frontend_implementer / frontend_validator | P07 |
-| T04.01 | [实现邀请创建取消重发与本人窄读](../tickets/better-auth/T04.01.md) | T03.04, T02.11 | backend_implementer / backend_validator | P08 |
-| T04.02 | [实现邀请接受拒绝和首次主体原子建立](../tickets/better-auth/T04.02.md) | T04.01 | backend_implementer / backend_validator | P08 |
-| T04.03 | [实现成员暂停移除恢复和最后 owner 保护](../tickets/better-auth/T04.03.md) | T04.02 | backend_implementer / backend_validator | P08 |
-| T04.04 | [完成验证邮箱真实邮件与邀请前置闭环](../tickets/better-auth/T04.04.md) | T04.02, T02.12 | backend_implementer / backend_validator | P08 |
-| T04.05 | [完成请求密码重置的 token 与邮件原子登记](../tickets/better-auth/T04.05.md) | T04.04, T02.09 | backend_implementer / backend_validator | P08 |
-| T04.06 | [完成原生密码重置唯一消费与安全代际终结](../tickets/better-auth/T04.06.md) | T04.05 | backend_implementer / backend_validator | P08 |
-| T04.07 | [提供公司管理员授予撤销团队管理 Grant 的接口](../tickets/better-auth/T04.07.md) | T04.03, T02.04 | backend_implementer / backend_validator | P09 |
-| T04.08 | [接通指定团队管理员成员增删命令](../tickets/better-auth/T04.08.md) | T04.07, T01.05 | backend_implementer / backend_validator | P09 |
-| T04.09 | [接通公司资料与团队管理真实页面](../tickets/better-auth/T04.09.md) | T03.07, T04.08 | frontend_implementer / frontend_validator | P10 |
-| T04.10 | [接通人员角色与团队管理 Grant UI](../tickets/better-auth/T04.10.md) | T04.09 | frontend_implementer / frontend_validator | P10 |
-| T04.11 | [完成公开邀请落地与登录换账号恢复](../tickets/better-auth/T04.11.md) | T04.10, T04.04 | frontend_implementer / frontend_validator | P10 |
-| T04.12 | [隔离默认与 BA Web 浏览器套件并审计 target](../tickets/better-auth/T04.12.md) | T04.11, T01.01 | frontend_implementer / frontend_validator | P10 |
-| T05.01 | [实现公司追加认证 challenge 的持久绑定](../tickets/better-auth/T05.01.md) | T04.03, T02.05, T03.01 | backend_implementer / backend_validator | P11 |
-| T05.02 | [接通 OIDC 公司证明原始证据回调](../tickets/better-auth/T05.02.md) | T05.01, T01.06 | backend_implementer / backend_validator | P11 |
-| T05.03 | [接通 SAML 公司证明自有 SP 与 ACS](../tickets/better-auth/T05.03.md) | T05.01, T01.07 | backend_implementer / backend_validator | P11 |
-| T05.04 | [在目录与业务 gate 中实时验证公司证明](../tickets/better-auth/T05.04.md) | T05.02, T05.03 | backend_implementer / backend_validator | P11 |
-| T05.05 | [把 SCIM 全方法接入原子目录命令](../tickets/better-auth/T05.05.md) | T05.04, T04.08 | backend_implementer / backend_validator | P12 |
-| T05.06 | [把 JIT 与批准组规则接入单次团队能力](../tickets/better-auth/T05.06.md) | T05.05, T04.04 | backend_implementer / backend_validator | P12 |
-| T05.07 | [接通全局禁用恢复角色与会话撤销真实入口](../tickets/better-auth/T05.07.md) | T05.06, T02.09 | backend_implementer / backend_validator | P12 |
-| T05.08 | [接通平台用户创建资料编辑与管理员密码重置](../tickets/better-auth/T05.08.md) | T05.07, T04.06 | backend_implementer / backend_validator | P12 |
-| T05.09 | [固定跨部署 issuer+subject 与原生回调身份](../tickets/better-auth/T05.09.md) | T05.07 | backend_implementer / backend_validator | P12 |
-| T05.10 | [让个人模型授权保存实时身份来源并安全重授权](../tickets/better-auth/T05.10.md) | T05.07, T02.04 | backend_implementer / backend_validator | P12 |
-| T05.11 | [封闭已挂载 Bot Service claim 与 renew 身份旁路](../tickets/better-auth/T05.11.md) | T05.10 | backend_implementer / backend_validator | P12 |
-| T05.12 | [实现移动企业模式一次性 PKCE session 交接](../tickets/better-auth/T05.12.md) | T05.09 | backend_implementer / backend_validator | P12 |
-| T05.13 | [实现 BFF 每次动作的在线身份范围准入](../tickets/better-auth/T05.13.md) | T05.12, T05.04, T03.02 | backend_implementer / backend_validator | P12 |
-| T05.14 | [接通 Web 账户验证与忘记重置密码页面](../tickets/better-auth/T05.14.md) | T04.11, T04.06, T05.08, T04.12 | frontend_implementer / frontend_validator | P13 |
-| T05.15 | [接通 Web 公司追加认证与受控恢复交互](../tickets/better-auth/T05.15.md) | T05.14, T05.04 | frontend_implementer / frontend_validator | P13 |
-| T05.16 | [接通平台用户管理与会话安全页面](../tickets/better-auth/T05.16.md) | T05.15, T05.08 | frontend_implementer / frontend_validator | P13 |
-| T06.01 | [让私有 Bot 与团队发布使用真实资源动作授权](../tickets/better-auth/T06.01.md) | T04.08, T05.07, T03.01 | backend_implementer / backend_validator | P14 |
-| T06.02 | [让会话与 Channel 操作检查创建者和对象动作](../tickets/better-auth/T06.02.md) | T06.01 | backend_implementer / backend_validator | P14 |
-| T06.03 | [在凭据 use 和明文披露前比较授权来源代际](../tickets/better-auth/T06.03.md) | T06.01, T02.04, T04.03 | backend_implementer / backend_validator | P14 |
-| T06.04 | [让 Memory 召回保留来源授权和个人隔离](../tickets/better-auth/T06.04.md) | T06.02, T06.03 | backend_implementer / backend_validator | P14 |
-| T06.05 | [隔离插件安装实例与 Skills Components 资源](../tickets/better-auth/T06.05.md) | T06.01 | backend_implementer / backend_validator | P14 |
-| T06.06 | [实现逐 pull 准入的敏感文件下载代理](../tickets/better-auth/T06.06.md) | T06.02 | backend_implementer / backend_validator | P15 |
-| T06.07 | [把旧文件和产物路由逐项接入在线下载代理](../tickets/better-auth/T06.07.md) | T06.06, T06.16 | backend_implementer / backend_validator | P15 |
-| T06.08 | [持久化 Run 的原始身份范围证明与 payer](../tickets/better-auth/T06.08.md) | T06.03, T05.04 | backend_implementer / backend_validator | P16 |
-| T06.09 | [在 Worker 领取重试恢复时重建持久 Run 范围](../tickets/better-auth/T06.09.md) | T06.08 | backend_implementer / backend_validator | P16 |
-| T06.10 | [在工具和凭据租约新动作前验证来源能力](../tickets/better-auth/T06.10.md) | T06.09, T06.03, T06.17 | backend_implementer / backend_validator | P16 |
-| T06.11 | [为实际网关提供个人 Key 在线身份准入](../tickets/better-auth/T06.11.md) | T05.11, T06.08 | backend_implementer / backend_validator | P16 |
-| T06.12 | [在部署启用的 Bifrost dispatch 前接在线身份准入](../tickets/better-auth/T06.12.md) | T06.11, T01.10 | backend_implementer / backend_validator | P16 |
-| T06.13 | [隔离浏览器沙箱池与外部可变状态](../tickets/better-auth/T06.13.md) | T06.10, T06.18 | backend_implementer / backend_validator | P17 |
-| T06.14 | [让入站 webhook OAuth callback 和事件订阅固定归属](../tickets/better-auth/T06.14.md) | T06.13 | backend_implementer / backend_validator | P17 |
-| T06.15 | [隔离公司观测审计元数据与私有内容导出](../tickets/better-auth/T06.15.md) | T06.14, T06.02 | backend_implementer / backend_validator | P17 |
-| T06.16 | [交付旧对象 URL 失效适配与 Computer 预览代理](../tickets/better-auth/T06.16.md) | T06.06 | backend_implementer / backend_validator | P15 |
-| T06.17 | [为共享审批持久化来源代际并在消费时重验](../tickets/better-auth/T06.17.md) | T06.09 | backend_implementer / backend_validator | P16 |
-| T06.18 | [封闭 Host 与外部执行租约的离线撤权窗口](../tickets/better-auth/T06.18.md) | T06.10 | backend_implementer / backend_validator | P16 |
-| T07.01 | [让公司财务入口消费独立财务 Grant](../tickets/better-auth/T07.01.md) | T06.08, T06.15, T02.04 | backend_implementer / backend_validator | P18 |
-| T07.02 | [验证团队共用公司余额与禁用后历史费用归属](../tickets/better-auth/T07.02.md) | T07.01, T05.11 | backend_implementer / backend_validator | P18 |
-| T07.03 | [在成员接受与真实资源动作 enforce 容量配额](../tickets/better-auth/T07.03.md) | T07.02, T04.03 | backend_implementer / backend_validator | P18 |
-| T07.04 | [统一身份目录业务审计的失败与脱敏合同](../tickets/better-auth/T07.04.md) | T07.03 | backend_implementer / backend_validator | P18 |
-| T07.05 | [实现 OpenMuse 企业 session 与原 Workspace 映射](../tickets/better-auth/T07.05.md) | T05.13, T06.02, T06.04, T07.01, T01.10 | backend_implementer / backend_validator | P17 |
-| T07.06 | [接通企业 BFF 的真实 CopilotKit 流与运行准入](../tickets/better-auth/T07.06.md) | T07.05, T06.10, T01.10 | backend_implementer / backend_validator | P17 |
-| T07.07 | [接通 BFF 媒体票据在线读取与公司追加认证代理](../tickets/better-auth/T07.07.md) | T07.06, T06.06, T05.04, T01.10 | backend_implementer / backend_validator | P17 |
-| T07.08 | [让 Desktop 唯一选择状态与本地缓存保持一致](../tickets/better-auth/T07.08.md) | T05.15, T07.04 | frontend_implementer / frontend_validator | P19 |
-| T07.09 | [固定 Desktop 原生登录与追加认证 callback 意图](../tickets/better-auth/T07.09.md) | T07.08, T05.09 | frontend_implementer / frontend_validator | P19 |
-| T07.10 | [接通真实 Mobile App 的企业 PKCE 登录与 MuseApi](../tickets/better-auth/T07.10.md) | T07.07, T05.14, T07.19, T01.10 | frontend_implementer / frontend_validator | P20 |
-| T07.11 | [让 Mobile 选择切换与 CopilotKit 流共享同一 session](../tickets/better-auth/T07.11.md) | T07.10, T03.06, T01.10 | frontend_implementer / frontend_validator | P20 |
-| T07.12 | [接通 Mobile 公司追加认证深链与 PDF 媒体读取](../tickets/better-auth/T07.12.md) | T07.11, T01.10 | frontend_implementer / frontend_validator | P20 |
-| T07.13 | [为真实 Mobile App 增加隔离浏览器入口和五链路验收](../tickets/better-auth/T07.13.md) | T07.12, T04.12 | frontend_implementer / frontend_validator | P20 |
-| T07.14 | [把 Web Bot 和 Channel query mutation 接统一范围代际](../tickets/better-auth/T07.14.md) | T05.16, T06.02, T03.06 | frontend_implementer / frontend_validator | P21 |
-| T07.15 | [把 Memory Craft Workshop 与审批页面接范围和下载合同](../tickets/better-auth/T07.15.md) | T07.14, T06.04, T06.07, T06.10 | frontend_implementer / frontend_validator | P21 |
-| T07.16 | [接通财务分权与观测页面并补真实业务浏览器矩阵](../tickets/better-auth/T07.16.md) | T07.15, T07.04, T06.15 | frontend_implementer / frontend_validator | P21 |
-| T07.17 | [让 BFF 邮件日历草稿会话和审批消费受控 namespace](../tickets/better-auth/T07.17.md) | T07.07, T01.10 | backend_implementer / backend_validator | P17 |
-| T07.18 | [让 BFF 浏览器与 Computer 控制逐动作在线准入](../tickets/better-auth/T07.18.md) | T07.17, T06.13, T06.18, T01.10 | backend_implementer / backend_validator | P17 |
-| T07.19 | [把 BFF Google OAuth 与附件导入绑定原始企业意图](../tickets/better-auth/T07.19.md) | T07.18, T06.14, T01.10 | backend_implementer / backend_validator | P17 |
-| T08.01 | [扩充最终迁移模型并实现 M3→M4 原子权威切换](../tickets/better-auth/T08.01.md) | T02.15, T07.09, T07.13, T07.16, T06.12, T06.05 | backend_implementer / backend_validator | P22 |
-| T08.02 | [实现不重置 clock 的投影重建与旧能力核验](../tickets/better-auth/T08.02.md) | T08.01 | backend_implementer / backend_validator | P22 |
-| T08.03 | [实现可信撤权高水位恢复与明确回退界限](../tickets/better-auth/T08.03.md) | T08.02 | backend_implementer / backend_validator | P22 |
-| T08.04 | [建立实际路由消费者与测试证据的版本化覆盖清单](../tickets/better-auth/T08.04.md) | T08.03 | backend_implementer / backend_validator | P23 |
-| T08.05 | [完成真实启动和 Worker 装配拒绝旁路](../tickets/better-auth/T08.05.md) | T08.04 | backend_implementer / backend_validator | P23 |
-| T08.06 | [独立验收真实数据库 IdP 邮件下载和实际网关](../tickets/better-auth/T08.06.md) | T08.05 | backend_validator / reviewer | P24 |
-| T08.07 | [独立验收真实 Web Desktop Mobile 与原生回调](../tickets/better-auth/T08.07.md) | T08.05 | frontend_validator / reviewer | P24 |
-| T08.08 | [完成全范围独立 Review OCR 与发布准备交接](../tickets/better-auth/T08.08.md) | T08.06, T08.07 | reviewer / 主控（独立汇总，不自批生产改动） | P24 |
+| T01.01 | [让 Bun 清单与实际执行严格对账](../../tickets/better-auth/T01.01.md) | G0 | backend_implementer / backend_validator | P01 |
+| T01.02 | [为 BA 套件提供独立数据库角色与真实 HTTP 夹具](../../tickets/better-auth/T01.02.md) | T01.01 | backend_implementer / backend_validator | P01 |
+| T01.03 | [证明固定版 BA 同连接事务与邀请原错误保留](../../tickets/better-auth/T01.03.md) | T01.02 | backend_implementer / backend_validator | P01 |
+| T01.04 | [证明延迟 hook 与邮件吞错均可被提交围栏控制](../../tickets/better-auth/T01.04.md) | T01.03 | backend_implementer / backend_validator | P01 |
+| T01.05 | [证明普通成员的精确团队命令无需管理员会话](../../tickets/better-auth/T01.05.md) | T01.03 | backend_implementer / backend_validator | P01 |
+| T01.06 | [证明 OIDC 原始签名证据可绑定公司挑战](../../tickets/better-auth/T01.06.md) | T01.02 | backend_implementer / backend_validator | P01 |
+| T01.07 | [证明 SAML 原断言与 RelayState 可用于公司证明](../../tickets/better-auth/T01.07.md) | T01.02, T01.06 | backend_implementer / backend_validator | P01 |
+| T01.08 | [固定 BA UI 来源并接入现有 React Provider](../../tickets/better-auth/T01.08.md) | T01.03 | frontend_implementer / frontend_validator | P02 |
+| T01.09 | [接通固定 UI 的 Organization 与账户 client adapter](../../tickets/better-auth/T01.09.md) | T01.08 | frontend_implementer / frontend_validator | P02 |
+| T01.10 | [先交付子模块测试的根调度与固定白名单合同](../../tickets/better-auth/T01.10.md) | T01.01 | backend_implementer / backend_validator | P01, P17, P20 |
+| T02.01 | [扩展 BA 目录与稳定业务 ID 映射](../../tickets/better-auth/T02.01.md) | T01.04, T01.05, T01.06, T01.07 | backend_implementer / backend_validator | P03 |
+| T02.02 | [建立 Principal 身份代际与持久资格 clock](../../tickets/better-auth/T02.02.md) | T02.01 | backend_implementer / backend_validator | P03 |
+| T02.03 | [建立命令终结、authority 与 outbox 持久模型](../../tickets/better-auth/T02.03.md) | T02.02 | backend_implementer / backend_validator | P03 |
+| T02.04 | [为长期授权与个人模型凭据追加来源代际](../../tickets/better-auth/T02.04.md) | T02.02 | backend_implementer / backend_validator | P03 |
+| T02.05 | [建立公司认证 challenge 与 proof 存储](../../tickets/better-auth/T02.05.md) | T02.03 | backend_implementer / backend_validator | P03 |
+| T02.06 | [落实受限连接、DML guard 与延迟约束](../../tickets/better-auth/T02.06.md) | T02.03, T02.04, T02.05 | backend_implementer / backend_validator | P03 |
+| T02.07 | [实现无公司前提的 PrincipalRegistry](../../tickets/better-auth/T02.07.md) | T02.06 | backend_implementer / backend_validator | P04 |
+| T02.08 | [完成 Directory 同事务命令 executor 与 finalizer](../../tickets/better-auth/T02.08.md) | T02.07, T02.10, T02.12 | backend_implementer / backend_validator | P04 |
+| T02.09 | [建立独立 Identity 命令与恢复事务内核](../../tickets/better-auth/T02.09.md) | T02.07, T02.10, T02.12, T02.08 | backend_implementer / backend_validator | P04 |
+| T02.10 | [产出 authority 分支与关闭的 CompanyAssurance](../../tickets/better-auth/T02.10.md) | T02.06 | backend_implementer / backend_validator | P04 |
+| T02.11 | [为原生 Admin/Organization 入口建立强制分类与读 gate](../../tickets/better-auth/T02.11.md) | T02.08, T02.09 | backend_implementer / backend_validator | P04 |
+| T02.12 | [提供事务内 outbox 与 callback 完成 receipt 围栏](../../tickets/better-auth/T02.12.md) | T02.06, T01.04 | backend_implementer / backend_validator | P04 |
+| T02.13 | [交付 M0 目录与授权来源只读盘点](../../tickets/better-auth/T02.13.md) | T02.08, T02.09, T02.11 | backend_implementer / backend_validator | P25 |
+| T02.14 | [实现 M1 expand 与 M2 停写回填工具](../../tickets/better-auth/T02.14.md) | T02.13 | backend_implementer / backend_validator | P25 |
+| T02.15 | [交付 M3 对账与后续任务可复用 authority 矩阵](../../tickets/better-auth/T02.15.md) | T02.14 | backend_implementer / backend_validator | P25 |
+| T03.01 | [让真实 Scope gate 比较持久身份和两层资格版本](../../tickets/better-auth/T03.01.md) | T02.15 | backend_implementer / backend_validator | P05 |
+| T03.02 | [提供稳定 ID 的公司团队发现和选择校验接口](../../tickets/better-auth/T03.02.md) | T03.01 | backend_implementer / backend_validator | P05 |
+| T03.03 | [从平台入口原子开通公司并固定 payer](../../tickets/better-auth/T03.03.md) | T03.02 | backend_implementer / backend_validator | P06 |
+| T03.04 | [实现公司暂停恢复及安全删除申请](../../tickets/better-auth/T03.04.md) | T03.03 | backend_implementer / backend_validator | P06 |
+| T03.05 | [实现 Web 唯一公司团队切换协调器](../../tickets/better-auth/T03.05.md) | T01.09, T03.02, T03.04 | frontend_implementer / frontend_validator | P07 |
+| T03.06 | [让 Web 缓存多标签和长流随选择代际清理](../../tickets/better-auth/T03.06.md) | T03.05 | frontend_implementer / frontend_validator | P07 |
+| T03.07 | [接通真实 Web 壳和公司团队空态](../../tickets/better-auth/T03.07.md) | T03.06 | frontend_implementer / frontend_validator | P07 |
+| T04.01 | [实现邀请创建取消重发与本人窄读](../../tickets/better-auth/T04.01.md) | T03.04, T02.11 | backend_implementer / backend_validator | P08 |
+| T04.02 | [实现邀请接受拒绝和首次主体原子建立](../../tickets/better-auth/T04.02.md) | T04.01 | backend_implementer / backend_validator | P08 |
+| T04.03 | [实现成员暂停移除恢复和最后 owner 保护](../../tickets/better-auth/T04.03.md) | T04.02 | backend_implementer / backend_validator | P08 |
+| T04.04 | [完成验证邮箱真实邮件与邀请前置闭环](../../tickets/better-auth/T04.04.md) | T04.02, T02.12 | backend_implementer / backend_validator | P08 |
+| T04.05 | [完成请求密码重置的 token 与邮件原子登记](../../tickets/better-auth/T04.05.md) | T04.04, T02.09 | backend_implementer / backend_validator | P08 |
+| T04.06 | [完成原生密码重置唯一消费与安全代际终结](../../tickets/better-auth/T04.06.md) | T04.05 | backend_implementer / backend_validator | P08 |
+| T04.07 | [提供公司管理员授予撤销团队管理 Grant 的接口](../../tickets/better-auth/T04.07.md) | T04.03, T02.04 | backend_implementer / backend_validator | P09 |
+| T04.08 | [接通指定团队管理员成员增删命令](../../tickets/better-auth/T04.08.md) | T04.07, T01.05 | backend_implementer / backend_validator | P09 |
+| T04.09 | [接通公司资料与团队管理真实页面](../../tickets/better-auth/T04.09.md) | T03.07, T04.08 | frontend_implementer / frontend_validator | P10 |
+| T04.10 | [接通人员角色与团队管理 Grant UI](../../tickets/better-auth/T04.10.md) | T04.09 | frontend_implementer / frontend_validator | P10 |
+| T04.11 | [完成公开邀请落地与登录换账号恢复](../../tickets/better-auth/T04.11.md) | T04.10, T04.04 | frontend_implementer / frontend_validator | P10 |
+| T04.12 | [隔离默认与 BA Web 浏览器套件并审计 target](../../tickets/better-auth/T04.12.md) | T04.11, T01.01 | frontend_implementer / frontend_validator | P10 |
+| T05.01 | [实现公司追加认证 challenge 的持久绑定](../../tickets/better-auth/T05.01.md) | T04.03, T02.05, T03.01 | backend_implementer / backend_validator | P11 |
+| T05.02 | [接通 OIDC 公司证明原始证据回调](../../tickets/better-auth/T05.02.md) | T05.01, T01.06 | backend_implementer / backend_validator | P11 |
+| T05.03 | [接通 SAML 公司证明自有 SP 与 ACS](../../tickets/better-auth/T05.03.md) | T05.01, T01.07 | backend_implementer / backend_validator | P11 |
+| T05.04 | [在目录与业务 gate 中实时验证公司证明](../../tickets/better-auth/T05.04.md) | T05.02, T05.03 | backend_implementer / backend_validator | P11 |
+| T05.05 | [把 SCIM 全方法接入原子目录命令](../../tickets/better-auth/T05.05.md) | T05.04, T04.08 | backend_implementer / backend_validator | P12 |
+| T05.06 | [把 JIT 与批准组规则接入单次团队能力](../../tickets/better-auth/T05.06.md) | T05.05, T04.04 | backend_implementer / backend_validator | P12 |
+| T05.07 | [接通全局禁用恢复角色与会话撤销真实入口](../../tickets/better-auth/T05.07.md) | T05.06, T02.09 | backend_implementer / backend_validator | P12 |
+| T05.08 | [接通平台用户创建资料编辑与管理员密码重置](../../tickets/better-auth/T05.08.md) | T05.07, T04.06 | backend_implementer / backend_validator | P12 |
+| T05.09 | [固定跨部署 issuer+subject 与原生回调身份](../../tickets/better-auth/T05.09.md) | T05.07 | backend_implementer / backend_validator | P12 |
+| T05.10 | [让个人模型授权保存实时身份来源并安全重授权](../../tickets/better-auth/T05.10.md) | T05.07, T02.04 | backend_implementer / backend_validator | P12 |
+| T05.11 | [封闭已挂载 Bot Service claim 与 renew 身份旁路](../../tickets/better-auth/T05.11.md) | T05.10 | backend_implementer / backend_validator | P12 |
+| T05.12 | [实现移动企业模式一次性 PKCE session 交接](../../tickets/better-auth/T05.12.md) | T05.09 | backend_implementer / backend_validator | P12 |
+| T05.13 | [实现 BFF 每次动作的在线身份范围准入](../../tickets/better-auth/T05.13.md) | T05.12, T05.04, T03.02 | backend_implementer / backend_validator | P12 |
+| T05.14 | [接通 Web 账户验证与忘记重置密码页面](../../tickets/better-auth/T05.14.md) | T04.11, T04.06, T05.08, T04.12 | frontend_implementer / frontend_validator | P13 |
+| T05.15 | [接通 Web 公司追加认证与受控恢复交互](../../tickets/better-auth/T05.15.md) | T05.14, T05.04 | frontend_implementer / frontend_validator | P13 |
+| T05.16 | [接通平台用户管理与会话安全页面](../../tickets/better-auth/T05.16.md) | T05.15, T05.08 | frontend_implementer / frontend_validator | P13 |
+| T06.01 | [让私有 Bot 与团队发布使用真实资源动作授权](../../tickets/better-auth/T06.01.md) | T04.08, T05.07, T03.01 | backend_implementer / backend_validator | P14 |
+| T06.02 | [让会话与 Channel 操作检查创建者和对象动作](../../tickets/better-auth/T06.02.md) | T06.01 | backend_implementer / backend_validator | P14 |
+| T06.03 | [在凭据 use 和明文披露前比较授权来源代际](../../tickets/better-auth/T06.03.md) | T06.01, T02.04, T04.03 | backend_implementer / backend_validator | P14 |
+| T06.04 | [让 Memory 召回保留来源授权和个人隔离](../../tickets/better-auth/T06.04.md) | T06.02, T06.03 | backend_implementer / backend_validator | P14 |
+| T06.05 | [隔离插件安装实例与 Skills Components 资源](../../tickets/better-auth/T06.05.md) | T06.01 | backend_implementer / backend_validator | P14 |
+| T06.06 | [实现逐 pull 准入的敏感文件下载代理](../../tickets/better-auth/T06.06.md) | T06.02 | backend_implementer / backend_validator | P15 |
+| T06.07 | [把旧文件和产物路由逐项接入在线下载代理](../../tickets/better-auth/T06.07.md) | T06.06, T06.16 | backend_implementer / backend_validator | P15 |
+| T06.08 | [持久化 Run 的原始身份范围证明与 payer](../../tickets/better-auth/T06.08.md) | T06.03, T05.04 | backend_implementer / backend_validator | P16 |
+| T06.09 | [在 Worker 领取重试恢复时重建持久 Run 范围](../../tickets/better-auth/T06.09.md) | T06.08 | backend_implementer / backend_validator | P16 |
+| T06.10 | [在工具和凭据租约新动作前验证来源能力](../../tickets/better-auth/T06.10.md) | T06.09, T06.03, T06.17 | backend_implementer / backend_validator | P16 |
+| T06.11 | [为实际网关提供个人 Key 在线身份准入](../../tickets/better-auth/T06.11.md) | T05.11, T06.08 | backend_implementer / backend_validator | P16 |
+| T06.12 | [在部署启用的 Bifrost dispatch 前接在线身份准入](../../tickets/better-auth/T06.12.md) | T06.11, T01.10 | backend_implementer / backend_validator | P16 |
+| T06.13 | [隔离浏览器沙箱池与外部可变状态](../../tickets/better-auth/T06.13.md) | T06.10, T06.18 | backend_implementer / backend_validator | P17 |
+| T06.14 | [让入站 webhook OAuth callback 和事件订阅固定归属](../../tickets/better-auth/T06.14.md) | T06.13 | backend_implementer / backend_validator | P17 |
+| T06.15 | [隔离公司观测审计元数据与私有内容导出](../../tickets/better-auth/T06.15.md) | T06.14, T06.02 | backend_implementer / backend_validator | P17 |
+| T06.16 | [交付旧对象 URL 失效适配与 Computer 预览代理](../../tickets/better-auth/T06.16.md) | T06.06 | backend_implementer / backend_validator | P15 |
+| T06.17 | [为共享审批持久化来源代际并在消费时重验](../../tickets/better-auth/T06.17.md) | T06.09 | backend_implementer / backend_validator | P16 |
+| T06.18 | [封闭 Host 与外部执行租约的离线撤权窗口](../../tickets/better-auth/T06.18.md) | T06.10 | backend_implementer / backend_validator | P16 |
+| T07.01 | [让公司财务入口消费独立财务 Grant](../../tickets/better-auth/T07.01.md) | T06.08, T06.15, T02.04 | backend_implementer / backend_validator | P18 |
+| T07.02 | [验证团队共用公司余额与禁用后历史费用归属](../../tickets/better-auth/T07.02.md) | T07.01, T05.11 | backend_implementer / backend_validator | P18 |
+| T07.03 | [在成员接受与真实资源动作 enforce 容量配额](../../tickets/better-auth/T07.03.md) | T07.02, T04.03 | backend_implementer / backend_validator | P18 |
+| T07.04 | [统一身份目录业务审计的失败与脱敏合同](../../tickets/better-auth/T07.04.md) | T07.03 | backend_implementer / backend_validator | P18 |
+| T07.05 | [实现 OpenMuse 企业 session 与原 Workspace 映射](../../tickets/better-auth/T07.05.md) | T05.13, T06.02, T06.04, T07.01, T01.10 | backend_implementer / backend_validator | P17 |
+| T07.06 | [接通企业 BFF 的真实 CopilotKit 流与运行准入](../../tickets/better-auth/T07.06.md) | T07.05, T06.10, T01.10 | backend_implementer / backend_validator | P17 |
+| T07.07 | [接通 BFF 媒体票据在线读取与公司追加认证代理](../../tickets/better-auth/T07.07.md) | T07.06, T06.06, T05.04, T01.10 | backend_implementer / backend_validator | P17 |
+| T07.08 | [让 Desktop 唯一选择状态与本地缓存保持一致](../../tickets/better-auth/T07.08.md) | T05.15, T07.04 | frontend_implementer / frontend_validator | P19 |
+| T07.09 | [固定 Desktop 原生登录与追加认证 callback 意图](../../tickets/better-auth/T07.09.md) | T07.08, T05.09 | frontend_implementer / frontend_validator | P19 |
+| T07.10 | [接通真实 Mobile App 的企业 PKCE 登录与 MuseApi](../../tickets/better-auth/T07.10.md) | T07.07, T05.14, T07.19, T01.10 | frontend_implementer / frontend_validator | P20 |
+| T07.11 | [让 Mobile 选择切换与 CopilotKit 流共享同一 session](../../tickets/better-auth/T07.11.md) | T07.10, T03.06, T01.10 | frontend_implementer / frontend_validator | P20 |
+| T07.12 | [接通 Mobile 公司追加认证深链与 PDF 媒体读取](../../tickets/better-auth/T07.12.md) | T07.11, T01.10 | frontend_implementer / frontend_validator | P20 |
+| T07.13 | [为真实 Mobile App 增加隔离浏览器入口和五链路验收](../../tickets/better-auth/T07.13.md) | T07.12, T04.12 | frontend_implementer / frontend_validator | P20 |
+| T07.14 | [把 Web Bot 和 Channel query mutation 接统一范围代际](../../tickets/better-auth/T07.14.md) | T05.16, T06.02, T03.06 | frontend_implementer / frontend_validator | P21 |
+| T07.15 | [把 Memory Craft Workshop 与审批页面接范围和下载合同](../../tickets/better-auth/T07.15.md) | T07.14, T06.04, T06.07, T06.10 | frontend_implementer / frontend_validator | P21 |
+| T07.16 | [接通财务分权与观测页面并补真实业务浏览器矩阵](../../tickets/better-auth/T07.16.md) | T07.15, T07.04, T06.15 | frontend_implementer / frontend_validator | P21 |
+| T07.17 | [让 BFF 邮件日历草稿会话和审批消费受控 namespace](../../tickets/better-auth/T07.17.md) | T07.07, T01.10 | backend_implementer / backend_validator | P17 |
+| T07.18 | [让 BFF 浏览器与 Computer 控制逐动作在线准入](../../tickets/better-auth/T07.18.md) | T07.17, T06.13, T06.18, T01.10 | backend_implementer / backend_validator | P17 |
+| T07.19 | [把 BFF Google OAuth 与附件导入绑定原始企业意图](../../tickets/better-auth/T07.19.md) | T07.18, T06.14, T01.10 | backend_implementer / backend_validator | P17 |
+| T08.01 | [扩充最终迁移模型并实现 M3→M4 原子权威切换](../../tickets/better-auth/T08.01.md) | T02.15, T07.09, T07.13, T07.16, T06.12, T06.05 | backend_implementer / backend_validator | P22 |
+| T08.02 | [实现不重置 clock 的投影重建与旧能力核验](../../tickets/better-auth/T08.02.md) | T08.01 | backend_implementer / backend_validator | P22 |
+| T08.03 | [实现可信撤权高水位恢复与明确回退界限](../../tickets/better-auth/T08.03.md) | T08.02 | backend_implementer / backend_validator | P22 |
+| T08.04 | [建立实际路由消费者与测试证据的版本化覆盖清单](../../tickets/better-auth/T08.04.md) | T08.03 | backend_implementer / backend_validator | P23 |
+| T08.05 | [完成真实启动和 Worker 装配拒绝旁路](../../tickets/better-auth/T08.05.md) | T08.04 | backend_implementer / backend_validator | P23 |
+| T08.06 | [独立验收真实数据库 IdP 邮件下载和实际网关](../../tickets/better-auth/T08.06.md) | T08.05 | backend_validator / reviewer | P24 |
+| T08.07 | [独立验收真实 Web Desktop Mobile 与原生回调](../../tickets/better-auth/T08.07.md) | T08.05 | frontend_validator / reviewer | P24 |
+| T08.08 | [完成全范围独立 Review OCR 与发布准备交接](../../tickets/better-auth/T08.08.md) | T08.06, T08.07 | reviewer / 主控（独立汇总，不自批生产改动） | P24 |
 
 ## 4. 规范拓扑顺序
 
@@ -306,8 +306,8 @@ T06.11与T06.12共同采用 `POST /api/gateway/identity-admission`、credit_serv
 | 事实源 | SHA-256 |
 | --- | --- |
 | `docs/specs/2026-10-22-better-auth-full-integration-design.md` | `bafef820abcfcbb0e5fb5a18a21f395e3ec50fd30cdbb90f5fa55ffe4243e47c` |
-| `docs/plans/2026-10-22-better-auth-full-integration/interfaces.md` | `66952d99c0c252c60d39683aab94b185949d2ad52e5d6943aa8ebdd66770a7d1` |
-| `docs/plans/2026-10-22-better-auth-full-integration/plan.md` | `60cdc7063d3f950a7d6c1ed1a0e9c21890a228052206dc36266b1f154da9fde6` |
-| `docs/plans/2026-10-22-better-auth-full-integration/acceptance.md` | `3bb52a6ec451a2e670454309c50e4dc635f945bfb69d0a02a4f8078c4158e968` |
+| `docs/plans/better-auth/full-integration/interfaces.md` | `66952d99c0c252c60d39683aab94b185949d2ad52e5d6943aa8ebdd66770a7d1` |
+| `docs/plans/better-auth/full-integration/plan.md` | `60cdc7063d3f950a7d6c1ed1a0e9c21890a228052206dc36266b1f154da9fde6` |
+| `docs/plans/better-auth/full-integration/acceptance.md` | `3bb52a6ec451a2e670454309c50e4dc635f945bfb69d0a02a4f8078c4158e968` |
 
 这些hash锚定本轮规划输入；未来批准/修订后主控重新生成检查点，不能将过期hash上的验证报告搬到新代码。发布Issue与关系的读取时间、响应与验证结果归档于本轮run的receipts/verification，不在docs登记“已实施”。

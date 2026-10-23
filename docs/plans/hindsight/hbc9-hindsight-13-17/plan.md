@@ -1,9 +1,9 @@
 # Hindsight 13–17（#390/#392/#393/#394）实施计划
 
 日期：2026-10-21。工作区：hbc9 worktree（main@f89cce08 + 未提交 #389 前置增量）。
-事实源：[Hindsight 个人记忆设计](../../../docs/specs/2026-10-15-hindsight-personal-memory-design.md)、
-[ADR 0005](../../../docs/adr/0005-self-hosted-hindsight-for-personal-memory.md)、
-[ADR 0008](../../../docs/adr/0008-test-runner-tester-army-e2e.md)、
+事实源：[Hindsight 个人记忆设计](../../../specs/2026-10-15-hindsight-personal-memory-design.md)、
+[ADR 0005](../../../adr/0005-self-hosted-hindsight-for-personal-memory.md)、
+[ADR 0008](../../../adr/0008-test-runner-tester-army-e2e.md)、
 Issue 快照 `.archive/runs/2026-10-21-hbc9-hindsight-13-17/issues/`。
 执行证据（验证命令、退出码、清理结果）归 `.archive/runs/2026-10-21-hbc9-hindsight-13-17/verification/`。
 

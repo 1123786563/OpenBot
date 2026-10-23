@@ -1,6 +1,6 @@
 # P15 Setup Save-Error Focus Repair
 
-- **Parent:** `docs/plans/2026-10-20-workspace-redesign-b1.md` T05/P15; refinement `route-acceptance.json` P15 exception and `verification-plan.md` B1-E/B1-I.
+- **Parent:** `docs/plans/workspace-redesign/b1/2026-10-20-workspace-redesign-b1.md` T05/P15; refinement `route-acceptance.json` P15 exception and `verification-plan.md` B1-E/B1-I.
 - **Finding:** In the isolated browser, a controlled 503 from the P15 title PATCH preserves the 120-character valid draft and shows an alert, but leaves `document.activeElement` on `BODY`. Escape then fails to close the controlled modal; focusing the input restores Escape behavior. Reproduced at 390×844.
 - **Goal:** Keep keyboard focus inside the P15 edit dialog after save failure so the user can continue editing, read the error and dismiss the dialog with Escape.
 - **Scope:** `SetupSections` / `EditTextDialog` in `app/src/components/bot-profile/setup.tsx` and focused behavior coverage in `app/tests/bot-setup.test.tsx` only. No server/API changes, no broad dialog refactor.

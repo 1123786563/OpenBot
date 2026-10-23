@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, CopilotKit SSE, Mastra, Drizzle/PostgreSQL, Orca supervised workers, OCR.
 
-**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; DAG `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`; parent plan `docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; DAG `docs/plans/mastra/intelligence/2026-10-11-mastra-intelligence-only-dag.md`; parent plan `docs/plans/superpowers/2026-10-10-mastra-intelligence-migration.md`.
 
 ## Global Constraints
 
@@ -38,7 +38,7 @@ The approved parent DAG decides exact dependencies between T3–T10. A later Tas
 
 **Depends on:** Fix2 frozen baseline. **Owner:** backend_implementer. **Validator:** backend_validator. **Reviewer:** reviewer. **Owned files:** `server/src/enterprise/runs/store.ts`, `server/tests/enterprise/run-failure-contract.test.ts`, Fix3 report/checkpoint files. **Interfaces:** consumes `RunStore.transitionTerminal` and `RunnerRequestLease`; produces atomic `RunService.fail` behavior needed by SSE admission.
 
-- [ ] Follow every step in `docs/plans/2026-10-13-mastra-run-request-failure-fix3.md` and `.superpowers/sdd/2026-10-13-mastra-run-request-failure/fix3-brief.md`: full baseline; test RED against current post-update status defect; minimal SQL repair; test GREEN, Biome/diff/type checks; exact uncommitted checkpoint.
+- [ ] Follow every step in `.archive/runs/legacy-plans/2026-10-13-mastra/briefs/2026-10-13-mastra-run-request-failure-fix3.md` and `.superpowers/sdd/2026-10-13-mastra-run-request-failure/fix3-brief.md`: full baseline; test RED against current post-update status defect; minimal SQL repair; test GREEN, Biome/diff/type checks; exact uncommitted checkpoint.
 - [ ] Backend validator checks same hash and repeats DB-free behavior/static checks. Reviewer returns separate Spec and quality verdicts on the increment. A valid High/Medium finding creates a numbered repair plan and repeats this gate.
 - [ ] Mark only DB-free behavior verified. PostgreSQL transaction/RLS/concurrency remains unverified.
 
@@ -52,7 +52,7 @@ The approved parent DAG decides exact dependencies between T3–T10. A later Tas
 
 ## Task 3: Resume production Runner and SSE admission
 
-**Depends on:** Tasks 1–2 reviewed checkpoints. **Owner:** backend_implementer. **Validator:** backend_validator. **Reviewer:** reviewer. **Owned files/interfaces:** exact ownership and consumes/produces contract in `docs/plans/2026-10-12-mastra-t2-runner-sse-admission.md` and its Task Brief.
+**Depends on:** Tasks 1–2 reviewed checkpoints. **Owner:** backend_implementer. **Validator:** backend_validator. **Reviewer:** reviewer. **Owned files/interfaces:** exact ownership and consumes/produces contract in `docs/plans/mastra/intelligence/2026-10-12-mastra-t2-runner-sse-admission.md` and its Task Brief.
 
 - [ ] Recheck source signatures and all current/protected hashes; preserve the existing uncommitted work.
 - [ ] Write and run RED tests for request-local authenticated scope, finalized intent, caller cap, selector/runId rejection, unavailable capability and mounted SSE behavior.
@@ -69,7 +69,7 @@ The approved parent DAG decides exact dependencies between T3–T10. A later Tas
 
 ## Task 5: Complete parent DAG T3–T9
 
-**Depends on:** T3-CORE code work consumes reviewed T1/T2-SSE/T2-GOV checkpoints; its database acceptance remains unverified until the isolated database is ready. All other parent prerequisites remain binding; T4–T9 require their exact parent interfaces/checkpoints. T2 aggregate acceptance includes the later headless consumer and database gates. **Owners:** backend_implementer for T3–T6/T8/server T9, frontend_implementer for T7/frontend T9. **Validators:** matching backend/frontend validator plus reviewer. **Owned files/interfaces:** exact per-task sections in `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`.
+**Depends on:** T3-CORE code work consumes reviewed T1/T2-SSE/T2-GOV checkpoints; its database acceptance remains unverified until the isolated database is ready. All other parent prerequisites remain binding; T4–T9 require their exact parent interfaces/checkpoints. T2 aggregate acceptance includes the later headless consumer and database gates. **Owners:** backend_implementer for T3–T6/T8/server T9, frontend_implementer for T7/frontend T9. **Validators:** matching backend/frontend validator plus reviewer. **Owned files/interfaces:** exact per-task sections in `docs/plans/mastra/intelligence/2026-10-11-mastra-intelligence-only-dag.md`.
 
 - [ ] For each task, prepare one narrow Brief from its existing plan section; verify current hashes and prior interfaces. Execute RED → GREEN → REFACTOR, checkpoint, validation, Spec/quality review, repair loop. Serialize all shared-file edits.
 - [ ] T3 covers single writable Mastra history and intent receipts; T4 authorized memory/revocation; T5 skill learning; T6 three execution sources; T7 chat UI; T8 staged import/CAS cutover; T9 remove Intelligence setup/dependencies without removing remote Mastra execution.

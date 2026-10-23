@@ -5,8 +5,8 @@
   "head": "d6123571433bee4e5b98923c8dc50c55dd34e5b6",
   "branch": "main",
   "git_status_porcelain": [
-    "A  docs/plans/2026-10-19-mastra-agent-execution-migration-dag.md",
-    "A  docs/plans/2026-10-19-mastra-agent-execution-migration.md"
+    "A  docs/plans/mastra/agent-execution/2026-10-19-mastra-agent-execution-migration-dag.md",
+    "A  docs/plans/mastra/agent-execution/2026-10-19-mastra-agent-execution-migration.md"
   ],
   "files": [
     {

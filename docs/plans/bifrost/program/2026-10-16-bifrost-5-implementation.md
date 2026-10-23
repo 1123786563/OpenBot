@@ -10,7 +10,7 @@
 
 ## Global Constraints（每个 worker 的隐含要求）
 
-- 事实源：GitHub 票正文（`docs/plans/2026-10-16-bifrost-5-dag.md` 附录 + `.omc/research/bifrost5/tickets.json` 快照）、`docs/specs/2026-10-14-bifrost-integration-design.md`、`docs/specs/2026-10-14-bifrost-github-spec.md`、ADR 0002/0003/0004、`CONTEXT.md`。冲突时以 Spec 为准。
+- 事实源：GitHub 票正文（`docs/plans/bifrost/program/2026-10-16-bifrost-5-dag.md` 附录 + `.omc/research/bifrost5/tickets.json` 快照）、`docs/specs/2026-10-14-bifrost-integration-design.md`、`docs/specs/2026-10-14-bifrost-github-spec.md`、ADR 0002/0003/0004、`CONTEXT.md`。冲突时以 Spec 为准。
 - 跨 Spec 裁决（用户确认"采用 ADR 0004"）：公司工作台固定公司付款账户；外部 Bot 个人授权固定个人付款账户；余额不足不切换；个人 Key 不授予公司内容/业务工具权限；保留公司财务历史。
 - 禁止事项（用户授权边界）：**不 git commit / push / merge；不 stash 共享协调；不清理生产数据；不部署；不启用网关能力；不发布**。清理类 Ticket 只做盘点/dry-run/哈希核对/专用测试库演练。
 - 测试数据库：每个 worker 用独立库 `openbot_b5_<ticket号>`（从主 checkout `.env` 的 DATABASE_URL 推导、替换库名、先 createdb）；禁止使用 `openbot`（live）与共享测试库。

@@ -94,7 +94,7 @@
 | `server/src/gateway/customer-provision.ts` | A: 扩展同步进来的 05.1 模块 / B: 经授权新建（含最小幂等 seam + 本票恢复） | provisionState 机 + recoverable 查找/确认 + 两条幂等路径 |
 | `server/src/db/schema/gateway.ts`（或独立 `gateway-customer.ts`） | 扩展 | 映射行状态字段 provisionState（pending/confirmed/recoverable CHECK 约束）、关联键唯一 |
 | `server/drizzle/0132_*.sql` + `meta/_journal.json` + `meta/0132_snapshot.json` | 新增 | 仅状态字段迁移；**journal when 严格递增（> 1792090549121）**；A 情形若 05.1 已占 0132 则顺延 0133 |
-| `docs/plans/2026-10-17-b5-243-customer-provision-recovery.md` | 本文件 | 计划 + RED/GREEN 命令 |
+| `docs/plans/bifrost/ticket-plans/2026-10-17-b5-243-customer-provision-recovery.md` | 本文件 | 计划 + RED/GREEN 命令 |
 
 不触碰：app/、bot-services/、billing 计价、授权模块、其他 worktree、bifrost/ 子模块内容。
 

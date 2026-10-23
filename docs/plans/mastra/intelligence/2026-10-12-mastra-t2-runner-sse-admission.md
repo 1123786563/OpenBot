@@ -8,13 +8,13 @@
 
 **Tech Stack:** TypeScript, Bun, Hono, CopilotKit SSE, Drizzle/PostgreSQL, Mastra storage.
 
-**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent DAG `docs/plans/2026-10-11-mastra-intelligence-only-dag.md`.
+**Spec:** `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent DAG `docs/plans/mastra/intelligence/2026-10-11-mastra-intelligence-only-dag.md`.
 
 **Source of truth:** Approved design `docs/specs/superpowers/2026-10-11-mastra-intelligence-only-design.md`; parent Task 2 plan/brief/Ledger; T2 production continuation plan and report; read-only architecture report `.superpowers/sdd/2026-10-12-mastra-t2-production-cutover/reports/next-slice-architecture.md`; current Fix4 remote fail-closed checkpoint.
 
 **Confirmed policy:** Resolve scope only from authenticated actor, active membership and exact server-owned thread. Require finalized Mastra message intent bound to tenant/thread/actor/client key/digest/attachments/backend version. Server Run ID/attempt and explicit caller `forwardedProps.maxOutputTokens` are authoritative; no client runId/tenant/workspace selector. Run cap is integer `1..2_147_483_647`. Do not execute any model request from this slice unless the invocation goes through the approved Run capability/ModelGateway governance; this task may fail closed at the model boundary while that next slice is pending. Unsupported remote AG-UI/Mastra remain refused.
 
-**Failure-settlement prerequisite:** Preflight found existing RunService cannot truthfully fail a just-admitted no-model attempt: stop/cancel records cancellation, and generic terminalization followed by request-lease release cannot clear the owner claim. Before Task 1 implementation resumes, complete reviewed prerequisite `docs/plans/2026-10-13-mastra-run-request-failure.md`. Its contract is `RunService.fail(scope, { lease: RunnerRequestLease, errorCode: "MODEL_EXECUTION_UNAVAILABLE" }): Promise<boolean>`, atomically fencing/settling that attempt and clearing its request-owner claim. Do not substitute cancellation, generic terminalization, or a leaked active Run.
+**Failure-settlement prerequisite:** Preflight found existing RunService cannot truthfully fail a just-admitted no-model attempt: stop/cancel records cancellation, and generic terminalization followed by request-lease release cannot clear the owner claim. Before Task 1 implementation resumes, complete reviewed prerequisite `docs/plans/mastra/intelligence/2026-10-13-mastra-run-request-failure.md`. Its contract is `RunService.fail(scope, { lease: RunnerRequestLease, errorCode: "MODEL_EXECUTION_UNAVAILABLE" }): Promise<boolean>`, atomically fencing/settling that attempt and clearing its request-owner claim. Do not substitute cancellation, generic terminalization, or a leaked active Run.
 
 ## Global Constraints
 

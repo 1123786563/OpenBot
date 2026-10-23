@@ -158,7 +158,7 @@
 
 ## Reference pointers
 
-- 文件级计划：`docs/plans/2026-10-20-upstream-openbot-refactor/implementation-plan.md`。
+- 文件级计划：`docs/plans/upstream-sync/2026-10-20-upstream-openbot-refactor/implementation-plan.md`。
 - 业务票据与依赖：`docs/tickets/upstream-openbot-update/tickets.json`。
 - 约束：根 `CONTEXT.md`，ADR 0002–0010；公司团队、Hindsight、Mastra 已批准 Spec。
 - 上游固定源码：[e8bb273](https://github.com/CopilotKit/OpenBot/tree/e8bb27368ff436958b614292ae91283e51d5a813)。上游文档不是本地授权或产品需求的替代物。

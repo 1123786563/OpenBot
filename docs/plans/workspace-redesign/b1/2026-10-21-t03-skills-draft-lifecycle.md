@@ -8,7 +8,7 @@
 
 **Tech Stack:** React, TanStack Router, TanStack Query, tester-army `e2e`, repository E2E compatibility layer, Happy DOM.
 
-**Spec:** `docs/design/2026-10-20-workspace-redesign/handoff/refinement/implementation-detail.md` §4–6; `docs/plans/2026-10-20-workspace-redesign-b1.md` T03; `.archive/runs/2026-10-20-workspace-redesign-b1/verification/t08/page-acceptance.md` shared-layer smoke scope.
+**Spec:** `docs/design/2026-10-20-workspace-redesign/handoff/refinement/implementation-detail.md` §4–6; `docs/plans/workspace-redesign/b1/2026-10-20-workspace-redesign-b1.md` T03; `.archive/runs/2026-10-20-workspace-redesign-b1/verification/t08/page-acceptance.md` shared-layer smoke scope.
 
 ## Global Constraints
 

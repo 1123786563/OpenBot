@@ -272,7 +272,7 @@
 
 ## ⑥ Remediation Delta(2026-10-13,验证检查点 `fe169d20`)
 
-> 增量基线:六能力恢复计划(`docs/plans/2026-10-12-craft-parity-remediation.md`,提交 `bf81d741..6c7c0d16`)。契约事实源:`onyx-contract.md` + `fixtures/`;终审证据:`remediation-verification.md`(真实 agent-sandbox 冒烟 + finding 全录)。**本节只记增量,与 §①–⑤ 冲突处以本节 + `onyx-contract.md` §6 勘误为准。**
+> 增量基线:六能力恢复计划(`docs/plans/craft/parity/2026-10-12-craft-parity-remediation.md`,提交 `bf81d741..6c7c0d16`)。契约事实源:`onyx-contract.md` + `fixtures/`;终审证据:`remediation-verification.md`(真实 agent-sandbox 冒烟 + finding 全录)。**本节只记增量,与 §①–⑤ 冲突处以本节 + `onyx-contract.md` §6 勘误为准。**
 
 ### 恢复了什么(vs remediation 前分支状态 `3c690410`)
 

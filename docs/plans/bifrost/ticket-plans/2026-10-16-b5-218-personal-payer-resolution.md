@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript / Bun test / Drizzle ORM / PostgreSQL（专用测试库 openbot_b5_218）
 
-**Spec:** docs/specs/2026-10-14-bifrost-github-spec.md（AC01、AC13）、docs/specs/2026-10-14-bifrost-integration-design.md、ADR 0002/0004、docs/plans/2026-10-16-bifrost-5-dag.md（#218 ← #215，#219/#220 消费本票）
+**Spec:** docs/specs/2026-10-14-bifrost-github-spec.md（AC01、AC13）、docs/specs/2026-10-14-bifrost-integration-design.md、ADR 0002/0004、docs/plans/bifrost/program/2026-10-16-bifrost-5-dag.md（#218 ← #215，#219/#220 消费本票）
 
 ## Global Constraints
 

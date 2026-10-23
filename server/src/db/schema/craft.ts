@@ -3,7 +3,7 @@
  *
  * Ported one-for-one from onyx `build_session` / `build_message` / `snapshot`
  * (backend/onyx/db/models.py). The sandbox side is deliberately NOT new here — craft reuses
- * `sandbox_instances` for container lifecycle; docs/plans/craft-port/schema-notes.md carries the
+ * `sandbox_instances` for container lifecycle; docs/plans/craft/port/schema-notes.md carries the
  * column mapping and the (documented, not yet applied) additions that port asks for there.
  *
  * Enumerations are `text` + check constraints rather than pgEnum, for the same reason onyx
