@@ -15,7 +15,7 @@
 | 规范性设计 | `docs/specs/`、`docs/adr/` | 需求、架构或接口冲突时 |
 | 静态 DAG / 任务清单 | 方案入口旁的 `.json`、`.md` | 建立或核对 DAG 时 |
 
-历史活跃 Run 兼容区（`2026-10-19-orca-*`、`2026-10-20-orca-dag-wave3/` 的运行状态）已于 2026-10-23 停止并交接后整体迁入 `.archive/runs/<run-key>/`，本目录不再保留过渡区；`docs/verification/heroui-migration/` 因 worktree 仍在执行暂留原路径，见下方迁移状态。
+历史活跃 Run 兼容区（`2026-10-19-orca-*`、`2026-10-20-orca-dag-wave3/` 的运行状态）已于 2026-10-23 停止并交接后整体迁入 `.archive/runs/<run-key>/`，本目录不再保留过渡区；heroui 迁移证据也已整簇迁入 `.archive/runs/2026-10-19-heroui-migration/`，`docs/verification/` 已删除，见下方迁移状态。
 
 ## 方案文件的最小结构
 
@@ -45,5 +45,8 @@ Issue 摄取和 DAG 规则见 [Issue 摄取与执行 DAG](../../.agents/rules/is
 - workspace-redesign b1 的验证、OCR、报告、Brief 与 Ledger（原 `docs/verification/workspace-redesign/`、`docs/plans/reports/`、`docs/plans/task-briefs/` 及根部 b1 修复 brief）迁入 `.archive/runs/2026-10-20-workspace-redesign-b1/`；design 阶段 review 截图与检查入该 Run `reviews/design/`。
 - `docs/tickets/` 在 #489 与 mastra 派发期间重新出现的两套 Ticket 目录已按新版本合并回 `docs/plans/tickets/`，被覆盖的旧版本存 `.archive/runs/legacy-plans/superseded/`。
 - 根部历史 fix/repair brief 与执行 DAG 状态（`*-dag.json`）归入 `.archive/runs/legacy-plans/<plan-key>/`；`docs/` 根的 `tls-certs.md`、`web-research.md`、`craft-preview-origin.md` 分流到 `reference/`。
-- `docs/verification/heroui-migration/` 暂留：heroui worktree 仍有 Agent 在执行。停止或交接后按同规则迁入 `.archive/runs/2026-10-19-heroui-migration/`，迁移前不要在该路径新增产物。
-- 每次迁移的旧→新映射与移动前后 SHA-256 见对应 Run 的 `migration-manifest.tsv`；本轮为 `.archive/runs/2026-10-23-docs-reorganization/migration-manifest.tsv`。
+- 2026-10-23 深层整理（第四轮，[台账 manifest2.tsv](../../.archive/runs/2026-10-23-docs-reorganization/index.md)）：`docs/verification/heroui-migration/` 整簇迁入 `.archive/runs/2026-10-19-heroui-migration/`，`docs/verification/` 随之删除。heroui 分支当时已 0 领先 main，worktree 内 Agent 只写自己的树；该线后续新证据必须直接写 `.archive/runs/`，不得重建 `docs/verification/`。
+- `docs/plans/superpowers/` 已拆分：57 个修复轮 brief（`*fix*`、`*fixes*`、`*repair*` 命名）迁入 `.archive/runs/legacy-plans/superpowers-briefs/`，81 个主方案保留。
+- Ticket 发布物料规则对剩余套目执行完毕：`upstream-openbot-update` 的 build/package/publish 脚本、`sources.json`、handoff 压缩包与校验 JSON，`mastra-agent-execution` 的 build/publish 与 publication-verification，`plugin-package-marketplace` 的 `sources/`、`requests/` 均迁入 `.archive/runs/legacy-plans/tickets/<set>/`；已作废 #6 的残留 `tickets/multitenancy/reports/` 一并归档，Ticket 正文、父 Issue、manifest 与派发说明保留。
+- 根部 `2026-10-18-e2e-tester-army-migration-status.md`（执行状态记录）迁入 `legacy-plans/2026-10-18-e2e-tester-army/`；`2026-10-18-craft-preview-issue-419-evidence-closeout.md`（收口记录）迁入 `.archive/runs/craft-port/`；design handoff 的 `handoff-receipt.json` 与 `source-baseline.json` 迁入 `.archive/runs/2026-10-20-workspace-redesign-b1/`。
+- 每次迁移的旧→新映射与移动前后 SHA-256 见对应 Run 的 manifest：第三轮为 `migration-manifest.tsv`，第四轮为 `manifest2.tsv`，均在 `.archive/runs/2026-10-23-docs-reorganization/`。

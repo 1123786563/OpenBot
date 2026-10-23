@@ -72,7 +72,7 @@ A10 独立 Review + OCR → H15。
 ## 7. 验证命令（ADR 0008）
 
 - `bun run --cwd app typecheck`、`bun run --cwd app build`。
-- native：`E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=docs/verification/heroui-migration/<wave>/native bunx e2e run --config e2e.unit.config.ts`。
+- native：`E2E_UNIT_SCOPE=app E2E_UNIT_OUTPUT=.archive/runs/2026-10-19-heroui-migration/<wave>/native bunx e2e run --config e2e.unit.config.ts`。
 - driven：`E2E_BUN_ONLY=app/tests E2E_UNIT_OUTPUT=<dir> bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts`（执行前按清单核验前缀覆盖）。
 - `bun run test:ci`（最终波次）。
 - 变更文件 Biome lint/format。

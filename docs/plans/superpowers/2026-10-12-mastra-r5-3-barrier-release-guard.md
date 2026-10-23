@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun test, TypeScript, Postgres.js.
 
-**Spec:** `docs/plans/superpowers/2026-10-12-mastra-r5-3-test-cleanup-repair.md`; finding in `.superpowers/sdd/2026-10-12-mastra-r5-3-test-cleanup-repair/reports/task-review.md`.
+**Spec:** `.archive/runs/legacy-plans/superpowers-briefs/2026-10-12-mastra-r5-3-test-cleanup-repair.md`; finding in `.superpowers/sdd/2026-10-12-mastra-r5-3-test-cleanup-repair/reports/task-review.md`.
 
 ## Global Constraints
 

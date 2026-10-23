@@ -42,7 +42,7 @@ import { settleReactWork } from "./settle-react-work";
  * (including non-string keys and null), controlled open/onOpenChange callbacks, label wiring and
  * that HeroUI's anchor path is a real anchor. What it cannot prove — focus return, scroll lock,
  * portal placement, pointer-positioned context menus, IME — is listed in
- * docs/verification/heroui-migration/h01/spike-plan.md and must be run in a browser.
+ * .archive/runs/2026-10-19-heroui-migration/h01/spike-plan.md and must be run in a browser.
  */
 
 beforeAll(() => GlobalRegistrator.register());

@@ -8,7 +8,7 @@
  * fault and not the compat layer's to hide — making Node quietly fall back to another port would
  * erase the one fact worth keeping, that this suite assumes a fixed port.
  *
- * The fix is the one `docs/plans/2026-10-18-e2e-tester-army-migration-status.md` already records:
+ * The fix is the one `.archive/runs/legacy-plans/2026-10-18-e2e-tester-army/2026-10-18-e2e-tester-army-migration-status.md` already records:
  * ask for port 0 and read back what was bound. `serve()` in tests/support/bun-compat.ts answers
  * with `server.port` for exactly that, and its own comment says a snapshot of the requested value
  * would hand back `http://127.0.0.1:0`.
