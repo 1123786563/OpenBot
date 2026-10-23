@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
 import { loadConfig } from "../src/config";
 import {
@@ -14,17 +15,24 @@ import {
 } from "../src/enterprise/tenancy/connections";
 import {
   assertApplyAuthorized,
+  type CutoverSwitchRequest,
   conversationServiceWriter,
   createAdminTxRunner,
+  createCutoverSwitchPorts,
   createFileRunStore,
   createPostgresLegacyOwnershipPorts,
   createPostgresTargetReader,
   intelligenceSourceFrom,
   parseCutoverArgs,
+  parseInFlightDispositions,
+  runCutover,
+  runCutoverRollback,
 } from "../src/mastra/cutover";
 import {
   type CutoverCommand,
   type CutoverRequest,
+  type LegacyImportSource,
+  type PersistedRunState,
   runApply,
   runDryRun,
   runInspect,
@@ -43,13 +51,20 @@ import { createTenantMastraStorage } from "../src/mastra/tenant-storage";
  * ME13 (#485): the legacy-conversation cutover tool. Fixed subcommands —
  * inspect | dry-run | apply | verify | rollback — read-only by default.
  *
+ * ME14 (#486) adds the `cutover` subcommand: the single-writer switch. It
+ * sits under the SAME double fixture-authorization gate as apply, consumes
+ * the staging→verified run state verify produced, re-checks the entry
+ * inventory, the admission pause, the drained scope and the in-flight
+ * disposition ledger, then bumps every switched thread's writer generation
+ * under the conversation write fence. `rollback` on a switched state routes
+ * to the fence's no-data-loss rollback (maintenance when unprovable).
+ *
  * apply double-gates on an explicit disposable-fixture authorization
  * (--authorize-fixture matching MASTRA_CUTOVER_FIXTURE_APPLY): it exists to
  * rehearse the import on authorized fixtures, never against production.
  * verify compares source and target digests and BLOCKS on any mismatch; the
  * staging/verified run state it produces is what the ME14 write fence
- * consumes. This script deliberately contains NO cutover switch: nothing
- * here makes a staging target the active writer.
+ * consumes.
  *
  * The Intelligence side is read through the same client class the runtime
  * uses, narrowed by the adapter to its two read methods; the tool has no
@@ -70,41 +85,115 @@ try {
   process.exit(2);
 }
 
+/** The operator-supplied JSON files the switch consumes (inventory, ledger). */
+function readJsonFile(path: string, what: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch (error) {
+    console.error(
+      `CUTOVER_${what}_UNREADABLE: ${path} (${error instanceof Error ? error.message : error})`,
+    );
+    process.exit(2);
+  }
+}
+
 const config = loadConfig(process.env);
 const runId = args.runId ?? `cutover-${randomUUID()}`;
+// The switch and the switched rollback work from the persisted run state,
+// not from a fresh source scan; every other command scans the source.
+const needsSource = !(
+  args.command === "cutover" ||
+  (args.command === "rollback" && args.stateDir !== undefined)
+);
 const scan: ScanDescriptor | null = args.thread
   ? { mode: "explicit-thread", threadId: args.thread }
   : args.user && args.agent
     ? { mode: "scan", userId: args.user, agentId: args.agent }
     : null;
-if (!scan) {
+if (!scan && needsSource) {
   console.error(
     "Either --thread <threadId> or both --user <actorId> and --agent <agentId> are required.",
   );
   process.exit(2);
 }
-const request: CutoverRequest = {
-  runId,
-  scan,
-  ...(args.pageSize !== undefined ? { pageSize: args.pageSize } : {}),
-};
-const runStore = args.stateDir
-  ? createFileRunStore(args.stateDir, runId)
-  : undefined;
+const request: CutoverRequest | null = scan
+  ? {
+      runId,
+      scan,
+      ...(args.pageSize !== undefined ? { pageSize: args.pageSize } : {}),
+    }
+  : null;
+if (!args.stateDir) {
+  console.error("--state-dir is required for this command.");
+  process.exit(2);
+}
+const runStore = createFileRunStore(args.stateDir, runId);
+
+/*
+ * The switch reads its operator inputs before any connection: the entry
+ * inventory and the in-flight disposition ledger.
+ */
+const entryInventory =
+  args.command === "cutover"
+    ? readJsonFile(args.entryInventoryPath as string, "ENTRY_INVENTORY")
+    : undefined;
+const parsedDispositions =
+  args.command === "cutover"
+    ? parseInFlightDispositions(
+        readJsonFile(args.dispositionsPath as string, "DISPOSITIONS"),
+      )
+    : undefined;
+if (parsedDispositions && !parsedDispositions.ok) {
+  console.error(
+    `CUTOVER_DISPOSITIONS_INVALID: ${parsedDispositions.failures.join("; ")}`,
+  );
+  process.exit(2);
+}
+const dispositions: CutoverSwitchRequest["dispositions"] | undefined =
+  parsedDispositions?.dispositions;
+
+/*
+ * A rollback of a SWITCHED state must route to the fence's rollback, which
+ * needs the same fixture authorization as the switch (it moves writer
+ * generations on the target). The decision needs the state, so load it now.
+ */
+async function statePhase(): Promise<PersistedRunState | null> {
+  const loaded = (await runStore.load()) as PersistedRunState | null;
+  return loaded?.schemaVersion === 1 && loaded.runId === runId ? loaded : null;
+}
+
+const needsTargetWrites = args.command === "apply";
+const needsTargetReads = args.command === "verify";
 
 /*
  * The Intelligence read client, built from the same three settings the
  * runtime uses. Only the narrowed read adapter is handed to the import —
- * the full client never is.
+ * the full client never is. The switch and the switched rollback never
+ * touch the source, so they construct no client at all.
  */
 const intelligenceSettings = config.runtime.intelligence;
-const source = intelligenceSourceFrom(
-  new CopilotKitIntelligence({
-    apiUrl: intelligenceSettings.apiUrl,
-    wsUrl: intelligenceSettings.gatewayWsUrl,
-    apiKey: intelligenceSettings.apiKey,
-  }),
-);
+const source =
+  needsSource && intelligenceSettings
+    ? intelligenceSourceFrom(
+        new CopilotKitIntelligence({
+          apiUrl: intelligenceSettings.apiUrl,
+          wsUrl: intelligenceSettings.gatewayWsUrl,
+          apiKey: intelligenceSettings.apiKey,
+        }),
+      )
+    : null;
+
+function requireSource(): {
+  source: LegacyImportSource;
+  request: CutoverRequest;
+} {
+  if (!source || !request) {
+    throw new Error(
+      "CUTOVER_SOURCE_REQUIRED: this command needs --thread or --user/--agent",
+    );
+  }
+  return { source, request };
+}
 
 /*
  * Ownership evidence runs with the deployment's own operator authority (the
@@ -134,9 +223,6 @@ const ports = createPostgresLegacyOwnershipPorts({
   admin,
   directory: directoryDatabase,
 });
-
-const needsTargetWrites = args.command === "apply";
-const needsTargetReads = args.command === "verify";
 
 let mastraStorage: ReturnType<typeof createTenantMastraStorage> | null = null;
 if (needsTargetWrites || needsTargetReads) {
@@ -188,17 +274,22 @@ try {
     Awaited<ReturnType<typeof runInspect>>
   > => {
     switch (args.command as CutoverCommand) {
-      case "inspect":
+      case "inspect": {
+        const scanned = requireSource();
         return runInspect(
-          { source, ports, ...(runStore ? { runStore } : {}) },
-          request,
+          { source: scanned.source, ports, runStore },
+          scanned.request,
         );
-      case "dry-run":
+      }
+      case "dry-run": {
+        const scanned = requireSource();
         return runDryRun(
-          { source, ports, ...(runStore ? { runStore } : {}) },
-          request,
+          { source: scanned.source, ports, runStore },
+          scanned.request,
         );
+      }
       case "apply": {
+        const scanned = requireSource();
         if (!mastraStorage) throw new Error("CUTOVER_STORAGE_UNAVAILABLE");
         const service = createConversationService({
           data: dataDatabase,
@@ -206,19 +297,20 @@ try {
         });
         return runApply(
           {
-            source,
+            source: scanned.source,
             ports,
             writer: conversationServiceWriter(service),
-            ...(runStore ? { runStore } : {}),
+            runStore,
           },
           {
-            ...request,
+            ...scanned.request,
             authorization: { fixtureId: args.authorizeFixture as string },
             environmentFixtureId: process.env.MASTRA_CUTOVER_FIXTURE_APPLY,
           },
         );
       }
       case "verify": {
+        const scanned = requireSource();
         if (!mastraStorage) throw new Error("CUTOVER_STORAGE_UNAVAILABLE");
         const service = createConversationService({
           data: dataDatabase,
@@ -226,7 +318,7 @@ try {
         });
         return runVerify(
           {
-            source,
+            source: scanned.source,
             ports,
             targetReader: createPostgresTargetReader({
               admin,
@@ -234,18 +326,63 @@ try {
               bindingFor: (scope, threadId) =>
                 service.resolveMastraBinding(scope, threadId),
             }),
-            ...(runStore ? { runStore } : {}),
+            runStore,
           },
-          request,
+          scanned.request,
         );
       }
-      case "rollback":
-        if (!runStore) throw new Error("ROLLBACK_REQUIRES_STATE");
-        return runRollback(
-          { source, ports, ...(runStore ? { runStore } : {}) },
-          request,
-          process.env.MASTRA_CUTOVER_ROLLBACK_REASON ?? "operator rollback",
+      case "cutover": {
+        // ME14: the single-writer switch, under the SAME double fixture gate
+        // apply runs under (asserted before any connection above).
+        if (!args.tenant || !args.workspace) {
+          throw new Error("CUTOVER_SCOPE_REQUIRED: --tenant and --workspace");
+        }
+        return runCutover(
+          { runStore, switchPorts: createCutoverSwitchPorts(admin) },
+          {
+            runId,
+            scope: { tenantId: args.tenant, workspaceId: args.workspace },
+            entryInventory,
+            dispositions: dispositions ?? {},
+            ...(args.compatibleRollbackVersion !== undefined
+              ? {
+                  compatibleRollbackVersion: args.compatibleRollbackVersion,
+                }
+              : {}),
+            pauseAdmission: args.pauseAdmission === true,
+          },
         );
+      }
+      case "rollback": {
+        const reason =
+          process.env.MASTRA_CUTOVER_ROLLBACK_REASON ?? "operator rollback";
+        // A switched state rolls back through the FENCE (preservation
+        // receipt, maintenance on the unprovable path); a staging state
+        // rolls back the ME13 way. The fence rollback moves writer
+        // generations on the target, so it demands the same double gate.
+        const state = await statePhase();
+        if (state?.phase === "switched" || state?.phase === "maintenance") {
+          if (
+            args.authorizeFixture === undefined ||
+            process.env.MASTRA_CUTOVER_FIXTURE_APPLY !== args.authorizeFixture
+          ) {
+            throw new Error(
+              "ROLLBACK_NOT_AUTHORIZED: a switched rollback requires --authorize-fixture matching MASTRA_CUTOVER_FIXTURE_APPLY",
+            );
+          }
+          return runCutoverRollback(
+            { runStore, switchPorts: createCutoverSwitchPorts(admin) },
+            { runId },
+            reason,
+          );
+        }
+        const scanned = requireSource();
+        return runRollback(
+          { source: scanned.source, ports, runStore },
+          scanned.request,
+          reason,
+        );
+      }
     }
   })();
   // The manifest is the deliverable: sanitized inventory, cursors, counts,
@@ -253,6 +390,7 @@ try {
   console.log(JSON.stringify(manifest, null, 1));
   const blocked =
     manifest.phase === "blocked" ||
+    manifest.phase === "maintenance" ||
     (manifest.verify?.status ?? "match") === "mismatch";
   process.exit(blocked ? 1 : 0);
 } catch (error) {

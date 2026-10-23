@@ -119,6 +119,7 @@ function ports(
     actors?: Record<string, string | null>;
     scopeFail?: boolean;
     finalizedIntents?: Record<string, number>;
+    pendingIntents?: Record<string, number>;
     finalizedKeys?: Record<string, boolean>;
     attachmentIds?: readonly string[];
   } = {},
@@ -160,6 +161,11 @@ function ports(
     async foreignFinalizedIntentCount(tenantId, threadId) {
       reads.push(`intents:${tenantId}:${threadId}`);
       return over.finalizedIntents?.[`${tenantId}:${threadId}`] ?? 0;
+    },
+    // ME14 (carried F1): the staging precheck counts pending foreign intents too.
+    async foreignPendingIntentCount(tenantId, threadId) {
+      reads.push(`pending:${tenantId}:${threadId}`);
+      return over.pendingIntents?.[`${tenantId}:${threadId}`] ?? 0;
     },
     async finalizedKeyExists(_tenantId, _threadId, clientMessageKey) {
       reads.push(`key:${clientMessageKey}`);

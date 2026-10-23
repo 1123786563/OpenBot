@@ -34,7 +34,7 @@ export type ThreadLockClient = Pick<
  * the caller waits and tries again rather than two Bots writing over each other.
  */
 export function createIntelligenceThreadLock(options: {
-  client: ThreadLockClient;
+  client: ThreadLockClient | (() => ThreadLockClient);
   learning?: {
     containerForThread: (input: {
       agentId: string;
@@ -44,16 +44,23 @@ export function createIntelligenceThreadLock(options: {
   };
   onRunBusy?: (input: { threadId: string; busy: boolean }) => void;
 }): ThreadLock {
-  const { client, learning, onRunBusy } = options;
+  const { client: clientOption, learning, onRunBusy } = options;
+  /*
+   * Resolved per call, never at assembly (ME15 #487): a deployment that boots
+   * without Intelligence hands an accessor that refuses by name, and only a
+   * conversation that actually runs a lock operation resolves it.
+   */
+  const client = () =>
+    typeof clientOption === "function" ? clientOption() : clientOption;
   return {
     acquire: async (input) => {
       try {
         const learningContainerId = await learning?.containerForThread(input);
-        await client.getOrCreateThread({
+        await client().getOrCreateThread({
           ...input,
           ...(learningContainerId ? { learningContainerId } : {}),
         });
-        const held = await client.ɵacquireThreadLock({
+        const held = await client().ɵacquireThreadLock({
           ...input,
           ...(learningContainerId ? { learningContainerId } : {}),
         });
@@ -92,7 +99,7 @@ export function createIntelligenceThreadLock(options: {
       }
     },
     renew: async (input) => {
-      await client.ɵrenewThreadLock({
+      await client().ɵrenewThreadLock({
         ...input,
         ttlSeconds: THREAD_LOCK_TTL_SECONDS,
       });
@@ -103,7 +110,7 @@ export function createIntelligenceThreadLock(options: {
       try {
         onRunBusy?.({ threadId: input.threadId, busy: false });
       } catch {}
-      await client.ɵcleanupThreadLock(input);
+      await client().ɵcleanupThreadLock(input);
     },
   };
 }

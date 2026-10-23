@@ -52,6 +52,7 @@ import {
 } from "./auth/guards";
 import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import { desktopAuthPage } from "./auth/native-browser";
+import { createAsyncJobsViewService } from "./billing/async-jobs-view";
 import type { Credits } from "./billing/credits";
 import type { CreditWriter } from "./billing/credits-writer";
 import {
@@ -153,7 +154,7 @@ import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
 import type { IdentityStore } from "./identity/store";
-import { createIntelligenceClient } from "./intelligence-client";
+import { lazyIntelligenceClient } from "./intelligence-optional";
 import {
   createLearningRoutes,
   type LearningAdminDependencies,
@@ -580,6 +581,8 @@ export function createApp(
     enterpriseConversations?: Hono;
     /** MT006 (issue #49): workspace scope listing + team administration routes. */
     enterpriseWorkspaceScope?: Hono;
+    /** Plugin packages marketplace routes (#459); mounted only where a deployment wires them. */
+    pluginPackages?: Hono;
     /**
      * ME06 (#478): the durable frontend_tool participation routes' deps —
      * the real continuation ledger and this deployment's scope resolver.
@@ -836,6 +839,15 @@ export function createApp(
    */
   workbenchPayer?: { database: Database },
 ) {
+  /*
+   * ME15 (#487): the thread-status reader's Intelligence client, resolved on
+   * the first thread read that needs it. A deployment without Intelligence
+   * constructs nothing here; the read refuses by name instead.
+   */
+  const requireThreadReaderClient = lazyIntelligenceClient({
+    settings: config.runtime.intelligence,
+    feature: "the thread-status reader",
+  });
   // The OpenMuse seam tail, unpacked to the local names the body below reads —
   // one named object at the call site, no seventeen positional arguments to
   // transpose. (Finding ocr-ob-certify #14.)
@@ -3039,14 +3051,13 @@ export function createApp(
       createThreadRoutes(
         threadIdentity,
         requireUser,
-        // config.ts refuses to boot without the full Intelligence contract (see copilot.ts's
-        // header comment), so `config.runtime.intelligence` is never missing here. Built from it
-        // rather than assumed, though: this is the one place besides the runtime mount itself that
-        // needs to reach Intelligence, and it should keep working unmodified if that guarantee ever
-        // loosens and a deployment can legitimately have no reader to build.
-        createThreadReader(
-          createIntelligenceClient(config.runtime.intelligence),
-        ),
+        // ME15 (#487): a deployment can legitimately have no Intelligence to
+        // build a reader from, so the client is resolved on the first request
+        // that actually reads a thread — the adapter defers it — and one
+        // without Intelligence gets the named refusal, never a broken mount.
+        createThreadReader({
+          getThread: (params) => requireThreadReaderClient().getThread(params),
+        }),
       ),
     );
   }

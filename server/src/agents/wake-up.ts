@@ -294,7 +294,12 @@ export function createWakeUpStore(
       await database
         .update(workItems)
         .set({
-          payload: sql`${workItems.payload} || ${JSON.stringify({ outcome })}::jsonb`,
+          // ME14 (carried ME12 R4, the store.ts:1266 precedent): the bound
+          // string must reach the jsonb cast as TEXT — under Bun SQL a bare
+          // `::jsonb` on the parameter double-encodes, the object arrives as
+          // a jsonb SCALAR string, and `payload || scalar` fails with
+          // "invalid concatenation of jsonb objects" on every settle.
+          payload: sql`${workItems.payload} || ${JSON.stringify({ outcome })}::text::jsonb`,
           updatedAt: sql`now()`,
         })
         .where(and(eq(workItems.kind, WAKE_UP_KIND), eq(workItems.key, id)));

@@ -302,6 +302,13 @@ export const SCOPE_HEADER_ALLOWED_PATHS: readonly ScopeHeaderPathEntry[] = [
       "the billing surface — the orders, invoices, credits and usage reads a person's billing pages make, and the company books a finance reader opens, are money facts of the selected scope, and MT097 binds those reads to the selection so a switch drops the old scope's amounts wholesale; the company books answer from the enterprise API's own scope gate, and the legacy payer-facing reads consume the pair when the legacy billing assembly reads it (MT125)",
     ownerTicket: "MT097",
   },
+  {
+    id: "mastra-participation-rest",
+    prefix: "/api/mastra-continuations",
+    reason:
+      "the durable participation surface — which Bot runs wait on a browser tool's result is workspace business state, and the waiting list a device reads plus the tool result it posts bind to the selection (ME16); the server resolves the pair through the same scope resolver every governed run is admitted under, so a suspension is only ever answered from a scope that may see its thread",
+    ownerTicket: "ME16",
+  },
 ];
 
 /**

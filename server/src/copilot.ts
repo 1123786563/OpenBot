@@ -78,6 +78,10 @@ import {
   withRunnerRequestContext,
 } from "./enterprise/runs/request-context";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
+import {
+  IntelligenceUnconfiguredError,
+  lazyIntelligenceClient,
+} from "./intelligence-optional";
 import { RemoteLearnedSkillsMiddleware } from "./learning/remote";
 import {
   type AcquireLearnedSkills,
@@ -2152,9 +2156,12 @@ export const meteredModelForTests = meteredModel;
  * a governed admission — the Mastra path exists only where the Runner has
  * admitted the run, minted the governed model collaborator and bound its
  * identity, so no client field can choose it and no provider-keyed build can
- * reach it. This ticket does not flip any default.
+ * reach it. ME16 (#488): the only value a selector can return is "mastra" —
+ * the legacy engine is not something a selector selects, it is what runs when
+ * no selector (or no governed admission) exists, so the unreachable "legacy"
+ * member the seam was drafted with is gone.
  */
-export type BuiltinExecutionEngine = "legacy" | "mastra";
+export type BuiltinExecutionEngine = "mastra";
 
 let builtinExecutionEngineFor:
   | ((input: { botId: string; governed: boolean }) => BuiltinExecutionEngine)
@@ -2987,7 +2994,24 @@ export async function buildAgents(
               }
             : undefined,
         );
-        if (loadPersonalMemory && !(built instanceof UnavailableAgent))
+        // ME14 (carried ME07 review F1): the middleware is the LEGACY engine's
+        // personal-memory block. A build the selector routes to the Mastra
+        // engine renders its memory block server-side from the #395 seams
+        // (ME07) and never reads this loader — mounting it anyway left a dead
+        // read wired to the legacy store's availability on every
+        // Mastra-selected run. The mount is skipped exactly for that case; a
+        // governed build that stays on the legacy engine keeps it.
+        if (
+          loadPersonalMemory &&
+          !(built instanceof UnavailableAgent) &&
+          !(
+            governedModel !== undefined &&
+            builtinExecutionEngineFor?.({
+              botId: agent.id,
+              governed: true,
+            }) === "mastra"
+          )
+        )
           built.use(new PersonalMemoryMiddleware(agent.id, loadPersonalMemory));
         return [agent.id, built];
       }),
@@ -4226,6 +4250,54 @@ export function mountCopilotRuntime(
   const { intelligence } = config.runtime;
   const { basePath = "/api/copilotkit", onRunBusy, learningSettings } = options;
 
+  /*
+   * ME15 (#487): the client, resolved lazily.
+   *
+   * With the governed enterprise Runner mounted, the runtime itself never
+   * asks for this client — the SSE branch below constructs nothing — and the
+   * remaining consumers (learning, when a container is actually targeted; the
+   * legacy delivery's history/lock/runner reads) each resolve it on their own
+   * first use. A deployment that has not configured Intelligence boots here
+   * with ZERO constructed clients; a consumer that runs anyway gets the named
+   * refusal, never a silent in-memory stand-in.
+   */
+  const requireIntelligenceClient = lazyIntelligenceClient({
+    settings: intelligence,
+    feature: "the CopilotKit runtime mount's client",
+    build: (settings) =>
+      observeIntelligenceAuthentication(
+        new IntelligenceKnowingANewThread({
+          apiUrl: settings.apiUrl,
+          wsUrl: settings.gatewayWsUrl,
+          apiKey: settings.apiKey,
+          getLearningContainerId: async ({
+            agentId,
+            input,
+            user,
+          }): Promise<string | undefined> => {
+            if (!user)
+              throw new Error(
+                "Learning Thread assignment requires a verified user.",
+              );
+            return learning?.containerForThread({
+              agentId,
+              threadId: input.threadId,
+              userId: user.id,
+            });
+          },
+        }),
+      ),
+  });
+  if (!intelligence && !options.enterpriseRunner) {
+    // Unreachable through index.ts (the boot gate refuses the engine-less
+    // deployment first) and refused here on its own terms: mounting the
+    // Intelligence runtime without Intelligence would be exactly the degraded
+    // runner the spec forbids.
+    throw new IntelligenceUnconfiguredError(
+      "the browser chat mount (no governed enterprise Runner is wired)",
+    );
+  }
+
   /**
    * The same Bot a person's run would get, built without a request.
    *
@@ -4261,36 +4333,14 @@ export function mountCopilotRuntime(
 
   /*
    * One client, used by the runtime and by anything reading a thread beside it, so a hop reads the
-   * history a person's run would read rather than a second view of it that could disagree.
+   * history a person's run would read rather than a second view of it that could disagree. Handed
+   * to the learning runtime as the same lazy accessor (ME15 #487): with learning disabled the
+   * runtime never resolves it, so this mount constructs nothing.
    */
-  const intelligenceClient: CopilotKitIntelligence =
-    observeIntelligenceAuthentication(
-      new IntelligenceKnowingANewThread({
-        apiUrl: intelligence.apiUrl,
-        wsUrl: intelligence.gatewayWsUrl,
-        apiKey: intelligence.apiKey,
-        getLearningContainerId: async ({
-          agentId,
-          input,
-          user,
-        }): Promise<string | undefined> => {
-          if (!user)
-            throw new Error(
-              "Learning Thread assignment requires a verified user.",
-            );
-          return learning?.containerForThread({
-            agentId,
-            threadId: input.threadId,
-            userId: user.id,
-          });
-        },
-      }),
-    );
-
   const learning: LearningRuntime | undefined = learningSettings
     ? createLearningRuntime({
         store: learningSettings,
-        client: intelligenceClient,
+        client: requireIntelligenceClient,
       })
     : undefined;
 
@@ -4307,7 +4357,7 @@ export function mountCopilotRuntime(
     // returns, so omitting it puts every person in the deployment in the same thread space and one
     // person's conversations become another's.
     identifyUser,
-    licenseToken: intelligence.licenseToken,
+    licenseToken: intelligence?.licenseToken,
     // Carried on the events the runtime already sends, so OpenBot's traffic is separable from any
     // other deployment's. Adds no events of its own.
     telemetryProperties: {
@@ -4353,7 +4403,7 @@ export function mountCopilotRuntime(
       // 500. See IntelligenceKnowingANewThread.
       new CopilotRuntime({
         ...commonRuntimeOptions,
-        intelligence: intelligenceClient,
+        intelligence: requireIntelligenceClient(),
       });
 
   return {
@@ -4369,11 +4419,11 @@ export function mountCopilotRuntime(
      * else driving a run has to ask the same client the same way.
      */
     runnerConnection: () => ({
-      url: intelligenceClient.ɵgetRunnerWsUrl(),
-      authToken: intelligenceClient.ɵgetRunnerAuthToken(),
+      url: requireIntelligenceClient().ɵgetRunnerWsUrl(),
+      authToken: requireIntelligenceClient().ɵgetRunnerAuthToken(),
     }),
     threadLock: createIntelligenceThreadLock({
-      client: intelligenceClient,
+      client: requireIntelligenceClient,
       learning,
       onRunBusy,
     }),
@@ -4395,7 +4445,7 @@ export function mountCopilotRuntime(
       >;
       const read = await historyOrEmpty<Read>(
         () =>
-          intelligenceClient.getThreadMessages({
+          requireIntelligenceClient().getThreadMessages({
             threadId: input.threadId,
             userId: input.actorId,
           }),

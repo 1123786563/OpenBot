@@ -539,8 +539,16 @@ async function conclude(
 }
 
 export function createTurnRunner(options: {
-  intelligence: IntelligenceLike;
-  runner: RunnerLike;
+  /**
+   * The platform client, or a lazy accessor for one (ME15 #487). Both forms
+   * are touched only inside the turn, so an assembly that never runs a turn
+   * never resolves — and never constructs — the client behind it. A deployment
+   * without Intelligence passes an accessor that refuses by name on the first
+   * actual turn; the assembly itself stays bootable.
+   */
+  intelligence: IntelligenceLike | (() => IntelligenceLike);
+  /** The runner, under the same lazy contract as `intelligence`. */
+  runner: RunnerLike | (() => RunnerLike);
   /** Checked before anything else; see `serverTurnAdmission` in agents/turn-admission.ts. */
   admission: TurnAdmission;
   learningContainerForThread?: (input: {
@@ -576,8 +584,8 @@ export function createTurnRunner(options: {
   abortGraceMs?: number;
 }): TurnRunner {
   const {
-    intelligence,
-    runner,
+    intelligence: intelligenceOption,
+    runner: runnerOption,
     admission,
     buildAgentFor,
     learningContainerForThread,
@@ -588,6 +596,15 @@ export function createTurnRunner(options: {
     heartbeatMs = TURN_LIMITS.heartbeatMs,
     abortGraceMs = TURN_LIMITS.abortGraceMs,
   } = options;
+  // Resolved inside the turn, never at assembly: the lazy form keeps boot
+  // client-free, and the refusal for a missing client is raised on the first
+  // turn that actually needs one.
+  const intelligence = () =>
+    typeof intelligenceOption === "function"
+      ? intelligenceOption()
+      : intelligenceOption;
+  const runner = () =>
+    typeof runnerOption === "function" ? runnerOption() : runnerOption;
 
   return async ({
     ownerUserId,
@@ -642,7 +659,7 @@ export function createTurnRunner(options: {
       agentId,
       userId: ownerUserId,
     });
-    await intelligence.getOrCreateThread({
+    await intelligence().getOrCreateThread({
       threadId,
       userId: ownerUserId,
       agentId,
@@ -662,7 +679,7 @@ export function createTurnRunner(options: {
      * between a routine that survives one interrupted chat turn and one that never fires again.
      */
     const history = await historyOrEmpty(
-      () => intelligence.getThreadMessages({ threadId, userId: ownerUserId }),
+      () => intelligence().getThreadMessages({ threadId, userId: ownerUserId }),
       { messages: [] as ThreadHistoryMessage[] },
     );
 
@@ -793,11 +810,13 @@ export function createTurnRunner(options: {
         // it sets `stopRequested`, which is what makes `finalizeRunEvents` close the run as
         // stopped rather than leaving it open for ever on the platform.
       }
-      stopPromise ??= runner.stop({ threadId, runId }).catch(() => undefined);
+      stopPromise ??= Promise.resolve()
+        .then(() => runner().stop({ threadId, runId }))
+        .catch(() => undefined);
     };
 
     const lease = await takeLease({
-      intelligence,
+      intelligence: intelligence(),
       threadId,
       runId,
       userId: ownerUserId,
@@ -827,7 +846,7 @@ export function createTurnRunner(options: {
       });
       const completed = new Promise<void>((resolve, reject) => {
         let terminal: Error | undefined;
-        runner
+        runner()
           .run({ threadId, agent, input, persistedInputMessages })
           .subscribe({
             /*

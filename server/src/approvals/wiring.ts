@@ -31,7 +31,7 @@ export function createServerApprovalService(deps: {
   actorFor: (ownerUserId: string) => Promise<AgentActor>;
   database: Database;
   authoriseQuestion: (question: PersonQuestion) => Promise<void>;
-  routineIntelligence: Pick<IntelligenceLike, "getThreadMessages">;
+  routineIntelligence?: Pick<IntelligenceLike, "getThreadMessages">;
   approvalComputerTools: (
     ownerUserId: string,
     agentId: string,
@@ -123,7 +123,11 @@ export function createServerApprovalService(deps: {
       // Intelligence saves a streaming run's messages a moment behind the stream, and the browser runs
       // the tool as soon as the call arrives. A call that is not saved yet is waited for briefly; one
       // that never appears is refused below.
-      let history = await routineIntelligence.getThreadMessages({
+      if (!routineIntelligence)
+      throw new ApprovalRefusedError(
+        "Resuming a computer tool needs an Intelligence deployment.",
+      );
+    let history = await routineIntelligence.getThreadMessages({
         threadId: snapshot.threadId,
         userId: ownerUserId,
       });

@@ -6,6 +6,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { type InfiniteData, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { z } from "zod";
 import { ChannelChat } from "@/components/channels/channel-chat";
 import {
   type AgentChannel,
@@ -14,6 +15,7 @@ import {
   channelKeys,
 } from "@/lib/channels/queries";
 import { a2uiProviderOptions } from "@/lib/copilot/a2ui";
+import { useFrontendTool } from "@/lib/copilot/approval-tools";
 import { resumeHandoffTask } from "@/lib/copilot/handoff-resume";
 import { queryClient } from "@/query-client";
 import {
@@ -102,6 +104,15 @@ let inbox: unknown = EMPTY_INBOX;
 let runRequests: { path: string; input: RunAgentInput }[];
 let stopRequests: unknown[];
 let runEvents: (input: RunAgentInput) => Response;
+/** ME16: the workspace's waiting Mastra suspensions, as the list route answers. */
+let waitingSuspensions: {
+  continuationId: string;
+  status: string;
+  kind: string;
+  toolCallId: string;
+}[];
+/** ME16: the tool results the browser posted to the participation route. */
+let participationPosts: { id: string; body: unknown }[];
 let core: ReturnType<typeof useCopilotKit>["copilotkit"] | undefined;
 
 function CoreProbe() {
@@ -131,6 +142,68 @@ function openRun(input: RunAgentInput) {
     }),
     { headers: { "content-type": "text/event-stream" } },
   );
+}
+
+/**
+ * A Mastra frontend_tool suspension on the wire: the call is announced, the
+ * args stream, the call ends — and the stream CLOSES with no result event
+ * and no terminal. That is what a suspension is: the run is parked on the
+ * server, and only a client answering the participation route continues it.
+ */
+function suspendedRun(input: RunAgentInput, toolCallId: string) {
+  const events = [
+    { type: "RUN_STARTED", threadId: input.threadId, runId: input.runId },
+    {
+      type: "TOOL_CALL_START",
+      threadId: input.threadId,
+      runId: input.runId,
+      toolCallId,
+      toolCallName: "participation_probe",
+    },
+    {
+      type: "TOOL_CALL_ARGS",
+      threadId: input.threadId,
+      runId: input.runId,
+      toolCallId,
+      delta: '{"query":"the page says hello"}',
+    },
+    {
+      type: "TOOL_CALL_END",
+      threadId: input.threadId,
+      runId: input.runId,
+      toolCallId,
+    },
+  ];
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const event of events) {
+          controller.enqueue(
+            new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`),
+          );
+        }
+        controller.close();
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+/**
+ * The probe tool the participation cases drive, registered through the app's
+ * own `useFrontendTool` wrapper — the seam the participation answer lives in.
+ */
+function ParticipationProbeTool(props: {
+  onResult: (result: unknown) => unknown;
+}) {
+  useFrontendTool({
+    name: "participation_probe",
+    description: "Reads the page the person is on.",
+    parameters: z.object({ query: z.string().describe("What to read.") }),
+    handler: async (args: { query?: string }) =>
+      props.onResult({ text: `read: ${args.query ?? ""}` }),
+  });
+  return null;
 }
 
 beforeAll(() => {
@@ -183,6 +256,18 @@ beforeAll(() => {
         stopRequests.push(await request.json().catch(() => ({})));
         return Response.json({});
       }
+      if (url.pathname === "/api/mastra-continuations") {
+        return Response.json({ suspensions: waitingSuspensions });
+      }
+      if (
+        /^\/api\/mastra-continuations\/[^/]+\/tool-result$/.test(url.pathname)
+      ) {
+        const request =
+          input instanceof Request ? input : new Request(url, init);
+        const id = decodeURIComponent(url.pathname.split("/")[3] ?? "");
+        participationPosts.push({ id, body: await request.json() });
+        return Response.json({ result: { outcome: "resumed" } });
+      }
       if (/\/api\/channels\/[^/]+\/(activity|busy)$/.test(url.pathname))
         return new Response(null, { status: 204 });
       if (url.pathname === "/api/voice/sessions")
@@ -213,6 +298,8 @@ afterEach(() => {
   core = undefined;
   sessionStorage.clear();
   inbox = EMPTY_INBOX;
+  waitingSuspensions = [];
+  participationPosts = [];
 });
 afterAll(() => {
   globalThis.fetch = originalFetch;
@@ -257,6 +344,8 @@ function mounting(
   decisionRequests = [];
   runRequests = [];
   stopRequests = [];
+  waitingSuspensions = [];
+  participationPosts = [];
   runEvents = (input) =>
     sse([
       { type: "RUN_STARTED", threadId: input.threadId, runId: input.runId },
@@ -530,5 +619,117 @@ describe("the existing client against a Mastra-backed history", () => {
       refusal = error instanceof Error ? error.message : "";
     }
     expect(refusal).toBe("This tool call is already answered.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ME16 (#488): the browser half of a Mastra frontend_tool suspension — the
+// handler's real result reaches the participation route, or the run never
+// continues.
+// ---------------------------------------------------------------------------
+
+describe("the browser answers a Mastra frontend_tool suspension", () => {
+  function participationTree(onResult: (result: unknown) => unknown) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <CopilotKitProvider
+          runtimeUrl="http://localhost/api/copilotkit"
+          {...a2uiProviderOptions(false)}
+        >
+          <CoreProbe />
+          <ParticipationProbeTool onResult={onResult} />
+          <ChannelChat channel={channel} runtimeAgentId="compat-bot" />
+        </CopilotKitProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  async function runProbe() {
+    const agent = currentAgent();
+    await core!.runAgent({ agent });
+    // The tool execution's follow-up run and its renders settle here, not in
+    // the next test's environment.
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    return agent;
+  }
+
+  test("a waiting suspension is answered with the handler's real result", async () => {
+    waitingSuspensions = [
+      {
+        continuationId: "cont-1",
+        status: "waiting",
+        kind: "frontend_tool",
+        toolCallId: "call-participate",
+      },
+    ];
+    let handlerResult: unknown;
+    history = async () => stored(storedTurns);
+    gatewaySnapshot = [];
+    cacheChannel();
+    const view = render(
+      participationTree((result) => {
+        handlerResult = result;
+        return result;
+      }),
+    );
+    await view.findByText("Retry twice, then page the on-call.");
+
+    runEvents = (input) => suspendedRun(input, "call-participate");
+    await runProbe();
+
+    // The browser posted the tool's real result to the participation route:
+    // the reply names the suspended call and carries what the handler read.
+    await waitFor(() => expect(participationPosts).toHaveLength(1));
+    // Exactly once — the follow-up run that carries the result forward must
+    // not answer the same suspension a second time.
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    expect(participationPosts).toHaveLength(1);
+    expect(participationPosts[0]).toMatchObject({
+      id: "cont-1",
+      body: {
+        toolCallId: "call-participate",
+        result: { text: "read: the page says hello" },
+      },
+    });
+    // And the handler's own return value still flows to the transcript —
+    // answering the suspension never eats the client-side result.
+    expect(handlerResult).toEqual({ text: "read: the page says hello" });
+  });
+
+  test("an approval-kind suspension is never answered with a tool result", async () => {
+    waitingSuspensions = [
+      {
+        continuationId: "cont-approval",
+        status: "waiting",
+        kind: "approval",
+        toolCallId: "call-participate",
+      },
+    ];
+    history = async () => stored(storedTurns);
+    gatewaySnapshot = [];
+    cacheChannel();
+    const view = render(participationTree(() => undefined));
+    await view.findByText("Retry twice, then page the on-call.");
+
+    runEvents = (input) => suspendedRun(input, "call-participate");
+    await runProbe();
+
+    // The waiting list was consulted, but the kind gate held: a parked
+    // approval is the approvals flow's to resume.
+    await waitFor(() => expect(participationPosts).toHaveLength(0));
+  });
+
+  test("nothing waiting — the legacy in-band flow answers nothing", async () => {
+    waitingSuspensions = [];
+    history = async () => stored(storedTurns);
+    gatewaySnapshot = [];
+    cacheChannel();
+    const view = render(participationTree(() => undefined));
+    await view.findByText("Retry twice, then page the on-call.");
+
+    runEvents = (input) => suspendedRun(input, "call-participate");
+    await runProbe();
+
+    expect(participationPosts).toHaveLength(0);
   });
 });

@@ -1,6 +1,6 @@
-import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import { readFileSync } from "node:fs";
 import { getLogger } from "../../shared/logger";
+import { describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
 import {
   configuredAuthProviders,
   loadConfig,
@@ -153,15 +153,22 @@ describe("deployment configuration", () => {
     );
   });
 
-  test("refuses to start when Intelligence is absent entirely, rather than degrading", () => {
-    expect(() =>
-      loadConfig({
-        DATABASE_URL: baseEnvironment.DATABASE_URL,
-        KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
-        MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
-        MANAGED_AGENT_TOKEN: baseEnvironment.MANAGED_AGENT_TOKEN,
-      }),
-    ).toThrow("CopilotKit Intelligence is required and is not configured");
+  // ME15 (#487): the block ABSENT is a mode, not a mistake — a deployment
+  // with no Intelligence settings boots (mode "none") and every entrance that
+  // needs Intelligence refuses by name; the engine-less boot refusal lives at
+  // the boot gate (see mastra-no-intelligence-boot.integration.test.ts).
+  // The environment here still needs an identity story, so single-user it is.
+  test("boots without Intelligence entirely (mode none, nothing degraded silently)", () => {
+    const config = loadConfig({
+      DATABASE_URL: baseEnvironment.DATABASE_URL,
+      KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+      MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
+      MANAGED_AGENT_TOKEN: baseEnvironment.MANAGED_AGENT_TOKEN,
+      OPENBOT_SINGLE_USER: "true",
+    });
+    expect(config.runtime.mode).toBe("none");
+    expect(config.runtime.intelligence).toBeUndefined();
+    expect(config.runtime.durableHistory).toBe(false);
   });
 
   test("rejects incomplete OAuth client configuration", () => {

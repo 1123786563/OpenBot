@@ -9,6 +9,7 @@ import { InlineApproval } from "@/components/approvals/inline-approval";
 import { tryClient } from "@/lib/client";
 import { useActiveBotHolder } from "./active-bot";
 import { frontendApprovalSnapshot } from "./approval-context";
+import { answerMastraParticipation } from "./mastra-participation";
 
 type RenderProps = { toolCallId: string; [key: string]: unknown };
 
@@ -60,14 +61,44 @@ export function useFrontendTool<T extends Record<string, unknown>>(
       : {}),
     handler: tool.handler
       ? async (args, context) => {
-          if (!writes.has(tool.name)) return tool.handler?.(args, context);
+          const answer = async (result: unknown) => {
+            /*
+             * ME16 (#488): a Mastra engine suspension never sees a handler's
+             * result in-band — the run is parked on the server as a durable
+             * waiting continuation, and the browser is the only party that
+             * can hand the real result over. Answer it when the server says
+             * one is waiting for this call; the legacy engine's in-band flow
+             * reads as "nothing waiting" and behaves exactly as before. A
+             * parked APPROVAL decision (`waiting`) is not a tool result: the
+             * approvals decision flow owns that resume.
+             */
+            if (
+              !writes.has(tool.name) ||
+              !(
+                result &&
+                typeof result === "object" &&
+                "waiting" in result &&
+                (result as { waiting?: unknown }).waiting === true
+              )
+            ) {
+              await answerMastraParticipation({
+                toolCallId: context.toolCall?.id,
+                result,
+                signal: context.signal,
+              });
+            }
+            return result;
+          };
+          if (!writes.has(tool.name)) {
+            return answer(await tool.handler?.(args, context));
+          }
           let snapshot: ReturnType<typeof frontendApprovalSnapshot>;
           try {
             snapshot = frontendApprovalSnapshot(context);
           } catch {
             // A surface with no observed conversation. The server still gates the action; it can
             // run it when nothing asks, and says why when something does.
-            return tool.handler?.(args, context);
+            return answer(await tool.handler?.(args, context));
           }
           const response = await tryClient(
             `/api/approvals/computer/${encodeURIComponent(bot.current)}`,
@@ -82,7 +113,9 @@ export function useFrontendTool<T extends Record<string, unknown>>(
             copilotkit.stopAgent({ agent: context.agent });
             // Draw the card now rather than on the inbox's next poll.
             void queryClient.invalidateQueries({ queryKey: ["approvals"] });
-            return { waiting: true };
+            // `answer` skips the waiting sentinel itself: a parked approval
+            // decision resumes the engine, a tool result never does.
+            return answer({ waiting: true });
           }
           if (!response.ok)
             throw new Error(
@@ -95,7 +128,7 @@ export function useFrontendTool<T extends Record<string, unknown>>(
             );
           if (!payload || typeof payload !== "object" || !("result" in payload))
             throw new Error("The computer action returned no result.");
-          return payload.result;
+          return answer(payload.result);
         }
       : undefined,
   });

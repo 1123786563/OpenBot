@@ -1262,6 +1262,15 @@ export function createOpenMuseTaskRows(database: Database): OpenMuseTaskRows {
         throw new Error(
           "evidence and appendedEvidence are mutually exclusive.",
         );
+      /*
+       * Every jsonb binding below goes `::text::jsonb` on purpose: Bun's SQL
+       * driver double-encodes a stringified parameter bound directly as
+       * jsonb (the value lands as one jsonb STRING, not the structure the
+       * text parses to), which had corrupted every step/evidence/artifact
+       * append this store wrote over real Postgres (ME12 #484's integration
+       * evidence). The text cast is what makes Postgres parse the JSON —
+       * the same discipline gateway/price-snapshot.ts already applies.
+       */
       const [row] = await database
         .update(openmuseTasks)
         .set({
@@ -1281,27 +1290,27 @@ export function createOpenMuseTaskRows(database: Database): OpenMuseTaskRows {
           // T09: a plan's graph is replaced whole — one step's status moves,
           // never an append onto the graph the runner selects from.
           ...(patch.steps
-            ? { steps: sql`${JSON.stringify(patch.steps)}::jsonb` }
+            ? { steps: sql`${JSON.stringify(patch.steps)}::text::jsonb` }
             : {}),
           ...(patch.appendedSteps
             ? {
-                steps: sql`${openmuseTasks.steps} || ${JSON.stringify(patch.appendedSteps)}::jsonb`,
+                steps: sql`${openmuseTasks.steps} || ${JSON.stringify(patch.appendedSteps)}::text::jsonb`,
               }
             : {}),
           // T11: a monitor's evidence is replaced whole — the capped latest
           // rows — so a drifting source's observations cannot grow the jsonb
           // column without bound.
           ...(patch.evidence
-            ? { evidence: sql`${JSON.stringify(patch.evidence)}::jsonb` }
+            ? { evidence: sql`${JSON.stringify(patch.evidence)}::text::jsonb` }
             : {}),
           ...(patch.appendedEvidence
             ? {
-                evidence: sql`${openmuseTasks.evidence} || ${JSON.stringify(patch.appendedEvidence)}::jsonb`,
+                evidence: sql`${openmuseTasks.evidence} || ${JSON.stringify(patch.appendedEvidence)}::text::jsonb`,
               }
             : {}),
           ...(patch.appendedArtifactIds
             ? {
-                artifactIds: sql`${openmuseTasks.artifactIds} || ${JSON.stringify(patch.appendedArtifactIds)}::jsonb`,
+                artifactIds: sql`${openmuseTasks.artifactIds} || ${JSON.stringify(patch.appendedArtifactIds)}::text::jsonb`,
               }
             : {}),
           updatedAt: sql`now()`,
@@ -1450,7 +1459,7 @@ export function createOpenMuseTaskRows(database: Database): OpenMuseTaskRows {
           pauseRequested: false,
           ...(retryKey !== null ? { lastRetryKey: retryKey } : {}),
           steps: resetSteps
-            ? stampAttempt(sql`${JSON.stringify(resetSteps)}::jsonb`)
+            ? stampAttempt(sql`${JSON.stringify(resetSteps)}::text::jsonb`)
             : stampAttempt(openmuseTasks.steps),
           evidence: stampAttempt(openmuseTasks.evidence),
           updatedAt: sql`now()`,
@@ -1490,12 +1499,12 @@ export function createOpenMuseTaskRows(database: Database): OpenMuseTaskRows {
           wait: patch.wait,
           ...(patch.appendedSteps
             ? {
-                steps: sql`${openmuseTasks.steps} || ${JSON.stringify(patch.appendedSteps)}::jsonb`,
+                steps: sql`${openmuseTasks.steps} || ${JSON.stringify(patch.appendedSteps)}::text::jsonb`,
               }
             : {}),
           ...(patch.appendedEvidence
             ? {
-                evidence: sql`${openmuseTasks.evidence} || ${JSON.stringify(patch.appendedEvidence)}::jsonb`,
+                evidence: sql`${openmuseTasks.evidence} || ${JSON.stringify(patch.appendedEvidence)}::text::jsonb`,
               }
             : {}),
           updatedAt: sql`now()`,
@@ -1521,17 +1530,17 @@ export function createOpenMuseTaskRows(database: Database): OpenMuseTaskRows {
           wait: patch.wait,
           ...(patch.appendedSteps
             ? {
-                steps: sql`${openmuseTasks.steps} || ${JSON.stringify(patch.appendedSteps)}::jsonb`,
+                steps: sql`${openmuseTasks.steps} || ${JSON.stringify(patch.appendedSteps)}::text::jsonb`,
               }
             : {}),
           ...(patch.appendedEvidence
             ? {
-                evidence: sql`${openmuseTasks.evidence} || ${JSON.stringify(patch.appendedEvidence)}::jsonb`,
+                evidence: sql`${openmuseTasks.evidence} || ${JSON.stringify(patch.appendedEvidence)}::text::jsonb`,
               }
             : {}),
           ...(patch.appendedArtifactIds
             ? {
-                artifactIds: sql`${openmuseTasks.artifactIds} || ${JSON.stringify(patch.appendedArtifactIds)}::jsonb`,
+                artifactIds: sql`${openmuseTasks.artifactIds} || ${JSON.stringify(patch.appendedArtifactIds)}::text::jsonb`,
               }
             : {}),
           updatedAt: sql`now()`,
@@ -1554,7 +1563,7 @@ export function createOpenMuseTaskRows(database: Database): OpenMuseTaskRows {
         .update(openmuseTasks)
         .set({
           status: "queued",
-          wait: sql`jsonb_set(jsonb_set(${openmuseTasks.wait}, '{answeredAt}', to_jsonb(now())), '{answer}', ${JSON.stringify(answer)}::jsonb)`,
+          wait: sql`jsonb_set(jsonb_set(${openmuseTasks.wait}, '{answeredAt}', to_jsonb(now())), '{answer}', ${JSON.stringify(answer)}::text::jsonb)`,
           updatedAt: sql`now()`,
         })
         .where(

@@ -19,7 +19,10 @@ import {
 } from "../work/queue";
 import { HANDOFF_KIND } from "./handoff";
 import { createHandoffDelivery } from "./handoff-delivery";
-import { createHandoffRunner } from "./handoff-runner";
+import {
+  createHandoffRunner,
+  type HandoffDelivery,
+} from "./handoff-runner";
 import { signHandoffDeliveryRun } from "./handoff-signing";
 import type { AgentActor } from "./profile-types";
 import { serverTurnAdmission } from "./turn-admission";
@@ -42,6 +45,8 @@ export async function startHandoffDelivery(deps: {
   threadIdentity: ThreadIdentity;
   groupConversations: GroupConversations;
   channelStore: ChannelStore;
+  /** The governed arm's delivery, when one exists (ME11 #483); the legacy platform delivery is built otherwise. */
+  delivery?: HandoffDelivery;
 }): Promise<{ listener: WorkOfferedListener; sweep: Repeating }> {
   const {
     config,
@@ -52,6 +57,7 @@ export async function startHandoffDelivery(deps: {
     threadIdentity,
     groupConversations,
     channelStore,
+    delivery,
   } = deps;
   const runner = createHandoffRunner({
     queue: createWorkQueue(database),
@@ -63,7 +69,7 @@ export async function startHandoffDelivery(deps: {
      */
     sign: (work, claim) =>
       signHandoffDeliveryRun(work, config.keyEncryptionKey, undefined, claim),
-    delivery: createHandoffDelivery({
+    delivery: delivery ?? createHandoffDelivery({
       admission: serverTurnAdmission,
       /*
        * Built as the person, WITH THEIR ROLE. The desk resolved it to decide the hop was allowed; a

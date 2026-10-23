@@ -242,9 +242,11 @@ import {
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
+  setBuiltinExecutionEngine,
   setBuiltinModelSpanObserver,
   setBuiltinToolStepObserver,
   setMastraContinuations,
+  setMastraConversationRuntime,
   setMastraPersonalMemoryContext,
   setModelBillingAudit,
   setModelUsageGate,
@@ -466,11 +468,12 @@ import { githubCallbackRoutes } from "./identity/github-callback";
 import { retireIdentityLinks, retireOwnedAccounts } from "./identity/retire";
 import { slackCodeRedeemer } from "./identity/slack-redeem";
 import { createIdentityStore } from "./identity/store";
-import {
-  createIntelligenceClient,
-  observeIntelligenceAuthentication,
-} from "./intelligence-client";
+import { observeIntelligenceAuthentication } from "./intelligence-client";
 import { scheduleStartupDiagnostics } from "./intelligence-entitlement-check";
+import {
+  agentRuntimeConfigRefusal,
+  lazyIntelligenceClient,
+} from "./intelligence-optional";
 import {
   createLearningAutoAssign,
   probeLearningContainer,
@@ -502,6 +505,13 @@ import type {
   MastraSuspensionFact,
   ResumeDecision,
 } from "./mastra/execution-contracts";
+import {
+  createGovernedHandoffDelivery,
+  createGovernedHandoffRecordResolver,
+  governedHandoffSurfaceTools,
+  handoffSchedulingRecordFor,
+  handoffWorkReader,
+} from "./mastra/handoff-delivery";
 import type { GovernedTurnRunnerDeps } from "./mastra/headless";
 import {
   assertResumeBindingCurrent,
@@ -511,6 +521,7 @@ import {
   GovernedHeadlessRefusal,
   settleResumedRun,
 } from "./mastra/headless";
+import { openMuseTaskSchedulingRecordFor } from "./mastra/openmuse-task-entry";
 import { PostgresTenantStorageRegistry } from "./mastra/postgres-registry";
 import {
   RegistryTenantStorageLookup,
@@ -886,6 +897,37 @@ const identifyActor: IdentifyActor = async (request) => {
 
 const config = loadConfig();
 /*
+ * ME15 (#487), AC: 缺核心能力拒绝启动. Intelligence no longer being required
+ * to boot, the first gate answers the only question that replaces it: is
+ * there an engine to serve a chat or a background turn at all? The legacy
+ * engine needs the Intelligence contract; the governed engine needs the
+ * enterprise directory, data and tenant-storage databases (and composes its
+ * model governance and durable recovery from the same verified pair). Neither
+ * configured, and boot refuses here — before pools, clients or routes exist —
+ * instead of starting a server whose every conversation would fail. A PARTIAL
+ * wiring refuses too, with the missing names. The verified-level twin of this
+ * gate (URLs set but the capability check failed) sits below, at the
+ * composition site.
+ */
+{
+  const refusal = agentRuntimeConfigRefusal({
+    intelligenceConfigured: config.runtime.intelligence !== undefined,
+    enterpriseDirectoryUrl: config.enterpriseDirectoryDatabaseUrl,
+    enterpriseDataUrl: config.enterpriseDataDatabaseUrl,
+    tenantStorageRuntimeUrl: config.tenantStorageRuntimeDatabaseUrl,
+  });
+  if (refusal) {
+    log.error(
+      { type: "agent-runtime-unconfigured", refusal },
+      "agent-runtime-unconfigured: refusing to boot",
+    );
+    // pino's stdout destination buffers; the refusal record must land before
+    // the process goes away, so the flush is awaited, not raced.
+    await new Promise<void>((resolve) => log.flush(() => resolve()));
+    process.exit(1);
+  }
+}
+/*
  * Multitenancy mode is an explicit switch (OPENBOT_MULTITENANCY, default off — config.ts), and
  * switching it on is a promise about who this deployment serves. The promise is checked before
  * anything else here runs: entrance coverage against the MT001 inventory, no single-user/dev
@@ -939,34 +981,59 @@ const learningSettingsStore = createLearningSettingsStore(
   database,
   config.learning,
 );
-// Its own client, like the self-host banner's: the constructor opens nothing.
-const learningProbeIntelligence = createIntelligenceClient(
-  config.runtime.intelligence,
-);
+/*
+ * ME15 (#487): Intelligence is optional at boot. Every client this file used
+ * to construct eagerly is now a memoized accessor: with learning disabled and
+ * the governed path serving, nothing here constructs a client at import, boot
+ * or run, and an accessor whose settings are absent refuses BY NAME on the
+ * first real use instead of degrading. See intelligence-optional.ts.
+ */
+const intelligenceSettings = config.runtime.intelligence;
+const learningProbeIntelligence = lazyIntelligenceClient({
+  settings: intelligenceSettings,
+  feature: "the Learning container probe",
+});
 /*
  * Who can create the `openbot` container here: never the runtime key. A service token the operator
  * configured (local evaluation installs), or a CopilotKit CLI login on this machine, which is what a
  * laptop running `bun run start` has. Neither, and the log and Admin say exactly what to run instead.
+ * Without Intelligence there is no project to hold a container at all, so the origin is undefined
+ * and the create arm composes from nothing.
  */
 const learningApiOrigin = (() => {
+  if (!intelligenceSettings) return undefined;
   try {
-    return intelligenceApiOrigin(config.runtime.intelligence.apiUrl);
+    return intelligenceApiOrigin(intelligenceSettings.apiUrl);
   } catch {
     return undefined;
   }
 })();
 const learningCanCreate =
   learningApiOrigin !== undefined &&
+  intelligenceSettings !== undefined &&
   (config.learningSetup !== undefined || cliLoginPresent());
+if (config.learningAutoAssign && learningApiOrigin === undefined) {
+  // Said once, at boot: the switch is on but the service it automates is not
+  // configured. The auto-assign itself stays off rather than probing nothing.
+  log.warn(
+    {
+      type: "learning-auto-assign-off",
+      reason: "Intelligence is not configured",
+    },
+    "learning-auto-assign-off: set INTELLIGENCE_API_URL, INTELLIGENCE_GATEWAY_WS_URL and INTELLIGENCE_API_KEY to enable automatic Learning container assignment",
+  );
+}
 const learningAutoAssign = createLearningAutoAssign({
-  enabled: config.learningAutoAssign,
+  enabled: config.learningAutoAssign && learningApiOrigin !== undefined,
   store: learningSettingsStore,
+  // The accessor, not a client: the probe runs only while no setting is
+  // saved, so a deployment that has learning switched off constructs nothing.
   probe: (containerId) =>
-    probeLearningContainer(learningProbeIntelligence, containerId),
+    probeLearningContainer(learningProbeIntelligence(), containerId),
   ...(learningApiOrigin
     ? { instructions: learningSetupInstructions(learningApiOrigin) }
     : {}),
-  ...(learningCanCreate && learningApiOrigin
+  ...(learningCanCreate && learningApiOrigin && intelligenceSettings
     ? {
         create: () =>
           ensureLearningContainer({
@@ -975,8 +1042,8 @@ const learningAutoAssign = createLearningAutoAssign({
             nonInteractive: true,
             key: keyIntelligence(
               learningApiOrigin,
-              config.runtime.intelligence.apiKey,
-              config.runtime.intelligence.gatewayWsUrl,
+              intelligenceSettings.apiKey,
+              intelligenceSettings.gatewayWsUrl,
             ),
             cliLogin: cliLoginPresent(),
             ...(config.learningSetup
@@ -1159,6 +1226,30 @@ const enterpriseCapabilities = await (async () => {
     return null;
   }
 })();
+/*
+ * ME15 (#487), AC: 缺核心能力拒绝启动 — the VERIFIED-level twin of the boot
+ * gate above. A deployment with no Intelligence and no VERIFIED enterprise
+ * capabilities has composed no engine: no directory, no data channel, no
+ * tenant-restricted storage for recovery snapshots, no governed model routes.
+ * Starting anyway would degrade every entrance to refusals — or worse, to the
+ * no-permission in-memory runner the spec forbids — so boot refuses here,
+ * naming the verification (not just the configuration) that failed. The
+ * directories may be reachable but wrong; that distinction is what this gate
+ * is for. With Intelligence configured this block is inert, exactly as the
+ * deployment was before this ticket.
+ */
+if (!config.runtime.intelligence && !enterpriseCapabilities) {
+  log.error(
+    {
+      type: "agent-runtime-unverified",
+      refusal:
+        "AGENT_RUNTIME_UNVERIFIED: Intelligence is not configured and the governed enterprise capabilities failed their verification (directory, data, tenant storage), so no engine can serve a turn. Boot refuses rather than degrade to an in-memory runner. The verification error is on the log above.",
+    },
+    "agent-runtime-unverified: refusing to boot",
+  );
+  await new Promise<void>((resolve) => log.flush(() => resolve()));
+  process.exit(1);
+}
 const enterpriseConversationRoutes = enterpriseCapabilities
   ? createEnterpriseConversationEntryRoutes({
       factory: enterpriseCapabilities.entry,
@@ -1903,13 +1994,18 @@ const chooseSkills = createModelCompleter({
  * connection, but its `threads` map is per instance, and a runner per turn would fragment the
  * already-running check that keeps two turns off one thread. See `toolkit/run-turn.ts`.
  */
-const routineIntelligence = observeIntelligenceAuthentication(
-  new CopilotKitIntelligence({
-    apiUrl: config.runtime.intelligence.apiUrl,
-    wsUrl: config.runtime.intelligence.gatewayWsUrl,
-    apiKey: config.runtime.intelligence.apiKey,
-  }),
-);
+// ME15 (#487): Intelligence is optional to boot, so this exists only where it
+// is configured — its constructor opens nothing, and approvals resume a
+// computer tool through it only when a conversation already ran.
+const routineIntelligence =
+  config.runtime.intelligence &&
+  observeIntelligenceAuthentication(
+    new CopilotKitIntelligence({
+      apiUrl: config.runtime.intelligence.apiUrl,
+      wsUrl: config.runtime.intelligence.gatewayWsUrl,
+      apiKey: config.runtime.intelligence.apiKey,
+    }),
+  );
 const approvalComputerTools = async (
   ownerUserId: string,
   agentId: string,
@@ -2808,10 +2904,48 @@ const buildAgentFor = async ({
   }
   return agent;
 };
-const routineAgentRunner = new IntelligenceAgentRunner({
-  url: routineIntelligence.ɵgetRunnerWsUrl(),
-  authToken: routineIntelligence.ɵgetRunnerAuthToken(),
+
+/*
+ * The pair a headless turn is driven through, built ONCE — on the FIRST TURN,
+ * not at boot (ME15 #487).
+ *
+ * Not the runtime's own pair: `mountCopilotRuntime` keeps its client and its runner inside
+ * `CopilotRuntime` and hands neither back, and reaching into that object would be a worse seam than
+ * building our own from the same three settings. The accessors are passed to the turn assemblies
+ * UNCALLED, so a deployment whose governed path serves every entry constructs neither a client nor
+ * a runner; a legacy turn actually running resolves them here, once. Without Intelligence the
+ * accessor refuses BY NAME on that first legacy turn — the assembly stays bootable, the run gets a
+ * named refusal, never a silent in-memory stand-in.
+ *
+ * One runner for the process, reused across firings: it opens a socket per run and holds no idle
+ * connection, but its `threads` map is per instance, and a runner per turn would fragment the
+ * already-running check that keeps two turns off one thread. See `routines/run-turn.ts`.
+ */
+const requireRoutineIntelligence = lazyIntelligenceClient({
+  settings: config.runtime.intelligence,
+  feature: "the legacy headless turn pair",
+  build: (settings) =>
+    observeIntelligenceAuthentication(
+      new CopilotKitIntelligence({
+        apiUrl: settings.apiUrl,
+        wsUrl: settings.gatewayWsUrl,
+        apiKey: settings.apiKey,
+      }),
+    ),
 });
+const requireRoutineAgentRunner = (() => {
+  let runner: IntelligenceAgentRunner | undefined;
+  return () => {
+    if (!runner) {
+      const client = requireRoutineIntelligence();
+      runner = new IntelligenceAgentRunner({
+        url: client.ɵgetRunnerWsUrl(),
+        authToken: client.ɵgetRunnerAuthToken(),
+      });
+    }
+    return runner;
+  };
+})();
 
 /*
  * The headless computer tools every turn runner (routines, delivery, OpenMuse tasks) hands its
@@ -2850,8 +2984,8 @@ const computerToolsForTurn = async ({
  */
 const legacyRoutineTurn = createTurnRunner({
   admission: serverTurnAdmission,
-  intelligence: routineIntelligence,
-  runner: routineAgentRunner,
+  intelligence: requireRoutineIntelligence,
+  runner: requireRoutineAgentRunner,
   components: componentCatalog,
   buildAgentFor,
   toolsForTurn: computerToolsForTurn,
@@ -3269,6 +3403,34 @@ if (mastraContinuationStore && enterpriseCapabilities && enterpriseRunner) {
     driver: governedResumeDriver ?? ungovernedResumeDriver,
   });
   setMastraContinuations(mastraContinuationInstall);
+}
+
+/*
+ * ME16 (#488): THE CHAT ENTRY'S ENGINE. The browser run's agent build consults
+ * the selector only inside a governed admission (a governedModel the enterprise
+ * Runner minted), so this install routes exactly the governed chat runs — and
+ * nothing else — to the Mastra execution, whose server-rebuilt history, durable
+ * suspensions and governed resume are all wired above. Without the enterprise
+ * capabilities no run is ever governed, the selector is never consulted, and
+ * the Intelligence runtime serves the chat exactly as before. The choice is
+ * made here at the assembly, never by a client field.
+ */
+if (enterpriseRunner && enterpriseCapabilities) {
+  // The conversation runtime the chat path's engine contract runs on (ME03):
+  // the run input is rebuilt from the server's persisted, principal-authorized
+  // history and the answer persists before the success terminal — the SAME
+  // runtime surface every governed headless entry builds for itself.
+  setMastraConversationRuntime(
+    createMastraConversationRuntime({
+      conversations: enterpriseCapabilities.conversations,
+      storage: enterpriseCapabilities.mastraStorage,
+      authorizeAttachment: (turn, attachmentId) =>
+        enterpriseCapabilities.data.transaction((tx) =>
+          authorizeAttachmentForSendInTransaction(tx, turn, attachmentId),
+        ),
+    }),
+  );
+  setBuiltinExecutionEngine(() => "mastra");
 }
 
 /*
@@ -4027,8 +4189,8 @@ const responsibilityEngine: ResponsibilityEngine = createResponsibilityEngine({
     }
     const runner = createTurnRunner({
       admission: serverTurnAdmission,
-      intelligence: routineIntelligence,
-      runner: routineAgentRunner,
+      intelligence: requireRoutineIntelligence,
+      runner: requireRoutineAgentRunner,
       components: componentCatalog,
       buildAgentFor: (input) => buildAgentFor({ ...input, initiator }),
       toolsForTurn: async () => {
@@ -4144,8 +4306,8 @@ const responsibilityAnswerTurn = ({
   });
   return createTurnRunner({
     admission: serverTurnAdmission,
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
+    intelligence: requireRoutineIntelligence,
+    runner: requireRoutineAgentRunner,
     components: componentCatalog,
     buildAgentFor: (input) => buildAgentFor({ ...input, initiator }),
     toolsForTurn: async () => [
@@ -4221,8 +4383,8 @@ const executeApprovedAction = createApprovedActionExecutor({
 });
 const approvalContinuationRunner = createTurnRunner({
   admission: serverTurnAdmission,
-  intelligence: routineIntelligence,
-  runner: routineAgentRunner,
+  intelligence: requireRoutineIntelligence,
+  runner: requireRoutineAgentRunner,
   components: componentCatalog,
   buildAgentFor,
   toolsForTurn: async ({ ownerUserId, agentId, initiator }) =>
@@ -4774,8 +4936,8 @@ const proactiveEngine = createProactiveEngine({
   owner: workOwner("proactive"),
   runTurn: createTurnRunner({
     admission: serverTurnAdmission,
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
+    intelligence: requireRoutineIntelligence,
+    runner: requireRoutineAgentRunner,
     buildAgentFor,
     // Only the run's own two tools and refusals: no computer, no components.
     toolsForTurn: (input) => proactiveEngine.toolsForTurn(input),
@@ -4855,8 +5017,8 @@ const wakeUpRunner = createWakeUpRunner({
     governedWakeUpTurn ??
     createTurnRunner({
       admission: serverTurnAdmission,
-      intelligence: routineIntelligence,
-      runner: routineAgentRunner,
+      intelligence: requireRoutineIntelligence,
+      runner: requireRoutineAgentRunner,
       components: componentCatalog,
       buildAgentFor,
       toolsForTurn: computerToolsForTurn,
@@ -4985,6 +5147,46 @@ const openMuseToolsFor = async (ownerUserId: string, botId: string) => {
 const openMuseNotificationStore = createOpenMuseNotificationStore({
   rows: createOpenMuseNotificationRows(database),
 });
+/*
+ * ME12 (#484) — the OpenMuse Task entry on the governed path. A claimed Task
+ * runs its headless turn through the SAME governed turn every other
+ * unattended entry runs: the TASK ROW is the durable record (re-read at the
+ * moment of running — a settled or deleted Task refuses by name before
+ * anything is admitted), the instruction is the row's own prompt (a plan
+ * runs the step its claim marked running), the identity is the row's owner
+ * and private Bot on the owner's own conversation thread, and the intent is
+ * one governed admission per turn attempt. Budget, scope re-signing, the
+ * request lease, settlement and the granted-tool surface (including the
+ * private Bot's own OpenMuse context tools) are the shared governed base —
+ * no second model dial, no environment guessed from the owner/Bot ids. The
+ * cancel/pause safe boundary, the attempts recovery, the artifacts and the
+ * notifications stay in the Task runner unchanged. A deployment without the
+ * enterprise capabilities keeps the legacy runner below unchanged.
+ */
+const governedOpenMuseTaskTurn =
+  enterpriseRunner && enterpriseCapabilities
+    ? governedHeadlessTurnFor({
+        schedulingRecordFor: openMuseTaskSchedulingRecordFor({
+          database,
+          channelThreadIdFor: async ({ ownerUserId, botId }) => {
+            try {
+              const channel = await channelStore.direct(
+                await actorFor(ownerUserId),
+                botId,
+              );
+              return channel.threadId;
+            } catch {
+              // A gone owner or Bot conversation is a gone record: the
+              // named refusal, never a raw throw mid-admission.
+              return null;
+            }
+          },
+        }),
+        surfaceFor: governedHeadlessSurfaceFor(async ({ scope, agentId }) =>
+          openMuseToolsFor(scope.actorId, agentId),
+        ),
+      })
+    : undefined;
 const openMuseTaskRunner = createOpenMuseTaskRunner({
   queue: openMuseTaskQueue,
   store: openMuseTaskStore,
@@ -4996,17 +5198,23 @@ const openMuseTaskRunner = createOpenMuseTaskRunner({
   // its File instead of failing on the unwired-seam default.
   files: openMuseFileStore,
   emitNotification: openMuseNotificationStore.emit,
-  runTurn: createTurnRunner({
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
-    admission: serverTurnAdmission,
-    components: componentCatalog,
-    buildAgentFor,
-    toolsForTurn: computerToolsForTurn,
-    learningContainerForThread: (input) =>
-      copilotRuntime.learning?.containerForThread(input) ??
-      Promise.resolve(undefined),
-  }),
+  // ME12 (#484): the entry selector — the enterprise assembly runs a claimed
+  // Task through the SAME governed turn a routine firing runs (record = the
+  // task row, identity = the row's owner + private Bot); a deployment
+  // without the enterprise capabilities keeps the legacy runner unchanged.
+  runTurn:
+    governedOpenMuseTaskTurn ??
+    createTurnRunner({
+      intelligence: requireRoutineIntelligence,
+      runner: requireRoutineAgentRunner,
+      admission: serverTurnAdmission,
+      components: componentCatalog,
+      buildAgentFor,
+      toolsForTurn: computerToolsForTurn,
+      learningContainerForThread: (input) =>
+        copilotRuntime.learning?.containerForThread(input) ??
+        Promise.resolve(undefined),
+    }),
 });
 const openMuseTaskSweep = repeatAfterEach(async () => {
   try {
@@ -5066,8 +5274,8 @@ const groupConversations = createGroupConversations({
     return bots;
   },
   runTurn: createTurnRunner({
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
+    intelligence: requireRoutineIntelligence,
+    runner: requireRoutineAgentRunner,
     admission: serverTurnAdmission,
     components: componentCatalog,
     buildAgentFor,
@@ -5246,6 +5454,74 @@ let workOfferedListener: WorkOfferedListener | undefined;
  */
 let handoffKickSweep: Repeating | undefined;
 
+/*
+ * ME11 (#483) — the handoff/reaper entry on the governed path. A claimed hop's
+ * delivery runs the ADDRESSED Bot through the SAME governed headless turn every
+ * other unattended entry runs: the hop's queue row is the durable record (re-read
+ * at the moment of running), the ONE advance intent is the hop key (a
+ * delivery/reaper redelivery converges on the first advance — one run, one
+ * budget reservation, one scratch conversation), and the addressed Bot runs
+ * with its OWN scope-signed grants, credentials and personal memory. The desk,
+ * the depth cap, the fan-out cap and the private-share gate are the SAME
+ * objects the asking run used: the governed surface mounts the desk-gated
+ * `message_bot` from the hop's original signed depth and queue claim, so a
+ * chain's next hop is refused exactly where the legacy desk refused it. No
+ * Intelligence runner, no socket. A deployment without the enterprise
+ * capabilities keeps the legacy platform delivery below unchanged.
+ */
+const governedHandoffHopResolver = enterpriseCapabilities
+  ? createGovernedHandoffRecordResolver({
+      database,
+      scopeFor: governedHeadlessScopeFor,
+      conversations: enterpriseCapabilities.conversations,
+    })
+  : undefined;
+const governedHandoffTurn =
+  enterpriseRunner && enterpriseCapabilities && governedHandoffHopResolver
+    ? governedHeadlessTurnFor({
+        schedulingRecordFor: handoffSchedulingRecordFor(
+          governedHandoffHopResolver,
+        ),
+        surfaceFor: governedHeadlessSurfaceFor(
+          governedHandoffSurfaceTools({
+            workFor: async (hopKey) => {
+              const hop = await handoffWorkReader(database)(hopKey);
+              return hop && !hop.finishedAt
+                ? { work: hop.work, claimedBy: hop.claimedBy }
+                : null;
+            },
+            toolsForDeliveryRun: async ({
+              scope,
+              agentId,
+              initiator,
+              work,
+              run,
+            }) =>
+              restrictCoordinationForRun(
+                initiator,
+                coordinationForActor(scope.actorId, initiator, work.depth),
+              )(agentId, {
+                runId: run.runId,
+                threadId: work.threadId,
+                forwardedProps: {
+                  openbotRun: mintRunAssertion(run, config.keyEncryptionKey),
+                },
+              } as import("@ag-ui/client").RunAgentInput),
+          }),
+        ),
+      })
+    : undefined;
+const governedHandoffDelivery =
+  governedHandoffTurn && governedHandoffHopResolver
+    ? createGovernedHandoffDelivery({
+        turn: governedHandoffTurn,
+        resolver: governedHandoffHopResolver,
+        // The asking channel shown as working while a forward hop runs in its
+        // scratch conversation — the same visibility the legacy delivery gave.
+        setBusy: (input) => channelStore.signalBusy(input.threadId, input.busy),
+      })
+    : undefined;
+
 if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
   const handoff = await startHandoffDelivery({
     config,
@@ -5256,6 +5532,10 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
     threadIdentity,
     groupConversations,
     channelStore,
+    // ME11 (#483): the governed arm delivers hops through the governed turn;
+    // without the enterprise capabilities the legacy platform delivery is
+    // built exactly as at HEAD.
+    delivery: governedHandoffDelivery,
   });
   workOfferedListener = handoff.listener;
   handoffKickSweep = handoff.sweep;
@@ -5309,7 +5589,14 @@ repeatAfterEach(
 const channelSummaries = {
   database,
   queue: createWorkQueue(database),
-  transcript: routineIntelligence,
+  transcript: {
+    getThreadMessages: ((
+      ...args: Parameters<CopilotKitIntelligence["getThreadMessages"]>
+    ) =>
+      requireRoutineIntelligence().getThreadMessages(
+        ...args,
+      )) as CopilotKitIntelligence["getThreadMessages"],
+  },
   title: createChannelTitler({
     model: runtimeModel.defaultModel,
     resolveApiKey: resolveRuntimeModelApiKey,
@@ -5317,6 +5604,15 @@ const channelSummaries = {
   owner: workOwner("summariser"),
 };
 repeatAfterEach(async () => {
+  /*
+   * ME16 (ME15 review INFO): the transcript half of naming is an
+   * Intelligence read. A deployment without it can never name a channel, so
+   * running the pass would only mint the same named refusal every 10
+   * seconds — log noise for a deployment that has not gone wrong, it simply
+   * has no titles. The skip is the honest posture, and it is stated once at
+   * boot rather than re-litigated on every pass.
+   */
+  if (!config.runtime.intelligence) return;
   try {
     await offerChannelsAwaitingSummary(channelSummaries);
     const report = await summariseClaimedChannels(channelSummaries);
@@ -5372,11 +5668,16 @@ guardHostAccess(
 );
 auditRoutineStore(routineStore, bootAuditStore);
 
-// Asked only whether this deployment pays for Intelligence, for the self-host banner. Its own client
-// rather than the runtime's, the same as the thread reader: the constructor opens nothing.
-const selfHostBannerIntelligence = createIntelligenceClient(
-  config.runtime.intelligence,
-);
+// Asked only whether this deployment pays for Intelligence, for the self-host banner. Its own
+// accessor rather than the runtime's, the same as the thread reader — and lazy since ME15 (#487):
+// resolved on the first entitlement read (a page load asking for the banner, or the boot diagnostic
+// when learning provisioning is configured), never at boot. Without Intelligence the read refuses
+// by name; the banner treats a refusal as "not paying", which is exactly what a deployment without
+// Intelligence is.
+const selfHostBannerIntelligence = lazyIntelligenceClient({
+  settings: config.runtime.intelligence,
+  feature: "the self-host banner's entitlement read",
+});
 
 /*
  * Boot diagnostics (spec 2026-10-20 §6, #497): the model question and, where the optional learning
@@ -5416,7 +5717,7 @@ scheduleStartupDiagnostics({
     enabled: learningCanCreate,
     read: async () => {
       const response =
-        await selfHostBannerIntelligence.getRuntimeEntitlements();
+        await selfHostBannerIntelligence().getRuntimeEntitlements();
       if (response.status !== "ready") {
         throw new Error(`runtime entitlement reported ${response.status}`);
       }
@@ -7807,7 +8108,7 @@ const app = createApp(
         listConversations: async (owner, cursor) =>
           channelStore.list(await actorFor(owner), { cursor, limit: 100 }),
         history: (scope) =>
-          routineIntelligence.getThreadMessages({
+          requireRoutineIntelligence().getThreadMessages({
             threadId: scope.threadId,
             userId: scope.ownerUserId,
           }),
@@ -7868,7 +8169,10 @@ const app = createApp(
   },
   createSelfHostBanner({
     enabled: config.selfHostBanner,
-    entitlements: () => selfHostBannerIntelligence.getRuntimeEntitlements(),
+    // ME15: async, so a missing Intelligence is a REJECTION the banner's
+    // failure path catches, never a synchronous throw past it.
+    entitlements: async () =>
+      selfHostBannerIntelligence().getRuntimeEntitlements(),
   }),
   billing,
   // The OpenConnector directory's client, appended last for the reason `createApp`'s own parameter

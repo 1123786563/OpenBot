@@ -7,6 +7,8 @@ import {
 } from "../src/agents/handoff-runner";
 import { signHandoffDeliveryRun } from "../src/agents/handoff-signing";
 import type { AuditStore } from "../src/audit";
+import { HANDOFF_HOP_REFUSALS } from "../src/mastra/handoff-delivery";
+import { GovernedHeadlessRefusal } from "../src/mastra/headless";
 import type { WorkItem, WorkQueue } from "../src/work/queue";
 
 /**
@@ -398,6 +400,37 @@ describe("a hop that failed for good", () => {
     });
     expect(offered).toHaveLength(1);
     expect(offered[0]?.task).toContain("Use Bots is turned off");
+  });
+
+  // ME14 (carried ME11 F1 cleanup): a governed hop whose row is gone,
+  // finished, or already advanced refuses with the same name every time —
+  // releasing it only reprinted the same handoff_failed audit row until
+  // maxAttempts. The hop is terminal: finish it and tell the asker.
+  test("a hop the governed delivery names NOT_ADVANCEABLE ends on its first try, and the person is told", async () => {
+    const {
+      runner: sweeper,
+      offered,
+      calls,
+    } = runner({
+      deliver: async () => {
+        throw new GovernedHeadlessRefusal(
+          HANDOFF_HOP_REFUSALS.hopNotAdvanceable,
+          "HANDOFF_HOP_NOT_ADVANCEABLE: the hop's record is gone, finished, or its advance intent was already claimed; a redelivery does not run it twice.",
+        );
+      },
+    });
+
+    await sweeper.sweep();
+
+    // No retry: the same refusal would meet every release-and-reclaim round.
+    expect(calls.filter((call) => call.verb === "release")).toEqual([]);
+    expect(calls).toContainEqual({
+      verb: "finish",
+      key: "run-1:abc",
+      owner: "replica-a",
+    });
+    expect(offered).toHaveLength(1);
+    expect(offered[0]?.task).toContain("HANDOFF_HOP_NOT_ADVANCEABLE");
   });
 
   /*

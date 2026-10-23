@@ -123,6 +123,16 @@ export interface LegacyOwnershipPorts {
     tenantId: string,
     threadId: string,
   ): Promise<number>;
+  /**
+   * ME14 (carried ME13 review F1): intents NOT carrying the import identity
+   * prefix that are still `pending` — a live writer mid-flight. The staging
+   * target rule counts these the same as finalized ones: a write the source
+   * of truth has not seen yet is exactly the row the import must not race.
+   */
+  foreignPendingIntentCount(
+    tenantId: string,
+    threadId: string,
+  ): Promise<number>;
   finalizedKeyExists(
     tenantId: string,
     threadId: string,
@@ -764,7 +774,14 @@ async function classifyThread(
     owner.tenantId,
     threadId,
   );
-  if (intents > 0) {
+  // ME14 (carried ME13 review F1): the staging precheck counts PENDING
+  // foreign intents too. A finalized-only check let an in-flight live write
+  // slip past the gate and land interleaved with imported rows.
+  const pendingIntents = await ports.foreignPendingIntentCount(
+    owner.tenantId,
+    threadId,
+  );
+  if (intents > 0 || pendingIntents > 0) {
     // Existing live rows would land AFTER imported legacy rows in seq
     // order — an inverted timeline. Refuse instead of interleaving.
     return {
@@ -858,7 +875,8 @@ export type CutoverCommand =
   | "dry-run"
   | "apply"
   | "verify"
-  | "rollback";
+  | "rollback"
+  | "cutover";
 
 export type RunPhase =
   | "in_progress"
@@ -867,7 +885,9 @@ export type RunPhase =
   | "staging"
   | "verified"
   | "blocked"
-  | "rolled_back";
+  | "rolled_back"
+  | "switched"
+  | "maintenance";
 
 export interface ThreadSourceInfo {
   messageCount: number | null;
@@ -944,26 +964,48 @@ export interface PersistedRunState {
   threads: Record<string, ThreadManifestEntry>;
   authorizedFixture?: string;
   rollbackReason?: string;
+  /**
+   * ME14: the admission pause + the in-flight ledger + the write-fence
+   * record. Typed where they are produced (mastra/cutover.ts); the state
+   * carries them opaquely so the import machine never depends on the fence.
+   */
+  admissionPausedAt?: string;
+  entryInventory?: unknown;
+  inFlightLedger?: unknown;
+  fence?: unknown;
+  maintenanceReason?: string;
   updatedAt: string;
 }
 
 export class CutoverStateError extends Error {}
 
 /**
- * The staging-state gate ME14's write fence consumes: a target is only
- * "verified" (fence-eligible) after a verify pass matched every digest, and
- * any blocked/rolled-back state is fence-ineligible. Before that, "absent".
+ * The staging-state gate ME14's write fence consumes: "verified" is the only
+ * fence-ELIGIBLE state. The fence's own states are recognized so the import
+ * machine can refuse them by name — "switched" and "maintenance" mean the
+ * target is past staging (the engine/backend decision happened), and any
+ * blocked/rolled-back state is fence-ineligible. Before all of these:
+ * "absent".
  */
 export function stagingStatusOf(
   state: unknown,
-): "staging" | "verified" | "blocked" | "rolled_back" | "absent" {
+):
+  | "staging"
+  | "verified"
+  | "blocked"
+  | "rolled_back"
+  | "switched"
+  | "maintenance"
+  | "absent" {
   if (state === null || typeof state !== "object") return "absent";
   const phase = (state as { phase?: unknown }).phase;
   if (
     phase === "staging" ||
     phase === "verified" ||
     phase === "blocked" ||
-    phase === "rolled_back"
+    phase === "rolled_back" ||
+    phase === "switched" ||
+    phase === "maintenance"
   ) {
     return phase;
   }
@@ -1054,7 +1096,8 @@ function stateOrDefault(
   };
 }
 
-function manifestOf(
+/** The sanitized manifest of a persisted run state (ME14's fence consumes it too). */
+export function manifestOf(
   state: PersistedRunState,
   command: CutoverCommand,
   extra?: { verify?: CutoverManifest["verify"]; rollbackReason?: string },
@@ -1307,6 +1350,19 @@ export async function runApply(
       "ROLLED_BACK: the run state was rolled back; start a new run",
     );
   }
+  // ME14: past-staging states are the fence's to own — an import never runs
+  // against a switched or maintenance target, and once a switch has started
+  // (a fence record exists) re-planning would race it.
+  if (state.phase === "switched" || state.phase === "maintenance") {
+    throw new CutoverStateError(
+      `CUTOVER_STATE_${state.phase.toUpperCase()}: the target switched past staging; import needs a new run`,
+    );
+  }
+  if (state.fence !== undefined && state.fence !== null) {
+    throw new CutoverStateError(
+      "CUTOVER_SWITCH_IN_PROGRESS: a switch has started on this run state",
+    );
+  }
   if (state.phase === "verified" && Object.keys(state.threads).length > 0) {
     throw new CutoverStateError(
       "APPLY_STATE_VERIFIED: verify already passed; roll back to re-import",
@@ -1347,6 +1403,27 @@ export async function runApply(
   for (const threadId of Object.keys(state.threads)) {
     const entry = state.threads[threadId] as ThreadManifestEntry;
     if (entry.status === "verified") continue;
+    // ME14 (carried ME13 review F2): a resumed run re-derives the staging
+    // invariant from classifyThread — the ONE place that owns it — instead of
+    // trusting the inventory entry the interrupted pass persisted. A backend
+    // flip or a foreign write since the crash quarantines the thread here,
+    // exactly as a first pass would have.
+    if (entry.status !== "quarantined") {
+      const fresh = await classifyThread(deps.ports, threadId);
+      if (fresh.skipReason !== undefined) {
+        state.threads[threadId] = {
+          ...entry,
+          status: "quarantined",
+          reason: fresh.skipReason,
+          ...(fresh.storageBackend !== undefined
+            ? { storageBackend: fresh.storageBackend }
+            : {}),
+        };
+        state.updatedAt = new Date().toISOString();
+        await persist(deps.runStore, state);
+        continue;
+      }
+    }
     // Progress marker BEFORE the first write of this thread: a crash after
     // it leaves an honest "importing" state the resumed run re-plans (the
     // per-message appends converge idempotently via the stable keys).
@@ -1485,6 +1562,21 @@ export async function runVerify(
   }
   if (loaded.phase === "rolled_back") {
     throw new CutoverStateError("ROLLED_BACK: the run state was rolled back");
+  }
+  // ME14: once a switch has touched this run state, verify's digests no
+  // longer describe the target — refuse instead of half-verifying a fence.
+  if (
+    (loaded.phase === "switched" || loaded.phase === "maintenance") &&
+    loaded.command !== "apply"
+  ) {
+    throw new CutoverStateError(
+      `CUTOVER_STATE_${loaded.phase.toUpperCase()}: the target switched past staging`,
+    );
+  }
+  if (loaded.fence !== undefined && loaded.fence !== null) {
+    throw new CutoverStateError(
+      "CUTOVER_SWITCH_IN_PROGRESS: a switch has started on this run state",
+    );
   }
   if (loaded.command !== "apply") {
     throw new CutoverStateError(
