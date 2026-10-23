@@ -4,7 +4,6 @@ import {
   isRangeKey,
   UsageCreditsView,
 } from "@/components/billing/usage-credits-view";
-import type { ConsumptionRange } from "@/components/billing/consumption-table";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 export const Route = createFileRoute("/_authed/settings/usage")({
