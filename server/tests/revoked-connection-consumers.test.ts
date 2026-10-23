@@ -42,7 +42,7 @@ describe("the craft resolvers' shared connection fact (#489 F01-01)", () => {
     // A withdrawn credential puts the app back on the connectable list — the reconnect advice
     // the connect flow already gives (a revoked row must not read as "already connected").
     expect(boot).toMatch(
-      /personalUnconnectedApps\(\s*servers,\s*await craftConnectedServerIdsFor\(userId\),\s*\);/,
+      /const \[servers, connectedServerIds\] = await Promise\.all\(\[\s*pluginStore\.listServers\(\),\s*craftConnectedServerIdsFor\(userId\),\s*\]\);\s*return personalUnconnectedApps\(servers, connectedServerIds\);/,
     );
   });
 
@@ -60,7 +60,7 @@ describe("the craft resolvers' shared connection fact (#489 F01-01)", () => {
     // (mcpWireConnectionFor → connectionTokenFor), so a revoked entry would be the permanently
     // failed MCP client that invariant refuses to create.
     expect(boot).toMatch(
-      /connectedServerIds: await craftConnectedServerIdsFor\(userId\),\s*relayBaseUrl: craftMcpRelayBaseUrl,/,
+      /const \[wireServers, connectedServerIds\] = await Promise\.all\(\[\s*pluginStore\.mcpWireServersFor\(\),\s*craftConnectedServerIdsFor\(userId\),\s*\]\);\s*return resolveCraftMcpServers\(\{[\s\S]*?connectedServerIds,\s*relayBaseUrl: craftMcpRelayBaseUrl,/,
     );
   });
 });

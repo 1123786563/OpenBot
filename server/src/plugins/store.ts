@@ -5487,8 +5487,9 @@ export function createPluginStore(options: PluginStoreOptions) {
          * delete the row here, which goes on pointing at it — so "this person has a row for Notion"
          * and "this person can use Notion" are different facts, and every reader of this list was
          * getting the first while asking the second. A reconnection does not settle it either: the
-         * upsert moves `credential_id` and `updated_at` and leaves `connected_at` where it was, so
-         * nothing in the shape this used to return changes when access comes back.
+         * upsert moves `credential_id`, `scope` and `updated_at` and leaves `connected_at` where it
+         * was, so `connected_at` cannot tell a caller that access has come back — only `revoked`
+         * flipping to false does.
          *
          * Reported rather than filtered. A caller that wants "connected" asks for a row that is not
          * revoked; one that wants to draw every app somebody has ever connected still can, and

@@ -6843,11 +6843,11 @@ const craftConnectedServerIdsFor = async (
 };
 const craftManagedContentFor = createCraftManagedContentResolver({
   connectableAppsFor: async (userId) => {
-    const servers = await pluginStore.listServers();
-    return personalUnconnectedApps(
-      servers,
-      await craftConnectedServerIdsFor(userId),
-    );
+    const [servers, connectedServerIds] = await Promise.all([
+      pluginStore.listServers(),
+      craftConnectedServerIdsFor(userId),
+    ]);
+    return personalUnconnectedApps(servers, connectedServerIds);
   },
   /*
    * The builtin skills (onyx's $ONYX/skills/builtin): pptx and
@@ -6876,13 +6876,16 @@ const craftManagedContentFor = createCraftManagedContentResolver({
    * would refuse their calls.
    */
   mcpServersFor: async (userId) => {
-    const wireServers = await pluginStore.mcpWireServersFor();
+    const [wireServers, connectedServerIds] = await Promise.all([
+      pluginStore.mcpWireServersFor(),
+      craftConnectedServerIdsFor(userId),
+    ]);
     return resolveCraftMcpServers({
       servers: wireServers.map((server) => ({
         id: server.id,
         name: server.title,
       })),
-      connectedServerIds: await craftConnectedServerIdsFor(userId),
+      connectedServerIds,
       relayBaseUrl: craftMcpRelayBaseUrl,
     });
   },

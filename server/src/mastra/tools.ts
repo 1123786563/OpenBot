@@ -107,6 +107,19 @@ export interface MastraToolGuard {
  * no path (a `/` is still refused) and no prototype (mount records are
  * null-prototype) on this runtime.
  *
+ * The dot's provider edge, on the record (#489 F03/C-M1): OpenAI's official
+ * function-name charset is `^[a-zA-Z0-9_-]{1,64}$` — it admits no dot — so
+ * the "strictest provider" claim above holds for the LENGTH only; on charset
+ * this runtime is deliberately looser than OpenAI. That looseness is argued
+ * safe for the gateway/OpenAI-compatible endpoints brokered tool calls ride
+ * (they forward the minted name as-is and accept dotted names); a deployment
+ * pointing an `openai` provider straight at api.openai.com has no such
+ * gateway scrub, and a mounted dotted brokered name can 400 the WHOLE chat
+ * request at the wire layer — not merely leave one tool uncallable. If
+ * direct-OpenAI ever needs first-class support, the shape is a name-alias/
+ * scrubbing layer between mount and wire: a follow-up item, deliberately
+ * not built here.
+ *
  * Exported so the grant write (plugins/store.ts, where `toolNameFor` mints
  * the name) enforces the SAME rule at configuration time; this mount-time
  * check stays as defense in depth for grants written before that gate.
