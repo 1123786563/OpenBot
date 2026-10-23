@@ -11,6 +11,31 @@ Orca 是工作区、Agent 与监督式 Task/Dispatch 的事实源。开始前读
 - 方案写在 `docs/plans/`；Issue 快照、动态 DAG、Ledger、Brief、回执、检查点和报告写在 `.archive/runs/<run-key>/`。Ledger 记录 Task 的权威尝试、实际 Agent 身份、工作区、前置检查点、验证、Review 与集成状态。恢复先对账 Ledger、Git 和 Orca，避免重派已完成或仍在运行的工作。
 - 本流程的实施 Agent 固定为 Orca 启动的 **Pi**，任务首轮及整改的独立代码审核 Agent 固定为 Orca 启动的 **Claude**，完整集成分支终审 Agent 固定为 Orca 启动的 **Codex**。角色仍按任务专业性在 Brief 中声明并核验；三个身份和各轮回执分别记录。当前 Orca 不能证明某一 Agent 已按要求启动时，保持 blocked/unverifiable，不静默换后端。
 
+## Agent 启动命令示例
+
+示例仅示意入口与回执要点；具体 argv、Agent ID 与回执字段以当前版本 `orca-cli` 和 `orchestration` 技能为准，派发前按当前指南核对。
+
+```text
+# 监督式派发：绑定 Run 后一步创建 Task/Dispatch 并启动实施 Pi
+orca orchestration run-create --objective "<run 目标>" --json
+orca orchestration worker-start --spec "<task brief>" --worktree id:<repoId>::<worktreePath> --agent pi --json
+orca orchestration check --wait --types "worker_done,escalation,question" --timeout-ms 900000 --json
+orca orchestration worker-release --dispatch <dispatch_id> --json
+
+# 任务 Worktree 从集成分支已验证 HEAD 创建并启动 Pi
+orca worktree create --repo id:<repoId> --name <task-key> --base-branch <集成分支> --agent pi --prompt "<brief>" --json
+
+# 已有工作区启动 Claude 审核轮次或 Codex 终审（只读审核不新增 Worktree）
+orca agent launch --agent claude --worktree id:<repoId>::<worktreePath> --prompt "<review brief>" --json
+orca agent launch --agent codex --worktree id:<repoId>::<integration-worktree> --prompt "<final review brief>" --json
+
+# 向运行中的 Worker 追加输入
+orca terminal send --terminal <handle> --text "<follow-up>" --enter --json
+```
+
+- 启动回执记录 `launch.outcome.kind`（`structured` 为 chat、`terminal` 为 PTY）与 `outcome.handle`，此后只经该 handle 寻址该 Agent；回执丢失时用原命令加 `--retry-launch <operationId>` 幂等重放，不另起新 Agent。
+- 三个固定身份分别用 `--agent pi`、`--agent claude`、`--agent codex` 启动；`--model`、`--effort`、`--surface chat|terminal` 仅在用户明确要求时传入。
+
 ## 分支与 Worktree 容量
 
 1. 派发前先用 Orca 建立或核验本轮唯一的**集成分支和集成 Worktree**，记录 BASE。已有同一 Run 的可恢复集成工作区直接复用。当前工作区的无关未提交修改留在原处；按 [Worktree 规范](worktrees.md)核对基线并显式转移必要文档。派发 Brief 写明提交策略：有本地提交授权时可按任务提交并用真实 Git 合并；无授权时保留未提交检查点，由编排者显式转移并核验任务增量，不能偷偷提交或以空 BASE..HEAD 代替审核。
