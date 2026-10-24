@@ -179,6 +179,7 @@ function probeCatalogue(): PackageCatalogue {
     artifactDigest: DIGEST,
     category: "productivity",
     listed: true,
+    state: "published",
     verified: true,
     displayName: "PKG03 probe package",
     summary: "The PKG03 probe package.",

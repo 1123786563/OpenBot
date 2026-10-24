@@ -68,6 +68,7 @@
       "ARTIFACT_MISSING": "此部署缺少该包的制品文件。",
       "ARTIFACT_INVALID": "该包的制品文件未通过校验。",
       "PACKAGE_UNLISTED": "该包已从市场上架目录中移除。",
+      "PACKAGE_WITHDRAWN": "该包版本已被部署方安全撤回，不能再安装或执行。",
       "PACKAGE_UNSUPPORTED": "此部署不支持该包。",
       "RESOURCE_UNAVAILABLE": "该包中有资源当前不可用。",
       "NEEDS_CONNECTION": "需要的连接器尚未连接。",

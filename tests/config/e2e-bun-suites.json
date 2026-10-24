@@ -860,6 +860,7 @@
         "server/tests/multitenancy/package-upgrade.test.ts",
         "server/tests/multitenancy/package-entrypoints.test.ts",
         "server/tests/multitenancy/package-lifecycle.test.ts",
+        "server/tests/multitenancy/package-withdraw.test.ts",
         "server/tests/package-install.integration.test.ts"
       ]
     },
@@ -870,6 +871,10 @@
     {
       "name": "server/tests/package-dispatch-call",
       "files": ["server/tests/package-dispatch-call.test.ts"]
+    },
+    {
+      "name": "server/tests/package-index-ops",
+      "files": ["server/tests/package-index-ops.test.ts"]
     },
     {
       "name": "server/tests/package-entrypoints",
@@ -1312,6 +1317,7 @@
     "server/tests/multitenancy/package-grants.test.ts",
     "server/tests/multitenancy/package-runtime.test.ts",
     "server/tests/multitenancy/package-storage.test.ts",
+    "server/tests/multitenancy/package-withdraw.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
     "server/tests/multitenancy/personal-memory.test.ts",
@@ -1414,6 +1420,7 @@
     "server/tests/organization-store.integration.test.ts",
     "server/tests/otel-export-scrubbing.test.ts",
     "server/tests/package-entrypoints.test.ts",
+    "server/tests/package-index-ops.test.ts",
     "server/tests/package-install.integration.test.ts",
     "server/tests/page-frame-retention.integration.test.ts",
     "server/tests/passwords-store.integration.test.ts",
