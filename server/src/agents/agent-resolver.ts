@@ -17,6 +17,7 @@ import {
 import type { GovernedModelRequest } from "../enterprise/runs/governed-execution";
 import type { AcquireLearnedSkills } from "../learning/runtime";
 import type { LoadPersonalMemory } from "../memory/tools";
+import type { SelectableSkill } from "../plugins/selection";
 import type { AgentActor } from "./profile-types";
 
 export type AgentResolutionContext = {
@@ -31,6 +32,16 @@ export type AgentResolutionContext = {
    * build. Never taken from a wire field or a global.
    */
   governedModel?: GovernedModelRequest;
+  /**
+   * PKG03B (T03-fix): the admitted run's pinned package skills, read through
+   * `readPinnedSkills` by the Runner AFTER its own admission (pin ∩ active
+   * grant ∩ membership revalidated per read, zero cache). Present only on the
+   * re-resolution of a run that has pins; the build merges them after the
+   * legacy `grantedSkills` catalogue — never replacing or downgrading legacy
+   * grants, and never reachable from a wire field. A run without pins
+   * re-resolves nothing and keeps the legacy contract untouched.
+   */
+  pinnedPackageSkills?: readonly SelectableSkill[];
 };
 
 export class CoworkerUnavailableError extends Error {}
@@ -166,6 +177,9 @@ export function createActorAgentResolver(
       // agent's own id, known where the model wrapper is built; the person is known here.
       { userId: actor.id },
       observation,
+      // PKG03B (T03-fix): the admitted run's pinned package skills, threaded
+      // to the builds so the run's Skill catalogue serves the pinned revision.
+      context?.pinnedPackageSkills,
     );
   };
 

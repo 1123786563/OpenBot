@@ -14,6 +14,7 @@ import {
   enterprisePackageResourceLinks as linkRows,
 } from "../../db/schema/enterprise-plugin-packages";
 import type { PlatformScope } from "../contracts";
+import { PERSONAL_BOT_ID_PREFIX } from "../tenancy/personal-bot";
 import type { CompanyAdminContext } from "../tenancy/workspace-admin";
 import {
   assertPackageWriteTx,
@@ -148,15 +149,23 @@ async function readInstallInScope(
 }
 
 /**
- * Bot ownership authority read (mirrors tenancy bots-ownership visibility
- * predicates): the row must exist, be active, and belong to the scope's
- * workspace. Unknown, cross-company and cross-team bots answer the same 404.
+ * Bot binding authority read (mirrors tenancy bots-ownership visibility
+ * predicates): an expert Bot with trusted business ownership — an active
+ * `enterprise_bot_ownership` row registered to the scope's workspace — is
+ * bindable. A logically-private Bot (`pbot-` namespace, ADR 0006) is refused
+ * with `PACKAGE_BOT_SCOPE_UNAVAILABLE`: its actual execution-scope resolution
+ * is not wired in this version, so binding must never copy the identity or
+ * fall back to a default environment — even if a drifted ownership row exists.
+ * Unknown and cross-company/cross-team bots answer the same 404.
  */
 async function readBotInScope(
   tx: PackageWriteTx,
   scope: PlatformScope,
   botId: string,
 ): Promise<void> {
+  if (botId.startsWith(PERSONAL_BOT_ID_PREFIX)) {
+    throw packageError("PACKAGE_BOT_SCOPE_UNAVAILABLE");
+  }
   const [bot] = await tx.db
     .select({
       workspaceId: botOwnershipRows.workspaceId,
@@ -611,12 +620,20 @@ export function createPackageGrantService(
             revokeInput.botId,
           );
           if (active.length === 0) {
-            // Nothing to revoke: a no-op. The current revision stands; no new
-            // generation is written (created: false, HTTP 200).
+            // Nothing to revoke. A pair that never held any grant generation
+            // has no current grant at all: answering a fabricated revision 1
+            // would hand back a CAS counter that is not the real count (0) and
+            // poison the caller's next expectedGrantRevision — so it is the
+            // same not-found face as any other absent grant. A pair WITH
+            // generations is an already-revoked no-op: the current revision
+            // stands, no new generation is written (created: false, HTTP 200).
+            if (generations.size === 0) {
+              throw packageError("RESOURCE_NOT_FOUND");
+            }
             const grant: PackageGrantDTO = {
               installId: install.id,
               botId: revokeInput.botId,
-              revision: Math.max(1, generations.size),
+              revision: generations.size,
               resources: [],
             };
             await recordGrantChange({

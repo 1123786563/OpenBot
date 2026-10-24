@@ -35,6 +35,10 @@ import type {
 import { messageDigest } from "../conversations/store";
 import { ExpertVersionCatalog } from "../experts/version-catalog";
 import type { RuntimeModelRoute } from "../models/runtime-adapter";
+import type {
+  PinnedSkillSummary,
+  PreparePackageRunInput,
+} from "../plugin-packages/runtime";
 import type { DataDatabase } from "../tenancy/connections";
 import { createRevocationGuard } from "../tenancy/revocation";
 import {
@@ -100,6 +104,18 @@ export interface ProductionRunnerDependencies {
   readonly gatewayEnvironment?: Record<string, string | undefined>;
   /** Upstream fetch for the gateway dial; defaults to the runtime's fetch. */
   readonly modelFetch?: typeof fetch;
+  /**
+   * PKG03B (T03-fix): the package runtime's pinned Skill read. Present, the
+   * Runner reads it for every admitted run — the run's (runId,
+   * attemptGeneration) come from its own admission, never from a client
+   * field — and a non-empty result re-resolves the executing agent with the
+   * pinned package skills in its catalogue. Absent, runs keep the legacy
+   * Skill contract untouched.
+   */
+  readonly readPinnedSkills?: (
+    scope: PlatformScope,
+    input: PreparePackageRunInput,
+  ) => Promise<readonly PinnedSkillSummary[]>;
 }
 
 /** Server-issued Bot Expert identity, frozen for the governed executor slice. */
@@ -509,9 +525,38 @@ class DurableProductionRunner extends AgentRunner {
     });
     this.startLeaseRenewal(state, captured);
 
+    // PKG03B (T03-fix): the run's pinned Skill read — the production call
+    // site. The run identity comes from THIS admission, never from a wire
+    // field, and every read revalidates pin ∩ active grant ∩ membership with
+    // zero cache (a revoked grant or membership refuses the very next read).
+    // A run with pins re-resolves its executing agent so the pinned package
+    // skills join its catalogue; a run without pins keeps the already-built
+    // agent exactly as it was — the legacy contract untouched, nothing
+    // downgraded. A failed read fails closed to the empty set: skills narrow
+    // the offer and never gate the run.
+    let executing = resolvedAgent;
+    if (deps.readPinnedSkills) {
+      const pinned = await deps
+        .readPinnedSkills(scope, {
+          botId: agentId,
+          runId: run.run_id,
+          attemptGeneration: lease.generation,
+        })
+        .catch(() => []);
+      if (pinned.length > 0) {
+        const rebound = await deps.resolveBuiltInBotForActor(actor, agentId, {
+          ...(carrier ? { governedModel: carrier.governedModel } : {}),
+          pinnedPackageSkills: pinned,
+        });
+        if (rebound.definitionFacts.agentId === agentId) {
+          executing = rebound.agent;
+        }
+      }
+    }
+
     return concat(
       from([startedEvent]),
-      resolvedAgent.run(input).pipe(
+      executing.run(input).pipe(
         concatMap((event) => from(this.relayEvent(state, event))),
         catchError((error) => from(this.streamFailureEvent(state, error))),
         mergeMap((event) => (event ? from([event]) : EMPTY)),
@@ -882,6 +927,13 @@ export interface ProductionRunnerCompositionDependencies {
    * enterprise runs pin package grants in the run transaction (Spec §9).
    */
   readonly preparePackageRun?: RunServiceDependencies["preparePackageRun"];
+  /**
+   * PKG03B (T03-fix): package runtime `readPinnedSkills`, forwarded to the
+   * Runner so every admitted run's Skill read goes through the pin ∩ active
+   * grant ∩ membership revalidation. The composition passes BOTH seams from
+   * the SAME `createPackageRuntime` instance.
+   */
+  readonly readPinnedSkills?: ProductionRunnerDependencies["readPinnedSkills"];
 }
 
 export interface ProductionRunnerComposition {
@@ -948,6 +1000,9 @@ export function createProductionRunnerComposition(
     ...(deps.modelFetch ? { modelFetch: deps.modelFetch } : {}),
     ...(deps.leaseMilliseconds !== undefined
       ? { leaseMilliseconds: deps.leaseMilliseconds }
+      : {}),
+    ...(deps.readPinnedSkills
+      ? { readPinnedSkills: deps.readPinnedSkills }
       : {}),
   });
   return { runnerForRequest, runs, events, expertVersions, modelRoutes };
