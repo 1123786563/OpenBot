@@ -59,6 +59,10 @@ import {
   DerivedJudgmentReviewRefusedError,
   type DerivedJudgmentReviewService,
 } from "./judgment-review";
+import {
+  PreferenceNotFoundError,
+  PreferenceRefusedError,
+} from "./preference-recall";
 import type { RestoreRecoveryService } from "./restore-recovery";
 import type { RevocationService } from "./revocation";
 import { MemorySensitivityRefusedError } from "./sensitivity-gate";
@@ -226,16 +230,24 @@ export function createHindsightRoutes(
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser, bodyLimit({ maxSize: 65_536 }));
   routes.onError((error, context) => {
+    // A routine refusal, never an outage: the same split the /api/memory face draws. The
+    // correction route reaches #386's seam, so that seam's own vocabulary (a superseded fact,
+    // a malformed content/time, a forgotten row) answers 400/404 here too rather than falling
+    // through to the 503 branch, which is reserved for a deployment failure and logs at error
+    // level. `PreferenceNotFoundError` carries a fixed sentence, so nothing about a row's
+    // history or ownership is disclosed by the 404.
     if (
       error instanceof EvidenceRefusedError ||
       error instanceof DerivedJudgmentRefusedError ||
       error instanceof HindsightRouteRefusedError ||
-      error instanceof MemorySensitivityRefusedError
+      error instanceof MemorySensitivityRefusedError ||
+      error instanceof PreferenceRefusedError
     )
       return context.json({ error: error.message }, 400);
     if (
       error instanceof EvidenceNotFoundError ||
-      error instanceof DerivedJudgmentNotFoundError
+      error instanceof DerivedJudgmentNotFoundError ||
+      error instanceof PreferenceNotFoundError
     )
       return context.json({ error: error.message }, 404);
     if (error instanceof DerivedJudgmentReviewRefusedError)

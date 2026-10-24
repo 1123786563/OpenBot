@@ -72,7 +72,7 @@ deployment declares where they are:
 | --- | --- |
 | Key | `HINDSIGHT_BACKUP_MANIFEST_DIR` in the **OpenBot server's** environment |
 | Value | absolute path of the directory `backup.sh` writes into (default: `deploy/hindsight/backups`) |
-| Where it is read | `server/src/hindsight/backup-registry.ts` (`backupManifestDirFromEnv`), per request |
+| Where it is read | `server/src/hindsight/backup-registry.ts` (`backupManifestDirFromEnv`), **once when the server assembles** (`server/src/index.ts`) — the routes close over that value, so a changed declaration takes effect on the next server restart, not the next request |
 | Not read by | `backup.sh`, `hindsight.env`, the compose stack — the key belongs to OpenBot only |
 
 - **Directory.** It must be the directory the backup job writes **archives and manifests** into
@@ -98,6 +98,21 @@ deployment declares where they are:
   nothing; `POST /api/hindsight/cleanup/verify` (the person's own action) and
   `POST /api/hindsight/ops/backups/reconcile` (admin) run the pass. The report returned to a
   person carries counts only; the directory path appears on the admin route alone.
+- **Freshness: what the claim stands on.** The registry only changes when a pass runs, so the
+  backup leg speaks for the directory as the **last** pass saw it, and the status's `observedAt`
+  is the instant behind the observation it answers from (the last recorded probe on a pure read;
+  now, when the verify action re-probes). Two states follow. *Before any pass* the registry is
+  empty, and with a confirmed deletion that is "no evidence", never "cleared" (`outstanding:
+  null`). *Between a backup and the next pass* a copy taken **before** a deletion's confirmation
+  that no pass has registered yet is invisible — while the copies the last pass saw as purged are
+  already recorded — so the claim can read "cleared" one pass too early, and `registered`
+  under-counts.
+- **Who schedules the pass.** OpenBot schedules nothing; a deployment that never reconciles keeps
+  the optimistic window above open indefinitely. Registering a new copy is therefore the
+  deployment's job: run the admin-gated `POST /api/hindsight/ops/backups/reconcile` at least as
+  often as `backup.sh` (the daily cron) — from an operator, or from a job holding an admin
+  session. The person's own `POST /api/hindsight/cleanup/verify` also runs a pass, but only when
+  they ask, so it is an action and not a schedule.
 
 ## Operating
 
