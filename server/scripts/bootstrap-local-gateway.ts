@@ -103,9 +103,10 @@ const probe = createGatewayProbeService({
 	log,
 });
 const probeRun = await probe.probeGateway();
-log.info({ ready: probeRun.ready, reason: probeRun.result?.reasonCode }, "probe finished");
+const probeReason = probeRun.ready ? probeRun.result.reasonCode : probeRun.reasonCode;
+log.info({ ready: probeRun.ready, reason: probeReason }, "probe finished");
 if (!probeRun.ready) {
-	throw new Error(`probe did not succeed: ${probeRun.result?.reasonCode}`);
+	throw new Error(`probe did not succeed: ${probeRun.reasonCode}`);
 }
 
 // 01.6 the negotiation
@@ -117,7 +118,10 @@ const negotiation = createGatewayCapabilityNegotiationService({
 	log,
 });
 const negotiationRun = await negotiation.negotiateGatewayCapabilities();
-log.info({ negotiated: negotiationRun.negotiated, reason: negotiationRun.reasonCode }, "negotiation finished");
+const negotiationReason = negotiationRun.negotiated
+	? negotiationRun.negotiation.reasonCode
+	: negotiationRun.reasonCode;
+log.info({ negotiated: negotiationRun.negotiated, reason: negotiationReason }, "negotiation finished");
 if (!negotiationRun.negotiated) {
 	throw new Error(`negotiation did not complete: ${negotiationRun.reasonCode}`);
 }
