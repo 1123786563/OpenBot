@@ -155,9 +155,15 @@ function markLoginFields(attribute: string) {
 /**
  * Find a one-time-code field. Runs in the page.
  *
- * The site's own `autocomplete="one-time-code"` first; otherwise a visible text-like field whose name,
- * id or label reads as a verification code. Any earlier mark is cleared, so a field that has gone
- * away is never typed into.
+ * The site's own `autocomplete="one-time-code"` first; otherwise a visible text-like field whose
+ * name, id or label reads as a verification code. Any earlier mark is cleared, so a field that has
+ * gone away is never typed into.
+ *
+ * The name fallback reads only fields whose subject is the code itself. A country, postal, promo
+ * or voucher code is the site's own business datum, and a login page full of those must not read
+ * as a code step; the exclusion therefore covers the business word directly followed by the code
+ * word in the joined name/id/label, in any of the spellings sites use. It narrows only that
+ * fallback: the site's own autocomplete stays authoritative whatever the field is called.
  */
 function markCodeField(attribute: string) {
   for (const node of document.querySelectorAll(`[${attribute}="code"]`))
@@ -177,15 +183,18 @@ function markCodeField(attribute: string) {
       ["text", "tel", "number", "password", ""].includes(input.type)
     );
   });
+  const businessCode =
+    /(?:country|postal|promo|zip|area|dial|referral|voucher|coupon|discount)[\s_-]*code/i;
   const code =
     inputs.find((input) => /one-time-code/.test(input.autocomplete)) ??
-    inputs.find(
-      (input) =>
-        input.type !== "password" &&
-        /code|otp|totp|2fa|mfa|verif|passcode/i.test(
-          `${input.name} ${input.id} ${input.getAttribute("aria-label") ?? ""}`,
-        ),
-    );
+    inputs.find((input) => {
+      if (input.type === "password") return false;
+      const described = `${input.name} ${input.id} ${input.getAttribute("aria-label") ?? ""}`;
+      return (
+        /code|otp|totp|2fa|mfa|verif|passcode/i.test(described) &&
+        !businessCode.test(described)
+      );
+    });
   if (code) code.setAttribute(attribute, "code");
   return Boolean(code);
 }
@@ -315,9 +324,15 @@ export async function fillSignIn(
         `The sign-in moved to ${originOfUrl(page.url()) || "another page"} to ask for a verification code. Take over the browser to finish signing in there.`,
         true,
       );
+    // On this origin, a password field still showing is the refusal, however code-like the page
+    // also looks: the login's own form never went away, so the site has not moved on to a code
+    // step — not even when it draws a real one-time-code field beside the unchanged login form.
+    // Read past the origin check above, so a code step that moved the page elsewhere keeps its own
+    // answer: a password field on the page it moved to is that page's, not the login's refusal.
+    if (refused) codeRequested = false;
     return {
       submitted: true,
-      passwordFieldVisible: codeRequested ? false : refused,
+      passwordFieldVisible: refused,
       codeRequested,
       url: page.url(),
     };
