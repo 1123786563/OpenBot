@@ -263,5 +263,16 @@
   "modelSelection": {
     "loadFailed": "无法加载你的模型选择。",
     "writeFailed": "无法保存你的模型选择。"
+  },
+  "hindsight": {
+    "loadCandidates": "无法加载判断",
+    "loadEvidence": "无法加载依据",
+    "loadCleanup": "无法加载清理状态",
+    "confirm": "无法确认这条判断",
+    "edit": "无法保存这条判断",
+    "reject": "无法拒绝这条判断",
+    "forget": "无法遗忘这条记忆",
+    "correct": "无法保存这次更正",
+    "verify": "无法核对清理状态"
   }
 }

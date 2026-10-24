@@ -263,5 +263,16 @@
   "modelSelection": {
     "loadFailed": "Your model selection could not be loaded.",
     "writeFailed": "Your model selection could not be saved."
+  },
+  "hindsight": {
+    "loadCandidates": "Could not load judgments",
+    "loadEvidence": "Could not load the basis",
+    "loadCleanup": "Could not load the cleanup status",
+    "confirm": "Could not confirm this judgment",
+    "edit": "Could not save this judgment",
+    "reject": "Could not reject this judgment",
+    "forget": "Could not forget this memory",
+    "correct": "Could not save this correction",
+    "verify": "Could not check the cleanup status"
   }
 }
