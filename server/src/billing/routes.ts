@@ -39,6 +39,12 @@ import {
   resolvePersonalPayerAccount,
 } from "./payer-personal";
 import type { PaymentOrderReadScope } from "./payments/types";
+// MOD10（Issue #630）：组内公开门面的能力面类型（仅类型；运行时零依赖）。
+import type {
+  BillingAccountQuery,
+  BillingEntitlementDelivery,
+  BillingResolvePayer,
+} from "./public";
 import type { RealtimeUsageReader } from "./realtime-usage";
 // The reasons list is used only as a type here (`typeof` for the status map's key union).
 import type { DISPOSAL_REFUSAL_REASONS } from "./recovery-disposal";
@@ -66,12 +72,17 @@ type RequireAdmin = (
 
 export function billingReadScopeOf(
   context: Context<{ Variables: AppVariables }>,
+  // MOD10（Issue #630）C1：可选经公开门面的 `resolvePayer.personal`（薄委托同一
+  // 纯函数）；缺省回退直用内件——两条臂行为等价（双路先例：MOD06 conversation
+  // routes、MOD05 team-bots routes）。Payer 解析仍是纯函数，不打开映射行。
+  resolvePayer?: Pick<BillingResolvePayer, "personal">,
 ): PaymentOrderReadScope {
   // The reading actor's own personal PayerRef, resolved from the session — never from a
   // request field (AC14/Q27). Order reads filter on the order's owner columns against this
   // ref, so another person's order — and any quarantined or pre-attribution row — is simply
   // not in the answer.
-  return { actorPayerRef: resolvePayerForPersonalUser(context.var.actor) };
+  const personal = resolvePayer?.personal ?? resolvePayerForPersonalUser;
+  return { actorPayerRef: personal(context.var.actor) };
 }
 
 /**
@@ -98,11 +109,19 @@ export function createBillingWebhookRoutes(deps: { service: BillingService }) {
 export function createBillingRoutes(deps: {
   service: BillingService;
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
+  /**
+   * MOD10（Issue #630）C2：权益交付门面（可选）。生产装配注入
+   * `entitlementDelivery` 后本 handler 经门面读；缺省回退直用 `service`
+   * （存量两参调用方与两臂行为等价——双路先例）。
+   */
+  entitlementDelivery?: Pick<BillingEntitlementDelivery, "entitlements">;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
   routes.get("/entitlements", async (context) => {
-    const entitlements = await deps.service.entitlements();
+    const entitlements = await (
+      deps.entitlementDelivery ?? deps.service
+    ).entitlements();
     return context.json({
       active: entitlements.active,
       ...(entitlements.planCode !== undefined
@@ -140,6 +159,13 @@ export { statementQueryInput };
 export function createBillingStatementRoutes(deps: {
   statements: BillingStatements;
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
+  /**
+   * MOD10（Issue #630）C3：账务查询门面的 statements 三读（可选）。注入后
+   * 三 handler 经门面；缺省回退直用 `statements`（两臂行为等价）。
+   */
+  accountQuery?: Pick<BillingAccountQuery, "planUsage" | "invoices" | "invoice">;
+  /** MOD10 C1 双路：读作用域的 Payer 解析经门面 `resolvePayer.personal`。 */
+  resolvePayer?: Pick<BillingResolvePayer, "personal">;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -154,7 +180,9 @@ export function createBillingStatementRoutes(deps: {
   });
 
   routes.get("/plan-usage", async (context) => {
-    return context.json(await deps.statements.planUsage());
+    return context.json(
+      await (deps.accountQuery ?? deps.statements).planUsage(),
+    );
   });
 
   routes.get("/invoices", async (context) => {
@@ -167,21 +195,21 @@ export function createBillingStatementRoutes(deps: {
       return context.json({ error: "Supply a valid request." }, 400);
     }
     return context.json(
-      await deps.statements.invoices(
+      await (deps.accountQuery ?? deps.statements).invoices(
         {
           from: parsed.data.from ? new Date(parsed.data.from) : null,
           to: parsed.data.to ? new Date(parsed.data.to) : null,
           page: parsed.data.page,
         },
-        billingReadScopeOf(context),
+        billingReadScopeOf(context, deps.resolvePayer),
       ),
     );
   });
 
   routes.get("/invoices/:id", async (context) => {
-    const invoice = await deps.statements.invoice(
+    const invoice = await (deps.accountQuery ?? deps.statements).invoice(
       context.req.param("id"),
-      billingReadScopeOf(context),
+      billingReadScopeOf(context, deps.resolvePayer),
     );
     if (!invoice) {
       return context.json({ error: "No such bill." }, 404);
@@ -234,6 +262,23 @@ export function createBillingCreditRoutes(deps: {
    * Absent answers 503, never a fallback — the same rule every optional read here keeps.
    */
   asyncJobsView?: AsyncJobsViewReader;
+  /**
+   * MOD10（Issue #630）C4/C5：账务查询门面（可选）。生产装配注入后六读 handler
+   * 改经门面；缺省回退直用 `credits`/`realtimeUsage`/`asyncJobsView`（存量
+   * 调用方与两臂行为等价，双路先例）。503 准入检查仍读上面的原件缺席，
+   * 逐字节不动。
+   */
+  accountQuery?: Pick<
+    BillingAccountQuery,
+    | "catalog"
+    | "personalBalance"
+    | "grants"
+    | "consumption"
+    | "realtimeSessionsForPayer"
+    | "asyncJobsForPayer"
+  >;
+  /** MOD10 C1 双路：Payer 解析经门面 `resolvePayer.personal`。 */
+  resolvePayer?: Pick<BillingResolvePayer, "personal">;
 }) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
@@ -257,23 +302,35 @@ export function createBillingCreditRoutes(deps: {
   });
 
   routes.get("/catalog", async (context) => {
-    return context.json(Object.fromEntries(deps.credits.catalog));
+    return context.json(
+      Object.fromEntries((deps.accountQuery ?? deps.credits).catalog),
+    );
   });
 
   routes.get("/credits/summary", async (context) => {
     // The account is the session's own personal payer, resolved from the authenticated identity —
     // pure, parameter-free, and a read that cannot open a mapping row.
-    const payer = resolvePayerForPersonalUser(context.var.actor);
-    return context.json(await deps.credits.personalBalance(payer));
+    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
+      context.var.actor,
+    );
+    return context.json(
+      await (deps.accountQuery ?? deps.credits).personalBalance(payer),
+    );
   });
 
   routes.get("/credits/grants", async (context) => {
-    const payer = resolvePayerForPersonalUser(context.var.actor);
-    return context.json({ grants: await deps.credits.grants(payer) });
+    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
+      context.var.actor,
+    );
+    return context.json({
+      grants: await (deps.accountQuery ?? deps.credits).grants(payer),
+    });
   });
 
   routes.get("/credits/consumption", async (context) => {
-    const payer = resolvePayerForPersonalUser(context.var.actor);
+    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
+      context.var.actor,
+    );
     const parsed = statementQueryInput.safeParse({
       from: context.req.query("from"),
       to: context.req.query("to"),
@@ -283,7 +340,7 @@ export function createBillingCreditRoutes(deps: {
       return context.json({ error: "Supply a valid request." }, 400);
     }
     return context.json(
-      await deps.credits.consumption(
+      await (deps.accountQuery ?? deps.credits).consumption(
         {
           from: parsed.data.from ? new Date(parsed.data.from) : null,
           to: parsed.data.to ? new Date(parsed.data.to) : null,
@@ -310,9 +367,13 @@ export function createBillingCreditRoutes(deps: {
         503,
       );
     }
-    const payer = resolvePayerForPersonalUser(context.var.actor);
+    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
+      context.var.actor,
+    );
     return context.json({
-      sessions: await deps.realtimeUsage.realtimeSessionsForPayer(payer),
+      sessions: await (
+        deps.accountQuery ?? deps.realtimeUsage
+      ).realtimeSessionsForPayer(payer),
     });
   });
 
@@ -331,9 +392,13 @@ export function createBillingCreditRoutes(deps: {
         503,
       );
     }
-    const payer = resolvePayerForPersonalUser(context.var.actor);
+    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
+      context.var.actor,
+    );
     return context.json({
-      jobs: await deps.asyncJobsView.asyncJobsForPayer(payer),
+      jobs: await (
+        deps.accountQuery ?? deps.asyncJobsView
+      ).asyncJobsForPayer(payer),
     });
   });
 

@@ -78,6 +78,7 @@ import {
   createPaymentRoutes,
 } from "../billing/payments/routes";
 import type { PaymentService } from "../billing/payments/service";
+import { createBillingEntriesPublic } from "../billing/public";
 import { createRealtimeUsageService } from "../billing/realtime-usage";
 import { createRewardGranter } from "../billing/rewards";
 import {
@@ -3125,7 +3126,14 @@ export function assembleHttpApp(
     );
     app.route(
       "/api/billing",
-      createBillingRoutes({ service: billing.service, requireUser }),
+      createBillingRoutes({
+        service: billing.service,
+        requireUser,
+        // MOD10（#630）C2：权益交付读经组内公开门面（薄委托同一 service.entitlements）。
+        entitlementDelivery: createBillingEntriesPublic({
+          entitlement: billing.service,
+        }).entitlementDelivery,
+      }),
     );
     app.route(
       "/api/admin/billing",
@@ -3164,9 +3172,16 @@ export function assembleHttpApp(
    * above is the provider's reader, this one is the deployment's own two answers about its money.
    */
   if (statements) {
+    // MOD10（#630）C3/C1：账单三读与读作用域 Payer 解析经组内公开门面（薄委托）。
+    const entries = createBillingEntriesPublic({ statements });
     app.route(
       "/api/billing",
-      createBillingStatementRoutes({ statements, requireUser }),
+      createBillingStatementRoutes({
+        statements,
+        requireUser,
+        accountQuery: entries.accountQuery,
+        resolvePayer: entries.resolvePayer,
+      }),
     );
   }
   /*
@@ -3174,6 +3189,19 @@ export function assembleHttpApp(
    * ledger rather than the provider's reader or the payment table.
    */
   if (credits) {
+    // MOD10（#630）C4/C5/C1：积分读面、实时/异步个人读与 Payer 解析经组内公开门面。
+    // 两部读者实例同时供给门面与 503 准入检查（准入语义逐字节不动）。
+    const realtimeUsage = billing?.database
+      ? createRealtimeUsageService({ database: billing.database })
+      : undefined;
+    const asyncJobsView = billing?.database
+      ? createAsyncJobsViewService({ database: billing.database })
+      : undefined;
+    const entries = createBillingEntriesPublic({
+      credits,
+      ...(realtimeUsage ? { realtimeUsage } : {}),
+      ...(asyncJobsView ? { asyncJobsView } : {}),
+    });
     app.route(
       "/api/billing",
       createBillingCreditRoutes({
@@ -3193,22 +3221,12 @@ export function assembleHttpApp(
           : {}),
         // 15.8's realtime consumption rows ride the same database the ledger reads; mounted
         // only where the billing assembly has one, and the route refuses 503 without it.
-        ...(billing?.database
-          ? {
-              realtimeUsage: createRealtimeUsageService({
-                database: billing.database,
-              }),
-            }
-          : {}),
+        ...(realtimeUsage ? { realtimeUsage } : {}),
         // 17.8's async jobs read rides the same database the ledger reads; mounted only
         // where the billing assembly has one, and the route refuses 503 without it.
-        ...(billing?.database
-          ? {
-              asyncJobsView: createAsyncJobsViewService({
-                database: billing.database,
-              }),
-            }
-          : {}),
+        ...(asyncJobsView ? { asyncJobsView } : {}),
+        accountQuery: entries.accountQuery,
+        resolvePayer: entries.resolvePayer,
         audit: auditStore,
       }),
     );
@@ -3230,6 +3248,8 @@ export function assembleHttpApp(
    *    `catalog` is answered by the `:id` handler. payment-routes.test.ts asserts the order.
    */
   if (payments) {
+    // MOD10（#630）C8/C1/C9：订单三读与 Payer 解析经组内公开门面（回调挂载不动，C11）。
+    const entries = createBillingEntriesPublic({ payments: payments.service });
     app.route(
       "/api/payments/callbacks",
       createPaymentCallbackRoutes({ service: payments.service }),
@@ -3242,6 +3262,8 @@ export function assembleHttpApp(
         requireAdmin,
         audit: auditStore,
         activePlanCode: payments.activePlanCode,
+        orders: entries.orders,
+        resolvePayer: entries.resolvePayer,
       }),
     );
   }
