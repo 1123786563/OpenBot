@@ -276,20 +276,48 @@ describe("span body governance (FREV-01)", () => {
       state: "omitted",
       reason: "unhandled_free_text",
     });
+    // No proof, no bodies — and therefore no policy to name.
+    expect(writes[0].spans[0].attributes?.content_policy_ref).toBeUndefined();
   });
 
-  test("a forged approval — structurally identical, never minted — projects nothing", () => {
+  test("a forged approval — structurally identical, never minted — projects nothing and names no policy", () => {
     const forged = {
       source: "bot_security_policy",
-      policyRef: "bot-1/security-policy/v3",
+      policyRef: "attacker-chosen-policy-ref",
     } as unknown as SpanContentApproval;
     const writes = recordAndCapture(
       anObservation({ input: "What is the weather?", approval: forged }),
     );
-    expect(writes[0].spans[0].attributes?.input).toEqual({
+    const span = writes[0].spans[0];
+    expect(span.attributes?.input).toEqual({
       state: "omitted",
       reason: "unhandled_free_text",
     });
+    // F5A1-R1-F1: the audit attribute shares the body gate's verdict. A token the
+    // module never minted must not name a policy for bodies it did not approve.
+    expect(span.attributes?.content_policy_ref).toBeUndefined();
+    expect(JSON.stringify(span)).not.toContain("attacker-chosen-policy-ref");
+  });
+
+  test("a spread copy of a minted approval projects nothing and names no policy", () => {
+    const minted = approveSpanContent({
+      source: "bot_security_policy",
+      policyRef: "bot-1/security-policy/v3",
+      allowFreeText: true,
+    });
+    if (minted === null) throw new Error("the mint must succeed for this case");
+    // A snapshot copy of the frozen token: the same strings, not the minted object.
+    const copied: SpanContentApproval = { ...minted };
+    const writes = recordAndCapture(
+      anObservation({ input: "What is the weather?", approval: copied }),
+    );
+    const span = writes[0].spans[0];
+    expect(span.attributes?.input).toEqual({
+      state: "omitted",
+      reason: "unhandled_free_text",
+    });
+    expect(span.attributes?.content_policy_ref).toBeUndefined();
+    expect(JSON.stringify(span)).not.toContain("bot-1/security-policy/v3");
   });
 
   test("the mint refuses an empty policy reference", () => {

@@ -94,6 +94,19 @@ function isIssuedApproval(value: unknown): value is SpanContentApproval {
 }
 
 /**
+ * The one verdict every governance gate reads (FREV-01, F5A1-R1-F1): the carried
+ * approval, if — and only if — this module minted it, else null. Body projection and
+ * the span's audit attribute must share this verdict; a truthiness test on the carried
+ * token would let a forged or spread-copied approval name a policy for bodies that
+ * were withheld, so the span would claim an approval that never happened.
+ */
+export function issuedSpanContentApproval(
+  approval: SpanContentApproval | null | undefined,
+): SpanContentApproval | null {
+  return isIssuedApproval(approval) ? approval : null;
+}
+
+/**
  * Span body behind the FREV-01 gate: the deny patterns still run first and always
  * win, and without a minted approval the body is omitted as unhandled free text —
  * metrics survive, prose does not. `null` text still projects no attribute at all.

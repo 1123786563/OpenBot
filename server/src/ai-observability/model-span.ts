@@ -34,6 +34,7 @@ import {
   type SafeRecord,
 } from "./redaction";
 import {
+  issuedSpanContentApproval,
   nanos,
   nowNs,
   projectApprovedSpanContent,
@@ -183,6 +184,11 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
       ? observation.trace.parentSpanId
       : undefined;
 
+  // FREV-01 / F5A1-R1-F1: bodies and audit attribute share ONE verdict — the
+  // runtime-verified mint, never the carried token's truthiness — so a forged or
+  // spread-copied approval withholds the bodies AND names no policy.
+  const approval = issuedSpanContentApproval(observation.contentApproval);
+
   const attributes: SafeRecord = projectSafeRecord(
     {
       model: observation.modelId ?? undefined,
@@ -204,24 +210,17 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
           : undefined,
       origin: "builtin",
       // FREV-01 audit chain: a span that carried bodies names the policy that
-      // approved them; a proof-less span carries no bodies to name.
-      ...(observation.contentApproval
-        ? { content_policy_ref: observation.contentApproval.policyRef }
-        : {}),
+      // approved them; a proof-less span carries no bodies to name. The name comes
+      // from the same verified mint the bodies pass through, never the raw carry.
+      ...(approval ? { content_policy_ref: approval.policyRef } : {}),
     },
     SPAN_ATTRIBUTE_ALLOWLIST,
   );
   // FREV-01: bodies project only behind the observation's minted policy approval —
   // the recorder's say-so is not one. Deny patterns still run first and always win.
-  const input = projectApprovedSpanContent(
-    observation.input,
-    observation.contentApproval,
-  );
+  const input = projectApprovedSpanContent(observation.input, approval);
   if (input) attributes.input = input;
-  const output = projectApprovedSpanContent(
-    observation.output,
-    observation.contentApproval,
-  );
+  const output = projectApprovedSpanContent(observation.output, approval);
   if (output) attributes.output = output;
 
   const label =
