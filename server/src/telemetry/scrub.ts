@@ -32,6 +32,22 @@ const TOKEN_SHAPES: RegExp[] = [
 const SECRET_NAME =
   "(?:[A-Za-z0-9_]*(?:PASSWORD|PASSWD|PWD|SECRET|TOKEN|API[_-]?KEY|APIKEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY|CREDENTIALS?|AUTH)[A-Za-z0-9_]*)";
 
+/*
+ * The shell-lexical arms every positional rule below is built from, held once here so an arm
+ * adjusted cannot drift between the five rules' copies (R14 F14-1) — every drift defect so far
+ * (A-H1, F04-6, T14, R8-C5, R10-C7) lived in one copy disagreeing with another. QUOTE_ARMS is a
+ * paired double- or single-quoted word beside the fallback that reads an unpaired quote as an
+ * ordinary character, each fallback guarded so exactly one arm can match at a quote (R10-C7).
+ * LEAD_SPAN is a lead's run from its anchor word to its flag, a VALUE_UNIT is one unit of a bare
+ * value, and BARE_VALUE is the value word, its first unit refusing `-` and the separators. The
+ * rules interpolate them the way the SECRET_NAME rules interpolate their name, each with its
+ * own flags.
+ */
+const QUOTE_ARMS = String.raw`"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')`;
+const LEAD_SPAN = String.raw`(?:[^|;&\\\r\n"']|${QUOTE_ARMS}|\\[\s\S])*?`;
+const VALUE_UNIT = String.raw`(?:\\[^\r\n]|${QUOTE_ARMS}|[^\s'";|&\\])`;
+const BARE_VALUE = String.raw`(?:\\[^\r\n]|${QUOTE_ARMS}|[^\s'";|&\\-])${VALUE_UNIT}*`;
+
 const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // Authorization headers: `Authorization: Bearer x`, `-H "Authorization: Basic x"`.
   [
@@ -104,7 +120,10 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // port (`mysql -h db -P3306`), and upstream's `i` reads it as a password — redacting the port while
   // a real `-phunter2` later in the same command line survives.
   [
-    /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/g,
+    new RegExp(
+      String.raw`(\bmysql(?:dump)?\b${LEAD_SPAN}(?:[ \t]|\\\r?\n)-p)(${BARE_VALUE})`,
+      "g",
+    ),
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `docker login -p secret`, where `-p` is the password rather than a port. docker's grammar puts
@@ -113,7 +132,10 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // subcommand cannot: `run` is not a flag, which is what keeps `docker run login -p 8080:80` a
   // port mapping instead of a registry password.
   [
-    /(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/gi,
+    new RegExp(
+      String.raw`(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b${LEAD_SPAN}(?:[ \t]|\\\r?\n)-p[ \t]*)(${BARE_VALUE})`,
+      "gi",
+    ),
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `sshpass -p secret ssh user@host`, where `-p` is the password handed to ssh. Only sshpass's own
@@ -143,7 +165,10 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // its value still clusters, its two readings ending at different places, the shorter dead where
   // the value begins, and `-v` and `-q` never had a second reading to lose.
   [
-    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*|-(?![fdP](?=\S))[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdPp]*p[ \t]*)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/g,
+    new RegExp(
+      String.raw`(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*${BARE_VALUE}|-(?![fdP](?=\S))[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdPp]*p[ \t]*)(${BARE_VALUE})`,
+      "g",
+    ),
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `SSHPASS=secret sshpass -e ssh host`: the env form sshpass itself recommends over `-p`, because
@@ -154,12 +179,15 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // assignment and start another command, which must stay in the record — and does not begin with
   // one either (`SSHPASS=;cmd` is an empty assignment before another command, no secret to take).
   [
-    /(\bSSHPASS\s*=\s*)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])+)/g,
+    new RegExp(String.raw`(\bSSHPASS\s*=\s*)(${VALUE_UNIT}+)`, "g"),
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `redis-cli -a secret`, `-asecret` and `--pass secret`, the same shape under redis-cli's names.
   [
-    /(\bredis-cli\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|\\[\s\S])*?(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/gi,
+    new RegExp(
+      String.raw`(\bredis-cli\b${LEAD_SPAN}(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))(${BARE_VALUE})`,
+      "gi",
+    ),
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // A quoted key in a JSON body: `-d '{"password":"x"}'`, or `-d "{\\"password\\":\\"x\\"}"` once the
