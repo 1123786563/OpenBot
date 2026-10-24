@@ -822,6 +822,12 @@ export function createObservationRetentionWorker(
             failureCode(result as OpikPortResult<never>),
           );
         }
+        // The port's ok is observed-absent, not request-accepted (FREV-07): the
+        // delete operation reads the trace/dataset back to a verified 404 inside
+        // a bounded window before answering ok, so this transition is bound to
+        // the upstream's actual cleanup — still-queryable data answers a
+        // retryable failure above, parks the record failed, and leaves the
+        // frozen locator for the retry.
         const moved = await store.markUpstreamDone(id);
         if (moved === null) {
           // Another pass settled this record while we held the upstream call. The
