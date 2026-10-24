@@ -113,12 +113,17 @@ export interface MastraToolGuard {
  * this runtime is deliberately looser than OpenAI. That looseness is argued
  * safe for the gateway/OpenAI-compatible endpoints brokered tool calls ride
  * (they forward the minted name as-is and accept dotted names); a deployment
- * pointing an `openai` provider straight at api.openai.com has no such
- * gateway scrub, and a mounted dotted brokered name can 400 the WHOLE chat
- * request at the wire layer — not merely leave one tool uncallable. If
- * direct-OpenAI ever needs first-class support, the shape is a name-alias/
- * scrubbing layer between mount and wire: a follow-up item, deliberately
- * not built here.
+ * pointing an `openai` provider straight at api.openai.com is caught at the
+ * dial itself: the F11-1 guard in enterprise/models/gateway.ts
+ * (directOpenAiDottedToolName) answers 400 MASTRA_TOOL_NAME_INVALID naming
+ * the offending mount, so the whole chat fails named and at home rather
+ * than lost to the upstream wire charset. The guard judges directness on
+ * new Request(url).url — the same normalization the dial itself fetches
+ * through (F01-R11-M1) — so a defaulted port or host case cannot slip a
+ * dotted name past it. If direct-OpenAI ever needs first-class support — a
+ * dotted name that RIDES rather than being refused — the shape is a
+ * name-alias/scrubbing layer between mount and wire: a follow-up item,
+ * deliberately not built here.
  *
  * Exported so the grant write (plugins/store.ts, where `toolNameFor` mints
  * the name) enforces the SAME rule at configuration time; this mount-time
