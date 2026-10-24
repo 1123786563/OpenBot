@@ -22,6 +22,7 @@ import {
   CREDIT_ADMISSION_EXTENSION_NAME,
   createEnterpriseGatewayNegotiationStore,
   createGatewayCapabilityNegotiationService,
+  GATEWAY_EXTENSIONS_MANAGEMENT_PATH,
   GATEWAY_NEGOTIATION_RESULT_KEY,
 } from "../src/gateway/capability-negotiation";
 import { createConversionRateStore } from "../src/gateway/conversion-rate-store";
@@ -109,7 +110,7 @@ async function healthyFakeGateway() {
       body: '{"authConfig":{"admin":{"exists":true}}}',
     },
     {
-      "/api/plugins": {
+      [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 200,
         body: JSON.stringify({
@@ -341,7 +342,7 @@ test("an extension that disappears re-opens the gate", async () => {
   const gateway = await startFakeGateway(
     { kind: "response", status: 200, body: "{}" },
     {
-      "/api/plugins": {
+      [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 200,
         body: JSON.stringify({
@@ -373,7 +374,7 @@ test("an extension shipping an incompatible version re-opens the gate", async ()
   const gateway = await startFakeGateway(
     { kind: "response", status: 200, body: "{}" },
     {
-      "/api/plugins": {
+      [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 200,
         body: JSON.stringify({
@@ -443,7 +444,7 @@ test("a refusal echoing a 401 carries no upstream bytes and no address", async (
       body: JSON.stringify({ error: marker.secret }),
     },
     {
-      "/api/plugins": {
+      [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 401,
         body: JSON.stringify({ error: marker.secret }),

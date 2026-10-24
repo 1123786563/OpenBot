@@ -24,6 +24,7 @@ import {
   createEnterpriseGatewayNegotiationStore,
   createGatewayCapabilityNegotiationService,
   CREDIT_ADMISSION_EXTENSION_NAME,
+  GATEWAY_EXTENSIONS_MANAGEMENT_PATH,
 } from "../src/gateway/capability-negotiation";
 import {
   gatewayAdminRoutes,
@@ -165,7 +166,7 @@ async function establishReady() {
       body: '{"authConfig":{"admin":{"exists":true}}}',
     },
     {
-      "/api/plugins": {
+      [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 200,
         body: JSON.stringify({
@@ -382,7 +383,7 @@ test("the probe action classifies, persists, and on success negotiates", async (
 
   // The extension vanished upstream: the probe still succeeds, the negotiation
   // verdict honestly turns "absent", and the status read carries it.
-  gateway.routes["/api/plugins"] = {
+  gateway.routes[GATEWAY_EXTENSIONS_MANAGEMENT_PATH] = {
     kind: "response",
     status: 200,
     body: JSON.stringify({
