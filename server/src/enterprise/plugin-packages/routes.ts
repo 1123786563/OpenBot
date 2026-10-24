@@ -15,14 +15,11 @@ import type { PackageCatalogue } from "../../plugin-packages/catalogue";
 import type { PlatformScope } from "../contracts";
 import { assertClassifiedCompanyEntrance } from "../tenancy/admin-separation";
 import type { CompanyAdminContext } from "../tenancy/workspace-admin";
-import type {
-  PackageInternalErrorCode,
-  PackageService,
-} from "./contracts";
+import type { PackageInternalErrorCode, PackageService } from "./contracts";
 import {
   isPackageStorageFailure,
-  packageErrorCodeOf,
   PACKAGE_INTERNAL_ERROR_CODES,
+  packageErrorCodeOf,
 } from "./contracts";
 
 /**
@@ -88,6 +85,7 @@ const ERROR_STATUS: Record<
   PLAN_EXPIRED: 410,
   PACKAGE_UNSUPPORTED: 422,
   RESOURCE_KIND_UNSUPPORTED: 422,
+  PACKAGE_BOT_SCOPE_UNAVAILABLE: 422,
   TEMPLATE_FIELD_REJECTED: 400,
   PACKAGE_STORAGE_UNAVAILABLE: 503,
   ADMIN_CHANNEL_UNAVAILABLE: 503,
@@ -109,6 +107,8 @@ const ERROR_MESSAGE: Record<PackageErrorCode, string> = {
   PACKAGE_UNSUPPORTED: "This package operation is not supported.",
   RESOURCE_KIND_UNSUPPORTED:
     "Only skill resources can be granted in this version.",
+  PACKAGE_BOT_SCOPE_UNAVAILABLE:
+    "This Bot's execution scope cannot be resolved for package use in this version.",
   TEMPLATE_FIELD_REJECTED:
     "The expert template carries fields this version refuses.",
   PACKAGE_STORAGE_UNAVAILABLE: "Package storage is unavailable.",

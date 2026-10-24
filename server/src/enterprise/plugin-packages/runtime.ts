@@ -1,5 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { PackageManifestV1 } from "../../../../shared/enterprise/plugin-package-contracts";
+import { enterpriseBotOwnership as botOwnershipRows } from "../../db/schema/enterprise-bot-ownership";
+import { enterpriseExpertVersions } from "../../db/schema/enterprise-expert-versions";
 import {
   enterprisePackageGrants as grantRows,
   enterprisePackageInstalls as installRows,
@@ -7,9 +9,15 @@ import {
   enterpriseRunPackagePins as pinRows,
   enterprisePackageRevisions as revisionRows,
 } from "../../db/schema/enterprise-plugin-packages";
+import { enterpriseRuns } from "../../db/schema/enterprise-runs";
+import {
+  enterpriseMemberships,
+  enterpriseWorkspaceMemberships,
+} from "../../db/schema/enterprise-tenancy";
 import { loadArtifact } from "../../plugin-packages/artifact";
 import type { PlatformScope } from "../contracts";
 import type { DataDatabase } from "../tenancy/connections";
+import { PERSONAL_BOT_ID_PREFIX } from "../tenancy/personal-bot";
 import { assertTrustedScope } from "../tenancy/store";
 import { packageError } from "./contracts";
 
@@ -47,16 +55,16 @@ import { packageError } from "./contracts";
  *   - chat run creation: WIRED — `createRunService.start` calls `prepareWithin`
  *     via `RunServiceDependencies.preparePackageRun` (production composition in
  *     `index.ts` → `createProductionRunnerComposition`).
- *   - chat runtime Skill read: NOT WIRED (disclosed deferral of brief
- *     deliverable 4) — `readPinnedSkills` below is implemented and tested, but
- *     has NO production call site: the chat skill-loading seam
- *     (`selectionForActor.loadSkills(botId)` in `index.ts`) resolves skills
- *     pre-admission from the botId alone and carries no run identity, so
- *     serving the pinned read through it requires threading (runId,
- *     attemptGeneration) through the dispatch path — deferred to the dispatch
- *     wiring ticket. `loadSkills` keeps its legacy `grantedSkills` behavior and
- *     cannot serve package resources (package skills never enter the global
- *     slug table).
+ *   - chat runtime Skill read: WIRED (T03-fix) — the durable Runner reads
+ *     `readPinnedSkills` for every admitted run (production composition in
+ *     `index.ts` passes the SAME `createPackageRuntime` instance to
+ *     `createProductionRunnerComposition` as `readPinnedSkills`); the runner
+ *     carries the run's (runId, attemptGeneration) from its own admission —
+ *     never from a client field. Non-empty pins re-resolve the executing agent
+ *     with `pinnedPackageSkills` in the resolution context, so the run's Skill
+ *     catalogue serves the pinned revision (merged after the legacy
+ *     `grantedSkills` catalogue — never a downgrade of legacy grants). A run
+ *     with no package context keeps the legacy contract untouched.
  *   - approvals resume / schedules & responsibility / memory ingestion /
  *     `plugins/routes.ts` call / `app.ts` internal call: NOT WIRED — later
  *     tickets; until wired they must not serve package resources
@@ -119,11 +127,13 @@ export interface PackageRuntime {
   ): Promise<PackageRunSnapshot>;
   /**
    * The pinned runtime Skill read: given the run identity, re-validates (read
-   * time, per spec "后续调用仍重验") that each pinned install is still enabled
-   * and the grant still active, then serves skill summaries parsed from the
-   * IMMUTABLE artifact of the pinned revision. Revoked / disabled / missing
-   * artifact → those skills disappear from the served set. Never serves
-   * connector tools and never touches the global skills slug table.
+   * time, per spec "后续调用仍重验") that the calling Bot is the run's admitted
+   * Bot, the initiator's memberships still hold, each pinned install is still
+   * enabled and the grant still active, then serves skill summaries parsed
+   * from the IMMUTABLE artifact of the pinned revision. Revoked / disabled /
+   * missing artifact / lost membership → those skills disappear from the
+   * served set. Never serves connector tools and never touches the global
+   * skills slug table.
    */
   readPinnedSkills(
     scope: PlatformScope,
@@ -275,6 +285,39 @@ export function createPackageRuntime(
         };
       }
 
+      // Run admission binding (Spec §9 / AC5): the Bot's grants make this a
+      // package run, so its trusted business ownership must resolve in THIS
+      // scope before anything is pinned. A logically-private Bot (`pbot-`,
+      // ADR 0006) has no wired execution-scope resolution in this version and
+      // is refused loudly — the identity is never copied into an ownership row
+      // and no default environment is fallen back to. An expert Bot whose
+      // ownership row drifted away (deleted/soft-deleted/moved) is refused the
+      // same way: grants without a resolvable execution scope must not start a
+      // run. The error rolls the whole run start back (the caller's
+      // transaction), so no package run ever starts unbound.
+      if (rawInput.botId.startsWith(PERSONAL_BOT_ID_PREFIX)) {
+        throw packageError("PACKAGE_BOT_SCOPE_UNAVAILABLE");
+      }
+      const [ownership] = await tx
+        .select({
+          workspaceId: botOwnershipRows.workspaceId,
+          status: botOwnershipRows.status,
+        })
+        .from(botOwnershipRows)
+        .where(
+          and(
+            eq(botOwnershipRows.tenantId, scope.tenantId),
+            eq(botOwnershipRows.agentId, rawInput.botId),
+          ),
+        )
+        .limit(1);
+      if (
+        ownership?.status !== "active" ||
+        ownership.workspaceId !== scope.workspaceId
+      ) {
+        throw packageError("PACKAGE_BOT_SCOPE_UNAVAILABLE");
+      }
+
       // The grant revision counts DISTINCT generations for (install, bot) —
       // every row, including superseded/revoked ones (slice A semantics: the
       // revision is the CAS counter that revocation also advances). The
@@ -389,6 +432,12 @@ export function createPackageRuntime(
         const artifactDigest = digestOf.get(
           `${installId}\u0000${entry.fact.installRevision}`,
         );
+        // Missing revision digest (L-2, disclosed): the install is skipped —
+        // never pinned with unverifiable content. This is fail-closed
+        // narrowing, not an authorization gap: the run simply has no package
+        // surface for that install, and AC3's "no unpinned package run" holds
+        // because a zero-pin run dispatches nothing. A hard failure here would
+        // let corrupt artifact metadata roll back every run start for the Bot.
         if (!artifactDigest) continue;
         const grantRevision = generationsByInstall.get(installId)?.size ?? 1;
         pinValues.push({
@@ -433,6 +482,77 @@ export function createPackageRuntime(
         await tx.execute(
           sql`select set_config('app.tenant_id', ${scope.tenantId}, true), set_config('app.principal_id', ${scope.principalId}, true), set_config('app.user_id', ${scope.actorId}, true), set_config('app.workspace_id', ${scope.workspaceId}, true)`,
         );
+
+        // (runId, attemptGeneration) → admitted bot binding (L-3): the pins of
+        // a run are only ever served to the Bot the run was admitted for. The
+        // run's expert version is the server-resolved agent identity written
+        // by the run writer; a caller naming another Bot is a contract
+        // violation, refused loudly. A run that does not exist in THIS scope
+        // is indistinguishable from having no pins: the same empty set.
+        const [run] = await tx
+          .select({ expertVersionRef: enterpriseRuns.expertVersionRef })
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.id, rawInput.runId),
+            ),
+          )
+          .limit(1);
+        if (run) {
+          const [admitted] = await tx
+            .select({ agentId: enterpriseExpertVersions.agentId })
+            .from(enterpriseExpertVersions)
+            .where(
+              and(
+                eq(enterpriseExpertVersions.tenantId, scope.tenantId),
+                eq(
+                  enterpriseExpertVersions.expertVersionRef,
+                  run.expertVersionRef,
+                ),
+              ),
+            )
+            .limit(1);
+          if (admitted?.agentId !== rawInput.botId) {
+            throw packageError("INPUT_INVALID");
+          }
+        }
+
+        // Membership revalidation (AC4, every read, zero cache): the run's
+        // initiator must still be an active company member (epoch pinned to
+        // the issued scope) and an active team member. A revoked principal's
+        // next read serves nothing — fail closed, no distinction leaked.
+        const [company] = await tx
+          .select({
+            status: enterpriseMemberships.status,
+            epoch: enterpriseMemberships.epoch,
+          })
+          .from(enterpriseMemberships)
+          .where(
+            and(
+              eq(enterpriseMemberships.tenantId, scope.tenantId),
+              eq(enterpriseMemberships.principalId, scope.principalId),
+            ),
+          )
+          .limit(1);
+        const [team] = await tx
+          .select({ status: enterpriseWorkspaceMemberships.status })
+          .from(enterpriseWorkspaceMemberships)
+          .where(
+            and(
+              eq(enterpriseWorkspaceMemberships.tenantId, scope.tenantId),
+              eq(enterpriseWorkspaceMemberships.workspaceId, scope.workspaceId),
+              eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
+            ),
+          )
+          .limit(1);
+        if (
+          company?.status !== "active" ||
+          company.epoch !== scope.memberEpoch ||
+          team?.status !== "active"
+        ) {
+          return [];
+        }
 
         // Read-time revalidation, per pin: the install must still be enabled.
         // The pin's revision row is immutable, so an upgraded install leaves

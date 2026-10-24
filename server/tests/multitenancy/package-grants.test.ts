@@ -1001,6 +1001,88 @@ describeDb("PKG03 package Bot grants (real restricted roles)", () => {
       expect(skillDuplicate).toContain("enterprise_package_grant_pk");
     },
   );
+
+  itDb(
+    "a logically-private Bot is refused with PACKAGE_BOT_SCOPE_UNAVAILABLE",
+    async () => {
+      const scope = await fixture.scopeFor("company-admin", "team-a1");
+      const admin = await fixture.adminContextOf("company-admin", "company-a");
+      const { createPackageGrantService } = await import(
+        "../../src/enterprise/plugin-packages/grants"
+      );
+      const grants = createPackageGrantService({
+        mutation: fixture.mutation,
+      });
+      // The `pbot-` namespace (MT059) is the logical-private Bot identity
+      // (ADR 0006): its actual execution-scope resolution is not wired in this
+      // version, so binding refuses loudly (422) — even before any ownership
+      // lookup, the identity is never copied and no default environment is
+      // fallen back to.
+      const state = await thrownMessage(
+        grants.setBotGrant(
+          scope,
+          admin,
+          {
+            installId: installA1.installId,
+            botId: `pbot-${crypto.randomUUID()}`,
+            expectedGrantRevision: null,
+            resources: [{ resourceId: SKILL_A, kind: "skill" }],
+          },
+          nextKey("pbot-bind"),
+        ),
+      );
+      expect(state).toContain("PACKAGE_BOT_SCOPE_UNAVAILABLE");
+    },
+  );
+
+  itDb(
+    "revoking a grant that never existed answers not-found, not a fabricated revision",
+    async () => {
+      const scope = await fixture.scopeFor("company-admin", "team-a1");
+      const admin = await fixture.adminContextOf("company-admin", "company-a");
+      const { createPackageGrantService } = await import(
+        "../../src/enterprise/plugin-packages/grants"
+      );
+      const grants = createPackageGrantService({
+        mutation: fixture.mutation,
+      });
+      // L-1: a (install, bot) pair with zero grant generations has the CAS
+      // count 0 — the old answer fabricated revision 1, which poisoned the
+      // caller's next expectedGrantRevision with a REVISION_CONFLICT. It is
+      // the same not-found face as any other absent grant.
+      const neverBot = await seedBot({
+        tenantId: installA1.tenantId,
+        workspaceId: installA1.workspaceId,
+        ownerPrincipalId: installA1.principalId,
+      });
+      const state = await thrownMessage(
+        grants.revokeBotGrant(
+          scope,
+          admin,
+          {
+            installId: installA1.installId,
+            botId: neverBot,
+            expectedGrantRevision: null,
+          },
+          nextKey("never-revoke"),
+        ),
+      );
+      expect(state).toContain("RESOURCE_NOT_FOUND");
+      // Round-trip sanity on a pair WITH generations: revoking a fully
+      // revoked pair stays the honest no-op whose revision IS the CAS count.
+      const first = await grants.revokeBotGrant(
+        scope,
+        admin,
+        {
+          installId: installA1.installId,
+          botId: botA1,
+          expectedGrantRevision: null,
+        },
+        nextKey("noop-revoke"),
+      );
+      expect(first.grant.revision).toBeGreaterThan(0);
+    },
+  );
 });
 
 async function revokeSeam(tx: unknown): Promise<void> {

@@ -8,7 +8,6 @@ import {
 } from "@copilotkit/runtime/v2";
 import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
-import { buildResponsibilityTurn } from "../../shared/responsibility-turn";
 import { initProcessTracing } from "@openbot/shared/trace";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
@@ -16,6 +15,7 @@ import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { serve } from "bun";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { buildResponsibilityTurn } from "../../shared/responsibility-turn";
 import { createActivityStore } from "./activity/activity";
 import {
   auditRoutineStore,
@@ -325,11 +325,11 @@ import { createUnavailableConversationRoutes } from "./enterprise/conversations/
 import { createConversationService } from "./enterprise/conversations/service";
 import { createPackageService } from "./enterprise/plugin-packages/install-service";
 import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
-import { createPackageRuntime } from "./enterprise/plugin-packages/runtime";
 import {
   createPluginPackageRoutes,
   createUnavailablePluginPackageRoutes,
 } from "./enterprise/plugin-packages/routes";
+import { createPackageRuntime } from "./enterprise/plugin-packages/runtime";
 import { createPackageReadStore } from "./enterprise/plugin-packages/store";
 import {
   createGovernedModelExecution,
@@ -377,11 +377,11 @@ import {
   type ResourceInventoryService,
 } from "./enterprise/tenancy/not-found-semantics";
 import { createOAuthStateService } from "./enterprise/tenancy/oauth-state";
-import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
 import {
   createOpenMuseVoiceMobileTenancyService,
   type OpenMuseVoiceMobileTenancyRows,
 } from "./enterprise/tenancy/openmuse-voice-mobile-tenancy";
+import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
 import {
   createPersonalShareAdminService,
   createPersonalShareDecisionService,
@@ -391,14 +391,14 @@ import {
   createPluginCatalogDecisionService,
 } from "./enterprise/tenancy/plugin-catalog";
 import {
+  applyReadinessEnforcementVerdict,
+  runReadinessEnforcement,
+} from "./enterprise/tenancy/readiness-enforcement";
+import {
   createSharedApprovalAdminService,
   createSharedApprovalService,
 } from "./enterprise/tenancy/shared-approvals";
 import { createCompanySsoScimConfigService } from "./enterprise/tenancy/sso-scim-config";
-import {
-  applyReadinessEnforcementVerdict,
-  runReadinessEnforcement,
-} from "./enterprise/tenancy/readiness-enforcement";
 import {
   applyStartupVerdict,
   runMultitenancyStartupChecks,
@@ -3183,29 +3183,38 @@ const productionModelSelection = () => ({
       : process.env.OPENAI_BASE_URL,
 });
 
-const enterpriseRunner = enterpriseCapabilities
-  ? createProductionRunnerComposition({
+/**
+ * PKG03B (Spec §9): ONE package runtime instance serves both seams — the pin
+ * write that commits with the run row, and the pinned Skill read the Runner
+ * serves for every admitted run (T03-fix wiring). Shared with the package
+ * routes' catalogue root; absent artifacts fail the READ closed per install,
+ * never the pin write.
+ */
+const packageRuntime = enterpriseCapabilities
+  ? createPackageRuntime({
       data: enterpriseCapabilities.data,
-      scopeResolver: enterpriseCapabilities.scopes,
-      conversations: enterpriseCapabilities.conversations,
-      identifyActor,
-      resolver: actorAgentResolver,
-      modelSelection: productionModelSelection,
-      modelCapabilitySecret: config.keyEncryptionKey,
-      // The governed gateway dial resolves the admitted route's api key
-      // through the same encrypted credential store every other surface uses.
-      credentialEncryptionKey: config.keyEncryptionKey,
-      credentialReader: credentialStore,
-      // PKG03B (Spec §9): package pins commit with the run row, and the
-      // pinned Skill read serves package skills from those pins. Shared with
-      // the package routes' catalogue root; absent artifacts fail the READ
-      // closed per install, never the pin write.
-      preparePackageRun: createPackageRuntime({
-        data: enterpriseCapabilities.data,
-        artifactRoot: config.pluginArtifactRoot,
-      }).prepareWithin,
+      artifactRoot: config.pluginArtifactRoot,
     })
   : undefined;
+
+const enterpriseRunner =
+  enterpriseCapabilities && packageRuntime
+    ? createProductionRunnerComposition({
+        data: enterpriseCapabilities.data,
+        scopeResolver: enterpriseCapabilities.scopes,
+        conversations: enterpriseCapabilities.conversations,
+        identifyActor,
+        resolver: actorAgentResolver,
+        modelSelection: productionModelSelection,
+        modelCapabilitySecret: config.keyEncryptionKey,
+        // The governed gateway dial resolves the admitted route's api key
+        // through the same encrypted credential store every other surface uses.
+        credentialEncryptionKey: config.keyEncryptionKey,
+        credentialReader: credentialStore,
+        preparePackageRun: packageRuntime.prepareWithin,
+        readPinnedSkills: packageRuntime.readPinnedSkills,
+      })
+    : undefined;
 
 /*
  * ME06 (#478): the durable-continuation production assembly — the review

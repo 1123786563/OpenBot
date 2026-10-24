@@ -2927,6 +2927,11 @@ export async function buildAgents(
     actorId: string;
     resolveScope: (botId: string) => Promise<unknown>;
   },
+  /**
+   * PKG03B (T03-fix): the admitted run's pinned package skills, forwarded to
+   * every built Bot. Appended last for the positional reason.
+   */
+  pinnedPackageSkills?: readonly SelectableSkill[],
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -2993,6 +2998,7 @@ export async function buildAgents(
                 resolveScope: observation.resolveScope,
               }
             : undefined,
+          pinnedPackageSkills,
         );
         // ME14 (carried ME07 review F1): the middleware is the LEGACY engine's
         // personal-memory block. A build the selector routes to the Mastra
@@ -3284,6 +3290,8 @@ async function buildAgent(
    * Absent means facts stay scope-less — the recorders submit nothing.
    */
   observation?: BuiltinRunObservationThreading,
+  /** PKG03B (T03-fix): the admitted run's pinned package skills. Appended last. */
+  pinnedPackageSkills?: readonly SelectableSkill[],
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -3311,6 +3319,14 @@ async function buildAgent(
     try {
       skills = await selection.loadSkills(agent.id);
     } catch {}
+  }
+  // PKG03B (T03-fix): the admitted run's pinned package skills join the
+  // catalogue. They are pin ∩ active grant ∩ membership summaries revalidated
+  // at every read, carried in the immutable artifact of the pinned revision;
+  // they declare no tools (dispatch is a later slice), so narrowing behavior
+  // is unchanged. Merged after — never instead of — the legacy grants.
+  if (pinnedPackageSkills?.length) {
+    skills = [...skills, ...pinnedPackageSkills];
   }
   const narrowing =
     selection &&
@@ -4122,6 +4138,13 @@ export async function resolveRuntimeAgents(
     actorId: string;
     resolveScope: (botId: string) => Promise<unknown>;
   },
+  /**
+   * PKG03B (T03-fix): the admitted run's pinned package skills, read by the
+   * Runner through `readPinnedSkills` after its own admission. Appended last
+   * for the same positional reason. Absent leaves every build on the legacy
+   * contract.
+   */
+  pinnedPackageSkills?: readonly SelectableSkill[],
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -4176,6 +4199,7 @@ export async function resolveRuntimeAgents(
     attribution,
     gatewayModelDial,
     observation,
+    pinnedPackageSkills,
   );
 }
 

@@ -93,6 +93,14 @@ import { assertTrustedScope } from "./store";
 // 视图与判定形状
 // ---------------------------------------------------------------------------
 
+/**
+ * 私有 Bot 身份的专属命名空间（MT059：agent_id 由服务端生成
+ * `pbot-<uuid>`，客户端没有身份输入面）。导出为常量供包运行时等下游消费：
+ * 逻辑私有 Bot（ADR 0006）在执行范围解析未接线前，包绑定/准入按此标记显式
+ * 拒绝（PACKAGE_BOT_SCOPE_UNAVAILABLE），不以归属行复制身份绕开约束。
+ */
+export const PERSONAL_BOT_ID_PREFIX = "pbot-";
+
 /** 私有 Bot 视图：可见主体可读的全部事实（文档/清单深冻结，缓存安全）。 */
 export interface PersonalBotView {
   readonly agentId: string;
@@ -625,7 +633,7 @@ export function createPersonalBotService(channels: {
           ...userFields,
           ...(templateDocument ?? {}),
         };
-        const agentId = `pbot-${randomUUID()}`;
+        const agentId = `${PERSONAL_BOT_ID_PREFIX}${randomUUID()}`;
         // 复合主键 (tenant, workspace, principal) 是幂等键的结构兜底：同一
         // 三元组在排他锁内不可能并发首建，约束本身挡住任何绕道路径。
         await tx.insert(enterprisePersonalBots).values({
