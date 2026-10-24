@@ -490,6 +490,73 @@ describe("scrubbing commands", () => {
     ["mysqldump -pglorbwibble appdb", "mysqldump -p[REDACTED] appdb"],
     // An uppercase -P is the attached port, not the password: only the lowercase flag reads as one.
     ["mysql -h db -P3306 -phunter2 app", "mysql -h db -P3306 -p[REDACTED] app"],
+    // A quoted word in the lead may itself hold an escaped quote (T14): the quoted arm used to close
+    // at the escape's `"`, and the dangling quote then left the scan unable to reach the flag, so
+    // the password survived whole. The double-quote arm consumes `\"` as a pair; shell single
+    // quotes have no escapes, so that arm is unchanged.
+    [
+      'docker login -u "dev\\"ops" -p hunter2 registry.example.test',
+      'docker login -u "dev\\"ops" -p [REDACTED] registry.example.test',
+    ],
+    [
+      'mysqldump -u "a\\"b" -pglorbwibble appdb',
+      'mysqldump -u "a\\"b" -p[REDACTED] appdb',
+    ],
+    [
+      'redis-cli -u "a\\"b" -a hunter2 ping',
+      'redis-cli -u "a\\"b" -a [REDACTED] ping',
+    ],
+    // sshpass's own option values sit inside the lead too (`-f`'s file, `-P`'s prompt): a quoted
+    // one with an escaped quote is the same arm with the same defect.
+    [
+      'sshpass -f "id\\"rsa" -p hunter2 ssh deploy@host.example.test',
+      'sshpass -f "id\\"rsa" -p [REDACTED] ssh deploy@host.example.test',
+    ],
+    // An unclosed quote in the lead falls back to reading the quote as an ordinary character
+    // (R8-C5): a paired quote is still swallowed whole, but a lone apostrophe in a user's name
+    // must not leave the scan dead short of the flag — the password behind the stalled scan used
+    // to survive whole.
+    ["mysql -u o'brien -phunter2 app", "mysql -u o'brien -p[REDACTED] app"],
+    [
+      'docker login -u a"b -p hunter2 registry.example.test',
+      'docker login -u a"b -p [REDACTED] registry.example.test',
+    ],
+    [
+      "redis-cli -u o'brien -a hunter2 ping",
+      "redis-cli -u o'brien -a [REDACTED] ping",
+    ],
+    // A quote segment inside the value is part of the word (R8-C5): the value reads as a run of
+    // bare characters and paired quote segments, so `a"b;c"` — a single argv word in the shell —
+    // is redacted whole instead of ending at the `;` inside the quotes. The same arm sits in
+    // every positional rule: mysql's attached form, sshpass's own options, SSHPASS=, redis-cli.
+    [
+      'docker login -p a"b;c" registry.example.test',
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    ["mysql -h db -pa'b;c' app", "mysql -h db -p[REDACTED] app"],
+    [
+      'sshpass -p a"b;c" ssh deploy@host.example.test',
+      "sshpass -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      'sshpass -f a"b;c" -p hunter2 ssh deploy@host.example.test',
+      'sshpass -f a"b;c" -p [REDACTED] ssh deploy@host.example.test',
+    ],
+    [
+      'SSHPASS=a"b;c" sshpass -e ssh deploy@host.example.test',
+      "SSHPASS=[REDACTED] sshpass -e ssh deploy@host.example.test",
+    ],
+    ['redis-cli -a a"b;c" ping', "redis-cli -a [REDACTED] ping"],
+    // An unclosed quote inside the value is read as an ordinary character too: the word keeps
+    // going past it and still ends at the next unquoted separator.
+    [
+      'docker login -p a"b;c registry.example.test',
+      "docker login -p [REDACTED];c registry.example.test",
+    ],
+    [
+      "docker login -p a'b registry.example.test",
+      "docker login -p [REDACTED] registry.example.test",
+    ],
     // A bare value ends where its command does (F04-4): in the shell's reading `;`, `|` and `&`
     // start another command, so the redaction must not swallow what follows them.
     ["docker login -p glorbwibble;whoami", "docker login -p [REDACTED];whoami"],
