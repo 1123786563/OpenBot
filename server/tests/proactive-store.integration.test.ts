@@ -21,7 +21,7 @@ import {
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-const prefix = `proactive-${randomUUID()}`;
+const prefix = `proactive-${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 const owner = `${prefix}-owner`;
 const other = `${prefix}-other`;
 const bot = `${prefix}-bot`;
