@@ -4194,10 +4194,10 @@ if (
   );
   /*
    * The judgment chain (#388 propose/list, #389 review and forget). The review seam gets
-   * the same pause and recovery gates as the recall seams and the durable revocation
-   * ledger #390 attaches to every forget; the sync-queue `work` recorder stays unwired
-   * until FIX-W2 instantiates the queue — a confirm's retain is eager, and its retry row
-   * lands when that assembly arrives (integration conflict left to the orchestrator).
+   * the same pause and recovery gates, the same durable revocation ledger #390 attaches to
+   * every forget, and the same sync-queue `work` recorder the two recall seams above use:
+   * a confirm/edit's eager retain is still best-effort, but a failed one leaves its retry
+   * row for the drain below (and `syncStatus` reports `failed`/`pending`, never `indexed`).
    */
   const hindsightJudgments = createDerivedJudgmentService(
     hindsightPreferenceRecords,
@@ -4215,7 +4215,8 @@ if (
     {
       pause: hindsightPause,
       recovery: hindsightRecovery.gate,
-      revocations: createDrizzleRevocationLedger(database),
+      work: hindsightSyncQueue,
+      revocations: hindsightRevocationLedger,
     },
   );
   const hindsightEvidence = createAnswerEvidenceService(

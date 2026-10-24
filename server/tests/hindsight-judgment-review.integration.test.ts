@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   afterAll,
   beforeAll,
@@ -21,6 +21,7 @@ import {
 import { derivedJudgmentCandidates } from "../src/db/schema/hindsight-judgments";
 import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
 import { hindsightMemoryGrants } from "../src/db/schema/hindsight-source-bound";
+import { hindsightSyncWork } from "../src/db/schema/hindsight-sync";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
@@ -128,6 +129,7 @@ let serviceConfig: {
   requestTimeoutMs: number;
 };
 let authorizations: ReturnType<typeof createDrizzleSourceBoundAuthorizations>;
+let syncQueue: ReturnType<typeof createHindsightSyncQueue>;
 
 async function bootScriptedHindsight() {
   const calls: CapturedCall[] = [];
@@ -331,7 +333,7 @@ beforeAll(async () => {
   );
   // The queue is the durable drain behind the confirm; wiring it in here is the production
   // shape (confirm records work, the queue drains it later).
-  const queue = createHindsightSyncQueue(database, serviceConfig, {
+  syncQueue = createHindsightSyncQueue(database, serviceConfig, {
     authorizations,
   });
   review = createDerivedJudgmentReviewService(
@@ -340,7 +342,7 @@ beforeAll(async () => {
     judgmentRecords,
     authorizations,
     serviceConfig,
-    { work: queue },
+    { work: syncQueue },
   );
   evidence = createAnswerEvidenceService(
     preferences,
@@ -756,6 +758,60 @@ describe("Hindsight 12 (#389) lifecycle: confirm, edit, reject, expire", () => {
     const row = await judgmentRow(id);
     expect(row?.syncedAt).not.toBeNull();
     expect(row?.syncedContentDigest).toBeTruthy();
+  });
+
+  test("a confirm records its sync work: the person's status walks pending → failed(with retry) → indexed", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(scope, `同步状态判断 ${run}`);
+    scripted.state.retainStatus = 500;
+    const failed = await review.confirmDerivedJudgment(scope, id);
+    expect(failed.remoteSynced).toBe(false);
+
+    // The confirm's retain is eager, but the seam recorded a durable work row before it: the
+    // retry path (the production drain in index.ts) has something to pick up.
+    const [recorded] = await database
+      .select()
+      .from(hindsightSyncWork)
+      .where(
+        and(
+          eq(hindsightSyncWork.tenantId, TENANT),
+          eq(hindsightSyncWork.subjectType, "derived_judgment"),
+          eq(hindsightSyncWork.subjectId, id),
+        ),
+      );
+    expect(recorded?.state).toBe("pending");
+    expect(recorded?.attempts).toBe(0);
+    expect(
+      await syncQueue.syncStatus(TENANT, "derived_judgment", id, PRINCIPAL_EMP),
+    ).toEqual({ state: "pending", attempts: 0 });
+
+    // A drain attempt against the still-failing service records the attempt and leaves the row
+    // retrying: the status answers failed + willRetry, never a silent endless pending.
+    await syncQueue.drain();
+    const failedStatus = await syncQueue.syncStatus(
+      TENANT,
+      "derived_judgment",
+      id,
+      PRINCIPAL_EMP,
+    );
+    expect(failedStatus.state).toBe("failed");
+    if (failedStatus.state === "failed") {
+      expect(failedStatus.willRetry).toBe(true);
+      expect(failedStatus.attempts).toBeGreaterThanOrEqual(1);
+      expect(failedStatus.lastError).toContain("500");
+    }
+
+    // The service comes back: the same drain indexes the judgment and the status follows.
+    scripted.state.retainStatus = 202;
+    await syncQueue.drain();
+    const indexed = await syncQueue.syncStatus(
+      TENANT,
+      "derived_judgment",
+      id,
+      PRINCIPAL_EMP,
+    );
+    expect(indexed.state).toBe("indexed");
+    if (indexed.state === "indexed") expect(indexed.syncedAt).not.toBeNull();
   });
 
   test("the queue buries pending work for a judgment rejected after its confirm", async () => {

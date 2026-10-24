@@ -14,12 +14,13 @@
  *     (`resolveHindsightBankScope`), so a forged field is not refused, it is simply never read.
  *     The personal routes carry `requireUser`; the operator routes add `requireAdmin`.
  *
- *   - THE PERSON'S SURFACES. Evidence expansion, the judgment candidate listing and the
- *     confirm/edit/reject/forget decisions, the source-or-Bot revocation, and the cleanup
- *     progress of the person's own forgotten records. The confirm/edit decisions answer to
- *     the same sensitivity gate as the /api/memory face: sensitive material is refused
- *     without the person's explicit second confirmation, and a refusal leaves the
- *     class-only audit trail. None of these makes an administrator's
+ *   - THE PERSON'S SURFACES. Evidence expansion and the time-windowed correction launched
+ *     FROM a basis (the `correct` action the preference evidence advertises), the judgment
+ *     candidate listing and the confirm/edit/reject/forget decisions, the source-or-Bot
+ *     revocation, and the cleanup progress of the person's own forgotten records. The
+ *     confirm/edit decisions answer to the same sensitivity gate as the /api/memory face:
+ *     sensitive material is refused without the person's explicit second confirmation, and
+ *     a refusal leaves the class-only audit trail. None of these makes an administrator's
  *     answer wider: an operator asking the same routes answers as themselves, and the operator
  *     surface below returns counts only.
  *
@@ -33,12 +34,12 @@
  * and is never read as evidence by itself (the leg's own probe decides).
  */
 
-import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getLogger } from "../../../shared/logger";
+import type { AuditSink } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
-import type { AuditSink } from "../audit";
 import type { PlatformScope, ScopeResolver } from "../enterprise/contracts";
 import {
   type AnswerEvidenceService,
@@ -49,8 +50,8 @@ import type { BackupRegistrationReport } from "./backup-registry";
 import { resolveHindsightBankScope } from "./bank-scope";
 import type { CleanupEvidenceService } from "./cleanup-evidence";
 import {
-  type DerivedJudgmentService,
   DerivedJudgmentRefusedError,
+  type DerivedJudgmentService,
 } from "./derived-judgments";
 import {
   DerivedJudgmentNotFoundError,
@@ -76,7 +77,12 @@ export class HindsightRouteRefusedError extends Error {
 export type HindsightRouteServices = {
   /** Trusted identity: the only thing that turns a request into a server-issued scope. */
   scopes: ScopeResolver;
-  evidence: Pick<AnswerEvidenceService, "inspectEvidence">;
+  /**
+   * The evidence chain. `inspectEvidence` expands what an answer cited; `correctEvidence` is
+   * the #387 "correct FROM the evidence" entry — the only production caller of #386's
+   * time-windowed correction, and the dispatcher that refuses the kinds without one.
+   */
+  evidence: Pick<AnswerEvidenceService, "inspectEvidence" | "correctEvidence">;
   judgments: Pick<
     DerivedJudgmentService,
     "proposeDerivedJudgmentCandidate" | "listDerivedJudgmentCandidates"
@@ -189,6 +195,29 @@ function restoreNote(input: Record<string, unknown>): {
   return { restoreKey, restoredAt };
 }
 
+/**
+ * What a person's own verify action may see of a reconcile: the counts and nothing else. The
+ * report names the host directory it read — an operator's detail, returned only on the
+ * admin-gated `/ops/backups/reconcile` — so it is dropped here rather than filtered by callers.
+ */
+export type BackupRegistrationSummary = Omit<
+  BackupRegistrationReport,
+  "directory"
+>;
+
+function registrationSummary(
+  report: BackupRegistrationReport,
+): BackupRegistrationSummary {
+  return {
+    manifests: report.manifests,
+    skipped: report.skipped,
+    registered: report.registered,
+    alreadyRegistered: report.alreadyRegistered,
+    purged: report.purged,
+    reopened: report.reopened,
+  };
+}
+
 export function createHindsightRoutes(
   deps: HindsightRouteServices & {
     requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
@@ -261,8 +290,9 @@ export function createHindsightRoutes(
    * cannot be written is logged and swallowed; the refusal is already the answer.
    */
   async function recorded<T>(
+    subjectType: "derived_judgment" | "preference",
     scope: PlatformScope,
-    judgmentId: string,
+    targetId: string,
     run: () => Promise<T>,
   ): Promise<T> {
     try {
@@ -273,10 +303,10 @@ export function createHindsightRoutes(
           .record({
             eventType: "memory.sensitivity_refused",
             targetType: "memory",
-            targetId: judgmentId,
+            targetId,
             actorUserId: scope.actorId,
             payload: {
-              subjectType: "derived_judgment",
+              subjectType,
               sensitivity: error.sensitivity,
             },
           })
@@ -328,6 +358,29 @@ export function createHindsightRoutes(
     });
   });
 
+  /*
+   * The correction the evidence entry offers (#387 AC2): a preference basis is superseded by
+   * a new confirmed fact, and the seam it reaches decides everything — the row must be the
+   * caller's own, the old window must be open, the new text answers to the sensitivity gate,
+   * and the successor is recorded for the sync queue before the next answer can read it. The
+   * other two basis kinds carry no `correct` action and answer with the refusal naming the
+   * path that does apply; a missing or foreign id answers 404 with no body detail.
+   */
+  routes.post("/evidence/:id/correction", async (context) => {
+    const scope = await scopeFor(context);
+    const input = await body(context.req.raw);
+    const id = context.req.param("id");
+    return context.json(
+      await recorded("preference", scope, id, () =>
+        deps.evidence.correctEvidence(scope, id, {
+          content: input.content,
+          effectiveFrom: input.effectiveFrom,
+          confirmSensitive: input.confirmSensitive,
+        }),
+      ),
+    );
+  });
+
   /* The review surface's data source: open candidates, newest first, complete basis each. */
   routes.get("/judgments/candidates", async (context) => {
     const scope = await scopeFor(context);
@@ -365,7 +418,7 @@ export function createHindsightRoutes(
     const id = context.req.param("id");
     const input = await confirmationInput(context.req.raw);
     return context.json(
-      await recorded(scope, id, () =>
+      await recorded("derived_judgment", scope, id, () =>
         deps.review.confirmDerivedJudgment(scope, id, input),
       ),
     );
@@ -377,7 +430,7 @@ export function createHindsightRoutes(
     const input = await body(context.req.raw);
     const id = context.req.param("id");
     return context.json(
-      await recorded(scope, id, () =>
+      await recorded("derived_judgment", scope, id, () =>
         deps.review.editDerivedJudgment(scope, id, {
           content: input.content,
           confirmSensitive: input.confirmSensitive,
@@ -420,17 +473,38 @@ export function createHindsightRoutes(
   /*
    * The person's own cleanup progress: the three legs (active data, finished payloads,
    * controlled backups) with what was actually observed, and the completion claim only when
-   * all three hold. A reconcile of the backup manifests runs first when the deployment
-   * declared their directory, so the backup leg reads what the backup job actually wrote; a
-   * reconciliation failure is logged and the leg still answers from the registry it holds.
+   * all three hold. A READ, in the strict sense (RA2-5): it writes nothing — no reconcile, no
+   * document probe — registers nothing, and returns no host path. The active-data leg answers
+   * from the observations the verify action recorded (`observedAt` says when); the payload
+   * leg's one network call is a read-only query. The backup registry is read as it stands.
    */
   routes.get("/cleanup", async (context) => {
     const scope = await scopeFor(context);
     const identity = resolveHindsightBankScope(scope);
-    let backupRegistration: BackupRegistrationReport | null = null;
+    const status = await deps.cleanup.cleanupEvidenceStatus({
+      tenantId: identity.tenantId,
+      principalId: identity.principalId,
+      operationRetentionDays: deps.operationRetentionDays(),
+      reprobe: false,
+    });
+    return context.json(status);
+  });
+
+  /*
+   * The explicit actions behind that picture: re-probe the person's own confirmed deletions,
+   * record what each probe found, and — the one place this family touches the backup
+   * registry — reconcile the backup job's manifests so the backup leg reads what the job
+   * actually wrote. Both are idempotent. A reconciliation failure is logged and the counts
+   * come back null; the probe answers regardless. The report is reduced to counts, so the
+   * manifest directory's host path never reaches a person's response.
+   */
+  routes.post("/cleanup/verify", async (context) => {
+    const scope = await scopeFor(context);
+    const identity = resolveHindsightBankScope(scope);
+    let backupRegistration: BackupRegistrationSummary | null = null;
     if (deps.reconcileBackups) {
       try {
-        backupRegistration = await deps.reconcileBackups();
+        backupRegistration = registrationSummary(await deps.reconcileBackups());
       } catch (error) {
         log.warn(
           {
@@ -442,23 +516,12 @@ export function createHindsightRoutes(
         );
       }
     }
-    const status = await deps.cleanup.cleanupEvidenceStatus({
-      tenantId: identity.tenantId,
-      principalId: identity.principalId,
-      operationRetentionDays: deps.operationRetentionDays(),
-    });
-    return context.json({ ...status, backupRegistration });
-  });
-
-  /* Re-probe the person's own confirmed deletions and record what each probe found. */
-  routes.post("/cleanup/verify", async (context) => {
-    const scope = await scopeFor(context);
-    const identity = resolveHindsightBankScope(scope);
     return context.json({
       outcomes: await deps.cleanup.verifyActiveDataCleanup({
         tenantId: identity.tenantId,
         principalId: identity.principalId,
       }),
+      backupRegistration,
     });
   });
 

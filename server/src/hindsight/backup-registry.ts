@@ -17,6 +17,12 @@
  *     that the copy was deleted under the declared window, and it is recorded as the purge
  *     evidence. A registered copy whose archive is gone AND whose manifest is gone is not
  *     provable either way — it stays outstanding rather than being guessed cleared.
+ *     The record is re-decided on EVERY pass, never latched: a copy an earlier pass proved
+ *     purged and a later pass finds present again (a re-mounted volume, an archive restored
+ *     from cold storage) has that proof withdrawn, and the leg goes back to outstanding.
+ *     What this cannot distinguish is an archive moved somewhere else while its manifest
+ *     stayed here — the same fingerprint as a real sweep deletion — which is why the declared
+ *     directory must be the ONLY place archives live or leave from (deploy/hindsight/README.md).
  *
  * The manifest is a plain JSON object, `{"backupId": "hindsight-<stamp>.sql.gz",
  * "takenAt": "<ISO 8601>"}`, one file per archive, written atomically after the archive passed
@@ -25,7 +31,7 @@
  * registry exactly as it was before this module existed.
  */
 
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Database } from "../db/client";
 import { hindsightControlledBackups } from "../db/schema/hindsight-restore";
@@ -51,6 +57,11 @@ export type BackupRegistrationReport = {
   alreadyRegistered: number;
   /** Registered copies this pass could prove deleted: manifest still present, archive gone. */
   purged: number;
+  /**
+   * Copies an earlier pass recorded as purged whose archive this pass found present again;
+   * their purge evidence was withdrawn and they are outstanding again.
+   */
+  reopened: number;
 };
 
 /**
@@ -155,7 +166,9 @@ export async function reconcileControlledBackups(input: {
   manifestDirectory: string;
   registry: Pick<
     CleanupEvidenceService,
-    "recordControlledBackup" | "noteControlledBackupPurged"
+    | "recordControlledBackup"
+    | "noteControlledBackupPurged"
+    | "withdrawControlledBackupPurged"
   >;
   now?: () => Date;
 }): Promise<BackupRegistrationReport> {
@@ -176,20 +189,35 @@ export async function reconcileControlledBackups(input: {
   }
 
   let purged = 0;
+  let reopened = 0;
   const registeredRows = await input.database
     .select()
     .from(hindsightControlledBackups);
-  const purgedAt = now();
+  const observedAt = now();
   for (const row of registeredRows) {
-    if (row.purgedAt !== null) continue;
     // Only a copy whose manifest THIS pass read can be judged: the manifest is the registration
-    // receipt, and its survival beside a missing archive is the retention sweep's fingerprint.
+    // receipt, and its survival beside the archive is what the sweep leaves behind. A row whose
+    // manifest is gone is unprovable either way and keeps whatever it holds.
     if (!byId.has(row.backupId)) continue;
-    if (await archivePresent(input.manifestDirectory, row.backupId)) continue;
+    if (await archivePresent(input.manifestDirectory, row.backupId)) {
+      // The copy is where the deployment declared it. If an earlier pass recorded it purged,
+      // that observation is contradicted NOW — the record goes back to outstanding instead of
+      // latching, so a re-mounted volume or a copy restored from cold storage cannot keep a
+      // false "cleared" standing.
+      if (row.purgedAt === null) continue;
+      const { withdrawn } = await input.registry.withdrawControlledBackupPurged(
+        {
+          backupId: row.backupId,
+        },
+      );
+      if (withdrawn) reopened++;
+      continue;
+    }
+    if (row.purgedAt !== null) continue;
     const { noted } = await input.registry.noteControlledBackupPurged({
       backupId: row.backupId,
-      purgedAt,
-      evidence: `archive absent from the controlled-backup directory while its manifest remains; the retention sweep deleted the copy (reconciled ${purgedAt.toISOString()})`,
+      purgedAt: observedAt,
+      evidence: `archive absent from the controlled-backup directory while its manifest remains; the retention sweep deleted the copy (reconciled ${observedAt.toISOString()})`,
     });
     if (noted) purged++;
   }
@@ -201,5 +229,6 @@ export async function reconcileControlledBackups(input: {
     registered,
     alreadyRegistered,
     purged,
+    reopened,
   };
 }
