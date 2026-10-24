@@ -5,11 +5,11 @@ function spreadOptional<K extends string, V>(
   return value === undefined ? {} : ({ [key]: value } as { [_ in K]?: V });
 }
 
+import { createRequire } from "node:module";
 // Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
 // without putting it in this module's eager import graph. Node has no such global, so the same
 // laziness needs a handle.
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
  * for durable threads and memory. Configuration the product cannot function without belongs at the
@@ -35,6 +35,10 @@ import {
   type TranscriptionConfig,
   transcriptionConfig,
 } from "./dictation/config";
+import {
+  parseMarketplaceEnabledFlag,
+  parsePilotWorkspaces,
+} from "./enterprise/plugin-packages/marketplace-gate";
 import {
   type ConversionRate,
   parseConversionRate,
@@ -298,6 +302,24 @@ export type DeploymentConfig = {
    * the startup path always read, so default behavior is unchanged.
    */
   pluginMarketplaceIndexPath: string;
+  /**
+   * PKG11 (#470, Spec §12.4): the package-marketplace entry switch, named by
+   * `OPENBOT_PACKAGE_MARKETPLACE_ENABLED`. Default false — install/upgrade
+   * plans, apply and new Bot grants answer 503 until a deployment opts in,
+   * while browse, reads and the governance of installs that already exist
+   * (pins, dispatch revalidation, revoke, lifecycle) keep working.
+   */
+  packageMarketplaceEnabled: boolean;
+  /**
+   * Exact (tenantId, workspaceId) pilot tuples, named by
+   * `OPENBOT_PACKAGE_PILOT_WORKSPACES` as a JSON array. No wildcards and no
+   * defaults: while the entry is enabled, only a named team may write, and a
+   * malformed value refuses startup rather than guessing an allowlist.
+   */
+  packagePilotWorkspaces: ReadonlyArray<{
+    tenantId: string;
+    workspaceId: string;
+  }>;
   keyEncryptionKey: string;
   /**
    * Authentication for the bundled Bot and/or the installed picked harness.
@@ -3035,6 +3057,13 @@ export function loadConfig(
     pluginMarketplaceIndexPath:
       optional(environment, "OPENBOT_PLUGIN_MARKETPLACE_INDEX") ??
       fileURLToPath(new URL("../../plugins/marketplace.json", import.meta.url)),
+    // PKG11: strict parse — an unparseable/illegal pilot list fails startup.
+    packageMarketplaceEnabled: parseMarketplaceEnabledFlag(
+      optional(environment, "OPENBOT_PACKAGE_MARKETPLACE_ENABLED"),
+    ),
+    packagePilotWorkspaces: parsePilotWorkspaces(
+      optional(environment, "OPENBOT_PACKAGE_PILOT_WORKSPACES"),
+    ),
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),
@@ -3156,9 +3185,7 @@ function multitenancyConfig(environment: Environment): {
     enabled,
     ...(inventoryPath ? { inventoryPath } : {}),
     ...(waiversPath ? { waiversPath } : {}),
-    ...(quarantineDefaultWorkspaceId
-      ? { quarantineDefaultWorkspaceId }
-      : {}),
+    ...(quarantineDefaultWorkspaceId ? { quarantineDefaultWorkspaceId } : {}),
   };
 }
 

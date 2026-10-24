@@ -19,6 +19,7 @@ import type {
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import type { PackageDispatchService } from "../src/enterprise/plugin-packages/dispatch";
+import { createMarketplaceGate } from "../src/enterprise/plugin-packages/marketplace-gate";
 import { createPluginPackageRoutes } from "../src/enterprise/plugin-packages/routes";
 import type {
   PackageCatalogue,
@@ -141,6 +142,10 @@ function routes(dispatches: PackageDispatchService | null): {
   app.route(
     "/api/enterprise/plugin-packages",
     createPluginPackageRoutes({
+      gate: createMarketplaceGate({
+        enabled: true,
+        pilotWorkspaces: [{ tenantId: "tenant-1", workspaceId: "workspace-1" }],
+      }),
       catalogue: fakeCatalogue(),
       service: null,
       dispatches: () => dispatches,

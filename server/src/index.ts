@@ -334,6 +334,7 @@ import {
   packageRunForBinding,
 } from "./enterprise/plugin-packages/entrypoints";
 import { createPackageService } from "./enterprise/plugin-packages/install-service";
+import { createMarketplaceGate } from "./enterprise/plugin-packages/marketplace-gate";
 import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
 import {
   createPluginPackageRoutes,
@@ -1476,7 +1477,28 @@ const pluginPackageRoutes = await (async () => {
         selectTenant: (request) => request.headers.get("x-openbot-tenant"),
       },
     );
+    /*
+     * PKG11 (#470, Spec §12.4): the deployment entry switch, built from the
+     * strictly-parsed config (an illegal pilot list refused startup earlier).
+     * Default off; the log line makes "why do plan/apply 503?" answerable
+     * from the boot record — enabled, and exactly which teams are pilots.
+     */
+    const packageGate = createMarketplaceGate({
+      enabled: config.packageMarketplaceEnabled,
+      pilotWorkspaces: config.packagePilotWorkspaces,
+    });
+    if (packageGate.enabled) {
+      log.info(
+        {
+          type: "plugin-package-marketplace-entry",
+          enabled: true,
+          pilotWorkspaces: packageGate.pilotWorkspaces,
+        },
+        "plugin-package-marketplace-entry",
+      );
+    }
     return createPluginPackageRoutes({
+      gate: packageGate,
       catalogue,
       service: createPackageService({
         catalogue,

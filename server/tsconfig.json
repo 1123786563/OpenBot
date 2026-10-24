@@ -52,6 +52,15 @@
     "tests/support/enterprise-database.ts",
     "tests/types",
     "../shared/enterprise",
-    "../scripts/composio-smoke.ts"
+    "../scripts/composio-smoke.ts",
+    // PKG11 (#470): the plugin-package CLI tools (export-builtin, migrate-legacy,
+    // migrate-legacy-apply) import `server/src` directly and ship as operator
+    // tooling, so they get the same direct type gate. The directory's other
+    // residents (build/index-file/publish/withdraw) are already import-only
+    // modules with no top-level await; if that ever changes, keep THIS entry
+    // file-scoped like composio-smoke above.
+    "../scripts/plugin-packages/export-builtin.ts",
+    "../scripts/plugin-packages/migrate-legacy.ts",
+    "../scripts/plugin-packages/migrate-legacy-apply.ts"
   ]
 }
