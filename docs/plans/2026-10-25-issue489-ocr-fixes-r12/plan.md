@@ -37,3 +37,11 @@ R13（r13-adjudication.md）3 有效 medium：
 **T26（F13-1+F13-3，server 双项）**：①`gateway.ts` 守卫覆盖 anthropic 直连——anthropic 臂经 `anthropicMessagesUrl` 同一 resolver 产物 + `new Request(url).url` 规范化比对直连 `https://api.anthropic.com/v1/messages` 常量，命中且点分工具名 ⇒ 400 `MASTRA_TOOL_NAME_INVALID`（同词表同文案族，provider 名适配）；`if (anthropic || !tools) return undefined` 拆为按 provider 分流；tools.ts:110-113 注释补记 anthropic 边缘裁决。②`server/src/computer/schema.ts` SignInCodeResult.url 改可选+注释（与 SignInFillResult 同契约）。测试：anthropic 直连+点分→拒绝、anthropic 网关→透传、openai 原三组零回退。门：seam 套件 49+新 全绿、adapter 29/29、enterprise 108/108、tsc 恰 3 BASE、biome。owned=gateway.ts+model-gateway.test.ts+schema.ts+tools.ts（注释行）。
 
 流程：并行→R1→串行集成→F14 收官门→R14 全量（新最终 HEAD 唯一一次）→f01-r12→V03/C01。
+
+## 附录三：F15 波 T27/T28（R14 终裁追加，2026-10-25）
+
+**T27（F14-1）**：scrub.ts 五规则引号/裸值臂提取共享常量（QUOTE_ARMS/BARE_VALUE 模板插值，沿 SECRET_NAME 的 new RegExp 先例）——**行为零变化重构**：regex 源串插值前后逐条 regex.toString 比对全等；全族零回归（enterprise 108/108、otel 4/4、T9/T14/R2/T18/T20 各对抗族抽验、ReDoS 计时门双引擎）。owned=scrub.ts+enterprise-controls.test.ts（如需补插值等价用例）。
+
+**T28（F14-2）**：fillSignInCode 跨源第二码步——markCodeField 读取与 origin 分离，跨源仍见码框 ⇒ 接管答复（"…to ask for another verification code. Take over…"）；上报 codeFieldVisible origin 收窄；同源语义/2s 宽限/T19/T23 守卫零触碰。新真实浏览器用例（提交码后跨源+仍见码框→接管）。owned=sign-in.ts+sign-in.test.ts。
+
+流程：并行→R1→串行集成→F15 收官门→R15 全量→f01-r12→V03/C01。
