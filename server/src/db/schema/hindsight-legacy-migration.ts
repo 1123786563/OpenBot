@@ -20,8 +20,11 @@ import { enterpriseMemberships, enterpriseTenants } from "./enterprise-tenancy";
 // 存储层折叠：同 old id 再来一次命中本表唯一键，不产生第二条活跃内容。
 //
 // hindsight_migration_quarantine：受控隔离清单。公司归属不可证明的旧记录（该用户无
-// principal、无 active membership、或同时属于多家公司）各记一行——只存 old id、owner
-// 与原因，不复制任何内容文本；绝不以全局用户 ID 猜测租户。
+// principal、无 active membership、或同时属于多家公司）各记一行；权限形状不可在新域
+// 复现的旧记录同样各记一行（bot 行缺 agent id、import 行缺 source id、formed_by 取值
+// 在三种映射形状之外、bot 行带 source_ref 收窄——旧侧「形成它的 Bot 仍持有来源应用才
+// 可召回」的子句在新域没有承载列）。只存 old id、owner 与原因，不复制任何内容文本；
+// 绝不以全局用户 ID 猜测租户，也绝不静默改类放宽可见面。
 //
 // hindsight_migration_runs：一次迁移的游标与计数。每处理一条旧记录即推进
 // cursor_old_id 并刷新计数（持久断点），失败中断后从游标继续，不重复活跃内容。
@@ -75,7 +78,13 @@ export const hindsightMigrationQuarantine = pgTable(
     ownerUserId: text("owner_user_id").notNull(),
     /** Why attribution could not be proven — the reason, never the content. */
     reason: text("reason")
-      .$type<"no-principal" | "no-active-membership" | "ambiguous-company">()
+      .$type<
+        | "no-principal"
+        | "no-active-membership"
+        | "ambiguous-company"
+        | "unmappable-permission-shape"
+        | "source-ref-narrowing"
+      >()
       .notNull(),
     /** When the row was quarantined; a later re-scan refreshes, never duplicates. */
     quarantinedAt: timestamp("quarantined_at", { withTimezone: true })
@@ -86,7 +95,7 @@ export const hindsightMigrationQuarantine = pgTable(
   (table) => [
     check(
       "hindsight_migration_quarantine_reason",
-      sql`${table.reason} in ('no-principal', 'no-active-membership', 'ambiguous-company')`,
+      sql`${table.reason} in ('no-principal', 'no-active-membership', 'ambiguous-company', 'unmappable-permission-shape', 'source-ref-narrowing')`,
     ),
     index("hindsight_migration_quarantine_owner_idx").on(table.ownerUserId),
   ],

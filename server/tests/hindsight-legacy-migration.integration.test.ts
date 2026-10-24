@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
@@ -74,6 +74,11 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * 4. Reconciliation and sample recall: the before/after counts balance, the migrated rows
  *    enqueue sync work the queue drains, and a migrated preference recalls through the real
  *    seam — indexed (scripted hit) and degraded (SQL fallback with the service stalled).
+ * 5. Permission shapes the new domain cannot reproduce (RG6-1): a Bot row that lost its agent
+ *    id, an import row without its source id, a formed_by value outside the mapped shapes, and
+ *    a Bot row whose source_ref narrowed recall to the forming Bot's still-held source app are
+ *    each quarantined with their own reason — never silently reclassified as a general
+ *    preference every authorized Bot of the person may read.
  */
 
 const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -239,6 +244,7 @@ async function seedOld(
     formedBy?: "person" | "import" | "bot" | "intelligence";
     formedByAgentId?: string | null;
     sourceId?: string | null;
+    sourceRef?: string | null;
     enabled?: boolean;
     deletedAt?: Date | null;
   },
@@ -259,7 +265,7 @@ async function seedOld(
     formedBy: input.formedBy ?? "person",
     formedByAgentId: input.formedByAgentId ?? null,
     sourceApp: null,
-    sourceRef: null,
+    sourceRef: input.sourceRef ?? null,
     sourceLink: null,
     observedAt: null,
     intelligenceMemoryId: null,
@@ -630,5 +636,164 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     expect(
       degraded.memories.map((memory) => memory.content),
     ).toContain(`mig-person-fact-${run}`);
+  });
+  test("RG6-1: out-of-shape and source-ref-narrowed rows quarantine instead of widening their audience", async () => {
+    // A dedicated owner so the run below sees this cohort alone.
+    const USER_SHAPE = `usr_shape-${run}`;
+    const PRINCIPAL_SHAPE = `prin_shape-${run}`;
+    const SOURCE_REF = `srv-proactive-${run}/messages/42`;
+    await database.insert(users).values({
+      id: USER_SHAPE,
+      email: `shape-${run}@example.invalid`,
+    });
+    await database.insert(enterprisePrincipals).values({
+      id: PRINCIPAL_SHAPE,
+      userId: USER_SHAPE,
+    });
+    await database.insert(enterpriseMemberships).values({
+      tenantId: TENANT_A,
+      principalId: PRINCIPAL_SHAPE,
+      role: "member",
+    });
+
+    // The two well-formed controls of the same cohort — they must still migrate.
+    const personControl = await seedOld(USER_SHAPE, {
+      content: `mig-shape-person-${run}`,
+    });
+    const botControl = await seedOld(USER_SHAPE, {
+      content: `mig-shape-bot-${run}`,
+      formedBy: "bot",
+      formedByAgentId: OLD_BOT,
+    });
+    // The shapes the new tables cannot reproduce.
+    const narrowedBot = await seedOld(USER_SHAPE, {
+      content: `mig-shape-narrowed-${run}`,
+      formedBy: "bot",
+      formedByAgentId: OLD_BOT,
+      // The old rule additionally required the forming Bot to still hold this source app
+      // (split_part(source_ref, '/', 1)); the new domain has no column to carry it.
+      sourceRef: SOURCE_REF,
+    });
+    const agentlessBot = await seedOld(USER_SHAPE, {
+      content: `mig-shape-agentless-${run}`,
+      formedBy: "bot",
+    });
+    const sourcelessImport = await seedOld(USER_SHAPE, {
+      content: `mig-shape-sourceless-${run}`,
+      formedBy: "import",
+    });
+    // formed_by has no CHECK in the old table: history may hold a value outside the three
+    // mapped shapes. Written the way history wrote it, past the typed insert.
+    const unknownShape = `old_${run}_unknown`;
+    await database.execute(sql`
+      insert into personal_memories
+        (id, owner_user_id, content, provenance, enabled, review_state, formed_by, created_at, updated_at)
+      values
+        (${unknownShape}, ${USER_SHAPE}, ${`mig-shape-unknown-${run}`}, ${`legacy-${run}`}, true, 'confirmed', 'intelligence', now(), now())
+    `);
+
+    const report = await migrator.run({ owners: [USER_SHAPE] });
+    expect(report.completed).toBe(true);
+    expect(report.migrated).toBe(2);
+    expect(report.quarantined).toBe(4);
+
+    // Each held-back row lands in the isolation list with its own reason.
+    const quarantinedIds = [
+      narrowedBot,
+      agentlessBot,
+      sourcelessImport,
+      unknownShape,
+    ];
+    const quarantine = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(
+        inArray(hindsightMigrationQuarantine.oldRecordId, quarantinedIds),
+      );
+    const byOld = new Map(quarantine.map((row) => [row.oldRecordId, row]));
+    expect(byOld.get(narrowedBot)?.reason).toBe("source-ref-narrowing");
+    expect(byOld.get(agentlessBot)?.reason).toBe("unmappable-permission-shape");
+    expect(byOld.get(sourcelessImport)?.reason).toBe(
+      "unmappable-permission-shape",
+    );
+    expect(byOld.get(unknownShape)?.reason).toBe(
+      "unmappable-permission-shape",
+    );
+    for (const id of quarantinedIds) {
+      expect(Object.keys(byOld.get(id) ?? {})).not.toContain("content");
+    }
+
+    // None of them reached the new domain — no map row, no preference, no source-bound row —
+    // so the audience each old restriction named was never widened.
+    const mapped = await database
+      .select()
+      .from(hindsightMigrationMap)
+      .where(inArray(hindsightMigrationMap.oldRecordId, quarantinedIds));
+    expect(mapped).toEqual([]);
+    const preferencesOfTheirs = await database
+      .select()
+      .from(genericPersonalPreferences)
+      .where(
+        and(
+          eq(genericPersonalPreferences.tenantId, TENANT_A),
+          inArray(genericPersonalPreferences.id, quarantinedIds),
+        ),
+      );
+    expect(preferencesOfTheirs).toEqual([]);
+    const boundOfTheirs = await database
+      .select()
+      .from(sourceBoundMemories)
+      .where(
+        and(
+          eq(sourceBoundMemories.tenantId, TENANT_A),
+          inArray(sourceBoundMemories.id, quarantinedIds),
+        ),
+      );
+    expect(boundOfTheirs).toEqual([]);
+
+    // The source-ref row keeps its original reference where it always lived — the old table —
+    // and the isolation row points at it by old id, so nothing had to be copied to hold it.
+    const [narrowedOld] = await database
+      .select()
+      .from(personalMemories)
+      .where(eq(personalMemories.id, narrowedBot));
+    expect(narrowedOld.sourceRef).toBe(SOURCE_REF);
+    expect(narrowedOld.enabled).toBe(true);
+    expect(narrowedOld.reviewState).toBe("confirmed");
+
+    // The controls migrated: the person row is a general preference, the Bot row a Bot-bound
+    // source-bound memory — the same run, the same cohort, no shape smuggled into either.
+    const [personRow] = await database
+      .select()
+      .from(genericPersonalPreferences)
+      .where(
+        and(
+          eq(genericPersonalPreferences.tenantId, TENANT_A),
+          eq(genericPersonalPreferences.id, personControl),
+        ),
+      );
+    expect(personRow.content).toBe(`mig-shape-person-${run}`);
+    const [botRow] = await database
+      .select()
+      .from(sourceBoundMemories)
+      .where(
+        and(
+          eq(sourceBoundMemories.tenantId, TENANT_A),
+          eq(sourceBoundMemories.id, botControl),
+        ),
+      );
+    expect(botRow.restriction).toBe("bot");
+    expect(botRow.agentId).toBe(OLD_BOT);
+
+    // Reconciliation answers with the new reasons, and still balances: the six confirmed-alive
+    // rows of this cohort are two migrations and four quarantines, not fewer.
+    const reconciled = await migrator.reconcile({ owners: [USER_SHAPE] });
+    expect(reconciled.oldSide.confirmedAlive).toBe(6);
+    expect(reconciled.newSide.migrated).toBe(2);
+    expect(reconciled.quarantined.byReason["source-ref-narrowing"]).toBe(1);
+    expect(
+      reconciled.quarantined.byReason["unmappable-permission-shape"],
+    ).toBe(3);
+    expect(reconciled.balanced).toBe(true);
   });
 });

@@ -25,6 +25,11 @@
  *     so the restriction has an authorization to check; import rows (`sourceId` set) become
  *     source-restricted rows, and the old source's `enabled` flag seeds the person's source
  *     grant the same way. Both seedings are revocable later through #390's revocation.
+ *     A shape the new tables cannot reproduce is never silently reclassified into a wider
+ *     audience: a Bot row without its agent id, an import row without its source id, a
+ *     formed_by value outside the three mapped shapes, and a Bot row whose source_ref
+ *     narrowed recall to the forming Bot's still-held source app are each quarantined with
+ *     their own reason — the row stays in the old table, reference intact, unmigrated.
  *   - HOW it resumes: the run row's cursor advances with every processed old record, so a
  *     failed run resumes strictly after it; the new record id IS the old id (globally unique
  *     in the old table, tenant-pinned in the new one), so re-processing an already-migrated
@@ -59,11 +64,17 @@ import { preferenceDocumentIdFor } from "./preference-recall";
 import { sourceBoundDocumentIdFor } from "./scoped-recall";
 import type { HindsightSyncWorkRecorder, SyncSubjectType } from "./sync-queue";
 
-/** Why one old record could not be proven to belong to a company. */
+/**
+ * Why one old record could not be placed in the new domain: its company attribution could not
+ * be proven, or its permission shape is one the new tables cannot reproduce without widening
+ * who may see it.
+ */
 export type QuarantineReason =
   | "no-principal"
   | "no-active-membership"
-  | "ambiguous-company";
+  | "ambiguous-company"
+  | "unmappable-permission-shape"
+  | "source-ref-narrowing";
 
 /** What one run pass did; the counters mirror the run row's durable columns. */
 export type MigrationRunReport = {
@@ -446,20 +457,49 @@ export function createLegacyMemoryMigrator(
     if (mapped) return { bucket: "already", migrated: false };
     const attribution = await attributionOf(old.ownerUserId);
     if (!attribution.proven) {
-      await database
-        .insert(hindsightMigrationQuarantine)
-        .values({
-          oldRecordId: old.id,
-          ownerUserId: old.ownerUserId,
-          reason: attribution.reason,
-          quarantinedAt: now(),
-          runId,
-        })
-        .onConflictDoNothing();
+      await quarantineOne(old, attribution.reason, runId);
       return { bucket: "quarantined", migrated: false };
     }
     const { tenantId, principalId } = attribution;
     const reviewedState = old.reviewState === "edited" ? "edited" : "confirmed";
+
+    // The permission shape, decided BEFORE any mapping: a record whose old-side restriction
+    // the new tables cannot reproduce is quarantined, never reclassified. The fallback this
+    // replaces let anything that missed the two restricted shapes silently become a general
+    // preference — widening a Bot-restricted or source-restricted row to every authorized
+    // Bot of the person. Historical rows cannot be trusted to hold the shape the branches
+    // below name (the old table has no CHECK on formed_by, and a 'bot' row may lack its
+    // agent id), so each branch is earned explicitly:
+    //   - a Bot row needs its agent id (the restriction has no target without it);
+    //   - a Bot row must carry no source_ref: the old rule additionally narrowed recall to
+    //     "only while the forming Bot still holds the source app"
+    //     (split_part(source_ref, '/', 1) ∈ the Bot's held server ids), and the new domain
+    //     has no column to carry that clause — the row stays in the old table, reference
+    //     intact, rather than migrate into a wider audience;
+    //   - an import row needs its source id (its restriction IS the source);
+    //   - only a person-formed row reaches the general preference the mapping names.
+    if (old.formedBy === "bot" && !old.formedByAgentId) {
+      await quarantineOne(old, "unmappable-permission-shape", runId);
+      return { bucket: "quarantined", migrated: false };
+    }
+    if (old.formedBy === "bot" && old.sourceRef !== null) {
+      await quarantineOne(old, "source-ref-narrowing", runId);
+      return { bucket: "quarantined", migrated: false };
+    }
+    if (old.formedBy === "import" && !old.sourceId) {
+      await quarantineOne(old, "unmappable-permission-shape", runId);
+      return { bucket: "quarantined", migrated: false };
+    }
+    if (
+      old.formedBy !== "person" &&
+      old.formedBy !== "bot" &&
+      old.formedBy !== "import"
+    ) {
+      // formed_by has no CHECK in the old table; a historical row may hold a value this
+      // migration has no mapping for. Not mapping it is the only honest answer.
+      await quarantineOne(old, "unmappable-permission-shape", runId);
+      return { bucket: "quarantined", migrated: false };
+    }
 
     if (old.formedBy === "bot" && old.formedByAgentId) {
       // The old rule: a Bot-formed fact is the forming Bot's alone — exactly the Bot bank's
@@ -609,6 +649,25 @@ export function createLegacyMemoryMigrator(
       });
     }
     return { bucket: "migrated", migrated: true };
+  }
+
+  /** Hold one old record back: the isolation list keeps the old id, owner and reason —
+   * content never, and the old row itself is left exactly as it was. */
+  async function quarantineOne(
+    old: typeof personalMemories.$inferSelect,
+    reason: QuarantineReason,
+    runId: string,
+  ): Promise<void> {
+    await database
+      .insert(hindsightMigrationQuarantine)
+      .values({
+        oldRecordId: old.id,
+        ownerUserId: old.ownerUserId,
+        reason,
+        quarantinedAt: now(),
+        runId,
+      })
+      .onConflictDoNothing();
   }
 
   async function recordMap(
