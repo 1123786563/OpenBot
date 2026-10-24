@@ -86,10 +86,11 @@ const OPEN: readonly SignInStatus[] = [
 const FILLING_LEASE_MS = 120_000;
 
 /**
- * How many refused verification codes one request may carry to the site. Every refused code is a
- * real browser submission to the site that sent it, so a request that has survived this many
- * refusals closes as failed: the code step is not a guessing game the Bot plays against a site,
- * and a person who is still stuck can take over the browser or start a new request.
+ * How many refused verification codes one request may carry to the site. Every one it counts is
+ * a submission the site's page really received and turned away — an attempt that completed no
+ * submission counts nothing — so a request that has survived this many refusals closes as
+ * failed: the code step is not a guessing game the Bot plays against a site, and a person who is
+ * still stuck can take over the browser or start a new request.
  */
 const MAX_CODE_ATTEMPTS = 5;
 
@@ -466,11 +467,13 @@ export function createSignInService(deps: SignInServiceDependencies) {
       );
     }
     if (failure) {
-      // A refusal the computer reported is one the browser really carried: the site's page saw the
-      // code and turned it away, or could not finish typing it. A delivery that provably never
-      // reached the computer (`failure` set by the catch above) is not a submission the site
-      // ever saw, and is not what the cap is for — it counts nothing.
-      if (result !== undefined) {
+      // The cap is for guesses the site actually received, and only a submission the computer
+      // carried through is one: `submitted: true` is the site's page taking the code and turning
+      // it away. Every other failure counts nothing — an answer that completed no submission (the
+      // browser had left the origin, the page had lost its code field, the typing itself failed:
+      // the site never saw the code), and a delivery that provably never reached the computer
+      // (`failure` set by the catch above) is no submission either.
+      if (result?.submitted) {
         wrongCodes.set(id, (wrongCodes.get(id) ?? 0) + 1);
         if ((wrongCodes.get(id) ?? 0) >= MAX_CODE_ATTEMPTS) {
           /*
@@ -505,7 +508,9 @@ export function createSignInService(deps: SignInServiceDependencies) {
           }
           // The row was closed under the attempt — a concurrent close, a lease that expired. The
           // refusal below keeps its superseded row, exactly as for any other refusal, and the
-          // request is final either way: no further code exists to count.
+          // request is final either way: no further code exists to count. The tally this attempt
+          // just wrote dies here with the row it arrived too late to close.
+          wrongCodes.delete(id);
         }
       }
       const reopened = await store.transition(owner, id, ["filling"], {
@@ -514,6 +519,10 @@ export function createSignInService(deps: SignInServiceDependencies) {
         outcome: failure,
         ...(back === "pending" ? { method: null } : {}),
       });
+      // A row this attempt cannot reopen is final, so its tally dies here too: the increment
+      // above ran after the closing side's `resolved` had already deleted it once, and no final
+      // row is ever code-entered again to clean it up later.
+      if (!reopened) wrongCodes.delete(id);
       /*
        * The refusal reaches the trail either way. A row this attempt reopened records the failure
        * as its own; a row closed under the attempt — a concurrent close, a lease that expired into
@@ -841,6 +850,15 @@ export function createSignInService(deps: SignInServiceDependencies) {
           "Enter the verification code the site sent.",
         );
       return view(await enterCode(owner, id, actor, code));
+    },
+
+    /**
+     * How many refused verification codes one request has counted in this process. No route or
+     * caller reads it: it exists so the tests can pin what counts toward the cap and when the
+     * tally dies with the request.
+     */
+    codeRefusalTally(id: string) {
+      return wrongCodes.get(id) ?? 0;
     },
 
     /** The person confirming one of their saved logins for this sign-in. */

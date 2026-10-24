@@ -1142,6 +1142,95 @@ describe("a verification code the site asks for after the password", () => {
     expect(resolved.map((row) => row.status)).toEqual(["signed_in"]);
   });
 
+  /*
+   * What the refusal cap counts (#489 F09): only a submission the site's page really received —
+   * the computer's `submitted: true` is the site taking the code and turning it away. The three
+   * answers that completed no submission (the browser had left the origin, the page had lost its
+   * code field, the typing itself failed) never showed the site a code, so no number of them
+   * spends the cap: a site that was never given a code was never guessed at.
+   */
+  test("five refusals from a browser no longer on the site count nothing toward the cap", async () => {
+    const code: Partial<SignInCodeResult> = {
+      submitted: false,
+      error:
+        "The Bot's browser is not on https://example.com any more. Take over the browser to finish signing in.",
+    };
+    const { service, request, store, resolved, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/not on https:\/\/example\.com any more/);
+    }
+    // Five failures, zero submissions: the site was never shown a code, so nothing was guessed
+    // at it, and the request stays open at the code step instead of closing on the cap's
+    // sentence — which would claim the site had been shown five codes it never saw.
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    expect(computer.codes).toHaveLength(5);
+    expect(resolved).toEqual([]);
+  });
+
+  test("five refusals from a page that lost its code field count nothing toward the cap", async () => {
+    const code: Partial<SignInCodeResult> = {
+      submitted: false,
+      error: "The site is not asking for a verification code any more.",
+    };
+    const { service, request, store, resolved, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/not asking for a verification code any more/);
+    }
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    expect(computer.codes).toHaveLength(5);
+    expect(resolved).toEqual([]);
+  });
+
+  test("five refusals from a typing that failed mid-way count nothing toward the cap", async () => {
+    const code: Partial<SignInCodeResult> = {
+      submitted: false,
+      error: "The verification code could not be typed into the page.",
+    };
+    const { service, request, store, resolved, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/could not be typed into the page/);
+    }
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    // A refusal the site really received still counts: the five that reached nothing did not
+    // spend any of the cap this one now begins to spend.
+    code.submitted = true;
+    code.error = undefined;
+    code.codeFieldVisible = true;
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(1);
+    expect(computer.codes).toHaveLength(6);
+    expect(resolved).toEqual([]);
+  });
+
   test("a site that goes back to its login page asks for the whole login again", async () => {
     const fill = { codeRequested: true };
     const code = { codeFieldVisible: false, passwordFieldVisible: true };
@@ -1193,6 +1282,82 @@ describe("a verification code the site asks for after the password", () => {
       trail.rows.find((row) => row.eventType === "computer.sign_in_failed")
         ?.payload,
     ).toMatchObject({ request: request.id, step: "code", superseded: true });
+  });
+
+  /*
+   * The tally dies with the request it counted for (#489 F09): a refusal that arrives after the
+   * row closed under its attempt is still real — the site did see the code — but the request is
+   * final, so the count it wrote back has nothing left to guard and is removed again; no path
+   * will ever touch that request id's entry, and it must not linger.
+   */
+  test("a refusal that lands after the row closed leaves no tally behind it", async () => {
+    const { service, request, store, trail, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code: { codeFieldVisible: true },
+    });
+    const inner = computer.gateway.signInCode.bind(computer.gateway);
+    // Another writer closes the row under the attempt, while the site's refusal is on its way
+    // back — the same interleaving the superseded-row test drives.
+    computer.gateway.signInCode = async (botId, input) => {
+      await store.transition("owner", request.id, ["filling"], {
+        status: "cancelled",
+        resolvedAt: new Date(),
+      });
+      return inner(botId, input);
+    };
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "cancelled",
+    );
+    expect(
+      trail.rows.find((row) => row.eventType === "computer.sign_in_failed")
+        ?.payload,
+    ).toMatchObject({ request: request.id, step: "code", superseded: true });
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+  });
+
+  test("a fifth refusal that lands after the row closed caps nothing and leaves no tally", async () => {
+    const code = { codeFieldVisible: true, passwordFieldVisible: false };
+    const { service, request, store, trail, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/did not accept that code/);
+    }
+    expect(service.codeRefusalTally(request.id)).toBe(4);
+    const inner = computer.gateway.signInCode.bind(computer.gateway);
+    // The fifth refusal is a real submission the site turned away — it would close the request
+    // on the cap — but the row closes under the attempt first, so the cap's close has no row to
+    // take and the tally dies with the request instead of lingering on it.
+    computer.gateway.signInCode = async (botId, input) => {
+      await store.transition("owner", request.id, ["filling"], {
+        status: "cancelled",
+        resolvedAt: new Date(),
+      });
+      return inner(botId, input);
+    };
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "cancelled",
+    );
+    // The refusal is recorded superseded, never as the request's ending: no cap close, no
+    // "too many" row, and the tally is gone.
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    expect(
+      trail.rows.some(
+        (row) =>
+          row.eventType === "computer.sign_in_failed" &&
+          typeof row.payload.failure === "string" &&
+          row.payload.failure.includes("too many incorrect verification codes"),
+      ),
+    ).toBe(false);
   });
 
   test("claiming the code step clears the previous attempt's failure sentence", async () => {
