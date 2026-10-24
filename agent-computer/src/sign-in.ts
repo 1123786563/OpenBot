@@ -397,6 +397,15 @@ export async function fillSignInCode(
         (await page.evaluate(markCodeField, LOGIN_ATTRIBUTE));
       backToLogin = await passwordVisible(page);
     }
+    // A password field on another origin is that page's, not this login back at its beginning — an
+    // identity provider asking for the password again, say. The person takes over there, the same
+    // way they do when the sign-in first moved: the server is never told the password is wanted
+    // again, which would reopen a request the retry could not follow.
+    if (backToLogin && originOfUrl(page.url()) !== input.origin)
+      return answer(
+        `The sign-in moved to ${originOfUrl(page.url()) || "another page"}. Take over the browser to finish signing in there.`,
+        true,
+      );
     return {
       submitted: true,
       codeFieldVisible,
