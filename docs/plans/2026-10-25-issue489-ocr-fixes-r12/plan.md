@@ -27,3 +27,13 @@ R12 全量（r12-adjudication.md）：F12-1 scrub high 经双引擎 10 形状实
 **T24（F12-3，doc-only）**：`server/src/mastra/tools.ts:116-121` 注释段同步已落地的 F11-1/T22 拨号期守卫（MASTRA_TOOL_NAME_INVALID，直连判定经 URL 规范化）——改写为描述现状+指向守卫位置；不改任何代码行。门：tsc 恰 3 BASE、biome、相关注释处 diff 仅注释。owned=tools.ts。
 
 流程：两任务并行→R1→串行集成→F13 收官门（十二门）→R13 全量（新最终 HEAD 唯一一次）→f01-r12→V03/C01。
+
+## 附录二：F14 波 T25/T26（R13 终裁追加，2026-10-25）
+
+R13（r13-adjudication.md）3 有效 medium：
+
+**T25（F13-2）**：`app/src/components/channels/tool-activity.tsx` 提取 `StepOutput` 子组件——`forDisplay` 移入边界内子组件的 render 期求值（`<ToolRenderBoundary><StepOutput output label/></ToolRenderBoundary>` 结构按 finding 建议形落位），解码期抛错落进边界；与单工具路径真同构；渲染产物零变化（DOM 结构不变）；注释同步兑现「never the whole conversation」。新增用例：解码期抛错（如 markdownComponents.a throw 注入，沿 T13 测试先例）折叠组存活。门：tool-activity 套件全绿（bun，31+新）、app tsc 62 BASE 不增、biome、enterprise 108/108 维持。owned=tool-activity.tsx+其测试。
+
+**T26（F13-1+F13-3，server 双项）**：①`gateway.ts` 守卫覆盖 anthropic 直连——anthropic 臂经 `anthropicMessagesUrl` 同一 resolver 产物 + `new Request(url).url` 规范化比对直连 `https://api.anthropic.com/v1/messages` 常量，命中且点分工具名 ⇒ 400 `MASTRA_TOOL_NAME_INVALID`（同词表同文案族，provider 名适配）；`if (anthropic || !tools) return undefined` 拆为按 provider 分流；tools.ts:110-113 注释补记 anthropic 边缘裁决。②`server/src/computer/schema.ts` SignInCodeResult.url 改可选+注释（与 SignInFillResult 同契约）。测试：anthropic 直连+点分→拒绝、anthropic 网关→透传、openai 原三组零回退。门：seam 套件 49+新 全绿、adapter 29/29、enterprise 108/108、tsc 恰 3 BASE、biome。owned=gateway.ts+model-gateway.test.ts+schema.ts+tools.ts（注释行）。
+
+流程：并行→R1→串行集成→F14 收官门→R14 全量（新最终 HEAD 唯一一次）→f01-r12→V03/C01。
