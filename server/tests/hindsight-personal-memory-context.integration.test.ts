@@ -465,7 +465,7 @@ describe("Hindsight 18 (#395) — Bot consumption over the single authority", ()
       .where(inArray(hindsightMemoryGrants.targetId, [ASKING_BOT]));
 
     // Pause-usage closes the whole block before any row is read.
-    await pause.setUsagePaused(TENANT, PRINCIPAL, true);
+    await pause.setUsagePaused(TENANT, PRINCIPAL, ACTOR, true);
     expect(await context.personalMemoryContext(scope, ASKING_BOT)).toEqual({
       memories: [],
     });
@@ -475,7 +475,7 @@ describe("Hindsight 18 (#395) — Bot consumption over the single authority", ()
         botId: ASKING_BOT,
       }),
     ).toEqual({ memories: [], degraded: false });
-    await pause.setUsagePaused(TENANT, PRINCIPAL, false);
+    await pause.setUsagePaused(TENANT, PRINCIPAL, ACTOR, false);
 
     // An unreplayed backup restore (#391) keeps every answer closed the same way.
     recoveryOpen = false;

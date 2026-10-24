@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import {
   afterAll,
@@ -66,6 +66,16 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  *
  * F-G1-5: `expireStaleDerivedJudgmentCandidates` expires only stale unreviewed candidates,
  * idempotently, and the production sweep call point is asserted at source level.
+ *
+ * FIX-W8 (RFW1-1): the legacy user gate answers under a RESTRICTED application login — the
+ * enterprise form's non-superuser, non-BYPASSRLS role with no ob_ent_* capability membership.
+ * The pre-fix gate joined enterprise_principals on the main connection; FORCE RLS made that
+ * join answer zero rows and both gates fail open. The probe below reproduces that exact form
+ * in-session (a dedicated NOLOGIN role granted the reads the application needs, entered with
+ * SET LOCAL ROLE inside one transaction) and pins both facts: the old join shape still sees
+ * nothing there, and the gate — reading the row's stored user attribution — still answers
+ * paused. On the BASE tree this test's gate assertions fail (gate answers not-paused); the
+ * fail-open reproduction evidence is .e2e/fixw8/probe-before.log in the run's verification.
  */
 
 const hereDir = dirname(fileURLToPath(import.meta.url));
@@ -413,7 +423,7 @@ describe("#392 FIX-W1 — the legacy recall seams obey pause-usage (F-G1-2)", ()
     if (!recallTool) throw new Error("Expected the recall tool.");
     expect((await recallTool.execute({})) as string).toContain(content);
 
-    await pause.setUsagePaused(TENANT, PRINCIPAL_A, true);
+    await pause.setUsagePaused(TENANT, PRINCIPAL_A, USER_A, true);
     // While paused: both seams answer empty — no error, and no word of the switch in the tool's
     // answer ("[]" is the empty-memory shape, not a pause tell).
     expect(await ingestion.contextFor(USER_A, BOT)).toBe("");
@@ -424,7 +434,7 @@ describe("#392 FIX-W1 — the legacy recall seams obey pause-usage (F-G1-2)", ()
       (await store.list(USER_A)).some((memory) => memory.content === content),
     ).toBe(true);
 
-    await pause.setUsagePaused(TENANT, PRINCIPAL_A, false);
+    await pause.setUsagePaused(TENANT, PRINCIPAL_A, USER_A, false);
     expect(await ingestion.contextFor(USER_A, BOT)).toContain(content);
     expect(await recallTool.execute({})).toContain(content);
   });
@@ -432,12 +442,12 @@ describe("#392 FIX-W1 — the legacy recall seams obey pause-usage (F-G1-2)", ()
   test("the switch is per person: the other person's recall is untouched", async () => {
     const content = `pw2 keeps recalling ${run}`;
     await store.create(USER_B, { content, provenance: "You" });
-    await pause.setUsagePaused(TENANT, PRINCIPAL_A, true);
+    await pause.setUsagePaused(TENANT, PRINCIPAL_A, USER_A, true);
     try {
       expect(await ingestion.contextFor(USER_A, BOT)).toBe("");
       expect(await ingestion.contextFor(USER_B, BOT)).toContain(content);
     } finally {
-      await pause.setUsagePaused(TENANT, PRINCIPAL_A, false);
+      await pause.setUsagePaused(TENANT, PRINCIPAL_A, USER_A, false);
     }
   });
 });
@@ -453,7 +463,7 @@ describe("#392 FIX-W1 — the candidate seams obey pause-learning (F-G1-3)", () 
     });
     expect(formed.duplicate).toBe(false);
 
-    await pause.setLearningPaused(TENANT, PRINCIPAL_A, true);
+    await pause.setLearningPaused(TENANT, PRINCIPAL_A, USER_A, true);
     try {
       // The observation seam: refused, nothing written.
       await expect(
@@ -489,7 +499,7 @@ describe("#392 FIX-W1 — the candidate seams obey pause-learning (F-G1-3)", () 
         [],
       );
     } finally {
-      await pause.setLearningPaused(TENANT, PRINCIPAL_A, false);
+      await pause.setLearningPaused(TENANT, PRINCIPAL_A, USER_A, false);
     }
     // After resume the observation seam forms candidates again.
     const resumed = await store.formMemory(USER_A, {
@@ -528,7 +538,7 @@ describe("#392 FIX-W1 — the candidate seams obey pause-learning (F-G1-3)", () 
     ]);
     expect((await imported()).length).toBe(2);
 
-    await pause.setLearningPaused(TENANT, PRINCIPAL_A, true);
+    await pause.setLearningPaused(TENANT, PRINCIPAL_A, USER_A, true);
     try {
       const sourceBefore = await store.getSource(USER_A, SOURCE);
       await store.completeSync(USER_A, SOURCE, [
@@ -543,7 +553,7 @@ describe("#392 FIX-W1 — the candidate seams obey pause-learning (F-G1-3)", () 
         sourceBefore.lastSyncAt?.getTime() ?? 0,
       );
     } finally {
-      await pause.setLearningPaused(TENANT, PRINCIPAL_A, false);
+      await pause.setLearningPaused(TENANT, PRINCIPAL_A, USER_A, false);
     }
     // After resume the same record imports.
     await store.completeSync(USER_A, SOURCE, [
@@ -625,5 +635,102 @@ describe("#392 FIX-W1 — the derived-judgment expiry rides the sweep (F-G1-5)",
     expect(source).toContain("personalMemoryPauseControls");
     expect(source).toContain("createUserPauseGate(database)");
     expect(source).toContain("pauseControls: {");
+  });
+});
+
+describe("#392 FIX-W8 — the user gate holds under a restricted application login (RFW1-1)", () => {
+  test("the join shape fail-opens under a restricted role; the stored attribution does not", async () => {
+    // The enterprise form's application login: the grants the application's own reads need,
+    // and membership in no capability role, no superuser, no BYPASSRLS — the shape every
+    // policy on enterprise_principals (FORCE RLS) refuses, which is exactly the point.
+    const PROBE_ROLE = `ob_pw_rls_${run.replaceAll("-", "")}`;
+    const createProbeRole = async () => {
+      await database.execute(
+        sql.raw(
+          `CREATE ROLE "${PROBE_ROLE}" NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION`,
+        ),
+      );
+      await database.execute(
+        sql.raw(`GRANT USAGE ON SCHEMA public TO "${PROBE_ROLE}"`),
+      );
+      await database.execute(
+        sql.raw(
+          `GRANT SELECT ON TABLE enterprise_principals, hindsight_pause_controls TO "${PROBE_ROLE}"`,
+        ),
+      );
+    };
+    const dropProbeRole = async () => {
+      await database
+        .execute(
+          sql.raw(
+            `REVOKE ALL ON TABLE enterprise_principals, hindsight_pause_controls FROM "${PROBE_ROLE}"`,
+          ),
+        )
+        .catch(() => undefined);
+      await database
+        .execute(sql.raw(`REVOKE USAGE ON SCHEMA public FROM "${PROBE_ROLE}"`))
+        .catch(() => undefined);
+      await database
+        .execute(sql.raw(`DROP ROLE IF EXISTS "${PROBE_ROLE}"`))
+        .catch(() => undefined);
+    };
+    await dropProbeRole();
+    await createProbeRole();
+    try {
+      // The production write path flips both switches for A; the row must carry A's own
+      // server-resolved attribution (the resolver selected the principal BY the actor's id).
+      const paused = await requestAs(USER_A, "/pause-controls", {
+        method: "POST",
+        body: JSON.stringify({ learningPaused: true, usagePaused: true }),
+      });
+      expect(paused.status).toBe(200);
+      const [stored] = await database
+        .select({ userId: hindsightPauseControls.userId })
+        .from(hindsightPauseControls)
+        .where(
+          and(
+            eq(hindsightPauseControls.tenantId, TENANT),
+            eq(hindsightPauseControls.principalId, PRINCIPAL_A),
+          ),
+        );
+      expect(stored?.userId).toBe(USER_A);
+
+      // The superuser connection (every pre-FIX-W8 test topology) holds, as always.
+      const superuserGate = createUserPauseGate(database);
+      expect(await superuserGate.learningPaused(USER_A)).toBe(true);
+      expect(await superuserGate.usagePaused(USER_A)).toBe(true);
+
+      // The restricted application login: one transaction, one pinned connection, the role
+      // entered and left with the transaction — nothing persists outside it.
+      await database.transaction(async (tx) => {
+        await tx.execute(sql.raw(`SET LOCAL ROLE "${PROBE_ROLE}"`));
+
+        // The pre-fix resolution shape: joining the FORCE-RLS directory table answers zero
+        // rows here. Pinned so the topology stays honest — if this ever returns rows, the
+        // probe role accidentally became a capability role and the test proves nothing.
+        const joinRows = (await tx.execute(sql`
+          SELECT p.learning_paused_at
+          FROM hindsight_pause_controls p
+          INNER JOIN enterprise_principals ep ON ep.id = p.principal_id
+          WHERE ep.user_id = ${USER_A}
+        `)) as unknown as unknown[];
+        expect(joinRows.length).toBe(0);
+
+        // The gate itself, on the same restricted connection: both switches hold — the
+        // single-table read never consults the directory's row visibility, so the answer no
+        // longer depends on the connection's privileges.
+        const gate = createUserPauseGate(tx as unknown as Database);
+        expect(await gate.learningPaused(USER_A)).toBe(true);
+        expect(await gate.usagePaused(USER_A)).toBe(true);
+        // And the attribution stays per person: B's memories are not paused by A's switch.
+        expect(await gate.usagePaused(USER_B)).toBe(false);
+      });
+    } finally {
+      await requestAs(USER_A, "/pause-controls", {
+        method: "POST",
+        body: JSON.stringify({ learningPaused: false, usagePaused: false }),
+      }).catch(() => undefined);
+      await dropProbeRole();
+    }
   });
 });
