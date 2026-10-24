@@ -202,14 +202,19 @@ const PREVIEW_TICKET_UNVERIFIABLE_ERROR =
 
 /**
  * The .webapp-mount record the RUNNING script left beside .nextjs-port
- * (review-367 H's second signal) — the ONE read behind three verdicts
- * (fix-ocr28 #4): the preview-ticket mint's legacy-heal mirror and
- * webapp-info's legacy and current branches each used to spell the
- * readFile + trim + null-fold + catch verbatim, and any one site drifting
- * its fold would make the two mirrored surfaces disagree about the SAME
- * session's record. null means ONLY "cannot vouch" — no fileApi
- * (undefined) or a thrown read (a gateway flake); readFile's null (the
- * record was never written) folds to "" and keeps comparing as the empty
+ * (review-367 H's second signal) — the FOLDED read behind webapp-info's
+ * two verdicts (fix-ocr28 #4): the preview-ticket mint's legacy-heal
+ * mirror and webapp-info's legacy and current branches each used to spell
+ * the readFile + trim + null-fold + catch verbatim, and any one site
+ * drifting its fold would make the two mirrored surfaces disagree about
+ * the SAME session's record. The mint's mirror now reads the same record
+ * through readMountRecordExact (below, OCR R1 medium) because it needs
+ * "never written" distinct from "no fileApi / thrown read"; this fold —
+ * readFile's null comparing as the empty mount — stays the info face's,
+ * where the ready gate already owns the never-written population.
+ * null means ONLY "cannot vouch" — no fileApi (undefined) or a thrown
+ * read (a gateway flake); readFile's null (the record was never written)
+ * folds to "" and keeps comparing as the empty
  * mount, a real answer (the root mount), never a refusal (fix-ocr29 #3:
  * this sentence previously counted readFile's null among the nulls —
  * drifting from the code the comment documents). A READ record answers
@@ -228,6 +233,35 @@ async function readMountRecord(
     return raw === undefined ? null : (raw?.trim() ?? "");
   } catch {
     return null;
+  }
+}
+
+/**
+ * The mint's own three-state read of the SAME record (OCR R1 medium): the
+ * info face's fold above collapses readFile's null ("never written") into
+ * "" so it keeps comparing as the empty mount — right for webapp-info,
+ * whose mismatch verdict is ready-gated and never fires for a
+ * not-yet-serving session. The mint has NO ready probe (a ticket must
+ * outlive a dev-server boot inside its 30s window), so folding there
+ * convicted the first-build window — "current generation, dev server
+ * never started" — as mount-stale with a repair sentence accusing a start
+ * script that never ran. For the mint the states must stay distinct:
+ *   undefined = no fileApi or a thrown read (cannot vouch);
+ *   null      = the record was never written (the first-build window);
+ *   string    = the READ record's trimmed content, "" included (the #437
+ *               repro's root mount — a real answer, never an absence).
+ */
+async function readMountRecordExact(
+  fileApi: AgentSandboxFileApi | null | undefined,
+  directory: string,
+): Promise<string | null | undefined> {
+  try {
+    const raw = await fileApi?.readFile(`${directory}/${WEBAPP_MOUNT_MARKER}`);
+    if (raw === undefined) return undefined;
+    if (raw === null) return null;
+    return raw.trim();
+  } catch {
+    return undefined;
   }
 }
 
@@ -796,12 +830,13 @@ export function createWebappProxyRoutes(
     // #437 GAP-C: BOTH resolved-generation arms re-check the RUNNING server's
     // mount record before any ticket leaves — webapp-info's suppression
     // (WEBAPP_MOUNT_STALE_REASON, the cross-check below) must not be walked
-    // around by minting into it. One shared read (readMountRecord, fix-ocr28
-    // #4) against one expected mount (expectedMountFor) — the SAME fact the
-    // info face judges, one branch over; the mirror is the discipline, not a
-    // shared abstraction.
+    // around by minting into it. One shared read (readMountRecordExact, the
+    // mint's three-state mirror of readMountRecord — OCR R1 medium) against
+    // one expected mount (expectedMountFor) — the SAME fact the info face
+    // judges, one branch over; the mirror is the discipline, not a shared
+    // abstraction.
     const expectedMount = expectedMountFor(origin);
-    const recorded = await readMountRecord(fileApi, directory);
+    const recorded = await readMountRecordExact(fileApi, directory);
     if (generation === "legacy") {
       // fix-ocr27 #3: the mint mirrors webapp-info's healed legacy branch.
       // "Legacy" has a hole the marker's write point never closes: an app
@@ -820,19 +855,28 @@ export function createWebappProxyRoutes(
       if (!recordProvesMount) {
         return context.json({ error: PREVIEW_TICKET_LEGACY_ERROR }, 409);
       }
-    } else if (recorded !== null && recorded !== expectedMount) {
-      // current: a READ record naming any other mount (or the empty mount —
-      // the #437 repro's root-path script on a current generation) is the
-      // suppressed state webapp-info withholds the address for: the mint
-      // refuses with the SAME displayable sentence instead of handing a
-      // ticket into a bare-404 entry. The info face runs this verdict only
-      // when `ready` (a not-yet-serving session has no frame to misroute);
-      // the mint deliberately has no ready probe — "a ticket outlives a dev
-      // server boot inside its 30s window by design" — so it runs the
-      // stricter unconditional read: a NULL record (no fileApi, thrown read)
-      // cannot vouch for a mismatch and mints on, exactly webapp-info's
-      // fix-ocr5 M-1 direction, while every READ record that disagrees with
-      // the address mints nothing.
+    } else if (
+      generation === "current" &&
+      typeof recorded === "string" &&
+      recorded !== expectedMount
+    ) {
+      // current — named, not an else-fallthrough: a future generation value
+      // must pick (and justify) its own arm, never silently inherit this
+      // re-check (OCR low). A WRITTEN record naming any other mount (the
+      // empty mount included — the #437 repro's root-path script on a
+      // current generation) is the suppressed state webapp-info withholds
+      // the address for: the mint refuses with the SAME displayable
+      // sentence instead of handing a ticket into a bare-404 entry. The
+      // info face runs this verdict only when `ready` (a not-yet-serving
+      // session has no frame to misroute); the mint deliberately has no
+      // ready probe — "a ticket outlives a dev server boot inside its 30s
+      // window by design" — so "never written" itself plays the ready
+      // gate's role here (OCR R1 medium): null (the record was never
+      // written — the first-build window, the dev server never started)
+      // and undefined (no fileApi, thrown read) cannot vouch for a
+      // mismatch and mint on, exactly webapp-info's fix-ocr18 #2 "no
+      // accusation of a rebuild that never happened" direction. The #437
+      // root-mount guard convicts "written and different" — nothing else.
       return context.json({ error: WEBAPP_MOUNT_STALE_REASON }, 409);
     }
     const { ticket, expiresAt } = previewTickets.issuePreviewTicket({
