@@ -184,7 +184,7 @@ function markCodeField(attribute: string) {
     );
   });
   const businessCode =
-    /(?:country|postal|promo|zip|area|dial|referral|voucher|coupon|discount)[\s_-]*code/i;
+    /(?:country|postal|post|promo|zip|area|dial|referral|voucher|coupon|discount)[\s_-]*code/i;
   const code =
     inputs.find((input) => /one-time-code/.test(input.autocomplete)) ??
     inputs.find((input) => {

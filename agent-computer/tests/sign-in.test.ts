@@ -220,6 +220,32 @@ beforeAll(async () => {
               <input name="voucherCode"><input name="coupon_code">
               <input name="discountCode"></form>`);
       }
+      // A login whose extra field spells the postcode word — the one business code the exclusion
+      // list's postal entry does not cover, in each of the spellings sites use. A refused password
+      // must stay a refusal, and the page a correct password lands on must not be read as the site
+      // asking for a code: any single spelling the fallback still matches turns the answer wrong.
+      if (url.pathname === "/login-postcode")
+        return page(`<form method="post" action="/postcode-session">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <label>Postcode <input name="postcode"></label>
+          <label>Post code <input name="post_code"></label>
+          <label>PostCode <input name="postCode"></label>
+          <label>Post-code <input name="post-code"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/postcode-session" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(`<h1>Welcome</h1><form>
+              <label>Postcode <input name="postcode"></label>
+              <label>Post code <input name="post_code"></label>
+              <label>PostCode <input name="postCode"></label>
+              <label>Post-code <input name="post-code"></label></form>`)
+          : page(`<p>Wrong password</p><form method="post" action="/postcode-session">
+              <input name="email" type="email"><input name="password" type="password">
+              <input name="postcode"><input name="post_code">
+              <input name="postCode"><input name="post-code"></form>`);
+      }
       // A refusal that keeps a real one-time-code field beside the unchanged login form: the wrong
       // password must be read as the refusal it is, not as the site having moved on to the code.
       if (url.pathname === "/login-2fa-refuse")
@@ -546,6 +572,33 @@ describe.skipIf(!asked)("the code the site asks for after the password", () => {
     expect(result.codeRequested).toBe(false);
     expect(result.passwordFieldVisible).toBe(false);
     expect(result.url).toBe(`${origin}/codes-session`);
+    await tab.close();
+  });
+
+  test("a postcode field on a refused login is not a code step: the refusal stays the refusal", async () => {
+    const tab = await open("/login-postcode");
+    const result = await fillSignIn(tab, {
+      origin,
+      username: "a@example.test",
+      password: "wrong-one",
+    });
+    expect(result.submitted).toBe(true);
+    expect(result.codeRequested).toBe(false);
+    expect(result.passwordFieldVisible).toBe(true);
+    await tab.close();
+  });
+
+  test("a postcode field on the page after the password is not a code step", async () => {
+    const tab = await open("/login-postcode");
+    const result = await fillSignIn(tab, {
+      origin,
+      username: "a@example.test",
+      password: PASSWORD,
+    });
+    expect(result.submitted).toBe(true);
+    expect(result.codeRequested).toBe(false);
+    expect(result.passwordFieldVisible).toBe(false);
+    expect(result.url).toBe(`${origin}/postcode-session`);
     await tab.close();
   });
 
