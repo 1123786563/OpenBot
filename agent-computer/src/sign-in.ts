@@ -382,19 +382,18 @@ export async function fillSignInCode(
     await typeSecret(codeField, input.code);
     await submitFrom(page, codeField);
     await settle(page);
-    let codeFieldVisible =
-      originOfUrl(page.url()) === input.origin &&
-      (await page.evaluate(markCodeField, LOGIN_ATTRIBUTE));
+    let codeVisible = await page.evaluate(markCodeField, LOGIN_ATTRIBUTE);
     let backToLogin = await passwordVisible(page);
-    if (codeFieldVisible || !backToLogin) {
+    if (
+      (codeVisible && originOfUrl(page.url()) === input.origin) ||
+      !backToLogin
+    ) {
       // A slow site may not have rendered its verdict yet — whether that verdict is the code page
       // going away or the login page coming back — so give it the same grace fillSignIn gives a
       // transition state, and take both readings again once it has. A success pays the wait too:
       // the same 2 seconds fillSignIn spends on every ordinary signed-in landing.
       await page.waitForTimeout(2_000);
-      codeFieldVisible =
-        originOfUrl(page.url()) === input.origin &&
-        (await page.evaluate(markCodeField, LOGIN_ATTRIBUTE));
+      codeVisible = await page.evaluate(markCodeField, LOGIN_ATTRIBUTE);
       backToLogin = await passwordVisible(page);
     }
     // A password field on another origin is that page's, not this login back at its beginning — an
@@ -406,6 +405,19 @@ export async function fillSignInCode(
         `The sign-in moved to ${originOfUrl(page.url()) || "another page"}. Take over the browser to finish signing in there.`,
         true,
       );
+    // A code field on another origin is that page's, not this login waiting to hear its code was
+    // right — a chained identity provider asking for another verification code, say. The person
+    // takes over there, like the password above: the server is never told the code step is over,
+    // which the empty verdict would otherwise have it read as the sign-in having gone through.
+    if (codeVisible && originOfUrl(page.url()) !== input.origin)
+      return answer(
+        `The sign-in moved to ${originOfUrl(page.url()) || "another page"} to ask for another verification code. Take over the browser to finish signing in there.`,
+        true,
+      );
+    // Only this origin's own code field is reported as the login still asking: what a page that
+    // moved elsewhere draws is its own, and has been handed back above.
+    const codeFieldVisible =
+      codeVisible && originOfUrl(page.url()) === input.origin;
     return {
       submitted: true,
       codeFieldVisible,

@@ -426,6 +426,23 @@ beforeAll(async () => {
           : page(`<p>Wrong password</p><form method="post" action="/two-factor-cross-password">
               <input name="password" type="password"></form>`);
       }
+      // The same identity provider, codes all the way: the site asks for a code on this origin,
+      // and submitting it hands the sign-in to that other origin, which asks for another code —
+      // the provider's second verification step.
+      if (url.pathname === "/login-2fa-cross-code")
+        return page(`<form method="post" action="/two-factor-cross-code">
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (
+        url.pathname === "/two-factor-cross-code" &&
+        request.method === "POST"
+      ) {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(codeForm(`${otherOrigin}/cross-code`))
+          : page(`<p>Wrong password</p><form method="post" action="/two-factor-cross-code">
+              <input name="password" type="password"></form>`);
+      }
       return new Response("not found", { status: 404 });
     },
   });
@@ -876,6 +893,30 @@ describe.skipIf(!asked)(
       expect(result.passwordFieldVisible).toBe(false);
       expect(result.error).toContain(`moved to ${otherOrigin}`);
       expect(result.url.startsWith(`${otherOrigin}/cross-password`)).toBe(true);
+      await tab.close();
+    });
+
+    test("a code that hands the sign-in to another origin's code page is not read as signed in", async () => {
+      // The same move again, staying on codes: the site takes the code and hands the sign-in to
+      // another origin — a chained identity provider — whose page draws a verification code field
+      // of its own. That field is the provider's second step, not this login's verdict: the
+      // person takes over, and the answer never tells the server the sign-in went through while
+      // the browser sits on the other origin waiting for a code it was never given.
+      const tab = await open("/login-2fa-cross-code");
+      const fill = await fillSignIn(tab, { origin, password: PASSWORD });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result.submitted).toBe(true);
+      expect(result.codeFieldVisible).toBe(false);
+      expect(result.passwordFieldVisible).toBe(false);
+      expect(result.error).toContain(
+        `moved to ${otherOrigin} to ask for another verification code`,
+      );
+      expect(result.url.startsWith(`${otherOrigin}/cross-code`)).toBe(true);
+      // The code field on that other origin was not typed into either.
+      expect(
+        await tab.locator("input[autocomplete=one-time-code]").inputValue(),
+      ).toBe("");
       await tab.close();
     });
 
