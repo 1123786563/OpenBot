@@ -70,6 +70,7 @@ import {
   type PersonalMemoryRevocationRecorder,
   STOPPED_USING_SUMMARY,
 } from "./revocation-ledger";
+import { assertMemoryContentAdmissible } from "./sensitivity-gate";
 
 /** The restriction that carves a memory's bank; exactly one target, spelled by the kind. */
 export type SourceBoundRestriction =
@@ -553,10 +554,15 @@ export function createSourceBoundRecallService(
         content: unknown;
         provenance?: unknown;
         restriction: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
       },
     ): Promise<{ record: RecalledSourceBoundMemory; remoteSynced: boolean }> {
       const identity = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // The chain-side sensitivity gate (audit F-G1-4), before the restriction is even read:
+      // a refused credential leaves no row, no work and no audit copy of the bytes.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const provenance = plainString(
         input.provenance ?? "You",
         "provenance",
@@ -724,10 +730,16 @@ export function createSourceBoundRecallService(
     async editSourceBoundMemory(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown },
+      input: {
+        content: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{ record: RecalledSourceBoundMemory; remoteSynced: boolean }> {
       const identity = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // Same gate as the confirm: an edit cannot walk a credential into an authorized bank.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const row = await records.load(identity.tenantId, id);
       if (
         !row ||

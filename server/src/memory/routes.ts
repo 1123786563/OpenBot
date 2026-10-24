@@ -5,6 +5,7 @@ import type { AppVariables } from "../auth/guards";
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "../hindsight/bank-scope";
 import type { HindsightPauseControlsService } from "../hindsight/pause-controls";
+import type { HindsightMemoryRoutes } from "../hindsight/routes";
 import { PluginRefusedError } from "../plugins/store";
 import type { MemoryIngestion } from "./ingestion";
 import type { MemoryStore } from "./store";
@@ -32,7 +33,15 @@ export function createMemoryRoutes(
   store: MemoryStore,
   ingestion: MemoryIngestion,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
-  options: { pauseControls?: MemoryPauseControlAccess } = {},
+  options: {
+    pauseControls?: MemoryPauseControlAccess;
+    /**
+     * The Hindsight chain's person-scoped operations (#384/#385), mounted at `/hindsight` under
+     * this same family's `requireUser` + body limit. Absent when the deployment wired no
+     * Hindsight chain, and then none of those routes exists.
+     */
+    hindsight?: HindsightMemoryRoutes;
+  } = {},
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser, bodyLimit({ maxSize: 16_384 }));
@@ -182,6 +191,9 @@ export function createMemoryRoutes(
     await store.remove(context.var.actor.id, context.req.param("id"));
     return context.body(null, 204);
   });
+  // Mounted last: the family's one- and two-segment patterns above are all narrower than
+  // `/hindsight/...`, and the sub-router's routes answer only their own paths.
+  if (options.hindsight) routes.route("/hindsight", options.hindsight);
   return routes;
 }
 async function body(request: Request): Promise<unknown> {

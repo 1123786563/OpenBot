@@ -150,6 +150,10 @@ import {
   createGatewayReadinessService,
   installGatewayReadinessService,
 } from "./gateway/readiness";
+import {
+  createHindsightMemoryRoutes,
+  type HindsightMemoryRoutesDeps,
+} from "./hindsight/routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
@@ -575,6 +579,11 @@ export function createApp(
        * absent, `/api/memory/pause-controls` is not mounted (no face that guesses identity).
        */
       pauseControls?: MemoryPauseControlAccess;
+       * The Hindsight chain's person-scoped confirm/edit/forget/status operations
+       * (#384/#385). Present only where both the chain is wired and a trusted-scope
+       * resolver exists; absent mounts no such routes.
+       */
+      hindsight?: HindsightMemoryRoutesDeps;
     };
     proactive?: { store: ProactiveStore; engine: ProactiveEngine };
     responsibilities?: {
@@ -2799,9 +2808,16 @@ export function createApp(
         coworker.memory.store,
         coworker.memory.ingestion,
         requireUser,
-        coworker.memory.pauseControls
-          ? { pauseControls: coworker.memory.pauseControls }
-          : {},
+        {
+          ...(coworker.memory.pauseControls
+            ? { pauseControls: coworker.memory.pauseControls }
+            : {}),
+          // Built here, where the family's middleware lives: the chain's operations ride the
+          // same `requireUser` + body limit as the rest of `/api/memory`.
+          ...(coworker.memory.hindsight
+            ? { hindsight: createHindsightMemoryRoutes(coworker.memory.hindsight) }
+            : {}),
+        },
       ),
     );
   if (coworker?.responsibilities) {
