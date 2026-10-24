@@ -9,7 +9,7 @@
 | 任务 | finding | 核心要求 | owned files（主） | 依赖 |
 | --- | --- | --- | --- | --- |
 | F5A1 span 正文治理 | FREV-01 (high) | 正文必须携带可信策略/审查证明才入库；无证明则省略（仅指标）；补非正则形状回归（邮箱/短口令经生产 recorder 的反例转绿） | span-support.ts、redaction.ts、model-span.ts（投影面） | — |
-| F5A2 绑定前置 | FREV-02 (high) | 真实执行写 span 前建立本地权威 run binding（bindings.begin/finish 接入真实 builtin observer 链）；binding 缺失时导出 fail-closed | model-span.ts、index.ts（:7686/:7737 面）、opik-http.ts（OTLP 写门槛）、bindings.ts 接线 | F5A1 |
+| F5A2 绑定前置+工具正文收口 | FREV-02 (high) + F5A1-R1-F2/F3 (medium) | 真实执行写 span 前建立本地权威 run binding（bindings.begin/finish 接入真实 builtin observer 链）；binding 缺失时导出 fail-closed；**tool/retrieval step 正文接入同一 contentApproval 治理**（F5A1-R1-F2：无此收口 FREV-01 不可关闭）；**opik-e2e-ingest 脚本断言更新**：正文 fail-closed 后 safeCanary 断言改走批准路径铸造（F5A1-R1-F3） | model-span.ts、index.ts（:7686/:7737 面）、opik-http.ts（OTLP 写门槛）、bindings.ts 接线、**tool-steps.ts、server/scripts/opik-e2e-ingest.ts** | F5A1 |
 | F5B1 scope 稳定化 | FREV-03 (high) | 分离稳定资源 scope 与请求授权/缓存 epoch：数据地址由稳定资源身份派生（Bot 而非 actor+epoch）；访问时在稳定数据范围上重验当前资格（manage gate/所有权）；管理员可汇总管理范围内创建者数据；profile 更新/移交不迁移数据地址 | scope.ts、bindings.ts、wiring.ts、admin-summary.ts、routes/admin-summary.ts、受影响 queries/exports/测试 | — |
 | F5C1 取消/准入 | FREV-05 (high) | AbortSignal 贯穿样本模型调用与 Judge（DB 取消可达中断）；inner 完成后启动 Judge 前重检任务未取消+授权未撤（RED：挂起期取消后 Judge 调用数为 0） | executions.ts、execution-runner.ts、scoring/judge.ts | — |
 | F5C2 公共执行路径 | FREV-04 (high) | 评测 runner 装配被测 Bot 公共执行引擎/隔离 thread/工具 schema；toolFixtures 真实拦截 callTool 并影响输出与拒绝计数（#29 语义） | execution-runner.ts、execution-boot.ts、executions.ts（runner 面） | F5C1 |
