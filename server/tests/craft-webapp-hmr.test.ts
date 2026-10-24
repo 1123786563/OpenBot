@@ -1001,6 +1001,11 @@ describe("webappHmrSocketHandlers — the client↔upstream bridge", () => {
 // keeps the conjunction (its half is the same gate the HTTP webapp proxy
 // answers to). The boot file is not importable (it starts a listener), so the
 // wiring is pinned at the source level — the same shape the qa-batch1 pins use.
+// issue-358 closeout F4 anchor note: #784/e9987bc941 later split the listener
+// out of the boot file, and the preview-branch DISPATCH moved with it to
+// src/http-server.ts; the deps DECLARATIONS stayed in index.ts. The dispatch
+// pin below therefore reads http-server.ts, while the declaration pins keep
+// index.ts.
 describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () => {
   const source = readFileSync(
     join(hereDir, "../src/index.ts"),
@@ -1010,11 +1015,18 @@ describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () 
   test("the preview-origin branch dispatches upgrades through its OWN deps const", () => {
     // The preview branch (inside `craftPreviewOrigin?.handlesRequest`) must
     // gate on the preview-specific deps, not the main-site's.
-    expect(source).toMatch(/craftPreviewWebappHmrDeps !== undefined/);
+    // F4 anchor note: the dispatch moved from index.ts to src/http-server.ts
+    // (#784/e9987bc941), so the branch is read from its current home; the
+    // assertions are unchanged.
+    const dispatch = readFileSync(
+      join(hereDir, "../src/http-server.ts"),
+      "utf8",
+    );
+    expect(dispatch).toMatch(/craftPreviewWebappHmrDeps !== undefined/);
     // …and the preview branch must no longer consult the main-site deps.
-    const previewBranch = source.slice(
-      source.indexOf("craftPreviewOrigin?.handlesRequest"),
-      source.indexOf('url.pathname === "/api/audio/transcriptions"'),
+    const previewBranch = dispatch.slice(
+      dispatch.indexOf("craftPreviewOrigin?.handlesRequest"),
+      dispatch.indexOf('url.pathname === "/api/audio/transcriptions"'),
     );
     expect(previewBranch).toContain("craftPreviewWebappHmrDeps !== undefined");
     expect(previewBranch).not.toContain("craftWebappHmrDeps !== undefined");
@@ -1054,8 +1066,11 @@ describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () 
 // The upgrade must therefore check Origin by hand — the same manual-discipline
 // shape the rest of this surface applies. The judgment is a pure function in
 // preview-origin.ts (beside holdsPreviewSessionPass, its sibling gate), and
-// the boot file wires it INSIDE the preview HMR branch, before the upgrade
-// resolver — pinned at source level like every other index.ts wiring above.
+// the HTTP listener wires it INSIDE the preview HMR branch, before the upgrade
+// resolver — pinned at source level like every other wiring pin above.
+// issue-358 closeout F4 anchor note: since #784/e9987bc941 that wiring lives
+// in src/http-server.ts (it used to sit in index.ts), so the pin below reads
+// http-server.ts; the assertion semantics are unchanged.
 describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () => {
   /**
    * #411: a healthy TLS renewal-status record in a throwaway file — the host
@@ -1179,9 +1194,12 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
     ).toBe(false);
   });
 
-  test("the boot file gates the upgrade on Origin inside the preview HMR branch, BEFORE the resolver (source pin)", () => {
+  test("the HTTP listener gates the upgrade on Origin inside the preview HMR branch, BEFORE the resolver (source pin)", () => {
+    // F4 anchor note: the listener wiring moved from index.ts to
+    // src/http-server.ts (#784/e9987bc941) — this pin used to slice index.ts
+    // and now slices the wiring's current home; assertions are unchanged.
     const source = readFileSync(
-      join(hereDir, "../src/index.ts"),
+      join(hereDir, "../src/http-server.ts"),
       "utf8",
     );
     const branch = source.slice(
