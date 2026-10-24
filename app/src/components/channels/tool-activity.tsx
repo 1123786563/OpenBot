@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
 import { PendingApprovals } from "@/components/approvals/inline-approval";
 import { markdownComponents } from "@/lib/markdown";
-import { readToolName, type ResearchLabelKey } from "@/lib/plugins/tool-name";
+import { type ResearchLabelKey, readToolName } from "@/lib/plugins/tool-name";
 import {
   asText,
   forDisplay,
@@ -19,6 +19,7 @@ import {
   type StepLabelKey,
 } from "./browser-activity";
 import type { VisibleChatItem } from "./chat-messages";
+import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine } from "./tool-line";
 
 type ToolItem = Extract<VisibleChatItem, { kind: "tool" }>;
@@ -461,17 +462,26 @@ function StepRow({ step, active }: { step: StepDetails; active: boolean }) {
             </dl>
           ) : null}
           {step.output ? (
-            <div className="max-h-60 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium">
-              {/*
-               * The same drawing `ServerToolLine` gives a single call: `forDisplay` takes the
-               * model's untrusted-content notice back off and unwraps a vendor's JSON envelope,
-               * and what a server wrote for a model reads as prose. Nothing here treats that
-               * content as instruction or authorization — it is drawn, never obeyed.
-               */}
-              <Streamdown components={markdownComponents}>
-                {forDisplay(step.output)}
-              </Streamdown>
-            </div>
+            /*
+             * The fold draws a vendor's answer with the same markdown machinery the transcript
+             * gives a Bot's prose, but the text arrives from the MCP server, not from the app, and
+             * no app-authored component card sits around it. A drawing that throws here must cost
+             * this step its result alone — the single-tool path draws behind the same boundary —
+             * never the whole conversation it sits inside.
+             */
+            <ToolRenderBoundary name={step.label}>
+              <div className="max-h-60 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium">
+                {/*
+                 * The same drawing `ServerToolLine` gives a single call: `forDisplay` takes the
+                 * model's untrusted-content notice back off and unwraps a vendor's JSON envelope,
+                 * and what a server wrote for a model reads as prose. Nothing here treats that
+                 * content as instruction or authorization — it is drawn, never obeyed.
+                 */}
+                <Streamdown components={markdownComponents}>
+                  {forDisplay(step.output)}
+                </Streamdown>
+              </div>
+            </ToolRenderBoundary>
           ) : null}
         </div>
       </details>

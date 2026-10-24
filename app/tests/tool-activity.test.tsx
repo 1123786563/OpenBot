@@ -22,6 +22,7 @@ import {
   ToolActivity,
   type ToolGroup,
 } from "../src/components/channels/tool-activity";
+import { markdownComponents } from "../src/lib/markdown";
 
 /**
  * The tool-activity group: the one line a run of adjacent connector and browser calls folds into,
@@ -419,6 +420,48 @@ test("the untrusted envelope never reaches the reader, and the content inside it
   expect(shown.includes("CRITICAL: The following")).toBe(false);
   expect(shown.includes("<untrusted_data")).toBe(false);
   page.restore();
+});
+
+/*
+ * The fold draws a vendor's answer with the same markdown machinery the transcript gives a Bot's
+ * prose, but without the single-tool path's fence around it: the text arrives from the MCP server,
+ * not from the app. A component in that machinery throwing must cost the one step its result and
+ * no more — the row degrades to the tool boundary's own local wording and the rest of the group,
+ * the fold, and the transcript around it go on. Injected the same way the failure really happens:
+ * a markdown component throwing on what the parser hands it, here on a link inside the answer.
+ */
+test("a step whose drawing throws degrades to the tool boundary's fallback and the rest of the group survives", async () => {
+  await i18next.changeLanguage("en");
+  const group = expectGroup(
+    groupToolSteps([
+      search(
+        "explodes",
+        "See [the source](https://example.com/doc) for the details.",
+      ),
+      search("fine", '{"results":"# Standup notes"}'),
+    ])[0],
+  );
+  const realAnchor = markdownComponents.a;
+  markdownComponents.a = () => {
+    throw new Error("pathological vendor markdown");
+  };
+  try {
+    const page = renderGroup(group);
+    page.openFold();
+    // The failed step is replaced by the boundary's own sentence — what failed, and the promise
+    // that nothing else was lost — instead of taking the whole transcript down with it.
+    const shown = document.body.textContent ?? "";
+    expect(shown.includes("could not be drawn")).toBe(true);
+    expect(shown.includes("The rest of this conversation is unaffected")).toBe(
+      true,
+    );
+    // The neighbour step's answer is still drawn, and the line the group folds from survives.
+    expect(page.view.getByText("Standup notes")).toBeTruthy();
+    expect(page.view.getByText("Used Notes")).toBeTruthy();
+    page.restore();
+  } finally {
+    markdownComponents.a = realAnchor;
+  }
 });
 
 test("a refused step reads as blocked and keeps its reason without the marker", () => {
