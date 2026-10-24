@@ -218,6 +218,46 @@ test("an ordinary refusal folds like any other step; it asks nobody anything", (
   expect(expectGroup(grouped[0]).steps).toEqual([refused, after]);
 });
 
+/*
+ * The verdict cache is FIFO-capped, so a long research session — more distinct results than the
+ * cap holds — rolls verdicts out as fast as they are written, and every frame used to re-parse the
+ * whole history it had already judged. The re-read is not owed to the semantics either:
+ * `refusalBody` decodes through `asText`, which rewrites a result only when it starts with a
+ * quote, and a refusal is either the marker itself or the JSON encoding of a string that starts
+ * with it. An ordinary vendor answer is known false from its first characters alone — no parse,
+ * no cache — and these two pins hold the claim: the verdicts at scale, and the parse they cost.
+ */
+test("a history longer than the verdict cache folds whole: no distinct ordinary result asks the person", () => {
+  // 600 distinct vendor answers, JSON-encoded the way the runtime carries them — none a refusal.
+  const steps = Array.from({ length: 600 }, (_, i) =>
+    search(`s${i}`, JSON.stringify(`vendor answer ${i}`)),
+  );
+  const grouped = groupToolSteps(steps);
+  expect(grouped).toHaveLength(1);
+  expect(expectGroup(grouped[0]).steps).toHaveLength(600);
+});
+
+test("a frame never re-parses history it has already judged, however far past the cache cap", () => {
+  const steps = Array.from({ length: 600 }, (_, i) =>
+    search(`r${i}`, JSON.stringify(`vendor answer ${i}`)),
+  );
+  const realParse = JSON.parse;
+  let parses = 0;
+  JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+    parses += 1;
+    return realParse(...args);
+  }) as typeof JSON.parse;
+  try {
+    // Two frames over the same history, the way a streaming reply re-renders: the second judges
+    // nothing the first did not, and an ordinary result is judged without a parse at all.
+    groupToolSteps(steps);
+    groupToolSteps(steps);
+  } finally {
+    JSON.parse = realParse;
+  }
+  expect(parses).toBe(0);
+});
+
 test("grouping reads a real streamed conversation through the transcript projection", () => {
   const messages = [
     { id: "u1", role: "user", content: "Catch up on my notes." },

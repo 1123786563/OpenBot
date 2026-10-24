@@ -7,6 +7,7 @@ import { type ResearchLabelKey, readToolName } from "@/lib/plugins/tool-name";
 import {
   asText,
   forDisplay,
+  REFUSAL_MARKER,
   refusalBody,
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
@@ -108,6 +109,23 @@ const askVerdicts = new Map<string, boolean>();
  */
 function asksThePerson(result: string | undefined): boolean {
   if (result === undefined) return false;
+  /*
+   * A refusal can only wear two shapes, and each is recognisable from the result's first
+   * characters. `refusalBody` decodes through `asText`, which rewrites a result only when it starts
+   * with a quote, and answers a body only for text that starts with the marker — so a verdict of
+   * true needs the result to open with the marker itself, or with the quote right in front of the
+   * marker that its JSON encoding opens with (the envelope is the runtime's own encoding, which
+   * escapes nothing in the marker's letters). Anything else is false before the cache or a parse is
+   * ever consulted — which is what keeps a long research session, more distinct results than the
+   * FIFO holds so every frame re-judges history it has already judged, from re-parsing all of it.
+   */
+  const lead = result.trimStart();
+  if (
+    !lead.startsWith(REFUSAL_MARKER) &&
+    !lead.startsWith(`"${REFUSAL_MARKER}`)
+  ) {
+    return false;
+  }
   const cached = askVerdicts.get(result);
   if (cached !== undefined) return cached;
   const body = refusalBody(result);
