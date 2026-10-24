@@ -7,10 +7,12 @@
  *     (one per company: a whole-company monthly ceiling and the per-person ceiling applied to
  *     every principal). No row = no cap expressed: background processing runs, and the ops
  *     view reports the cap as unset rather than inventing a default limit.
- *   - "额度耗尽时新处理排队，不改动已确认内容的授权读取" — admission happens ONLY on the
- *     background path (the sync queue's retains). Exhaustion defers the work — it stays
- *     pending, retried on the next drain — and no recall path ever consults this gate: reads
- *     of confirmed content are not spend and are unaffected by exhaustion.
+ *   - "额度耗尽时新处理排队，不改动已确认内容的授权读取" — admission happens on every
+ *     path that sends content for processing: the sync queue's retains (#384) and the eager
+ *     retains behind a person's confirm/edit/correction (the judgment review's since
+ *     FIX-W11, the preference and source-bound seams' since FIX-F23). Exhaustion defers the
+ *     work — it stays pending, retried on the next drain — and no recall path ever consults
+ *     this gate: reads of confirmed content are not spend and are unaffected by exhaustion.
  *   - "重试不重复扣费或跨公司计入" — admission is idempotent per (tenant, work_key): the
  *     queue keys admission on the work row's id plus its attempt count, so a budget-deferred
  *     retry (which deliberately does not bump attempts) re-admits the SAME reservation and is
@@ -31,6 +33,7 @@ import {
   hindsightBudgetCaps,
   hindsightBudgetReservations,
 } from "../db/schema/hindsight-budget";
+import { isUniqueViolation } from "./sync-queue";
 
 /** What one admission asks for, and what its answer means. */
 export type BackgroundWorkAdmission =
@@ -90,80 +93,108 @@ export function createDrizzleBudgetGate(
     async admitBackgroundWork(input) {
       const period = budgetPeriodOf(now());
       const units = input.units ?? 1;
-      // Idempotency first: the same work key returns its existing reservation whatever its
-      // state — a deferred retry re-admits without a second charge. A RELEASED row never
-      // counted, so re-admitting it is a fresh admission in budget terms (RG6-3): the caps
-      // are re-checked inside the caps row lock and the flip back to reserved happens only
-      // within them — a released row cannot stand in as a bypass around a cap tightened
-      // since its release. The queue normally makes this unreachable (a release bumps
-      // attempts, so the next drain uses a fresh work key); it is the crash window between
-      // release and that bump where the same work key comes back.
-      const [existing] = await database
-        .select()
-        .from(hindsightBudgetReservations)
-        .where(
-          and(
-            eq(hindsightBudgetReservations.tenantId, input.tenantId),
-            eq(hindsightBudgetReservations.workKey, input.workKey),
-          ),
-        )
-        .limit(1);
-      if (existing) {
-        if (existing.state === "released") {
-          const reAdmission = await database.transaction(async (tx) => {
-            const verdict = await capsVerdict(
-              tx,
-              input.tenantId,
-              input.principalId,
-              period,
-              units,
-            );
-            if (!verdict.ok) return verdict;
-            await tx
-              .update(hindsightBudgetReservations)
-              .set({
-                state: "reserved",
+      // One transaction for the whole admission (FR-3, FIX-F23): the dedup read, the caps row
+      // lock, the usage read under it and the insert all commit together, so a `SELECT … FOR
+      // UPDATE` that used to expire at the end of its single statement now holds until the
+      // reservation row is durable. Concurrent admissions of the same company serialize on
+      // their caps row and each sees the charges the earlier one committed; the one thing a
+      // transaction cannot fold is two admissions of the SAME work key racing past the dedup
+      // read — the (tenant_id, work_key) unique index decides that race, and the loser returns
+      // the winner's reservation below instead of erroring.
+      //
+      // Idempotency first (RG6-3): the same work key returns its existing reservation whatever
+      // its state — a deferred retry re-admits without a second charge. A RELEASED row never
+      // counted, so re-admitting it is a fresh admission in budget terms: the caps are
+      // re-checked inside the caps row lock and the flip back to reserved happens only within
+      // them — a released row cannot stand in as a bypass around a cap tightened since its
+      // release. The queue normally makes this unreachable (a release bumps attempts, so the
+      // next drain uses a fresh work key); it is the crash window between release and that
+      // bump where the same work key comes back.
+      try {
+        return await database.transaction(async (tx) => {
+          const [existing] = await tx
+            .select()
+            .from(hindsightBudgetReservations)
+            .where(
+              and(
+                eq(hindsightBudgetReservations.tenantId, input.tenantId),
+                eq(hindsightBudgetReservations.workKey, input.workKey),
+              ),
+            )
+            .limit(1);
+          if (existing) {
+            if (existing.state === "released") {
+              const verdict = await capsVerdict(
+                tx,
+                input.tenantId,
+                input.principalId,
                 period,
                 units,
-                releasedAt: null,
-                releaseReason: null,
-                updatedAt: now(),
-              })
-              .where(
-                and(
-                  eq(hindsightBudgetReservations.id, existing.id),
-                  eq(hindsightBudgetReservations.state, "released"),
-                ),
               );
-            return { ok: true as const };
+              if (!verdict.ok) return verdict;
+              await tx
+                .update(hindsightBudgetReservations)
+                .set({
+                  state: "reserved",
+                  period,
+                  units,
+                  releasedAt: null,
+                  releaseReason: null,
+                  updatedAt: now(),
+                })
+                .where(
+                  and(
+                    eq(hindsightBudgetReservations.id, existing.id),
+                    eq(hindsightBudgetReservations.state, "released"),
+                  ),
+                );
+            }
+            return { ok: true as const, reservationId: existing.id };
+          }
+          const verdict = await capsVerdict(
+            tx,
+            input.tenantId,
+            input.principalId,
+            period,
+            units,
+          );
+          if (!verdict.ok) return { ok: false as const, reason: verdict.reason };
+          const id = randomUUID();
+          await tx.insert(hindsightBudgetReservations).values({
+            id,
+            tenantId: input.tenantId,
+            principalId: input.principalId,
+            workKey: input.workKey,
+            period,
+            units,
+            state: "reserved",
+            createdAt: now(),
+            updatedAt: now(),
           });
-          if (!reAdmission.ok) {
-            return { ok: false, reason: reAdmission.reason };
+          return { ok: true as const, reservationId: id };
+        });
+      } catch (error) {
+        // A same-key concurrent admission committed its reservation first (the unique index
+        // is the authority the dedup read could not be under concurrency): fold into it —
+        // the caller gets the SAME reservation id and its settle/release stays idempotent,
+        // so the work is charged once, not once per racer.
+        if (isUniqueViolation(error)) {
+          const [existing] = await database
+            .select()
+            .from(hindsightBudgetReservations)
+            .where(
+              and(
+                eq(hindsightBudgetReservations.tenantId, input.tenantId),
+                eq(hindsightBudgetReservations.workKey, input.workKey),
+              ),
+            )
+            .limit(1);
+          if (existing) {
+            return { ok: true as const, reservationId: existing.id };
           }
         }
-        return { ok: true, reservationId: existing.id };
+        throw error;
       }
-      const verdict = await capsVerdict(
-        database,
-        input.tenantId,
-        input.principalId,
-        period,
-        units,
-      );
-      if (!verdict.ok) return { ok: false, reason: verdict.reason };
-      const id = randomUUID();
-      await database.insert(hindsightBudgetReservations).values({
-        id,
-        tenantId: input.tenantId,
-        principalId: input.principalId,
-        workKey: input.workKey,
-        period,
-        units,
-        state: "reserved",
-        createdAt: now(),
-        updatedAt: now(),
-      });
-      return { ok: true, reservationId: id };
     },
 
     async settleBackgroundWork(reservationId, units) {
@@ -261,9 +292,10 @@ export function createDrizzleBudgetGate(
 
   /**
    * Whether one admission fits the caps the platform has expressed — the same computation
-   * for a fresh reservation and the re-admission of a released one. Called inside the
-   * caller's transaction when it has one, so the caps row lock holds across the verdict and
-   * the write that acts on it: concurrent admissions of the same company serialize on their
+   * for a fresh reservation and the re-admission of a released one. Always called inside
+   * `admitBackgroundWork`'s transaction (FR-3, FIX-F23): the caps row lock the `FOR UPDATE`
+   * takes holds across the verdict AND the insert or update that acts on it, until the
+   * transaction commits — concurrent admissions of the same company serialize on their
    * caps row, and each sees the charges the earlier one committed (READ COMMITTED re-reads
    * the aggregate under the lock). No caps row = no cap expressed: admission runs. A cap of
    * 0 is the platform's "no background processing" — an expressed limit, not an unset one.

@@ -4159,11 +4159,12 @@ if (
     database,
     hindsightRevocations,
   );
-  // The background-processing budget gate (FIX-W11 A-2, #393): the platform-side control
-  // over whether its own background work runs. The durable sync queue (#384) drains through
-  // it — an exhausted cap defers the retain, the work stays pending and retries on the next
-  // drain — and the judgment review's eager retains below admit through the same gate.
-  // Authorized reads never consult it: exhaustion changes what runs, never what recalls.
+  // The background-processing budget gate (FIX-W11 A-2, FIX-F23, #393): the platform-side
+  // control over whether its own background work runs. The durable sync queue (#384) drains
+  // through it — an exhausted cap defers the retain, the work stays pending and retries on
+  // the next drain — and every eager retain below (the judgment review's, the preference
+  // confirm/edit/correction's and the source-bound confirm/edit's) admits through the same
+  // gate. Authorized reads never consult it: exhaustion changes what runs, never what recalls.
   const hindsightBudgetGate = createDrizzleBudgetGate(database);
   // The durable sync queue (#384): what the confirm seams record into and the
   // sweep below drains. Identity at task time is the work row's own
@@ -4188,6 +4189,10 @@ if (
       recovery: hindsightRecovery.gate,
       work: hindsightSyncQueue,
       revocations: hindsightRevocationLedger,
+      // FIX-F23 / FR-2: the confirm/edit/correction eager retains admit through the same
+      // budget gate the queue drains through — an exhausted cap defers the retain to the
+      // work row's drain instead of sending unmetered.
+      budget: hindsightBudgetGate,
     },
   );
   const hindsightSourceBound = createSourceBoundRecallService(
@@ -4199,6 +4204,8 @@ if (
       recovery: hindsightRecovery.gate,
       work: hindsightSyncQueue,
       revocations: hindsightRevocationLedger,
+      // FIX-F23 / FR-2: the same gate for the source-bound confirm/edit eager retains.
+      budget: hindsightBudgetGate,
     },
   );
   /*
