@@ -9,13 +9,19 @@ import {
   createObservationExecutionWorker,
   type EvaluationCaseContext,
   type EvaluationCaseOutcome,
+  type EvaluationCaseRunner,
   type EvaluationToolCall,
   EXECUTION_WORK_KIND,
   ExecutionError,
 } from "../src/ai-observability/executions";
 import { createObservationExperimentStore } from "../src/ai-observability/experiments";
+import {
+  createProductionEvaluationCaseRunner,
+  type EvaluationModelCall,
+} from "../src/ai-observability/execution-runner";
 import { createExperimentResultService } from "../src/ai-observability/results";
 import { resolveObservationScope } from "../src/ai-observability/scope";
+import { createJudgeScoringCaseRunner } from "../src/ai-observability/scoring/judge";
 import { createAuditStore } from "../src/audit";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
 import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
@@ -109,6 +115,8 @@ function workerFor(
     revoked?: boolean;
     leaseMs?: number;
     concurrency?: number;
+    /** FREV-05: the cancel-watch cadence; tests tighten it, production rides the default. */
+    cancelWatchMs?: number;
     /** Overrides the default scope-echoing reauthorize seam. */
     reauthorize?: Parameters<
       typeof createObservationExecutionWorker
@@ -122,6 +130,7 @@ function workerFor(
     runCase,
     concurrency: input.concurrency,
     leaseMs: input.leaseMs,
+    cancelWatchMs: input.cancelWatchMs,
     reauthorize:
       input.reauthorize ??
       (input.revoked
@@ -981,4 +990,154 @@ test("the case-outcome vocabulary is a database fact, and rows die with the exec
     .delete(aiObservationExperimentExecutions)
     .where(eq(aiObservationExperimentExecutions.id, row.id));
   expect(await executions.caseOutcomes(row.id)).toEqual([]);
+});
+
+/*
+ * FREV-05, the final-review timing on the real pipeline: sample A admitted and
+ * awaiting its model → the task settles cancelled (or the actor's authorization is
+ * withdrawn) behind the worker's back → the model still answers completed. The judge
+ * is a NEW billed call that withdrawn eligibility may not start, and a cancellation
+ * must also reach the in-flight dial itself.
+ */
+
+test("a cancel that lands while a sample is suspended withholds the judge — zero judge calls when the sample resumes (FREV-05)", { timeout: 30_000 }, async () => {
+  const { experiment } = await frozenExperiment(scopeA, {}, 2);
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  const judgeCalls: unknown[] = [];
+  let releaseSample!: () => void;
+  const suspended = new Promise<void>((resolve) => {
+    releaseSample = resolve;
+  });
+  let inFlight = 0;
+  const inner: EvaluationCaseRunner = async (): Promise<EvaluationCaseOutcome> => {
+    inFlight += 1;
+    await suspended;
+    return { status: "completed", output: "the answer" };
+  };
+  const judge = async () => {
+    judgeCalls.push({});
+    return null;
+  };
+  const worker = workerFor(createJudgeScoringCaseRunner({ inner, judge }));
+
+  const swept = worker.sweep();
+  await until(() => inFlight === 1, "sample 0 in flight");
+
+  // The cancel the route or a revocation settles: the row goes terminal while
+  // the sample's model call is away.
+  await executions.settleCancelled(row.id);
+
+  releaseSample();
+  await swept;
+
+  // The judge call count is zero — no new billed call on a cancelled task —
+  // and the withholding is a record, not a silence.
+  expect(judgeCalls).toHaveLength(0);
+  const settled = await executions.get(scopeA, row.id);
+  expect(settled?.state).toBe("cancelled");
+  const outcomes = await executions.caseOutcomes(row.id);
+  expect(outcomes).toHaveLength(1); // sample 1 never started
+  expect(outcomes[0]?.status).toBe("completed");
+  expect((outcomes[0]?.detail as { judge?: unknown } | null)?.judge).toMatchObject({
+    state: "projected",
+    value: {
+      status: { state: "projected", value: "failed" },
+      code: { state: "projected", value: "JUDGE_CANCELLED" },
+    },
+  });
+});
+
+test("an authorization withdrawn while the sample is away withholds the judge and cancels at the boundary (FREV-05)", { timeout: 30_000 }, async () => {
+  const { experiment } = await frozenExperiment(scopeA, {}, 2);
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  const judgeCalls: unknown[] = [];
+  let releaseSample!: () => void;
+  const suspended = new Promise<void>((resolve) => {
+    releaseSample = resolve;
+  });
+  let inFlight = 0;
+  const inner: EvaluationCaseRunner = async (): Promise<EvaluationCaseOutcome> => {
+    inFlight += 1;
+    await suspended;
+    return { status: "completed", output: "the answer" };
+  };
+  const judge = async () => {
+    judgeCalls.push({});
+    return null;
+  };
+  let authorized = true;
+  const worker = workerFor(createJudgeScoringCaseRunner({ inner, judge }), {
+    reauthorize: async () => (authorized ? scopeA : null),
+  });
+
+  const swept = worker.sweep();
+  await until(() => inFlight === 1, "sample 0 in flight");
+  // The revocation: live authorization is gone while the row itself is still
+  // running — the re-check must answer on live facts, not the cached scope.
+  authorized = false;
+  releaseSample();
+  await swept;
+
+  expect(judgeCalls).toHaveLength(0);
+  const settled = await executions.get(scopeA, row.id);
+  expect(settled?.state).toBe("cancelled");
+  const outcomes = await executions.caseOutcomes(row.id);
+  expect(outcomes).toHaveLength(1);
+  expect(outcomes[0]?.status).toBe("completed");
+  expect((outcomes[0]?.detail as { judge?: unknown } | null)?.judge).toMatchObject({
+    state: "projected",
+    value: {
+      status: { state: "projected", value: "failed" },
+      code: { state: "projected", value: "JUDGE_CANCELLED" },
+    },
+  });
+});
+
+test("a cancellation mid-case aborts the in-flight model call — the database fact reaches the dial (FREV-05)", { timeout: 30_000 }, async () => {
+  const { experiment } = await frozenExperiment(scopeA, {}, 1);
+  const row = await executions.enqueue(scopeA, experiment.id);
+
+  // The production runner over a dial that only ends when the task's signal
+  // fires: the chain under proof is the row watch → context.signal → the dial.
+  const observedSignals: (AbortSignal | undefined)[] = [];
+  const callModel = (async (request: Parameters<EvaluationModelCall>[0]) => {
+    const signal = request.signal;
+    observedSignals.push(signal);
+    if (!signal) throw new Error("no signal threaded into the model call");
+    return new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () =>
+        reject(new Error("The operation was aborted")),
+      );
+    });
+  }) satisfies EvaluationModelCall;
+  const judgeCalls: unknown[] = [];
+  const worker = workerFor(
+    createJudgeScoringCaseRunner({
+      inner: createProductionEvaluationCaseRunner({ callModel }),
+      judge: async () => {
+        judgeCalls.push({});
+        return null;
+      },
+    }),
+    { cancelWatchMs: 20 },
+  );
+
+  const swept = worker.sweep();
+  await until(() => observedSignals.length === 1, "the sample's dial in flight");
+  await executions.settleCancelled(row.id);
+  await swept;
+
+  // The dial was interrupted by the cancellation, the case lands as a
+  // cancellation (never a provider error), and no judge runs after it.
+  expect(judgeCalls).toHaveLength(0);
+  const settled = await executions.get(scopeA, row.id);
+  expect(settled?.state).toBe("cancelled");
+  const outcomes = await executions.caseOutcomes(row.id);
+  expect(outcomes).toHaveLength(1);
+  expect(outcomes[0]?.status).toBe("failed");
+  expect((outcomes[0]?.detail as { reason?: string } | null)?.reason).toBe(
+    "cancelled",
+  );
 });

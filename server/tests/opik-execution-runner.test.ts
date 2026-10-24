@@ -382,6 +382,77 @@ describe("the production case runner makes one controlled, observed model call",
   });
 });
 
+describe("the task's cancellation signal (FREV-05)", () => {
+  test("the runner threads the task's signal into the model call", async () => {
+    const { callModel, calls } = recorder();
+    const runner = createProductionEvaluationCaseRunner({ callModel });
+    const controller = new AbortController();
+
+    await runner({ ...contextFor(), signal: controller.signal });
+
+    // The signal the worker's cancel-watch aborts is the signal the dial holds:
+    // no re-derivation, no copy — one chain from the execution row to the wire.
+    expect(calls[0]?.signal).toBe(controller.signal);
+  });
+
+  test("a task cancelled before the dial refuses with zero holds and the canceled observation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { callModel, observe, observations, calls } = recorder();
+    let admitted = 0;
+    const runner = createProductionEvaluationCaseRunner({
+      callModel,
+      observe,
+      admit: async () => {
+        admitted += 1;
+        return { allowed: true };
+      },
+    });
+
+    const outcome = await runner({ ...contextFor(), signal: controller.signal });
+
+    // The same settlement class as the projection refusal: the case lands
+    // failed with its reason, nothing is held, nothing is dialed, and the
+    // observation says canceled — never a provider error the call never got
+    // the chance to be.
+    expect(outcome).toEqual({ status: "failed", reason: "cancelled" });
+    expect(admitted).toBe(0);
+    expect(calls).toEqual([]);
+    expect(observations[0]?.ending).toEqual({ kind: "canceled" });
+  });
+
+  test("an abort that fires mid-call lands as cancellation, not provider_error", async () => {
+    const controller = new AbortController();
+    const { observe, observations } = recorder();
+    // The dial's shape of an abort: it holds the call open until the task's
+    // signal fires, then rejects. Nothing about the rejection itself says WHY,
+    // so the runner asks the signal — the only fact that knows.
+    let dialing!: () => void;
+    const dialStarted = new Promise<void>((resolve) => {
+      dialing = resolve;
+    });
+    const callModel = (async (request: Parameters<EvaluationModelCall>[0]) => {
+      const signal = request.signal;
+      if (!signal) throw new Error("no signal threaded into the model call");
+      dialing();
+      return new Promise<never>((_, reject) => {
+        signal.addEventListener("abort", () =>
+          reject(new Error("The operation was aborted")),
+        );
+      });
+    }) satisfies EvaluationModelCall;
+    const runner = createProductionEvaluationCaseRunner({ callModel, observe });
+
+    const settled = runner({ ...contextFor(), signal: controller.signal });
+    await dialStarted;
+    controller.abort();
+    const outcome = await settled;
+
+    expect(outcome).toEqual({ status: "failed", reason: "cancelled" });
+    expect(observations[0]?.ending).toEqual({ kind: "canceled" });
+  });
+});
+
 /*
  * The gateway adapter against a real local HTTP upstream (the T15 precedent: a
  * Bun.serve on an ephemeral port, not a mocked fetch) — proving the frozen
@@ -517,6 +588,38 @@ describe("the gateway model call", () => {
           user: "u",
         }),
       ).rejects.toThrow();
+    } finally {
+      hanging.stop(true);
+    }
+  });
+
+  test("a task cancellation aborts an in-flight dial before its own time bound (FREV-05)", async () => {
+    // The call's two bounds — its own timeout and the task's cancellation — are
+    // one signal, whichever fires first. A dial holding a 5s budget is aborted
+    // by the task at 50ms: the interrupt reaches the wire, it does not wait
+    // for the budget to expire.
+    const hanging = Bun.serve({
+      port: 0,
+      fetch: () => new Promise(() => {}),
+    });
+    try {
+      const bounded = createGatewayModelCall({
+        apiKey: "test-key",
+        baseURL: `http://127.0.0.1:${hanging.port}/v1`,
+        timeoutMs: 5_000,
+      });
+      const controller = new AbortController();
+      const startedAt = Date.now();
+      const call = bounded({
+        modelName: "gateway-model",
+        modelParameters: {},
+        system: "s",
+        user: "u",
+        signal: controller.signal,
+      });
+      setTimeout(() => controller.abort(), 50);
+      await expect(call).rejects.toThrow();
+      expect(Date.now() - startedAt).toBeLessThan(2_000);
     } finally {
       hanging.stop(true);
     }

@@ -276,6 +276,23 @@ export type EvaluationCaseContext = Readonly<{
    * learning or business-data handle in this context at all — isolation by construction.
    */
   callTool: (toolName: string) => Promise<EvaluationToolCall>;
+  /**
+   * The task's cancellation signal (FREV-05): aborts the moment the execution row
+   * leaves running — a user cancel or a revocation settles it behind the worker's
+   * back — so a model or judge call already in flight is interrupted at its dial
+   * instead of running to completion against a settled execution. The worker derives
+   * it by watching the row, not from an in-process channel, because the settle can
+   * land in another process than the one running the case.
+   */
+  signal?: AbortSignal;
+  /**
+   * The current-eligibility re-check a runner performs before a new billed call it
+   * starts after a suspension point (FREV-05): the task's row still running AND live
+   * authorization for its actor — a fresh answer, because the admission that started
+   * the case is stale the moment the case's model call goes away. Fail-closed: a
+   * re-check that cannot be answered is not an admission.
+   */
+  recheckAdmission?: () => Promise<boolean>;
 }>;
 
 /** Runs one case to an honest outcome. The production runner is a later ticket's work. */
@@ -912,12 +929,20 @@ export type ObservationExecutionWorkerDeps = Readonly<{
   concurrency?: number;
   leaseMs?: number;
   pollMs?: number;
+  /**
+   * The cancel-watch cadence (FREV-05): how often a running case re-reads its
+   * execution row to learn a cancel or revocation settled it mid-case. A poll, by
+   * necessity — the settle can land in another process than the worker's.
+   */
+  cancelWatchMs?: number;
   owner?: string;
 }>;
 
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_LEASE_MS = 60_000;
 const DEFAULT_POLL_MS = 2_000;
+/** How often a running case's cancel-watch re-reads the execution row (FREV-05). */
+const DEFAULT_CANCEL_WATCH_MS = 250;
 /** Distinct refused tool names the settle audit row carries; enough to steer a review. */
 const MAX_AUDITED_TOOL_NAMES = 32;
 
@@ -1065,6 +1090,7 @@ export function createObservationExecutionWorker(
   const queue = deps.queue ?? createWorkQueue(deps.database);
   const concurrency = deps.concurrency ?? DEFAULT_CONCURRENCY;
   const leaseMs = deps.leaseMs ?? DEFAULT_LEASE_MS;
+  const cancelWatchMs = deps.cancelWatchMs ?? DEFAULT_CANCEL_WATCH_MS;
   const owner = deps.owner ?? workOwner("opik-execution");
 
   const auditSettle = (
@@ -1253,25 +1279,90 @@ export function createObservationExecutionWorker(
           }
           continue;
         }
-        const outcome = await deps.runCase({
-          executionId: execution.id,
-          experimentId: execution.experimentId,
-          caseIndex: index,
-          frozenCase,
-          config,
-          scope: live,
-          callTool: async (toolName) =>
-            gate.call(toolName, [frozenCase.toolFixtures, config.toolFixtures]),
-        });
-        await store.recordCaseOutcome(
-          execution.id,
-          index,
-          outcome.status,
-          outcome.output,
-          outcome.usage,
-          outcome.judge,
-          outcome.reason,
-        );
+        /*
+         * FREV-05: a cancel or a revocation settles the row while the worker awaits
+         * this case, and the per-case re-authorization above cannot see it — the
+         * case is already away. The watch turns that database fact into the case's
+         * AbortSignal (the model call and the judge call both hold it), so the
+         * in-flight dial is interrupted rather than running to completion against
+         * a settled execution. A poll, because the settle can land in another
+         * process than this one; a read that cannot be answered is not a cancel
+         * (R3-27: infrastructure noise is not a case fact), so the watch logs and
+         * keeps polling while the case boundaries stay the hard gates.
+         */
+        const cancelWatch = new AbortController();
+        const watching = repeatAfterEach(async () => {
+          try {
+            const current = await store.loadById(execution.id);
+            // A row that is gone or left running is a settle this worker must
+            // stop awaiting: an absent row reads as "not running", fail closed.
+            if (current?.state !== "running") {
+              cancelWatch.abort();
+            }
+          } catch (error) {
+            log.warn(
+              {
+                type: "opik-execution-cancel-watch-failed",
+                executionId: execution.id,
+                error: String(error),
+              },
+              "opik-execution-cancel-watch-failed",
+            );
+          }
+        }, cancelWatchMs);
+        try {
+          const outcome = await deps.runCase({
+            executionId: execution.id,
+            experimentId: execution.experimentId,
+            caseIndex: index,
+            frozenCase,
+            config,
+            scope: live,
+            signal: cancelWatch.signal,
+            recheckAdmission: async () => {
+              // The judge wrapper's fresh answer (FREV-05): the row AND live
+              // authorization, read now — the eligibility that admitted this case
+              // can be withdrawn while its model call is away. A re-check that
+              // cannot be answered is not an admission: fail closed.
+              try {
+                const current = await store.loadById(execution.id);
+                if (current?.state !== "running") return false;
+                return (
+                  (await deps.reauthorize({
+                    actorId: execution.actorId,
+                    botId: execution.botId,
+                  })) !== null
+                );
+              } catch (error) {
+                log.warn(
+                  {
+                    type: "opik-execution-recheck-failed",
+                    executionId: execution.id,
+                    error: String(error),
+                  },
+                  "opik-execution-recheck-failed",
+                );
+                return false;
+              }
+            },
+            callTool: async (toolName) =>
+              gate.call(toolName, [
+                frozenCase.toolFixtures,
+                config.toolFixtures,
+              ]),
+          });
+          await store.recordCaseOutcome(
+            execution.id,
+            index,
+            outcome.status,
+            outcome.output,
+            outcome.usage,
+            outcome.judge,
+            outcome.reason,
+          );
+        } finally {
+          watching.stop();
+        }
         // The governance counter follows each case, so a run that dies mid-way has
         // already recorded the refusals that happened.
         const tally = gate.tally();

@@ -538,3 +538,124 @@ test("the judge record survives the whole landing channel: outcome row, settle c
     usage: { inputTokens: 12, outputTokens: 34 },
   });
 });
+
+async function until(
+  predicate: () => Promise<boolean> | boolean,
+  what: string,
+  ms = 5_000,
+) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`condition not reached: ${what}`);
+}
+
+test("a judge call aborted mid-dial by the task's cancellation keeps its hold reserved and records cancelled evidence (FREV-05)", { timeout: 30_000 }, async () => {
+  const customer = `${prefix}-aborted-judge`;
+  await grant(customer, 20_000);
+
+  // The real pipeline with a judge that holds its dial: the evaluated call
+  // completes, the judge's request is on the wire — and the task settles
+  // cancelled behind the worker's back. The watch aborts the judge dial; the
+  // hold is an unknown cost that stays occupied (ADR-0003's pending
+  // settlement), the evidence row says cancelled, and the case lands with a
+  // JUDGE_CANCELLED scoring record.
+  const datasets = createObservationDatasetStore(database);
+  const experiments = createObservationExperimentStore(database);
+  const executionsStore = createObservationExecutionStore(database);
+  const audit = createAuditStore(database);
+
+  const { version } = await datasets.saveVersion(scope, {
+    datasetName: `${prefix}-ds-${randomUUID().slice(0, 8)}`,
+    cases: [
+      {
+        input: "Summarize the outage.",
+        referenceOutput: "A summary.",
+        toolFixtures: {},
+        sourceRunId: "run-1",
+        sourceAttemptId: "attempt-1",
+        sourceBindingId: null,
+      },
+    ],
+  });
+  const { experiment } = await experiments.submit(scope, {
+    name: `${prefix}-exp-${randomUUID().slice(0, 8)}`,
+    datasetVersionId: version.id,
+    config: configInput(),
+  });
+  const execution = await createExperimentExecutionService({
+    executions: executionsStore,
+    billing: {
+      precheck: createExecutionBudgetPrecheck({
+        creditWriter: writer,
+        externalCustomerId: customer,
+      }),
+    },
+  }).start(scope, experiment.id);
+
+  const judgeDials: (AbortSignal | undefined)[] = [];
+  const callJudge = (async (request: Parameters<EvaluationModelCall>[0]) => {
+    const signal = request.signal;
+    judgeDials.push(signal);
+    if (!signal) throw new Error("no signal threaded into the judge dial");
+    return new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () =>
+        reject(new Error("aborted by the task's cancellation")),
+      );
+    });
+  }) satisfies EvaluationModelCall;
+  const judge = createJudgeScorer({
+    callModel: callJudge,
+    admission: {
+      entrances,
+      approvedVersions: new Set([JUDGE_SCORER_VERSION]),
+      policy,
+    },
+    billing: { creditWriter: writer, outbox, externalCustomerId: customer },
+  });
+  const billed = createBilledEvaluationCaseRunner({
+    callModel: async () => ({
+      output: "the answer",
+      inputTokens: 10,
+      outputTokens: 20,
+    }),
+    billing: { creditWriter: writer, outbox, policy, externalCustomerId: customer },
+  });
+  const worker = createObservationExecutionWorker({
+    database,
+    audit,
+    classify: () => "read",
+    runCase: createJudgeScoringCaseRunner({ inner: billed, judge }),
+    reauthorize: async () => scope,
+    owner: `t27-owner-${randomUUID().slice(0, 8)}`,
+    cancelWatchMs: 20,
+  });
+
+  const swept = worker.sweep();
+  await until(() => judgeDials.length === 1, "the judge dial in flight");
+  await executionsStore.settleCancelled(execution.id);
+  await swept;
+
+  const settled = await executionsStore.get(scope, execution.id);
+  expect(settled?.state).toBe("cancelled");
+
+  const judgeEvent = judgeCaseUsageId(execution.id, 0);
+  // The judge hold is an unknown cost, not a confirmed no-cost: it stays
+  // reserved until its own clock expires.
+  expect(await reservationOf(judgeEvent)).toMatchObject({ status: "reserved" });
+  const evidence = await outboxRow(judgeEvent);
+  expect(evidence?.reservationId).toBeNull();
+  expect(evidence?.status).toBe("cancelled");
+
+  const outcomes = await executionsStore.caseOutcomes(execution.id);
+  expect(outcomes[0]?.status).toBe("completed");
+  expect(fieldEnvelope(outcomes[0]?.detail, "judge")).toMatchObject({
+    state: "projected",
+    value: {
+      status: { state: "projected", value: "failed" },
+      code: { state: "projected", value: "JUDGE_CANCELLED" },
+    },
+  });
+});

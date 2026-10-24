@@ -8,7 +8,11 @@
  * an evaluation may invent. A model call is money, so the call is bounded in time
  * and its outcome is durable before anything else happens: the worker marks the
  * case in its write-ahead row before invoking this runner and lands the observed
- * outcome after, which is what makes a takeover refuse to invoke twice.
+ * outcome after, which is what makes a takeover refuse to invoke twice. It is
+ * bounded by the task's cancellation too (FREV-05): a cancel or revocation that
+ * settles the execution behind the worker's back aborts the dial it is awaiting,
+ * and the case lands as a cancellation — never as a provider error, and never
+ * silently.
  *
  * Two seams, both interfaces rather than implementations:
  *  - `admit` is the per-call billing admission — T25's seam. This ticket wires
@@ -37,6 +41,13 @@ export type EvaluationModelCall = (input: {
    * when two entrances share a model name. Absent on plain gateway calls.
    */
   entranceId?: string;
+  /**
+   * The task's cancellation signal (FREV-05): combined with the call's own time bound,
+   * whichever fires first. A cancelled task's in-flight dial is interrupted, not left
+   * to run to completion against an execution that already settled. Absent on callers
+   * with no cancellation source — the pre-FREV-05 contract, bounded by the timeout.
+   */
+  signal?: AbortSignal;
 }) => Promise<{
   output: string;
   /** The provider's settled usage; missing means unknown, never zero. */
@@ -128,6 +139,21 @@ export function createProductionEvaluationCaseRunner(
       return { status: "failed", reason: "input_unavailable" };
     }
 
+    // FREV-05: a task already cancelled before the dial refuses in the same class
+    // as the projection refusal — zero holds, zero provider calls, and the honest
+    // `canceled` observation ending instead of a provider error the call never got
+    // the chance to be. The worker's cancel-watch can fire between the case's
+    // start and this point; the check is the dial's last look at the signal.
+    if (context.signal?.aborted) {
+      report({
+        ...base,
+        occurredAt: startedAt,
+        endedAt: new Date(),
+        ending: { kind: "canceled" },
+      });
+      return { status: "failed", reason: "cancelled" };
+    }
+
     const admission = await deps.admit?.({
       executionId: context.executionId,
       experimentId: context.experimentId,
@@ -160,6 +186,7 @@ export function createProductionEvaluationCaseRunner(
         modelParameters: recordOf(context.config.modelParameters),
         system,
         user,
+        signal: context.signal,
       });
       const knownUsage =
         answer.inputTokens !== undefined && answer.outputTokens !== undefined;
@@ -190,6 +217,20 @@ export function createProductionEvaluationCaseRunner(
           : {}),
       };
     } catch {
+      // FREV-05: an abort from the task's cancellation signal is a cancellation,
+      // not a provider failure — the rejection says nothing about why the dial
+      // ended, so the signal is asked. The billed layer above still settles it by
+      // the thrown-call doctrine (unknown cost, evidence row, hold retained): the
+      // provider may have produced billable work before it was stopped.
+      if (context.signal?.aborted) {
+        report({
+          ...base,
+          occurredAt: startedAt,
+          endedAt: new Date(),
+          ending: { kind: "canceled" },
+        });
+        return { status: "failed", reason: "cancelled" };
+      }
       report({
         ...base,
         occurredAt: startedAt,
@@ -235,15 +276,21 @@ export function createGatewayModelCall(
     return client;
   };
 
-  return async ({ modelName, modelParameters, system, user }) => {
+  return async ({ modelName, modelParameters, system, user, signal }) => {
     const settings = gatewaySettings(modelParameters);
+    // The call's own time bound and the task's cancellation are one signal
+    // (FREV-05): whichever fires first ends the dial, so a cancelled task does
+    // not wait out a budget nobody will use. Without a task signal the timeout
+    // alone bounds the call, exactly as before.
+    const bound = AbortSignal.timeout(
+      options.timeoutMs ?? GATEWAY_CALL_TIMEOUT_MS,
+    );
     const result = await generateText({
       model: openai().chat(modelName),
       system,
       prompt: user,
-      abortSignal: AbortSignal.timeout(
-        options.timeoutMs ?? GATEWAY_CALL_TIMEOUT_MS,
-      ),
+      abortSignal:
+        signal === undefined ? bound : AbortSignal.any([bound, signal]),
       ...settings,
     });
     return {
