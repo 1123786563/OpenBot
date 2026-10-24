@@ -2540,6 +2540,52 @@ test("a dotted tool name is refused before dispatch when the effective base URL 
   }
 });
 
+test("a dotted tool name is refused when the base URL spells the default port", async () => {
+  // F01-R11-M1 (#489): the dial normalizes its URL before connecting, and
+  // the HTTPS default port falls out there — `https://api.openai.com:443/…`
+  // connects as `https://api.openai.com/…`. The guard must reach its
+  // verdict in the dial's own terms; the resolver string verbatim let this
+  // form slip past into the whole-request 400 the guard exists to refuse.
+  let dialed = 0;
+  const gateway = createModelGateway(
+    deps({
+      environment: { OPENAI_BASE_URL: "https://api.openai.com:443/v1" },
+      fetch: (async () => {
+        dialed++;
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(400);
+  const body = (await response.json()) as { error: { code: string } };
+  expect(body.error.code).toBe("MASTRA_TOOL_NAME_INVALID");
+  expect(dialed).toBe(0);
+});
+
 test("a dotted tool name still rides a gateway base URL untouched", async () => {
   // The variable's entire purpose: a gateway or OpenAI-compatible endpoint
   // forwards minted names as-is, so the same mount that direct OpenAI
@@ -2582,6 +2628,61 @@ test("a dotted tool name still rides a gateway base URL untouched", async () => 
   );
   expect(response.status).toBe(200);
   expect(dialedUrl).toBe("https://gateway.example/v1/chat/completions");
+  expect(dialedTools).toEqual([
+    {
+      type: "function",
+      function: {
+        name: "github.get_current_user",
+        parameters: { type: "object" },
+      },
+    },
+  ]);
+});
+
+test("a dotted tool name still rides a gateway that spells an explicit port", async () => {
+  // A non-default port is a real part of the address — the dial's URL
+  // normalization keeps it — so an explicit-port gateway is no more direct
+  // OpenAI than the plain gateway above, and the guard must not fold it
+  // into the direct constant.
+  let dialedUrl = "";
+  let dialedTools: unknown;
+  const gateway = createModelGateway(
+    deps({
+      environment: { OPENAI_BASE_URL: "https://gateway.example:8443/v1" },
+      fetch: (async (url, init) => {
+        dialedUrl = String(url);
+        dialedTools = (JSON.parse(String(init?.body)) as { tools?: unknown })
+          .tools;
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(dialedUrl).toBe("https://gateway.example:8443/v1/chat/completions");
   expect(dialedTools).toEqual([
     {
       type: "function",

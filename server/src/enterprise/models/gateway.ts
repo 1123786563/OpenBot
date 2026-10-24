@@ -122,11 +122,24 @@ function directOpenAiDottedToolName(
   chatUrl: string,
 ): string | undefined {
   if (anthropic || !tools) return undefined;
-  // chatCompletionsUrl already folds the unset default, the explicit /v1
-  // form, and trailing slashes into one URL; host case folds in here because
-  // HTTP hosts are case-insensitive and https://API.OPENAI.COM dials the same
-  // public API.
-  if (chatUrl.toLowerCase() !== DIRECT_OPENAI_CHAT_COMPLETIONS_URL)
+  // The dial never connects to this string as written: fetch normalizes it
+  // first, and new Request(url).url is that same normalization — the one
+  // that drops the HTTPS default port, so https://api.openai.com:443/…
+  // dials https://api.openai.com/… (F01-R11-M1). Judge directness in the
+  // dial's own terms or the two disagree about which endpoint a request
+  // hits. chatCompletionsUrl already folds the unset default, the explicit
+  // /v1 form, and trailing slashes into one URL; host case folds in here
+  // because HTTP hosts are case-insensitive and https://API.OPENAI.COM dials
+  // the same public API. A base URL that cannot even parse is not the public
+  // API — pass it through and let the dial fail on it as it does today,
+  // rather than answer a URL question with a tool-name refusal.
+  let dialed: string;
+  try {
+    dialed = new Request(chatUrl).url;
+  } catch {
+    return undefined;
+  }
+  if (dialed.toLowerCase() !== DIRECT_OPENAI_CHAT_COMPLETIONS_URL)
     return undefined;
   for (const tool of tools) {
     if (!object(tool)) continue;
