@@ -454,6 +454,15 @@ export function createPackageService(
           ? await catalogue.listVersions(facts.packageKey)
           : [];
       const usable = versions.filter((entry) => entry.verified && entry.listed);
+      // PKG10 (#469): the unknown-effect badge rides the same detail read —
+      // redacted (a count only), preserved whatever the install's lifecycle
+      // state. Same guard discipline as listVersions: an older read store (or
+      // an untyped test seam) keeps the detail it always answered, and the
+      // badge is simply absent rather than breaking the read.
+      const unknownDispatches =
+        typeof readStore.countUnknownDispatches === "function"
+          ? await readStore.countUnknownDispatches(scope, installId)
+          : undefined;
       return PackageInstallDetailDTOSchema.parse({
         ...installDTO(facts, release, {
           isAdmin: facts.callerCompanyRole === "tenant_admin",
@@ -467,6 +476,7 @@ export function createPackageService(
           version: entry.version,
           artifactDigest: entry.artifactDigest,
         })),
+        unknownDispatches,
       });
     },
 

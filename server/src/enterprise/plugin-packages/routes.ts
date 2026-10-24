@@ -21,8 +21,13 @@ import type { PackageInternalErrorCode, PackageService } from "./contracts";
 import {
   isPackageStorageFailure,
   PACKAGE_INTERNAL_ERROR_CODES,
+  packageError,
   packageErrorCodeOf,
 } from "./contracts";
+import type {
+  PackageDispatchService,
+  PackageDispatchSurfaceCode,
+} from "./dispatch";
 
 /**
  * Enterprise plugin-package surface.
@@ -42,6 +47,19 @@ import {
  *   PATCH /installs/:id/status        disable / enable / uninstall an install
  *                                    under the revision CAS (admin,
  *                                    Idempotency-Key)
+ *   GET  /installs/:id/dispatches     the install's dispatch ledger, redacted
+ *                                    (PKG10: unknown visibility; any active
+ *                                    member of the scope)
+ *   GET  /installs/:id/dispatches/:operationId
+ *                                    one dispatch's verification view: facts,
+ *                                    evidence binding, related receipts, the
+ *                                    no-auto-resend reason and the recovery
+ *                                    gate (PKG10)
+ *   POST /installs/:id/dispatches/:operationId/verify
+ *                                    protocol-mediated verification by the
+ *                                    ORIGINAL operation identity — refused
+ *                                    with 422 while no verified vendor query
+ *                                    protocol exists; never a resend (PKG10)
  *
  * Every request first establishes a trusted PlatformScope from the signed-in
  * identity plus the tenant/workspace selection headers. Management writes
@@ -70,6 +88,16 @@ export interface PluginPackageRoutesDeps {
    * install/plan paths answer 503.
    */
   service?: PackageService | null;
+  /**
+   * PKG10 (#469): the dispatch ledger surface (unknown visibility, verification,
+   * recovery), supplied lazily because the dispatch service is assembled after
+   * this factory runs. Null/absent → the dispatch paths answer 503, never an
+   * empty success list.
+   */
+  dispatches?: () => Pick<
+    PackageDispatchService,
+    "listDispatches" | "inspectDispatch" | "verifyDispatch"
+  > | null;
   /** Issues a trusted CompanyAdminContext for plan/apply. */
   resolveAdmin?(request: Request): Promise<CompanyAdminContext>;
 }
@@ -93,6 +121,10 @@ const ERROR_STATUS: Record<
   PACKAGE_BOT_SCOPE_UNAVAILABLE: 422,
   PACKAGE_RUN_REQUIRED: 422,
   TEMPLATE_FIELD_REJECTED: 400,
+  // PKG10 (#469): dispatch-verification refusals — no auto-resend, ever.
+  VENDOR_QUERY_PROTOCOL_UNAVAILABLE: 422,
+  DISPATCH_NOT_UNKNOWN: 409,
+  DISPATCH_ACCOUNT_UNAVAILABLE: 409,
   PACKAGE_STORAGE_UNAVAILABLE: 503,
   ADMIN_CHANNEL_UNAVAILABLE: 503,
   INTERNAL: 500,
@@ -119,6 +151,12 @@ const ERROR_MESSAGE: Record<PackageErrorCode, string> = {
     "Package tools run only inside a managed run; this entry point has none.",
   TEMPLATE_FIELD_REJECTED:
     "The expert template carries fields this version refuses.",
+  VENDOR_QUERY_PROTOCOL_UNAVAILABLE:
+    "No verified vendor query protocol exists for this dispatch; it cannot be auto-verified or resent.",
+  DISPATCH_NOT_UNKNOWN:
+    "Only a dispatch with an undetermined effect can be verified.",
+  DISPATCH_ACCOUNT_UNAVAILABLE:
+    "The original account connection is no longer available; verification cannot reach the vendor on it.",
   PACKAGE_STORAGE_UNAVAILABLE: "Package storage is unavailable.",
   ADMIN_CHANNEL_UNAVAILABLE: "Package administration is unavailable.",
   INTERNAL: "Package request failed.",
@@ -303,6 +341,33 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
   const requireService = (): PackageService => {
     if (!deps.service) throw new Error("ADMIN_CHANNEL_UNAVAILABLE");
     return deps.service;
+  };
+
+  /**
+   * PKG10 refusal mapping: the dispatch surface's closed codes onto the wire
+   * vocabulary. Cross-scope/unknown keeps the identical 404 shape everywhere;
+   * the two verification refusals carry their own 409/422 bodies so the client
+   * can say WHY no verification is possible without retrying anything.
+   */
+  const SURFACE_ERROR_CODE: Record<
+    PackageDispatchSurfaceCode,
+    PackageErrorCode
+  > = {
+    NOT_AVAILABLE: "RESOURCE_NOT_FOUND",
+    DISPATCH_NOT_UNKNOWN: "DISPATCH_NOT_UNKNOWN",
+    VENDOR_QUERY_PROTOCOL_UNAVAILABLE: "VENDOR_QUERY_PROTOCOL_UNAVAILABLE",
+    DISPATCH_ACCOUNT_UNAVAILABLE: "DISPATCH_ACCOUNT_UNAVAILABLE",
+  };
+
+  const respondSurfaceRefusal = (
+    context: Context,
+    code: PackageDispatchSurfaceCode,
+  ) => respondError(context, packageError(SURFACE_ERROR_CODE[code]));
+
+  const requireDispatches = () => {
+    const dispatches = deps.dispatches?.() ?? null;
+    if (!dispatches) throw new Error("PACKAGE_STORAGE_UNAVAILABLE");
+    return dispatches;
   };
 
   const resolveAdmin = async (
@@ -552,6 +617,62 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
       return respondError(context, error);
     }
   });
+
+  // PKG10 (#469): the dispatch ledger — unknown visibility, verification and
+  // recovery. Reads are any active member of the selected scope (the trusted
+  // scope itself is the eligibility); verification is the dispatch's own run
+  // initiator (the original account is theirs — enforced in the service, same
+  // canonical 404 as everything cross-scope). These paths never reach a
+  // vendor: no resend exists anywhere on this surface.
+  routes.get("/installs/:id/dispatches", async (context) => {
+    try {
+      const scope = await deps.resolveScope(context.req.raw);
+      const result = await requireDispatches().listDispatches(scope, {
+        installId: context.req.param("id"),
+      });
+      if (result.outcome === "refused") {
+        return respondSurfaceRefusal(context, result.code);
+      }
+      return context.json({ dispatches: result.value });
+    } catch (error) {
+      return respondError(context, error);
+    }
+  });
+
+  routes.get("/installs/:id/dispatches/:operationId", async (context) => {
+    try {
+      const scope = await deps.resolveScope(context.req.raw);
+      const result = await requireDispatches().inspectDispatch(scope, {
+        installId: context.req.param("id"),
+        operationId: context.req.param("operationId"),
+      });
+      if (result.outcome === "refused") {
+        return respondSurfaceRefusal(context, result.code);
+      }
+      return context.json(result.value);
+    } catch (error) {
+      return respondError(context, error);
+    }
+  });
+
+  routes.post(
+    "/installs/:id/dispatches/:operationId/verify",
+    async (context) => {
+      try {
+        const scope = await deps.resolveScope(context.req.raw);
+        const result = await requireDispatches().verifyDispatch(scope, {
+          installId: context.req.param("id"),
+          operationId: context.req.param("operationId"),
+        });
+        if (result.outcome === "refused") {
+          return respondSurfaceRefusal(context, result.code);
+        }
+        return context.json(result.value);
+      } catch (error) {
+        return respondError(context, error);
+      }
+    },
+  );
 
   return routes;
 }

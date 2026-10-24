@@ -163,6 +163,14 @@ export interface PackageReadStore {
     scope: PlatformScope,
     installId: string,
   ): Promise<PackageInstallFacts | null>;
+  /**
+   * PKG10 (#469): dispatches of this install still in the `unknown` state
+   * (the detail view's redacted badge). Cross-scope/unknown installs count 0.
+   */
+  countUnknownDispatches(
+    scope: PlatformScope,
+    installId: string,
+  ): Promise<number>;
 }
 
 // ---------------------------------------------------------------------------

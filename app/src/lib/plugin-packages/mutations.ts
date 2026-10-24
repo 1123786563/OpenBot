@@ -6,6 +6,7 @@ import {
 import { client } from "@/lib/client";
 import type {
   PackageConfig,
+  PackageDispatchVerifyDTO,
   PackageExpertCreatedDTO,
   PackageGrantDTO,
   PackageGrantResource,
@@ -332,6 +333,66 @@ export function usePackageLifecycle(queryClient: QueryClient) {
       onSuccess: async (_install, request) => {
         await queryClient.invalidateQueries({
           queryKey: pluginPackageKeys.scope(request.scope),
+        });
+      },
+    }),
+  );
+}
+
+/**
+ * PKG10 (#469): vendor-protocol verification of ONE unknown-effect dispatch,
+ * by the ORIGINAL operation identity only.
+ *
+ * THE SERVER REFUSES THIS while no verified vendor query protocol exists — the
+ * button only renders when the inspection said one does (`canQueryVendor`). The
+ * POST never carries a body: there is nothing for a client to choose — no new
+ * arguments, no new target, no resend. A 422 is the honest "no protocol" answer
+ * and the UI shows it as a fact, not as a retryable failure.
+ */
+export type PackageDispatchVerifyRequest = {
+  scope: PluginPackageScope;
+  installId: string;
+  operationId: string;
+};
+
+export function usePackageDispatchVerify(queryClient: QueryClient) {
+  return useMutation(
+    mutationOptions({
+      mutationFn: async (
+        request: PackageDispatchVerifyRequest,
+      ): Promise<PackageDispatchVerifyDTO> => {
+        const response = await client(
+          `${PACKAGE_ROOT}/installs/${encodeURIComponent(request.installId)}/dispatches/${encodeURIComponent(request.operationId)}/verify`,
+          {
+            method: "POST",
+            tenantId: request.scope.tenantId,
+            workspaceId: request.scope.workspaceId,
+            fallback: "The dispatch could not be verified.",
+          },
+        );
+        return (await response.json()) as PackageDispatchVerifyDTO;
+      },
+      onSuccess: async (_result, request) => {
+        // The ledger row, its inspection and the install's unknown badge all
+        // derive from facts this write may have settled.
+        await queryClient.invalidateQueries({
+          queryKey: pluginPackageKeys.dispatches(
+            request.scope,
+            request.installId,
+          ),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: pluginPackageKeys.dispatchInspection(
+            request.scope,
+            request.installId,
+            request.operationId,
+          ),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: pluginPackageKeys.installDetail(
+            request.scope,
+            request.installId,
+          ),
         });
       },
     }),

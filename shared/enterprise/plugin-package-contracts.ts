@@ -721,11 +721,162 @@ export const PackageInstallDetailDTOSchema = z
           .strict(),
       )
       .optional(),
+    /**
+     * PKG10 (#469): dispatches of this install still in the `unknown` state —
+     * the redacted "effect undetermined" badge the detail screen draws. Absent
+     * when the ledger read is not wired (degraded read stays the detail it was).
+     */
+    unknownDispatches: z.number().int().nonnegative().optional(),
   })
   .strict();
 
 export type PackageInstallDetailDTO = z.infer<
   typeof PackageInstallDetailDTOSchema
+>;
+
+// ---------------------------------------------------------------------------
+// PKG10 (#469): dispatch ledger reads — unknown visibility, verification,
+// recovery. Never carries arguments, tokens or raw vendor payloads.
+// ---------------------------------------------------------------------------
+
+/** The dispatch state machine's wire face (PKG05 semantics, unchanged). */
+export const PackageDispatchStateSchema = z.enum([
+  "prepared",
+  "dispatched",
+  "succeeded",
+  "failed",
+  "unknown",
+  "cancelled",
+]);
+
+export type PackageDispatchState = z.infer<typeof PackageDispatchStateSchema>;
+
+/** One dispatch row as this scope may read it: identities and redacted outcome facts only. */
+export const PackageDispatchSummaryDTOSchema = z
+  .object({
+    operationId: z.string().min(1).max(64),
+    runId: z.string().uuid(),
+    attemptGeneration: z.number().int().positive(),
+    toolCallId: z.string().min(1).max(256),
+    installId: z.string().min(1).max(128),
+    resourceId: z.string().min(1).max(128),
+    /** `<resourceId>:<toolName>` — the binding inside the run snapshot. */
+    toolRef: z.string().min(1).max(256),
+    effect: z.enum(["read", "write"]),
+    state: PackageDispatchStateSchema,
+    /** Redacted outcome facts as recorded (effectStatus and friends); null until settled. */
+    receiptRef: z.record(z.string(), z.unknown()).nullable(),
+    errorCode: z.string().max(128).nullable(),
+    createdAt: z.string().datetime(),
+    completedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+
+export type PackageDispatchSummaryDTO = z.infer<
+  typeof PackageDispatchSummaryDTOSchema
+>;
+
+/**
+ * The evidence identity an unknown dispatch is bound to (AC3): the caller's
+ * own connection row and vendor account alias, the managed connector install
+ * the call reached, and the argument digest — never the arguments themselves.
+ */
+export const PackageDispatchEvidenceDTOSchema = z
+  .object({
+    connectionId: z.string().min(1).max(128).nullable(),
+    accountHandle: z.string().min(1).max(256).nullable(),
+    connectorInstallId: z.string().min(1).max(128),
+    argsDigest: z.string().regex(/^[0-9a-f]{64}$/),
+    connectionGeneration: z.number().int().positive(),
+  })
+  .strict();
+
+export type PackageDispatchEvidenceDTO = z.infer<
+  typeof PackageDispatchEvidenceDTOSchema
+>;
+
+/**
+ * What the verification surface can honestly say about one dispatch. `unknown`
+ * is the PKG10 core: no auto-resend ever, and a vendor query only when a
+ * verified protocol is registered. `definite` / `in_flight` reuse the recorded
+ * state — the surface never invents a completion or failure.
+ */
+export const PackageDispatchVerificationDTOSchema = z.discriminatedUnion(
+  "kind",
+  [
+    z
+      .object({
+        kind: z.literal("unknown"),
+        /** False = no verified vendor query protocol exists for this call. */
+        canQueryVendor: z.boolean(),
+        /** Closed reason vocabulary for the "why no auto-resend" line. */
+        noAutoResendReason: z.enum([
+          "NO_VENDOR_QUERY_PROTOCOL",
+          "VENDOR_QUERY_UNRESOLVED",
+        ]),
+        /** Settled receipts of the same run the handler can correlate against. */
+        relatedReceipts: z.array(PackageDispatchSummaryDTOSchema).max(20),
+      })
+      .strict(),
+    z.object({ kind: z.literal("definite") }).strict(),
+    z.object({ kind: z.literal("in_flight") }).strict(),
+  ],
+);
+
+export type PackageDispatchVerificationDTO = z.infer<
+  typeof PackageDispatchVerificationDTOSchema
+>;
+
+/** The recovery gate for an unknown dispatch (AC5): would a FOLLOW-UP call (a
+ * new operation, never a resend) pass every revalidation the dispatch chain
+ * enforces — membership, run lease, pin, install state/generation, release
+ * state, grant, connection generation, per-call revalidation. */
+export const PackageDispatchRecoveryDTOSchema = z.union([
+  z
+    .object({
+      ready: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      ready: z.literal(false),
+      /** The first gate that refused (the dispatch chain's closed refusal codes). */
+      refusalCode: z.string().min(1).max(64),
+    })
+    .strict(),
+]);
+
+export type PackageDispatchRecoveryDTO = z.infer<
+  typeof PackageDispatchRecoveryDTOSchema
+>;
+
+/** GET /installs/:id/dispatches/:operationId — one dispatch's verification view. */
+export const PackageDispatchInspectionDTOSchema = z
+  .object({
+    dispatch: PackageDispatchSummaryDTOSchema,
+    evidence: PackageDispatchEvidenceDTOSchema,
+    verification: PackageDispatchVerificationDTOSchema,
+    /** Present for `unknown` rows only; null otherwise. */
+    recovery: PackageDispatchRecoveryDTOSchema.nullable(),
+  })
+  .strict();
+
+export type PackageDispatchInspectionDTO = z.infer<
+  typeof PackageDispatchInspectionDTOSchema
+>;
+
+/** POST /installs/:id/dispatches/:operationId/verify — protocol-mediated result. */
+export const PackageDispatchVerifyDTOSchema = z
+  .object({
+    /** `verified` = a definite result was written back; `unresolved` = the
+     * protocol found no match and the row keeps its unknown facts untouched. */
+    outcome: z.enum(["verified", "unresolved"]),
+    dispatch: PackageDispatchSummaryDTOSchema,
+  })
+  .strict();
+
+export type PackageDispatchVerifyDTO = z.infer<
+  typeof PackageDispatchVerifyDTOSchema
 >;
 
 // ---------------------------------------------------------------------------
@@ -833,6 +984,10 @@ export const PackageErrorCodes = [
   "TEMPLATE_FIELD_REJECTED",
   "PACKAGE_STORAGE_UNAVAILABLE",
   "ADMIN_CHANNEL_UNAVAILABLE",
+  // PKG10 (#469): dispatch verification refusals — closed additions.
+  "VENDOR_QUERY_PROTOCOL_UNAVAILABLE",
+  "DISPATCH_NOT_UNKNOWN",
+  "DISPATCH_ACCOUNT_UNAVAILABLE",
   "INTERNAL",
 ] as const;
 

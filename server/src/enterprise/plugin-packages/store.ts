@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
+  enterprisePackageDispatches as dispatchRows,
   enterprisePackageGrants as grantRows,
   enterprisePackageInstalls as installRows,
   enterprisePackageResourceLinks as linkRows,
@@ -346,6 +347,31 @@ export function createPackageReadStore(data: DataDatabase): PackageReadStore {
         const links = await loadLinks(tx, scope, [row.id]);
         const grants = await loadGrants(tx, scope, [row.id]);
         return toFacts(row, links.get(row.id) ?? [], grants.get(row.id) ?? []);
+      });
+    },
+
+    /**
+     * PKG10 (#469): the install's dispatches still in `unknown` — the redacted
+     * "effect undetermined" badge. Read-only under the same data-role arm;
+     * an unknown/cross-scope install counts zero (its rows are invisible to
+     * this scope's RLS anyway), so the badge never leaks existence.
+     */
+    async countUnknownDispatches(scope, installId) {
+      assertTrustedScope(scope);
+      if (typeof installId !== "string" || !installId.trim()) return 0;
+      return readTransaction(data, scope, async (tx) => {
+        const rows = await tx
+          .select({ operationId: dispatchRows.operationId })
+          .from(dispatchRows)
+          .where(
+            and(
+              eq(dispatchRows.tenantId, scope.tenantId),
+              eq(dispatchRows.workspaceId, scope.workspaceId),
+              eq(dispatchRows.installId, installId),
+              eq(dispatchRows.state, "unknown"),
+            ),
+          );
+        return rows.length;
       });
     },
   };
