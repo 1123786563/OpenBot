@@ -328,6 +328,11 @@ describe("GET /admin/summary authorization and filters", () => {
     );
     const response = await app.request("http://openbot.test/admin/summary");
     expect(response.status).toBe(500);
+    // The 500 is the route's own fault boundary, not hono's dispatch
+    // fallback: the body names the fault so the page's unavailable mapping
+    // rides an explicit contract, and a regression to the accidental
+    // pass-through cannot hide behind the same status code.
+    expect(await response.json()).toEqual({ error: "ADMIN_SUMMARY_UNAVAILABLE" });
     expect(recorder.calls).toEqual([]);
   });
 });
