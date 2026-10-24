@@ -37,6 +37,7 @@ import {
   createPreviewProxy,
   createWebappProxyRoutes,
   proxyWebappRequest,
+  WEBAPP_MOUNT_STALE_REASON,
 } from "../src/craft/webapp-proxy";
 import {
   buildContentDisposition,
@@ -2336,12 +2337,15 @@ describe("POST /sessions/:id/preview-ticket: admission gate", () => {
       // fix-ocr24 #5: the workspace carries the current-generation marker —
       // the mint now reads the same generation judgment webapp-info answers
       // from, and a legacy workspace (app body without the marker) refuses
-      // 409 before any ticket is bound.
+      // 409 before any ticket is bound. #437 GAP-C: the RUNNING script's
+      // mount record must name the address's mount (/label), or the mint
+      // refuses the suppressed state webapp-info withholds the address for.
       gateway: gatewayWith(
         memoryFileApi({
           [`${WEBAPP}/package.json`]: '{"name":"web"}',
           [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]:
             WEBAPP_GENERATION_CURRENT,
+          [`${DIRECTORY}/${WEBAPP_MOUNT_MARKER}`]: "/label",
         }),
       ),
       botIdFor: async () => "craft-bot",
@@ -2568,10 +2572,13 @@ describe("POST /sessions/:id/preview-ticket: the D10 generation gate (fix-ocr24 
 
   test("a current session's mint still answers 200 bound to the injected origin (regression pin)", async () => {
     // The marker stamps current: the gate must only close for legacy, never
-    // tax the population the preview origin serves.
+    // tax the population the preview origin serves. #437 GAP-C: the running
+    // server's mount record names the address's mount, so the current-arm
+    // mount re-check passes.
     const { app } = generationApp({
       [`${WEBAPP}/package.json`]: '{"name":"web"}',
       [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]: WEBAPP_GENERATION_CURRENT,
+      [`${DIRECTORY}/${WEBAPP_MOUNT_MARKER}`]: "/label",
     });
     const response = await app.request(
       `/sessions/${SESSION_ID}/preview-ticket`,
@@ -2659,6 +2666,112 @@ describe("POST /sessions/:id/preview-ticket: the D10 generation gate (fix-ocr24 
     expect(typeof body.error).toBe("string");
     expect(body.error.length).toBeGreaterThan(0);
     expect(tickets.size()).toBe(0);
+  });
+});
+
+// ── #437 GAP-C: the mint's current-generation mount re-check ─────────────────
+//
+// webapp-info suppresses the preview address when the RUNNING server's
+// .webapp-mount record does not name the address's mount (a ready server + a
+// READ record ≠ the expected mount) — but the issuing route minted a ticket
+// into that very suppressed state: the pane (or anyone who cached the URL)
+// redeemed into a bare 404. The mint now runs the SAME single read
+// (readMountRecord) against the SAME expected mount (expectedMountFor) and
+// refuses with the SAME sentence the info face withholds the address with.
+describe("POST /sessions/:id/preview-ticket: the current-generation mount re-check (#437 GAP-C)", () => {
+  const CURRENT_APP = {
+    [`${WEBAPP}/package.json`]: '{"name":"web"}',
+    [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]: WEBAPP_GENERATION_CURRENT,
+  };
+  const MOUNT_RECORD = `${DIRECTORY}/${WEBAPP_MOUNT_MARKER}`;
+
+  function mountApp(
+    files: Record<string, string>,
+    wrap?: (api: AgentSandboxFileApi) => AgentSandboxFileApi,
+  ) {
+    const tickets = createPreviewTickets({ store: storeWithSession("app") });
+    const app = createWebappProxyRoutes(fakeRequireUser(), {
+      config: loadCraftConfig({}),
+      store: storeWithSession("app", "u1", 3011),
+      gateway: gatewayWith(
+        wrap?.(memoryFileApi(files)) ?? memoryFileApi(files),
+      ),
+      botIdFor: async () => "craft-bot",
+      sandboxConnectionFor: () => ({
+        baseUrl: "http://sbox.internal:4300",
+        token: null,
+      }),
+      previewOriginFor: () => "http://127.0.0.1:3005/label",
+      previewTickets: tickets,
+    });
+    return { app, tickets };
+  }
+
+  test("suppressed state: a record naming ANOTHER mount refuses 409 with webapp-info's own sentence — nothing minted", async () => {
+    const { app, tickets } = mountApp({
+      ...CURRENT_APP,
+      [MOUNT_RECORD]: "/some-other-label",
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(409);
+    // The reason is DISPLAYABLE and it is the SAME sentence webapp-info
+    // withholds the address with — one condition, two faces, no drift.
+    expect(await response.json()).toEqual({ error: WEBAPP_MOUNT_STALE_REASON });
+    expect(tickets.size()).toBe(0);
+  });
+
+  test("the #437 repro shape: an EMPTY record (root-mount script on a current generation) refuses the same way", async () => {
+    // The ticket's own reproduction: `.webapp-mount` written as the empty
+    // string — a script without the preview mount — while the address derives
+    // /<label>. webapp-info suppresses this exact state (ready + "" ≠
+    // expected); the mint must not hand a ticket out of it either.
+    const { app, tickets } = mountApp({ ...CURRENT_APP, [MOUNT_RECORD]: "" });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: WEBAPP_MOUNT_STALE_REASON });
+    expect(tickets.size()).toBe(0);
+  });
+
+  test("recovery: once the record names the address's mount again, the mint answers 200 (the repair arm closes)", async () => {
+    const { app, tickets } = mountApp({
+      ...CURRENT_APP,
+      [MOUNT_RECORD]: "/label",
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { origin: string };
+    expect(body.origin).toBe("http://127.0.0.1:3005/label");
+    expect(tickets.size()).toBe(1);
+  });
+
+  test("a mount read that THROWS is unverifiable, not stale — the mint proceeds (webapp-info's fix-ocr5 M-1 direction)", async () => {
+    // A gateway flake on the record read cannot vouch for a mismatch: the
+    // cross-check folds to "cannot verify" and the mint keeps the generation
+    // verdict's own answer, the same direction the info face runs.
+    const { app, tickets } = mountApp(CURRENT_APP, (api) => ({
+      ...api,
+      async readFile(path: string) {
+        if (path === MOUNT_RECORD) {
+          throw new Error("sandbox gateway: read timed out");
+        }
+        return api.readFile(path);
+      },
+    }));
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(200);
+    expect(tickets.size()).toBe(1);
   });
 });
 
@@ -2916,8 +3029,9 @@ describe("the .webapp-mount read is single-sourced (fix-ocr28 #4 — source pins
 
   test("readMountRecord exists and exactly the three consumers call it", () => {
     expect(source).toContain("async function readMountRecord(");
-    // Definition line excluded: exactly 3 call sites (the mint's legacy
-    // mirror, webapp-info's legacy branch, webapp-info's current branch).
+    // Definition line excluded: exactly 3 call sites (the mint's D10/mount
+    // mirror — both resolved generations share it, fix-ocr27 #3 + #437 GAP-C
+    // — webapp-info's legacy branch, webapp-info's current branch).
     const calls = [...source.matchAll(/await readMountRecord\(/g)];
     expect(calls.length).toBe(3);
     // No site kept a private copy of the raw read: the marker's readFile is
@@ -3209,9 +3323,12 @@ describe("the mint under the legacy switch (#425 — a verified no-op)", () => {
       { [`${WEBAPP}/package.json`]: '{"name":"web"}' },
       true,
     );
-    const response = await app.request(`/sessions/${SESSION_ID}/preview-ticket`, {
-      method: "POST",
-    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      {
+        method: "POST",
+      },
+    );
     expect(response.status).toBe(409);
     const body = (await response.json()) as { error: string };
     // The D10 legacy refusal, NOT the switch's closure sentence.
@@ -3256,12 +3373,18 @@ describe("the mint under the legacy switch (#425 — a verified no-op)", () => {
       {
         [`${WEBAPP}/package.json`]: '{"name":"web"}',
         [`${DIRECTORY}/${WEBAPP_GENERATION_MARKER}`]: WEBAPP_GENERATION_CURRENT,
+        // #437 GAP-C: the running server's mount record names the address's
+        // mount — the current-arm re-check passes, the switch stays a no-op.
+        [`${DIRECTORY}/${WEBAPP_MOUNT_MARKER}`]: "/label",
       },
       true,
     );
-    const response = await app.request(`/sessions/${SESSION_ID}/preview-ticket`, {
-      method: "POST",
-    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      {
+        method: "POST",
+      },
+    );
     expect(response.status).toBe(200);
     expect(tickets.size()).toBe(1);
   });

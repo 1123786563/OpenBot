@@ -121,8 +121,12 @@ const WEBAPP_NOT_RUNNING_ERROR =
  * mount-stale shape (old script, degraded write, rotated label) and points at
  * the repair that exists: skills/reload rewrites the start script (#437's
  * repair arm — the mount record then refreshes on the next spawn).
+ *
+ * Exported (#437 GAP-C) so the mint route and its tests answer with the very
+ * same value webapp-info withholds the address with — one sentence, both
+ * faces, no drift possible.
  */
-const WEBAPP_MOUNT_STALE_REASON =
+export const WEBAPP_MOUNT_STALE_REASON =
   "The web app's dev server is not mounted on the preview address: its start script was written without the preview mount. Reload the session's skills to rewrite the start script, then start the web app again; regenerating the session also repairs it.";
 
 /**
@@ -778,10 +782,26 @@ export function createWebappProxyRoutes(
     // API call could. The mint reads the SAME readWebappGeneration judgment
     // webapp-info answers from, one branch over; the mirror is the
     // discipline (webapp-generation.ts's header), not a shared abstraction.
-    const generation = await readWebappGeneration(
-      deps.gateway.fileApiFor(botId),
-      sessionDirectory(sessionId, deps.config.sessionDirectoryMode),
+    const fileApi = deps.gateway.fileApiFor(botId);
+    const directory = sessionDirectory(
+      sessionId,
+      deps.config.sessionDirectoryMode,
     );
+    const generation = await readWebappGeneration(fileApi, directory);
+    if (generation === "unknown") {
+      // fix-ocr26 #8: the read flaked — 503 + retry, never the legacy 409
+      // (a generational fact the flake never established).
+      return context.json({ error: PREVIEW_TICKET_UNVERIFIABLE_ERROR }, 503);
+    }
+    // #437 GAP-C: BOTH resolved-generation arms re-check the RUNNING server's
+    // mount record before any ticket leaves — webapp-info's suppression
+    // (WEBAPP_MOUNT_STALE_REASON, the cross-check below) must not be walked
+    // around by minting into it. One shared read (readMountRecord, fix-ocr28
+    // #4) against one expected mount (expectedMountFor) — the SAME fact the
+    // info face judges, one branch over; the mirror is the discipline, not a
+    // shared abstraction.
+    const expectedMount = expectedMountFor(origin);
+    const recorded = await readMountRecord(fileApi, directory);
     if (generation === "legacy") {
       // fix-ocr27 #3: the mint mirrors webapp-info's healed legacy branch.
       // "Legacy" has a hole the marker's write point never closes: an app
@@ -795,25 +815,25 @@ export function createWebappProxyRoutes(
       // mint proceeds. Any other record (empty, absent, unreadable, another
       // mount) keeps the refusal: the conservative answer for every
       // population the record cannot vouch for, byte-for-byte unchanged.
-      const expectedMount = expectedMountFor(origin);
-      // The one shared read (readMountRecord, fix-ocr28 #4) — the SAME shape
-      // as webapp-info's cross-check: null (no fileApi, no record, or a
-      // thrown read) is NOT proof, only a READ non-empty record naming the
-      // derived mount is.
-      const recorded = await readMountRecord(
-        deps.gateway.fileApiFor(botId),
-        sessionDirectory(sessionId, deps.config.sessionDirectoryMode),
-      );
       const recordProvesMount =
         recorded !== null && recorded !== "" && recorded === expectedMount;
       if (!recordProvesMount) {
         return context.json({ error: PREVIEW_TICKET_LEGACY_ERROR }, 409);
       }
-    }
-    if (generation === "unknown") {
-      // fix-ocr26 #8: the read flaked — 503 + retry, never the legacy 409
-      // (a generational fact the flake never established).
-      return context.json({ error: PREVIEW_TICKET_UNVERIFIABLE_ERROR }, 503);
+    } else if (recorded !== null && recorded !== expectedMount) {
+      // current: a READ record naming any other mount (or the empty mount —
+      // the #437 repro's root-path script on a current generation) is the
+      // suppressed state webapp-info withholds the address for: the mint
+      // refuses with the SAME displayable sentence instead of handing a
+      // ticket into a bare-404 entry. The info face runs this verdict only
+      // when `ready` (a not-yet-serving session has no frame to misroute);
+      // the mint deliberately has no ready probe — "a ticket outlives a dev
+      // server boot inside its 30s window by design" — so it runs the
+      // stricter unconditional read: a NULL record (no fileApi, thrown read)
+      // cannot vouch for a mismatch and mints on, exactly webapp-info's
+      // fix-ocr5 M-1 direction, while every READ record that disagrees with
+      // the address mints nothing.
+      return context.json({ error: WEBAPP_MOUNT_STALE_REASON }, 409);
     }
     const { ticket, expiresAt } = previewTickets.issuePreviewTicket({
       sessionId,
