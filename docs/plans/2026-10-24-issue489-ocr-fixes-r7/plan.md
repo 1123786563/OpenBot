@@ -25,3 +25,12 @@ RED：裸 HEAD+仅测试增量——>512 条不同非 refusal 结果的场景断
 ## 共同约束
 
 实施=Claude（用户绑定）；TDD（RED 证据先落报告）；检查点与报告写主归档绝对路径（briefs 同 F07 惯例：after-all/increment diff+status+逐文件 SHA-256）；不 commit/push；不派子 Agent；owned 互斥；两任务并行（K=4 内）。集成后：Codex 完整终审重派（4f88d9b310..新 HEAD）+ OCR R9（A/B=R7 本周期复扫沿用 + C6=4f88d9b310..新 HEAD）。
+
+## 附录（2026-10-24，R8-C5 证据后扩权，编排者）
+
+R8-C5 全量扫（ocr/r8-chunkC-4f88d9b310-1dcee7a9d.md）对 scrub.ts 给出两条同族新证据，**T14 范围据此扩大**：
+
+1. **未闭合引号卡死 lead（security medium）**：`mysql -u o'brien -phunter2`、`docker login -u a"b -p pass`——旧 lead 引号作普通字符通过会脱敏；新成对引号臂遇未闭合引号（自然语言撇号 can't/o'brien、被截断命令）无法推进→整条规则失配→泄漏。修法：两引号臂之后补单字符回退臂（如 `|"'"`）——成对仍整段吞、未闭合退回旧单字符读法。
+2. **值臂词中引号段部分脱敏回归（security medium）**：`docker login -p a"b;c"` shell 中是单 argv 词；旧臂 `[^\s'"-]\S*` 整词脱敏；R2 新臂 `[^\s'";|&-][^\s;|&]*` 在词中 `;` 截断→`[REDACTED];c"`（密码尾存活+记录残缺）。修法：值臂改「裸字符+成对引号段」序列（如 `(?:"[^"]*"|'[^']*'|[^\s'";|&-])+`）——保留 R2 拒分隔符开头词的目标，恢复整词脱敏。同形状臂（mysql 附加式/sshpass/SSHPASS=/redis）全量核。**本附录取代 T14 节「值臂不动」边界**（该边界系 R7-C4 时证据；R8-C5 证明值臂本身对 BASE 回归）。
+
+对抗例矩阵相应扩充（未闭合撇号、词中引号段、`-p;cmd` 分隔符开头零回退、既有全部语义）。RED 基线锚点两版对照（BASE=4f88d9b310、R2 前、R2 后）由实施 worker 落报告。
