@@ -1050,6 +1050,7 @@
     "server/tests/multitenancy/marketplace-install.test.ts",
     "server/tests/multitenancy/membership-model.test.ts",
     "server/tests/multitenancy/migration-tool.test.ts",
+    "server/tests/multitenancy/model-invocation-budget-public.test.ts",
     "server/tests/multitenancy/native-runtime.test.ts",
     "server/tests/multitenancy/not-found-semantics.test.ts"
    ]
@@ -1573,6 +1574,7 @@
   "server/tests/multitenancy/marketplace-install.test.ts",
   "server/tests/multitenancy/membership-model.test.ts",
   "server/tests/multitenancy/migration-tool.test.ts",
+  "server/tests/multitenancy/model-invocation-budget-public.test.ts",
   "server/tests/multitenancy/native-runtime.test.ts",
   "server/tests/multitenancy/not-found-semantics.test.ts",
   "server/tests/multitenancy/oauth-state.test.ts",

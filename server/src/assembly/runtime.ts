@@ -153,10 +153,6 @@ import type { OpenBotRole } from "../auth/roles";
 import { createCompanyFinanceVisibilityService } from "../billing/company-finance-visibility";
 import { CREDIT_SCALE, createCredits } from "../billing/credits";
 import { createCreditWriter } from "../billing/credits-writer";
-import {
-  countChatInputTokens,
-  fitChatInputRequest,
-} from "../billing/input-bound";
 import { createLagoClient } from "../billing/lago";
 import {
   startBillingRenewalSweeps,
@@ -166,10 +162,8 @@ import {
 } from "../billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "../billing/outbound";
 import {
-  CreditInsufficientError,
   currentPayerBinding,
   ensureDeploymentPayerBinding,
-  resolveConsumptionPayerBinding,
 } from "../billing/payer-binding";
 import { createAlipayProvider } from "../billing/payments/alipay";
 import { startPaymentSweeps } from "../billing/payments/maintenance";
@@ -186,20 +180,12 @@ import {
 } from "../billing/service";
 import { createBillingStatements } from "../billing/statements";
 import { createBillingStore } from "../billing/store";
-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
   createCreditUsageTarget,
   createLagoUsageTarget,
   createUsageDelivery,
 } from "../billing/usage-delivery";
-import {
-  createUsageEvidenceRecorder,
-  isConfirmedNoCost,
-} from "../billing/usage-evidence";
-import {
-  createUsageOutbox,
-  UsageOutboxConflictError,
-} from "../billing/usage-outbox";
+import { createUsageOutbox } from "../billing/usage-outbox";
 import { createWebhookVerifier } from "../billing/webhook-signature";
 import { currentWorkbenchScope } from "../billing/workbench-payer";
 import { createBotServiceRegistry } from "../bot-services/registry";
@@ -251,13 +237,9 @@ import { createStreamAuthorizer } from "../computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "../config";
 import {
   billingMethodForModel,
-  CreditGateFailureError,
-  CreditPolicyUnconfiguredError,
   type IdentifyActor,
   type IdentifyUser,
   type ModelBillingAuditEvent,
-  ModelNotPricedError,
-  ModelUsageSettlementError,
   mountCopilotRuntime,
   normalizeModelBaseUrls,
   runtimeModelForEnvironment,
@@ -738,11 +720,7 @@ import {
 import { indexArtifacts } from "../workshop/artifacts";
 import { createTurnEventBus } from "../workshop/bus";
 import { createInProcessTurnLock, createRedisTurnLock } from "../workshop/locks";
-import {
-  calculateExactModelUsageCharge,
-  reportCodeRunUsage,
-  UsageChargeError,
-} from "../workshop/metering";
+import { reportCodeRunUsage } from "../workshop/metering";
 import { createTurnOrchestrator } from "../workshop/orchestrator";
 import { createWorkshopPublicRoutes } from "../workshop/public-routes";
 import {
@@ -755,6 +733,10 @@ import {
 } from "../workshop/sharing";
 import { createWorkshopStore } from "../workshop/store";
 import { createRuntimeLifecycle } from "./lifecycle";
+import {
+  createModelBudgetArm,
+  logUsageOutboxWriteFailure,
+} from "./model-budget";
 
 /**
  * What the runtime assembly hands back to the entry: the two MT009/MT011
@@ -770,93 +752,6 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
   const lifecycle = createRuntimeLifecycle();
   try {
 const log = getLogger("server");
-const STABLE_BILLING_CODE = /^[a-z0-9_]{1,64}$/;
-const MODEL_RESERVATION_WINDOW_MS = 15 * 60_000;
-
-function usageOutboxWriteFailureCode(error: unknown): string {
-  if (error instanceof UsageOutboxConflictError) {
-    return "usage_outbox_conflict";
-  }
-  const code =
-    typeof error === "object" && error !== null
-      ? (error as { code?: unknown }).code
-      : undefined;
-  return typeof code === "string" && STABLE_BILLING_CODE.test(code)
-    ? code
-    : "usage_outbox_write_failed";
-}
-
-function logUsageOutboxWriteFailure(
-  source: "llm" | "code_run",
-  eventId: string,
-  error: unknown,
-  reservationId?: string,
-  precomputedCode?: string,
-) {
-  // The error's NAME only: a database message can carry connection details, and the sweep
-  // probes pin that nothing of the sort reaches the logs.
-  log.error(
-    {
-      type: "billing-usage-outbox-write-failed",
-      source,
-      eventId,
-      ...(reservationId ? { reservationId } : {}),
-      code: precomputedCode ?? usageOutboxWriteFailureCode(error),
-      ...(error instanceof Error ? { name: error.name } : {}),
-    },
-    "billing-usage-outbox-write-failed",
-  );
-}
-
-function reservationReleaseFailureCode(error: unknown): string {
-  const code =
-    typeof error === "object" && error !== null
-      ? (error as { code?: unknown }).code
-      : undefined;
-  return typeof code === "string" && STABLE_BILLING_CODE.test(code)
-    ? code
-    : "reservation_release_failed";
-}
-
-function logReservationReleaseFailure(input: {
-  source: "llm";
-  eventId: string;
-  reservationId: string;
-  reason: string;
-  error: unknown;
-}) {
-  log.error(
-    {
-      type: "billing-reservation-release-failed",
-      source: input.source,
-      eventId: input.eventId,
-      reservationId: input.reservationId,
-      reason: input.reason,
-      code: reservationReleaseFailureCode(input.error),
-    },
-    "billing-reservation-release-failed",
-  );
-}
-
-function logReservationUnknownMarkFailure(input: {
-  source: "llm";
-  eventId: string;
-  reservationId: string;
-  reason: string;
-  error: unknown;
-}) {
-  log.error(
-    {
-      type: "billing-reservation-unknown-mark-failed",
-      source: input.source,
-      eventId: input.eventId,
-      reservationId: input.reservationId,
-      reason: input.reason,
-      code: reservationReleaseFailureCode(input.error),
-    },
-    "billing-reservation-unknown-mark-failed",
-  );
-}
 
 // 本进程的全部出站依赖都是内网/本机（Casdoor、kb-mastra、agent 运行时等）：
 // 开发机的 HTTP_PROXY 会把 localhost 请求劫持成代理 404/HTML（Bun fetch 读
@@ -5958,279 +5853,23 @@ const usageOutbox =
  * than being silently charged in-process.
  */
 if (billing !== undefined && usageOutbox !== undefined) {
-  const creditPolicy = billingSettings?.creditPolicy;
-  const recordUnsettledUsage = createUsageEvidenceRecorder(
+  /*
+   * The inline creditWriter/creditPolicy/reserve composition now lives in the named
+   * budget arm (./model-budget): the double-budget order, the once-resolved payer,
+   * the confirmed-no-cost release boundary and the outbox-first settlement fact are
+   * the byte-for-byte moved composition, with the funds doors routed through the M06
+   * model budget facade.
+   */
+  const { usageGate } = createModelBudgetArm({
+    credits: billing.creditWriter,
+    creditPolicy: billingSettings?.creditPolicy,
+    defaultModelId: runtimeModel.defaultModel,
+    deploymentPayerBinding: billing.deploymentPayerBinding,
+    currentPayerBinding,
+    currentWorkbenchScope,
     usageOutbox,
-    (message) => log.warn(message),
-  );
-  setModelUsageGate(async (input) => {
-    if (!creditPolicy?.configured) {
-      // `configured === false` narrows the union to the variant that carries `issues`, so the
-      // offending keys reach the error (and the log) without a cast. `creditPolicy === undefined`
-      // cannot happen inside this block, but the guard is on `?.` so answer it as "no issues known".
-      throw new CreditPolicyUnconfiguredError(
-        creditPolicy?.configured === false ? creditPolicy.issues : [],
-      );
-    }
-    const modelId = input.modelId ?? runtimeModel.defaultModel;
-    const modelPolicy = creditPolicy.models.get(modelId);
-    if (!modelPolicy) throw new ModelNotPricedError(modelId);
-
-    /*
-     * The request's one payer (B5-219): resolved ONCE here, from the request's own
-     * binding when the surface bound one, otherwise the deployment's boot binding — and
-     * every write below (reserve, outbox fact, unsettled evidence) names exactly this
-     * account. A refusal below never re-resolves and never switches: an insufficient
-     * balance on the bound account is the final answer for this request.
-     */
-    const payerBinding = resolveConsumptionPayerBinding({
-      requestBinding: currentPayerBinding(),
-      deploymentBinding: billing.deploymentPayerBinding,
-    });
-
-    let reservation: Awaited<
-      ReturnType<typeof billing.creditWriter.reserveCredits>
-    >;
-    try {
-      reservation = await billing.creditWriter.reserveCredits({
-        externalCustomerId: payerBinding.externalCustomerId,
-        idempotencyKey: `${USAGE_IDEMPOTENCY_KEY_PREFIX}${input.eventId}`,
-        maximumCents: Number(modelPolicy.maximumReservationUnits),
-        expiresAt: new Date(
-          input.occurredAt.getTime() + MODEL_RESERVATION_WINDOW_MS,
-        ),
-      });
-    } catch (error) {
-      log.error(
-        {
-          type: "billing-credit-gate-failed",
-          eventId: input.eventId,
-          model: modelId,
-          name: (error as Error | null)?.name,
-        },
-        "billing-credit-gate-failed",
-      );
-      throw new CreditGateFailureError();
-    }
-    if (!reservation.reserved) {
-      /*
-       * The hold is the WORST-CASE ceiling (config.ts derives it from the configured token maxima),
-       * so this refusal has two very different causes and the log is the only place they are
-       * distinguishable: a balance that is genuinely empty, and a balance that is fine but smaller
-       * than one call's maximum (decision gate G3). `available` and `required` in scaled units.
-       */
-      log.warn(
-        {
-          type: "billing-credit-reservation-refused",
-          eventId: input.eventId,
-          model: modelId,
-          payerKind: payerBinding.payer.kind,
-          available: reservation.availableCents,
-          required: Number(modelPolicy.maximumReservationUnits),
-        },
-        "billing-credit-reservation-refused",
-      );
-      /*
-       * The one insufficiency semantics (B5-219 / AC13): a displayable refusal on the
-       * bound account — its type and its own available amount, no other account's data,
-       * no second resolution, no switch. The hold attempt wrote nothing.
-       */
-      throw new CreditInsufficientError({
-        payerKind: payerBinding.payer.kind,
-        availableCents: reservation.availableCents,
-      });
-    }
-
-    return {
-      /*
-       * The provider-bound contract, as it stands for the adapters this deployment actually
-       * invokes. The built-in instance path is the OpenAI-compatible chat model: it maps
-       * maxOutputTokens to max_tokens, which the chat-completions contract enforces, so the
-       * output cap is proven. Its input side has no provider-enforced ceiling, so the bound
-       * is the deployment's own (ADR-0001): a conservative bytes-based count that sits above
-       * a typical tokenizer, and a fit that drops the oldest non-system messages until the
-       * count fits the configured ceiling — the provider cannot be SENT more than the
-       * reservation prices by our own measure, and a tokenizer that beats the calibration
-       * surfaces at settlement as usage_over_bound: the stream fails, the hold is retained,
-       * and billing/usage-evidence.ts keeps the provider's real token counts — the credits
-       * target blocks the row in manual review (`missing_reservation`) while the Lago
-       * target still meters the tokens the provider did report.
-       * （G2 未决：Spec「Billed admission per surface」仍写 input_bound_unsupported，与 ADR-0001 的 counted+截断冲突，待回写。2026-10-15。）
-       */
-      bounds: {
-        input: {
-          enforced: "counted" as const,
-          maximumTokens: modelPolicy.input.maximumTokens,
-          countInputTokens: countChatInputTokens,
-          fit: fitChatInputRequest(modelPolicy.input.maximumTokens),
-        },
-        output: {
-          enforced: "provider_cap" as const,
-          maximumTokens: modelPolicy.output.maximumTokens,
-        },
-      },
-      finish: async (usage) => {
-        /*
-         * The decisive boundary: a successful finish means the immutable usage fact is
-         * COMMITTED to the outbox (or an identical event already exists). Any failure —
-         * invalid or over-bound usage, or a rejected write — is logged with both stable ids
-         * and rethrown as a credential-free settlement error, so the stream the person sees
-         * fails rather than reporting a successful answer whose usage vanished. The hold
-         * stays `reserved`: chargeable work is never released by a failed write, and
-         * reconciliation is what investigates it.
-         */
-        let charged: ReturnType<typeof calculateExactModelUsageCharge>;
-        try {
-          charged = calculateExactModelUsageCharge(modelPolicy, {
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-          });
-        } catch (error) {
-          // Pricing refused the settlement — a distinct stage from the outbox write, so it
-          // gets its own event and never the write-failure code a foreign error would
-          // otherwise fall back to. The hold is retained either way.
-          const code =
-            error instanceof UsageChargeError
-              ? error.code
-              : "usage_charge_failed";
-          log.error(
-            {
-              type: "billing-usage-charge-refused",
-              source: "llm",
-              eventId: input.eventId,
-              reservationId: reservation.reservationId,
-              ...(error instanceof Error ? { name: error.name } : {}),
-              code,
-            },
-            "billing-usage-charge-refused",
-          );
-          // Audit A3: the tokens are real work this deployment will not price — a durable
-          // evidence row (no reservation facts, hold retained) instead of numbers that die
-          // with the stream error. The settlement-failure exit in copilot.ts may record the
-          // same event again with zero tokens; the outbox keeps these real facts and logs the
-          // second write as superseded.
-          await recordUnsettledUsage({
-            eventId: input.eventId,
-            source: "llm",
-            externalCustomerId: payerBinding.externalCustomerId,
-            model: modelId,
-            client: input.client,
-            occurredAt: input.occurredAt,
-            inputTokens: usage.inputTokens ?? 0,
-            outputTokens: usage.outputTokens ?? 0,
-            reason: code,
-          });
-          throw new ModelUsageSettlementError(code);
-        }
-        try {
-          await usageOutbox.record({
-            eventId: input.eventId,
-            source: "llm",
-            externalCustomerId: payerBinding.externalCustomerId,
-            transactionId: input.eventId,
-            inputTokens: charged.inputTokens,
-            outputTokens: charged.outputTokens,
-            model: modelId,
-            client: input.client,
-            occurredAt: input.occurredAt,
-            reservationId: reservation.reservationId,
-            actualCostNumerator: charged.actual.numerator.toString(),
-            actualCostDenominator: charged.actual.denominator.toString(),
-            // The consumption record's attribution (09.1): the Bot that ran the call and the
-            // person it ran for, as the build knew them. Absent stays absent — a named null,
-            // never a guess.
-            botId: input.attribution.botId,
-            ownerUserId: input.attribution.userId,
-            // The team dimension (09.2): the workspace a company-workbench call ran under,
-            // from the request's own scope. Attribution only — the payer above is already
-            // fixed, and no dimension of the caller moves it.
-            workspaceId: currentWorkbenchScope()?.workspaceId ?? null,
-          });
-        } catch (error) {
-          const failureCode = usageOutboxWriteFailureCode(error);
-          logUsageOutboxWriteFailure(
-            "llm",
-            input.eventId,
-            error,
-            reservation.reservationId,
-            failureCode,
-          );
-          throw new ModelUsageSettlementError(failureCode);
-        }
-      },
-      recordUnsettled: async (unsettled) => {
-        await recordUnsettledUsage({
-          eventId: unsettled.eventId,
-          source: "llm",
-          externalCustomerId: payerBinding.externalCustomerId,
-          model: modelId,
-          client: input.client,
-          occurredAt: unsettled.occurredAt,
-          inputTokens: unsettled.inputTokens,
-          outputTokens: unsettled.outputTokens,
-          reason: unsettled.reason,
-        });
-      },
-      fail: async (failure) => {
-        /*
-         * Release only on a CONFIRMED no-cost (audit A2 / CONTEXT.md Pending Settlement /
-         * ADR-0003): the provider refused before any token (`provider_error`), admission refused
-         * before the provider (`bound_refused`), or the provider reported zero usage (`no_usage`).
-         * Everything else is an unknown outcome — `usage_missing`, `stream_error`, `cancelled`:
-         * the provider may have produced billable work we never learned about. Those keep the
-         * hold (it expires on its own clock and reconciliation reports it) and leave a durable
-         * evidence row naming the event, the reason, and whatever token counts the stream had
-         * learned by the time it failed.
-         */
-        if (isConfirmedNoCost(failure.reason)) {
-          try {
-            await billing.creditWriter.releaseReservation(
-              reservation.reservationId,
-              failure.reason,
-            );
-          } catch (error) {
-            logReservationReleaseFailure({
-              source: "llm",
-              eventId: input.eventId,
-              reservationId: reservation.reservationId,
-              reason: failure.reason,
-              error,
-            });
-          }
-          return;
-        }
-        // 06.8: the hold must outlive its own expiry, so it may not stay plain-reserved —
-        // mark it unknown BEFORE the evidence write. Best-effort by the same contract as the
-        // release above: a failed mark is logged, never allowed to mask the evidence row or
-        // the stream's own failure.
-        try {
-          await billing.creditWriter.markReservationUnknown(
-            reservation.reservationId,
-            failure.reason,
-          );
-        } catch (error) {
-          logReservationUnknownMarkFailure({
-            source: "llm",
-            eventId: input.eventId,
-            reservationId: reservation.reservationId,
-            reason: failure.reason,
-            error,
-          });
-        }
-        await recordUnsettledUsage({
-          eventId: input.eventId,
-          source: "llm",
-          externalCustomerId: payerBinding.externalCustomerId,
-          model: modelId,
-          client: input.client,
-          occurredAt: input.occurredAt,
-          inputTokens: failure.inputTokens ?? 0,
-          outputTokens: failure.outputTokens ?? 0,
-          reason: failure.reason,
-        });
-      },
-    };
   });
+  setModelUsageGate(usageGate);
 
   /*
    * The workbench model transport (09.1): a billed deployment's built-in Bot calls dial the model
