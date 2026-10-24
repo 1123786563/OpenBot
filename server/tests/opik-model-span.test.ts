@@ -11,9 +11,10 @@
 //   3. a refusal or settlement failure is never recorded as a successful span.
 //   4. span input/output reach the write queue only through the T05 redaction projection;
 //      a canary planted in the observation cannot survive into a real span instance.
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
+
 import { context, trace } from "@opentelemetry/api";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
 import {
   createModelSpanRecorder,
@@ -225,15 +226,18 @@ describe("the model span recorder", () => {
       state: "projected",
       value: "completed",
     });
-    // Input/output travel as projected span content.
+    // FREV-01: input/output travel only behind a policy approval. This observation
+    // carries none, so the bodies are metrics-only — the approved-carry case is
+    // pinned in opik-span-support.test.ts.
     expect(span.attributes?.input).toEqual({
-      state: "projected",
-      value: "What is the weather?",
+      state: "omitted",
+      reason: "unhandled_free_text",
     });
     expect(span.attributes?.output).toEqual({
-      state: "projected",
-      value: "Sunny.",
+      state: "omitted",
+      reason: "unhandled_free_text",
     });
+    expect(span.attributes?.content_policy_ref).toBeUndefined();
   });
 
   test("missing usage is an explicit unavailable, never a 0 (acceptance 1)", async () => {
@@ -685,9 +689,7 @@ describe("the built-in observation bypass (metered path)", () => {
           })
         ).stream,
       );
-      await drain(
-        (await wrapped.doStream({ prompt: undefined })).stream,
-      );
+      await drain((await wrapped.doStream({ prompt: undefined })).stream);
     } finally {
       setBuiltinModelSpanObserver(undefined);
     }

@@ -128,6 +128,8 @@ function project(input: string, budget: number): SafeText {
 /**
  * Body text. `allowFreeText` is the caller's explicit assertion that this content was reviewed
  * (a saved dataset case, a curated synthetic sample). Without it, unreviewed prose is metrics-only.
+ * FREV-01: for recorder-captured span bodies that assertion must itself be backed by a Bot policy
+ * approval minted in span-support — the boolean alone is not a review.
  */
 export function projectSafeText(
   input: string | null | undefined,
