@@ -342,6 +342,11 @@
       "kind": "assembly"
     },
     {
+      "path": "server/src/assembly",
+      "module": "ASSEMBLY",
+      "kind": "assembly"
+    },
+    {
       "path": "server/src/db/schema",
       "module": "SCHEMA",
       "kind": "infrastructure"
