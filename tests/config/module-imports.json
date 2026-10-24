@@ -702,7 +702,7 @@
       "source": "app/src/lib/agents/answers.ts",
       "target": "app/src/lib/plugins/queries.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -718,7 +718,7 @@
       "source": "app/src/lib/agents/proposal.ts",
       "target": "app/src/lib/plugins/queries.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -790,7 +790,7 @@
       "source": "app/src/lib/bot-lifecycle/mutations.ts",
       "target": "app/src/lib/channels/queries.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -814,7 +814,7 @@
       "source": "app/src/lib/channels/mutations.ts",
       "target": "app/src/lib/bot-lifecycle/queries.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -870,7 +870,7 @@
       "source": "app/src/lib/computers/call.ts",
       "target": "app/src/lib/copilot/computer-activity.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M04 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M04（M09 与 M04 互相可达）"
     },
@@ -902,7 +902,7 @@
       "source": "app/src/lib/copilot/bot-tools.tsx",
       "target": "app/src/lib/agents/answers.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -910,7 +910,7 @@
       "source": "app/src/lib/copilot/bot-tools.tsx",
       "target": "app/src/lib/agents/form.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -918,7 +918,7 @@
       "source": "app/src/lib/copilot/bot-tools.tsx",
       "target": "app/src/lib/agents/mutations.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -926,7 +926,7 @@
       "source": "app/src/lib/copilot/bot-tools.tsx",
       "target": "app/src/lib/agents/proposal.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -934,7 +934,7 @@
       "source": "app/src/lib/copilot/bot-tools.tsx",
       "target": "app/src/lib/agents/queries.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -942,7 +942,7 @@
       "source": "app/src/lib/copilot/bot-tools.tsx",
       "target": "app/src/lib/plugins/mutations.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -950,7 +950,7 @@
       "source": "app/src/lib/copilot/bot-tools.tsx",
       "target": "app/src/lib/plugins/queries.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -966,7 +966,7 @@
       "source": "app/src/lib/copilot/computer-available.ts",
       "target": "app/src/lib/agents/queries.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -1014,7 +1014,7 @@
       "source": "app/src/lib/copilot/escalation-tool.tsx",
       "target": "app/src/lib/plugins/tool-result.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -1030,7 +1030,7 @@
       "source": "app/src/lib/copilot/handoff-tool.tsx",
       "target": "app/src/lib/plugins/tool-result.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -1046,7 +1046,7 @@
       "source": "app/src/lib/copilot/sign-in-tool.tsx",
       "target": "app/src/lib/passwords/mutations.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -1054,7 +1054,7 @@
       "source": "app/src/lib/copilot/sign-in-tool.tsx",
       "target": "app/src/lib/passwords/queries.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -1070,7 +1070,7 @@
       "source": "app/src/lib/copilot/skill-tools.tsx",
       "target": "app/src/lib/plugins/mutations.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -1078,7 +1078,7 @@
       "source": "app/src/lib/copilot/skill-tools.tsx",
       "target": "app/src/lib/plugins/queries.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -1086,7 +1086,7 @@
       "source": "app/src/lib/copilot/skill-tools.tsx",
       "target": "app/src/lib/skills/form.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -1094,7 +1094,7 @@
       "source": "app/src/lib/copilot/skill-tools.tsx",
       "target": "app/src/lib/skills/proposal.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -1158,7 +1158,7 @@
       "source": "app/src/lib/marketplace/mutations.ts",
       "target": "app/src/lib/plugins/mutations.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M08 单向化后移除此例外",
       "reason": "模块级环边 M12 -> M08（M12 与 M08 互相可达）"
     },
@@ -1182,7 +1182,7 @@
       "source": "app/src/lib/observability/route-guard.ts",
       "target": "app/src/lib/agents/queries.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1190,7 +1190,7 @@
       "source": "app/src/lib/onboarding/mutations.ts",
       "target": "app/src/lib/channels/queries.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M01 改走公开出口，使 M01↔M04 单向化后移除此例外",
       "reason": "模块级环边 M01 -> M04（M01 与 M04 互相可达）"
     },
@@ -1262,7 +1262,7 @@
       "source": "app/src/lib/voice/archive.ts",
       "target": "app/src/lib/channels/queries.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
     },
@@ -1326,7 +1326,7 @@
       "source": "server/src/activity/activity.ts",
       "target": "server/src/agents/handoff.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -1334,7 +1334,7 @@
       "source": "server/src/activity/activity.ts",
       "target": "server/src/agents/wake-up.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -1342,7 +1342,7 @@
       "source": "server/src/agents/agent-resolver.ts",
       "target": "server/src/channels/stall-guard.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -1374,7 +1374,7 @@
       "source": "server/src/agents/auth-header.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1390,7 +1390,7 @@
       "source": "server/src/agents/coordination-wiring.ts",
       "target": "server/src/approvals/question-resume.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1398,7 +1398,7 @@
       "source": "server/src/agents/coordination-wiring.ts",
       "target": "server/src/approvals/service.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1406,7 +1406,7 @@
       "source": "server/src/agents/coordination-wiring.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1414,7 +1414,7 @@
       "source": "server/src/agents/coordination-wiring.ts",
       "target": "server/src/channels/group.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -1422,7 +1422,7 @@
       "source": "server/src/agents/coordination-wiring.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -1446,7 +1446,7 @@
       "source": "server/src/agents/coordination-wiring.ts",
       "target": "server/src/plugins/store.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1454,7 +1454,7 @@
       "source": "server/src/agents/coordination-wiring.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1486,7 +1486,7 @@
       "source": "server/src/agents/handoff-runner.ts",
       "target": "server/src/channels/text.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -1518,7 +1518,7 @@
       "source": "server/src/agents/handoff-tool.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1526,7 +1526,7 @@
       "source": "server/src/agents/handoff-tool.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1542,7 +1542,7 @@
       "source": "server/src/agents/handoff-wiring.ts",
       "target": "server/src/channels/group.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -1550,7 +1550,7 @@
       "source": "server/src/agents/handoff-wiring.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -1558,7 +1558,7 @@
       "source": "server/src/agents/handoff-wiring.ts",
       "target": "server/src/channels/thread-identity.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -1630,7 +1630,7 @@
       "source": "server/src/agents/profile-store.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1646,7 +1646,7 @@
       "source": "server/src/agents/routes.ts",
       "target": "server/src/plugins/exposure-change.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1654,7 +1654,7 @@
       "source": "server/src/agents/routes.ts",
       "target": "server/src/plugins/shared-use-store.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1662,7 +1662,7 @@
       "source": "server/src/agents/runtime-agents.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1670,7 +1670,7 @@
       "source": "server/src/agents/wake-up.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M04 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
@@ -1686,7 +1686,7 @@
       "source": "server/src/agents/wake-up.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -1702,7 +1702,7 @@
       "source": "server/src/ai-observability/context.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1758,7 +1758,7 @@
       "source": "server/src/ai-observability/execution-boot.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1782,7 +1782,7 @@
       "source": "server/src/ai-observability/execution-boot.ts",
       "target": "server/src/plugins/catalogue.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M08 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M08（M11 与 M08 互相可达）"
     },
@@ -1838,7 +1838,7 @@
       "source": "server/src/ai-observability/routes/admin-summary.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1854,7 +1854,7 @@
       "source": "server/src/ai-observability/routes/basic-run.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1870,7 +1870,7 @@
       "source": "server/src/ai-observability/routes/case-review.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1886,7 +1886,7 @@
       "source": "server/src/ai-observability/routes/comparison.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1902,7 +1902,7 @@
       "source": "server/src/ai-observability/routes/datasets.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1918,7 +1918,7 @@
       "source": "server/src/ai-observability/routes/experiments.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1934,7 +1934,7 @@
       "source": "server/src/ai-observability/routes/exports.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1958,7 +1958,7 @@
       "source": "server/src/ai-observability/routes/index.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1974,7 +1974,7 @@
       "source": "server/src/ai-observability/routes/results.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -1990,7 +1990,7 @@
       "source": "server/src/ai-observability/routes/runs.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -2046,7 +2046,7 @@
       "source": "server/src/ai-observability/wiring.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
       "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
     },
@@ -2062,7 +2062,7 @@
       "source": "server/src/approvals/execute.ts",
       "target": "server/src/agents/callback-token.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -2070,7 +2070,7 @@
       "source": "server/src/approvals/person-response-sweep.ts",
       "target": "server/src/agents/callback-token.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -2078,7 +2078,7 @@
       "source": "server/src/approvals/person-response-sweep.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -2086,7 +2086,7 @@
       "source": "server/src/approvals/person-response-sweep.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
@@ -2126,7 +2126,7 @@
       "source": "server/src/approvals/resume-sweep.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -2134,7 +2134,7 @@
       "source": "server/src/approvals/resume-sweep.ts",
       "target": "server/src/channels/group.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
@@ -2142,7 +2142,7 @@
       "source": "server/src/approvals/resume-sweep.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
@@ -2182,7 +2182,7 @@
       "source": "server/src/approvals/wiring.ts",
       "target": "server/src/agents/callback-token.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -2190,7 +2190,7 @@
       "source": "server/src/approvals/wiring.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -2198,7 +2198,7 @@
       "source": "server/src/approvals/wiring.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -2214,7 +2214,7 @@
       "source": "server/src/auth/encrypt-sso-config.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M01 改走公开出口，使 M01↔M08 单向化后移除此例外",
       "reason": "模块级环边 M01 -> M08（M01 与 M08 互相可达）"
     },
@@ -2222,7 +2222,7 @@
       "source": "server/src/auth/signed-value.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M01 改走公开出口，使 M01↔M08 单向化后移除此例外",
       "reason": "模块级环边 M01 -> M08（M01 与 M08 互相可达）"
     },
@@ -2230,7 +2230,7 @@
       "source": "server/src/billing/async-job-submit.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2238,7 +2238,7 @@
       "source": "server/src/billing/async-terminal.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2246,7 +2246,7 @@
       "source": "server/src/billing/async-terminal.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2254,7 +2254,7 @@
       "source": "server/src/billing/audio-capability-evidence.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2262,7 +2262,7 @@
       "source": "server/src/billing/audio-path-admission.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2270,7 +2270,7 @@
       "source": "server/src/billing/audio-path-admission.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2278,7 +2278,7 @@
       "source": "server/src/billing/audio-path-admission.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2286,7 +2286,7 @@
       "source": "server/src/billing/batch-cancel.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2294,7 +2294,7 @@
       "source": "server/src/billing/batch-partial.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2302,7 +2302,7 @@
       "source": "server/src/billing/batch-partial.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2310,7 +2310,7 @@
       "source": "server/src/billing/batch-partial.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2318,7 +2318,7 @@
       "source": "server/src/billing/batch-settlement.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2326,7 +2326,7 @@
       "source": "server/src/billing/batch-settlement.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2334,7 +2334,7 @@
       "source": "server/src/billing/batch-settlement.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2342,7 +2342,7 @@
       "source": "server/src/billing/batch-submit.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2350,7 +2350,7 @@
       "source": "server/src/billing/credit-reserve.ts",
       "target": "server/src/gateway/catalog-freshness.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2358,7 +2358,7 @@
       "source": "server/src/billing/credit-reserve.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2366,7 +2366,7 @@
       "source": "server/src/billing/credit-reserve.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2374,7 +2374,7 @@
       "source": "server/src/billing/credit-reserve.ts",
       "target": "server/src/gateway/price-status.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2390,7 +2390,7 @@
       "source": "server/src/billing/credit-service-auth.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M08 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M08（M07 与 M08 互相可达）"
     },
@@ -2398,7 +2398,7 @@
       "source": "server/src/billing/credit-settle.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2406,7 +2406,7 @@
       "source": "server/src/billing/credit-settle.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2414,7 +2414,7 @@
       "source": "server/src/billing/credits-writer.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2422,7 +2422,7 @@
       "source": "server/src/billing/embedding-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2430,7 +2430,7 @@
       "source": "server/src/billing/image-edit-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2438,7 +2438,7 @@
       "source": "server/src/billing/image-entrypoints.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2446,7 +2446,7 @@
       "source": "server/src/billing/image-entrypoints.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2454,7 +2454,7 @@
       "source": "server/src/billing/image-generation-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2462,7 +2462,7 @@
       "source": "server/src/billing/image-settlement.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2470,7 +2470,7 @@
       "source": "server/src/billing/image-settlement.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2478,7 +2478,7 @@
       "source": "server/src/billing/ocr-admission.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2486,7 +2486,7 @@
       "source": "server/src/billing/ocr-admission.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2494,7 +2494,7 @@
       "source": "server/src/billing/ocr-pricing.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2502,7 +2502,7 @@
       "source": "server/src/billing/ocr-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2542,7 +2542,7 @@
       "source": "server/src/billing/realtime-session.ts",
       "target": "server/src/gateway/catalog-freshness.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2550,7 +2550,7 @@
       "source": "server/src/billing/realtime-session.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2558,7 +2558,7 @@
       "source": "server/src/billing/realtime-session.ts",
       "target": "server/src/gateway/price-status.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2566,7 +2566,7 @@
       "source": "server/src/billing/realtime-unit.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2574,7 +2574,7 @@
       "source": "server/src/billing/realtime-unit.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2582,7 +2582,7 @@
       "source": "server/src/billing/recovery-disposal.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2590,7 +2590,7 @@
       "source": "server/src/billing/recovery-disposal.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2598,7 +2598,7 @@
       "source": "server/src/billing/rerank-admission.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2606,7 +2606,7 @@
       "source": "server/src/billing/rerank-admission.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2614,7 +2614,7 @@
       "source": "server/src/billing/rerank-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2622,7 +2622,7 @@
       "source": "server/src/billing/reserve-bound.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2630,7 +2630,7 @@
       "source": "server/src/billing/reserve-bound.ts",
       "target": "server/src/gateway/conversion-rate-store.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2638,7 +2638,7 @@
       "source": "server/src/billing/reserve-bound.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2646,7 +2646,7 @@
       "source": "server/src/billing/reserve-bound.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2662,7 +2662,7 @@
       "source": "server/src/billing/routes.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2670,7 +2670,7 @@
       "source": "server/src/billing/speech-pricing.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2678,7 +2678,7 @@
       "source": "server/src/billing/speech-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2686,7 +2686,7 @@
       "source": "server/src/billing/speech-settlement.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2694,7 +2694,7 @@
       "source": "server/src/billing/tool-admission.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2702,7 +2702,7 @@
       "source": "server/src/billing/tool-call-charge.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2710,7 +2710,7 @@
       "source": "server/src/billing/tool-surcharge-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2718,7 +2718,7 @@
       "source": "server/src/billing/transcription-pricing.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2726,7 +2726,7 @@
       "source": "server/src/billing/transcription-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2734,7 +2734,7 @@
       "source": "server/src/billing/transcription-settlement.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2742,7 +2742,7 @@
       "source": "server/src/billing/transcription-settlement.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2750,7 +2750,7 @@
       "source": "server/src/billing/video-edit-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2758,7 +2758,7 @@
       "source": "server/src/billing/video-generation-pricing.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2766,7 +2766,7 @@
       "source": "server/src/billing/video-settlement.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2774,7 +2774,7 @@
       "source": "server/src/billing/video-spec-availability.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2782,7 +2782,7 @@
       "source": "server/src/billing/video-spec-availability.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2790,7 +2790,7 @@
       "source": "server/src/billing/video-submit.ts",
       "target": "server/src/gateway/catalog.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2798,7 +2798,7 @@
       "source": "server/src/billing/video-submit.ts",
       "target": "server/src/gateway/conversion-rate.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2806,7 +2806,7 @@
       "source": "server/src/billing/video-submit.ts",
       "target": "server/src/gateway/price-snapshot.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M07 改走公开出口，使 M07↔M06 单向化后移除此例外",
       "reason": "模块级环边 M07 -> M06（M07 与 M06 互相可达）"
     },
@@ -2846,7 +2846,7 @@
       "source": "server/src/bot-services/auth.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M08 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M08（M06 与 M08 互相可达）"
     },
@@ -2862,7 +2862,7 @@
       "source": "server/src/bot-services/registry.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M08 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M08（M06 与 M08 互相可达）"
     },
@@ -2878,7 +2878,7 @@
       "source": "server/src/bot-services/service-credentials.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M08 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M08（M06 与 M08 互相可达）"
     },
@@ -2894,7 +2894,7 @@
       "source": "server/src/channels/group.ts",
       "target": "server/src/agents/handoff.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -2902,7 +2902,7 @@
       "source": "server/src/channels/group.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M08 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M08（M04 与 M08 互相可达）"
     },
@@ -2934,7 +2934,7 @@
       "source": "server/src/channels/routes.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -2942,7 +2942,7 @@
       "source": "server/src/channels/routes.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M03 单向化后移除此例外",
       "reason": "模块级环边 M04 -> M03（M04 与 M03 互相可达）"
     },
@@ -2974,7 +2974,7 @@
       "source": "server/src/codesandbox/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
     },
@@ -2990,7 +2990,7 @@
       "source": "server/src/computer/gateway.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M08 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M08（M09 与 M08 互相可达）"
     },
@@ -2998,7 +2998,7 @@
       "source": "server/src/computer/headless-tools.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M08 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M08（M09 与 M08 互相可达）"
     },
@@ -3006,7 +3006,7 @@
       "source": "server/src/computer/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
     },
@@ -3022,7 +3022,7 @@
       "source": "server/src/computer/stream-auth.ts",
       "target": "server/src/agents/computer-access.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
     },
@@ -3030,7 +3030,7 @@
       "source": "server/src/computer/stream-auth.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
     },
@@ -3038,7 +3038,7 @@
       "source": "server/src/computer/stream-auth.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
     },
@@ -3046,7 +3046,7 @@
       "source": "server/src/craft/approval-gate.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 CRAFT 改走公开出口，使 CRAFT↔M08 单向化后移除此例外",
       "reason": "模块级环边 CRAFT -> M08（CRAFT 与 M08 互相可达）"
     },
@@ -3054,7 +3054,7 @@
       "source": "server/src/craft/approvals.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 CRAFT 改走公开出口，使 CRAFT↔M08 单向化后移除此例外",
       "reason": "模块级环边 CRAFT -> M08（CRAFT 与 M08 互相可达）"
     },
@@ -3102,7 +3102,7 @@
       "source": "server/src/craft/manager.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 CRAFT 改走公开出口，使 CRAFT↔M08 单向化后移除此例外",
       "reason": "模块级环边 CRAFT -> M08（CRAFT 与 M08 互相可达）"
     },
@@ -3118,7 +3118,7 @@
       "source": "server/src/craft/routes.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 CRAFT 改走公开出口，使 CRAFT↔M08 单向化后移除此例外",
       "reason": "模块级环边 CRAFT -> M08（CRAFT 与 M08 互相可达）"
     },
@@ -3190,7 +3190,7 @@
       "source": "server/src/delivery/opentag-agent.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -3198,7 +3198,7 @@
       "source": "server/src/delivery/router.ts",
       "target": "server/src/agents/lifecycle.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -3246,7 +3246,7 @@
       "source": "server/src/enterprise/contracts.ts",
       "target": "server/src/enterprise/experts/version-catalog.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M02 改走公开出口，使 M02↔M03 单向化后移除此例外",
       "reason": "模块级环边 M02 -> M03（M02 与 M03 互相可达）"
     },
@@ -3422,7 +3422,7 @@
       "source": "server/src/enterprise/models/budget.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M04 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M04（M06 与 M04 互相可达）"
     },
@@ -3454,7 +3454,7 @@
       "source": "server/src/enterprise/models/gateway.ts",
       "target": "server/src/agents/plan-model.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M03 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M03（M06 与 M03 互相可达）"
     },
@@ -3470,7 +3470,7 @@
       "source": "server/src/enterprise/models/runtime-adapter.ts",
       "target": "server/src/agents/plan-model.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M03 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M03（M06 与 M03 互相可达）"
     },
@@ -3478,7 +3478,7 @@
       "source": "server/src/enterprise/models/runtime-adapter.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M08 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M08（M06 与 M08 互相可达）"
     },
@@ -3670,7 +3670,7 @@
       "source": "server/src/enterprise/runs/events.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -3702,7 +3702,7 @@
       "source": "server/src/enterprise/runs/governed-execution.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M08 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M08（M05 与 M08 互相可达）"
     },
@@ -3718,7 +3718,7 @@
       "source": "server/src/enterprise/runs/governed-execution.ts",
       "target": "server/src/enterprise/models/ai-sdk-v3-gateway-adapter.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -3726,7 +3726,7 @@
       "source": "server/src/enterprise/runs/governed-execution.ts",
       "target": "server/src/enterprise/models/gateway.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -3734,7 +3734,7 @@
       "source": "server/src/enterprise/runs/governed-execution.ts",
       "target": "server/src/enterprise/models/runtime-adapter.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -3750,7 +3750,7 @@
       "source": "server/src/enterprise/runs/model-capability.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -3758,7 +3758,7 @@
       "source": "server/src/enterprise/runs/model-capability.ts",
       "target": "server/src/enterprise/models/budget.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -3782,7 +3782,7 @@
       "source": "server/src/enterprise/runs/model-route-catalog.ts",
       "target": "server/src/enterprise/models/runtime-adapter.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -3814,7 +3814,7 @@
       "source": "server/src/enterprise/runs/model-route-rebind.ts",
       "target": "server/src/enterprise/models/runtime-adapter.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -3838,7 +3838,7 @@
       "source": "server/src/enterprise/runs/outbox.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -3854,7 +3854,7 @@
       "source": "server/src/enterprise/runs/runner.ts",
       "target": "server/src/agents/agent-resolver.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -3862,7 +3862,7 @@
       "source": "server/src/enterprise/runs/runner.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -3870,7 +3870,7 @@
       "source": "server/src/enterprise/runs/runner.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M08 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M08（M05 与 M08 互相可达）"
     },
@@ -3886,7 +3886,7 @@
       "source": "server/src/enterprise/runs/runner.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -3894,7 +3894,7 @@
       "source": "server/src/enterprise/runs/runner.ts",
       "target": "server/src/enterprise/experts/version-catalog.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -3902,7 +3902,7 @@
       "source": "server/src/enterprise/runs/runner.ts",
       "target": "server/src/enterprise/models/runtime-adapter.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -3966,7 +3966,7 @@
       "source": "server/src/enterprise/runs/service.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -3974,7 +3974,7 @@
       "source": "server/src/enterprise/runs/service.ts",
       "target": "server/src/enterprise/experts/version-catalog.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -3982,7 +3982,7 @@
       "source": "server/src/enterprise/runs/service.ts",
       "target": "server/src/enterprise/models/budget.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -4022,7 +4022,7 @@
       "source": "server/src/enterprise/runs/store.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -4046,7 +4046,7 @@
       "source": "server/src/enterprise/tenancy/agent-adapters.ts",
       "target": "server/src/agents/callback-token.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M02 改走公开出口，使 M02↔M03 单向化后移除此例外",
       "reason": "模块级环边 M02 -> M03（M02 与 M03 互相可达）"
     },
@@ -4094,7 +4094,7 @@
       "source": "server/src/enterprise/tenancy/conversation-actions.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M02 改走公开出口，使 M02↔M04 单向化后移除此例外",
       "reason": "模块级环边 M02 -> M04（M02 与 M04 互相可达）"
     },
@@ -4206,7 +4206,7 @@
       "source": "server/src/enterprise/tenancy/startup-defaults.ts",
       "target": "server/src/channels/thread-identity.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M02 改走公开出口，使 M02↔M04 单向化后移除此例外",
       "reason": "模块级环边 M02 -> M04（M02 与 M04 互相可达）"
     },
@@ -4246,7 +4246,7 @@
       "source": "server/src/gateway/admin-credential.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M06 改走公开出口，使 M06↔M08 单向化后移除此例外",
       "reason": "模块级环边 M06 -> M08（M06 与 M08 互相可达）"
     },
@@ -4438,7 +4438,7 @@
       "source": "server/src/host-access/broker.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M08 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M08（M09 与 M08 互相可达）"
     },
@@ -4446,7 +4446,7 @@
       "source": "server/src/host-access/routes.ts",
       "target": "server/src/agents/callback-token.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
     },
@@ -4454,7 +4454,7 @@
       "source": "server/src/host-access/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M03 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M03（M09 与 M03 互相可达）"
     },
@@ -4470,7 +4470,7 @@
       "source": "server/src/host-access/tools.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M09 改走公开出口，使 M09↔M08 单向化后移除此例外",
       "reason": "模块级环边 M09 -> M08（M09 与 M08 互相可达）"
     },
@@ -4478,7 +4478,7 @@
       "source": "server/src/identity/github-callback.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M01 改走公开出口，使 M01↔M08 单向化后移除此例外",
       "reason": "模块级环边 M01 -> M08（M01 与 M08 互相可达）"
     },
@@ -4486,7 +4486,7 @@
       "source": "server/src/identity/retire.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M01 改走公开出口，使 M01↔M08 单向化后移除此例外",
       "reason": "模块级环边 M01 -> M08（M01 与 M08 互相可达）"
     },
@@ -4494,7 +4494,7 @@
       "source": "server/src/identity/store.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M01 改走公开出口，使 M01↔M08 单向化后移除此例外",
       "reason": "模块级环边 M01 -> M08（M01 与 M08 互相可达）"
     },
@@ -4510,7 +4510,7 @@
       "source": "server/src/marketplace/routes.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M03 单向化后移除此例外",
       "reason": "模块级环边 M12 -> M03（M12 与 M03 互相可达）"
     },
@@ -4526,7 +4526,7 @@
       "source": "server/src/marketplace/routes.ts",
       "target": "server/src/plugins/store.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M08 单向化后移除此例外",
       "reason": "模块级环边 M12 -> M08（M12 与 M08 互相可达）"
     },
@@ -4678,7 +4678,7 @@
       "source": "server/src/mastra/handoff-delivery.ts",
       "target": "server/src/agents/callback-token.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -4686,7 +4686,7 @@
       "source": "server/src/mastra/handoff-delivery.ts",
       "target": "server/src/agents/handoff-delivery.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -4694,7 +4694,7 @@
       "source": "server/src/mastra/handoff-delivery.ts",
       "target": "server/src/agents/handoff-runner.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -4702,7 +4702,7 @@
       "source": "server/src/mastra/handoff-delivery.ts",
       "target": "server/src/agents/handoff-signing.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -4710,7 +4710,7 @@
       "source": "server/src/mastra/handoff-delivery.ts",
       "target": "server/src/agents/handoff-tool.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -4718,7 +4718,7 @@
       "source": "server/src/mastra/handoff-delivery.ts",
       "target": "server/src/agents/handoff.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -4750,7 +4750,7 @@
       "source": "server/src/mastra/headless.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -4758,7 +4758,7 @@
       "source": "server/src/mastra/headless.ts",
       "target": "server/src/enterprise/experts/version-catalog.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -4782,7 +4782,7 @@
       "source": "server/src/mastra/legacy-import.ts",
       "target": "server/src/channels/attachment-parts.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -4798,7 +4798,7 @@
       "source": "server/src/mastra/legacy-import.ts",
       "target": "server/src/enterprise/conversations/store.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -4806,7 +4806,7 @@
       "source": "server/src/mastra/message-parts.ts",
       "target": "server/src/channels/attachment-parts.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M04 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M04（M05 与 M04 互相可达）"
     },
@@ -4814,7 +4814,7 @@
       "source": "server/src/mastra/model.ts",
       "target": "server/src/agents/plan-model.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M03 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M03（M05 与 M03 互相可达）"
     },
@@ -4830,7 +4830,7 @@
       "source": "server/src/mastra/model.ts",
       "target": "server/src/enterprise/models/runtime-adapter.ts",
       "category": "cycle",
-      "ticket": "MOD08 (S2 核心)",
+      "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
@@ -4870,7 +4870,7 @@
       "source": "server/src/mastra/tools.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M08 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M08（M05 与 M08 互相可达）"
     },
@@ -4886,7 +4886,7 @@
       "source": "server/src/mastra/tools.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M08 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M08（M05 与 M08 互相可达）"
     },
@@ -4894,7 +4894,7 @@
       "source": "server/src/memory/ingestion.ts",
       "target": "server/src/plugins/access.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外",
       "reason": "模块级环边 M10 -> M08（M10 与 M08 互相可达）"
     },
@@ -4902,7 +4902,7 @@
       "source": "server/src/memory/ingestion.ts",
       "target": "server/src/plugins/broker.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外",
       "reason": "模块级环边 M10 -> M08（M10 与 M08 互相可达）"
     },
@@ -4910,7 +4910,7 @@
       "source": "server/src/memory/ingestion.ts",
       "target": "server/src/plugins/catalogue.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外",
       "reason": "模块级环边 M10 -> M08（M10 与 M08 互相可达）"
     },
@@ -4918,7 +4918,7 @@
       "source": "server/src/memory/ingestion.ts",
       "target": "server/src/plugins/composio.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外",
       "reason": "模块级环边 M10 -> M08（M10 与 M08 互相可达）"
     },
@@ -4926,7 +4926,7 @@
       "source": "server/src/memory/ingestion.ts",
       "target": "server/src/plugins/shared-accounts.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外",
       "reason": "模块级环边 M10 -> M08（M10 与 M08 互相可达）"
     },
@@ -4934,7 +4934,7 @@
       "source": "server/src/memory/ingestion.ts",
       "target": "server/src/plugins/store.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外",
       "reason": "模块级环边 M10 -> M08（M10 与 M08 互相可达）"
     },
@@ -4950,7 +4950,7 @@
       "source": "server/src/memory/routes.ts",
       "target": "server/src/plugins/store.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M10 改走公开出口，使 M10↔M08 单向化后移除此例外",
       "reason": "模块级环边 M10 -> M08（M10 与 M08 互相可达）"
     },
@@ -4958,7 +4958,7 @@
       "source": "server/src/mobile-bff/activity.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -4966,7 +4966,7 @@
       "source": "server/src/mobile-bff/activity.ts",
       "target": "server/src/approvals/service.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M08 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）"
     },
@@ -4982,7 +4982,7 @@
       "source": "server/src/mobile-bff/openmuse-bot.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -4990,7 +4990,7 @@
       "source": "server/src/mobile-bff/openmuse-bot.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -5006,7 +5006,7 @@
       "source": "server/src/mobile-bff/routes.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -5014,7 +5014,7 @@
       "source": "server/src/mobile-bff/routes.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -5030,7 +5030,7 @@
       "source": "server/src/mobile-bff/routes.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
     },
@@ -5038,7 +5038,7 @@
       "source": "server/src/mobile-bff/workspace.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -5046,7 +5046,7 @@
       "source": "server/src/mobile-bff/workspace.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -5054,7 +5054,7 @@
       "source": "server/src/mobile-bff/workspace.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
     },
@@ -5062,7 +5062,7 @@
       "source": "server/src/openmuse-activity/routes.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M08 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）"
     },
@@ -5102,7 +5102,7 @@
       "source": "server/src/openmuse-deletion/manifest.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -5110,7 +5110,7 @@
       "source": "server/src/openmuse-deletion/manifest.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
     },
@@ -5118,7 +5118,7 @@
       "source": "server/src/openmuse-deletion/purge-relational.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -5126,7 +5126,7 @@
       "source": "server/src/openmuse-deletion/purge-relational.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
     },
@@ -5166,7 +5166,7 @@
       "source": "server/src/openmuse-files/routes.ts",
       "target": "server/src/channels/attachment-mime.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
     },
@@ -5222,7 +5222,7 @@
       "source": "server/src/openmuse-personal/tools.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M08 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）"
     },
@@ -5246,7 +5246,7 @@
       "source": "server/src/openmuse-tasks/runner.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
     },
@@ -5254,7 +5254,7 @@
       "source": "server/src/openmuse-tasks/runner.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
       "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
     },
@@ -5286,7 +5286,7 @@
       "source": "server/src/passwords/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -5342,7 +5342,7 @@
       "source": "server/src/plugins/builtin-routines.ts",
       "target": "server/src/channels/text.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
@@ -5382,7 +5382,7 @@
       "source": "server/src/plugins/composio.ts",
       "target": "server/src/channels/text.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
@@ -5390,7 +5390,7 @@
       "source": "server/src/plugins/google-drive-rest.ts",
       "target": "server/src/channels/text.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
@@ -5398,7 +5398,7 @@
       "source": "server/src/plugins/mcp.ts",
       "target": "server/src/channels/text.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
@@ -5414,7 +5414,7 @@
       "source": "server/src/plugins/openconnector.ts",
       "target": "server/src/channels/text.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M04 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M04（M08 与 M04 互相可达）"
     },
@@ -5422,7 +5422,7 @@
       "source": "server/src/plugins/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -5438,7 +5438,7 @@
       "source": "server/src/plugins/selection.ts",
       "target": "server/src/agents/message-text.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 M08 改走公开出口，使 M08↔M03 单向化后移除此例外",
       "reason": "模块级环边 M08 -> M03（M08 与 M03 互相可达）"
     },
@@ -5510,7 +5510,7 @@
       "source": "server/src/proactive/engine.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -5518,7 +5518,7 @@
       "source": "server/src/proactive/private-share.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -5526,7 +5526,7 @@
       "source": "server/src/proactive/restriction.ts",
       "target": "server/src/plugins/tools.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -5550,7 +5550,7 @@
       "source": "server/src/responsibilities/bindings.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -5566,7 +5566,7 @@
       "source": "server/src/responsibilities/engine.ts",
       "target": "server/src/agents/lifecycle.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -5590,7 +5590,7 @@
       "source": "server/src/responsibilities/routes.ts",
       "target": "server/src/plugins/exposure-change.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -5598,7 +5598,7 @@
       "source": "server/src/responsibilities/routes.ts",
       "target": "server/src/plugins/shared-use-store.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -5614,7 +5614,7 @@
       "source": "server/src/responsibilities/triggers.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -5622,7 +5622,7 @@
       "source": "server/src/responsibilities/wiring.ts",
       "target": "server/src/agents/computer-access.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -5630,7 +5630,7 @@
       "source": "server/src/responsibilities/wiring.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -5638,7 +5638,7 @@
       "source": "server/src/responsibilities/wiring.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -5646,7 +5646,7 @@
       "source": "server/src/responsibilities/wiring.ts",
       "target": "server/src/agents/turn-admission.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -5654,7 +5654,7 @@
       "source": "server/src/responsibilities/wiring.ts",
       "target": "server/src/approvals/types.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M08 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M08（AUTOMATION 与 M08 互相可达）"
     },
@@ -5662,7 +5662,7 @@
       "source": "server/src/responsibilities/wiring.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M04 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M04（AUTOMATION 与 M04 互相可达）"
     },
@@ -5694,7 +5694,7 @@
       "source": "server/src/routines/runner.ts",
       "target": "server/src/agents/lifecycle.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -5702,7 +5702,7 @@
       "source": "server/src/routines/runner.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M03 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M03（AUTOMATION 与 M03 互相可达）"
     },
@@ -5710,7 +5710,7 @@
       "source": "server/src/routines/runner.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 AUTOMATION 改走公开出口，使 AUTOMATION↔M04 单向化后移除此例外",
       "reason": "模块级环边 AUTOMATION -> M04（AUTOMATION 与 M04 互相可达）"
     },
@@ -5734,7 +5734,7 @@
       "source": "server/src/team-bots/routes.ts",
       "target": "server/src/plugins/exposure-change.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -5742,7 +5742,7 @@
       "source": "server/src/team-bots/routes.ts",
       "target": "server/src/plugins/shared-use-store.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -5750,7 +5750,7 @@
       "source": "server/src/team-bots/team-bots.ts",
       "target": "server/src/plugins/store.ts",
       "category": "cycle",
-      "ticket": "MOD12 (S3 工具审批与恢复)",
+      "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔M08 单向化后移除此例外",
       "reason": "模块级环边 M03 -> M08（M03 与 M08 互相可达）"
     },
@@ -5758,7 +5758,7 @@
       "source": "server/src/voice/routes.ts",
       "target": "server/src/agents/profile-store.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）"
     },
@@ -5774,7 +5774,7 @@
       "source": "server/src/voice/routes.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
     },
@@ -5782,7 +5782,7 @@
       "source": "server/src/voice/session-routes.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）"
     },
@@ -5798,7 +5798,7 @@
       "source": "server/src/voice/session-routes.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
     },
@@ -5806,7 +5806,7 @@
       "source": "server/src/voice/sessions.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）"
     },
@@ -5814,7 +5814,7 @@
       "source": "server/src/voice/sessions.ts",
       "target": "server/src/channels/routes.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
     },
@@ -5822,7 +5822,7 @@
       "source": "server/src/voice/summary.ts",
       "target": "server/src/agents/plan-model.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）"
     },
@@ -5830,7 +5830,7 @@
       "source": "server/src/voice/summary.ts",
       "target": "server/src/channels/titler.ts",
       "category": "cycle",
-      "ticket": "MOD06 (S2 核心)",
+      "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
       "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
     },
@@ -5894,7 +5894,7 @@
       "source": "server/src/workshop/preview.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 WORKSHOP 改走公开出口，使 WORKSHOP↔M03 单向化后移除此例外",
       "reason": "模块级环边 WORKSHOP -> M03（WORKSHOP 与 M03 互相可达）"
     },
@@ -5910,7 +5910,7 @@
       "source": "server/src/workshop/routes.ts",
       "target": "server/src/agents/profile-policy.ts",
       "category": "cycle",
-      "ticket": "MOD05 (S2 核心)",
+      "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 WORKSHOP 改走公开出口，使 WORKSHOP↔M03 单向化后移除此例外",
       "reason": "模块级环边 WORKSHOP -> M03（WORKSHOP 与 M03 互相可达）"
     },

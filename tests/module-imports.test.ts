@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import {
   mkdirSync,
   mkdtempSync,
@@ -8,13 +7,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "./support/e2e-compat";
 import {
   runCheck,
   type CheckConfig,
   type ModuleRoot,
 } from "../scripts/check-module-imports";
 
-const REPO_ROOT = resolve(import.meta.dir, "..");
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const realConfig = (): CheckConfig =>
   JSON.parse(

@@ -11,9 +11,10 @@
  *   ③ 模块级 import 环：把业务 Module 之间的 import 聚合后成环。
  *
  * 退出语义：
- *   - 发现新增违规（不在例外基线内） → 退出码非零；
+ *   - 发现新增违规（不在例外基线内；例外按 source+target+category 三键精确匹配） → 退出码非零；
  *   - 例外基线数量/范围扩大（基线条目不对应任何实际违规，或出现幻影条目） → 退出码非零；
- *   - JSON 不自洽（字段缺失/重复/重叠） → 退出码非零；
+ *   - JSON 不自洽（字段缺失/非法 kind/同路径 Module 冲突） → 退出码非零；嵌套前缀的
+ *     moduleRoot 不算冲突，按 longest-prefix 归属规则消解；
  *   - 与基线完全一致 → 退出码 0。
  *
  * CLI 形态：
@@ -23,6 +24,7 @@
  *   --json      以 JSON 输出检查结果，供机器消费。
  */
 
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   readdirSync,
@@ -30,8 +32,10 @@ import {
   statSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(__dirname, "..");
+// ESM 可移植形态（Bun/Node 通用）：模块需能被根 e2e 入口在 Node target 下加载（ADR 0008）。
+const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 type ModuleKind = "business" | "infrastructure" | "assembly";
 
@@ -52,7 +56,7 @@ interface Exception {
   exit_condition: string;
   /** 一行理由。 */
   reason: string;
-  /** 判定类别：deep-reference | cycle。 */
+  /** 判定类别：deep-reference | cycle。匹配键之一：category 与实际判定不符的条目按幻影/违规处理。 */
   category?: string;
 }
 
@@ -176,6 +180,33 @@ function walk(absDir: string, cwd: string, out: string[]): void {
 }
 
 // ---------------------------------------------------------------------------
+// gitignore 感知（扫描面与干净树两态一致）
+// ---------------------------------------------------------------------------
+
+/**
+ * 查询候选源文件中哪些被 .gitignore 覆盖。构建期生成物（如 pretest 物化的
+ * `app/src/lib/generated/application-config.ts`）存在与否不应改变检查结果：干净树上
+ * 它不存在，跑过测试的树上它出现。以 `git check-ignore` 自身的判定为准，批查一次。
+ * 非 git 仓库（测试 fixture 的临时目录）或 git 不可用时返回空集，等价于无忽略。
+ */
+function gitIgnoredPaths(cwd: string, candidates: string[]): Set<string> {
+  if (candidates.length === 0) return new Set();
+  try {
+    const res = spawnSync("git", ["-c", "core.quotepath=off", "check-ignore", "--stdin"], {
+      cwd,
+      input: candidates.join("\n"),
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    // status 0 = 存在被忽略路径；1 = 均不忽略；其余（如非 git 仓库）视为无忽略。
+    if (res.error || res.status === null || res.status > 1) return new Set();
+    return new Set((res.stdout ?? "").split("\n").filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // import 解析（字符串感知地剥离注释后正则匹配）
 // ---------------------------------------------------------------------------
 
@@ -257,11 +288,17 @@ const WORKSPACE_PACKAGES: Record<string, string> = {
   "@openbot/toolkit": "toolkit/src",
 };
 
-function resolveSpecifier(cwd: string, fromRel: string, spec: string, scanRoots: string[]): Resolved {
+function resolveSpecifier(
+  cwd: string,
+  fromRel: string,
+  spec: string,
+  scanRoots: string[],
+  ignoredPaths: Set<string>,
+): Resolved {
   // tsconfig alias（仅 app 使用 @/* → app/src/*）
   if (spec.startsWith("@/")) {
     if (fromRel.startsWith("app/")) {
-      return resolveFile(cwd, "app/src/" + spec.slice(2), scanRoots);
+      return resolveFile(cwd, "app/src/" + spec.slice(2), scanRoots, ignoredPaths);
     }
     return { kind: "unresolved", spec };
   }
@@ -270,7 +307,7 @@ function resolveSpecifier(cwd: string, fromRel: string, spec: string, scanRoots:
   for (const [pkg, base] of Object.entries(WORKSPACE_PACKAGES)) {
     if (spec === pkg) return { kind: "unresolved", spec };
     if (spec.startsWith(pkg + "/")) {
-      return resolveFile(cwd, base + "/" + spec.slice(pkg.length + 1), scanRoots);
+      return resolveFile(cwd, base + "/" + spec.slice(pkg.length + 1), scanRoots, ignoredPaths);
     }
   }
 
@@ -278,14 +315,19 @@ function resolveSpecifier(cwd: string, fromRel: string, spec: string, scanRoots:
   if (spec.startsWith(".")) {
     const dirRel = dirname(fromRel);
     const target = joinRel(dirRel, spec);
-    return resolveFile(cwd, target, scanRoots);
+    return resolveFile(cwd, target, scanRoots, ignoredPaths);
   }
 
   // 其余视为外部包（node_modules / node: 内置 / 绝对 URL）
   return { kind: "external" };
 }
 
-function resolveFile(cwd: string, baseRel: string, scanRoots: string[]): Resolved {
+function resolveFile(
+  cwd: string,
+  baseRel: string,
+  scanRoots: string[],
+  ignoredPaths: Set<string>,
+): Resolved {
   const candidates: string[] = [];
   if (/\.(ts|tsx)$/.test(baseRel)) candidates.push(baseRel);
   else if (/\.(js|mjs)$/.test(baseRel)) {
@@ -302,6 +344,8 @@ function resolveFile(cwd: string, baseRel: string, scanRoots: string[]): Resolve
     if (existsSync(abs)) {
       if (/\.(ts|tsx)$/.test(cand)) {
         const rel = toRel(cand);
+        // gitignored 生成物按不存在处理，保证干净树/脏树两态数字一致。
+        if (ignoredPaths.has(rel)) continue;
         if (isInsideScanRoots(rel, scanRoots)) return { kind: "source", path: rel };
         return { kind: "outside" };
       }
@@ -388,7 +432,9 @@ export function runCheck(
   const outsideSpecs: string[] = [];
   const configErrors = validateConfig(config);
 
-  const files = listSourceFiles(cwd, scanRoots);
+  const candidates = listSourceFiles(cwd, scanRoots);
+  const ignoredPaths = gitIgnoredPaths(cwd, candidates);
+  const files = candidates.filter((rel) => !ignoredPaths.has(rel));
   const byModule = new Map<string, ModuleRoot>();
   for (const r of config.moduleRoots) byModule.set(r.module, r);
 
@@ -413,7 +459,7 @@ export function runCheck(
 
     for (const spec of specs) {
       edgeCount += 1;
-      const res = resolveSpecifier(cwd, file, spec, scanRoots);
+      const res = resolveSpecifier(cwd, file, spec, scanRoots, ignoredPaths);
       if (res.kind === "external") {
         skipped.external += 1;
         continue;
@@ -479,14 +525,19 @@ export function runCheck(
 
   // 汇总违规
   const violations: Violation[] = [];
+  // 例外按 source+target+category 三键精确匹配：category 漂移（如环解开后以
+  // deep-reference 语义续存的旧环条目）不再命中，落违规；类别不再对应任何实际边的
+  // 条目落幻影。
   const baselineEdges = new Map<string, Exception>();
-  for (const e of config.exceptions) baselineEdges.set(e.source + "\u0000" + e.target, e);
+  for (const e of config.exceptions) {
+    baselineEdges.set(`${e.source}\u0000${e.target}\u0000${e.category ?? ""}`, e);
+  }
 
   for (const e of deepEdges.values()) {
     const mkey = e.sm + "\u0000" + e.tm;
     const isCycle = cyclicModuleEdges.has(mkey);
     const category: ViolationCategory = isCycle ? "cycle" : "deep-reference";
-    const key = e.source + "\u0000" + e.target;
+    const key = `${e.source}\u0000${e.target}\u0000${category}`;
     const baselined = baselineEdges.has(key);
     if (baselined) baselineEdges.delete(key);
     if (options.ignoreExceptions || !baselined) {
@@ -602,16 +653,17 @@ export function generateBaseline(config: CheckConfig, options: { cwd: string; sc
   return { version: config.version, moduleRoots: config.moduleRoots, exceptions };
 }
 
-/** Module → (消除出口的 MOD 票, migration-plan 工作包)。 */
+/** Module → (消除出口的 MOD 票, migration-plan 阶段名)。标签用阶段名（S2=身份与 Access、
+ *  S5=工具审批与恢复……），不用批次名。 */
 const MODULE_TICKET: Record<string, string> = {
   M01: "MOD04 (S2 身份与 Access)",
   M02: "MOD04 (S2 身份与 Access)",
-  M03: "MOD05 (S2 核心)",
-  M04: "MOD06 (S2 核心)",
+  M03: "MOD05 (S2 身份与 Access)",
+  M04: "MOD06 (S2 身份与 Access)",
   M05: "MOD07 (S3 会话与一次文本 Run)",
-  M06: "MOD08 (S2 核心)",
+  M06: "MOD08 (S2 身份与 Access)",
   M07: "MOD09 (S4 受管模型与资金)",
-  M08: "MOD12 (S3 工具审批与恢复)",
+  M08: "MOD12 (S5 工具审批与恢复)",
   M09: "MOD11 (S6 范围绑定环境)",
   M10: "MOD15 (S7 记忆)",
   M11: "MOD17 (S7 观测)",
@@ -654,14 +706,20 @@ function main(): number {
     console.error(`配置文件不存在: ${configPath}`);
     return 2;
   }
-  const config = JSON.parse(readFileSync(configAbs, "utf8")) as CheckConfig;
+  let config: CheckConfig;
+  try {
+    config = JSON.parse(readFileSync(configAbs, "utf8")) as CheckConfig;
+  } catch (err) {
+    console.error(`配置文件不是合法 JSON: ${configPath}`);
+    console.error(err instanceof Error ? err.message : String(err));
+    return 2;
+  }
 
   const options = { cwd: ROOT, scanRoots: SCAN_ROOTS };
 
   if (baseline) {
-    const out = generateBaseline(config, options);
-    if (asJson) console.log(JSON.stringify(out, null, 2));
-    else console.log(JSON.stringify(out, null, 2));
+    // --baseline 恒以 JSON 输出（本就是机器消费形态），--json 只作用于检查结果。
+    console.log(JSON.stringify(generateBaseline(config, options), null, 2));
     return 0;
   }
 
