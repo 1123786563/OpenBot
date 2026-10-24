@@ -29,6 +29,7 @@ import {
 } from "../../../tests/support/bun-test-compat";
 import { buildInventory } from "../../scripts/multitenancy/inventory";
 import { requireAdmin } from "../../src/auth/guards";
+import { createMarketplaceGate } from "../../src/enterprise/plugin-packages/marketplace-gate";
 import { createPluginPackageRoutes } from "../../src/enterprise/plugin-packages/routes";
 import {
   assertClassifiedCompanyEntrance,
@@ -198,6 +199,10 @@ describe("management plane classification (closed rule table)", () => {
     // The real route table says which entrances exist; classification must
     // agree with it, so a future route added here without a rule fails.
     const routes = createPluginPackageRoutes({
+      gate: createMarketplaceGate({
+        enabled: true,
+        pilotWorkspaces: [{ tenantId: "tenant-1", workspaceId: "workspace-1" }],
+      }),
       catalogue: null,
       resolveScope: async () => {
         throw new Error("AUTH_REQUIRED");

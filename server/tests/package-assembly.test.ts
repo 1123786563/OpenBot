@@ -6,6 +6,7 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";
 import type { PackageService } from "../src/enterprise/plugin-packages/contracts";
+import { createMarketplaceGate } from "../src/enterprise/plugin-packages/marketplace-gate";
 import {
   createPluginPackageRoutes,
   createUnavailablePluginPackageRoutes,
@@ -95,6 +96,10 @@ function appWithCrew(coworker: {
 /** A wired deployment, named exactly the way `index.ts` wires it. */
 function wiredRoutes() {
   return createPluginPackageRoutes({
+    gate: createMarketplaceGate({
+      enabled: true,
+      pilotWorkspaces: [{ tenantId: "tenant-1", workspaceId: "workspace-1" }],
+    }),
     catalogue: fakeCatalogue(),
     service: fakeService(),
     // Production resolves through the enterprise scope registry, which

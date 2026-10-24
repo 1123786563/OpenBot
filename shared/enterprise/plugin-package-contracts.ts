@@ -984,6 +984,10 @@ export const PackageErrorCodes = [
   "TEMPLATE_FIELD_REJECTED",
   "PACKAGE_STORAGE_UNAVAILABLE",
   "ADMIN_CHANNEL_UNAVAILABLE",
+  // PKG11 (#470): the deployment entry switch is closed (or this team is not
+  // a pilot workspace) — writes refuse, reads and existing-pin governance do
+  // not degrade.
+  "MARKETPLACE_ENTRY_DISABLED",
   // PKG10 (#469): dispatch verification refusals — closed additions.
   "VENDOR_QUERY_PROTOCOL_UNAVAILABLE",
   "DISPATCH_NOT_UNKNOWN",

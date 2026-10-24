@@ -41,6 +41,7 @@ import {
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
+import { createMarketplaceGate } from "../src/enterprise/plugin-packages/marketplace-gate";
 import { createPluginPackageRoutes } from "../src/enterprise/plugin-packages/routes";
 import { buildArtifact, storeArtifact } from "../src/plugin-packages/artifact";
 import { loadPackageCatalogue } from "../src/plugin-packages/catalogue";
@@ -622,6 +623,10 @@ describe("PKG08 permission boundary (AC1)", () => {
 
   test("the company HTTP surface exposes no publish or withdraw route", async () => {
     const routes = createPluginPackageRoutes({
+      gate: createMarketplaceGate({
+        enabled: true,
+        pilotWorkspaces: [{ tenantId: "tenant-1", workspaceId: "workspace-1" }],
+      }),
       catalogue: null,
       resolveScope: async () => {
         throw new Error("PKG08_TEST_SCOPE_UNRESOLVED");

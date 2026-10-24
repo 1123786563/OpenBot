@@ -24,6 +24,7 @@ import type {
   PackageService,
 } from "../src/enterprise/plugin-packages/contracts";
 import { packageError } from "../src/enterprise/plugin-packages/contracts";
+import { createMarketplaceGate } from "../src/enterprise/plugin-packages/marketplace-gate";
 import { createPluginPackageRoutes } from "../src/enterprise/plugin-packages/routes";
 import { classifyManagementPlane } from "../src/enterprise/tenancy/admin-separation";
 import type {
@@ -160,6 +161,10 @@ function appWith(
   app.route(
     "/api/enterprise/plugin-packages",
     createPluginPackageRoutes({
+      gate: createMarketplaceGate({
+        enabled: true,
+        pilotWorkspaces: [{ tenantId: "tenant-1", workspaceId: "workspace-1" }],
+      }),
       catalogue,
       service,
       resolveScope: async () => scope,

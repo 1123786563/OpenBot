@@ -58,6 +58,10 @@ COPY server server
 COPY shared shared
 COPY toolkit toolkit
 COPY examples examples
+# PKG11 (#470, Spec §12): the plugin-package marketplace ships WITH the image
+# (see the root Dockerfile's note) — the release index plus the immutable
+# content-addressed artifacts the server's default boot path resolves.
+COPY plugins plugins
 
 # The built app, served by the process below. `APP_DIST_DIR` is what turns that on, so an image
 # without this layer is still a working API.

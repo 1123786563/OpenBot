@@ -28,6 +28,7 @@ import type {
   PackageDispatchService,
   PackageDispatchSurfaceCode,
 } from "./dispatch";
+import type { MarketplaceGate } from "./marketplace-gate";
 
 /**
  * Enterprise plugin-package surface.
@@ -100,6 +101,15 @@ export interface PluginPackageRoutesDeps {
   > | null;
   /** Issues a trusted CompanyAdminContext for plan/apply. */
   resolveAdmin?(request: Request): Promise<CompanyAdminContext>;
+  /**
+   * PKG11 (#470, Spec §12.4): the deployment entry switch. Install/upgrade
+   * plans, apply and new Bot grants consult it per scope and answer 503
+   * MARKETPLACE_ENTRY_DISABLED while closed; reads, the dispatch ledger, the
+   * dispatch-verification surface, revoke and the PKG07 lifecycle never do,
+   * so closing the entry during a rollback leaves existing pinned Runs under
+   * their original governance. Required so no assembly can forget to decide.
+   */
+  gate: MarketplaceGate;
 }
 
 const ERROR_STATUS: Record<
@@ -127,6 +137,9 @@ const ERROR_STATUS: Record<
   DISPATCH_ACCOUNT_UNAVAILABLE: 409,
   PACKAGE_STORAGE_UNAVAILABLE: 503,
   ADMIN_CHANNEL_UNAVAILABLE: 503,
+  // PKG11: same degraded posture as a missing operator channel — 503, not a
+  // permission verdict, because the entry is closed by deployment posture.
+  MARKETPLACE_ENTRY_DISABLED: 503,
   INTERNAL: 500,
 };
 
@@ -159,6 +172,8 @@ const ERROR_MESSAGE: Record<PackageErrorCode, string> = {
     "The original account connection is no longer available; verification cannot reach the vendor on it.",
   PACKAGE_STORAGE_UNAVAILABLE: "Package storage is unavailable.",
   ADMIN_CHANNEL_UNAVAILABLE: "Package administration is unavailable.",
+  MARKETPLACE_ENTRY_DISABLED:
+    "The package marketplace entry is disabled for this team.",
   INTERNAL: "Package request failed.",
 };
 
@@ -377,6 +392,20 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
     return deps.resolveAdmin(request);
   };
 
+  /*
+   * PKG11 (#470): the entry switch, checked after the scope resolves (the
+   * pilot allowlist is per team) and before anything on the write path runs —
+   * a closed entry exercises neither the admin channel nor the service, and
+   * the 503 names the switch, not a permission or a fault.
+   */
+  const requireEntryOpen = async (request: Request) => {
+    const scope = await deps.resolveScope(request);
+    if (!deps.gate.entryOpenFor(scope)) {
+      throw packageError("MARKETPLACE_ENTRY_DISABLED");
+    }
+    return scope;
+  };
+
   routes.get("/", async (context) => {
     if (!deps.catalogue) return unavailable(context);
     try {
@@ -430,7 +459,10 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
     );
     if (!deps.catalogue) return unavailable(context);
     try {
-      const scope = await deps.resolveScope(context.req.raw);
+      // PKG11: plan creation is a write entry — install/upgrade/rollback all
+      // start here, so the switch refuses the whole family before the body
+      // is even read.
+      const scope = await requireEntryOpen(context.req.raw);
       const body = await parseJsonBody(context);
       const parsed = PackagePlanInputSchema.safeParse(body);
       if (!parsed.success) throw new Error("INPUT_INVALID");
@@ -450,7 +482,10 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
     );
     if (!deps.catalogue) return unavailable(context);
     try {
-      const scope = await deps.resolveScope(context.req.raw);
+      // PKG11: a plan created while the entry was open does not survive the
+      // switch being closed — apply re-checks, so closing the entry also
+      // cancels pending confirms.
+      const scope = await requireEntryOpen(context.req.raw);
       const idempotency = PackageIdempotencyKeySchema.safeParse(
         context.req.header("idempotency-key"),
       );
@@ -477,7 +512,9 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
     );
     if (!deps.catalogue) return unavailable(context);
     try {
-      const scope = await deps.resolveScope(context.req.raw);
+      // PKG11: a NEW grant is an authorization entry and follows the switch;
+      // revoke below stays open so governance keeps working while closed.
+      const scope = await requireEntryOpen(context.req.raw);
       const body = await parseJsonBody(context);
       const parsed = PackageGrantInputSchema.safeParse(body);
       if (!parsed.success) throw new Error("INPUT_INVALID");

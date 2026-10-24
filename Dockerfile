@@ -140,6 +140,15 @@ COPY toolkit toolkit
 COPY examples examples
 COPY agent-computer/src agent-computer/src
 COPY agent-computer/package.json agent-computer/package.json
+# PKG11 (#470, Spec §12): the plugin-package marketplace ships WITH the image.
+# `plugins/marketplace.json` is the release registry the server reads at boot
+# (its default path resolves here), and `plugins/.artifacts/sha256/<digest>/`
+# are the immutable, content-addressed package bytes every install pins. The
+# dot-directory matters: COPY carries hidden entries unless ignored, and
+# `.dockerignore` does not exclude it. A deployment that mounts or overrides
+# the index still points `OPENBOT_PLUGIN_MARKETPLACE_INDEX` at its own file;
+# without this COPY the default boot answers an empty marketplace instead.
+COPY plugins plugins
 
 # `bun run composio:smoke`, because the manifest copied above carries that entry and the question it
 # answers belongs here rather than on a laptop: it asks what THIS deployment's Composio key can see,

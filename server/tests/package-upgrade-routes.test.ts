@@ -22,6 +22,7 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import type { PackageService } from "../src/enterprise/plugin-packages/contracts";
 import { packageError } from "../src/enterprise/plugin-packages/contracts";
+import { createMarketplaceGate } from "../src/enterprise/plugin-packages/marketplace-gate";
 import { createPluginPackageRoutes } from "../src/enterprise/plugin-packages/routes";
 import type {
   PackageCatalogue,
@@ -177,6 +178,10 @@ function appWith(service: PackageService): Hono {
   app.route(
     "/api/enterprise/plugin-packages",
     createPluginPackageRoutes({
+      gate: createMarketplaceGate({
+        enabled: true,
+        pilotWorkspaces: [{ tenantId: "tenant-1", workspaceId: "workspace-1" }],
+      }),
       catalogue: fakeCatalogue(),
       service,
       resolveScope: async () => scope,

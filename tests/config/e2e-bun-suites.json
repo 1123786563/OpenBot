@@ -866,6 +866,10 @@
       ]
     },
     {
+      "name": "server/tests/multitenancy/package-migration",
+      "files": ["server/tests/multitenancy/package-migration.test.ts"]
+    },
+    {
       "name": "server/tests/multitenancy/tool-invocation",
       "files": ["server/tests/multitenancy/tool-invocation.test.ts"]
     },
@@ -1320,6 +1324,7 @@
     "server/tests/multitenancy/package-storage.test.ts",
     "server/tests/multitenancy/package-unknown.test.ts",
     "server/tests/multitenancy/package-withdraw.test.ts",
+    "server/tests/multitenancy/package-migration.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
     "server/tests/multitenancy/personal-memory.test.ts",
