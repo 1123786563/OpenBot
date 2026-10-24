@@ -1045,7 +1045,9 @@ describe("preview origin admission", () => {
         );
       }
       expect(() => broken.originFor(SESSION_ID)).toThrow();
-      expect(broken.handlesRequest(new Request("https://x.*.example.com/"))).toBe(false);
+      expect(
+        broken.handlesRequest(new Request("https://x.*.example.com/")),
+      ).toBe(false);
     }
   });
 
@@ -2080,13 +2082,16 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
     const origin = originWith({}, { PORT: "3001" }, undefined, servePreview);
     const address = origin.originFor(SESSION_ID);
     const label = new URL(address).pathname.replace(/^\//, "");
+    // #427: every mint is a fresh random token, so the cookie the request
+    // carries and the expectation must name the SAME value — computed once.
+    const presentedPass = `${PREVIEW_SESSION_COOKIE}=${passFor(SESSION_ID)}`;
 
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/api/probe?x=1&y=2`, {
         method: "POST",
         headers: {
-          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(SESSION_ID)}; other=irrelevant`,
+          cookie: `${presentedPass}; other=irrelevant`,
           "content-type": "application/json",
         },
         body: "{}",
@@ -2101,7 +2106,7 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
         appPath: `/${label}/api/probe`,
         query: "?x=1&y=2",
         method: "POST",
-        cookie: `${passCookie(SESSION_ID)}; other=irrelevant`,
+        cookie: `${presentedPass}; other=irrelevant`,
       },
     ]);
   });
@@ -2654,6 +2659,35 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
     expect(origin.verifyPass(SESSION_ID, shadowOnly)).toBeNull();
   });
 
+  test("#427: revokePass retires exactly one token — the session, its siblings and a re-mint stay open", () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    const address = origin.originFor(SESSION_ID);
+    const reqWith = (value: string) =>
+      new Request(`${address}/`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${value}` },
+      });
+    const retireMe = passFor(SESSION_ID);
+    const keepMe = passFor(SESSION_ID);
+
+    expect(origin.verifyPass(SESSION_ID, reqWith(retireMe))).toEqual({
+      userId: USER_ID,
+    });
+    // The seam a server-side caller drives without holding the secret:
+    expect(origin.revokePass(SESSION_ID, retireMe)).toBe(true);
+    expect(origin.verifyPass(SESSION_ID, reqWith(retireMe))).toBeNull();
+    // AC7's shape: the SESSION and its other tokens are untouched —
+    expect(origin.verifyPass(SESSION_ID, reqWith(keepMe))).toEqual({
+      userId: USER_ID,
+    });
+    // a re-mint opens again, and the guard refuses to retire another
+    // session's token through a wrong id.
+    expect(origin.revokePass(OTHER_SESSION_ID, keepMe)).toBe(false);
+    const replanted = passFor(SESSION_ID);
+    expect(origin.verifyPass(SESSION_ID, reqWith(replanted))).toEqual({
+      userId: USER_ID,
+    });
+  });
+
   test("Review Focus 4: two dev /<label> passes coexist — each serves its own session, and cross-session passes are refused", async () => {
     const { store } = {
       store: {
@@ -2751,8 +2785,12 @@ describe("#418 Option B: single-replica contract — registry empty-state observ
 
 describe("#418 Option B: singleReplicaStartupNotice — the startup line the boot log prints", () => {
   const logged = () => {
-    const info = spyOn(getLogger("server"), "info").mockImplementation(() => {});
-    const warn = spyOn(getLogger("server"), "warn").mockImplementation(() => {});
+    const info = spyOn(getLogger("server"), "info").mockImplementation(
+      () => {},
+    );
+    const warn = spyOn(getLogger("server"), "warn").mockImplementation(
+      () => {},
+    );
     return { info, warn };
   };
 

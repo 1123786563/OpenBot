@@ -307,6 +307,17 @@ export type PreviewOrigin = {
    * drift: one codec, one cookie iteration, one acceptance.
    */
   verifyPass(sessionId: string, request: Request): { userId: string } | null;
+  /**
+   * #427 AC7 — the single-token revocation seam: retire ONE pass token so that
+   * exact cookie 401s on every later HTTP and HMR request, while the session
+   * itself and the holder's other tokens stay open (a re-mint opens again).
+   * Server-side callers hold no deployment secret, so the origin re-exposes its
+   * codec's revoke under this name — the call surface a session-deletion or
+   * forced-sign-out hook would drive; no production caller is wired by this
+   * ticket (tests pin the semantics). False when the token is unknown or bound
+   * to a different session — never a throw.
+   */
+  revokePass(sessionId: string, token: string): boolean;
 };
 
 /**
@@ -1071,14 +1082,15 @@ export function createPreviewOrigin(deps: {
             401,
           );
         }
-        // ponytail: the cookie carries a deployment-signed pass — HttpOnly on
-        // the preview origin, and the proxy never forwards cookies to the app;
-        // mint an opaque token + index instead only if a consumer needs
-        // rotation. #358 repair: the value is the codec's signature over
-        // (sessionId, redeemed.userId) — NOT the session id the old code
-        // echoed (the forgeable credential this fix removes). The userId is
-        // the ticket's OWN verified claim (redemption re-checked the store
-        // for it above), so the pass binds the session to its true owner.
+        // #427: the cookie carries a fresh RANDOM TOKEN in the v1 MAC frame —
+        // HttpOnly on the preview origin, and the proxy never forwards cookies
+        // to the app. The token's (sessionId, redeemed.userId) binding lives in
+        // the server-side pass index (preview-pass.ts), not on the wire, so the
+        // value discloses neither field and one token can be revoked without
+        // touching the session (the old ponytail note's mint-an-opaque-token-
+        // plus-index design, now landed). The userId is the ticket's OWN
+        // verified claim (redemption re-checked the store for it above), so the
+        // pass binds the session to its true owner.
         return new Response(null, {
           status: 302,
           headers: {
@@ -1147,6 +1159,10 @@ export function createPreviewOrigin(deps: {
 
     verifyPass(sessionId, request) {
       return verifyPassWith(previewPass, sessionId, request);
+    },
+
+    revokePass(sessionId, token) {
+      return previewPass.revoke(sessionId, token);
     },
   };
 }

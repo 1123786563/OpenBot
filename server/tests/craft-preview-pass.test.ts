@@ -17,6 +17,7 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   PREVIEW_PASS_COOKIE_SHAPE,
   createPreviewPassCodec,
+  createPreviewPassIndex,
   type PreviewPassCodec,
 } from "../src/craft/preview-pass";
 import {
@@ -123,7 +124,9 @@ describe("createPreviewPassCodec.verify", () => {
   });
 
   test("non-string and over-length candidates refuse without throwing", () => {
-    expect(codec().verify(SESSION_ID, undefined as unknown as string)).toBeNull();
+    expect(
+      codec().verify(SESSION_ID, undefined as unknown as string),
+    ).toBeNull();
     expect(codec().verify(SESSION_ID, `${"a".repeat(513)}`)).toBeNull();
     expect(codec().verify("", "v1.AAAA.AAAA")).toBeNull();
   });
@@ -145,14 +148,107 @@ describe("pass derivation", () => {
     expect(a.split(".")[2]).not.toBe(b.split(".")[2]);
   });
 
-  test("issuing is deterministic and verify is repeatable (no state, no burn)", () => {
+  test("issuing is NON-deterministic (#427 AC1: a fresh random token per pass) and verify is repeatable (no burn)", () => {
     // Unlike the ticket (single use), the pass is a session credential: verify
-    // must not consume it. Two issues for the same triple are identical.
+    // must not consume it. But two issues for the same triple are NO LONGER the
+    // same value — the kernel is a fresh random token per pass, which is the
+    // rotation primitive's whole point (a deterministic pass could never be
+    // retired independently of its siblings).
     const c = codec();
-    expect(c.issue(SESSION_ID, USER_ID)).toBe(c.issue(SESSION_ID, USER_ID));
+    const a = c.issue(SESSION_ID, USER_ID);
+    const b = c.issue(SESSION_ID, USER_ID);
+    expect(a).not.toBe(b);
+    expect(c.verify(SESSION_ID, a)).toEqual({ userId: USER_ID });
+    expect(c.verify(SESSION_ID, b)).toEqual({ userId: USER_ID });
+    expect(c.verify(SESSION_ID, a)).toEqual({ userId: USER_ID });
+  });
+});
+
+// ── #427: the rotation capability — random token + server-side index ─────────
+//
+// The pass used to be a pure function of (deployment secret, sessionId, userId):
+// unforgeable, but with no per-token identity — revoking ONE holder meant
+// rotating the global key (killing every pass) or deleting the session row
+// (killing the session). The kernel is now a 128-bit random token; the server
+// keeps a token → (sessionId, userId) index, and the MAC frame covers the
+// TOKEN (not the session id): the index is the binding authority, so one entry
+// can be deleted to 401 exactly that pass while the session and every other
+// token keep working.
+
+describe("#427 rotation: the index binds each random token", () => {
+  test("the cookie value carries no session id and no userId material — the index owns the binding", () => {
+    const pass = codec().issue(SESSION_ID, USER_ID);
+    expect(pass).not.toContain(SESSION_ID);
+    expect(pass).not.toContain(USER_ID);
+    // And a pass issued for a userId that never rides the wire still verifies
+    // to it — the claim comes from the index, not from the cookie.
+    const longUser = "u".repeat(256);
+    const longPass = codec().issue(SESSION_ID, longUser);
+    expect(longPass).not.toContain(longUser);
+    expect(codec().verify(SESSION_ID, longPass)).toEqual({ userId: longUser });
+  });
+
+  test("an index lookup miss refuses even when the MAC frame is intact — never 'not found ⇒ let through'", () => {
+    // The fail-safe property AC demands: unknown/empty ⇒ 401. A token that is
+    // structurally perfect but absent from the index (revoked, restart-cleared,
+    // another deployment's) is 401 through the SAME judgment, by construction:
+    // the verify answer is the index hit, and there is no pass-through branch.
+    const ownIndex = createPreviewPassIndex();
+    const isolated = createPreviewPassCodec(SECRET, ownIndex);
+    const pass = isolated.issue(SESSION_ID, USER_ID);
+    isolated.revoke(SESSION_ID, pass); // the only entry is gone
+    expect(isolated.verify(SESSION_ID, pass)).toBeNull();
+  });
+
+  test("a fresh index (the restart state) refuses every outstanding pass", () => {
+    const pass = codec().issue(SESSION_ID, USER_ID);
+    // A new process = a new empty index (the #418 single-replica contract's
+    // in-memory state). The MAC frame still parses, the lookup misses: 401.
+    const restarted = createPreviewPassCodec(SECRET, createPreviewPassIndex());
+    expect(restarted.verify(SESSION_ID, pass)).toBeNull();
+    // Re-minting after the restart plants a fresh binding that verifies.
+    const replanted = restarted.issue(SESSION_ID, USER_ID);
+    expect(restarted.verify(SESSION_ID, replanted)).toEqual({
+      userId: USER_ID,
+    });
+  });
+
+  test("the index observable counts live tokens (test/observability only)", () => {
+    const index = createPreviewPassIndex();
+    const c = createPreviewPassCodec(SECRET, index);
+    expect(c.size()).toBe(0);
+    const a = c.issue(SESSION_ID, USER_ID);
+    expect(c.size()).toBe(1);
+    c.revoke(SESSION_ID, a);
+    expect(c.size()).toBe(0);
+  });
+});
+
+describe("#427 rotation: single-token revocation", () => {
+  test("revoking one token 401s it; the session and its other tokens are untouched", () => {
+    const c = codec();
+    const retireMe = c.issue(SESSION_ID, USER_ID);
+    const keepMe = c.issue(SESSION_ID, USER_ID);
+    expect(c.revoke(SESSION_ID, retireMe)).toBe(true);
+    expect(c.verify(SESSION_ID, retireMe)).toBeNull();
+    expect(c.verify(SESSION_ID, keepMe)).toEqual({ userId: USER_ID });
+    // The session itself is unharmed: a re-mint (the front-end's recovery
+    // path) opens again immediately.
+    const replanted = c.issue(SESSION_ID, USER_ID);
+    expect(c.verify(SESSION_ID, replanted)).toEqual({ userId: USER_ID });
+  });
+
+  test("revocation is session-guarded: the wrong session id refuses to retire a token", () => {
+    const c = codec();
+    const other = "cs-777788889999";
     const pass = c.issue(SESSION_ID, USER_ID);
+    expect(c.revoke(other, pass)).toBe(false);
     expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
-    expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+  });
+
+  test("revoking an unknown token is a clean false — the predicate never throws", () => {
+    expect(codec().revoke(SESSION_ID, "no-such-token")).toBe(false);
+    expect(codec().revoke(SESSION_ID, "")).toBe(false);
   });
 });
 

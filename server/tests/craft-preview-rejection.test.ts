@@ -28,6 +28,7 @@ import { join } from "node:path";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
+import { WEBAPP_MOUNT_MARKER } from "../src/craft/nextjs-dev";
 import {
   createPreviewOrigin,
   PREVIEW_PASS_REFUSAL,
@@ -178,7 +179,17 @@ function entryCase(
     userId: USER_ID,
     previewHost: host,
   });
-  return { clock, store, state, tickets, origin, address, host, ticket, sessionId };
+  return {
+    clock,
+    store,
+    state,
+    tickets,
+    origin,
+    address,
+    host,
+    ticket,
+    sessionId,
+  };
 }
 
 /** The redemption request a browser would land on: previewEntryUrl's exact
@@ -217,7 +228,10 @@ function signedInAs(userId: string): MiddlewareHandler<{
   };
 }
 
-function sessionRow(sessionId: string, nextjsPort: number | null): CraftSessionRow {
+function sessionRow(
+  sessionId: string,
+  nextjsPort: number | null,
+): CraftSessionRow {
   return {
     id: sessionId,
     userId: USER_ID,
@@ -409,9 +423,8 @@ describe("逐条拒绝: every refusal answers its status with a displayable, cre
     // #358 repair: the planted value is a SIGNED pass, never the session id —
     // verify it against the codec the origin derives from the same secret.
     const ownCookie = own.headers.get("set-cookie") ?? "";
-    const ownPass = ownCookie
-      .split(";")[0]
-      ?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
+    const ownPass =
+      ownCookie.split(";")[0]?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
     expect(ownPass).not.toBe(SESSION_B);
     expect(passCodec.verify(SESSION_B, ownPass)).toEqual({ userId: USER_ID });
   });
@@ -440,9 +453,7 @@ describe("逐条拒绝: every refusal answers its status with a displayable, cre
     const app = createWebappProxyRoutes(signedInAs(OTHER_USER_ID), {
       config: loadCraftConfig({}),
       store,
-      gateway: gatewayWith(
-        recordingFileApi().api,
-      ),
+      gateway: gatewayWith(recordingFileApi().api),
       botIdFor: async () => "craft-bot",
       sandboxConnectionFor: () => ({
         baseUrl: "http://sbox.internal:4300",
@@ -523,8 +534,16 @@ describe("并发兑换竞争: two concurrent redemptions of one ticket — exact
     });
 
     const [first, second] = await Promise.all([
-      tickets.redeemPreviewTicket({ ticket, sessionId: SESSION_A, previewHost: host }),
-      tickets.redeemPreviewTicket({ ticket, sessionId: SESSION_A, previewHost: host }),
+      tickets.redeemPreviewTicket({
+        ticket,
+        sessionId: SESSION_A,
+        previewHost: host,
+      }),
+      tickets.redeemPreviewTicket({
+        ticket,
+        sessionId: SESSION_A,
+        previewHost: host,
+      }),
     ]);
     const outcomes = [first, second].map((outcome) =>
       "userId" in outcome ? "redeemed" : outcome.reason,
@@ -704,9 +723,12 @@ describe("准入关闭: a closed origin answers its displayable reason on EVERY 
       previewOriginAdmission: () => closedOrigin.admission(),
     });
 
-    const response = await app.request(`/sessions/${SESSION_A}/preview-ticket`, {
-      method: "POST",
-    });
+    const response = await app.request(
+      `/sessions/${SESSION_A}/preview-ticket`,
+      {
+        method: "POST",
+      },
+    );
     expect(response.status).toBe(503);
     const admission = closedOrigin.admission();
     expect(await response.json()).toEqual({
@@ -716,13 +738,26 @@ describe("准入关闭: a closed origin answers its displayable reason on EVERY 
     expect(tickets.size()).toBe(0);
 
     // Control: the same wiring with an OPEN origin mints, and the minted
-    // ticket redeems on that very origin — one table, one gate.
+    // ticket redeems on that very origin — one table, one gate. #437 GAP-C:
+    // the mint now re-checks the running server's mount record on the
+    // current arm, so the control's workspace carries the record naming the
+    // address's own mount (the same derivation the origin answers).
     const openTickets = createPreviewTickets({ store });
     const openOrigin = originWith({}, { PORT: "3001" }, openTickets);
+    const controlApi = recordingFileApi();
+    const controlMount = openOrigin.webappBasePathFor(SESSION_A);
+    const controlGateway = gatewayWith({
+      ...controlApi.api,
+      async readFile(path: string) {
+        return path === `${DIRECTORY}/${WEBAPP_MOUNT_MARKER}`
+          ? (controlMount ?? "")
+          : controlApi.api.readFile(path);
+      },
+    });
     const openApp = createWebappProxyRoutes(signedInAs(USER_ID), {
       config: loadCraftConfig({}),
       store,
-      gateway: gatewayWith(recordingFileApi().api),
+      gateway: controlGateway,
       botIdFor: async () => "craft-bot",
       sandboxConnectionFor: () => ({
         baseUrl: "http://sbox.internal:4300",
@@ -780,7 +815,9 @@ describe("附着模型: upstream dev server absent → the established 503, no s
       sessionId: SESSION_A,
       userId: USER_ID,
       request: new Request(`http://127.0.0.1:3001/label/`, {
-        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${passCodec.issue(SESSION_A, USER_ID)}` },
+        headers: {
+          cookie: `${PREVIEW_SESSION_COOKIE}=${passCodec.issue(SESSION_A, USER_ID)}`,
+        },
       }),
       appPath: "/label/",
       query: "",
@@ -901,9 +938,8 @@ describe("#358 repair: a planted pass stops working when the session leaves its 
     );
     expect(redemption.status).toBe(302);
     const planted = redemption.headers.get("set-cookie") ?? "";
-    const passValue = planted
-      .split(";")[0]
-      ?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
+    const passValue =
+      planted.split(";")[0]?.slice(`${PREVIEW_SESSION_COOKIE}=`.length) ?? "";
     expect(passCodec.verify(SESSION_A, passValue)).toEqual({ userId: USER_ID });
 
     // The session moves to another user UNDER the live pass. The signature

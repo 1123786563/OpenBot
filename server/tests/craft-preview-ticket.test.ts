@@ -14,6 +14,7 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
+import { createPreviewPassCodec } from "../src/craft/preview-pass";
 import {
   createPreviewTickets,
   defaultPreviewOrigin,
@@ -65,10 +66,7 @@ function fakeStore(ownerUserId: string | null = USER_ID) {
   return { store, state };
 }
 
-function ticketsWith(
-  store: CraftStore,
-  clock: ReturnType<typeof fakeClock>,
-) {
+function ticketsWith(store: CraftStore, clock: ReturnType<typeof fakeClock>) {
   return createPreviewTickets({ store, now: clock.now });
 }
 
@@ -348,9 +346,11 @@ describe("defaultPreviewOrigin: PORT/SERVER_PORT semantics (serverPort convergen
     expect(defaultPreviewOrigin({ SERVER_PORT: "3002" })).toEqual({
       origin: "http://127.0.0.1:3002",
     });
-    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3001" })).toEqual({
-      origin: "http://127.0.0.1:3001",
-    });
+    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3001" })).toEqual(
+      {
+        origin: "http://127.0.0.1:3001",
+      },
+    );
     // Unset everywhere: the documented D5 default port.
     expect(defaultPreviewOrigin({})).toEqual({
       origin: "http://127.0.0.1:3001",
@@ -382,9 +382,11 @@ describe("defaultPreviewOrigin: PORT/SERVER_PORT semantics (serverPort convergen
   });
 
   test("disagreement refuses with a reason naming both, never a silent PORT preference", () => {
-    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" })).toEqual({
-      reason: expect.stringContaining("PORT"),
-    });
+    expect(defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" })).toEqual(
+      {
+        reason: expect.stringContaining("PORT"),
+      },
+    );
     const refused = defaultPreviewOrigin({ PORT: "3001", SERVER_PORT: "3002" });
     expect("reason" in refused && refused.reason).toContain("SERVER_PORT");
   });
@@ -511,6 +513,30 @@ describe("previewSessionCookieHeader", () => {
     const ok = previewSessionCookieHeader("cs-444455556666");
     expect(ok).toContain(`${PREVIEW_SESSION_COOKIE}=cs-444455556666;`);
     expect(ok).toContain("Path=/;");
+  });
+
+  test("#427: the opaque pass rides the whitelist, never names the session, and every mint is a fresh value", () => {
+    // The cookie value is a random opaque token in the v1 MAC frame (#427):
+    // structurally different per mint (the rotation primitive), carrying no
+    // session id, and the value whitelist (the injection guard above) still
+    // admits it because the frame's charset is unchanged.
+    const passCodec = createPreviewPassCodec("test-ticket-suite-secret");
+    const a = passCodec.issue(SESSION_ID, USER_ID);
+    const b = passCodec.issue(SESSION_ID, USER_ID);
+    expect(a).not.toBe(b);
+    expect(a).not.toContain(SESSION_ID);
+    for (const pass of [a, b]) {
+      const header = previewSessionCookieHeader(pass);
+      expect(header).toContain(`${PREVIEW_SESSION_COOKIE}=${pass};`);
+      expect(header).toContain("HttpOnly");
+      expect(header).toContain("SameSite=None");
+      expect(header).toContain("Secure");
+    }
+    // An empty value still folds to empty at this boundary (the AC's
+    // fail-safe: empty ⇒ the gate 401s forever, never a pass-through).
+    expect(previewSessionCookieHeader("")).toContain(
+      `${PREVIEW_SESSION_COOKIE}=;`,
+    );
   });
 });
 
