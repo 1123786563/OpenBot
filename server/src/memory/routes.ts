@@ -2,17 +2,37 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
+import type { PlatformScope } from "../enterprise/contracts";
+import { resolveHindsightBankScope } from "../hindsight/bank-scope";
+import type { HindsightPauseControlsService } from "../hindsight/pause-controls";
 import { PluginRefusedError } from "../plugins/store";
 import type { MemoryIngestion } from "./ingestion";
 import type { MemoryStore } from "./store";
-import { MemoryNotFoundError, MemoryRefusedError } from "./types";
+import {
+  MemoryNotFoundError,
+  MemoryRefusedError,
+  parsePauseControlPatch,
+} from "./types";
 
 const log = getLogger("server");
+
+/**
+ * The person's own pause switches (#392 F-G1-1): the two states, behind the deployment's
+ * server-issued scope. Exactly one trusted identity path — the request is resolved to a
+ * `PlatformScope` by the deployment's own resolver, and `resolveHindsightBankScope` turns it
+ * into the (tenant, principal) the switches are keyed by. A tenant, principal or bank id on the
+ * wire is refused by the patch schema, never consulted.
+ */
+export type MemoryPauseControlAccess = {
+  pause: HindsightPauseControlsService;
+  resolveScope: (request: Request) => Promise<PlatformScope>;
+};
 
 export function createMemoryRoutes(
   store: MemoryStore,
   ingestion: MemoryIngestion,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  options: { pauseControls?: MemoryPauseControlAccess } = {},
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser, bodyLimit({ maxSize: 16_384 }));
@@ -26,6 +46,15 @@ export function createMemoryRoutes(
       error instanceof PluginRefusedError
     )
       return context.json({ error: error.message }, 400);
+    // The trusted-scope seams refuse with canonical codes (the MT005/#82 discipline): no
+    // session is 401, a missing company/team selection is 400, and a foreign subject or a
+    // scope nobody issued is 403 — never a guessed default identity.
+    const code = error instanceof Error ? error.message : "";
+    if (code === "AUTH_REQUIRED") return context.json({ error: code }, 401);
+    if (code === "TENANT_REQUIRED" || code === "WORKSPACE_REQUIRED")
+      return context.json({ error: code }, 400);
+    if (code === "TENANT_FORBIDDEN" || code === "UNVERIFIED_SCOPE")
+      return context.json({ error: code }, 403);
     log.error(
       {
         type: "memory-route-error",
@@ -40,6 +69,49 @@ export function createMemoryRoutes(
   routes.get("/", async (context) =>
     context.json({ memories: await store.list(context.var.actor.id) }),
   );
+  /*
+   * Hindsight 14 (#392, F-G1-1): the person's own two pause switches — read here, written here,
+   * under the same `/api/memory` family as the memories they control. Mounted only where the
+   * deployment can resolve a trusted scope (enterprise capabilities wired); a deployment that
+   * cannot prove who is asking mounts no such face at all rather than one that guesses an
+   * identity, so the path simply does not exist there.
+   */
+  if (options.pauseControls) {
+    const { pause, resolveScope } = options.pauseControls;
+    const identityFor = (request: Request) =>
+      resolveScope(request).then(resolveHindsightBankScope);
+    routes.get("/pause-controls", async (context) => {
+      const identity = await identityFor(context.req.raw);
+      return context.json({
+        pauseControls: await pause.getPauseState(
+          identity.tenantId,
+          identity.principalId,
+        ),
+      });
+    });
+    routes.post("/pause-controls", async (context) => {
+      const identity = await identityFor(context.req.raw);
+      const patch = parsePauseControlPatch(await body(context.req.raw));
+      if (patch.learningPaused !== undefined)
+        await pause.setLearningPaused(
+          identity.tenantId,
+          identity.principalId,
+          patch.learningPaused,
+        );
+      if (patch.usagePaused !== undefined)
+        await pause.setUsagePaused(
+          identity.tenantId,
+          identity.principalId,
+          patch.usagePaused,
+        );
+      return context.json({
+        pauseControls: await pause.getPauseState(
+          identity.tenantId,
+          identity.principalId,
+        ),
+      });
+    });
+  }
   routes.post("/", async (context) =>
     context.json(
       {

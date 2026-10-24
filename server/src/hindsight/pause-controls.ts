@@ -28,6 +28,7 @@
 
 import { and, eq } from "drizzle-orm";
 import type { Database } from "../db/client";
+import { enterprisePrincipals } from "../db/schema/enterprise-tenancy";
 import { hindsightPauseControls } from "../db/schema/hindsight-pause";
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "./bank-scope";
@@ -181,3 +182,54 @@ export async function learningPausedFor(
   const identity = resolveHindsightBankScope(scope);
   return pause.learningPaused(identity.tenantId, identity.principalId);
 }
+
+/**
+ * The legacy surfaces' gate (#392 FIX-W1, F-G1-2/F-G1-3): the legacy memory store is the
+ * person's own, keyed by user id, and its callers (the legacy engine's personal-memory
+ * middleware, the memory tools, the connector sync) carry a session actor rather than a
+ * request-resolved `PlatformScope`. This bridge answers the same two switches from the SAME
+ * table and the directory's own principal rows: the actor id in is the trusted session's own
+ * answer, and the (tenant, principal) pairs out are derived server-side — nothing in a request
+ * body, query or header can name a tenant, principal or bank here, the same discipline
+ * `resolveHindsightBankScope` holds on the chain side.
+ *
+ * The legacy store has no company column, so a pause the person set under ANY of their
+ * principal rows stops it: the switch says "stop using my memories", and the only store it can
+ * stop is the person-wide one. That is the fail-safe direction — a pause never leaks content —
+ * and resuming clears exactly the switch that was set, nothing else.
+ */
+export function createUserPauseGate(database: Database): {
+  learningPaused(ownerUserId: string): Promise<boolean>;
+  usagePaused(ownerUserId: string): Promise<boolean>;
+} {
+  async function statesFor(ownerUserId: string): Promise<{
+    learning: boolean;
+    usage: boolean;
+  }> {
+    const rows = await database
+      .select({
+        learningPausedAt: hindsightPauseControls.learningPausedAt,
+        usagePausedAt: hindsightPauseControls.usagePausedAt,
+      })
+      .from(hindsightPauseControls)
+      .innerJoin(
+        enterprisePrincipals,
+        eq(enterprisePrincipals.id, hindsightPauseControls.principalId),
+      )
+      .where(eq(enterprisePrincipals.userId, ownerUserId));
+    return {
+      learning: rows.some((row) => row.learningPausedAt !== null),
+      usage: rows.some((row) => row.usagePausedAt !== null),
+    };
+  }
+  return {
+    async learningPaused(ownerUserId) {
+      return (await statesFor(ownerUserId)).learning;
+    },
+    async usagePaused(ownerUserId) {
+      return (await statesFor(ownerUserId)).usage;
+    },
+  };
+}
+
+export type HindsightUserPauseGate = ReturnType<typeof createUserPauseGate>;

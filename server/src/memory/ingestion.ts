@@ -189,6 +189,13 @@ export function createMemoryIngestion(options: {
    * Bot qualifies.
    */
   canUseBot?: (ownerUserId: string, botId: string) => Promise<boolean>;
+  /**
+   * Hindsight 14 (#392): the person's pause-usage switch, read live at the two legacy recall
+   * entries below (`recall` and `contextFor`). Paused answers empty before any row is read —
+   * no error, no mention of the switch — because the model must not be able to tell a pause
+   * from an empty memory. Absent, the seams answer as they always did.
+   */
+  usagePaused?: (ownerUserId: string) => Promise<boolean>;
 }) {
   const { store, plugins } = options;
   const mayUse = async (ownerUserId: string, botId: string) =>
@@ -383,6 +390,10 @@ export function createMemoryIngestion(options: {
       }
     },
     async recall(ownerUserId: string, botId: string, search = "") {
+      // Pause-usage (#392): the pause is the person's own choice, not an outage — the answer
+      // is empty, silently, and nothing is deleted.
+      if (options.usagePaused && (await options.usagePaused(ownerUserId)))
+        return [];
       return store.retrieve(
         ownerUserId,
         await eligibleSources(ownerUserId, botId),
@@ -391,6 +402,8 @@ export function createMemoryIngestion(options: {
       );
     },
     async contextFor(ownerUserId: string, botId: string) {
+      if (options.usagePaused && (await options.usagePaused(ownerUserId)))
+        return "";
       return quoteMemoryContext(
         await store.retrieve(
           ownerUserId,

@@ -165,7 +165,10 @@ import type { MastraContinuationInstall } from "./mastra/approvals";
 import { createMastraContinuationRoutes } from "./mastra/continuation-routes";
 import type { MastraContinuationStore } from "./mastra/continuation-store";
 import type { MemoryIngestion } from "./memory/ingestion";
-import { createMemoryRoutes } from "./memory/routes";
+import {
+  createMemoryRoutes,
+  type MemoryPauseControlAccess,
+} from "./memory/routes";
 import type { MemoryStore } from "./memory/store";
 import { createMobileBffActivity } from "./mobile-bff/activity";
 import {
@@ -563,7 +566,16 @@ export function createApp(
       >;
       webhooks: Parameters<typeof createDeliveryWebhookRoutes>[0];
     };
-    memory?: { store: MemoryStore; ingestion: MemoryIngestion };
+    memory?: {
+      store: MemoryStore;
+      ingestion: MemoryIngestion;
+      /**
+       * Hindsight 14 (#392, F-G1-1): the person's own two pause switches behind the
+       * deployment's trusted scope. Present only where a deployment can resolve one;
+       * absent, `/api/memory/pause-controls` is not mounted (no face that guesses identity).
+       */
+      pauseControls?: MemoryPauseControlAccess;
+    };
     proactive?: { store: ProactiveStore; engine: ProactiveEngine };
     responsibilities?: {
       store: ResponsibilityStore;
@@ -2787,6 +2799,9 @@ export function createApp(
         coworker.memory.store,
         coworker.memory.ingestion,
         requireUser,
+        coworker.memory.pauseControls
+          ? { pauseControls: coworker.memory.pauseControls }
+          : {},
       ),
     );
   if (coworker?.responsibilities) {

@@ -41,6 +41,30 @@ export class MemoryRefusedError extends Error {
     this.name = "MemoryRefusedError";
   }
 }
+/**
+ * Said to the Bot whose observation arrived while the person paused learning (#392): the
+ * switch is the person's own, so the answer says what happened and how it changes back.
+ */
+export const LEARNING_PAUSED_REFUSAL =
+  "Learning is paused for this person. They can turn it back on in their memory settings.";
+/**
+ * The person's own pause-switches patch (#392): booleans only. Strict, so a tenant, principal
+ * or bank id supplied from the wire is refused as a bad request — identity never travels in a
+ * body; the route derives it from the server-issued scope.
+ */
+export const pauseControlPatchSchema = z
+  .object({
+    learningPaused: z.boolean().optional(),
+    usagePaused: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (patch) =>
+      patch.learningPaused !== undefined || patch.usagePaused !== undefined,
+    "Choose which switch to change.",
+  );
+export const parsePauseControlPatch = (input: unknown) =>
+  parse(pauseControlPatchSchema, input);
 export class MemoryNotFoundError extends Error {
   constructor() {
     super("This memory could not be found.");
