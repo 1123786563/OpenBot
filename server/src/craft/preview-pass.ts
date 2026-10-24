@@ -288,13 +288,23 @@ export function createPreviewPassCodec(
       ) {
         return false;
       }
-      // The same strict frame rules verify runs — the token is never taken
-      // from a value this deployment's own shape would refuse.
+      // Frame rules aligned with verify's SHAPE (N4-01): macPart charset
+      // (43 chars = the 32-byte MAC's base64url), strict token decode, and
+      // the TOKEN_BYTES length — a value this deployment's own shape would
+      // refuse never reaches the index lookup, so revoke===true keeps
+      // meaning "a well-formed pass this deployment could have minted".
+      // The MAC itself is deliberately NOT re-verified — the index, not the
+      // signature, is revocation's authority (a known token retires its own
+      // entry; proving the deployment key buys nothing here).
       const parts = candidate.split(".");
       if (parts.length !== 3) return false;
-      const [version, token] = parts;
+      const [version, token, macPart] = parts;
       if (version !== PREVIEW_PASS_VERSION) return false;
       if (!/^[A-Za-z0-9_-]+$/.test(token)) return false;
+      if (!/^[A-Za-z0-9_-]{43}$/.test(macPart)) return false;
+      const tokenBytes = decodeStrict(token);
+      if (tokenBytes === null || tokenBytes.length !== TOKEN_BYTES)
+        return false;
       const binding = store.lookup(token);
       if (binding === undefined || binding.sessionId !== sessionId)
         return false;
