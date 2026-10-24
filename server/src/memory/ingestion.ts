@@ -6,6 +6,7 @@ import { catalogueEntry } from "../plugins/catalogue";
 import { asksForArguments } from "../plugins/composio";
 import { type AccountAnswer, accountFor } from "../plugins/shared-accounts";
 import { PluginRefusedError, type PluginStore } from "../plugins/store";
+import type { MemoryCompany } from "./company";
 import { classifyMemorySensitivity } from "./sensitivity";
 import type { MemoryStore } from "./store";
 import {
@@ -196,8 +197,42 @@ export function createMemoryIngestion(options: {
    * from an empty memory. Absent, the seams answer as they always did.
    */
   usagePaused?: (ownerUserId: string) => Promise<boolean>;
+  /**
+   * FIX-F1 (#376, FR-1): the company this deployment's memory work belongs to, resolved from
+   * durable server state for the (person, Bot) at hand (memory/company.ts). Present only in an
+   * enterprise deployment — absent, every seam below answers exactly as it always did, which is
+   * the single-user deployment's standing. A call that names no company of its own asks this
+   * resolver; an undefined answer (no provable company) fails closed: recall and the context
+   * injection answer nothing, and an import lands isolated rather than global.
+   */
+  companyFor?: (input: {
+    ownerUserId: string;
+    agentId: string;
+  }) => Promise<MemoryCompany | undefined>;
 }) {
   const { store, plugins } = options;
+  /**
+   * The company a seam works for, as a tri-state the seams can read without re-deriving the
+   * rules: `company` is the pin to filter and stamp by; `isolated` is an enterprise deployment
+   * with NO provable company for this (person, Bot) — fail closed, answer nothing, write
+   * nothing visible; `unscoped` is a deployment without the enterprise layer, whose seams keep
+   * the global-owner behaviour they always had. The caller's own resolution (the request face's
+   * trusted scope, the tool face's) wins over this deployment's resolver.
+   */
+  const companyAnswer = async (
+    company: MemoryCompany | undefined,
+    ownerUserId: string,
+    agentId: string,
+  ): Promise<
+    | { company: MemoryCompany; isolated?: undefined; unscoped?: undefined }
+    | { isolated: true; company?: undefined; unscoped?: undefined }
+    | { unscoped: true; company?: undefined; isolated?: undefined }
+  > => {
+    if (company) return { company };
+    if (!options.companyFor) return { unscoped: true };
+    const resolved = await options.companyFor({ ownerUserId, agentId });
+    return resolved ? { company: resolved } : { isolated: true };
+  };
   const mayUse = async (ownerUserId: string, botId: string) =>
     options.canUseBot
       ? options.canUseBot(ownerUserId, botId)
@@ -271,13 +306,20 @@ export function createMemoryIngestion(options: {
     }
     return tool;
   }
-  async function sync(ownerUserId: string, id: string) {
+  async function sync(
+    ownerUserId: string,
+    id: string,
+    company?: MemoryCompany,
+  ) {
     await store.getSource(ownerUserId, id);
     const source = await store.claimSync(ownerUserId, id);
     if (!source)
       throw new MemoryRefusedError(
         "This source is disabled or already syncing.",
       );
+    // FIX-F1 (FR-1): the import stamps the company it belongs to — the caller's (a
+    // request-scoped sync) or this deployment's answer for the source's own Bot.
+    const stamp = await companyAnswer(company, ownerUserId, source.agentId);
     try {
       await authorize(source);
       const result = await plugins.callTool({
@@ -310,7 +352,12 @@ export function createMemoryIngestion(options: {
           },
           "memory-sync-sensitive-dropped",
         );
-      await store.completeSync(ownerUserId, id, kept);
+      await store.completeSync(
+        ownerUserId,
+        id,
+        kept,
+        stamp.company ?? undefined,
+      );
       return {
         imported: kept.length,
         source: await store.getSource(ownerUserId, id),
@@ -389,27 +436,46 @@ export function createMemoryIngestion(options: {
         }
       }
     },
-    async recall(ownerUserId: string, botId: string, search = "") {
+    async recall(
+      ownerUserId: string,
+      botId: string,
+      search = "",
+      company?: MemoryCompany,
+    ) {
       // Pause-usage (#392): the pause is the person's own choice, not an outage — the answer
       // is empty, silently, and nothing is deleted.
       if (options.usagePaused && (await options.usagePaused(ownerUserId)))
         return [];
+      // FIX-F1 (FR-1): the company pin. Isolated (no provable company) answers empty the
+      // same way — no row is read, nothing of any company crosses.
+      const answer = await companyAnswer(company, ownerUserId, botId);
+      if (answer.isolated) return [];
       return store.retrieve(
         ownerUserId,
         await eligibleSources(ownerUserId, botId),
         search.slice(0, 200),
         await formedFor(botId),
+        answer.company,
       );
     },
-    async contextFor(ownerUserId: string, botId: string) {
+    async contextFor(
+      ownerUserId: string,
+      botId: string,
+      company?: MemoryCompany,
+    ) {
       if (options.usagePaused && (await options.usagePaused(ownerUserId)))
         return "";
+      // FIX-F1 (FR-1): same pin, same silent empty as a pause — the injected context
+      // carries no company's rows when the run's company cannot be proven.
+      const answer = await companyAnswer(company, ownerUserId, botId);
+      if (answer.isolated) return "";
       return quoteMemoryContext(
         await store.retrieve(
           ownerUserId,
           await eligibleSources(ownerUserId, botId),
           "",
           await formedFor(botId),
+          answer.company,
         ),
       );
     },

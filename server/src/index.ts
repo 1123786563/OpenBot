@@ -557,6 +557,7 @@ import type { MastraResumeLoop } from "./mastra/resume-driver";
 import { createMastraResumeDriver } from "./mastra/resume-driver";
 import { createTenantMastraStorage } from "./mastra/tenant-storage";
 import { createMastraTools } from "./mastra/tools";
+import { resolveMemoryCompany } from "./memory/company";
 import { createMemoryDefaults } from "./memory/defaults";
 import { createMemoryIngestion } from "./memory/ingestion";
 import { createMemoryStore } from "./memory/store";
@@ -2563,6 +2564,16 @@ const memoryIngestion = createMemoryIngestion({
   // own switch is on — the same switch the chain seams and the settings entry read.
   usagePaused: (ownerUserId) =>
     personalMemoryUserPause.usagePaused(ownerUserId),
+  // FIX-F1 (#376, FR-1): the old face's company pin, present only where the enterprise layer
+  // is wired. The seams without a request of their own (the personal-memory injection, the
+  // background source sync) resolve their company through this; a deployment without the
+  // enterprise layer passes nothing and every seam answers as it always did.
+  ...(enterpriseCapabilities
+    ? {
+        companyFor: (input: { ownerUserId: string; agentId: string }) =>
+          resolveMemoryCompany(database, input),
+      }
+    : {}),
 });
 // Proactive research may only read; see proactive/restriction.ts. Read from the catalogue per call.
 const proactiveReadOnlyRefs = createReadOnlyClassifier(pluginStore);
@@ -2691,6 +2702,19 @@ const loadToolsForActor =
       ingestion: memoryIngestion,
       ownerUserId: actorId,
       agentId: botId,
+      // FIX-F1 (#376, FR-1): the recall/remember/observe/forget tools answer one
+      // company's rows — the Bot's ownership row's company, else the person's one
+      // provable membership (memory/company.ts). Only where the enterprise layer is
+      // wired; a single-user deployment's tools stay exactly as they were.
+      ...(enterpriseCapabilities
+        ? {
+            companyFor: () =>
+              resolveMemoryCompany(database, {
+                ownerUserId: actorId,
+                agentId: botId,
+              }),
+          }
+        : {}),
     }),
     ...(await grantedTools({
       store: pluginStore,
@@ -8328,6 +8352,17 @@ const app = createApp(
       ingestion: memoryIngestion,
       ownerUserId: actorId,
       agentId: botId,
+      // FIX-F1 (#376, FR-1): the dispatch face resolves the same company the
+      // catalogue face above does — one rule for every entry to the old store.
+      ...(enterpriseCapabilities
+        ? {
+            companyFor: () =>
+              resolveMemoryCompany(database, {
+                ownerUserId: actorId,
+                agentId: botId,
+              }),
+          }
+        : {}),
     }).find((candidate) => candidate.name === name);
     if (memory) {
       const text = await memory.execute(args);
@@ -8415,6 +8450,15 @@ const app = createApp(
         ? {
             pauseControls: {
               pause: personalMemoryPauseControls,
+              resolveScope: (request: Request) =>
+                enterpriseCapabilities.scopes.resolve(request),
+            },
+            // FIX-F1 (#376, FR-1): the whole old face's company pin, behind the SAME
+            // trusted scope resolver the pause switches read. Every /api/memory request
+            // resolves the caller's company; the rows it may list, review, write or
+            // forget are that company's alone. Unwired without the enterprise layer —
+            // a single-user deployment keeps today's behaviour unchanged.
+            companyScope: {
               resolveScope: (request: Request) =>
                 enterpriseCapabilities.scopes.resolve(request),
             },

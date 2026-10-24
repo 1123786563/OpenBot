@@ -584,6 +584,14 @@ export function createApp(
        */
       pauseControls?: MemoryPauseControlAccess;
       /**
+       * FIX-F1 (#376, FR-1): the whole old face's company pin, behind the same trusted
+       * scope resolver. Present only where a deployment can resolve one; absent, the
+       * family keeps the single-user behaviour unchanged.
+       */
+      companyScope?: {
+        resolveScope: (request: Request) => Promise<PlatformScope>;
+      };
+      /**
        * The Hindsight chain's person-scoped confirm/edit/forget/status operations
        * (#384/#385). Present only where both the chain is wired and a trusted-scope
        * resolver exists; absent mounts no such routes.
@@ -2824,10 +2832,17 @@ export function createApp(
           ...(coworker.memory.pauseControls
             ? { pauseControls: coworker.memory.pauseControls }
             : {}),
+          ...(coworker.memory.companyScope
+            ? { companyScope: coworker.memory.companyScope }
+            : {}),
           // Built here, where the family's middleware lives: the chain's operations ride the
           // same `requireUser` + body limit as the rest of `/api/memory`.
           ...(coworker.memory.hindsight
-            ? { hindsight: createHindsightMemoryRoutes(coworker.memory.hindsight) }
+            ? {
+                hindsight: createHindsightMemoryRoutes(
+                  coworker.memory.hindsight,
+                ),
+              }
             : {}),
         },
       ),

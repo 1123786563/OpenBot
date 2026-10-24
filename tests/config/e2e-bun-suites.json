@@ -561,6 +561,7 @@
     "server/tests/mastra-stream-events.test.ts",
     "server/tests/mastra-tools.test.ts",
     "server/tests/mcp-grant-removal.integration.test.ts",
+    "server/tests/memory-company-isolation.integration.test.ts",
     "server/tests/memory-defaults.integration.test.ts",
     "server/tests/memory-exit-single-authority.integration.test.ts",
     "server/tests/memory-expiry.test.ts",
@@ -1512,6 +1513,7 @@
   "server/tests/mastra-stream-events.test.ts",
   "server/tests/mastra-tools.test.ts",
   "server/tests/mcp-grant-removal.integration.test.ts",
+  "server/tests/memory-company-isolation.integration.test.ts",
   "server/tests/memory-defaults.integration.test.ts",
   "server/tests/memory-exit-single-authority.integration.test.ts",
   "server/tests/memory-expiry.test.ts",
@@ -1958,6 +1960,7 @@
   "server/tests/multitenancy/workshop-scope.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/multitenancy/share-tokens.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）",
-  "server/tests/hindsight-ops-routes.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-W2b /api/hindsight 路由族集成套件（bun 驱动，TEST_DATABASE_URL + 脚本化 Hindsight 服务；FIX-INTG RINTG-4 收口改名，原登记名 hindsight-routes.integration.test.ts）"
+  "server/tests/hindsight-ops-routes.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-W2b /api/hindsight 路由族集成套件（bun 驱动，TEST_DATABASE_URL + 脚本化 Hindsight 服务；FIX-INTG RINTG-4 收口改名，原登记名 hindsight-routes.integration.test.ts）",
+  "server/tests/memory-company-isolation.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-F1 旧记忆面公司隔离越权套件（bun 驱动，TEST_DATABASE_URL；FR-1）"
  }
 }
