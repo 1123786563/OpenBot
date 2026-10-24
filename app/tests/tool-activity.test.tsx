@@ -9,6 +9,7 @@ import {
   afterEach,
   beforeAll,
   expect,
+  spyOn,
   test,
 } from "../../tests/support/bun-test-compat";
 import {
@@ -23,6 +24,7 @@ import {
   type ToolGroup,
 } from "../src/components/channels/tool-activity";
 import { markdownComponents } from "../src/lib/markdown";
+import * as toolResult from "../src/lib/plugins/tool-result";
 
 /**
  * The tool-activity group: the one line a run of adjacent connector and browser calls folds into,
@@ -501,6 +503,50 @@ test("a step whose drawing throws degrades to the tool boundary's fallback and t
     page.restore();
   } finally {
     markdownComponents.a = realAnchor;
+  }
+});
+
+/*
+ * Decoding is a failure mode the drawing case above cannot reach: `forDisplay` runs while a step's
+ * elements are being built, before any drawing starts, and it used to run in `StepRow`'s own
+ * render — ahead of the boundary, so a decode that threw escaped past it and took the whole
+ * transcript down. The known decode throws are caught inside `forDisplay` itself (the deep-JSON
+ * case below); this one pins the structure, injected the same way the drawing case injects its
+ * markdown component — here the decoder itself throws. What must survive is the neighbour's
+ * answer, the line the group folds from, and the promise the fallback states.
+ */
+test("a step whose decoding throws degrades to the tool boundary's fallback and the rest of the group survives", async () => {
+  await i18next.changeLanguage("en");
+  const group = expectGroup(
+    groupToolSteps([
+      search("explodes", '{"results":"# Never drawn"}'),
+      search("fine", '{"results":"# Standup notes"}'),
+    ])[0],
+  );
+  const realDecode = toolResult.forDisplay;
+  const decode = spyOn(toolResult, "forDisplay").mockImplementation(
+    (text: string) => {
+      if (text.includes("Never drawn")) throw new Error("pathological decode");
+      return realDecode(text);
+    },
+  );
+  try {
+    const page = renderGroup(group);
+    page.openFold();
+    // The failed step is replaced by the boundary's own sentence — what failed, and the promise
+    // that nothing else was lost — instead of taking the whole transcript down with it.
+    const shown = document.body.textContent ?? "";
+    expect(shown.includes("could not be drawn")).toBe(true);
+    expect(shown.includes("The rest of this conversation is unaffected")).toBe(
+      true,
+    );
+    expect(shown.includes("Never drawn")).toBe(false);
+    // The neighbour step's answer is still drawn, and the line the group folds from survives.
+    expect(page.view.getByText("Standup notes")).toBeTruthy();
+    expect(page.view.getByText("Used Notes")).toBeTruthy();
+    page.restore();
+  } finally {
+    decode.mockRestore();
   }
 });
 

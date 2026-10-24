@@ -421,6 +421,32 @@ function StepStatus({ step, active }: { step: StepDetails; active: boolean }) {
   return null;
 }
 
+/*
+ * A step's decoded answer, a component the boundary renders on purpose.
+ *
+ * `forDisplay` is evaluated in THIS component's render, not in `StepRow`'s: `StepRow` puts the
+ * boundary around this component, and React reaches a child's render only inside that boundary,
+ * so a decoding that throws is caught exactly where a drawing that throws already is. Run in
+ * `StepRow`'s own render it would throw while the elements were being built, before any boundary
+ * existed, and unwind the whole conversation — the single-tool path keeps the same shape, its
+ * `ServerToolLine` decoding inside the boundary that wraps it.
+ */
+function StepOutput({ output }: { output: string }) {
+  return (
+    <div className="max-h-60 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium">
+      {/*
+       * The same drawing `ServerToolLine` gives a single call: `forDisplay` takes the model's
+       * untrusted-content notice back off and unwraps a vendor's JSON envelope, and what a server
+       * wrote for a model reads as prose. Nothing here treats that content as instruction or
+       * authorization — it is drawn, never obeyed.
+       */}
+      <Streamdown components={markdownComponents}>
+        {forDisplay(output)}
+      </Streamdown>
+    </div>
+  );
+}
+
 function StepRow({ step, active }: { step: StepDetails; active: boolean }) {
   const { t } = useTranslation("channels");
   const line = (
@@ -483,22 +509,12 @@ function StepRow({ step, active }: { step: StepDetails; active: boolean }) {
             /*
              * The fold draws a vendor's answer with the same markdown machinery the transcript
              * gives a Bot's prose, but the text arrives from the MCP server, not from the app, and
-             * no app-authored component card sits around it. A drawing that throws here must cost
-             * this step its result alone — the single-tool path draws behind the same boundary —
-             * never the whole conversation it sits inside.
+             * no app-authored component card sits around it. A step that throws while decoding or
+             * drawing its answer must cost it that result alone — the single-tool path decodes and
+             * draws behind the same boundary — never the whole conversation it sits inside.
              */
             <ToolRenderBoundary name={step.label}>
-              <div className="max-h-60 overflow-auto border-l pl-3 text-xs [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h1]:font-medium [&_h2]:font-medium [&_h3]:font-medium">
-                {/*
-                 * The same drawing `ServerToolLine` gives a single call: `forDisplay` takes the
-                 * model's untrusted-content notice back off and unwraps a vendor's JSON envelope,
-                 * and what a server wrote for a model reads as prose. Nothing here treats that
-                 * content as instruction or authorization — it is drawn, never obeyed.
-                 */}
-                <Streamdown components={markdownComponents}>
-                  {forDisplay(step.output)}
-                </Streamdown>
-              </div>
+              <StepOutput output={step.output} />
             </ToolRenderBoundary>
           ) : null}
         </div>
