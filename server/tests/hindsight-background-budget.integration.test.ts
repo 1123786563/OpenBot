@@ -30,6 +30,11 @@ import {
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
 } from "../src/hindsight/degraded-recall";
+import {
+  createDerivedJudgmentService,
+  createDrizzleDerivedJudgmentRecords,
+} from "../src/hindsight/derived-judgments";
+import { createDerivedJudgmentReviewService } from "../src/hindsight/judgment-review";
 import { hindsightAdminHealthSnapshot } from "../src/hindsight/ops-view";
 import {
   createDrizzlePreferenceRecords,
@@ -69,6 +74,10 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  *    between the queue's release and its attempts bump) re-checks both caps first: it stays
  *    released while either cap refuses, and re-reserves — once, under one row — when they
  *    do not.
+ * 6. (FIX-W11 A-2) The judgment confirm's eager retain admits through the gate: an exhausted
+ *    budget defers the retain to the work row's drain (the decision still stands, nothing
+ *    charged), recovery resumes under the original identity and is charged exactly once, and
+ *    an admitted eager retain charges without the drain adding a second one.
  */
 
 const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -77,8 +86,10 @@ const run = randomUUID().slice(0, 8);
 const TENANT_A = `tn_bud-a-${run}`;
 const TENANT_B = `tn_bud-b-${run}`;
 const TENANT_C = `tn_bud-c-${run}`;
+const TENANT_D = `tn_bud-d-${run}`;
 const PRINCIPAL_C_EMP = `prin_c-emp-${run}`;
 const PRINCIPAL_C_PEER = `prin_c-peer-${run}`;
+const PRINCIPAL_D_EMP = `prin_d-emp-${run}`;
 const PRINCIPAL_EMP = `prin_emp-${run}`;
 const PRINCIPAL_PEER = `prin_peer-${run}`;
 const GLOBAL_ACTOR = `usr_global-${run}`;
@@ -289,7 +300,13 @@ beforeAll(async () => {
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
   };
   budget = createDrizzleBudgetGate(database);
-  queue = createHindsightSyncQueue(database, serviceConfig, { budget });
+  // FIX-W11 A-2: the queue wired the way index.ts wires it — the budget gate AND the
+  // authorization store (a derived_judgment work row defers without one, even in general
+  // scope; the earlier preference-only tests are unaffected by the addition).
+  queue = createHindsightSyncQueue(database, serviceConfig, {
+    budget,
+    authorizations: createDrizzleSourceBoundAuthorizations(database),
+  });
   const preferences = createPreferenceRecallService(
     createDrizzlePreferenceRecords(database),
     serviceConfig,
@@ -313,7 +330,14 @@ afterAll(async () => {
   // queue.drain() in this process does not count it.
   await database
     .delete(hindsightSyncWork)
-    .where(inArray(hindsightSyncWork.tenantId, [TENANT_A, TENANT_B, TENANT_C]));
+    .where(
+      inArray(hindsightSyncWork.tenantId, [
+        TENANT_A,
+        TENANT_B,
+        TENANT_C,
+        TENANT_D,
+      ]),
+    );
 });
 
 afterEach(() => {
@@ -702,10 +726,135 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       )?.units,
     ).toBe(2);
   });
+
+  test("FIX-W11 A-2: the judgment confirm's eager retain admits through the gate; exhaustion defers, recovery charges once", async () => {
+    // A fourth company, its person and the judgment chain — the review service wired with the
+    // SAME budget gate and work recorder the production assembly wires (FIX-W11 index.ts).
+    await database
+      .insert(users)
+      .values([{ id: `usr_d-emp-${run}`, email: `d-emp-${run}@example.invalid` }]);
+    await database
+      .insert(enterpriseTenants)
+      .values({ id: TENANT_D, name: `Bud D ${run}` });
+    await database
+      .insert(enterprisePrincipals)
+      .values({ id: PRINCIPAL_D_EMP, userId: `usr_d-emp-${run}` });
+    await database.insert(enterpriseMemberships).values([
+      { tenantId: TENANT_D, principalId: PRINCIPAL_D_EMP, role: "member" },
+    ]);
+    const scope = await makeTrustedScope(PRINCIPAL_D_EMP, TENANT_D);
+    const preferenceRecords = createDrizzlePreferenceRecords(database);
+    const sourceBoundRecords = createDrizzleSourceBoundRecords(database);
+    const judgmentRecords = createDrizzleDerivedJudgmentRecords(database);
+    const authorizations = createDrizzleSourceBoundAuthorizations(database);
+    const preferences = createPreferenceRecallService(
+      preferenceRecords,
+      serviceConfig,
+    );
+    const proposals = createDerivedJudgmentService(
+      preferenceRecords,
+      sourceBoundRecords,
+      judgmentRecords,
+      authorizations,
+    );
+    const review = createDerivedJudgmentReviewService(
+      preferenceRecords,
+      sourceBoundRecords,
+      judgmentRecords,
+      authorizations,
+      serviceConfig,
+      { work: queue, budget },
+    );
+
+    // The judgment's basis: two confirmed general preferences.
+    const basisA = await preferences.confirmGenericPreference(scope, {
+      content: `fixw11-basis-a-${run}`,
+    });
+    const basisB = await preferences.confirmGenericPreference(scope, {
+      content: `fixw11-basis-b-${run}`,
+    });
+    const lead = [
+      preferenceDocumentIdFor(TENANT_D, basisA.record.id),
+      preferenceDocumentIdFor(TENANT_D, basisB.record.id),
+    ];
+
+    // Exhausted: the confirm's DECISION stands, the eager retain defers to the work row, and
+    // nothing is charged — the refusal precedes any reservation.
+    await budget.setCaps(TENANT_D, {
+      companyMonthlyUnits: 0,
+      personalMonthlyUnits: 0,
+    });
+    const candidateA = await proposals.proposeDerivedJudgmentCandidate(scope, {
+      judgment: `fixw11-judgment-a-${run}`,
+      evidence: lead,
+    });
+    const deferred = await review.confirmDerivedJudgment(
+      scope,
+      candidateA.id,
+      {},
+    );
+    expect(deferred.judgment.reviewState).toBe("confirmed");
+    expect(deferred.remoteSynced).toBe(false);
+    expect((await budget.currentUsage(TENANT_D)).companyUnits).toBe(0);
+    const [deferredWork] = await database
+      .select()
+      .from(hindsightSyncWork)
+      .where(eqSyncSubject(TENANT_D, candidateA.id));
+    expect(deferredWork.state).toBe("pending");
+
+    // Recovery: the platform raises the caps and the drain resumes the deferred work under
+    // its original tenant and principal — charged exactly once, and a second drain finds
+    // nothing left to charge.
+    await budget.setCaps(TENANT_D, {
+      companyMonthlyUnits: 10,
+      personalMonthlyUnits: 10,
+    });
+    const resumed = await queue.drain({ limit: 50 });
+    expect(resumed.synced).toBeGreaterThanOrEqual(1);
+    const [resumedWork] = await database
+      .select()
+      .from(hindsightSyncWork)
+      .where(eqSyncSubject(TENANT_D, candidateA.id));
+    expect(resumedWork.state).toBe("done");
+    expect(resumedWork.principalId).toBe(PRINCIPAL_D_EMP);
+    expect((await budget.currentUsage(TENANT_D)).companyUnits).toBe(1);
+    await queue.drain({ limit: 50 });
+    expect((await budget.currentUsage(TENANT_D)).companyUnits).toBe(1);
+
+    // With budget available the eager retain runs and settles its own admission; the work
+    // row the confirm recorded then finds the row already indexed and adds no second charge.
+    const candidateB = await proposals.proposeDerivedJudgmentCandidate(scope, {
+      judgment: `fixw11-judgment-b-${run}`,
+      evidence: lead,
+    });
+    const eager = await review.confirmDerivedJudgment(
+      scope,
+      candidateB.id,
+      {},
+    );
+    expect(eager.remoteSynced).toBe(true);
+    expect((await budget.currentUsage(TENANT_D)).companyUnits).toBe(2);
+    await queue.drain({ limit: 50 });
+    const [eagerWork] = await database
+      .select()
+      .from(hindsightSyncWork)
+      .where(eqSyncSubject(TENANT_D, candidateB.id));
+    expect(eagerWork.state).toBe("done");
+    expect((await budget.currentUsage(TENANT_D)).companyUnits).toBe(2);
+  });
 });
 function eqSyncWork(tenantId: string, id: string) {
   return and(
     eq(hindsightSyncWork.tenantId, tenantId),
     eq(hindsightSyncWork.id, id),
+  );
+}
+
+/** The queue mints its own work-row id; the judgment legs find theirs by subject. */
+function eqSyncSubject(tenantId: string, subjectId: string) {
+  return and(
+    eq(hindsightSyncWork.tenantId, tenantId),
+    eq(hindsightSyncWork.subjectType, "derived_judgment"),
+    eq(hindsightSyncWork.subjectId, subjectId),
   );
 }

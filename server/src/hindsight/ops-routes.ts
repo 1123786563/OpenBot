@@ -59,6 +59,7 @@ import {
   DerivedJudgmentReviewRefusedError,
   type DerivedJudgmentReviewService,
 } from "./judgment-review";
+import type { HindsightAdminHealthSnapshot } from "./ops-view";
 import {
   PreferenceNotFoundError,
   PreferenceRefusedError,
@@ -128,6 +129,16 @@ export type HindsightRouteServices = {
    * the backup leg stays unevidenced until copies are registered by some other means.
    */
   reconcileBackups: (() => Promise<BackupRegistrationReport>) | null;
+  /**
+   * The company administrator's health view (FIX-W11 A-2, #393): service state, backlog
+   * counts and budget usage of the caller's OWN company — the company comes from the trusted
+   * scope, never from a query string, and the snapshot's shape is the guarantee that no
+   * memory, candidate or basis text can ride along. Absent leaves the `/ops/health` route
+   * unmounted (a deployment without the enterprise capabilities wires no such view).
+   */
+  opsHealth?: {
+    snapshot: (scope: PlatformScope) => Promise<HindsightAdminHealthSnapshot>;
+  };
 };
 
 type RouteContext = Context<{ Variables: AppVariables }>;
@@ -580,6 +591,22 @@ export function createHindsightRoutes(
       );
     return context.json(await deps.reconcileBackups());
   });
+
+  /*
+   * The company administrator's health view (FIX-W11 A-2, #393): the asking company is the
+   * trusted scope's own, and the answer is the ops-view module's three blocks — service,
+   * backlog, budgets — counts, states and instants only. Mounted solely where the deployment
+   * wired the view; absent leaves the route itself away.
+   */
+  const opsHealth = deps.opsHealth;
+  if (opsHealth) {
+    routes.get("/ops/health", async (context) => {
+      const denied = requireAdmin(context);
+      if (denied) return denied;
+      const scope = await scopeFor(context);
+      return context.json(await opsHealth.snapshot(scope));
+    });
+  }
 
   return routes;
 }

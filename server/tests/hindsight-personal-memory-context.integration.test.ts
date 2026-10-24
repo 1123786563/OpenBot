@@ -19,6 +19,10 @@ import {
   enterpriseWorkspaces,
 } from "../src/db/schema/enterprise-tenancy";
 import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
+import {
+  derivedJudgmentCandidates,
+  derivedJudgmentEvidence,
+} from "../src/db/schema/hindsight-judgments";
 import { hindsightPauseControls } from "../src/db/schema/hindsight-pause";
 import {
   hindsightMemoryGrants,
@@ -33,6 +37,11 @@ import {
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
 } from "../src/hindsight/degraded-recall";
+import {
+  createDerivedJudgmentService,
+  createDrizzleDerivedJudgmentRecords,
+} from "../src/hindsight/derived-judgments";
+import { createDerivedJudgmentReviewService } from "../src/hindsight/judgment-review";
 import { createDrizzlePauseControls } from "../src/hindsight/pause-controls";
 import {
   createPersonalMemoryContext,
@@ -93,6 +102,9 @@ let context: ReturnType<typeof createPersonalMemoryContext>;
 let preferences: ReturnType<typeof createPreferenceRecallService>;
 let sourceBound: ReturnType<typeof createSourceBoundRecallService>;
 let pause: ReturnType<typeof createDrizzlePauseControls>;
+/** FIX-W11 A-1: the judgment half's seam, wired exactly as index.ts wires it. */
+let judgmentProposals: ReturnType<typeof createDerivedJudgmentService>;
+let judgmentReview: ReturnType<typeof createDerivedJudgmentReviewService>;
 let scope: PlatformScope;
 let recoveryOpen = true;
 
@@ -255,14 +267,35 @@ beforeAll(async () => {
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
   };
   pause = createDrizzlePauseControls(database);
+  const preferenceRecords = createDrizzlePreferenceRecords(database);
+  const sourceBoundRecords = createDrizzleSourceBoundRecords(database);
+  const authorizations = createDrizzleSourceBoundAuthorizations(database);
   preferences = createPreferenceRecallService(
-    createDrizzlePreferenceRecords(database),
+    preferenceRecords,
     serviceConfig,
     { pause, recovery: { recallOpen: () => Promise.resolve(recoveryOpen) } },
   );
   sourceBound = createSourceBoundRecallService(
-    createDrizzleSourceBoundRecords(database),
-    createDrizzleSourceBoundAuthorizations(database),
+    sourceBoundRecords,
+    authorizations,
+    serviceConfig,
+    { pause, recovery: { recallOpen: () => Promise.resolve(recoveryOpen) } },
+  );
+  // FIX-W11 A-1: the judgment half's seam — #388's proposer and #389's review service, on
+  // the same records stores and the same pause/restore gates the two halves above use.
+  const judgmentRecords = createDrizzleDerivedJudgmentRecords(database);
+  judgmentProposals = createDerivedJudgmentService(
+    preferenceRecords,
+    sourceBoundRecords,
+    judgmentRecords,
+    authorizations,
+    { pause },
+  );
+  judgmentReview = createDerivedJudgmentReviewService(
+    preferenceRecords,
+    sourceBoundRecords,
+    judgmentRecords,
+    authorizations,
     serviceConfig,
     { pause, recovery: { recallOpen: () => Promise.resolve(recoveryOpen) } },
   );
@@ -272,11 +305,12 @@ beforeAll(async () => {
       sourceBound,
       createDrizzleDegradedPreferenceSearch(database),
       createDrizzleDegradedSourceBoundSearch(database),
-      createDrizzleSourceBoundAuthorizations(database),
+      authorizations,
     ),
     preferenceSearch: createDrizzleDegradedPreferenceSearch(database),
     sourceBoundSearch: createDrizzleDegradedSourceBoundSearch(database),
-    authorizations: createDrizzleSourceBoundAuthorizations(database),
+    authorizations,
+    judgments: judgmentReview,
     pause,
     recovery: { recallOpen: () => Promise.resolve(recoveryOpen) },
   });
@@ -301,6 +335,14 @@ afterEach(() => {
 
 afterAll(async () => {
   await scripted.server.close();
+  // FIX-W11 A-1: the judgment half's rows — the evidence relation first (it references the
+  // candidate rows), then the candidates, before the tenancy rows below go.
+  await database
+    .delete(derivedJudgmentEvidence)
+    .where(eq(derivedJudgmentEvidence.tenantId, TENANT));
+  await database
+    .delete(derivedJudgmentCandidates)
+    .where(eq(derivedJudgmentCandidates.tenantId, TENANT));
   await database
     .delete(sourceBoundMemories)
     .where(eq(sourceBoundMemories.tenantId, TENANT));
@@ -488,6 +530,86 @@ describe("Hindsight 18 (#395) — Bot consumption over the single authority", ()
       `ctx-live-pref-${run}`,
     );
     expect(live.record.id).toBeTruthy();
+  });
+
+  test("confirmed judgments join the context block; unreviewed, dead-basis or paused ones never do", async () => {
+    // The judgment's basis: two confirmed general preferences, the way #388's leads arrive.
+    const basisA = await preferences.confirmGenericPreference(scope, {
+      content: `ctx-jdg-basis-a-${run}`,
+    });
+    const basisB = await preferences.confirmGenericPreference(scope, {
+      content: `ctx-jdg-basis-b-${run}`,
+    });
+    const candidate = await judgmentProposals.proposeDerivedJudgmentCandidate(
+      scope,
+      {
+        judgment: `ctx-jdg-risk-first-${run}`,
+        evidence: [
+          preferenceDocumentIdFor(TENANT, basisA.record.id),
+          preferenceDocumentIdFor(TENANT, basisB.record.id),
+        ],
+      },
+    );
+
+    // Unreviewed: the candidate is a person-facing proposal, never Bot context — however the
+    // context is built, an unadopted judgment must not reach a Bot.
+    let block = await context.personalMemoryContext(scope, ASKING_BOT);
+    expect(
+      block.memories.filter((memory) => memory.kind === "derived-judgment"),
+    ).toEqual([]);
+
+    // Adopted: the judgment is in the block, with its basis as citations.
+    await judgmentReview.confirmDerivedJudgment(scope, candidate.id, {});
+    block = await context.personalMemoryContext(scope, ASKING_BOT);
+    const judgment = block.memories.find(
+      (memory) => memory.kind === "derived-judgment",
+    );
+    expect(judgment?.content).toBe(`ctx-jdg-risk-first-${run}`);
+    const rendered = renderPersonalMemoryContext(block.memories);
+    expect(rendered).toContain(`ctx-jdg-risk-first-${run}`);
+    const records = JSON.parse(
+      rendered.split("\n")[1] as string,
+    ) as Record<string, unknown>[];
+    const renderedJudgment = records.find(
+      (record) => record.kind === "derived-judgment",
+    );
+    // The basis travels as record-id citations the evidence seam can expand — never as the
+    // basis content inside the judgment's entry.
+    expect(renderedJudgment?.evidence).toEqual([
+      { id: basisA.record.id, kind: "preference" },
+      { id: basisB.record.id, kind: "preference" },
+    ]);
+
+    // Pause-usage closes the judgment half with the whole block, and the seam's own read too.
+    await pause.setUsagePaused(TENANT, PRINCIPAL, ACTOR, true);
+    expect(await context.personalMemoryContext(scope, ASKING_BOT)).toEqual({
+      memories: [],
+    });
+    expect(await judgmentReview.derivedJudgmentContext(scope, ASKING_BOT)).toEqual(
+      [],
+    );
+    await pause.setUsagePaused(TENANT, PRINCIPAL, ACTOR, false);
+    const unpaused = await context.personalMemoryContext(scope, ASKING_BOT);
+    expect(
+      unpaused.memories.find((memory) => memory.kind === "derived-judgment")
+        ?.content,
+    ).toBe(`ctx-jdg-risk-first-${run}`);
+
+    // The basis died: the judgment leaves the block on the next read — nothing was cached at
+    // confirm time, and the four gates re-run over the stored relation every time.
+    await preferences.forgetGenericPreference(scope, basisA.record.id);
+    const afterBasisDeath = await context.personalMemoryContext(
+      scope,
+      ASKING_BOT,
+    );
+    expect(
+      afterBasisDeath.memories.filter(
+        (memory) => memory.kind === "derived-judgment",
+      ),
+    ).toEqual([]);
+    expect(
+      renderPersonalMemoryContext(afterBasisDeath.memories),
+    ).not.toContain(`ctx-jdg-risk-first-${run}`);
   });
 
   test("the rendered block quotes memories as untrusted attributed data", () => {

@@ -59,6 +59,7 @@ import {
   teamBankFor,
   userBankFor,
 } from "./bank-scope";
+import type { HindsightBudgetGate } from "./budget-gate";
 import {
   createDerivedJudgmentEvidenceVerifier,
   DerivedJudgmentRefusedError,
@@ -207,6 +208,11 @@ const QUERY_MAX = 512;
 const AGENT_ID_MAX = 128;
 /** Bot-context economy: recall answers at most as many judgments as the other seams do. */
 const RECALL_LIMIT = 20;
+/**
+ * How many adopted rows the query-less context half scans before giving up on filling the
+ * limit: rows whose basis died are withheld, so a full page may need to look past them.
+ */
+const CONTEXT_SCAN_MAX = 200;
 /** The spec's candidate rule: unhandled proposals expire after thirty days. */
 const CANDIDATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -271,6 +277,14 @@ export function createDerivedJudgmentReviewService(
      * degradation path (whose rows a restore may have resurrected) never runs either.
      */
     recovery?: HindsightRecoveryGate;
+    /**
+     * The background-processing budget gate (#393, FIX-W11 A-2). The confirm/edit eager
+     * retain is the model-call path of a judgment's adoption, and it admits through the same
+     * gate the sync queue's drains do: exhaustion skips the retain — the decision stands and
+     * the work row keeps the retry — and an admitted retain settles when the service answered
+     * (a refusal did the work) and releases when it was never reached, the queue's discipline.
+     */
+    budget?: HindsightBudgetGate;
   } = {},
 ) {
   const now = options.now ?? (() => new Date());
@@ -314,12 +328,13 @@ export function createDerivedJudgmentReviewService(
    * Retain one row's adopted content into its own bank under its hdj_ identity; `replace`
    * keeps the retain idempotent per document, so an edit replaces in place. A non-2xx or an
    * unreachable service is reported, never thrown — the review decision stands and the work
-   * row awaits the queue (#384).
+   * row awaits the queue (#384). `reached` says which of the two happened, so a budgeted
+   * caller can settle the one and release the other.
    */
   async function retain(
     identity: { tenantId: string; principalId: string },
     row: DerivedJudgmentRow,
-  ): Promise<boolean> {
+  ): Promise<{ synced: boolean; reached: boolean }> {
     const bank = bankGrantFor(row);
     try {
       const response = await hindsight(
@@ -337,13 +352,52 @@ export function createDerivedJudgmentReviewService(
           },
         },
       );
-      if (!response.ok) return false;
+      if (!response.ok) return { synced: false, reached: true };
       row.syncedContentDigest = digestOf(row.content);
       row.syncedAt = now();
-      return true;
+      return { synced: true, reached: true };
     } catch {
-      return false;
+      return { synced: false, reached: false };
     }
+  }
+
+  /**
+   * The eager retain behind a review decision, admitted through the budget gate when one is
+   * wired (#393, FIX-W11 A-2). An exhausted budget does NOT fail the decision: the retain is
+   * skipped, `remoteSynced` answers false and the work row recorded just above owns the
+   * retry — the drain re-admits it under its own work key once the budget recovers, so an
+   * exhausted decision charges nothing here. The admission key is stable per row and adopted
+   * content: re-asserting the same text re-admits one reservation (charged once), while an
+   * edit's new text is genuinely new processing and honestly separate.
+   */
+  async function admittedRetain(
+    identity: { tenantId: string; principalId: string },
+    row: DerivedJudgmentRow,
+  ): Promise<boolean> {
+    if (!options.budget) return (await retain(identity, row)).synced;
+    const admission = await options.budget.admitBackgroundWork({
+      tenantId: identity.tenantId,
+      principalId: identity.principalId,
+      workKey: `judgment-review:${row.id}:${digestOf(row.content)}`,
+      units: 1,
+    });
+    if (!admission.ok) return false;
+    const outcome = await retain(identity, row);
+    if (outcome.synced) {
+      await options.budget.settleBackgroundWork(admission.reservationId);
+      return true;
+    }
+    if (outcome.reached) {
+      // The service answered and refused: it did the work, the charge stands — the same
+      // split the sync queue's retains draw.
+      await options.budget.settleBackgroundWork(admission.reservationId);
+    } else {
+      await options.budget.releaseBackgroundWork(
+        admission.reservationId,
+        "eager retain could not reach the service",
+      );
+    }
+    return false;
   }
 
   /**
@@ -524,7 +578,7 @@ export function createDerivedJudgmentReviewService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(identity, row);
+      const remoteSynced = await admittedRetain(identity, row);
       if (remoteSynced) await judgments.save(row);
       return { judgment: reviewedView(row, verified.evidence), remoteSynced };
     },
@@ -594,7 +648,7 @@ export function createDerivedJudgmentReviewService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(identity, row);
+      const remoteSynced = await admittedRetain(identity, row);
       if (remoteSynced) await judgments.save(row);
       return { judgment: reviewedView(row, verified.evidence), remoteSynced };
     },
@@ -825,6 +879,80 @@ export function createDerivedJudgmentReviewService(
         if (recalled.length >= RECALL_LIMIT) break;
         const row = byDocument.get(documentId);
         if (!row || !derivedJudgmentEligible(row)) continue;
+        if (!(await judgmentScopeAuthorizedNow(row, second))) continue;
+        const verified = await verifier.verifyStoredEvidence(
+          identity.tenantId,
+          identity.principalId,
+          row,
+          second,
+        );
+        if (!verified.ok) continue;
+        recalled.push({
+          id: row.id,
+          content: row.content,
+          provenance: row.provenance,
+          scope: judgmentScopeOf(row),
+          reviewState: row.reviewState as "confirmed" | "edited",
+          reviewedAt: row.reviewedAt ?? row.updatedAt,
+          evidence: verified.evidence.map((basis) => ({
+            id: basis.row.id,
+            kind: basis.kind,
+          })),
+        });
+      }
+      return recalled;
+    },
+
+    /**
+     * The query-less context half (FIX-W11 A-1, #396 A-1): the adopted judgments that still
+     * stand, read from the authority rows the way the personal-memory loader's other two
+     * halves read theirs — there is no query to rank, so no bank is asked and no ranking is
+     * claimed. The gate order is the query recall's own: pause-usage and the restore gate
+     * close before any row is read; the authorization snapshot is read twice — before the
+     * rows load and again after, the #383 discipline — and every row must still be adopted,
+     * still sit inside its scope's CURRENT authorization, and still pass the four evidence
+     * gates through the one verifier. A judgment whose basis died between two turns simply
+     * is not in the next block; nothing was cached at confirm time.
+     */
+    async derivedJudgmentContext(
+      scope: PlatformScope,
+      askingAgentId?: string,
+    ): Promise<RecalledDerivedJudgment[]> {
+      const identity = resolveHindsightBankScope(scope);
+      // Pause-usage (#392): before any row is read, the same place the query recall checks.
+      if (await usagePausedFor(options.pause, scope)) return [];
+      // Backup-restore gate (#391): an unreplayed restore keeps the context half closed too.
+      if (!(await recallOpenFor(options.recovery))) return [];
+      // The ask's authorization, read before any judgment row leaves the store — the query
+      // recall's first read, minus the banks it resolves there.
+      const first = await readScopedAuthorization(
+        authorizations,
+        identity.tenantId,
+        identity.principalId,
+        scope.workspaceId,
+        askingAgentId,
+      );
+      const adopted = await judgments.loadAdopted(
+        identity.tenantId,
+        identity.principalId,
+        CONTEXT_SCAN_MAX,
+      );
+      // The second read: what the authorization looks like NOW, after the rows loaded — the
+      // same TOCTOU discipline the query recall applies after the remote answered. Rows the
+      // FIRST snapshot already refuses never reach the verifier; the SECOND is the word that
+      // counts for everything that does.
+      const second = await readScopedAuthorization(
+        authorizations,
+        identity.tenantId,
+        identity.principalId,
+        scope.workspaceId,
+        askingAgentId,
+      );
+      const recalled: RecalledDerivedJudgment[] = [];
+      for (const row of adopted) {
+        if (recalled.length >= RECALL_LIMIT) break;
+        if (!derivedJudgmentEligible(row)) continue;
+        if (!(await judgmentScopeAuthorizedNow(row, first))) continue;
         if (!(await judgmentScopeAuthorizedNow(row, second))) continue;
         const verified = await verifier.verifyStoredEvidence(
           identity.tenantId,

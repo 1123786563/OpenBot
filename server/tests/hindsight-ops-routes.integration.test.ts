@@ -31,13 +31,19 @@ import {
   hindsightControlledBackups,
 } from "../src/db/schema/hindsight-restore";
 import { hindsightRevocations } from "../src/db/schema/hindsight-revocations";
+import { hindsightSyncWork } from "../src/db/schema/hindsight-sync";
 import { hindsightMemoryGrants } from "../src/db/schema/hindsight-source-bound";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
 import { createAnswerEvidenceService } from "../src/hindsight/answer-evidence";
 import { reconcileControlledBackups } from "../src/hindsight/backup-registry";
-import { sourceBankFor, userBankFor } from "../src/hindsight/bank-scope";
+import {
+  resolveHindsightBankScope,
+  sourceBankFor,
+  userBankFor,
+} from "../src/hindsight/bank-scope";
+import { createDrizzleBudgetGate } from "../src/hindsight/budget-gate";
 import {
   CONTROLLED_COPIES_CLEARED_SUMMARY,
   createCleanupEvidenceService,
@@ -49,6 +55,7 @@ import {
 } from "../src/hindsight/derived-judgments";
 import { createDerivedJudgmentReviewService } from "../src/hindsight/judgment-review";
 import { createHindsightRoutes } from "../src/hindsight/ops-routes";
+import { hindsightAdminHealthSnapshotForRoute } from "../src/hindsight/ops-view";
 import { createDrizzlePauseControls } from "../src/hindsight/pause-controls";
 import {
   createDrizzlePreferenceRecords,
@@ -84,6 +91,8 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * 3. The source-revocation route blocks only the caller's feed.
  * 4. Cleanup evidence shows "受控副本清除完成" only when all three legs hold.
  * 5. The operator restore gate and backup registration are admin-only and content-free.
+ * 6. (FIX-W11 A-2) The company admin's health view is admin-gated, scoped to the caller's
+ *    own company, content-free by shape — and the route itself is absent when unwired.
  */
 
 const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -155,6 +164,8 @@ let revocations: ReturnType<typeof createRevocationService>;
 let recovery: ReturnType<typeof createRestoreRecoveryService>;
 let cleanup: ReturnType<typeof createCleanupEvidenceService>;
 let syncQueue: ReturnType<typeof createHindsightSyncQueue>;
+/** FIX-W11 A-2: the admin health view's budget gate, shared with the suite's assembly. */
+let budgetGate: ReturnType<typeof createDrizzleBudgetGate>;
 
 /** The declared operation-retention window the cleanup leg measures against; per-test mutable. */
 let declaredOperationRetentionDays: number | null = 1;
@@ -323,11 +334,14 @@ async function scopeForPrincipal(
 /**
  * The mounted route family as one principal sees it. `role` answers the operator gates;
  * every other identity field is derived inside the seams, exactly as in production.
+ * `opsEnv` feeds the admin health view's probe configuration — the default `{}` is an
+ * undeclared deployment, whose view honestly answers the service state "unknown".
  */
 async function harnessFor(
   principalId: string,
   role: "user" | "admin",
   workspaceId = WORKSPACE_A,
+  options: { opsEnv?: Record<string, string | undefined> } = {},
 ): Promise<Hono> {
   const scopes = await resolverFor(principalId, workspaceId);
   const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
@@ -370,6 +384,19 @@ async function harnessFor(
               registry: cleanup,
             })
         : null,
+      // FIX-W11 A-2: the admin health view, wired the way index.ts wires it — the trusted
+      // scope's own tenant, the shared budget gate, the probe fed from a declared env.
+      opsHealth: {
+        snapshot: (scope: PlatformScope) => {
+          const identity = resolveHindsightBankScope(scope);
+          return hindsightAdminHealthSnapshotForRoute(
+            database,
+            budgetGate,
+            identity.tenantId,
+            { env: options.opsEnv ?? {} },
+          );
+        },
+      },
     }),
   );
   return app;
@@ -560,6 +587,7 @@ beforeAll(async () => {
   syncQueue = createHindsightSyncQueue(database, serviceConfig, {
     authorizations,
   });
+  budgetGate = createDrizzleBudgetGate(database);
   review = createDerivedJudgmentReviewService(
     preferenceRecords,
     sourceBoundRecords,
@@ -1916,6 +1944,130 @@ describe("the operator restore routes (#391)", () => {
     } finally {
       currentManifestDir = null;
       await rm(manifestDir, { recursive: true, force: true });
+    }
+  });
+
+  test("FIX-W11 A-2: the company admin's health view is admin-gated, content-free and absent when unwired", async () => {
+    // What must never survive into the view: a confirmed preference whose content is
+    // distinctive, a pending work row pointing at it, and an error string on the work row.
+    const secret = await confirmPreference(
+      PRINCIPAL_EMP,
+      `fixw11-ops-secret-content-${run}`,
+    );
+    const workId = randomUUID();
+    await database.insert(hindsightSyncWork).values({
+      tenantId: TENANT,
+      id: workId,
+      subjectType: "preference",
+      subjectId: secret.id,
+      principalId: PRINCIPAL_EMP,
+      expectedDigest: "0".repeat(64),
+      state: "pending",
+      attempts: 1,
+      lastError: `fixw11-ops-secret-error-${run}`,
+    });
+    try {
+      await budgetGate.setCaps(TENANT, {
+        companyMonthlyUnits: 10,
+        personalMonthlyUnits: 3,
+      });
+
+      // Not an administrator: the view stays closed.
+      const userApp = await harnessFor(PRINCIPAL_EMP, "user");
+      const denied = await call(userApp, {
+        method: "GET",
+        path: "/api/hindsight/ops/health",
+      });
+      expect(denied.status).toBe(403);
+
+      // The administrator of the company the scope resolves to: the three blocks and the
+      // instant, nothing else — and an undeclared health configuration answers "unknown".
+      const adminApp = await harnessFor(PRINCIPAL_ADMIN, "admin");
+      const viewed = await call(adminApp, {
+        method: "GET",
+        path: "/api/hindsight/ops/health",
+      });
+      expect(viewed.status).toBe(200);
+      const snapshot = (await viewed.json()) as {
+        service: { state: string };
+        backlog: { pendingWork: number };
+        budgets: { companyMonthlyUnits: number; personalMonthlyUnits: number };
+      };
+      expect(Object.keys(snapshot).sort()).toEqual([
+        "backlog",
+        "budgets",
+        "checkedAt",
+        "service",
+      ]);
+      expect(snapshot.service.state).toBe("unknown");
+      expect(snapshot.backlog.pendingWork).toBeGreaterThanOrEqual(1);
+      expect(snapshot.budgets.companyMonthlyUnits).toBe(10);
+      expect(snapshot.budgets.personalMonthlyUnits).toBe(3);
+      const serialized = JSON.stringify(snapshot);
+      expect(serialized).not.toContain(`fixw11-ops-secret-content-${run}`);
+      expect(serialized).not.toContain(`fixw11-ops-secret-error-${run}`);
+      expect(serialized).not.toContain("content");
+      expect(serialized).not.toContain("lastError");
+
+      // A DECLARED probe configuration runs the health check: this deployment's "service"
+      // is the scripted stand-in, whose /health answers 404 — an honest service_down.
+      const probedApp = await harnessFor(PRINCIPAL_ADMIN, "admin", WORKSPACE_A, {
+        opsEnv: {
+          HINDSIGHT_API_URL: scripted.url,
+          HINDSIGHT_API_TOKEN: SERVICE_KEY,
+          HINDSIGHT_MODEL_GATEWAY_URL: "http://127.0.0.1:9",
+          HINDSIGHT_MODEL_GATEWAY_API_KEY: "unused-in-test",
+          HINDSIGHT_PRIVACY_LLM_TRACE_ENABLED: "false",
+          HINDSIGHT_PRIVACY_OPERATION_RETENTION_DAYS: "1",
+          HINDSIGHT_PRIVACY_BACKUP_RETENTION_DAYS: "30",
+        },
+      });
+      const probed = await call(probedApp, {
+        method: "GET",
+        path: "/api/hindsight/ops/health",
+      });
+      expect(probed.status).toBe(200);
+      expect(((await probed.json()) as { service: { state: string } }).service.state).toBe(
+        "service_down",
+      );
+
+      // A deployment that wired no view leaves the route itself away.
+      const scopes = await resolverFor(PRINCIPAL_ADMIN, WORKSPACE_A);
+      const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
+        context,
+        next,
+      ) => {
+        context.set("actor", {
+          id: PRINCIPAL_ADMIN,
+          email: `admin-${run}@example.invalid`,
+          role: "admin",
+        });
+        await next();
+      };
+      const bareApp = new Hono<{ Variables: AppVariables }>();
+      bareApp.route(
+        "/api/hindsight",
+        createHindsightRoutes({
+          scopes,
+          evidence,
+          judgments: proposals,
+          review,
+          revocations,
+          cleanup,
+          recovery,
+          requireUser,
+          operationRetentionDays: () => null,
+          reconcileBackups: null,
+        }),
+      );
+      const unmounted = await bareApp.request("/api/hindsight/ops/health", {
+        method: "GET",
+      });
+      expect(unmounted.status).toBe(404);
+    } finally {
+      await database
+        .delete(hindsightSyncWork)
+        .where(eq(hindsightSyncWork.id, workId));
     }
   });
 });
