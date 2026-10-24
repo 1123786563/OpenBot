@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import type { RunAssertion } from "./agents/callback-token";
 import type { BotLifecycleServices } from "./agents/lifecycle-routes";
+import type { BotCatalog } from "./agents/public";
 import type {
   OpenMuseTemplateMethods,
   OpenMuseTemplateRevisionService,
@@ -467,6 +468,12 @@ export function createApp(
     /** MT126 (Issue #169): the stream entry's unified assembly (/api/enterprise/streams). */
     enterpriseStreamEntry?: Hono;
     teamBots?: TeamBots;
+    /**
+     * MOD05（Issue #625，根 #620）：M03 BotCatalog 门面（发布/撤回经它委托，见
+     * agents/public.ts）。与 assembly/http.ts HttpAssemblyDependencies.coworker 的同名字段
+     * 同步——本类型是 createApp 位置参数的孪生声明，两处必须一致地可选。
+     */
+    botCatalog?: BotCatalog;
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
     /**

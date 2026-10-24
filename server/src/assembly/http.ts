@@ -47,6 +47,7 @@ import type {
 } from "../agents/openmuse-template-store";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AgentProfileStore } from "../agents/profile-store";
+import type { BotCatalog } from "../agents/public";
 import { createAgentRoutes } from "../agents/routes";
 import { createApprovalRoutes } from "../approvals/routes";
 import type { ApprovalService } from "../approvals/service";
@@ -531,6 +532,12 @@ export interface HttpAssemblyDependencies {
     /** MT126 (Issue #169): the stream entry's unified assembly (/api/enterprise/streams). */
     enterpriseStreamEntry?: Hono;
     teamBots?: TeamBots;
+    /**
+     * MOD05（Issue #625，根 #620）：M03 BotCatalog 门面——发布/撤回两 handler 经它
+     * 委托（见 agents/public.ts）。字段式而非又一个位置参数：与 teamBots 同源装配，
+     * 缺席则 publication 两 handler 保持 teamBots 直用旧路径（行为逐字节等价）。
+     */
+    botCatalog?: BotCatalog;
     /** Pause, reset, Activity and attention for a person's own Bots. See agents/lifecycle.ts. */
     lifecycle?: BotLifecycleServices;
     /**
@@ -2764,7 +2771,12 @@ export function assembleHttpApp(
   if (coworker?.teamBots)
     app.route(
       "/api/team-bots",
-      createTeamBotRoutes(coworker.teamBots, requireUser, coworker.shared?.use),
+      createTeamBotRoutes(
+        coworker.teamBots,
+        requireUser,
+        coworker.shared?.use,
+        coworker.botCatalog,
+      ),
     );
   /*
    * BEFORE `/api/approvals`, which would otherwise take every path under it and answer 404 for

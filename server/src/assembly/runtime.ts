@@ -73,6 +73,7 @@ import {
 import { canManageAgent } from "../agents/profile-policy";
 import { createAgentProfileStore } from "../agents/profile-store";
 import type { AgentActor } from "../agents/profile-types";
+import { createBotCatalog } from "../agents/public";
 import { createRuntimeAgentLoader } from "../agents/runtime-agents";
 import { serverTurnAdmission } from "../agents/turn-admission";
 import {
@@ -3137,6 +3138,20 @@ const enterpriseRunner = enterpriseCapabilities
       }).prepareWithin,
     })
   : undefined;
+
+/*
+ * MOD05（#625，根 #620）：M03 BotCatalog 门面装配。三内件全部复用既有实例：
+ * agentProfileStore（:1691）、teamBots（:2574 附近）、expertVersions 复用
+ * enterpriseRunner 上已构造的同一 ExpertVersionCatalog（生产唯一实例，runs/ 同源）。
+ * 企业能力未接线时 expertVersions 缺席——getVersion 届时响亮拒绝（缺省即缺席，
+ * 绝不宽松回退，与 enterpriseCapabilities 同一纪律），其余三能力照常；发布/撤回
+ * 不依赖企业能力，与改造前一致（teamBots 直用时代的可用性不动）。
+ */
+const botCatalog = createBotCatalog({
+  profileStore: agentProfileStore,
+  teamBots,
+  expertVersions: enterpriseRunner?.expertVersions,
+});
 
 /*
  * ME06 (#478): the durable-continuation production assembly — the review
@@ -8215,6 +8230,7 @@ const app = createApp(
     },
     groups: groupConversations,
     teamBots,
+    botCatalog,
     enterpriseConversations: enterpriseConversationRoutes,
     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
     ...(enterpriseMobileAggregateAndStreamEntry
