@@ -40,6 +40,7 @@ import {
   mintBankScopeAssertion,
   resolveHindsightBankScope,
 } from "./bank-scope";
+import type { HindsightBudgetGate } from "./budget-gate";
 import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
 import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
 import {
@@ -355,6 +356,15 @@ export function createPreferenceRecallService(
      * degradation path (whose rows a restore may have resurrected) never runs either.
      */
     recovery?: HindsightRecoveryGate;
+    /**
+     * The background-processing budget gate (#393, FIX-F23 / FR-2). The confirm/edit/
+     * correction eager retains are model-call paths exactly like the judgment review's, and
+     * they admit through the same gate the sync queue's drains do: exhaustion skips the
+     * retain — the person's confirmation stands and the work row keeps the retry — and an
+     * admitted retain settles when the service answered (a refusal did the work) and
+     * releases when it was never reached, the queue's discipline.
+     */
+    budget?: HindsightBudgetGate;
   } = {},
 ) {
   const now = options.now ?? (() => new Date());
@@ -430,12 +440,13 @@ export function createPreferenceRecallService(
    * Retain one row's confirmed content under its stable document identity. `replace` makes the
    * retain idempotent per document: an edit supersedes what the service held instead of
    * appending a second copy. A non-2xx answer is reported, never thrown — the authority row
-   * stands on its own and simply stays pending its sync (#384 drains those).
+   * stands on its own and simply stays pending its sync (#384 drains those). `reached` says
+   * which of the two happened, so a budgeted caller can settle the one and release the other.
    */
   async function retain(
     grant: HindsightBankScope,
     row: PreferenceAuthorityRow,
-  ): Promise<boolean> {
+  ): Promise<{ synced: boolean; reached: boolean }> {
     try {
       const response = await hindsight(
         grant,
@@ -452,13 +463,54 @@ export function createPreferenceRecallService(
           },
         },
       );
-      if (!response.ok) return false;
+      if (!response.ok) return { synced: false, reached: true };
       row.syncedContentDigest = digestOf(row.content);
       row.syncedAt = now();
-      return true;
+      return { synced: true, reached: true };
     } catch {
-      return false;
+      return { synced: false, reached: false };
     }
+  }
+
+  /**
+   * The eager retain behind a confirm/edit/correction, admitted through the budget gate when
+   * one is wired (#393, FIX-F23 / FR-2 — the seam the final review caught bypassing it). An
+   * exhausted budget does NOT fail the person's decision: the retain is skipped,
+   * `remoteSynced` answers false and the work row recorded just above owns the retry — the
+   * drain re-admits it under its own work key once the budget recovers, so an exhausted
+   * decision charges nothing here. The admission key is stable per row and confirmed
+   * content: re-asserting the same text re-admits one reservation (charged once), while an
+   * edit's new text is genuinely new processing and honestly separate — the judgment
+   * review's `admittedRetain` discipline, verbatim.
+   */
+  async function admittedRetain(
+    grant: HindsightBankScope,
+    row: PreferenceAuthorityRow,
+  ): Promise<boolean> {
+    if (!options.budget) return (await retain(grant, row)).synced;
+    const admission = await options.budget.admitBackgroundWork({
+      tenantId: grant.tenantId,
+      principalId: grant.principalId,
+      workKey: `preference-eager:${row.id}:${digestOf(row.content)}`,
+      units: 1,
+    });
+    if (!admission.ok) return false;
+    const outcome = await retain(grant, row);
+    if (outcome.synced) {
+      await options.budget.settleBackgroundWork(admission.reservationId);
+      return true;
+    }
+    if (outcome.reached) {
+      // The service answered and refused: it did the work, the charge stands — the same
+      // split the sync queue's retains draw.
+      await options.budget.settleBackgroundWork(admission.reservationId);
+    } else {
+      await options.budget.releaseBackgroundWork(
+        admission.reservationId,
+        "eager retain could not reach the service",
+      );
+    }
+    return false;
   }
 
   return {
@@ -527,7 +579,7 @@ export function createPreferenceRecallService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(grant, row);
+      const remoteSynced = await admittedRetain(grant, row);
       if (remoteSynced) await store.save(row);
       return { record: toRecalledPreferenceView(row), remoteSynced };
     },
@@ -569,7 +621,7 @@ export function createPreferenceRecallService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(grant, row);
+      const remoteSynced = await admittedRetain(grant, row);
       await store.save(row);
       return { record: toRecalledPreferenceView(row), remoteSynced };
     },
@@ -684,7 +736,7 @@ export function createPreferenceRecallService(
           contentDigest: digestOf(successor.content),
         });
       }
-      const remoteSynced = await retain(grant, successor);
+      const remoteSynced = await admittedRetain(grant, successor);
       if (remoteSynced) await store.save(successor);
       return {
         record: toRecalledPreferenceView(successor, effectiveFrom === null),

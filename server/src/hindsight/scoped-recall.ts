@@ -62,6 +62,7 @@ import {
   sourceBankFor,
   teamBankFor,
 } from "./bank-scope";
+import type { HindsightBudgetGate } from "./budget-gate";
 import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
 import type { PreferenceRecallServiceConfig } from "./preference-recall";
 import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
@@ -428,6 +429,15 @@ export function createSourceBoundRecallService(
      * degradation path (whose rows a restore may have resurrected) never runs either.
      */
     recovery?: HindsightRecoveryGate;
+    /**
+     * The background-processing budget gate (#393, FIX-F23 / FR-2). The confirm/edit eager
+     * retains are model-call paths exactly like the judgment review's, and they admit through
+     * the same gate the sync queue's drains do: exhaustion skips the retain — the person's
+     * confirmation stands and the work row keeps the retry — and an admitted retain settles
+     * when the service answered (a refusal did the work) and releases when it was never
+     * reached, the queue's discipline.
+     */
+    budget?: HindsightBudgetGate;
   } = {},
 ) {
   const now = options.now ?? (() => new Date());
@@ -456,12 +466,16 @@ export function createSourceBoundRecallService(
     });
   }
 
-  /** Retain one row's confirmed content into its restricted bank; failure leaves the row pending. */
+  /**
+   * Retain one row's confirmed content into its restricted bank; failure leaves the row
+   * pending. `reached` says whether the service answered at all, so a budgeted caller can
+   * settle the one outcome and release the other.
+   */
   async function retain(
     grant: HindsightBankScope,
     bankId: string,
     row: SourceBoundRecordRow,
-  ): Promise<boolean> {
+  ): Promise<{ synced: boolean; reached: boolean }> {
     try {
       const response = await hindsight(
         grant,
@@ -478,13 +492,61 @@ export function createSourceBoundRecallService(
           },
         },
       );
-      if (!response.ok) return false;
+      if (!response.ok) return { synced: false, reached: true };
       row.syncedContentDigest = digestOf(row.content);
       row.syncedAt = now();
-      return true;
+      return { synced: true, reached: true };
     } catch {
-      return false;
+      return { synced: false, reached: false };
     }
+  }
+
+  /**
+   * The eager retain behind a confirm/edit, admitted through the budget gate when one is
+   * wired (#393, FIX-F23 / FR-2 — the seam the final review caught bypassing it). An
+   * exhausted budget does NOT fail the person's decision: the retain is skipped,
+   * `remoteSynced` answers false and the work row recorded just above owns the retry — the
+   * drain re-admits it under its own work key once the budget recovers, so an exhausted
+   * decision charges nothing here. The admission key is stable per row and confirmed
+   * content, the judgment review's `admittedRetain` discipline.
+   */
+  async function admittedRetain(
+    identity: { tenantId: string; principalId: string },
+    bank: HindsightBankGrant,
+    row: SourceBoundRecordRow,
+  ): Promise<boolean> {
+    if (!options.budget) {
+      return (
+        await retain(backgroundTaskBankScope(identity, bank), bank.id, row)
+      ).synced;
+    }
+    const admission = await options.budget.admitBackgroundWork({
+      tenantId: identity.tenantId,
+      principalId: identity.principalId,
+      workKey: `source-bound-eager:${row.id}:${digestOf(row.content)}`,
+      units: 1,
+    });
+    if (!admission.ok) return false;
+    const outcome = await retain(
+      backgroundTaskBankScope(identity, bank),
+      bank.id,
+      row,
+    );
+    if (outcome.synced) {
+      await options.budget.settleBackgroundWork(admission.reservationId);
+      return true;
+    }
+    if (outcome.reached) {
+      // The service answered and refused: it did the work, the charge stands — the same
+      // split the sync queue's retains draw.
+      await options.budget.settleBackgroundWork(admission.reservationId);
+    } else {
+      await options.budget.releaseBackgroundWork(
+        admission.reservationId,
+        "eager retain could not reach the service",
+      );
+    }
+    return false;
   }
 
   /**
@@ -614,11 +676,7 @@ export function createSourceBoundRecallService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(
-        backgroundTaskBankScope(identity, bank),
-        bank.id,
-        row,
-      );
+      const remoteSynced = await admittedRetain(identity, bank, row);
       if (remoteSynced) await records.save(row);
       return { record: toRecalledSourceBoundView(row), remoteSynced };
     },
@@ -773,11 +831,7 @@ export function createSourceBoundRecallService(
         });
       }
       const bank = bankGrantForRestriction(restriction);
-      const remoteSynced = await retain(
-        backgroundTaskBankScope(identity, bank),
-        bank.id,
-        row,
-      );
+      const remoteSynced = await admittedRetain(identity, bank, row);
       await records.save(row);
       return { record: toRecalledSourceBoundView(row), remoteSynced };
     },
