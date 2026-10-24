@@ -755,10 +755,12 @@ export function createObservationExportWorker(
     }
 
     /*
-     * Re-derive the scope from live authorization. A revoked actor, a
-     * transferred bot or a bumped epoch answers differently than the scope the
-     * job was enqueued under — including null — and every one of those answers
-     * cancels the job before a single upstream byte is fetched.
+     * Re-derive the scope from live authorization. A revoked actor or a
+     * transferred bot answers differently than the scope the job was enqueued
+     * under — including null — and every one of those answers cancels the job
+     * before a single upstream byte is fetched. FREV-03: the data address is
+     * stable, so this gate — not an address change — is what retires the old
+     * holder's job, while a new owner's own job reads the same history.
      */
     const scope = await deps.reauthorize({
       actorId: job.actorId,
@@ -774,8 +776,9 @@ export function createObservationExportWorker(
       locator.workspace !== job.locatorWorkspace ||
       locator.project !== job.locatorProject
     ) {
-      // The scope the world would issue now points somewhere else than the
-      // locator this job froze: ownership moved underneath the job.
+      // The stable per-Bot address the world would issue now points somewhere
+      // else than the locator this job froze — a structural drift (never a
+      // transfer: those are caught by the reauthorization above), fail closed.
       await store.settleCancelled(job.id);
       await finish();
       return;

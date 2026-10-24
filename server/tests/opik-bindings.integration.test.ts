@@ -91,7 +91,7 @@ test("begin inserts exactly once and a replay returns the original binding", asy
   });
 });
 
-test("the same run id under two scopes stays two bindings, invisible to each other", async () => {
+test("one Bot is one binding range: a manager reads the creator's rows (FREV-03 a)", async () => {
   const input = {
     runId: `${prefix}-run-2`,
     attemptId: "attempt-1",
@@ -101,20 +101,72 @@ test("the same run id under two scopes stays two bindings, invisible to each oth
   };
 
   const a = await store.begin(scopeA, input);
-  const b = await store.begin(scopeB, input);
 
-  expect(a.binding.id).not.toBe(b.binding.id);
-  expect(await store.get(scopeA, b.binding.id)).toBeNull();
-  expect(await store.get(scopeB, a.binding.id)).toBeNull();
-  expect(await store.get(scopeA, a.binding.id)).toEqual(a.binding);
+  // The administrator's scope for the same Bot is a different actor over the
+  // SAME data key — the creator's binding is visible, not a neighbour row in a
+  // scope of its own.
+  expect(scopeB.key).toBe(scopeA.key);
+  expect(await store.get(scopeB, a.binding.id)).toEqual(a.binding);
+  expect(await store.latestAttempt(scopeB, input.runId)).toEqual(a.binding);
+
+  // Replaying the same run/attempt under the admin's scope is the SAME
+  // authoritative subject: the first claim stands, nothing is minted twice.
+  const replay = await store.begin(scopeB, input);
+  expect(replay.replayed).toBe(true);
+  expect(replay.binding.id).toBe(a.binding.id);
+  // Provenance stays with whoever recorded it.
+  expect(replay.binding.actorId).toBe(scopeA.actorId);
 
   const rows = await database
     .select({ scopeKey: aiObservationBindings.scopeKey })
     .from(aiObservationBindings)
     .where(eq(aiObservationBindings.runId, input.runId));
-  expect(rows.map((row) => row.scopeKey).sort()).toEqual(
-    [scopeA.key, scopeB.key].sort(),
-  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.scopeKey).toBe(scopeA.key);
+});
+
+test("another Bot's binding stays out of reach (the boundary that remains)", async () => {
+  const input = {
+    runId: `${prefix}-run-2b`,
+    attemptId: "attempt-1",
+    traceId: "trace-2b",
+    capability: "basic" as const,
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  };
+  const otherBot = resolveObservationScope({
+    actorId: "user-a",
+    botId: "agent-2",
+    ownership: "owner",
+    epoch: 1,
+  });
+  const begun = await store.begin(otherBot, input);
+  expect(await store.get(scopeA, begun.binding.id)).toBeNull();
+  expect(await store.latestAttempt(scopeA, input.runId)).toBeNull();
+  expect(await store.get(otherBot, begun.binding.id)).toEqual(begun.binding);
+});
+
+test("a transferred Bot keeps its history for the new owner, and the row keeps its author (FREV-03 c)", async () => {
+  const input = {
+    runId: `${prefix}-run-2c`,
+    attemptId: "attempt-1",
+    traceId: "trace-2c",
+    capability: "detailed" as const,
+    expiresAt: new Date("2026-10-22T00:00:00.000Z"),
+  };
+  const recorded = await store.begin(scopeA, input);
+
+  // The handover mints the new owner's scope; the data address is the Bot's,
+  // so the history recorded before the transfer is reachable as it stands.
+  const newOwner = resolveObservationScope({
+    actorId: "user-new-owner",
+    botId: "agent-1",
+    ownership: "owner",
+    epoch: 9,
+  });
+  expect(newOwner.key).toBe(scopeA.key);
+  const history = await store.latestAttempt(newOwner, input.runId);
+  expect(history?.id).toBe(recorded.binding.id);
+  expect(history?.actorId).toBe(scopeA.actorId);
 });
 
 test("concurrent begin for one scope/run/attempt yields exactly one binding", async () => {
@@ -290,7 +342,7 @@ test("a forged scope is refused even against the real database", async () => {
   expect(rows).toHaveLength(0);
 });
 
-test("an ownership epoch bump fences the old scope's bindings away", async () => {
+test("an epoch bump (rename, profile update) keeps the history reachable (FREV-03 b)", async () => {
   const input = {
     runId: `${prefix}-run-7`,
     attemptId: "attempt-1",
@@ -300,23 +352,23 @@ test("an ownership epoch bump fences the old scope's bindings away", async () =>
   };
   const before = await store.begin(scopeA, input);
 
-  // Ownership was revoked and re-granted: the new epoch mints a different scope key, so the old
-  // binding is invisible to the new authority rather than silently inherited.
+  // A rename or profile update bumps the epoch. The data address is the Bot's
+  // stable identity, so the new generation reaches the same records instead of
+  // losing them to a rotated key space.
   const after = resolveObservationScope({
     actorId: "user-a",
     botId: "agent-1",
     ownership: "owner",
     epoch: 2,
   });
-  expect(after.key).not.toBe(scopeA.key);
+  expect(after.key).toBe(scopeA.key);
+  expect(await store.get(after, before.binding.id)).toEqual(before.binding);
+  expect(await store.latestAttempt(after, input.runId)).toEqual(before.binding);
 
-  expect(await store.get(after, before.binding.id)).toBeNull();
-
-  const regranted = await store.begin(after, input);
-  expect(regranted.binding.id).not.toBe(before.binding.id);
-
-  // The old binding is untouched underneath, not overwritten by the new epoch.
-  expect(await store.get(scopeA, before.binding.id)).toEqual(before.binding);
+  // The same run/attempt under the new generation is still one binding.
+  const replay = await store.begin(after, input);
+  expect(replay.replayed).toBe(true);
+  expect(replay.binding.id).toBe(before.binding.id);
 });
 
 /*

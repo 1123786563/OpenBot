@@ -46,13 +46,13 @@ const prefix = `t23-${randomUUID()}`;
 
 const scopeA = resolveObservationScope({
   actorId: "user-a",
-  botId: "agent-1",
+  botId: `opik-executions-integration-bot-a-${randomUUID()}`,
   ownership: "owner",
   epoch: 1,
 });
 const scopeB = resolveObservationScope({
   actorId: "user-b",
-  botId: "agent-1",
+  botId: `opik-executions-integration-bot-b-${randomUUID()}`,
   ownership: "admin",
   epoch: 1,
 });

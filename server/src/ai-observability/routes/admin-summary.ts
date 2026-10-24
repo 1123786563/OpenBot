@@ -6,10 +6,12 @@
  *
  * Authorization comes FIRST, aggregation second: every bot this answer names
  * went through the manage gate and a freshly minted T06 scope (whose
- * enterprise refusal precedes its ownership answer), so a chat-only sharer, a
- * guessed id and a same-id neighbour scope all widen nothing. The query
- * string contributes a bot filter and a time window and nothing else — the
- * route never reads an actor, scope, epoch or locator from the request.
+ * enterprise refusal precedes its ownership answer), so a chat-only sharer or
+ * a guessed id widens nothing. FREV-03: the minted scope's key is the Bot's
+ * stable data identity, so an administrator's summary aggregates exactly the
+ * range its creator's writes live in — same data, freshly gated viewer. The
+ * query string contributes a bot filter and a time window and nothing else —
+ * the route never reads an actor, scope, epoch or locator from the request.
  */
 import { Hono } from "hono";
 import type { AgentActor, AgentProfile } from "../../agents/profile-types";
@@ -74,7 +76,11 @@ export function createAdminSummaryRoutes(
   const maxBots = deps.maxBots ?? DEFAULT_MAX_BOTS;
   const log = getLogger("server");
 
-  /** The T10 authorization block: manage-gate, then the live-epoch scope. */
+  /**
+   * The T10 authorization block: manage-gate, then the live-epoch scope. The
+   * scope's key is the Bot's stable data identity (FREV-03) — the epoch rides
+   * the scope for artifact binding, never for storage addressing.
+   */
   const scopeFor = async (
     actor: AgentActor,
     botId: string,

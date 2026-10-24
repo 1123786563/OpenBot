@@ -14,10 +14,12 @@
  *
  * An unavailable upstream is an explainable error, never a disguised empty list;
  * only the port's verified 404 on the scope's project is a truthful empty page.
- * Pagination and the window cache are keyed by the scope (T06 `bindCursor` /
- * `cacheKey`), so a transfer, revocation or epoch bump makes outstanding cursors
- * and cached pages unreadable immediately — the old key space dies with the old
- * epoch. Producer credentials (T32) never appear here: reads carry the scope,
+ * Cursors bind the scope's AUTHORIZATION generation (T06 `bindCursor`), so a
+ * transfer, revocation or epoch bump makes outstanding cursors unreadable
+ * immediately; the window cache is keyed by the stable DATA key (FREV-03), so
+ * it follows the Bot's range — whoever the live gate authorizes next reads
+ * the same pages, and retention drops them by the row's stored key alone.
+ * Producer credentials (T32) never appear here: reads carry the scope,
  * not the write-path credential.
  */
 
@@ -432,8 +434,10 @@ export function createRunsQueryService(
 
   /**
    * The scope's servable window: the port's one verified listing operation over
-   * the scope-derived project, cached under the scope key so an epoch bump
-   * orphans it by construction.
+   * the scope-derived project. Cached under the Bot's stable data key — the
+   * window is a fact about the Bot's range, its readers are scopes the live
+   * gate freshly authorized, and retention invalidates it from the stored row
+   * key alone (the TTL bounds any staleness regardless).
    */
   const window = async (scope: ObservationScope): Promise<CachedWindow> => {
     const key = cacheKey(scope, "runs-window");

@@ -30,8 +30,9 @@ import { rejectionOf } from "./support/pg-errors";
  * PostgreSQL database (Issue #40 / DAG T34): the enqueue-only request path, the
  * concurrency bound that queues instead of backlog-parallelizing, the row cap
  * that fails rather than truncates, immediate revocation whose product never
- * lands, scope isolation, and the database facts that hold all of it up. There
- * is no skip and no fallback database; a missing test database fails the run.
+ * lands, cross-Bot scope isolation, and the database facts that hold all of
+ * it up. There is no skip and no fallback database; a missing test database
+ * fails the run.
  */
 
 const database = opikTestDatabase({ max: 6 });
@@ -43,10 +44,13 @@ const scopeA = resolveObservationScope({
   ownership: "owner",
   epoch: 1,
 });
+// FREV-03: scopeB pins the isolation boundary that REMAINS — a different Bot
+// is a different data range. Two authorized actors over ONE Bot share the
+// range (the shared-range proof is its own test below).
 const scopeB = resolveObservationScope({
   actorId: `t34-b-${randomUUID()}`,
-  botId: "agent-1",
-  ownership: "admin",
+  botId: "agent-2",
+  ownership: "owner",
   epoch: 1,
 });
 
@@ -509,19 +513,19 @@ test("an unavailable upstream fails the job with the port's code (AC4)", async (
   expect(done?.artifact).toBeNull();
 });
 
-test("jobs are invisible and uncancelable across scopes (AC2)", async () => {
+test("jobs are invisible and uncancelable across Bots (AC2)", async () => {
   const upstream = fakePort({ rows: [] });
   const worker = workerFor(upstream.port);
   const jobA = await store.enqueue(scopeA, 10);
   const jobB = await store.enqueue(scopeB, 10);
 
-  // Another scope's id is simply not found.
+  // Another Bot's job id is simply not found.
   expect(await store.get(scopeB, jobA.id)).toBeNull();
   expect(await store.get(scopeA, jobB.id)).toBeNull();
   expect((await store.list(scopeA)).map((job) => job.id)).toEqual([jobA.id]);
   expect((await store.list(scopeB)).map((job) => job.id)).toEqual([jobB.id]);
 
-  // Revoking actor A leaves actor B's jobs exactly where they were.
+  // Revoking actor A leaves the other Bot's jobs exactly where they were.
   expect(await store.cancelForActor(scopeA.actorId)).toBe(1);
   expect((await store.get(scopeA, jobA.id))?.state).toBe("cancelled");
   expect((await store.get(scopeB, jobB.id))?.state).toBe("queued");
@@ -529,6 +533,24 @@ test("jobs are invisible and uncancelable across scopes (AC2)", async () => {
   // And B's job still runs to completion afterwards.
   await worker.sweep();
   expect((await store.get(scopeB, jobB.id))?.state).toBe("completed");
+});
+
+test("an administrator's scope reads the creator's export jobs of the same Bot (FREV-03 a)", async () => {
+  // One Bot is one data range: the creator's job answers through any scope the
+  // live gate mints for that Bot — the admin's included — while the job's own
+  // actor stays the provenance and revocation scope.
+  const adminOfSameBot = resolveObservationScope({
+    actorId: `t34-admin-${randomUUID()}`,
+    botId: "agent-1",
+    ownership: "admin",
+    epoch: 7,
+  });
+  expect(adminOfSameBot.key).toBe(scopeA.key);
+  const job = await store.enqueue(scopeA, 10);
+  expect((await store.get(adminOfSameBot, job.id))?.id).toBe(job.id);
+  expect((await store.list(adminOfSameBot)).map((j) => j.id)).toContain(
+    job.id,
+  );
 });
 
 test("the export list paginates and never inlines the artifact (R2-40)", async () => {
