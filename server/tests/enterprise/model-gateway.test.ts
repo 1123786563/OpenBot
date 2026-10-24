@@ -2483,3 +2483,148 @@ test("Anthropic message_delta cannot finish while a content block remains open",
   expect(confirmed).toBe(0);
   expect(unknown).toBe(1);
 });
+
+test("a dotted tool name is refused before dispatch when the effective base URL is direct OpenAI", async () => {
+  // F11-1 (#489): the three direct forms — the unset default, the explicit
+  // `/v1`, and a trailing slash — all resolve to the same public chat URL,
+  // and each must refuse the mounted dotted name BEFORE any upstream dial:
+  // OpenAI's function-name charset rejects it with a whole-request 400.
+  for (const environment of [
+    {},
+    { OPENAI_BASE_URL: "https://api.openai.com/v1" },
+    { OPENAI_BASE_URL: "https://api.openai.com/" },
+  ]) {
+    let dialed = 0;
+    const gateway = createModelGateway(
+      deps({
+        environment,
+        fetch: (async () => {
+          dialed++;
+          return Response.json({
+            id: "x",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "answer" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+          });
+        }) as typeof fetch,
+      }) as never,
+    );
+    const response = await gateway.handle(
+      req({
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "github.get_current_user",
+              parameters: { type: "object" },
+            },
+          },
+        ],
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      error: { code: string; message?: string };
+    };
+    expect(body.error.code).toBe("MASTRA_TOOL_NAME_INVALID");
+    expect(body.error.message).toBe(
+      "github.get_current_user cannot be mounted on a direct-OpenAI provider (its function-name charset admits no dot)",
+    );
+    expect(dialed).toBe(0);
+  }
+});
+
+test("a dotted tool name still rides a gateway base URL untouched", async () => {
+  // The variable's entire purpose: a gateway or OpenAI-compatible endpoint
+  // forwards minted names as-is, so the same mount that direct OpenAI
+  // refuses must dispatch unchanged behind a gateway base URL.
+  let dialedUrl = "";
+  let dialedTools: unknown;
+  const gateway = createModelGateway(
+    deps({
+      fetch: (async (url, init) => {
+        dialedUrl = String(url);
+        dialedTools = (JSON.parse(String(init?.body)) as { tools?: unknown })
+          .tools;
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(dialedUrl).toBe("https://gateway.example/v1/chat/completions");
+  expect(dialedTools).toEqual([
+    {
+      type: "function",
+      function: {
+        name: "github.get_current_user",
+        parameters: { type: "object" },
+      },
+    },
+  ]);
+});
+
+test("a legal tool name still dials direct OpenAI untouched", async () => {
+  let dialedUrl = "";
+  const gateway = createModelGateway(
+    deps({
+      environment: {},
+      fetch: (async (url) => {
+        dialedUrl = String(url);
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: { name: "lookup_user", parameters: { type: "object" } },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(dialedUrl).toBe("https://api.openai.com/v1/chat/completions");
+});
