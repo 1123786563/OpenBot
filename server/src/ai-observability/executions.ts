@@ -172,6 +172,32 @@ export type EvaluationToolCall =
  */
 export type EvaluationToolClassifier = (toolName: string) => "read" | "write";
 
+/**
+ * What this deployment's catalogue knows about one tool name the freeze kept
+ * (FREV-04): the production description and JSON Schema the runtime offers the model
+ * for that tool, and the read/write effect the gate's second key decides on. Metadata
+ * only — it carries no handle to execute anything; the one execution seam stays
+ * `callTool`, and the schema is declared, never reached through.
+ */
+export type EvaluationToolSurface = Readonly<{
+  description: string;
+  parameters: Record<string, unknown>;
+  effect: "read" | "write";
+}>;
+
+/**
+ * The catalogue read the worker performs ONCE per execution (FREV-04), over the
+ * execution's frozen whitelist. The production wiring builds this over the plugin
+ * tool rows and `classifyTool` — the same pair the store's own `callTool` classifies
+ * a real call with, so the evaluation's read/write answer agrees with production's
+ * for the same tool. A name the deployment does not advertise is absent from the map,
+ * never guessed at; a resolver that throws answers nothing, and every name then falls
+ * back to the fail-closed write classifier.
+ */
+export type EvaluationToolSurfaceResolver = (
+  names: readonly string[],
+) => Promise<ReadonlyMap<string, EvaluationToolSurface>>;
+
 /** How many calls the gate refused, and the distinct tools it refused them for. */
 export type ToolGateTally = Readonly<{
   rejections: number;
@@ -276,6 +302,15 @@ export type EvaluationCaseContext = Readonly<{
    * learning or business-data handle in this context at all — isolation by construction.
    */
   callTool: (toolName: string) => Promise<EvaluationToolCall>;
+  /**
+   * The catalogue facts the worker resolved for this execution's frozen whitelist at
+   * claim time (FREV-04), answering synchronously out of that one preload: a map
+   * lookup, never a query and never an execution. The runner declares the model's
+   * tool surface from it — production description and schema where the deployment
+   * knows the tool, an honest generic declaration where it does not. Absent on
+   * assemblies that wired no catalogue resolver (and for names it did not resolve).
+   */
+  resolveToolSurface?: (toolName: string) => EvaluationToolSurface | undefined;
   /**
    * The task's cancellation signal (FREV-05): aborts the moment the execution row
    * leaves running — a user cancel or a revocation settles it behind the worker's
@@ -916,6 +951,15 @@ export type ObservationExecutionWorkerDeps = Readonly<{
   audit: Pick<AuditStore, "insert">;
   /** The production read/write classifier; wiring builds this over the plugin catalogue. */
   classify: EvaluationToolClassifier;
+  /**
+   * The deployment catalogue read (FREV-04): resolved once per execution over the
+   * frozen whitelist, before any case runs. When wired, a whitelisted name's effect
+   * is the catalogue's answer (production's own read/write classification) and the
+   * case runner declares tool schemas from it; a name the catalogue does not know
+   * falls back to `classify` — fail-closed write in production. Absent, `classify`
+   * alone decides, exactly as before.
+   */
+  resolveToolSurface?: EvaluationToolSurfaceResolver;
   /** Runs one frozen case to an honest outcome. The production runner is a later ticket. */
   runCase: EvaluationCaseRunner;
   /**
@@ -948,6 +992,39 @@ const MAX_AUDITED_TOOL_NAMES = 32;
 
 /** Internal: the work-item lease was taken over; another owner owns the truth now. */
 class ExecutionLeaseLost extends Error {}
+
+/**
+ * The catalogue facts for one execution's frozen whitelist (FREV-04), read once at
+ * claim time. Only whitelisted names are asked about: the gate refuses every other
+ * name before its classifier is consulted, so nothing else needs an effect. An
+ * assembly with no resolver answers nothing (the pre-FREV-04 assembly, where the
+ * classifier alone decided), and a resolver that throws is logged and treated the
+ * same way — a catalogue read that cannot be answered narrows the evaluation's tool
+ * surface to what the fail-closed classifier permits, never widens it.
+ */
+async function toolSurfacesFor(
+  config: FrozenExperimentConfig,
+  deps: Pick<ObservationExecutionWorkerDeps, "resolveToolSurface">,
+): Promise<ReadonlyMap<string, EvaluationToolSurface>> {
+  const resolve = deps.resolveToolSurface;
+  if (resolve === undefined) return new Map();
+  const names = (config.readOnlyTools ?? [])
+    .filter((name) => name.state === "projected")
+    .map((name) => name.text);
+  if (names.length === 0) return new Map();
+  try {
+    return await resolve(names);
+  } catch (error) {
+    getLogger("server").warn(
+      {
+        type: "opik-execution-tool-surface-unresolved",
+        error: String(error),
+      },
+      "opik-execution-tool-surface-unresolved",
+    );
+    return new Map();
+  }
+}
 
 /**
  * The settle audit row: what ended, against which frozen experiment, how many cases
@@ -1238,7 +1315,16 @@ export function createObservationExecutionWorker(
       }
     };
 
-    const gate = createEvaluationToolGate(experiment.config, deps.classify);
+    // FREV-04: the catalogue read happens once per execution, before any case runs.
+    // The same surface answers both questions the gate and the runner ask — is this
+    // tool a read, and what does the model get told about it — so the two can never
+    // disagree about a name. A name the map does not carry keeps the fail-closed
+    // classifier's word (a write, in production).
+    const surfaces = await toolSurfacesFor(experiment.config, deps);
+    const gate = createEvaluationToolGate(
+      experiment.config,
+      (toolName) => surfaces.get(toolName)?.effect ?? deps.classify(toolName),
+    );
     const config = experiment.config;
     let lastTally = 0;
 
@@ -1350,6 +1436,11 @@ export function createObservationExecutionWorker(
                 frozenCase.toolFixtures,
                 config.toolFixtures,
               ]),
+            // The one catalogue preload this execution answered, as a synchronous
+            // lookup: inert metadata for the tool surface the runner declares.
+            ...(surfaces.size === 0
+              ? {}
+              : { resolveToolSurface: (name: string) => surfaces.get(name) }),
           });
           await store.recordCaseOutcome(
             execution.id,
