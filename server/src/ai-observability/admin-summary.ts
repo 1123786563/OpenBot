@@ -2,9 +2,12 @@
  * The administrator's scope summary (Issue #39 / DAG T33).
  *
  * The route authorizes first and hands this service already-minted
- * ObservationScopes; every aggregate below is keyed by the scope, so the same
- * bot id under another scope is a different key space that simply never
- * appears. The summary is a BYPASS query, never part of a run's critical
+ * ObservationScopes; every aggregate below is keyed by the scope's STABLE
+ * data key (FREV-03), so one Bot is one key space — an administrator's scope
+ * for a managed Bot names the same range its creator's scope does, which is
+ * exactly what "管理员在其管理范围内查看全局" requires, and a guessed id still
+ * answers nothing because the route's manage gate refused it before any scope
+ * existed. The summary is a BYPASS query, never part of a run's critical
  * path: it reads the local authoritative tables (T07 bindings, T22
  * experiments, T34 export jobs) plus the T13 health snapshot, performs no
  * write of any kind, and treats an Opik failure as a fact to report — the

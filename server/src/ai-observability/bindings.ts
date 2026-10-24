@@ -19,6 +19,12 @@ import { assertObservationScope, resolveStorageLocator } from "./scope";
  * the database even once. Opik metadata is never read here and never could assign ownership:
  * reconciliation is keyed by the authoritative local (scope, run, attempt) triple, and the
  * upstream trace id is a value it records, not an identity it derives from.
+ *
+ * FREV-03: the scope key a row carries is the Bot's STABLE data identity (scope.ts
+ * `resourceScopeKey`), so every authorized holder of a scope for one Bot — its creator, a
+ * managing administrator, a post-transfer owner — reads and writes the SAME rows. Who may hold
+ * the scope at all is the live manage gate's answer upstream of this store; the row's own
+ * `actor_id` remains the provenance of who recorded it.
  */
 
 export type RunBindingErrorCode =
