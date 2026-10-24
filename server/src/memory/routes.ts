@@ -6,6 +6,7 @@ import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "../hindsight/bank-scope";
 import type { HindsightPauseControlsService } from "../hindsight/pause-controls";
 import type { HindsightMemoryRoutes } from "../hindsight/routes";
+import type { MemoryCompany } from "./company";
 import { PluginRefusedError } from "../plugins/store";
 import type { MemoryIngestion } from "./ingestion";
 import type { MemoryStore } from "./store";
@@ -41,9 +42,34 @@ export function createMemoryRoutes(
      * Hindsight chain, and then none of those routes exists.
      */
     hindsight?: HindsightMemoryRoutes;
+    /**
+     * FIX-F1 (#376, FR-1): the whole old face's company pin. Present only in an enterprise
+     * deployment, where every route below resolves the request's trusted scope — the same
+     * `resolveHindsightBankScope` seam the pause switches use — and the memory rows a request
+     * may read, review, write or forget are that company's alone. A deployment without the
+     * enterprise layer wires nothing here and keeps the single-user behaviour unchanged.
+     */
+    companyScope?: {
+      resolveScope: (request: Request) => Promise<PlatformScope>;
+    };
   } = {},
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
+  /*
+   * FIX-F1 (FR-1): one resolution per request, one company for the whole visit. The scope is
+   * the deployment's own resolver's answer (missing session/company/selection and unissued
+   * scopes throw the canonical codes `onError` below maps); the pin is the scope's tenant —
+   * never a value from the body — and the same `assertTrustedScope`-backed derivation the
+   * pause switches and the Hindsight chain's seams read.
+   */
+  const companyFor = async (
+    request: Request,
+  ): Promise<MemoryCompany | undefined> => {
+    if (!options.companyScope) return undefined;
+    const scope = await options.companyScope.resolveScope(request);
+    const identity = resolveHindsightBankScope(scope);
+    return { tenantId: identity.tenantId };
+  };
   routes.use("*", requireUser, bodyLimit({ maxSize: 16_384 }));
   routes.onError((error, context) => {
     if (error instanceof MemoryNotFoundError)
@@ -76,7 +102,12 @@ export function createMemoryRoutes(
     return context.json({ error: "Memory is unavailable. Try again." }, 503);
   });
   routes.get("/", async (context) =>
-    context.json({ memories: await store.list(context.var.actor.id) }),
+    context.json({
+      memories: await store.list(
+        context.var.actor.id,
+        await companyFor(context.req.raw),
+      ),
+    }),
   );
   /*
    * Hindsight 14 (#392, F-G1-1): the person's own two pause switches — read here, written here,
@@ -136,32 +167,40 @@ export function createMemoryRoutes(
         memory: await store.create(
           context.var.actor.id,
           await body(context.req.raw),
+          await companyFor(context.req.raw),
         ),
       },
       201,
     ),
   );
-  routes.get("/sources", async (context) =>
-    context.json({ sources: await store.sources(context.var.actor.id) }),
-  );
-  routes.get("/sources/available/:botId", async (context) =>
-    context.json({
+  // The sources are the person's own connector settings, not memory rows: this family's
+  // gate still resolves the trusted scope in an enterprise deployment (an unresolvable
+  // identity refuses here too, fail closed), while the rows themselves stay owner-keyed.
+  routes.get("/sources", async (context) => {
+    await companyFor(context.req.raw);
+    return context.json({ sources: await store.sources(context.var.actor.id) });
+  });
+  routes.get("/sources/available/:botId", async (context) => {
+    await companyFor(context.req.raw);
+    return context.json({
       tools: await ingestion.availableSources(
         context.var.actor.id,
         context.req.param("botId"),
       ),
-    }),
-  );
-  routes.post("/sources", async (context) =>
-    context.json(
+    });
+  });
+  routes.post("/sources", async (context) => {
+    await companyFor(context.req.raw);
+    return context.json(
       await ingestion.createSource(
         context.var.actor.id,
         await body(context.req.raw),
       ),
       201,
-    ),
-  );
+    );
+  });
   routes.patch("/sources/:id", async (context) => {
+    await companyFor(context.req.raw);
     const input = await body(context.req.raw);
     if (
       !input ||
@@ -178,12 +217,18 @@ export function createMemoryRoutes(
       ),
     });
   });
-  routes.post("/sources/:id/sync", async (context) =>
-    context.json(
-      await ingestion.sync(context.var.actor.id, context.req.param("id")),
-    ),
-  );
+  routes.post("/sources/:id/sync", async (context) => {
+    const company = await companyFor(context.req.raw);
+    return context.json(
+      await ingestion.sync(
+        context.var.actor.id,
+        context.req.param("id"),
+        company,
+      ),
+    );
+  });
   routes.delete("/sources/:id", async (context) => {
+    await companyFor(context.req.raw);
     await store.removeSource(context.var.actor.id, context.req.param("id"));
     return context.body(null, 204);
   });
@@ -193,11 +238,16 @@ export function createMemoryRoutes(
         context.var.actor.id,
         context.req.param("id"),
         await body(context.req.raw),
+        await companyFor(context.req.raw),
       ),
     }),
   );
   routes.delete("/:id", async (context) => {
-    await store.remove(context.var.actor.id, context.req.param("id"));
+    await store.remove(
+      context.var.actor.id,
+      context.req.param("id"),
+      await companyFor(context.req.raw),
+    );
     return context.body(null, 204);
   });
   // Mounted last: the family's one- and two-segment patterns above are all narrower than
