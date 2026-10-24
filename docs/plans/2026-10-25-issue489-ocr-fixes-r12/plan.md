@@ -45,3 +45,11 @@ R13（r13-adjudication.md）3 有效 medium：
 **T28（F14-2）**：fillSignInCode 跨源第二码步——markCodeField 读取与 origin 分离，跨源仍见码框 ⇒ 接管答复（"…to ask for another verification code. Take over…"）；上报 codeFieldVisible origin 收窄；同源语义/2s 宽限/T19/T23 守卫零触碰。新真实浏览器用例（提交码后跨源+仍见码框→接管）。owned=sign-in.ts+sign-in.test.ts。
 
 流程：并行→R1→串行集成→F15 收官门→R15 全量→f01-r12→V03/C01。
+
+## 附录四：F16 波 T29/T30（R15 终裁追加，2026-10-25）
+
+**T29（F15-1+F15-2，app 双项）**：①`tool-activity.tsx` askVerdicts 缓存上限——`ASK_VERDICTS_CACHEABLE_MAX=16_384`，`asksThePerson` 内超长结果计算后直接返回不入缓存（逐帧重算=改动前行为；预筛/T15 语义不变），新用例（超长 Refused. 前缀串两帧计算、Map.size 不增）。②`chat-transcript.tsx` ServerToolLine 改 `refusalBody(result)`（answer 保留供非拒绝 body 与 connectPromptOf；`markerRefusalBody` 别名与 import 清理），等价性钉子用例。owned=tool-activity.tsx+chat-transcript.tsx+两测试（恰 4 M）。门：tool-activity 32+新、app tsc 62 BASE、biome、enterprise 108/108。
+
+**T30（F15-3，test-only）**：新增 `server/tests/scrub-command.test.ts`（或并入既有套件，按 runner 归属）常驻钉住 scrub 对抗边界：ReDoS 探针（`""`×30、`-fa`×30、粗粒度 <2s 断言+输出恒等）、`-p;whoami` 保留 whoami、未闭合引号不吞第二行、`pa\;ss` 整词、o'brien 回退、成对引号段整词、`fixture-pass-` 整词、SSHPASS 首元素放行 `-`。owned=该测试文件（恰 1 M 新增或含 scrub.ts 零改动）。门：新套件全绿、enterprise 108/108、otel 4/4、tsc 3 BASE、biome。
+
+流程：并行→R1→串行集成→F16 收官门→R16 全量→f01-r12→V03/C01。
