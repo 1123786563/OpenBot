@@ -13,9 +13,10 @@
  *
  * Egress is structural: the projected span enters ONLY through the T09 bounded write
  * queue, never a direct port call. Content reaches the queue only after the T05
- * projection — free text is asserted-by-the-recorder span content (`allowFreeText`),
- * and even then the deny patterns run first and always win, so a credential-shaped
- * canary dies at the projection, not in transit.
+ * projection — and since FREV-01, span bodies carry free text only behind an approval
+ * minted from the Bot's configured security policy; without one the span is
+ * metrics-only. Even approved, the deny patterns run first and always win, so a
+ * credential-shaped canary dies at the projection, not in transit.
  *
  * Scoping: a span is written upstream only when the observation carries a scope this
  * process issued (T06). The built-in path's facts arrive without one today — the
@@ -33,9 +34,11 @@ import {
   type SafeRecord,
 } from "./redaction";
 import {
+  issuedSpanContentApproval,
   nanos,
   nowNs,
-  projectSpanContent,
+  projectApprovedSpanContent,
+  type SpanContentApproval,
   W3C_SPAN_ID,
   W3C_TRACE_ID,
 } from "./span-support";
@@ -74,6 +77,15 @@ export type ModelSpanObservation = Readonly<{
    * inside this recorder.
    */
   output?: string | null;
+  /**
+   * The FREV-01 proof for this call's bodies: an approval minted from the Bot's
+   * configured security policy, resolved where the run's policy is known and carried
+   * here on the same journey as `scope`. Absent — every wiring today — is no proof:
+   * `input`/`output` are omitted and the span keeps its metrics. The token is
+   * process-internal trust (span-support mints and verifies it); a wire value or a
+   * hand-built lookalike projects nothing.
+   */
+  contentApproval?: SpanContentApproval | null;
   /** The trusted scope, when this path carries one; absent submits nothing upstream. */
   scope?: ObservationScope;
   /**
@@ -103,6 +115,7 @@ const SPAN_ATTRIBUTE_ALLOWLIST: readonly string[] = [
   "ending_kind",
   "ending_code",
   "origin",
+  "content_policy_ref",
 ];
 
 /**
@@ -171,6 +184,11 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
       ? observation.trace.parentSpanId
       : undefined;
 
+  // FREV-01 / F5A1-R1-F1: bodies and audit attribute share ONE verdict — the
+  // runtime-verified mint, never the carried token's truthiness — so a forged or
+  // spread-copied approval withholds the bodies AND names no policy.
+  const approval = issuedSpanContentApproval(observation.contentApproval);
+
   const attributes: SafeRecord = projectSafeRecord(
     {
       model: observation.modelId ?? undefined,
@@ -191,12 +209,18 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
           ? ending.code
           : undefined,
       origin: "builtin",
+      // FREV-01 audit chain: a span that carried bodies names the policy that
+      // approved them; a proof-less span carries no bodies to name. The name comes
+      // from the same verified mint the bodies pass through, never the raw carry.
+      ...(approval ? { content_policy_ref: approval.policyRef } : {}),
     },
     SPAN_ATTRIBUTE_ALLOWLIST,
   );
-  const input = projectSpanContent(observation.input);
+  // FREV-01: bodies project only behind the observation's minted policy approval —
+  // the recorder's say-so is not one. Deny patterns still run first and always win.
+  const input = projectApprovedSpanContent(observation.input, approval);
   if (input) attributes.input = input;
-  const output = projectSpanContent(observation.output);
+  const output = projectApprovedSpanContent(observation.output, approval);
   if (output) attributes.output = output;
 
   const label =
