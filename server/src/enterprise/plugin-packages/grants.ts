@@ -1087,22 +1087,23 @@ export async function grantTemplateSkillsWithin(
 }
 
 /**
- * PKG03A lifecycle seam: revoke every active grant of one install. PKG06's
- * disable/uninstall transaction calls this right after the install row moves
- * to its new status/generation (Spec §10: disabling/uninstalling bumps the
- * generation and revokes the current grants; re-enabling requires explicit
- * re-granting). It is deliberately NOT wired anywhere yet — slice A has no
- * status-change path. The write handle must come from a
- * `PackageMutationStore.transaction` (the same admin-revalidated operator
- * transaction that performs the status change).
+ * Lifecycle seam: revoke every active grant of one install and answer how many
+ * rows that revoked. PKG07 (#466) calls it from the disable/uninstall
+ * transaction, right after the install row moves to its new status/generation
+ * (Spec §10: disabling/uninstalling bumps the generation and revokes the
+ * current grants; re-enabling requires explicit re-granting). It is called ONLY
+ * there — a per-Bot revoke has its own, narrower path — and the write handle
+ * must come from a `PackageMutationStore.transaction` (the same
+ * admin-revalidated operator transaction that performs the status change), so
+ * the revocation and the generation bump commit atomically.
  */
 export async function revokeGrantsForInstallLifecycle(
   tx: PackageWriteTx,
   install: { readonly tenantId: string; readonly installId: string },
   revokedAt: Date,
-): Promise<void> {
+): Promise<number> {
   assertPackageWriteTx(tx);
-  await tx.db
+  const revoked = await tx.db
     .update(grantRows)
     .set({ revokedAt })
     .where(
@@ -1111,5 +1112,7 @@ export async function revokeGrantsForInstallLifecycle(
         eq(grantRows.installId, install.installId),
         isNull(grantRows.revokedAt),
       ),
-    );
+    )
+    .returning({ botId: grantRows.botId });
+  return revoked.length;
 }

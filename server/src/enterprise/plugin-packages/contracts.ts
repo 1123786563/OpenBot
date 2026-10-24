@@ -8,6 +8,7 @@ import type {
   PackageGrantRevokeInput,
   PackageInstallDetailDTO,
   PackageInstallDTO,
+  PackageInstallStatusUpdate,
   PackageListQuery,
   PackageOperation,
   PackagePage,
@@ -257,6 +258,19 @@ export interface PackageExpertMutationResult {
   readonly created: boolean;
 }
 
+/**
+ * PKG07 (#466) lifecycle result. `changed: false` means the install already
+ * stood in the requested status (or this idempotency key replayed an earlier
+ * answer): no generation bump, no second revocation. Both cases answer the
+ * install as it now stands, with readiness/allowedActions computed from live
+ * facts — a disabled or uninstalled install reads `unavailable` and offers only
+ * the actions its state permits.
+ */
+export interface PackageInstallStatusResult {
+  readonly install: PackageInstallDTO;
+  readonly changed: boolean;
+}
+
 export interface PackageService {
   list(scope: PlatformScope, query: PackageListQuery): Promise<PackagePage>;
   get(
@@ -301,6 +315,21 @@ export interface PackageService {
     input: PackageExpertCreateInput,
     idempotencyKey: string,
   ): Promise<PackageExpertMutationResult>;
+  /**
+   * PATCH /installs/:id/status (tenant_admin, Idempotency-Key).
+   *
+   * Moves one install to `enabled` / `disabled` / `uninstalled` under the
+   * revision CAS. Disable and uninstall bump the generation and revoke the
+   * install's active grants; enable (including reinstall from the tombstone)
+   * bumps the generation and never revives a grant. Nothing is deleted.
+   */
+  updateInstallStatus(
+    scope: PlatformScope,
+    admin: CompanyAdminContext,
+    installId: string,
+    input: PackageInstallStatusUpdate,
+    idempotencyKey: string,
+  ): Promise<PackageInstallStatusResult>;
 }
 
 /** Injected clock; tests advance it to exercise the 10-minute expiry. */

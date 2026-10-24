@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   PackageBlocker,
+  PackageInstallDTO,
   PackageManifestV1,
   PackagePlanDTO,
   PackagePlanInput,
@@ -213,6 +214,47 @@ export function applyRequestDigest(plan: {
 
 export const PLAN_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * PKG07 (#466): the closed lifecycle verb vocabulary. These are NOT plan
+ * operations — a lifecycle change needs no preview plan, no release resolve and
+ * no revision row; it moves the install ROW's status/generation and appends one
+ * receipt. `disable`/`uninstall` revoke the install's active grants;
+ * `enable` (from `disabled` or an `uninstalled` tombstone) never revives them.
+ */
+export type PackageLifecycleAction = "disable" | "enable" | "uninstall";
+
+/** The lifecycle verb a target status means for the mutation and its receipt. */
+export function lifecycleActionOf(
+  status: PackageInstallDTO["status"],
+): PackageLifecycleAction {
+  switch (status) {
+    case "enabled":
+      return "enable";
+    case "disabled":
+      return "disable";
+    default:
+      return "uninstall";
+  }
+}
+
+/**
+ * Status-request digest for the changes-ledger idempotency receipt: the exact
+ * install identity, the target status and the CAS revision the caller read.
+ */
+export function lifecycleRequestDigest(input: {
+  readonly installId: string;
+  readonly status: PackageInstallDTO["status"];
+  readonly expectedRevision: number;
+}): string {
+  return sha256Hex(
+    `openbot:plugin-package-lifecycle:v1\0${canonicalJson({
+      expectedRevision: input.expectedRevision,
+      installId: input.installId,
+      status: input.status,
+    })}`,
+  );
+}
+
 export function toPlanDTO(input: {
   planId: string;
   operation: PackagePlanDTO["operation"];
@@ -416,5 +458,35 @@ export function changeDiff(input: {
     ...(input.previousRevision === undefined
       ? {}
       : { previousRevision: input.previousRevision }),
+  };
+}
+
+/**
+ * PKG07 (#466): redacted lifecycle receipt. Counters and states only — the
+ * revoked grant ids stay in their own append-friendly rows, and no config,
+ * envelope or secret has a path here (the DB's secret-carrier CHECK agrees).
+ */
+export function lifecycleChangeDiff(input: {
+  action: PackageLifecycleAction;
+  packageKey: string;
+  version: string;
+  revision: number;
+  previousStatus: PackageInstallDTO["status"];
+  status: PackageInstallDTO["status"];
+  previousGeneration: number;
+  generation: number;
+  /** Active grant rows this transition revoked (disable/uninstall only). */
+  revokedGrants: number;
+}): Record<string, unknown> {
+  return {
+    action: input.action,
+    generation: input.generation,
+    packageKey: input.packageKey,
+    previousGeneration: input.previousGeneration,
+    previousStatus: input.previousStatus,
+    revokedGrants: input.revokedGrants,
+    revision: input.revision,
+    status: input.status,
+    version: input.version,
   };
 }

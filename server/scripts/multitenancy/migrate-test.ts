@@ -2284,6 +2284,37 @@ const PACKAGE_DISPATCH_TASK: TaskMigrationSpec = {
 };
 
 /**
+ * PKG07（Issue #466）：停用/卸载/重装。expand-only——只把
+ * enterprise_package_changes 的动作 CHECK 从
+ * ('install','upgrade','rollback','grant','revoke','createExpert') 扩到含
+ * 'disable'/'enable'/'uninstall'（生命周期回执与领域变更同事务追加；幂等复用
+ * 既有 (tenant, workspace, actor, key) 唯一）。不新增表、不新增列、不改任何
+ * 既有策略/授权；约束只放宽不收紧，既有行不受影响。
+ */
+const PACKAGE_LIFECYCLE_TASK: TaskMigrationSpec = {
+  id: "PKG07",
+  description:
+    "PKG07（Issue #466）：插件包停用/卸载/重装——changes 动作 CHECK 扩到 disable/enable/uninstall（expand-only：无新表、无新列、无策略变更）。",
+  steps: [
+    {
+      slug: "package_changes_lifecycle_actions",
+      impact:
+        "把 enterprise_package_changes 的动作 CHECK 从 ('install','upgrade','rollback','grant','revoke','createExpert') 扩到含 'disable'/'enable'/'uninstall'：停用、重新启用（含从卸载 tombstone 重装）各写一条与安装状态变更同事务的回执；安装行本身是 tombstone，不删行，revision/pin/审计与调用证据保留。约束只放宽不收紧。",
+      objects: ["enterprise_package_changes"],
+      statements: [
+        // IF EXISTS: this step only WIDENS a constraint an earlier task owns.
+        // The test-side drift reconciler (support/task-drift.ts) sees the
+        // un-journaled `ADD CONSTRAINT` below and may already have dropped the
+        // constraint as 0163 drift, so the drop must tolerate its absence; the
+        // ADD then rebuilds exactly the widened definition in both cases.
+        'ALTER TABLE "enterprise_package_changes" DROP CONSTRAINT IF EXISTS "enterprise_package_change_action";',
+        "ALTER TABLE \"enterprise_package_changes\" ADD CONSTRAINT \"enterprise_package_change_action\" CHECK (\"enterprise_package_changes\".\"action\" in ('install','upgrade','rollback','grant','revoke','createExpert','disable','enable','uninstall'));",
+      ],
+    },
+  ],
+};
+
+/**
  * MT042（Issue #85）：平台扫描作用域重建。expand-only——为 MT041 的
  * job_ownership 表追加一条 ob_ent_operator SELECT 策略臂：仅当事务本地上下文
  * app.scan_sweep='on' 时允许跨租户读（平台扫描专用；普通业务事务不设该上
@@ -4624,6 +4655,7 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [PACKAGE_GRANT_TASK.id, PACKAGE_GRANT_TASK],
   [PACKAGE_EXPERT_TASK.id, PACKAGE_EXPERT_TASK],
   [PACKAGE_DISPATCH_TASK.id, PACKAGE_DISPATCH_TASK],
+  [PACKAGE_LIFECYCLE_TASK.id, PACKAGE_LIFECYCLE_TASK],
   [SCAN_SCOPE_REBUILD_TASK.id, SCAN_SCOPE_REBUILD_TASK],
   [PERSONAL_BOT_TASK.id, PERSONAL_BOT_TASK],
   [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],
