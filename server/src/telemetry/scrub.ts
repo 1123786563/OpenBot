@@ -120,7 +120,8 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // options are read, `-f file`, `-d fd` and `-P prompt` with the word after them, so the command it
   // wraps keeps its `-p` and `-P`, which are ports. Case matters here: `-P` is sshpass's prompt.
   //
-  // The bare-flag arm reads one cluster with no `p` in it (`-[^\sp]+`, with no unconstrained tail):
+  // The bare-flag arm reads one cluster with no `p` in it and with no value glued to one of its
+  // flags (`-(?![fdP](?=\S))[^\sp]+`, no unconstrained tail):
   // getopt folds `-v` into the next option, so `-vp hunter2` is `-v -p hunter2`, and a tail like
   // `\S*` would swallow the whole cluster — `p` and all — and never reach the password. Instead the
   // cluster's `p` is where the lead ends: the terminator matches a `-p` on its own or at the end of
@@ -132,8 +133,17 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // lead — so, with `p` barred from the cluster, the `p` that ends the terminator can only be the
   // flag's own. The cluster arm still takes a lowercase `p` only; uppercase `-P` never ends the
   // lead as one.
+  //
+  // The guard on the cluster's head is the same single-derivation rule the quote arms were given
+  // (R10-C7): a token like `-fa` or `-Pprompt` reads two ways over one span — as the `-[fdP]` arm,
+  // a flag with its value attached, or as one long cluster — and a lazy loop handed two readings
+  // walks 2^n of them into a dead tail (`sshpass -fa -fa …` with no `-p` after it stalled for a
+  // quarter second at twenty-four clusters and four seconds at twenty-eight; T18 R1-F1). The
+  // cluster is refused only where the value is glued straight on: a `-f` that stands apart from
+  // its value still clusters, its two readings ending at different places, the shorter dead where
+  // the value begins, and `-v` and `-q` never had a second reading to lose.
   [
-    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*|-[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdPp]*p[ \t]*)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/g,
+    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*|-(?![fdP](?=\S))[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdPp]*p[ \t]*)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `SSHPASS=secret sshpass -e ssh host`: the env form sshpass itself recommends over `-p`, because

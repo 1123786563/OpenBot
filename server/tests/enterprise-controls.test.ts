@@ -708,4 +708,44 @@ describe("scrubbing commands", () => {
     expect(scrubCommand(input)).toBe(input);
     expect(performance.now() - start).toBeLessThan(1000);
   });
+  test("an sshpass flag with its value glued on cannot stall the scrubber", () => {
+    // Before the cluster arm was guarded, a token like `-fa` read two ways over the same span —
+    // the `-[fdP]` arm, flag with attached value, or one long cluster — so the lazy lead loop
+    // walked 2^n derivations into a tail with no `-p`: twenty-four glued flags stalled node for a
+    // quarter of a second and bun for two thirds (T18 R1-F1). The cluster now refuses to start a
+    // glued value, leaving one derivation per token at any count — including with space-separated
+    // `-f a` tokens mixed in, whose own two readings end at different places and never chained.
+    // None of these carries a `-p`, so the output is the input, unchanged.
+    const shapes = [
+      (n: number) => `sshpass ${"-fa ".repeat(n)}-v`,
+      (n: number) => `sshpass ${"-Pa ".repeat(n)}-v`,
+      (n: number) => `sshpass ${"-da ".repeat(n)}-v`,
+      (n: number) => `sshpass ${"-fa -f a ".repeat(n)}-v`,
+    ];
+    const start = performance.now();
+    for (const build of shapes)
+      for (const n of [8, 12, 16, 20, 24, 40, 100]) {
+        const input = build(n);
+        expect(scrubCommand(input)).toBe(input);
+      }
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+  test("the guarded cluster still reads the flat sshpass shapes", () => {
+    // The guard refuses a cluster only where a value is glued straight onto the flag: a `-f` that
+    // stands apart from its value still clusters, and still carries a lead to the password flag,
+    // while `-v`-clusters never had a second reading to lose. These stay flat at any count — and
+    // the password behind a flat lead is still taken, so the guard narrowed nothing it shouldn't.
+    const start = performance.now();
+    for (const n of [8, 24, 100]) {
+      expect(scrubCommand(`sshpass ${"-f a ".repeat(n)}-v`)).toBe(
+        `sshpass ${"-f a ".repeat(n)}-v`,
+      );
+      expect(scrubCommand(`sshpass ${"-va ".repeat(n)}-v`)).toBe(
+        `sshpass ${"-va ".repeat(n)}-v`,
+      );
+      const lead = `sshpass ${"-f a ".repeat(n)}`;
+      expect(scrubCommand(`${lead}-p pw`)).toBe(`${lead}-p [REDACTED]`);
+    }
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
 });
