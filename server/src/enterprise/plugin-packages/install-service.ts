@@ -119,6 +119,7 @@ function releaseOrArtifactBlockers(
     (blocker) =>
       blocker.code === "ARTIFACT_MISSING" ||
       blocker.code === "ARTIFACT_INVALID" ||
+      blocker.code === "PACKAGE_WITHDRAWN" ||
       blocker.code === "PACKAGE_UNSUPPORTED",
   );
   if (!release.verified && artifactBlockers.length === 0) {
@@ -158,6 +159,10 @@ function readinessOf(
 ): PackageInstallDTO["readiness"] {
   if (facts.status !== "enabled") return "unavailable";
   if (!release?.verified) return "unavailable";
+  // PKG08 (#467): a withdrawn release is unavailable with its real reason.
+  // Unlisting deliberately does NOT land here — `listed=false` changes only
+  // discovery and never the installed release's runtime eligibility.
+  if (release.state !== "published") return "unavailable";
   if (requiredConnectorBlockers(release, facts).length > 0) {
     return "needs_connection";
   }
@@ -439,8 +444,10 @@ export function createPackageService(
         facts.version,
       );
       // PKG06: the published-version facts the detail screen draws beside the
-      // install — the newest listed+verified release and the exact targets an
-      // upgrade/rollback plan may name. The guard keeps older catalogue
+      // install — the newest listed release and the exact targets an
+      // upgrade/rollback plan may name. PKG08: listVersions returns listed
+      // PUBLISHED releases only, so a withdrawn release is neither the newest
+      // published face nor a picker target. The guard keeps older catalogue
       // implementations (and the untyped test seams) from breaking the read.
       const versions =
         typeof catalogue.listVersions === "function"

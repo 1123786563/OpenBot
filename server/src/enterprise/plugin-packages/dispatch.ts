@@ -956,11 +956,21 @@ export function createPackageDispatchService(
       // 发布撤回/制品漂移：不能新派发此版本。
       return refused("PACKAGE_WITHDRAWN");
     }
+    if (pinnedRelease.state !== "published") {
+      // PKG08 (#467)：安全撤回——旧 Run 的旧 pin 同样不能新派发。判定在
+      // 与 dispatched CAS 同一事务、同一锁序内：撤回先提交（目录快照已换）
+      // 则此处拒绝、transport 0 次；先 dispatched 则效果按下方完成写保留。
+      return refused("PACKAGE_WITHDRAWN");
+    }
     const currentRelease = await catalogue.resolveRelease(
       install.packageKey,
       install.version,
     );
     if (!currentRelease?.verified || !currentRelease.manifest) {
+      return refused("PACKAGE_WITHDRAWN");
+    }
+    if (currentRelease.state !== "published") {
+      // PKG08 (#467)：install 当前版本被撤回同样阻断（不依赖 pin 侧）。
       return refused("PACKAGE_WITHDRAWN");
     }
     const declared = addedToolsOf(currentRelease.manifest).find(

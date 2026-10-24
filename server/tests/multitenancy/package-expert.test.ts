@@ -198,6 +198,7 @@ function probeCatalogue(
       artifactDigest: probe.artifactDigest,
       category: "productivity",
       listed: true,
+      state: "published",
       verified: true,
       displayName: "PKG04 probe package",
       summary: "The PKG04 probe package.",

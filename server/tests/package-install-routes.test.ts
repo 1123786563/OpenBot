@@ -822,6 +822,7 @@ const readinessRelease: PackageReleaseFacts = {
   artifactDigest: digest,
   category: "productivity",
   listed: true,
+  state: "published",
   verified: true,
   displayName: "Demo Skill",
   summary: "Summarize text.",

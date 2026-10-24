@@ -46,9 +46,11 @@ export function sha256Hex(text: string): string {
 
 /**
  * Refuse an exact release that cannot be installed: unknown artifacts,
- * withdrawn (unlisted) packages and manifests that disagree with the index all
- * answer the same closed `PACKAGE_UNSUPPORTED`; an unknown package/version is
- * the caller's `RESOURCE_NOT_FOUND`.
+ * withdrawn (unlisted) packages, PKG08 safety withdrawals and manifests that
+ * disagree with the index all answer the same closed `PACKAGE_UNSUPPORTED`
+ * (there is no install path into a withdrawn release — install, upgrade or
+ * rollback); an unknown package/version is the caller's
+ * `RESOURCE_NOT_FOUND`.
  */
 export type UsablePackageRelease = PackageReleaseFacts & {
   readonly manifest: PackageManifestV1;
@@ -59,6 +61,11 @@ export function assertReleaseUsable(
 ): UsablePackageRelease {
   if (!release) throw packageError("RESOURCE_NOT_FOUND");
   if (!release.listed) throw packageError("PACKAGE_UNSUPPORTED");
+  if (release.state !== "published") {
+    // PKG08 (#467): a withdrawn release cannot be installed, upgraded into
+    // or rolled back into, whatever its listed flag says.
+    throw packageError("PACKAGE_UNSUPPORTED");
+  }
   if (!release.verified || !release.manifest) {
     throw packageError("PACKAGE_UNSUPPORTED");
   }

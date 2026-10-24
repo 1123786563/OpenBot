@@ -208,6 +208,7 @@ function probeCatalogue(): PackageCatalogue {
     artifactDigest: digest,
     category: "productivity",
     listed: true,
+    state: "published",
     verified: true,
     displayName: "PKG09 entrypoints package",
     summary: "The PKG09 background-entry probe.",

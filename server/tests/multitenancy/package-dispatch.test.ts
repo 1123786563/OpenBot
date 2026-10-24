@@ -213,6 +213,7 @@ function probeCatalogue(): PackageCatalogue {
     artifactDigest: digest,
     category: "productivity",
     listed: true,
+    state: "published",
     verified: true,
     displayName: "PKG05 dispatch package",
     summary: "The PKG05 dispatch probe.",

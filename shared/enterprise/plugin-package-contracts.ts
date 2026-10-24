@@ -152,6 +152,16 @@ export const PackageManifestV1Schema = z
 
 export type PackageManifestV1 = z.infer<typeof PackageManifestV1Schema>;
 
+/**
+ * PKG08 (#467): deployment release state. `listed` decides discovery only;
+ * `withdrawn` is the safety withdrawal that blocks every new dispatch and
+ * every install/upgrade/rollback into the release, in every scope. The two
+ * facts are orthogonal: unlisting never withdraws, withdrawing never unlists.
+ */
+export const PackageReleaseStateSchema = z.enum(["published", "withdrawn"]);
+
+export type PackageReleaseState = z.infer<typeof PackageReleaseStateSchema>;
+
 export const MarketplaceV1Schema = z
   .object({
     schemaVersion: z.literal(1),
@@ -164,6 +174,12 @@ export const MarketplaceV1Schema = z
             artifactDigest: z.string().regex(/^[0-9a-f]{64}$/),
             category: PackageIdSchema,
             listed: z.boolean(),
+            /**
+             * Absent means `published`: an index written before PKG08 keeps
+             * parsing, and the parsed record always carries the state — the
+             * default is decided here, once, never at a use site.
+             */
+            state: PackageReleaseStateSchema.default("published"),
           })
           .strict(),
       )
@@ -188,6 +204,7 @@ export const PackageBlockerCodes = [
   "ARTIFACT_MISSING",
   "ARTIFACT_INVALID",
   "PACKAGE_UNLISTED",
+  "PACKAGE_WITHDRAWN",
   "PACKAGE_UNSUPPORTED",
   "RESOURCE_UNAVAILABLE",
   "NEEDS_CONNECTION",
