@@ -129,6 +129,34 @@ beforeAll(async () => {
               <form method="post" action="/mfa-verify">
               <input name="otp" autocomplete="one-time-code"><button>Verify</button></form>`);
       }
+      // A site that signs in without leaving the page: the password is checked in place, the login
+      // form is hidden and the code panel drawn beside it. The login form's nodes stay in the
+      // document — which is how the fill can still see the code step at all — submit button and all.
+      if (url.pathname === "/login-spa-2fa")
+        return page(`<form id="login" method="post" action="/spa-session">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>
+        <div id="code-panel" hidden>
+          <p>We sent a code to your phone.</p>
+          ${codeForm("/spa-check")}
+        </div>
+        <script>
+          const login = document.getElementById("login");
+          login.addEventListener("submit", (event) => {
+            event.preventDefault();
+            if (login.querySelector("input[name=password]").value !== ${JSON.stringify(PASSWORD)}) return;
+            login.hidden = true;
+            document.getElementById("code-panel").hidden = false;
+          });
+        </script>`);
+      // The code step of the same-document site: the right code finishes the sign-in.
+      if (url.pathname === "/spa-check" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("code") === CODE
+          ? Response.redirect(`${origin}/home`, 303)
+          : page(`<p>That code is not right.</p>${codeForm("/spa-check")}`);
+      }
       if (url.pathname === "/home") return page("<h1>Welcome back</h1>");
       // A login whose password is answered with a one-time-code page on this origin.
       if (url.pathname === "/login-2fa")
@@ -293,6 +321,35 @@ beforeAll(async () => {
               \`${codeForm("/check-code")}\`);
           }, 2500);
         </script>`);
+      }
+      // A site that accepts the code but is slow to swap the code page for what comes next: the
+      // page it answers with still wears the code form, and replaces it only after the fill has
+      // looked — the way a slow SPA re-render lands later than the settle window.
+      if (url.pathname === "/login-slow-swap")
+        return page(`<form method="post" action="/slow-swap-session">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/slow-swap-session" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(codeForm("/slow-swap-check"))
+          : page(`<p>Wrong password</p><form method="post" action="/slow-swap-session">
+              <input name="email" type="email"><input name="password" type="password"></form>`);
+      }
+      if (url.pathname === "/slow-swap-check" && request.method === "POST") {
+        const form = await request.formData();
+        if (form.get("code") !== CODE)
+          return page(
+            `<p>That code is not right.</p>${codeForm("/slow-swap-check")}`,
+          );
+        return page(`<p>We sent a code to your phone.</p>
+          ${codeForm("/slow-swap-check")}
+          <script>
+            setTimeout(() => {
+              document.body.innerHTML = "<h1>All set</h1>";
+            }, 2500);
+          </script>`);
       }
       // A refusal the site draws late: the wrong password is answered with a transition state
       // first, and the login page comes back only after the fill has already looked and moved on.
@@ -747,6 +804,48 @@ describe.skipIf(!asked)(
       });
       const finished = await fillSignInCode(tab, { origin, code: CODE });
       expect(finished.url).toBe(`${origin}/home`);
+      await tab.close();
+    });
+
+    test("a code panel drawn in the same document as the hidden login form is submitted by its own button", async () => {
+      // The site signed in without leaving the page: the login form is hidden and the code panel
+      // drawn beside it, both still in the document. The login form's submit button keeps the mark
+      // the password step gave it, so marking the code form's button without clearing the older
+      // one first leaves two marked buttons, and the click does not know which one to press.
+      const tab = await open("/login-spa-2fa");
+      const fill = await fillSignIn(tab, {
+        origin,
+        username: "a@example.test",
+        password: PASSWORD,
+      });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result).toEqual({
+        submitted: true,
+        codeFieldVisible: false,
+        passwordFieldVisible: false,
+        url: `${origin}/home`,
+      });
+      await tab.close();
+    });
+
+    test("a code page the site is slow to replace is not read as a refused code", async () => {
+      // The site accepted the code, but its success page is late: the old code form is still on
+      // the page when the fill first looks, and goes away only during the grace wait. Reading the
+      // first look alone would call the code refused, and the person would be told to re-enter a
+      // one-time code the site has already spent.
+      const tab = await open("/login-slow-swap");
+      const fill = await fillSignIn(tab, {
+        origin,
+        username: "a@example.test",
+        password: PASSWORD,
+      });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result.submitted).toBe(true);
+      expect(result.codeFieldVisible).toBe(false);
+      // The code was spent on the site that accepted it: the success page came up.
+      expect(await tab.locator("h1").textContent()).toBe("All set");
       await tab.close();
     });
   },

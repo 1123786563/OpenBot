@@ -207,6 +207,11 @@ function markSubmit(
   field: Element,
   attribute: string,
 ): "button" | "form" | "key" {
+  // An earlier step's submit mark goes first: a site that kept the login form in the document when
+  // it moved on to a code step (an SPA hiding it, not navigating away) would otherwise leave two
+  // marked buttons, and the click below would not know which one it was asked to press.
+  for (const node of document.querySelectorAll(`[${attribute}="submit"]`))
+    node.removeAttribute(attribute);
   const form = (field as HTMLInputElement).form;
   if (!form) return "key";
   const button = form.querySelector(
@@ -369,9 +374,18 @@ export async function fillSignInCode(
     await typeSecret(codeField, input.code);
     await submitFrom(page, codeField);
     await settle(page);
-    const codeFieldVisible =
+    let codeFieldVisible =
       originOfUrl(page.url()) === input.origin &&
       (await page.evaluate(markCodeField, LOGIN_ATTRIBUTE));
+    if (codeFieldVisible) {
+      // A slow site may not have replaced the code page yet: give it the same grace fillSignIn
+      // gives a late-appearing code field before calling the code refused — what the re-render is
+      // late bringing in, it can as late take away.
+      await page.waitForTimeout(2_000);
+      codeFieldVisible =
+        originOfUrl(page.url()) === input.origin &&
+        (await page.evaluate(markCodeField, LOGIN_ATTRIBUTE));
+    }
     return {
       submitted: true,
       codeFieldVisible,
