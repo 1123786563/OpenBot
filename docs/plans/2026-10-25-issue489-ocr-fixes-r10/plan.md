@@ -35,3 +35,9 @@
 ## 检查点与流程
 
 两任务并行（不同文件族，worktree 各自从本方案提交派生）。各：检查点（after-all/increment/status/sha256，全绝对路径 `/Users/wuyongjun/trea/OpenBot/.archive/runs/2026-10-23-issue489-orchestration/checkpoints/`）→ 编排者字节核验 → R1（Claude 双轴）→ 串行集成（剥头 apply+组合树字节核验+门）→ F10 收官门 → Codex f01-r10 完整终审 + OCR R11（**全 16 项覆盖硬约束，429 失败即 resume 重试**）→ R11 终裁 → V03 → C01。
+
+## 附录：T20（R1-F1 证据追加，2026-10-25）
+
+T18 R1（`…/reviews/t18-claude-r1.md` Findings 节）在修复树上独立坐实**第三个同族 ReDoS 形**：sshpass lead 循环的簇级歧义——`-fa`/`-Pa`/`-da` 附着值 token 有两种同跨度推导（`-[fdP][ \t]*值` 臂 vs 背簇 `-[^\sp]+` 臂），惰性 lead 循环遇失败尾部枚举 2^n。实测（node，修复树 8283eeb33d 前）：n=16→1.00ms、20→16.05ms、24→255.56ms（每 +4 簇 ×16；n≈32 分钟级）；bun ~0.63-0.70s 平台。系 T14-R2 引入簇结构时即存在（T18 未引入未恶化），与 F10-1 同规则族、同机制、同暴露面（OCR 对 F10-1 定级 high，故同定 high）。
+
+**T20 范围（仅 scrub.ts:136 sshpass 规则 + 测试）**：消除簇臂与 fdP 臂的首字符歧义，使每个 `-x…` token 单一推导。方向（方案裁决，实施可按代码事实取更强口径并申报）：背簇臂加否定前瞻——`-(?![fdP](?=\S))[^\sp]+`（附着值形态 `-fa`/`-Pprompt` 归 fdP 臂唯一处理；`-f file` 空格分离形、`-v`/`-q` 等背簇不受影响）。RED：R1-F1 实测形（`sshpass ` + `-fa`×n + 失败尾）pre-fix 计时爆（n=20 即 >1000ms 量级）；GREEN：同形 ≤ 个位数 ms 至 n=100 双引擎 + 新防回溯计时用例（输出恒等断言）；106 既有用例 + otel 4/4 零回退；`-f a`（空格）、`-va`、`-p pw` 平坦对照保持。owned=scrub.ts+enterprise-controls.test.ts；门同 T18。
