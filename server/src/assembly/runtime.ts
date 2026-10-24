@@ -341,7 +341,8 @@ import { createDemonstrationRecorder } from "../demonstrations/recording";
 import { createDemonstrationStore } from "../demonstrations/store";
 import type { PlatformScope, RunnerRequestLease } from "../enterprise/contracts";
 import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
-import { createConversationService } from "../enterprise/conversations/service";
+import { createMastraStorageArm } from "../enterprise/conversations/integration";
+import { createConversationPublic } from "../enterprise/conversations/public";
 import { createPackageService } from "../enterprise/plugin-packages/install-service";
 import { createPackageMutationStore } from "../enterprise/plugin-packages/mutation-context";
 import { createPackageRuntime } from "../enterprise/plugin-packages/runtime";
@@ -1254,7 +1255,7 @@ const enterpriseCapabilities = await (async () => {
       data,
       scopes,
       entry,
-      conversations: createConversationService({ data, mastraStorage }),
+      conversations: createMastraStorageArm({ data, mastraStorage }),
       // ME06 (#478): the tenant-restricted engine storage the continuation
       // install's storageFor resolves suspension snapshots through.
       mastraStorage,
@@ -1290,7 +1291,19 @@ if (!config.runtime.intelligence && !enterpriseCapabilities) {
 const enterpriseConversationRoutes = enterpriseCapabilities
   ? createEnterpriseConversationEntryRoutes({
       factory: enterpriseCapabilities.entry,
-      service: enterpriseCapabilities.conversations,
+      // MOD06 (#626): the entry's business capabilities route through the M04
+      // public facade (list/getOrCreate/history/append/appendEngineMessage,
+      // pure delegation — conversation-public.test.ts pins same-args/same-
+      // result/same-error-instance). resolveBackend/resolveMastraBinding —
+      // the engine-storage internals no ordinary caller may see — ride through
+      // from the internal service only; the unified entry's frozen M02 type
+      // (tenancy, untouched this ticket) keeps requiring the full service.
+      service: {
+        ...enterpriseCapabilities.conversations,
+        ...createConversationPublic({
+          service: enterpriseCapabilities.conversations,
+        }),
+      },
     })
   : createUnavailableConversationRoutes();
 // MT006 (issue #49): workspace scope listing plus company team administration.
