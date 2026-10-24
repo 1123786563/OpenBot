@@ -86,7 +86,6 @@ import {
 import { createRunBindingStore } from "../ai-observability/bindings";
 import { opikConfigFromEnv } from "../ai-observability/config";
 import type { BotManagementCheck } from "../ai-observability/context";
-import type { ObservationScope } from "../ai-observability/contracts";
 import { createExecutionBudgetPrecheck } from "../ai-observability/execution-billing";
 import { createExperimentExecutionWorkerBoot } from "../ai-observability/execution-boot";
 import {
@@ -101,6 +100,11 @@ import {
 import { createOpikHealthService } from "../ai-observability/health";
 import { createIdLinkStore } from "../ai-observability/id-links";
 import { createModelSpanRecorder } from "../ai-observability/model-span";
+import {
+  modelSpanObserver,
+  observationEnabled,
+  toolStepObserver,
+} from "../ai-observability/public";
 import { createRunsQueryService } from "../ai-observability/queries/runs";
 import {
   createObservationRetentionWorker,
@@ -7379,42 +7383,11 @@ const opikTicketReaper = repeatAfterEach(
 const opikModelSpans = createModelSpanRecorder({
   healthService: opikHealthService,
 });
-if (opikBootConfig.enabled) {
-  setBuiltinModelSpanObserver((fact) =>
-    opikModelSpans.record({
-      occurredAt: fact.startedAt,
-      endedAt: fact.endedAt,
-      provider: fact.provider,
-      modelId: fact.modelId,
-      ending: fact.ending,
-      input: fact.input,
-      output: fact.output,
-      // The run's trusted scope (T-final M1), CAPTURED at the fact's doStream
-      // entry and carried here on the fact itself (OCR R2-58): by stream
-      // teardown — where settlement reports the fact — the ambient context is
-      // not guaranteed (the same discipline the fact's trace field documents),
-      // so reading the ambient store at THIS moment silently no-op'd the main
-      // path's success spans. A fact whose entry captured no scope — a run that
-      // started scope-less — stays exactly as scope-less as before: the record
-      // is a no-op upstream. The cast is the wiring seam's own: the ONLY writer
-      // of that captured value is copilot.ts's entry read of the store this
-      // boot's threading established — a scope this process issued (T06's
-      // WeakSet trust), never a wire value.
-      scope: fact.scope as ObservationScope | undefined,
-      // The run's W3C chain captured at doStream entry (OCR h6, the tool-step
-      // precedent): the model span joins the run's trace instead of rooting a
-      // fresh random one — one trace per run, no orphan pseudo-runs in the
-      // collection window.
-      ...(fact.trace
-        ? {
-            trace: {
-              traceId: fact.trace.traceId,
-              parentSpanId: fact.trace.spanId,
-            },
-          }
-        : {}),
-    }),
-  );
+if (observationEnabled(opikBootConfig)) {
+  // MOD17: the fact→observation adaptation moved verbatim into the M11 public
+  // facade — this seam now only binds the recorder (queue semantics stay in the
+  // health service the recorder was built with) and registers the observer.
+  setBuiltinModelSpanObserver(modelSpanObserver(opikModelSpans));
 }
 
 /*
@@ -7440,45 +7413,10 @@ const opikToolSteps = createToolStepRecorder({
     bindings: aiObservabilityBindings,
   }),
 });
-if (opikBootConfig.enabled) {
-  setBuiltinToolStepObserver((fact) =>
-    opikToolSteps.record({
-      toolCallId: fact.toolCallId,
-      toolName: fact.toolName ?? undefined,
-      proposedAt: fact.proposedAt ?? undefined,
-      endedAt: fact.endedAt,
-      proposalObserved: fact.proposalObserved,
-      executionObserved: fact.executionObserved,
-      receiptObserved: fact.receiptObserved,
-      execution: fact.execution,
-      window: fact.window,
-      input: fact.input,
-      output: fact.output,
-      // The run's trusted scope (T-final M1), CAPTURED at the tool-step cell's
-      // open and carried here on the fact itself (OCR R3-39 — the model-span
-      // adapter's own OCR R2-58 discipline, now on the tool-step half): the
-      // settlement that reports the fact can land at stream teardown — the
-      // finalize hook runs OUTSIDE the run's ambient context — where reading
-      // the ambient store silently no-op'd the record. A fact whose open
-      // captured no scope — a run that started scope-less — stays exactly as
-      // scope-less as before: the record is a no-op upstream. The cast is the
-      // wiring seam's own: the ONLY writer of that captured value is
-      // copilot.ts's cell-open read of the store this boot's threading
-      // established — a scope this process issued (T06's WeakSet trust), never
-      // a wire value.
-      scope: fact.scope as ObservationScope | undefined,
-      // The run's W3C chain captured at cell open (Issue #23/T17): the step span
-      // joins the cross-service trace instead of rooting a fresh random one.
-      ...(fact.trace
-        ? {
-            trace: {
-              traceId: fact.trace.traceId,
-              parentSpanId: fact.trace.spanId,
-            },
-          }
-        : {}),
-    }),
-  );
+if (observationEnabled(opikBootConfig)) {
+  // MOD17: same move as the model spans above — the adaptation lives in the
+  // M11 public facade; this seam binds the recorder and registers the observer.
+  setBuiltinToolStepObserver(toolStepObserver(opikToolSteps));
 }
 
 /*
