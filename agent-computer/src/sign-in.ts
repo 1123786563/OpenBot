@@ -377,19 +377,22 @@ export async function fillSignInCode(
     let codeFieldVisible =
       originOfUrl(page.url()) === input.origin &&
       (await page.evaluate(markCodeField, LOGIN_ATTRIBUTE));
-    if (codeFieldVisible) {
-      // A slow site may not have replaced the code page yet: give it the same grace fillSignIn
-      // gives a late-appearing code field before calling the code refused — what the re-render is
-      // late bringing in, it can as late take away.
+    let backToLogin = await passwordVisible(page);
+    if (codeFieldVisible || !backToLogin) {
+      // A slow site may not have rendered its verdict yet — whether that verdict is the code page
+      // going away or the login page coming back — so give it the same grace fillSignIn gives a
+      // transition state, and take both readings again once it has. A success pays the wait too:
+      // the same 2 seconds fillSignIn spends on every ordinary signed-in landing.
       await page.waitForTimeout(2_000);
       codeFieldVisible =
         originOfUrl(page.url()) === input.origin &&
         (await page.evaluate(markCodeField, LOGIN_ATTRIBUTE));
+      backToLogin = await passwordVisible(page);
     }
     return {
       submitted: true,
       codeFieldVisible,
-      passwordFieldVisible: await passwordVisible(page),
+      passwordFieldVisible: backToLogin,
       url: page.url(),
     };
   } catch {

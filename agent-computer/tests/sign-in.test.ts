@@ -371,6 +371,34 @@ beforeAll(async () => {
           }, 2500);
         </script>`);
       }
+      // The mirror of the slow refusal, one step deeper: the code is answered with a transition
+      // state too, and the login page comes back only after the fill has already looked and moved
+      // on — the site spent the code without signing the person in.
+      if (url.pathname === "/login-slow-back")
+        return page(`<form method="post" action="/slow-back">
+          <label>Email <input name="email" type="email"></label>
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
+      if (url.pathname === "/slow-back" && request.method === "POST") {
+        const form = await request.formData();
+        return form.get("password") === PASSWORD
+          ? page(codeForm("/slow-back-check"))
+          : page(`<p>Wrong password</p><form method="post" action="/slow-back">
+              <input name="email" type="email"><input name="password" type="password"></form>`);
+      }
+      if (url.pathname === "/slow-back-check" && request.method === "POST") {
+        const form = await request.formData();
+        if (form.get("code") !== CODE)
+          return page(`<p>Wrong code</p>${codeForm("/slow-back-check")}`);
+        return page(`<p>Checking your sign-in…</p><script>
+          setTimeout(() => {
+            document.body.insertAdjacentHTML("beforeend",
+              \`<form method="post" action="/slow-back">
+                <input name="email" type="email"><input name="password" type="password">
+                <button>Sign in</button></form>\`);
+          }, 2500);
+        </script>`);
+      }
       // A site that moves the code step to another origin entirely.
       if (url.pathname === "/login-cross")
         return page(`<form method="post" action="${otherOrigin}/cross-code">
@@ -826,6 +854,26 @@ describe.skipIf(!asked)(
         passwordFieldVisible: false,
         url: `${origin}/home`,
       });
+      await tab.close();
+    });
+
+    test("a login page the site is slow to bring back is not a finished sign-in", async () => {
+      // The mirror of the slow swap above, on the refusal side: the site took the code but sends
+      // the person back to the login page, and the checking page it shows first carries neither
+      // field. Reporting on the first look alone would tell the server the code went through while
+      // the person is back where they started.
+      const tab = await open("/login-slow-back");
+      const fill = await fillSignIn(tab, {
+        origin,
+        username: "a@example.test",
+        password: PASSWORD,
+      });
+      expect(fill.codeRequested).toBe(true);
+      const result = await fillSignInCode(tab, { origin, code: CODE });
+      expect(result.submitted).toBe(true);
+      expect(result.codeFieldVisible).toBe(false);
+      // The login page came back: the code was spent, the sign-in did not go through.
+      expect(result.passwordFieldVisible).toBe(true);
       await tab.close();
     });
 
