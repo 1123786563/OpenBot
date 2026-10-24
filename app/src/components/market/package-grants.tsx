@@ -75,6 +75,19 @@ export function PackageGrantsSection({
   const skillResources =
     detail.data?.resources.filter((resource) => resource.kind === "skill") ??
     [];
+  /*
+   * PKG05 (#464): connector resources and the tools their CURRENT revision
+   * declares. A connector grant is exact per tool (never "this connector"),
+   * so the form offers each declared tool by ref and the server re-derives
+   * the schema digest/effect from the same manifest.
+   */
+  const connectorResources =
+    detail.data?.resources.filter(
+      (resource) => resource.kind === "managedConnector" && resource.available,
+    ) ?? [];
+  const [selectedTools, setSelectedTools] = React.useState<ReadonlySet<string>>(
+    new Set(),
+  );
 
   const activeGrant =
     detail.data?.grants.find((grant) => grant.botId === trimmedBotId) ?? null;
@@ -99,6 +112,13 @@ export function PackageGrantsSection({
           .map((resource) => resource.resourceId)
           .sort()
           .join("\u0000");
+  const activeToolKey =
+    activeGrant === null
+      ? ""
+      : activeGrant.resources
+          .flatMap((resource) => resource.toolRefs ?? [])
+          .sort()
+          .join("\u0000");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the three unread deps are the reseed SIGNAL, not reads — the body draws only the resource ids, but a new Bot id must clear the previous Bot's draft even when neither holds a grant, an install generation bump must reseed even when the granted set looks unchanged, and object references (the old `detail.data` dep) are deliberately absent: they change on every refetch and wiped in-progress selections for Bots whose own grant never moved.
   React.useEffect(() => {
@@ -107,12 +127,26 @@ export function PackageGrantsSection({
         activeResourceKey === "" ? [] : activeResourceKey.split("\u0000"),
       ),
     );
-  }, [trimmedBotId, activeGrantRevision, activeResourceKey, installGeneration]);
+    // A tool grant's own selection: connector resources carry their granted
+    // tool refs, reseeded on the same identity signal.
+    setSelectedTools(
+      new Set(activeToolKey === "" ? [] : activeToolKey.split("\u0000")),
+    );
+  }, [
+    trimmedBotId,
+    activeGrantRevision,
+    activeResourceKey,
+    activeToolKey,
+    installGeneration,
+  ]);
 
   const grantPending = grantMutation.isPending;
   const revokePending = revokeMutation.isPending;
   const canSubmit =
-    trimmedBotId !== "" && selected.size > 0 && !grantPending && !revokePending;
+    trimmedBotId !== "" &&
+    (selected.size > 0 || selectedTools.size > 0) &&
+    !grantPending &&
+    !revokePending;
 
   const submitGrant = () => {
     if (!canSubmit) return;
@@ -123,12 +157,23 @@ export function PackageGrantsSection({
         installId: install.installId,
         botId: trimmedBotId,
         expectedGrantRevision: activeGrant?.revision ?? null,
-        resources: skillResources
-          .filter((resource) => selected.has(resource.id))
-          .map((resource) => ({
-            resourceId: resource.id,
-            kind: "skill" as const,
-          })),
+        resources: [
+          ...skillResources
+            .filter((resource) => selected.has(resource.id))
+            .map((resource) => ({
+              resourceId: resource.id,
+              kind: "skill" as const,
+            })),
+          ...connectorResources
+            .map((resource) => ({
+              resourceId: resource.id,
+              kind: "managedConnector" as const,
+              toolRefs: (resource.tools ?? [])
+                .map((tool) => tool.ref)
+                .filter((ref) => selectedTools.has(ref)),
+            }))
+            .filter((resource) => resource.toolRefs.length > 0),
+        ],
         idempotencyKey: newIdempotencyKey(),
       },
       {
@@ -233,14 +278,23 @@ export function PackageGrantsSection({
               <code className="min-w-0 truncate font-mono text-xs text-foreground/80">
                 {grant.botId}
               </code>
-              {grant.resources.map((resource) => (
-                <code
-                  className="min-w-0 truncate font-mono text-foreground/50 text-xs"
-                  key={resource.resourceId}
-                >
-                  {resource.resourceId}
-                </code>
-              ))}
+              {grant.resources.map((resource) =>
+                resource.kind === "managedConnector" ? (
+                  <code
+                    className="min-w-0 truncate font-mono text-foreground/50 text-xs"
+                    key={resource.resourceId}
+                  >
+                    {`${resource.resourceId} · ${(resource.toolRefs ?? []).join(", ")}`}
+                  </code>
+                ) : (
+                  <code
+                    className="min-w-0 truncate font-mono text-foreground/50 text-xs"
+                    key={resource.resourceId}
+                  >
+                    {resource.resourceId}
+                  </code>
+                ),
+              )}
               <WbTag className="ml-auto">{`r${grant.revision}`}</WbTag>
               <WbSecondaryButton
                 aria-label={t("packages.grants.revokeAria", {
@@ -309,6 +363,54 @@ export function PackageGrantsSection({
             ))}
           </fieldset>
         )}
+        {connectorResources.length > 0 ? (
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="text-xs leading-5 text-foreground/50">
+              {t("packages.grants.toolsLabel")}
+            </legend>
+            {connectorResources.map((resource) => (
+              <div className="flex flex-col gap-1" key={resource.id}>
+                <code className="font-mono text-xs text-foreground/70">
+                  {resource.id}
+                </code>
+                {(resource.tools ?? []).length === 0 ? (
+                  <p className="text-xs text-foreground/50">
+                    {t("packages.grants.noConnectorTools")}
+                  </p>
+                ) : (
+                  (resource.tools ?? []).map((tool) => (
+                    <label
+                      className="ml-3 flex items-center gap-2 text-xs text-foreground/70"
+                      key={tool.ref}
+                    >
+                      <input
+                        aria-label={tool.ref}
+                        checked={selectedTools.has(tool.ref)}
+                        disabled={grantPending || revokePending}
+                        onChange={(event) => {
+                          setSelectedTools((held) => {
+                            const next = new Set(held);
+                            if (event.target.checked) {
+                              next.add(tool.ref);
+                            } else {
+                              next.delete(tool.ref);
+                            }
+                            return next;
+                          });
+                        }}
+                        type="checkbox"
+                      />
+                      <code className="min-w-0 truncate font-mono">
+                        {tool.ref}
+                      </code>
+                      <span className="text-foreground/40">{tool.effect}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            ))}
+          </fieldset>
+        ) : null}
         <div className="flex items-center gap-3">
           <WbSecondaryButton
             disabled={!canSubmit}

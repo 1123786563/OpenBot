@@ -17,6 +17,7 @@ import {
 import type { GovernedModelRequest } from "../enterprise/runs/governed-execution";
 import type { AcquireLearnedSkills } from "../learning/runtime";
 import type { LoadPersonalMemory } from "../memory/tools";
+import type { PackageToolRunContext } from "../plugins/package-tools";
 import type { SelectableSkill } from "../plugins/selection";
 import type { AgentActor } from "./profile-types";
 
@@ -42,6 +43,13 @@ export type AgentResolutionContext = {
    * re-resolves nothing and keeps the legacy contract untouched.
    */
   pinnedPackageSkills?: readonly SelectableSkill[];
+  /**
+   * PKG05 (Issue #464): the admitted run's package execution context. Present
+   * only on the re-resolution of a run with dispatchable package tools; the
+   * build hands it to `grantedTools`, and every package tool call carries it
+   * to the dispatch chain. Never reachable from a wire field.
+   */
+  packageRun?: PackageToolRunContext;
 };
 
 export class CoworkerUnavailableError extends Error {}
@@ -180,6 +188,8 @@ export function createActorAgentResolver(
       // PKG03B (T03-fix): the admitted run's pinned package skills, threaded
       // to the builds so the run's Skill catalogue serves the pinned revision.
       context?.pinnedPackageSkills,
+      // PKG05: the admitted run's package context, threaded to the tool offer.
+      context?.packageRun,
     );
   };
 

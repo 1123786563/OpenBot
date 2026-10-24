@@ -82,6 +82,13 @@ export const EXPLICIT_GROUPS = {
     "server/tests/multitenancy/package-runtime.test.ts",
     "server/tests/multitenancy/package-grants.test.ts",
     "server/tests/multitenancy/package-expert.test.ts",
+    /*
+     * PKG05 (#464): the dispatch suite seeds the same package chain (it calls
+     * `applyPackageTasks` itself) and its concurrency case opens a second data
+     * connection, so it belongs in this one sequential process rather than a
+     * racing sibling group.
+     */
+    "server/tests/multitenancy/package-dispatch.test.ts",
     "server/tests/package-install.integration.test.ts",
   ],
   /*

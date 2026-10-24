@@ -86,6 +86,22 @@ export interface PreparePackageRunInput {
   readonly attemptGeneration: number;
 }
 
+/**
+ * One managed-connector tool binding pinned into a run attempt (PKG05,
+ * Spec §7.2 `allowedToolRefs`). The digest/effect travel with the binding so
+ * dispatch can prove the run was admitted against the SAME tool contract the
+ * grant was written for; a later grant of the same tool name cannot be
+ * absorbed by this attempt's pin.
+ */
+export interface PackageToolBinding {
+  readonly resourceId: string;
+  /** `<resourceId>:<toolName>` — the grant's tool_ref. */
+  readonly toolRef: string;
+  readonly schemaDigest: string;
+  readonly effect: "read" | "write";
+  readonly connectorInstallId: string;
+}
+
 /** One pinned install, as the run's authorization snapshot. */
 export interface PackageRunPinSnapshot {
   readonly installId: string;
@@ -95,6 +111,16 @@ export interface PackageRunPinSnapshot {
   readonly artifactDigest: string;
   readonly grantRevision: number;
   readonly allowedResourceIds: readonly string[];
+  /** PKG05: managed-connector tools this attempt may dispatch. */
+  readonly allowedToolBindings: readonly PackageToolBinding[];
+}
+
+/** A tool binding read back for the runner's re-resolution decision. */
+export interface PinnedToolBinding extends PackageToolBinding {
+  readonly installId: string;
+  readonly runId: string;
+  readonly attemptGeneration: number;
+  readonly botId: string;
 }
 
 export interface PackageRunSnapshot {
@@ -139,6 +165,18 @@ export interface PackageRuntime {
     scope: PlatformScope,
     input: PreparePackageRunInput,
   ): Promise<readonly PinnedSkillSummary[]>;
+  /**
+   * PKG05: the tool bindings this attempt pinned, re-validated at read time
+   * (install still enabled, grant still active, same digest/effect). The
+   * runner uses a non-empty result to re-resolve the executing agent WITH the
+   * run's package context, so the model is offered exactly the tools this
+   * attempt may dispatch. Empty for a run with no connector-tool pins — the
+   * legacy offer is untouched.
+   */
+  readPinnedTools(
+    scope: PlatformScope,
+    input: PreparePackageRunInput,
+  ): Promise<readonly PinnedToolBinding[]>;
 }
 
 export interface CreatePackageRuntimeInput {
@@ -182,6 +220,35 @@ async function pinWorkspaceLocally(
   );
 }
 
+/** Narrow a stored `allowed_tool_bindings` value to typed bindings. */
+function toolBindingsOf(value: unknown): PackageToolBinding[] {
+  if (!Array.isArray(value)) return [];
+  const bindings: PackageToolBinding[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as Partial<PackageToolBinding>;
+    if (
+      typeof candidate.resourceId !== "string" ||
+      typeof candidate.toolRef !== "string" ||
+      typeof candidate.schemaDigest !== "string" ||
+      (candidate.effect !== "read" && candidate.effect !== "write") ||
+      typeof candidate.connectorInstallId !== "string"
+    ) {
+      continue;
+    }
+    bindings.push({
+      resourceId: candidate.resourceId,
+      toolRef: candidate.toolRef,
+      schemaDigest: candidate.schemaDigest,
+      effect: candidate.effect,
+      connectorInstallId: candidate.connectorInstallId,
+    });
+  }
+  return bindings.sort((left, right) =>
+    left.toolRef < right.toolRef ? -1 : left.toolRef > right.toolRef ? 1 : 0,
+  );
+}
+
 export function createPackageRuntime(
   input: CreatePackageRuntimeInput,
 ): PackageRuntime {
@@ -201,6 +268,8 @@ export function createPackageRuntime(
           releaseDigest: pinRows.releaseDigest,
           grantRevision: pinRows.grantRevision,
           allowedResourceIds: pinRows.allowedResourceIds,
+          allowedToolBindings: pinRows.allowedToolBindings,
+          pinnedInstallGeneration: pinRows.installGeneration,
           packageKey: installRows.packageKey,
           installGeneration: installRows.generation,
         })
@@ -230,7 +299,10 @@ export function createPackageRuntime(
           pins: existing.map((row) => ({
             installId: row.installId,
             packageKey: row.packageKey,
-            installGeneration: row.installGeneration,
+            // The generation recorded at pin time — re-reading the live
+            // install generation here would make the snapshot lie about what
+            // was pinned (the runtime read revalidates it per read).
+            installGeneration: row.pinnedInstallGeneration,
             revision: row.revision,
             artifactDigest: row.releaseDigest,
             grantRevision: row.grantRevision,
@@ -240,6 +312,9 @@ export function createPackageRuntime(
                     (id): id is string => typeof id === "string",
                   )
                 : [],
+            ),
+            allowedToolBindings: Object.freeze(
+              toolBindingsOf(row.allowedToolBindings),
             ),
           })),
         };
@@ -256,6 +331,11 @@ export function createPackageRuntime(
           installRevision: installRows.revision,
           resourceId: grantRows.resourceId,
           grantGeneration: grantRows.generation,
+          resourceKind: grantRows.resourceKind,
+          toolRef: grantRows.toolRef,
+          schemaDigest: grantRows.schemaDigest,
+          effect: grantRows.effect,
+          connectorInstallId: grantRows.connectorInstallId,
         })
         .from(grantRows)
         .innerJoin(
@@ -351,26 +431,38 @@ export function createPackageRuntime(
         {
           fact: (typeof grantFacts)[number];
           resources: Set<string>;
+          /** Raw active connector-tool grant rows, classified below. */
+          toolRows: (typeof grantFacts)[number][];
         }
       >();
       for (const fact of grantFacts) {
         let entry = byInstall.get(fact.installId);
         if (!entry) {
-          entry = { fact, resources: new Set<string>() };
+          entry = { fact, resources: new Set<string>(), toolRows: [] };
           byInstall.set(fact.installId, entry);
+        }
+        if (fact.resourceKind === "connectorTool") {
+          entry.toolRows.push(fact);
+          continue;
         }
         entry.resources.add(fact.resourceId);
       }
 
-      // The install's CURRENT-revision skill links: the pin's allowed set is
-      // the active grant ∩ the current revision's skill resources. (Historical
-      // revisions' links stay in the table but never describe the install.)
+      // The install's CURRENT-revision links: the pin's allowed skill set is
+      // the active grant ∩ the current revision's skill resources, and a tool
+      // binding additionally needs the grant's connector install to be the one
+      // the revision links for that resource. (Historical revisions' links
+      // stay in the table but never describe the install.)
       const currentSkillIds = new Map<string, Set<string>>();
+      /** resourceId → connector install id, current revision only. */
+      const currentConnectorIds = new Map<string, string>();
       const currentRevisionLinks = await tx
         .select({
           installId: linkRows.installId,
           resourceId: linkRows.resourceId,
           revision: linkRows.revision,
+          kind: linkRows.kind,
+          connectorInstallId: linkRows.connectorInstallId,
         })
         .from(linkRows)
         .where(
@@ -378,15 +470,24 @@ export function createPackageRuntime(
             eq(linkRows.tenantId, scope.tenantId),
             eq(linkRows.workspaceId, scope.workspaceId),
             inArray(linkRows.installId, installIds),
-            eq(linkRows.kind, "skill"),
+            inArray(linkRows.kind, ["skill", "managedConnector"]),
           ),
         );
       for (const row of currentRevisionLinks) {
         const install = byInstall.get(row.installId);
         if (!install || row.revision !== install.fact.installRevision) continue;
-        const set = currentSkillIds.get(row.installId) ?? new Set<string>();
-        set.add(row.resourceId);
-        currentSkillIds.set(row.installId, set);
+        if (row.kind === "skill") {
+          const set = currentSkillIds.get(row.installId) ?? new Set<string>();
+          set.add(row.resourceId);
+          currentSkillIds.set(row.installId, set);
+          continue;
+        }
+        if (row.connectorInstallId) {
+          currentConnectorIds.set(
+            `${row.installId}\u0000${row.resourceId}`,
+            row.connectorInstallId,
+          );
+        }
       }
 
       // The pinned revision's artifact digest (immutable revision facts).
@@ -421,14 +522,40 @@ export function createPackageRuntime(
       for (const installId of [...byInstall.keys()].sort()) {
         const entry = byInstall.get(installId);
         if (!entry) continue;
-        const currentSkillsOfInstall = currentSkillIds.get(installId);
-        if (!currentSkillsOfInstall) continue;
+        const currentSkillsOfInstall =
+          currentSkillIds.get(installId) ?? new Set<string>();
         const allowed = [...entry.resources]
           .filter((resourceId) => currentSkillsOfInstall.has(resourceId))
           .sort();
+        // A tool row is pinned only when it names the CURRENT revision's
+        // connector link AND carries the reviewed contract. A row that
+        // cannot be described this way is skipped (fail-closed narrowing,
+        // never a guessed digest).
+        const toolBindings: PackageToolBinding[] = [];
+        for (const toolRow of entry.toolRows) {
+          const connectorInstallId = currentConnectorIds.get(
+            `${installId}\u0000${toolRow.resourceId}`,
+          );
+          if (
+            !connectorInstallId ||
+            !toolRow.toolRef ||
+            !toolRow.schemaDigest ||
+            (toolRow.effect !== "read" && toolRow.effect !== "write") ||
+            toolRow.connectorInstallId !== connectorInstallId
+          ) {
+            continue;
+          }
+          toolBindings.push({
+            resourceId: toolRow.resourceId,
+            toolRef: toolRow.toolRef,
+            schemaDigest: toolRow.schemaDigest,
+            effect: toolRow.effect,
+            connectorInstallId,
+          });
+        }
         // Nothing left to pin for this install (grant superseded to nothing or
         // resources no longer linked): no pin row, nothing served later.
-        if (allowed.length === 0) continue;
+        if (allowed.length === 0 && toolBindings.length === 0) continue;
         const artifactDigest = digestOf.get(
           `${installId}\u0000${entry.fact.installRevision}`,
         );
@@ -450,6 +577,8 @@ export function createPackageRuntime(
           releaseDigest: artifactDigest,
           grantRevision,
           allowedResourceIds: allowed,
+          allowedToolBindings: toolBindings,
+          installGeneration: entry.fact.installGeneration,
         });
         pins.push({
           installId,
@@ -459,6 +588,7 @@ export function createPackageRuntime(
           artifactDigest,
           grantRevision,
           allowedResourceIds: Object.freeze(allowed),
+          allowedToolBindings: Object.freeze(toolBindings),
         });
       }
       if (pinValues.length > 0) {
@@ -634,6 +764,169 @@ export function createPackageRuntime(
               title: manifest.display.name,
               summary: manifest.display.summary,
               tools: [],
+            });
+          }
+        }
+        return served;
+      });
+    },
+
+    async readPinnedTools(scope, rawInput) {
+      assertTrustedScope(scope);
+      assertRunInput(rawInput);
+      return data.transaction(async (tx) => {
+        await tx.execute(sql`set transaction isolation level read committed`);
+        await tx.execute(sql`set local lock_timeout = '2s'`);
+        await tx.execute(sql`set local statement_timeout = '5s'`);
+        await tx.execute(
+          sql`select set_config('app.tenant_id', ${scope.tenantId}, true), set_config('app.principal_id', ${scope.principalId}, true), set_config('app.user_id', ${scope.actorId}, true), set_config('app.workspace_id', ${scope.workspaceId}, true)`,
+        );
+
+        // The admitted-bot binding, exactly like the pinned Skill read (L-3):
+        // another Bot naming this run is a contract violation, refused loudly;
+        // a run unknown in this scope answers an empty set.
+        const [run] = await tx
+          .select({ expertVersionRef: enterpriseRuns.expertVersionRef })
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.id, rawInput.runId),
+            ),
+          )
+          .limit(1);
+        if (run) {
+          const [admitted] = await tx
+            .select({ agentId: enterpriseExpertVersions.agentId })
+            .from(enterpriseExpertVersions)
+            .where(
+              and(
+                eq(enterpriseExpertVersions.tenantId, scope.tenantId),
+                eq(
+                  enterpriseExpertVersions.expertVersionRef,
+                  run.expertVersionRef,
+                ),
+              ),
+            )
+            .limit(1);
+          if (admitted?.agentId !== rawInput.botId) {
+            throw packageError("INPUT_INVALID");
+          }
+        }
+
+        // Membership revalidation, same as the Skill read: a revoked
+        // principal's next read serves nothing.
+        const [company] = await tx
+          .select({
+            status: enterpriseMemberships.status,
+            epoch: enterpriseMemberships.epoch,
+          })
+          .from(enterpriseMemberships)
+          .where(
+            and(
+              eq(enterpriseMemberships.tenantId, scope.tenantId),
+              eq(enterpriseMemberships.principalId, scope.principalId),
+            ),
+          )
+          .limit(1);
+        const [team] = await tx
+          .select({ status: enterpriseWorkspaceMemberships.status })
+          .from(enterpriseWorkspaceMemberships)
+          .where(
+            and(
+              eq(enterpriseWorkspaceMemberships.tenantId, scope.tenantId),
+              eq(enterpriseWorkspaceMemberships.workspaceId, scope.workspaceId),
+              eq(enterpriseWorkspaceMemberships.principalId, scope.principalId),
+            ),
+          )
+          .limit(1);
+        if (
+          company?.status !== "active" ||
+          company.epoch !== scope.memberEpoch ||
+          team?.status !== "active"
+        ) {
+          return [];
+        }
+
+        // The pinned bindings, narrowed by what is STILL authorized now:
+        // install enabled, install generation unmoved, and an active grant
+        // row with the SAME digest/effect the pin captured. A grant granted
+        // after admission never appears here (it is not in the pin); a grant
+        // revoked since admission disappears (the run's offer narrows).
+        const pinned = await tx
+          .select({
+            installId: pinRows.installId,
+            revision: pinRows.revision,
+            allowedToolBindings: pinRows.allowedToolBindings,
+            installGeneration: pinRows.installGeneration,
+            installStatus: installRows.status,
+            liveGeneration: installRows.generation,
+          })
+          .from(pinRows)
+          .innerJoin(
+            installRows,
+            and(
+              eq(installRows.tenantId, pinRows.tenantId),
+              eq(installRows.workspaceId, pinRows.workspaceId),
+              eq(installRows.id, pinRows.installId),
+            ),
+          )
+          .where(
+            and(
+              eq(pinRows.tenantId, scope.tenantId),
+              eq(pinRows.workspaceId, scope.workspaceId),
+              eq(pinRows.runId, rawInput.runId),
+              eq(pinRows.attemptGeneration, rawInput.attemptGeneration),
+            ),
+          )
+          .orderBy(asc(pinRows.installId));
+
+        const served: PinnedToolBinding[] = [];
+        for (const pin of pinned) {
+          if (pin.installStatus !== "enabled") continue;
+          if (pin.installGeneration !== pin.liveGeneration) continue;
+          const active = await tx
+            .select({
+              resourceId: grantRows.resourceId,
+              toolRef: grantRows.toolRef,
+              schemaDigest: grantRows.schemaDigest,
+              effect: grantRows.effect,
+              connectorInstallId: grantRows.connectorInstallId,
+            })
+            .from(grantRows)
+            .where(
+              and(
+                eq(grantRows.tenantId, scope.tenantId),
+                eq(grantRows.workspaceId, scope.workspaceId),
+                eq(grantRows.installId, pin.installId),
+                eq(grantRows.botId, rawInput.botId),
+                isNull(grantRows.revokedAt),
+                eq(grantRows.resourceKind, "connectorTool"),
+              ),
+            );
+          const activeByKey = new Map(
+            active.map((row) => [`${row.resourceId}\u0000${row.toolRef}`, row]),
+          );
+          for (const binding of toolBindingsOf(pin.allowedToolBindings)) {
+            const live = activeByKey.get(
+              `${binding.resourceId}\u0000${binding.toolRef}`,
+            );
+            if (!live) continue;
+            if (
+              live.schemaDigest !== binding.schemaDigest ||
+              live.effect !== binding.effect ||
+              live.connectorInstallId !== binding.connectorInstallId
+            ) {
+              // The contract moved since pinning: the run's offer narrows to
+              // nothing for this tool until it is re-granted (A06).
+              continue;
+            }
+            served.push({
+              installId: pin.installId,
+              runId: rawInput.runId,
+              attemptGeneration: rawInput.attemptGeneration,
+              botId: rawInput.botId,
+              ...binding,
             });
           }
         }

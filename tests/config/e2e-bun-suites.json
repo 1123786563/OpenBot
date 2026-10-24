@@ -856,12 +856,17 @@
         "server/tests/multitenancy/package-runtime.test.ts",
         "server/tests/multitenancy/package-grants.test.ts",
         "server/tests/multitenancy/package-expert.test.ts",
+        "server/tests/multitenancy/package-dispatch.test.ts",
         "server/tests/package-install.integration.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy/tool-invocation",
       "files": ["server/tests/multitenancy/tool-invocation.test.ts"]
+    },
+    {
+      "name": "server/tests/package-dispatch-call",
+      "files": ["server/tests/package-dispatch-call.test.ts"]
     }
   ],
   "files": [

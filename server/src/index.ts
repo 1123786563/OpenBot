@@ -15,6 +15,7 @@ import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { serve } from "bun";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { packageToolRefFor } from "../../shared/enterprise/plugin-package-contracts";
 import { buildResponsibilityTurn } from "../../shared/responsibility-turn";
 import { createActivityStore } from "./activity/activity";
 import {
@@ -323,6 +324,7 @@ import { createDemonstrationStore } from "./demonstrations/store";
 import type { PlatformScope, RunnerRequestLease } from "./enterprise/contracts";
 import { createUnavailableConversationRoutes } from "./enterprise/conversations/routes";
 import { createConversationService } from "./enterprise/conversations/service";
+import { createPackageDispatchService } from "./enterprise/plugin-packages/dispatch";
 import { createPackageService } from "./enterprise/plugin-packages/install-service";
 import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
 import {
@@ -419,6 +421,7 @@ import {
   createTeamResourceActionService,
   type TeamResourceActionService,
 } from "./enterprise/tenancy/team-public-rules";
+import { createToolInvocationService } from "./enterprise/tenancy/tool-invocation";
 import {
   createCompanyAdminAuthorizer,
   createWorkspaceAdminService,
@@ -646,6 +649,10 @@ import { backfillComposioLogos } from "./plugins/logos";
 import { redirectUriFor } from "./plugins/oauth";
 import { useOpenConnectorClient } from "./plugins/openconnector";
 import { createOpenConnectorClient } from "./plugins/openconnector-adapter";
+import type {
+  PackageToolRunContext,
+  PackageToolSeam,
+} from "./plugins/package-tools";
 import {
   createSharedUseGate,
   createSharedUseStore,
@@ -1396,6 +1403,13 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
 // require a verified CompanyAdminContext issued by the same authorizer the
 // workspace-scope admin routes use, so a platform administrator gains no
 // implicit company authority.
+/**
+ * PKG05 (#464): the loaded, verified catalogue, hoisted so the dispatch chain
+ * shares ONE catalogue instance with the routes (withdrawal facts, manifest
+ * digests) instead of a second boot-time load. Null when the routes degraded.
+ */
+let packageCatalogue: Awaited<ReturnType<typeof loadPackageCatalogue>> | null =
+  null;
 const pluginPackageRoutes = await (async () => {
   if (!enterpriseCapabilities) return createUnavailablePluginPackageRoutes();
   try {
@@ -1410,6 +1424,7 @@ const pluginPackageRoutes = await (async () => {
       index: JSON.parse(indexSource),
       artifactRoot: config.pluginArtifactRoot,
     });
+    packageCatalogue = catalogue;
     const operatorUrl = config.enterpriseOperatorDatabaseUrl;
     // R6-2 (OCR round 6): the degradation itself is unchanged — plan/apply
     // answer 503 and read-only browsing stays up — but it is no longer
@@ -1674,6 +1689,91 @@ export const pluginCatalog = await (async () => {
       : null,
   };
 })();
+// PKG05 (#464): the package execution chain — the runtime (pin writes + the
+// pinned Skill/TOOL reads), the per-call tool-invocation gate (MT032/#75: this
+// composition is its FIRST production consumer) and the dispatch service whose
+// `prepared → dispatched` CAS is the only point a package tool call may reach
+// a vendor. Everything here degrades fail-closed: no catalogue, no enterprise
+// capabilities or no verified plugin-catalog decision service means package
+// tools are refused (PACKAGE_RUN_REQUIRED-shaped refusal), never resolved as
+// legacy grants, while every legacy surface is untouched. The vault is the
+// same AES-GCM envelope seam the credential ownership service rides.
+const packageTooling = await (async () => {
+  if (!enterpriseCapabilities || !packageCatalogue || !pluginCatalog) {
+    return null;
+  }
+  const vault: SecretVault = {
+    seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
+    open: (envelope) => decryptSecret(config.keyEncryptionKey, envelope),
+  };
+  const runtime = createPackageRuntime({
+    data: enterpriseCapabilities.data,
+    artifactRoot: config.pluginArtifactRoot,
+  });
+  const toolInvocation = createToolInvocationService({
+    data: enterpriseCapabilities.data,
+  });
+  const dispatch = createPackageDispatchService({
+    data: enterpriseCapabilities.data,
+    catalogue: packageCatalogue,
+    artifactRoot: config.pluginArtifactRoot,
+    vault,
+    toolInvocation,
+    catalogDecisions: pluginCatalog.decisions,
+    pinnedTools: runtime.readPinnedTools,
+  });
+  /*
+   * The adapter that turns the dispatch service into the store seam. The
+   * scope rides the SERVER-ISSUED run context (the runner's admission), so
+   * the cast re-claims a type the seam deliberately does not know, never a
+   * client value; a context without one is a wiring error, refused closed.
+   */
+  const scopeOf = (context: { runId: string; attemptGeneration: number }) => {
+    const scope = (context as { scope?: unknown }).scope;
+    if (!scope) throw new Error("PACKAGE_RUN_SCOPE_MISSING");
+    return scope as Parameters<typeof dispatch.beginDispatch>[0];
+  };
+  const toolNameOf = (toolRef: string, resourceId: string) =>
+    toolRef.slice(resourceId.length + 1);
+  const packageToolSeam: PackageToolSeam = {
+    async list({ context, botId }) {
+      const tools = await dispatch.listPinnedTools(scopeOf(context), {
+        botId,
+        runId: context.runId,
+        attemptGeneration: context.attemptGeneration,
+      });
+      return tools.map((tool) => {
+        const toolName = toolNameOf(tool.toolRef, tool.resourceId);
+        return {
+          ref: packageToolRefFor(tool.installId, tool.resourceId, toolName),
+          installId: tool.installId,
+          resourceId: tool.resourceId,
+          toolName,
+          effect: tool.effect,
+        };
+      });
+    },
+    prepare: ({ context, botId, toolCallId, ref, args }) =>
+      dispatch.preparePackageTool(scopeOf(context), {
+        runId: context.runId,
+        attemptGeneration: context.attemptGeneration,
+        toolCallId,
+        ref,
+        args,
+        botId,
+      }),
+    dispatch: (ticket, args, { context }) =>
+      dispatch.dispatchPackageTool(scopeOf(context), ticket, args),
+    cancel: (ticket) =>
+      dispatch.cancelDispatch(scopeOf(ticket), {
+        runId: ticket.runId,
+        attemptGeneration: ticket.attemptGeneration,
+        toolCallId: ticket.toolCallId,
+      }),
+  };
+  return { runtime, dispatch, seam: packageToolSeam };
+})();
+
 // MT028 (Issue #71): OAuth callback binding by server-held state. The whole
 // service (initiate/consume/fail) rides the verified restricted operator
 // channel: initiation happens inside a company/team session, but the callback
@@ -2292,6 +2392,9 @@ const signInService = computerGateway
 const sharedUseStore = createSharedUseStore(database);
 
 const pluginStore = createPluginStore({
+  // PKG05: the package dispatch seam (absent without the fail-closed
+  // composition above — package calls then refuse, legacy calls are intact).
+  ...(packageTooling ? { packageTool: packageTooling.seam } : {}),
   database,
   deploymentId: config.deploymentId ?? tenantPackage.tenantId,
   auditStore: bootAuditStore,
@@ -2728,7 +2831,15 @@ const wakeUpStore = createWakeUpStore(database, { auditStore: bootAuditStore });
 
 const loadToolsForActor =
   (actorId: string, initiator: AuditInitiator = PERSON_INITIATOR) =>
-  async (botId: string) => [
+  async (
+    botId: string,
+    /*
+     * PKG05: the admitted run's package context, handed in ONLY by the
+     * enterprise Runner's re-resolution. A legacy build calls this with one
+     * argument and is served exactly what it always was.
+     */
+    packageRun?: PackageToolRunContext,
+  ) => [
     ...wakeUpTools({
       store: wakeUpStore,
       ownerUserId: actorId,
@@ -2748,6 +2859,7 @@ const loadToolsForActor =
       initiator,
       // A Team Bot reaches its owner's accounts, and a teammate's own only with their consent.
       credentialActorFor: teamBots.credentialActorFor(actorId, botId),
+      ...(packageRun ? { packageRun } : {}),
     })),
     ...hostAccessTools({
       broker: hostAccessBroker,
@@ -3191,10 +3303,11 @@ const productionModelSelection = () => ({
  * never the pin write.
  */
 const packageRuntime = enterpriseCapabilities
-  ? createPackageRuntime({
+  ? (packageTooling?.runtime ??
+    createPackageRuntime({
       data: enterpriseCapabilities.data,
       artifactRoot: config.pluginArtifactRoot,
-    })
+    }))
   : undefined;
 
 const enterpriseRunner =
@@ -3213,6 +3326,9 @@ const enterpriseRunner =
         credentialReader: credentialStore,
         preparePackageRun: packageRuntime.prepareWithin,
         readPinnedSkills: packageRuntime.readPinnedSkills,
+        // PKG05: the pinned TOOL read — a run with dispatchable package tools
+        // re-resolves its agent with the run's package context.
+        readPinnedTools: packageRuntime.readPinnedTools,
       })
     : undefined;
 

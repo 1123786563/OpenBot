@@ -178,7 +178,9 @@
       "grantConflict": "授权在你编辑期间发生了变化。下方列表已是最新，请确认后重试。",
       "revokeError": "授权撤销失败，请重试。",
       "revokeForbidden": "你没有权限管理该团队的 Bot 授权。",
-      "revokeConflict": "授权在你查看期间发生了变化。下方列表已是最新，请确认后重试。"
+      "revokeConflict": "授权在你查看期间发生了变化。下方列表已是最新，请确认后重试。",
+      "toolsLabel": "当前修订的连接器工具（授权会替换该 Bot 原有的集合）",
+      "noConnectorTools": "该修订没有为此连接器声明任何工具。"
     },
     "experts": {
       "title": "从模板创建专家",

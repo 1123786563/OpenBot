@@ -177,10 +177,18 @@ function installDTO(
 function detailResources(
   facts: PackageInstallFacts,
   release: PackageReleaseFacts | null,
-): Array<{ id: string; kind: PackageResourceKind; available: boolean }> {
+): Array<{
+  id: string;
+  kind: PackageResourceKind;
+  available: boolean;
+  tools?: Array<{ ref: string; effect: "read" | "write" }>;
+}> {
   const linked = new Set(facts.links.map((link) => link.resourceId));
   const manifest = release?.manifest;
   if (manifest) {
+    // PKG05: a connector resource tells the grant form which tools it may
+    // grant — the same manifest list the server validates the write against.
+    const declared = addedToolsOf(manifest);
     return manifest.resources.map((resource) => ({
       id: resource.id,
       kind: resource.kind,
@@ -188,6 +196,13 @@ function detailResources(
         resource.kind === "managedConnector"
           ? linked.has(resource.id)
           : release?.verified === true,
+      ...(resource.kind === "managedConnector"
+        ? {
+            tools: declared
+              .filter((tool) => tool.ref.startsWith(`${resource.id}:`))
+              .map((tool) => ({ ref: tool.ref, effect: tool.effect })),
+          }
+        : {}),
     }));
   }
   return facts.links.map((link) => ({
