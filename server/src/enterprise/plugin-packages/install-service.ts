@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   type PackageBlocker,
   type PackageGrantDTO,
@@ -8,6 +8,8 @@ import {
   PackageInstallDetailDTOSchema,
   type PackageInstallDTO,
   PackageInstallDTOSchema,
+  type PackageInstallStatusUpdate,
+  PackageInstallStatusUpdateSchema,
   type PackageListQuery,
   type PackageManifestV1,
   type PackagePage,
@@ -21,6 +23,7 @@ import {
 } from "../../../../shared/enterprise/plugin-package-contracts";
 import {
   enterprisePackageChanges as changeRows,
+  enterprisePackageGrants as grantRows,
   enterprisePackageInstalls as installRows,
   enterprisePackageResourceLinks as linkRows,
   enterprisePackagePlans as planRows,
@@ -31,19 +34,25 @@ import type {
   PackageCatalogue,
   PackageReleaseFacts,
 } from "../../plugin-packages/catalogue";
+import type { PlatformScope } from "../contracts";
 import type { CompanyAdminContext } from "../tenancy/workspace-admin";
 import {
   assertPackageWriteTx,
   type PackageApplyResult,
   type PackageClock,
   type PackageInstallFacts,
+  type PackageInstallStatusResult,
   type PackageMutationStore,
   type PackageReadStore,
   type PackageService,
+  type PackageWriteTx,
   packageError,
 } from "./contracts";
 import { createPackageExpertService } from "./experts";
-import { createPackageGrantService } from "./grants";
+import {
+  createPackageGrantService,
+  revokeGrantsForInstallLifecycle,
+} from "./grants";
 import {
   addedToolsOf,
   applyRequestDigest,
@@ -51,6 +60,9 @@ import {
   canonicalJson,
   canonicalPlanInput,
   changeDiff,
+  lifecycleActionOf,
+  lifecycleChangeDiff,
+  lifecycleRequestDigest,
   PLAN_TTL_MS,
   planInputDigest,
   previewBlockers,
@@ -142,38 +154,52 @@ function requiredConnectorBlockers(
 function readinessOf(
   facts: PackageInstallFacts,
   release: PackageReleaseFacts | null,
+  hasActiveGrant: boolean,
 ): PackageInstallDTO["readiness"] {
   if (facts.status !== "enabled") return "unavailable";
   if (!release?.verified) return "unavailable";
   if (requiredConnectorBlockers(release, facts).length > 0) {
     return "needs_connection";
   }
-  return facts.grants.length > 0 ? "ready" : "needs_grant";
+  return hasActiveGrant ? "ready" : "needs_grant";
 }
 
 /**
- * PKG06 (#465): the actions THIS build actually supports on an existing
+ * PKG07 (#466): the actions THIS build actually supports on an existing
  * install, computed from the caller's company role and the install's state.
- * `plan`/`apply` are the version-change verbs (upgrade/rollback), `grant`
- * arrived with PKG03/05 and `createExpert` with PKG04. `disable`/`enable`/
- * `uninstall` belong to PKG07 and are NEVER claimed before it lands — an
- * honest empty array for anyone who cannot manage the install (a member or
- * an auditor browses; the server re-authorizes every write regardless).
+ *
+ *   - `enabled`   → version moves (`plan`/`apply`), `grant`, `createExpert`,
+ *                   and the two ways out of enabled: `disable`, `uninstall`;
+ *   - `disabled`  → `enable` (back on, grants still revoked) and `uninstall`;
+ *   - `uninstalled` (tombstone) → `enable` only: the reinstall path. Version
+ *                   moves and grants start from an enabled install again.
+ *
+ * A caller who cannot manage the install (a member or an auditor browses) gets
+ * an honest empty array; the server re-authorizes every write regardless.
  */
 function allowedActionsOf(
   status: PackageInstallFacts["status"],
   isAdmin: boolean,
 ): PackageInstallAction[] {
-  if (!isAdmin || status !== "enabled") return [];
-  return ["plan", "apply", "grant", "createExpert"];
+  if (!isAdmin) return [];
+  switch (status) {
+    case "enabled":
+      return ["plan", "apply", "grant", "createExpert", "disable", "uninstall"];
+    case "disabled":
+      return ["enable", "uninstall"];
+    default:
+      return ["enable"];
+  }
 }
 
 function installDTO(
   facts: PackageInstallFacts,
   release: PackageReleaseFacts | null,
   caller: { readonly isAdmin: boolean },
+  /** PKG07: the write path knows the live grant state without rebuilding it. */
+  hasActiveGrant: boolean = facts.grants.length > 0,
 ): PackageInstallDTO {
-  const readiness = readinessOf(facts, release);
+  const readiness = readinessOf(facts, release, hasActiveGrant);
   const blockers: PackageBlocker[] = [];
   if (readiness === "unavailable") {
     blockers.push(...releaseOrArtifactBlockers(release));
@@ -247,6 +273,87 @@ function uniqueViolation(error: unknown, constraint: string): boolean {
   return false;
 }
 
+/**
+ * PKG07 (#466): allowed lifecycle transitions. Same-status targets never reach
+ * here — they are the idempotent no-op arm (no second generation bump, no
+ * second revocation). `uninstalled → disabled` has no meaning: a tombstone
+ * either comes back `enabled` (the reinstall path) or stays uninstalled.
+ */
+function lifecycleTransitionAllowed(
+  previous: PackageInstallDTO["status"],
+  next: PackageInstallDTO["status"],
+): boolean {
+  switch (previous) {
+    case "enabled":
+      return next === "disabled" || next === "uninstalled";
+    case "disabled":
+      return next === "enabled" || next === "uninstalled";
+    default:
+      return next === "enabled";
+  }
+}
+
+/**
+ * The install facts a lifecycle DTO is built from, read INSIDE the writer's
+ * operator transaction: the current revision's resource links (readiness needs
+ * the required connectors). Grants themselves are not rebuilt here — an install
+ * DTO carries no grant list; the caller feeds readiness the live grant fact
+ * through `installDTO`'s explicit argument.
+ */
+async function lifecycleFactsWithin(
+  tx: PackageWriteTx,
+  scope: PlatformScope,
+  install: {
+    readonly id: string;
+    readonly packageKey: string;
+    readonly version: string;
+    readonly artifactDigest: string;
+    readonly revision: number;
+    readonly generation: number;
+    readonly status: PackageInstallDTO["status"];
+  },
+): Promise<PackageInstallFacts> {
+  const links = await tx.db
+    .select({
+      resourceId: linkRows.resourceId,
+      kind: linkRows.kind,
+      connectorInstallId: linkRows.connectorInstallId,
+      existingSkillId: linkRows.existingSkillId,
+      expertTemplateRef: linkRows.expertTemplateRef,
+    })
+    .from(linkRows)
+    .where(
+      and(
+        eq(linkRows.tenantId, scope.tenantId),
+        eq(linkRows.installId, install.id),
+        eq(linkRows.revision, install.revision),
+      ),
+    );
+  return {
+    tenantId: scope.tenantId,
+    workspaceId: scope.workspaceId,
+    installId: install.id,
+    packageKey: install.packageKey,
+    version: install.version,
+    artifactDigest: install.artifactDigest,
+    revision: install.revision,
+    generation: install.generation,
+    status: install.status,
+    links: links.map((link) => ({
+      resourceId: link.resourceId,
+      kind: link.kind as PackageResourceKind,
+      connectorInstallId: link.connectorInstallId,
+      existingSkillId: link.existingSkillId,
+      expertTemplateRef: link.expertTemplateRef,
+    })),
+    // Placeholder shape only: PackageInstallDTO carries no grant list, and the
+    // one reader of `grants` on this path is readiness, fed by the explicit
+    // `hasActiveGrant` argument below. Never surfaced as grant facts.
+    grants: [],
+    callerCompanyRole: "tenant_admin",
+  };
+}
+
 export function createPackageService(
   input: CreatePackageServiceInput,
 ): PackageService {
@@ -256,6 +363,26 @@ export function createPackageService(
   const requireMutation = (): PackageMutationStore => {
     if (!mutation) throw packageError("ADMIN_CHANNEL_UNAVAILABLE");
     return mutation;
+  };
+
+  /** Does any active (never revoked) grant row still stand for this install? */
+  const hasActiveGrantWithin = async (
+    tx: PackageWriteTx,
+    scope: PlatformScope,
+    installId: string,
+  ): Promise<boolean> => {
+    const [row] = await tx.db
+      .select({ botId: grantRows.botId })
+      .from(grantRows)
+      .where(
+        and(
+          eq(grantRows.tenantId, scope.tenantId),
+          eq(grantRows.installId, installId),
+          isNull(grantRows.revokedAt),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
   };
 
   return {
@@ -1299,6 +1426,300 @@ export function createPackageService(
         if (uniqueViolation(error, "enterprise_package_install_scope_key_uq")) {
           throw packageError("REVISION_CONFLICT");
         }
+        if (
+          uniqueViolation(error, "enterprise_package_change_idempotency_uq")
+        ) {
+          throw packageError("IDEMPOTENCY_CONFLICT");
+        }
+        throw error;
+      }
+    },
+
+    /**
+     * PKG07 (#466): move one install's lifecycle status under the revision CAS.
+     *
+     * Lock order (Spec §8): the mutation store already holds the member class
+     * exclusively; this method takes the INSTALL class EXCLUSIVELY — the same
+     * advisory key dispatch takes SHARED for its `prepared → dispatched` CAS.
+     * Commit order therefore decides the disable/dispatch race, never
+     * timestamps:
+     *   - a disable/uninstall that commits FIRST moves the generation and the
+     *     status, so a waiting CAS re-reads `status != 'enabled'` /
+     *     `generation != pin.installGeneration` and refuses before any
+     *     transport call (network: 0);
+     *   - a CAS that commits FIRST is already dispatched; the disable revokes
+     *     the grants but the completion write is deliberately NOT gated on
+     *     authorization, so a real external effect keeps its receipt or its
+     *     `unknown` state instead of being relabelled as withdrawn.
+     *
+     * Nothing is deleted: the install row is a tombstone, revisions, Run pins,
+     * change receipts and dispatch evidence all stay.
+     */
+    async updateInstallStatus(
+      scope: PlatformScope,
+      admin: CompanyAdminContext,
+      installId: string,
+      rawInput: PackageInstallStatusUpdate,
+      idempotencyKey: string,
+    ): Promise<PackageInstallStatusResult> {
+      if (
+        typeof idempotencyKey !== "string" ||
+        idempotencyKey.length < 1 ||
+        idempotencyKey.length > 128 ||
+        !/^[\x20-\x7e]+$/.test(idempotencyKey)
+      ) {
+        throw packageError("INPUT_INVALID");
+      }
+      const parsed = PackageInstallStatusUpdateSchema.safeParse(rawInput);
+      if (!parsed.success) throw packageError("INPUT_INVALID");
+      if (
+        typeof installId !== "string" ||
+        installId.trim() === "" ||
+        installId.length > 128
+      ) {
+        throw packageError("RESOURCE_NOT_FOUND");
+      }
+      const input = parsed.data;
+      const store = requireMutation();
+      const requestDigest = lifecycleRequestDigest({
+        installId,
+        status: input.status,
+        expectedRevision: input.expectedRevision,
+      });
+
+      try {
+        return await store.transaction(scope, admin, async (tx) => {
+          assertPackageWriteTx(tx);
+          const installLockKey = JSON.stringify([
+            "enterprise",
+            "package-install",
+            scope.tenantId,
+            installId,
+          ]);
+          await tx.db.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${installLockKey}, 0))`,
+          );
+          const changedAt = now();
+
+          const [receipt] = await tx.db
+            .select({
+              requestDigest: changeRows.requestDigest,
+              response: changeRows.resultJson,
+            })
+            .from(changeRows)
+            .where(
+              and(
+                eq(changeRows.tenantId, scope.tenantId),
+                eq(changeRows.workspaceId, scope.workspaceId),
+                eq(changeRows.actorId, scope.actorId),
+                eq(changeRows.idempotencyKey, idempotencyKey),
+              ),
+            )
+            .limit(1);
+          if (receipt) {
+            // Replay under the same key: the stored answer stands, whatever
+            // the install has done since (a receipt is an audit fact).
+            if (receipt.requestDigest !== requestDigest) {
+              throw packageError("IDEMPOTENCY_CONFLICT");
+            }
+            return {
+              install: PackageInstallDTOSchema.parse(receipt.response),
+              changed: false,
+            };
+          }
+
+          const [install] = await tx.db
+            .select({
+              id: installRows.id,
+              workspaceId: installRows.workspaceId,
+              packageKey: installRows.packageKey,
+              currentVersion: installRows.currentVersion,
+              status: installRows.status,
+              generation: installRows.generation,
+              revision: installRows.revision,
+            })
+            .from(installRows)
+            .where(
+              and(
+                eq(installRows.tenantId, scope.tenantId),
+                eq(installRows.id, installId),
+              ),
+            )
+            .limit(1);
+          // Cross-scope and unknown ids answer the same 404 (the operator RLS
+          // pins the tenant; the workspace predicate is the second line).
+          if (!install || install.workspaceId !== scope.workspaceId) {
+            throw packageError("RESOURCE_NOT_FOUND");
+          }
+          // The CAS names the revision the caller read: an upgrade/rollback
+          // that moved it makes this request stale (409, re-read and retry).
+          // Lifecycle changes move the GENERATION only — revision stays the
+          // version fact PKG06 defined, so a lifecycle retry is idempotent
+          // instead of ratcheting counters.
+          if (input.expectedRevision !== install.revision) {
+            throw packageError("REVISION_CONFLICT");
+          }
+          const [currentRevision] = await tx.db
+            .select({ artifactDigest: revisionRows.artifactDigest })
+            .from(revisionRows)
+            .where(
+              and(
+                eq(revisionRows.tenantId, scope.tenantId),
+                eq(revisionRows.installId, install.id),
+                eq(revisionRows.revision, install.revision),
+              ),
+            )
+            .limit(1);
+          if (!currentRevision) {
+            // The install row names a revision no immutable row proves.
+            throw packageError("RESOURCE_NOT_FOUND");
+          }
+          const release = await catalogue.resolveRelease(
+            install.packageKey,
+            install.currentVersion,
+          );
+          const previousStatus = install.status as PackageInstallDTO["status"];
+
+          const dtoFor = async (
+            status: PackageInstallDTO["status"],
+            generation: number,
+            hasActiveGrant: boolean,
+          ): Promise<PackageInstallDTO> => {
+            const facts = await lifecycleFactsWithin(tx, scope, {
+              id: install.id,
+              packageKey: install.packageKey,
+              version: install.currentVersion,
+              artifactDigest: currentRevision.artifactDigest,
+              revision: install.revision,
+              generation,
+              status,
+            });
+            return installDTO(
+              facts,
+              release,
+              { isAdmin: true },
+              hasActiveGrant,
+            );
+          };
+
+          if (input.status === previousStatus) {
+            // Idempotent no-op: the install already stands where the caller
+            // asked. No generation bump (a retry must not ratchet it) and no
+            // second revocation; the request still earns a receipt so the key
+            // replays deterministically.
+            const hasActiveGrant = await hasActiveGrantWithin(
+              tx,
+              scope,
+              install.id,
+            );
+            const standing = await dtoFor(
+              previousStatus,
+              install.generation,
+              hasActiveGrant,
+            );
+            await tx.db.insert(changeRows).values({
+              tenantId: scope.tenantId,
+              changeId: randomUUID(),
+              workspaceId: scope.workspaceId,
+              installId: install.id,
+              revision: install.revision,
+              actorId: scope.actorId,
+              action: lifecycleActionOf(input.status),
+              diff: lifecycleChangeDiff({
+                action: lifecycleActionOf(input.status),
+                packageKey: install.packageKey,
+                version: install.currentVersion,
+                revision: install.revision,
+                previousStatus,
+                status: previousStatus,
+                previousGeneration: install.generation,
+                generation: install.generation,
+                revokedGrants: 0,
+              }),
+              idempotencyKey,
+              requestDigest,
+              resultJson: standing,
+            });
+            return { install: standing, changed: false };
+          }
+
+          if (!lifecycleTransitionAllowed(previousStatus, input.status)) {
+            throw packageError("PACKAGE_UNSUPPORTED");
+          }
+
+          // Every effective lifecycle move bumps the generation — enabled,
+          // disabled and uninstalled alike. That is what makes an OLD Run pin
+          // (which recorded the generation at admission) unable to dispatch
+          // after a disable AND unable to revive after a re-enable: the
+          // generation never returns to a value a pin holds.
+          const nextGeneration = install.generation + 1;
+          // Disable and uninstall revoke the install's ACTIVE grants in the
+          // same transaction that moves the status (Spec §10). Enable touches
+          // no grant row: a revoked approval never comes back.
+          const revokedGrants =
+            input.status === "enabled"
+              ? 0
+              : await revokeGrantsForInstallLifecycle(
+                  tx,
+                  { tenantId: scope.tenantId, installId: install.id },
+                  changedAt,
+                );
+          await tx.db
+            .update(installRows)
+            .set({
+              status: input.status,
+              generation: nextGeneration,
+              updatedAt: changedAt,
+            })
+            .where(
+              and(
+                eq(installRows.tenantId, scope.tenantId),
+                eq(installRows.id, install.id),
+                // Defence in depth: the row must still be the one this
+                // transaction read under the exclusive install lock.
+                eq(installRows.status, previousStatus),
+                eq(installRows.revision, install.revision),
+              ),
+            );
+          // Re-enable never invents a grant: whatever active rows survive (in
+          // practice none — disable revoked them) is read as a live FACT here,
+          // so readiness says `needs_grant` instead of claiming ready.
+          const hasActiveGrant =
+            input.status === "enabled"
+              ? await hasActiveGrantWithin(tx, scope, install.id)
+              : false;
+          const next = await dtoFor(
+            input.status,
+            nextGeneration,
+            hasActiveGrant,
+          );
+          const action = lifecycleActionOf(input.status);
+          await tx.db.insert(changeRows).values({
+            tenantId: scope.tenantId,
+            changeId: randomUUID(),
+            workspaceId: scope.workspaceId,
+            installId: install.id,
+            revision: install.revision,
+            actorId: scope.actorId,
+            action,
+            diff: lifecycleChangeDiff({
+              action,
+              packageKey: install.packageKey,
+              version: install.currentVersion,
+              revision: install.revision,
+              previousStatus,
+              status: input.status,
+              previousGeneration: install.generation,
+              generation: nextGeneration,
+              revokedGrants,
+            }),
+            idempotencyKey,
+            requestDigest,
+            resultJson: next,
+          });
+          return { install: next, changed: true };
+        });
+      } catch (error) {
         if (
           uniqueViolation(error, "enterprise_package_change_idempotency_uq")
         ) {

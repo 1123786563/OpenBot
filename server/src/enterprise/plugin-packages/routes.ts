@@ -7,6 +7,8 @@ import {
   PackageGrantInputSchema,
   PackageGrantRevokeBodySchema,
   PackageIdempotencyKeySchema,
+  type PackageInstallStatusUpdate,
+  PackageInstallStatusUpdateSchema,
   type PackageListQuery,
   PackageListQuerySchema,
   PackagePlanInputSchema,
@@ -37,6 +39,9 @@ import {
  *   POST /installs/:id/experts/:resourceId    instantiate a Bot from the
  *                                    installed revision's expert template
  *                                    (admin, Idempotency-Key)
+ *   PATCH /installs/:id/status        disable / enable / uninstall an install
+ *                                    under the revision CAS (admin,
+ *                                    Idempotency-Key)
  *
  * Every request first establishes a trusted PlatformScope from the signed-in
  * identity plus the tenant/workspace selection headers. Management writes
@@ -504,6 +509,45 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
       );
       // First creation → 201; replay (same key) → 200 with the SAME agentId.
       return context.json(result.expert, result.created ? 201 : 200);
+    } catch (error) {
+      return respondError(context, error);
+    }
+  });
+
+  routes.patch("/installs/:id/status", async (context) => {
+    // Fail-closed classification guard, same as plan/apply/grants/experts
+    // (PKG07).
+    assertClassifiedCompanyEntrance(
+      "PATCH",
+      "/api/enterprise/plugin-packages/installs/:id/status",
+    );
+    if (!deps.catalogue) return unavailable(context);
+    try {
+      const scope = await deps.resolveScope(context.req.raw);
+      const body = await parseJsonBody(context);
+      const parsed = PackageInstallStatusUpdateSchema.safeParse(body);
+      if (!parsed.success) throw new Error("INPUT_INVALID");
+      const idempotency = PackageIdempotencyKeySchema.safeParse(
+        context.req.header("idempotency-key"),
+      );
+      if (!idempotency.success) throw new Error("INPUT_INVALID");
+      const admin = await resolveAdmin(context.req.raw);
+      const input: PackageInstallStatusUpdate = parsed.data;
+      const result = await requireService().updateInstallStatus(
+        scope,
+        admin,
+        context.req.param("id"),
+        input,
+        idempotency.data,
+      );
+      /*
+       * PATCH answers 200 in every accepted case: an effective transition, a
+       * same-status idempotent no-op and an idempotency-key replay all return
+       * the install as it stands (status + generation say which happened).
+       * A stale revision is 409, an impossible transition 422, another scope
+       * 404 — one identical shape to an unknown id.
+       */
+      return context.json(result.install, 200);
     } catch (error) {
       return respondError(context, error);
     }

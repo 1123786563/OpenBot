@@ -509,12 +509,16 @@ describeDb(
         );
         expect(applied.install.readiness).toBe("needs_grant");
         // PKG06: the apply actor is a revalidated tenant_admin, so the result
-        // names the actions this build supports on an enabled install.
+        // names the actions this build supports on an enabled install. PKG07
+        // (#466) adds the lifecycle verbs — turning off or uninstalling an
+        // enabled install is a real action this build now serves.
         expect(applied.install.allowedActions).toEqual([
           "plan",
           "apply",
           "grant",
           "createExpert",
+          "disable",
+          "uninstall",
         ]);
         expect(applied.install.blockers).toEqual([{ code: "NEEDS_GRANT" }]);
         expect(

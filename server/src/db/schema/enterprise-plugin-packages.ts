@@ -870,11 +870,12 @@ export const enterprisePackageChanges = pgTable(
     }).onDelete("cascade"),
     // Mirror of the authoritative CHECK: PKG02 created it with the install
     // verbs, PKG03 `package_changes_grant_actions` widened it to grant/revoke
-    // receipts and PKG04 `package_changes_create_expert_action` added
-    // createExpert (R4-6 alignment).
+    // receipts, PKG04 `package_changes_create_expert_action` added createExpert
+    // and PKG07 `package_changes_lifecycle_actions` added
+    // disable/enable/uninstall (R4-6 alignment).
     check(
       "enterprise_package_change_action",
-      sql`${table.action} in ('install', 'upgrade', 'rollback', 'grant', 'revoke', 'createExpert')`,
+      sql`${table.action} in ('install', 'upgrade', 'rollback', 'grant', 'revoke', 'createExpert', 'disable', 'enable', 'uninstall')`,
     ),
     check(
       "enterprise_package_change_key",

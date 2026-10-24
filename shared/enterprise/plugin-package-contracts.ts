@@ -558,6 +558,32 @@ export const PackageInstallActionSchema = z.enum([
 
 export type PackageInstallAction = z.infer<typeof PackageInstallActionSchema>;
 
+/**
+ * PKG07 (#466): PATCH …/installs/:id/status body.
+ *
+ * The install's three lifecycle states (`enabled` / `disabled` /
+ * `uninstalled`) plus the CAS target the caller read. The CAS compares the
+ * install REVISION, never a lifecycle counter: a status change moves
+ * `generation` (and never creates a revision row), so a caller who read before
+ * an upgrade is refused 409 and re-reads, while two lifecycle calls are
+ * serialized by the install lock and the transition itself.
+ *
+ * `uninstalled` is a tombstone, not a delete: the row, its revision, Run pins,
+ * audit receipts and dispatch evidence stay. Sending `enabled` from a
+ * non-enabled install is the reinstall path — same install id, generation
+ * increments, previously revoked grants stay revoked.
+ */
+export const PackageInstallStatusUpdateSchema = z
+  .object({
+    status: PackageInstallStatusSchema,
+    expectedRevision: z.number().int().positive(),
+  })
+  .strict();
+
+export type PackageInstallStatusUpdate = z.infer<
+  typeof PackageInstallStatusUpdateSchema
+>;
+
 // ---------------------------------------------------------------------------
 // PKG03A: Bot grants (skill resources only in slice A)
 // ---------------------------------------------------------------------------

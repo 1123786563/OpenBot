@@ -282,3 +282,58 @@ export function useInstantiateExpert(queryClient: QueryClient) {
     }),
   );
 }
+
+/**
+ * One lifecycle attempt (PKG07): the install, the exact target state, the revision the caller
+ * read (the server's CAS) and one idempotency key.
+ */
+export type PackageLifecycleRequest = {
+  scope: PluginPackageScope;
+  installId: string;
+  status: "enabled" | "disabled" | "uninstalled";
+  expectedRevision: number;
+  idempotencyKey: string;
+};
+
+/**
+ * Move one install between enabled / disabled / uninstalled
+ * (PATCH …/installs/:installId/status).
+ *
+ * THE BODY IS EXACTLY `PackageInstallStatusUpdateSchema`: target status plus CAS revision. Scope
+ * and actor ride as the selection headers the server re-derives, never as body fields. One key
+ * per dialog open, so a double click or a retry of the SAME intent replays the server's answer
+ * instead of ratcheting the install generation — the server is what actually guarantees it.
+ *
+ * Success invalidates the captured scope's package tree: the card, the detail facts and the
+ * allowed actions all derive from state this write changed.
+ */
+export function usePackageLifecycle(queryClient: QueryClient) {
+  return useMutation(
+    mutationOptions({
+      mutationFn: async (
+        request: PackageLifecycleRequest,
+      ): Promise<PackageInstallDTO> => {
+        const response = await client(
+          `${PACKAGE_ROOT}/installs/${encodeURIComponent(request.installId)}/status`,
+          {
+            method: "PATCH",
+            body: {
+              status: request.status,
+              expectedRevision: request.expectedRevision,
+            },
+            headers: { "idempotency-key": request.idempotencyKey },
+            tenantId: request.scope.tenantId,
+            workspaceId: request.scope.workspaceId,
+            fallback: "The package install could not be updated.",
+          },
+        );
+        return (await response.json()) as PackageInstallDTO;
+      },
+      onSuccess: async (_install, request) => {
+        await queryClient.invalidateQueries({
+          queryKey: pluginPackageKeys.scope(request.scope),
+        });
+      },
+    }),
+  );
+}

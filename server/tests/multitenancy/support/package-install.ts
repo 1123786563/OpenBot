@@ -69,16 +69,20 @@ export interface PackageTaskOutcomes {
   readonly pkg04?: RunOutcome;
   /** PKG05 (#464): dispatch ledger + connector-tool grants + pin bindings. */
   readonly pkg05?: RunOutcome;
+  /** PKG07 (#466): lifecycle action vocabulary in the changes ledger. */
+  readonly pkg07?: RunOutcome;
 }
 
 /**
  * Applies MT004 (team memberships, required by the isolation fixture), MT008
  * (resource visibility, required by the isolation fixture), MT031 (connector
  * authority the package links reference), PKG02 (install storage), MT016 (the
- * Bot-ownership authority PKG03's grant FK pins), PKG03 (Bot grant storage)
- * and PKG04 (expert provenance storage + restricted creation function) in
- * order through the real migration tool. `up-to-date` is a legitimate
- * rerun; `refused`/`failed` throws with the tool's own reason.
+ * Bot-ownership authority PKG03's grant FK pins), PKG03 (Bot grant storage),
+ * PKG04 (expert provenance storage + restricted creation function), PKG05
+ * (dispatch ledger + connector-tool grants + pin bindings) and PKG07 (the
+ * lifecycle verbs in the changes ledger) in order through the real migration
+ * tool. `up-to-date` is a legitimate rerun; `refused`/`failed` throws with the
+ * tool's own reason.
  *
  * Before the chain runs, `reconcileTaskDrift` removes drizzle-restored
  * objects that the chain's not-yet-journaled steps also create (0163's
@@ -102,6 +106,12 @@ export const PACKAGE_CHAIN_TASK_IDS = [
    * creates the dispatch table, whose FKs pin PKG02's installs.
    */
   "PKG05",
+  /**
+   * PKG07 (Issue #466): widens the changes-ledger action CHECK to the
+   * lifecycle verbs (disable/enable/uninstall). Ordered after every step that
+   * rewrites the same constraint.
+   */
+  "PKG07",
 ] as const;
 
 export async function applyPackageTasks(): Promise<PackageTaskOutcomes> {
@@ -172,6 +182,7 @@ export async function applyPackageTasks(): Promise<PackageTaskOutcomes> {
       pkg03: outcomes[5],
       pkg04: outcomes[6],
       pkg05: outcomes[7],
+      pkg07: outcomes[8],
     };
   } finally {
     await lockAdvisory.$client

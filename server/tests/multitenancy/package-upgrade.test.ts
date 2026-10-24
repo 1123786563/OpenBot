@@ -1202,12 +1202,17 @@ describeDb("PKG06 package upgrade/rollback (real roles)", () => {
       // allowedActions: the company administrator sees exactly the actions
       // this build supports; a plain member sees none. The detail also carries
       // the published-version facts for the upgrade/rollback picker.
+      // PKG07 (#466) extends the set with the lifecycle verbs — an enabled
+      // install can be turned off or uninstalled, which is a real action this
+      // build now serves.
       const adminDetail = await service.get(scopeA1, current.installId);
       expect(adminDetail.allowedActions).toEqual([
         "plan",
         "apply",
         "grant",
         "createExpert",
+        "disable",
+        "uninstall",
       ]);
       expect(adminDetail.latestPublishedVersion).toBe(V3);
       expect(

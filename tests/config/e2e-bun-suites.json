@@ -858,6 +858,7 @@
         "server/tests/multitenancy/package-expert.test.ts",
         "server/tests/multitenancy/package-dispatch.test.ts",
         "server/tests/multitenancy/package-upgrade.test.ts",
+        "server/tests/multitenancy/package-lifecycle.test.ts",
         "server/tests/package-install.integration.test.ts"
       ]
     },
