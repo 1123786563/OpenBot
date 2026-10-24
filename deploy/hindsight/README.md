@@ -34,9 +34,11 @@ explicitly is reported noncompliant, never assumed fine.
 - `backup.sh` — controlled `pg_dump` backup with the retention sweep: a copy is deleted at
   the first run once it has existed for `HINDSIGHT_PRIVACY_BACKUP_RETENTION_DAYS` whole days
   (`find -mtime +N` only matches at N+1 whole days, so the sweep passes N−1; measured boundary:
-  29.0d/29.5d kept, exactly 30.0d deleted). The value resolves host environment → this
-  directory's `hindsight.env` → default 30, and only 1..30 are accepted (0 "keep nothing" is
-  not expressible by a scheduled sweep — rejected loudly; don't schedule the job instead).
+  29.0d/29.5d kept, exactly 30.0d deleted). The value must be declared explicitly in the host
+  environment or in this directory's `hindsight.env`; there is no implicit default — with neither
+  declared the script refuses to run rather than silently sweeping at 30 days. Only 1..30 are
+  accepted (0 "keep nothing" is not expressible by a scheduled sweep — rejected loudly; don't
+  schedule the job instead).
   pg_dump receives the database password over stdin, never as an exec argv/env declaration;
   archives are written owner-only (umask 077), integrity-checked (`gzip -t`) before their
   final name appears, and partial files are removed by an EXIT trap.
@@ -66,7 +68,7 @@ explicitly is reported noncompliant, never assumed fine.
 cp hindsight.env.example hindsight.env   # fill in real gateway URL/key and API key
 docker compose up -d
 curl -s -H "Authorization: Bearer $HINDSIGHT_API_TOKEN" http://127.0.0.1:8888/health
-./backup.sh            # daily via cron; prunes copies once they reach the 30-day window
+./backup.sh            # daily via cron; prunes copies once they reach the configured retention window
 ```
 
 **Linux hosts:** on Docker Engine ≥ 20.10 the compose file pins `host.docker.internal` to the
@@ -77,7 +79,7 @@ the name is provided natively. On engines or network setups without that mapping
 container (e.g. the `docker0` bridge IP). The mapping takes effect when the container is
 (re)created via `docker compose up -d`.
 
-Three-state health check (OpenBot side):
+Four-state health check (OpenBot side):
 
 ```bash
 bun test server/tests/hindsight-health.test.ts
