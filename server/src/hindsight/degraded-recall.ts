@@ -16,7 +16,9 @@
  * imported from the seam modules, never re-implemented here: the row-level review/tombstone
  * gate, #386's temporal visibility for preferences, and #383's live authorization snapshot for
  * source-bound rows (the asking workspace's boundary included; an empty snapshot still answers
- * empty, because nothing is ever guessed into a bank). The one capability the outage takes
+ * empty, because nothing is ever guessed into a bank). The source-bound snapshot is read a
+ * second time after the rows load (FR-5): a row must pass both reads, exactly the revocation
+ * window the indexed recall closes after the remote answers. The one capability the outage takes
  * away is semantic ranking, and the honest substitute is plain text matching: a memory answers
  * only when every whitespace-separated query term appears in its confirmed content — fewer,
  * never wronger, results. The answer says so: `degraded: true` means "text-matched confirmed
@@ -146,10 +148,13 @@ export function createDegradedRecallFacade(
 
   /**
    * The source-bound fallback. The bank set is resolved from a LIVE authorization snapshot
-   * exactly as the indexed recall resolves it — an empty snapshot answers empty here too — and
-   * each row must still pass #383's per-row authorization check against a second live read,
-   * which is what keeps the asking workspace's boundary and source/Bot revocations enforced
-   * under the outage.
+   * exactly as the indexed recall resolves it — an empty snapshot answers empty here too —
+   * and after the authority rows load the authorization is read a SECOND time (FR-5): a row
+   * answers only when BOTH snapshots cover it, so a source, membership or Bot grant revoked
+   * while the rows were loading is dropped instead of answering from the earlier read — the
+   * same TOCTOU clause the indexed recall enforces after the remote answers. The second read
+   * costs one extra authorization snapshot (membership and source grants, plus the asking
+   * Bot's grant when one is asking) per fallback answer.
    */
   async function degradedSourceBoundRecall(
     scope: PlatformScope,
@@ -178,11 +183,21 @@ export function createDegradedRecallFacade(
       grant.tenantId,
       grant.principalId,
     );
+    // The second read (FR-5): what the authorization looks like NOW, after the rows came
+    // back — a revocation that landed while they were loading is caught exactly here.
+    const second: AuthorizationSnapshot = await readScopedAuthorization(
+      authorizations,
+      grant.tenantId,
+      grant.principalId,
+      scope.workspaceId,
+      input.askingAgentId,
+    );
     return rows
       .filter(
         (row) =>
           sourceBoundRecallEligible(row) &&
           stillAuthorized(row, first) &&
+          stillAuthorized(row, second) &&
           contentMatchesQuery(row.content, input.query.trim()),
       )
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
