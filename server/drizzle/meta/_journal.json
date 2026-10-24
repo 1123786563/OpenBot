@@ -1471,6 +1471,13 @@
       "when": 1792857703000,
       "tag": "0209_hindsight_migration_quarantine_reasons",
       "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1792857704000,
+      "tag": "0210_hindsight_pause_controls_user_id",
+      "breakpoints": true
     }
   ]
 }

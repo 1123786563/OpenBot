@@ -87,8 +87,15 @@ export function createMemoryRoutes(
    */
   if (options.pauseControls) {
     const { pause, resolveScope } = options.pauseControls;
-    const identityFor = (request: Request) =>
-      resolveScope(request).then(resolveHindsightBankScope);
+    // The stored identity includes the person's user id: the resolver selected the principal
+    // BY the session actor's id, so it is the same server-side fact, never a wire value
+    // (FIX-W8/RFW1-1 — the legacy user gate reads this attribution instead of joining the
+    // FORCE-RLS directory tables, which fail open under restricted application logins).
+    const identityFor = async (request: Request) => {
+      const scope = await resolveScope(request);
+      const identity = resolveHindsightBankScope(scope);
+      return { ...identity, userId: scope.actorId };
+    };
     routes.get("/pause-controls", async (context) => {
       const identity = await identityFor(context.req.raw);
       return context.json({
@@ -105,12 +112,14 @@ export function createMemoryRoutes(
         await pause.setLearningPaused(
           identity.tenantId,
           identity.principalId,
+          identity.userId,
           patch.learningPaused,
         );
       if (patch.usagePaused !== undefined)
         await pause.setUsagePaused(
           identity.tenantId,
           identity.principalId,
+          identity.userId,
           patch.usagePaused,
         );
       return context.json({
