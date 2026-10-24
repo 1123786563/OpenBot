@@ -349,7 +349,26 @@
       "cancel": "取消",
       "readAria": "读取 {{title}}"
     },
-    "loadError": "无法加载你的记忆。"
+    "loadError": "无法加载你的记忆。",
+    "pause": {
+      "title": "暂停记忆",
+      "description": "需要时，你可以让 Bots 暂停学习或暂停使用你的记忆。",
+      "learning": "暂停学习",
+      "learningHint": "开启后，Bots 不再从对话和已连接应用学到新内容。",
+      "usage": "暂停使用",
+      "usageHint": "开启后，Bots 回答时不再使用你的记忆。",
+      "usagePausedNote": "已确认的记忆不会被删除，只是暂停召回。",
+      "unavailable": "这台 OpenBot 没有提供暂停开关。",
+      "noCompany": "选择一家公司后才能使用这些开关。"
+    },
+    "sync": {
+      "indexed": "已同步",
+      "pending": "待同步",
+      "failed": "同步失败",
+      "failedTitle": "同步失败",
+      "failedBody": "这条记忆还没有同步。OpenBot 会自动重试，不需要你操作。",
+      "close": "关闭"
+    }
   },
   "reachability": {
     "title": "触达方式",

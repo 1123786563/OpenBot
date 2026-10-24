@@ -143,7 +143,8 @@
     "update": "无法更新记忆",
     "forget": "无法忘记该记忆",
     "addSource": "无法添加该来源",
-    "changeSource": "无法更改该来源"
+    "changeSource": "无法更改该来源",
+    "changePause": "无法更改暂停开关"
   },
   "package": {
     "loadActive": "无法加载当前套餐"

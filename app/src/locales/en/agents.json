@@ -349,7 +349,26 @@
       "cancel": "Cancel",
       "readAria": "Read {{title}}"
     },
-    "loadError": "Your memories could not be loaded."
+    "loadError": "Your memories could not be loaded.",
+    "pause": {
+      "title": "Pause memory",
+      "description": "Pause your Bots' learning or recall whenever you need to.",
+      "learning": "Pause learning",
+      "learningHint": "While on, your Bots stop learning new things about you.",
+      "usage": "Pause recall",
+      "usageHint": "While on, your Bots answer without your memories.",
+      "usagePausedNote": "Confirmed memories are kept. Only recall is paused.",
+      "unavailable": "These switches aren't available on this OpenBot.",
+      "noCompany": "Choose a company to use these switches."
+    },
+    "sync": {
+      "indexed": "Synced",
+      "pending": "Waiting to sync",
+      "failed": "Sync failed",
+      "failedTitle": "Sync failed",
+      "failedBody": "This memory hasn't synced yet. OpenBot will retry it for you.",
+      "close": "Close"
+    }
   },
   "reachability": {
     "title": "Reachability",

@@ -31,14 +31,16 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   createMemoryMutationOptions,
   deleteMemoryMutationOptions,
   type MemoryRecord,
+  type MemorySyncSubjectType,
   scopedMemoriesQueryOptions,
+  scopedMemorySyncStatusQueryOptions,
   updateMemoryMutationOptions,
 } from "@/lib/memory";
-import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * A fact the person tells their Bots directly. It reaches every one of them.
@@ -55,9 +57,7 @@ export function RememberFact() {
   // scope in force, and the settle refreshes this scope's own subtree.
   const queryClient = useQueryClient();
   const scope = useScopedCache();
-  const remember = useMutation(
-    createMemoryMutationOptions(queryClient, scope),
-  );
+  const remember = useMutation(createMemoryMutationOptions(queryClient, scope));
   return (
     <>
       <Button
@@ -213,6 +213,7 @@ function MemoryRow({
         </ItemTitle>
         <ItemDescription className="line-clamp-none">
           {memory.provenance} · {status}
+          <MemorySyncBadge memory={memory} />
         </ItemDescription>
         {memory.formedBy === "bot" && (
           <ItemDescription className="line-clamp-none">
@@ -298,6 +299,75 @@ function MemoryRow({
         />
       ) : null}
     </Item>
+  );
+}
+
+/**
+ * The memory's sync status (#384), appended to its provenance line: synced, waiting, or failed.
+ * Only the status surface's own answer draws a badge — a subject the chain does not hold, or a
+ * deployment without the chain, draws nothing rather than a made-up "indexed". A failure is
+ * clickable and explains that the retry comes on its own.
+ */
+function MemorySyncBadge({ memory }: { memory: MemoryRecord }) {
+  const { t } = useTranslation("agents");
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  // The chain holds person-formed memories as preferences and the rest as source-bound rows
+  // (#394's mapping), which is the subject type the status read names.
+  const subjectType: MemorySyncSubjectType =
+    memory.formedBy === "person" ? "preference" : "source_bound";
+  const sync = useQuery(
+    scopedMemorySyncStatusQueryOptions(
+      queryClient,
+      scope,
+      subjectType,
+      memory.id,
+    ),
+  );
+  const [explaining, setExplaining] = useState(false);
+  const state = sync.data?.state;
+  if (state === undefined || state === "unknown-subject") return null;
+  return (
+    <>
+      {" · "}
+      {state === "indexed" ? (
+        t("memory.sync.indexed")
+      ) : state === "pending" ? (
+        t("memory.sync.pending")
+      ) : (
+        <button
+          type="button"
+          className="text-destructive underline underline-offset-4"
+          onClick={() => setExplaining(true)}
+        >
+          {t("memory.sync.failed")}
+        </button>
+      )}
+      {state === "failed" ? (
+        <Dialog
+          onOpenChange={(next) => !next && setExplaining(false)}
+          open={explaining}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("memory.sync.failedTitle")}</DialogTitle>
+              <DialogDescription>
+                {t("memory.sync.failedBody")}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <Button
+                onClick={() => setExplaining(false)}
+                size="sm"
+                variant="outline"
+              >
+                {t("memory.sync.close")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+    </>
   );
 }
 
