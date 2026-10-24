@@ -16,14 +16,14 @@
 | AC5 status/logs/restart 同进程 + HMR | **PASS** | 附着模型锚点 + F4 43/43 + R2-F2-merge 57/57 + N2 run4 AC5 热更三步 |
 | AC6 生产缺证书/域名显式关闭 | **PASS**（仓库/单测面） | admission 总门四分支（#404/#408/#411）+ origin 套件 148 |
 | AC7 存量会话按 D10 | **PASS** | 代际标记三态 + #425 开关/文案 + N0 SATISFIED |
-| AC8 ACME DNS-01 自动签发/续期/告警 | **PASS-with-blocked(env)**（仓库面全绿；live 首签/续期/热加载 BE-1、staging 演练 BE-3） | #407/#415/#429/#430 已验证证据 + TLS 面 main→HEAD 字节一致 |
+| AC8 ACME DNS-01 自动签发/续期/告警 | **PASS-with-blocked(env)**（仓库面 PASS/沿用 main 已验证证据；live 首签/续期/热加载 BE-1、staging 演练 BE-3 维持 blocked(env)） | #407/#415/#429/#430 已验证证据 + TLS 面 main→HEAD 字节一致 |
 | AC9 子域名不泄露 session id、不可枚举 | **PASS** | label=HMAC(secret, sid) 截断 + pass 值零会话身份 + N2 AC9 两轮 PASS |
 
 统计：AC1–AC9 无 FAIL；2 项受 blocked(env) 约束的 live 面挂 BE-1..4。正式子票 32 张：closed 10（仅引用）/ open 22（本轮全部处置，见 §2，其中关票候选 16 张、交终审裁决 3 张（#414/#419/#431）、因 BE/PA 维持 OPEN 3 张（#412/#413/#416））。
 
 ## 1. AC1–AC9 逐项证据表
 
-> 锚点均为 HEAD `d7c0dfe9c` 实测 `file:line`（N0 时点锚点经 F2 增量漂移，本表重锚，订正见 §5）。真机证据（N2）绑定 `75e74b8f9e`（HEAD 第一亲本、F2 并入前的集成分支 HEAD）；F2 增量（pass 层）在 HEAD 由 R2-F2-merge 组合树套件与 F2-R1 独立复跑承载，HEAD 上未重跑浏览器真机链（未决项见 N3 报告 §4）。
+> 锚点均为 HEAD `d7c0dfe9c` 实测 `file:line`（N0 时点锚点经 F2 增量漂移，本表重锚，订正见 §5）。真机证据（N2）绑定 `75e74b8f9e`（HEAD 第一亲本、F2 并入前的集成分支 HEAD）；F2 增量（pass 层）在 HEAD 由 R2-F2-merge 组合树套件与 F2-R1 独立复跑承载，HEAD 上未重跑浏览器真机链（未决项见 N3 报告「已知缺陷与处置」第 2 条）。
 
 ### AC1 预览域隔离（对应 F1/F2/D1/D2）
 
@@ -33,7 +33,7 @@
 | 覆盖票 | #362/#409（已关，引用）+ #425（本轮 N0 SATISFIED）+ #410/#408/#411（纵深） |
 | HEAD 锚点 | `server/src/craft/preview-origin.ts:1135-1149`（pass 门：null ⇒ `refuseResponse(PREVIEW_PASS_REFUSAL, 401)`）、`:146`（拒绝常量）；`server/src/craft/webapp-proxy.ts:467`（CSP `form-action 'self'; frame-src 'self'`，#409）、`:1072`（legacy 关闭原因可展示）；`server/src/craft/config.ts:505-509`（`legacyPreviewEnabled`，默认 true） |
 | 证据与读数 | N2 run4（`verification/N2-live-r2-report.md` §2.1，HEAD=75e74b8f9e）：document.cookie 空 / cookie jar 隔离 / localStorage 隔离 / 跨 origin 401 / form-action CSP 拦截 / 协议层 401（服务端日志增量锚定）全 PASS；run9 AC1 全家复 PASS（§2.2，更正口径见 §6）。N0 `issue-audit-n0-transfer/N0-audit-report.md` §二（#425 五条 AC 逐条 file:line）+ `reviews-n0-transfer/N0-audit-r1.md` B3 独立确认。HEAD 套件：origin 148 / rejection 24（`verification/R2-F2-merge/f2-5suites.log`，exit 0）。前序 `../2026-10-23-craft-preview-404-419/verification/issue-audit/issue-409.md` |
-| 缺口与解除 | ①same-site（host 形态）live = BE-2；②伪造明文 cookie 断言为 harness 缺陷从未真机实测（HTTP 拒绝面由协议层 401 独立钉住，N2-R1-03，建议票见 §7）；③HEAD 上真机链未复跑（见 N3 报告 §4） |
+| 缺口与解除 | ①same-site（host 形态）live = BE-2；②伪造明文 cookie 断言为 harness 缺陷从未真机实测（HTTP 拒绝面由协议层 401 独立钉住，N2-R1-03，建议票见 §7）；③HEAD 上真机链未复跑（见 N3 报告「已知缺陷与处置」第 2 条） |
 
 ### AC2 自身 API 四动词 + Server Actions（D2 不回退）
 
@@ -99,7 +99,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| verdict | **PASS-with-blocked(env)**：仓库交付面（脚本/守护/golden/测试/CI 接线/fail-closed 消费）全绿；**公网 live 首签/续期/热加载 = BE-1（#412，票面 Out of scope）、staging 演练 = BE-3（#431-T4）** |
+| verdict | **PASS-with-blocked(env)**：仓库面 PASS（沿用 main 已验证证据：TLS 面与 main 字节一致、HEAD 未单跑 `test:tls`）；**公网 live 首签/续期/热加载 = BE-1（#412，票面 Out of scope）、staging 演练 = BE-3（#431-T4）** |
 | 覆盖票 | #359（已关引用）+ #407/#415/#412 + #429/#430（已关引用）+ #431-T4 |
 | HEAD 锚点 | `docker/compose/certs/renewal-guard.sh` + `drill-renewal-failure.sh`（续期守护与失败演练）、`docker/compose/certs/entrypoint.sh`、`docker/compose/preview-tls.yml` + `docker/compose/preview-tls/{nginx.conf.template,reload-watcher.sh,start.sh}`（#412 参考拓扑与热加载消费者）；`scripts/tls-pipeline.test.ts:449`（renewal-guard health/alerts/cooldown/recovery 套件）、`:20-34`（管线/fixture 说明）；`server/src/craft/preview-tls-status.ts:55`（server 侧状态消费者，#411）；`reference/tls-certs.md`（文档现居所，原 `docs/tls-certs.md` 已随 af3a73e5f 重组迁移） |
 | 证据与读数 | 前序 `N01-407-report.md`（`bun run test:tls` 117/117 空载+满载）、`N02-415-report.md`（origin 140/140 + tls 133/133 两轮 + 负向对照翻红）、`N04-412-report.md`（compose config OK + 16 项真实容器冒烟 PASS + 0 残留）；**绑定核验（本轮）**：`git diff --stat b117c3c3e HEAD -- docker/compose/certs docker/compose/preview-tls server/src/craft/preview-tls-status.ts scripts/tls-pipeline.test.ts docker/compose/preview-tls.yml` 为空 ⇒ TLS 面与 main 已验证态**字节一致**，既有证据适用 HEAD。ledger 2026-10-24T12:35Z：本轮 240s 预算内 `test:tls` 未跑完（套件含 20–30s 计时用例），不作结论；全量复跑如需以 ≥600s 预算执行（未决项） |
