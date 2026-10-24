@@ -143,7 +143,8 @@
     "update": "Could not update memory",
     "forget": "Could not forget this memory",
     "addSource": "Could not add this source",
-    "changeSource": "Could not change this source"
+    "changeSource": "Could not change this source",
+    "changePause": "Could not change the pause switches"
   },
   "package": {
     "loadActive": "Could not load the active package"
