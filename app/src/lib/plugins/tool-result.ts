@@ -75,6 +75,23 @@ export function withoutUntrustedEnvelope(text: string): string {
 }
 
 /**
+ * A parsed JSON value drawn as a json fence, or the original text fenced when it cannot be redrawn.
+ *
+ * V8's JSON.stringify recurses once per nesting level and gives up (`RangeError: Maximum call
+ * stack size exceeded`) on legal documents far shallower than JSON.parse reads. When it does, the
+ * vendor's own text is what gets drawn — fenced as JSON, unchanged, exactly the bytes the server
+ * sent.
+ */
+function fence(parsed: unknown, original: string): string {
+  try {
+    return `\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``;
+  } catch {
+    // The stringifier recursed past the engine's limit; the text the server sent is the bound.
+    return `\`\`\`json\n${original}\n\`\`\``;
+  }
+}
+
+/**
  * A tool result, as something worth looking at.
  *
  * MCP says a text part, and vendors fill it with anything from plain markdown to a JSON envelope
@@ -109,15 +126,11 @@ export function forDisplay(text: string): string {
       const rest = entries.filter(([key]) => key !== markdown[0]);
       const body = String(markdown[1]);
       if (rest.length === 0) return body;
-      return `${body}\n\n\`\`\`json\n${JSON.stringify(
-        Object.fromEntries(rest),
-        null,
-        2,
-      )}\n\`\`\``;
+      return `${body}\n\n${fence(Object.fromEntries(rest), trimmed)}`;
     }
   }
 
-  return `\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``;
+  return fence(parsed, trimmed);
 }
 
 /**

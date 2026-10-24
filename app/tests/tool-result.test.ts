@@ -142,3 +142,34 @@ describe("telling a failed tool from a successful one", () => {
     expect(toolResultFailed(undefined)).toBe(false);
   });
 });
+
+/**
+ * JSON the parser accepts but the stringifier cannot redraw.
+ *
+ * V8's JSON.stringify recurses once per nesting level and gives up (`RangeError: Maximum call
+ * stack size exceeded`) on legal documents far shallower than JSON.parse reads. forDisplay is the
+ * one door every tool result passes through on the way to the screen, so the drawing falls back to
+ * the text the server sent, fenced as JSON — nothing thrown, nothing lost.
+ */
+describe("JSON that parses but is too deep to redraw", () => {
+  test("a deeply nested array is drawn as the text the server sent", () => {
+    const deep = `${"[".repeat(100000)}0${"]".repeat(100000)}`;
+    let drawn: string | undefined;
+    expect(() => {
+      drawn = forDisplay(deep);
+    }).not.toThrow();
+    expect(drawn).toBe(`\`\`\`json\n${deep}\n\`\`\``);
+  });
+
+  test("a markdown envelope whose rest is too deep to redraw keeps the whole envelope", () => {
+    const deep = `${"[".repeat(100000)}0${"]".repeat(100000)}`;
+    const envelope = `{"results":"# Found\\n\\nBody","meta":${deep}}`;
+    let drawn: string | undefined;
+    expect(() => {
+      drawn = forDisplay(envelope);
+    }).not.toThrow();
+    // The answer's body stays in front; the fence that cannot be redrawn holds the whole
+    // envelope as it arrived, markdown field included.
+    expect(drawn).toBe(`# Found\n\nBody\n\n\`\`\`json\n${envelope}\n\`\`\``);
+  });
+});

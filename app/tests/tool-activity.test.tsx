@@ -464,6 +464,34 @@ test("a step whose drawing throws degrades to the tool boundary's fallback and t
   }
 });
 
+/*
+ * The fold draws a step's output through forDisplay before the boundary mounts. A legal deep JSON
+ * string makes the stringify inside forDisplay throw RangeError during render, and with no
+ * fallback that error takes the whole group down with the one step. Drawn instead as the text that
+ * arrived — the original string fenced as JSON — and the group around it untouched.
+ */
+test("a step whose output is JSON too deep to redraw draws as the text that arrived and the group survives", async () => {
+  await i18next.changeLanguage("en");
+  const deep = `${"[".repeat(100000)}0${"]".repeat(100000)}`;
+  const group = expectGroup(
+    groupToolSteps([
+      search("deep", deep),
+      search("fine", '{"results":"# Standup notes"}'),
+    ])[0],
+  );
+  const page = renderGroup(group);
+  page.openFold();
+  const step = page.stepDisclosures()[0];
+  if (!step) throw new Error("no step disclosure");
+  fireEvent.click(summaryOf(step));
+  // The deep step's own text is on the page, and the neighbour's answer is still drawn.
+  const shown = document.body.textContent ?? "";
+  expect(shown.includes(deep.slice(0, 20))).toBe(true);
+  expect(page.view.getByText("Standup notes")).toBeTruthy();
+  expect(page.view.getByText("Used Notes")).toBeTruthy();
+  page.restore();
+});
+
 test("a refused step reads as blocked and keeps its reason without the marker", () => {
   const group = expectGroup(
     groupToolSteps([
