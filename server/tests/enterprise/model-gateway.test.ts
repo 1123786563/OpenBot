@@ -2729,3 +2729,107 @@ test("a legal tool name still dials direct OpenAI untouched", async () => {
   expect(response.status).toBe(200);
   expect(dialedUrl).toBe("https://api.openai.com/v1/chat/completions");
 });
+
+test("a dotted tool name is refused before dispatch when the effective base URL is direct Anthropic", async () => {
+  // T26 (#489, R13 F13-1): the F11-1 guard used to exempt the anthropic
+  // dial outright, but Anthropic's Messages tool-name charset
+  // (^a-zA-Z0-9_- up to 128) admits no dot either — the same four direct
+  // forms (unset default, explicit /v1, trailing slash, spelled-out
+  // default port) must each refuse the mounted dotted name BEFORE any
+  // upstream dial, not lose the whole request to the upstream charset.
+  for (const environment of [
+    {},
+    { ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1" },
+    { ANTHROPIC_BASE_URL: "https://api.anthropic.com/" },
+    { ANTHROPIC_BASE_URL: "https://api.anthropic.com:443/v1" },
+  ]) {
+    let dialed = 0;
+    const gateway = createModelGateway(
+      deps({
+        environment,
+        selectModel: async () => ({
+          model: { provider: "anthropic", defaultModel: "claude-fixed" },
+          credentialSecretRef: "credential-1",
+        }),
+        fetch: (async () => {
+          dialed++;
+          return Response.json({
+            id: "m",
+            content: [{ type: "text", text: "ok" }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          });
+        }) as typeof fetch,
+      }) as never,
+    );
+    const response = await gateway.handle(
+      req({
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "github.get_current_user",
+              parameters: { type: "object" },
+            },
+          },
+        ],
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      error: { code: string; message?: string };
+    };
+    expect(body.error.code).toBe("MASTRA_TOOL_NAME_INVALID");
+    expect(body.error.message).toBe(
+      "github.get_current_user cannot be mounted on a direct-Anthropic provider (its tool-name charset admits no dot)",
+    );
+    expect(dialed).toBe(0);
+  }
+});
+
+test("a dotted tool name still rides an Anthropic gateway base URL untouched", async () => {
+  // The anthropic arm judges only the public endpoint, exactly as the
+  // openai arm does: an ANTHROPIC_BASE_URL gateway forwards minted names
+  // as-is, so the same mount that direct Anthropic refuses must dispatch
+  // unchanged behind a gateway base URL.
+  let dialedUrl = "";
+  let dialedTools: unknown;
+  const gateway = createModelGateway(
+    deps({
+      environment: { ANTHROPIC_BASE_URL: "https://gateway.example/v1" },
+      selectModel: async () => ({
+        model: { provider: "anthropic", defaultModel: "claude-fixed" },
+        credentialSecretRef: "credential-1",
+      }),
+      fetch: (async (url, init) => {
+        dialedUrl = String(url);
+        dialedTools = (JSON.parse(String(init?.body)) as { tools?: unknown })
+          .tools;
+        return Response.json({
+          id: "m",
+          content: [{ type: "text", text: "ok" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(dialedUrl).toBe("https://gateway.example/v1/messages");
+  expect(dialedTools).toEqual([
+    { name: "github.get_current_user", input_schema: { type: "object" } },
+  ]);
+});

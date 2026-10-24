@@ -98,48 +98,58 @@ function validName(value: unknown): value is string {
 }
 
 /*
- * F11-1 (#489): the direct-OpenAI tool-name guard, a mount→wire backstop.
+ * F11-1 (#489): the direct-provider tool-name guard, a mount→wire backstop.
  * VALID_TOOL_NAME admits dots for brokered tool names (OpenConnector action
- * ids are dotted), and the public OpenAI API's function-name charset
- * (^a-zA-Z0-9_- up to 64) does not — it rejects the WHOLE request, so one
- * granted dotted name would 400 every chat the tool set rides. The guard
- * lives at this dial because it is the only place a run's effective
- * provider, its effective base URL, and the mounted tool names coexist: the
- * route (and with it the provider) resolves lazily per dial, so no earlier
- * mount-time layer can know it. Gateways and OpenAI-compatible endpoints —
- * the entire purpose of OPENAI_BASE_URL — forward minted names as-is and
- * never see this refusal; other providers are untouched. The provider-aware
- * alias layer that would let dotted names ride direct OpenAI stays a
- * deliberate transfers design item (see VALID_TOOL_NAME in mastra/tools.ts),
- * and the code reuses that layer's MASTRA_TOOL_NAME_INVALID vocabulary so
- * one refusal family names the same fact at both layers.
+ * ids are dotted), and neither public API's charset does — OpenAI's
+ * function names (^a-zA-Z0-9_- up to 64), and, on the record since T26
+ * (#489 R13 F13-1), Anthropic's Messages tool names (^a-zA-Z0-9_- up to
+ * 128) — each rejects the WHOLE request, so one granted dotted name would
+ * 400 every chat the tool set rides. The guard lives at this dial because
+ * it is the only place a run's effective provider, its effective base URL,
+ * and the mounted tool names coexist: the route (and with it the provider)
+ * resolves lazily per dial, so no earlier mount-time layer can know it.
+ * Gateways and OpenAI-compatible endpoints — the entire purpose of
+ * OPENAI_BASE_URL — forward minted names as-is and never see this refusal,
+ * and an ANTHROPIC_BASE_URL gateway is judged the same way: only the
+ * public endpoint itself refuses. The provider-aware alias layer that
+ * would let dotted names ride a public API stays a deliberate transfers
+ * design item (see VALID_TOOL_NAME in mastra/tools.ts), and the code
+ * reuses that layer's MASTRA_TOOL_NAME_INVALID vocabulary so one refusal
+ * family names the same fact at both layers.
  */
 const DIRECT_OPENAI_CHAT_COMPLETIONS_URL =
   "https://api.openai.com/v1/chat/completions";
-function directOpenAiDottedToolName(
+const DIRECT_ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
+function directDottedToolName(
   anthropic: boolean,
   tools: unknown[] | undefined,
-  chatUrl: string,
+  url: string,
 ): string | undefined {
-  if (anthropic || !tools) return undefined;
+  if (!tools) return undefined;
   // The dial never connects to this string as written: fetch normalizes it
   // first, and new Request(url).url is that same normalization — the one
-  // that drops the HTTPS default port, so https://api.openai.com:443/…
-  // dials https://api.openai.com/… (F01-R11-M1). Judge directness in the
+  // that drops the HTTPS default port, so https://api.anthropic.com:443/…
+  // dials https://api.anthropic.com/… (F01-R11-M1). Judge directness in the
   // dial's own terms or the two disagree about which endpoint a request
-  // hits. chatCompletionsUrl already folds the unset default, the explicit
-  // /v1 form, and trailing slashes into one URL; host case folds in here
-  // because HTTP hosts are case-insensitive and https://API.OPENAI.COM dials
-  // the same public API. A base URL that cannot even parse is not the public
-  // API — pass it through and let the dial fail on it as it does today,
-  // rather than answer a URL question with a tool-name refusal.
+  // hits. Each provider's resolver already folds the unset default, the
+  // explicit version segment, and trailing slashes into one URL; host case
+  // folds in here because HTTP hosts are case-insensitive and
+  // https://API.ANTHROPIC.COM dials the same public API. A base URL that
+  // cannot even parse is not the public API — pass it through and let the
+  // dial fail on it as it does today, rather than answer a URL question
+  // with a tool-name refusal.
   let dialed: string;
   try {
-    dialed = new Request(chatUrl).url;
+    dialed = new Request(url).url;
   } catch {
     return undefined;
   }
-  if (dialed.toLowerCase() !== DIRECT_OPENAI_CHAT_COMPLETIONS_URL)
+  if (
+    dialed.toLowerCase() !==
+    (anthropic
+      ? DIRECT_ANTHROPIC_MESSAGES_URL
+      : DIRECT_OPENAI_CHAT_COMPLETIONS_URL)
+  )
     return undefined;
   for (const tool of tools) {
     if (!object(tool)) continue;
@@ -1634,16 +1644,20 @@ export function createModelGateway(
       // F11-1 (#489): refuse a dotted tool name the dial's provider cannot
       // carry — named, before the wire — instead of losing the whole request
       // to the upstream charset check.
-      const refusedToolName = directOpenAiDottedToolName(
+      const refusedToolName = directDottedToolName(
         anthropic,
         input.tools,
-        chatCompletionsUrl(environment),
+        anthropic
+          ? anthropicMessagesUrl(environment)
+          : chatCompletionsUrl(environment),
       );
       if (refusedToolName !== undefined)
         return error(
           400,
           "MASTRA_TOOL_NAME_INVALID",
-          `${refusedToolName} cannot be mounted on a direct-OpenAI provider (its function-name charset admits no dot)`,
+          anthropic
+            ? `${refusedToolName} cannot be mounted on a direct-Anthropic provider (its tool-name charset admits no dot)`
+            : `${refusedToolName} cannot be mounted on a direct-OpenAI provider (its function-name charset admits no dot)`,
         );
       let payload: Record<string, unknown>;
       if (anthropic) {

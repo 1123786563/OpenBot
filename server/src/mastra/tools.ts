@@ -107,23 +107,28 @@ export interface MastraToolGuard {
  * no path (a `/` is still refused) and no prototype (mount records are
  * null-prototype) on this runtime.
  *
- * The dot's provider edge, on the record (#489 F03/C-M1): OpenAI's official
- * function-name charset is `^[a-zA-Z0-9_-]{1,64}$` — it admits no dot — so
- * the "strictest provider" claim above holds for the LENGTH only; on charset
- * this runtime is deliberately looser than OpenAI. That looseness is argued
- * safe for the gateway/OpenAI-compatible endpoints brokered tool calls ride
- * (they forward the minted name as-is and accept dotted names); a deployment
- * pointing an `openai` provider straight at api.openai.com is caught at the
- * dial itself: the F11-1 guard in enterprise/models/gateway.ts
- * (directOpenAiDottedToolName) answers 400 MASTRA_TOOL_NAME_INVALID naming
- * the offending mount, so the whole chat fails named and at home rather
- * than lost to the upstream wire charset. The guard judges directness on
+ * The dot's provider edge, on the record (#489 F03/C-M1; the anthropic side
+ * adjudicated by F14 T26 / R13 F13-1): OpenAI's official function-name
+ * charset is `^[a-zA-Z0-9_-]{1,64}$`, and Anthropic's Messages tool-name
+ * charset is the same family at `^[a-zA-Z0-9_-]{1,128}$` — neither admits
+ * a dot — so the "strictest provider" claim above holds for the LENGTH
+ * only; on charset this runtime is deliberately looser than both. That
+ * looseness is argued safe for the gateway/OpenAI-compatible endpoints
+ * brokered tool calls ride (they forward the minted name as-is and accept
+ * dotted names); a deployment pointing an `openai` provider straight at
+ * api.openai.com — or an `anthropic` provider straight at
+ * api.anthropic.com — is caught at the dial itself: the F11-1 guard in
+ * enterprise/models/gateway.ts (directDottedToolName, branch-on-provider
+ * since T26) answers 400 MASTRA_TOOL_NAME_INVALID naming the offending
+ * mount, so the whole chat fails named and at home rather than lost to the
+ * upstream wire charset; an ANTHROPIC_BASE_URL gateway is exempt exactly as
+ * an OpenAI-compatible one is. The guard judges directness on
  * new Request(url).url — the same normalization the dial itself fetches
  * through (F01-R11-M1) — so a defaulted port or host case cannot slip a
- * dotted name past it. If direct-OpenAI ever needs first-class support — a
- * dotted name that RIDES rather than being refused — the shape is a
- * name-alias/scrubbing layer between mount and wire: a follow-up item,
- * deliberately not built here.
+ * dotted name past it. If a direct public API ever needs first-class
+ * support — a dotted name that RIDES rather than being refused — the
+ * shape is a name-alias/scrubbing layer between mount and wire: a follow-up
+ * item, deliberately not built here.
  *
  * Exported so the grant write (plugins/store.ts, where `toolNameFor` mints
  * the name) enforces the SAME rule at configuration time; this mount-time
