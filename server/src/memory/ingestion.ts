@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PACKAGE_TOOL_REF_PREFIX } from "../../../shared/enterprise/plugin-package-contracts";
 import { getLogger } from "../../../shared/logger";
 import { accessFor } from "../plugins/access";
 import type { Decides } from "../plugins/broker";
@@ -205,7 +206,7 @@ export function createMemoryIngestion(options: {
      * read, and never worked around by fabricating a run for it: memory keeps
      * its own contract with connected-app reads, and a package tool is not one.
      */
-    if (source.toolRef.startsWith("pkg:"))
+    if (source.toolRef.startsWith(PACKAGE_TOOL_REF_PREFIX))
       throw new MemoryRefusedError(
         "Package tools run only inside a managed run, so they cannot be memory sources.",
       );

@@ -37,6 +37,8 @@ import { createAuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
 import { auditEvents } from "../src/db/schema";
+import { packageRunForBinding } from "../src/enterprise/plugin-packages/entrypoints";
+import { createMastraTools, VALID_TOOL_NAME } from "../src/mastra/tools";
 import { createMemoryIngestion } from "../src/memory/ingestion";
 import { MemoryRefusedError } from "../src/memory/types";
 import type {
@@ -46,12 +48,12 @@ import type {
 } from "../src/plugins/package-tools";
 import type { BotAccessCheck } from "../src/plugins/routes";
 import { createPluginRoutes } from "../src/plugins/routes";
+import { createPluginStore, type PluginStore } from "../src/plugins/store";
 import {
-  createPluginStore,
-  type PluginStore,
-  toolNameFor,
-} from "../src/plugins/store";
-import { grantedTools } from "../src/plugins/tools";
+  grantedTools,
+  PACKAGE_TOOL_MODEL_PREFIX,
+  packageToolModelName,
+} from "../src/plugins/tools";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -516,7 +518,7 @@ describe("grantedTools package offer (PKG09)", () => {
       actorId: "person",
     });
     expect(withoutContext.map((tool) => tool.name)).not.toContain(
-      toolNameFor(REF),
+      packageToolModelName(REF),
     );
     expect(state.listCalls).toBe(0);
 
@@ -526,7 +528,9 @@ describe("grantedTools package offer (PKG09)", () => {
       actorId: "person",
       packageRun: runContext,
     });
-    const offered = withContext.find((tool) => tool.name === toolNameFor(REF));
+    const offered = withContext.find(
+      (tool) => tool.name === packageToolModelName(REF),
+    );
     expect(offered?.ref).toBe(REF);
     expect(state.listCalls).toBe(1);
 
@@ -547,5 +551,217 @@ describe("grantedTools package offer (PKG09)", () => {
       botId: "notes-bot",
     });
     expect(skills).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (g) governed continuation resume —— B1：审批恢复的生产臂
+//
+// 生产企业部署的包审批停靠必落 governed 续跑（builtin 引擎固定 mastra）。
+// 该臂的两处 grantedTools（续跑工具面 / toolGrantCurrent）必须带 continuation
+// 自己的 run/attempt 上下文，否则 pkg: 工具名永不命中 —— 续跑在 GRANT_REVOKED
+// 处就被拒，或挂载的工具面根本没有那个工具。以下用例用真实 store + 真实包
+// 分支（seam 注入）驱动同一个装配助手 `packageRunForBinding`，并把工具经
+// `createMastraTools` 真挂载后执行。
+// ---------------------------------------------------------------------------
+describe("governed continuation resume (PKG09 B1)", () => {
+  const descriptor: PackageToolDescriptor = {
+    ref: REF,
+    installId: INSTALL,
+    resourceId: "notes",
+    toolName: "lookup",
+    effect: "read",
+  };
+  // The continuation's OWN binding (MastraContinuationStore record binding):
+  // the run and attempt it was admitted and parked under.
+  const binding = {
+    runId: runContext.runId,
+    attemptGeneration: runContext.attemptGeneration,
+  };
+  // The resume's freshly-signed trusted scope (a resolver-issued object in
+  // production; only its pass-through matters to the store's package seam).
+  const trustedScope = Object.freeze({
+    tenantId: "tenant-a",
+    workspaceId: "team-a1",
+  });
+
+  /** Invokes the wrapped Mastra tool the way the resumed engine does. */
+  async function engineCall(
+    wrapped: unknown,
+    input: unknown,
+    context: unknown,
+  ): Promise<unknown> {
+    const execute = (wrapped as { execute?: unknown }).execute;
+    if (typeof execute !== "function")
+      throw new Error("wrapped tool exposes no execute");
+    return (execute as (input: unknown, context: unknown) => Promise<unknown>)(
+      input,
+      context,
+    );
+  }
+
+  test("the package tool's model name is addressable and stable across a resume", () => {
+    // A `pkg:<installId>:<resource>/<tool>` ref minted through `toolNameFor`
+    // carries colons and an unbounded install id — a name no provider (and so
+    // no Mastra mount) accepts. The name below is what the suspension, the
+    // approval continuation and the resumed loop all spell the same way.
+    const name = packageToolModelName(REF);
+    expect(name.startsWith(PACKAGE_TOOL_MODEL_PREFIX)).toBe(true);
+    expect(name).toMatch(/^mcp__pkg_[0-9a-f]{10}_notes_lookup$/);
+    expect(name).toBe(packageToolModelName(REF));
+    expect(VALID_TOOL_NAME.test(name)).toBe(true);
+    // Two installs differ even when they publish the same resource/tool.
+    const other = packageToolModelName(`pkg:${randomUUID()}:${"notes"}/lookup`);
+    expect(other).not.toBe(name);
+    // A long resource/tool pair stays inside the cap and remains addressable.
+    const longRef = `pkg:${INSTALL}:${"r".repeat(60)}/${"t".repeat(60)}`;
+    const longName = packageToolModelName(longRef);
+    expect(longName.length).toBeLessThanOrEqual(64);
+    expect(VALID_TOOL_NAME.test(longName)).toBe(true);
+  });
+
+  test("the resumed loop mounts the run's pinned package tool and completes the parked call once", async () => {
+    const state: SeamState = {
+      listed: [descriptor],
+      listCalls: 0,
+      prepared: 0,
+      dispatched: 0,
+      cancelled: 0,
+    };
+    let preparedToolCallId: string | null = null;
+    const seam: PackageToolSeam = {
+      ...makeSeam(state),
+      async prepare(input) {
+        state.prepared += 1;
+        preparedToolCallId = input.toolCallId;
+        return { outcome: "ticket", ticket };
+      },
+    };
+    const store = storeOf({ seam });
+
+    // THE RESUME TOOL SURFACE: the context comes from the continuation's own
+    // binding through the ONE helper the assembly uses — never from a
+    // proposal, and never absent (its absence is the whole B1 defect).
+    const packageRun = packageRunForBinding({
+      scope: trustedScope,
+      binding,
+    });
+    expect(packageRun).toEqual({
+      runId: binding.runId,
+      attemptGeneration: binding.attemptGeneration,
+      scope: trustedScope,
+    });
+    const offered = await grantedTools({
+      store,
+      botId: "notes-bot",
+      actorId: "person",
+      packageRun,
+    });
+    const granted = offered.find(
+      (tool) => tool.name === packageToolModelName(REF),
+    );
+    expect(granted?.ref).toBe(REF);
+    expect(state.listCalls).toBe(1);
+
+    // Mount it exactly as the governed resume surface does: a model-facing
+    // name that cannot mount would refuse the WHOLE toolset, so this is also
+    // the name-addressability proof for package tools.
+    const mounted = createMastraTools(offered, {
+      approvalBinding: {
+        runId: binding.runId,
+        threadId: "thread-from-continuation",
+        initiator: PERSON,
+      },
+    });
+    expect(Object.keys(mounted)).toContain(packageToolModelName(REF));
+    const answer = await engineCall(
+      mounted[packageToolModelName(REF)],
+      { query: "notes" },
+      { agent: { toolCallId: "call-parked-1" } },
+    );
+    expect(String(answer)).toContain("two notes");
+    expect(state.prepared).toBe(1);
+    expect(state.dispatched).toBe(1);
+    // L4: the engine's call id is the dispatch operation identity, so the
+    // resumed call prepares against the SAME row the parked proposal left —
+    // no orphan, and a replay of the same id can never dispatch twice.
+    expect(preparedToolCallId).toBe("call-parked-1");
+  });
+
+  test("the grant re-check follows the binding: live pins pass, a revoked pin refuses, no binding never finds it", async () => {
+    const state: SeamState = {
+      listed: [descriptor],
+      listCalls: 0,
+      prepared: 0,
+      dispatched: 0,
+      cancelled: 0,
+    };
+    const store = storeOf({ seam: makeSeam(state) });
+    const packageRun = packageRunForBinding({
+      scope: trustedScope,
+      binding,
+    });
+    const name = packageToolModelName(REF);
+    // THE GATE'S OWN EXPRESSION (index.ts `toolGrantCurrent`): the offered
+    // names are what a continuation's tool name is matched against.
+    const currentWithBinding = async () =>
+      (
+        await grantedTools({
+          store,
+          botId: "notes-bot",
+          actorId: "person",
+          packageRun,
+        })
+      ).some((tool) => tool.name === name);
+    expect(await currentWithBinding()).toBe(true);
+
+    // Pre-fix behaviour: with no run context the name is invisible — this is
+    // why every package approval resumed as GRANT_REVOKED.
+    const withoutBinding = await grantedTools({
+      store,
+      botId: "notes-bot",
+      actorId: "person",
+    });
+    expect(withoutBinding.some((tool) => tool.name === name)).toBe(false);
+
+    // Revoked while the approval waited: the pin leaves the offer and the
+    // gate refuses the resume.
+    state.listed = [];
+    expect(await currentWithBinding()).toBe(false);
+  });
+
+  test("the proposal records the run and attempt it was prepared against (L2 binding)", async () => {
+    const state: SeamState = {
+      listed: [descriptor],
+      listCalls: 0,
+      prepared: 0,
+      dispatched: 0,
+      cancelled: 0,
+    };
+    const proposals: Array<{ target?: unknown }> = [];
+    const store = storeOf({
+      seam: makeSeam(state),
+      approvalGate: async (candidate) => {
+        proposals.push(candidate as { target?: unknown });
+        return undefined;
+      },
+    });
+    const offered = await grantedTools({
+      store,
+      botId: "notes-bot",
+      actorId: "person",
+      packageRun: runContext,
+    });
+    await offered
+      .find((tool) => tool.name === packageToolModelName(REF))
+      ?.execute({ query: "notes" });
+    expect(proposals).toHaveLength(1);
+    // The attempt the proposal was prepared against rides the approval
+    // target, so a resume can refuse a proposal whose run moved on.
+    expect(proposals[0]?.target).toMatchObject({
+      runId: runContext.runId,
+      attemptGeneration: runContext.attemptGeneration,
+      installId: INSTALL,
+    });
   });
 });

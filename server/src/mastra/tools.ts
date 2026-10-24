@@ -306,12 +306,21 @@ export function createMastraTools(
         // Vendor answers arrive already enveloped (vendorAnswer); refusals
         // arrive as "Refused." text; any other throw becomes the engine's
         // tool-error, which stream-events wraps with markUntrusted.
+        //
+        // PKG09: the engine's call id travels with the execute. A package
+        // tool keys its dispatch operation on it, so the prepared row a
+        // parked approval left behind is completed by the RESUMED call
+        // (the engine replays the same id) instead of being orphaned beside
+        // a fresh random one.
+        const toolCallContext = operation.toolCallId
+          ? { toolCallId: operation.toolCallId }
+          : undefined;
         try {
           const answer = approvalContext
             ? await withApprovalContext(approvalContext, () =>
-                granted.execute(input),
+                granted.execute(input, toolCallContext),
               )
-            : await granted.execute(input);
+            : await granted.execute(input, toolCallContext);
           return answer;
         } catch (error) {
           if (error instanceof HeadlessToolSuspension) {

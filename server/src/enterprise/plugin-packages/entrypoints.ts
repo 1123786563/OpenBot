@@ -17,13 +17,15 @@
 //     仍由 PKG05 的 dispatch 链在 CAS 处全量重验（args digest、连接
 //     generation、grant、install 状态、Run lease——A07 的另一半）。
 //
-// 拒绝词表（三个，全部给固定拒绝句，不内插任何值）：
-//   PACKAGE_RUN_REQUIRED     —— 没有该 owner 可达的受管 Run（不存在/他人
-//                               Run/无企业身份同形折叠，不泄露存在性）。
-//   PACKAGE_RUN_BOT_MISMATCH —— 审批票面命名的 Bot 不是该 Run 准入的 Bot
-//                               （合同违约，拒绝而非纠正）。
-//   PACKAGE_RUN_SCOPE_LOST   —— Run 归属的成员资格/团队此刻不再成立
-//                               （等待期间被撤；旧提案就地失效）。
+// 拒绝词表（四个，全部给固定拒绝句，不内插任何值）：
+//   PACKAGE_RUN_REQUIRED      —— 没有该 owner 可达的受管 Run（不存在/他人
+//                                Run/无企业身份同形折叠，不泄露存在性）。
+//   PACKAGE_RUN_BOT_MISMATCH  —— 审批票面命名的 Bot 不是该 Run 准入的 Bot
+//                                （合同违约，拒绝而非纠正）。
+//   PACKAGE_RUN_SCOPE_LOST    —— Run 归属的成员资格/团队此刻不再成立
+//                                （等待期间被撤；旧提案就地失效）。
+//   PACKAGE_RUN_ATTEMPT_STALE —— 提案绑定的 attempt 已被取消/重试替换；旧
+//                                提案不能骑到新 attempt 的 pin 上执行。
 
 import { and, eq, sql } from "drizzle-orm";
 import { enterpriseExpertVersions } from "../../db/schema/enterprise-expert-versions";
@@ -33,6 +35,7 @@ import {
   enterprisePrincipals,
   enterpriseTenants,
 } from "../../db/schema/enterprise-tenancy";
+import type { PackageToolRunContext } from "../../plugins/package-tools";
 import type { PlatformScope } from "../contracts";
 import type { DataDatabase, DirectoryDatabase } from "../tenancy/connections";
 import { createScopeResolver } from "../tenancy/store";
@@ -41,7 +44,8 @@ import { createScopeResolver } from "../tenancy/store";
 export type PackageEntrypointRefusalCode =
   | "PACKAGE_RUN_REQUIRED"
   | "PACKAGE_RUN_BOT_MISMATCH"
-  | "PACKAGE_RUN_SCOPE_LOST";
+  | "PACKAGE_RUN_SCOPE_LOST"
+  | "PACKAGE_RUN_ATTEMPT_STALE";
 
 /** The trusted package execution context rebuilt from one persistent run row. */
 export interface RestoredPackageRun {
@@ -69,6 +73,17 @@ export interface PackageEntrypointsService {
     readonly ownerUserId: string;
     readonly runId: string;
     readonly botId: string;
+    /**
+     * L2: the attempt the proposal itself was prepared against, when the
+     * proposal names it (the package approval's `target`). The run row's
+     * CURRENT attempt is not a substitute: a cancel/retry between the
+     * proposal and its approval moves it, and the old approval must then be
+     * refused rather than quietly executed against the replacement attempt's
+     * pins. Absent on proposals written before the binding existed — those
+     * are adjudicated in the report, and the dispatch CAS still re-verifies
+     * the run/lease/pin facts at whatever attempt it is handed.
+     */
+    readonly expectedAttemptGeneration?: number;
   }): Promise<PackageRunRestoration>;
 }
 
@@ -121,7 +136,10 @@ export function createPackageEntrypoints(input: {
         ) ||
         typeof rawInput?.botId !== "string" ||
         !rawInput.botId.trim() ||
-        rawInput.botId.length > 256
+        rawInput.botId.length > 256 ||
+        (rawInput.expectedAttemptGeneration !== undefined &&
+          (!Number.isSafeInteger(rawInput.expectedAttemptGeneration) ||
+            rawInput.expectedAttemptGeneration <= 0))
       ) {
         return refused("PACKAGE_RUN_REQUIRED");
       }
@@ -226,6 +244,26 @@ export function createPackageEntrypoints(input: {
         return refused("PACKAGE_RUN_REQUIRED");
       }
 
+      /*
+       * L2 — THE ATTEMPT BINDING. The row above carries the run's CURRENT
+       * attempt, and that alone would let a proposal approved at attempt N
+       * execute against attempt N+1 after a cancel/retry: the pins, and the
+       * operation identity they key, both moved. When the proposal names the
+       * attempt it was prepared against, a moved generation refuses here —
+       * before the Bot binding, before any scope is signed.
+       *
+       * A proposal that names no attempt (written before this binding) is
+       * adjudicated in the task report rather than guessed at: this service
+       * cannot invent the original attempt, and the dispatch CAS re-verifies
+       * lease, pins and run status at whatever attempt it is handed.
+       */
+      if (
+        rawInput.expectedAttemptGeneration !== undefined &&
+        rawInput.expectedAttemptGeneration !== run.attemptGeneration
+      ) {
+        return refused("PACKAGE_RUN_ATTEMPT_STALE");
+      }
+
       // The admitted Bot, from the run's own expert version — the same binding
       // the pinned reads enforce. The proposal's Bot must be that Bot, or the
       // action is not the action the run proposed.
@@ -294,5 +332,35 @@ export function createPackageEntrypoints(input: {
         },
       };
     },
+  };
+}
+
+/**
+ * PKG09: the package run context a RESUMED governed continuation re-issues.
+ *
+ * The identity is the continuation's OWN binding — the run and the attempt it
+ * was admitted and parked under; the continuation store re-verifies that
+ * binding field-wise at claim time and `reactivateSuspensionLease` re-arms
+ * exactly that attempt before the drive runs, so this is the parked attempt,
+ * never a re-derived current one. The scope is the resume's freshly-signed
+ * trusted scope (a `PlatformScope`), never a stored or deserialized one.
+ *
+ * Exported so the assembly's two resume gates — `toolGrantCurrent`'s grant
+ * re-check and the resumed loop's tool surface — share ONE definition with the
+ * tests that prove them. A package tool is offered only under this context;
+ * without it the tool name can never be found and every package approval would
+ * resume as a revoked grant.
+ */
+export function packageRunForBinding(input: {
+  readonly scope: PlatformScope;
+  readonly binding: {
+    readonly runId: string;
+    readonly attemptGeneration: number;
+  };
+}): PackageToolRunContext {
+  return {
+    runId: input.binding.runId,
+    attemptGeneration: input.binding.attemptGeneration,
+    scope: input.scope,
   };
 }

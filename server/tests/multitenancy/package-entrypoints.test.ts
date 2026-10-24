@@ -44,7 +44,10 @@ import {
   createPackageDispatchService,
   type PackageVendorCaller,
 } from "../../src/enterprise/plugin-packages/dispatch";
-import { createPackageEntrypoints } from "../../src/enterprise/plugin-packages/entrypoints";
+import {
+  createPackageEntrypoints,
+  packageRunForBinding,
+} from "../../src/enterprise/plugin-packages/entrypoints";
 import { addedToolsOf } from "../../src/enterprise/plugin-packages/plans";
 import { createPackageRuntime } from "../../src/enterprise/plugin-packages/runtime";
 import type { SecretVault } from "../../src/enterprise/tenancy/credential-ownership";
@@ -749,6 +752,154 @@ describeDb("PKG09 package entrypoints (real roles)", () => {
         }),
       ).toEqual({ outcome: "refused", code: "DUPLICATE_DISPATCH" });
       expect(vendorCalls).toHaveLength(0);
+    },
+  );
+
+  itDb(
+    "a proposal bound to an attempt the run has left behind refuses (L2 attempt binding)",
+    async () => {
+      const current = await prepareCase();
+      // The run is cancelled/retried while the approval waits: the run row's
+      // attempt generation moves on, and the pins (and operation identity)
+      // that belonged to the old attempt are no longer this run's.
+      await setup.$client.unsafe(
+        `update enterprise_runs set attempt_generation = 2 where id = $1 and tenant_id = $2`,
+        [current.runId, companyA],
+      );
+      // The proposal names the attempt it was prepared against → the restore
+      // refuses instead of executing the old approval against the new pins.
+      const stale = await entrypoints.restoreRunContext({
+        ownerUserId,
+        runId: current.runId,
+        botId: current.botId,
+        expectedAttemptGeneration: 1,
+      });
+      expect(stale).toEqual({
+        outcome: "refused",
+        code: "PACKAGE_RUN_ATTEMPT_STALE",
+      });
+      // Without a bound attempt (a proposal written before the binding) the
+      // restore answers the run's CURRENT attempt — the adjudicated fallback;
+      // the dispatch CAS still refuses it at the lease/pin gates below.
+      const currentAttempt = await entrypoints.restoreRunContext({
+        ownerUserId,
+        runId: current.runId,
+        botId: current.botId,
+      });
+      expect(currentAttempt.outcome).toBe("context");
+      if (currentAttempt.outcome !== "context") return;
+      expect(currentAttempt.run.attemptGeneration).toBe(2);
+      vendorCalls = [];
+      const refusedAtDispatch = await dispatch.preparePackageTool(
+        currentAttempt.run.scope,
+        {
+          runId: current.runId,
+          attemptGeneration: currentAttempt.run.attemptGeneration,
+          toolCallId: `call-${randomUUID()}`,
+          ref: toolRefFor(current.installId),
+          args: { query: "notes" },
+          botId: current.botId,
+        },
+      );
+      // The moved attempt has no admitted binding (its pins belong to the
+      // old attempt) → the run/attempt lease gate refuses, transport 0.
+      expect(refusedAtDispatch).toEqual({
+        outcome: "refused",
+        code: "RUN_LEASE_INVALID",
+      });
+      expect(vendorCalls).toHaveLength(0);
+    },
+  );
+
+  itDb(
+    "the governed continuation's own binding offers the pinned tool and the resume revalidates it (transport 1; moved attempt and revoked grant → 0)",
+    async () => {
+      const current = await prepareCase();
+      const scope = await fixture.scopeFor(OWNER, "team-a1");
+      // What the continuation record holds: the run and the attempt the call
+      // was parked under. The assembly turns it into the server-issued
+      // context through the ONE helper both resume gates use.
+      const packageRun = packageRunForBinding({
+        scope,
+        binding: { runId: current.runId, attemptGeneration: 1 },
+      });
+      expect(packageRun).toEqual({
+        runId: current.runId,
+        attemptGeneration: 1,
+        scope,
+      });
+
+      // THE OFFER SIDE: the grant the parked call rode on is still there, at
+      // exactly this run/attempt — this is the name `toolGrantCurrent` looks
+      // for, and the offer the resumed loop mounts.
+      const pinned = await dispatch.listPinnedTools(packageRun.scope, {
+        botId: current.botId,
+        runId: packageRun.runId,
+        attemptGeneration: packageRun.attemptGeneration,
+      });
+      expect(pinned.map((fact) => fact.toolRef)).toContain(TOOL_LOOKUP);
+
+      // THE RESUME: prepare then dispatch under the same context; the whole
+      // CAS chain revalidates and the vendor is reached exactly once.
+      vendorCalls = [];
+      const prepared = await dispatch.preparePackageTool(packageRun.scope, {
+        runId: packageRun.runId,
+        attemptGeneration: packageRun.attemptGeneration,
+        toolCallId: `call-${randomUUID()}`,
+        ref: toolRefFor(current.installId),
+        args: { query: "notes" },
+        botId: current.botId,
+      });
+      expect(prepared.outcome).toBe("ticket");
+      if (prepared.outcome !== "ticket") return;
+      expect(
+        await dispatch.dispatchPackageTool(packageRun.scope, prepared.ticket, {
+          query: "notes",
+        }),
+      ).toMatchObject({ outcome: "ok" });
+      expect(vendorCalls).toHaveLength(1);
+
+      // A context built from a MOVED attempt reaches no pins: the same
+      // binding shape with the wrong generation refuses, transport 0.
+      const moved = await dispatch.preparePackageTool(packageRun.scope, {
+        runId: packageRun.runId,
+        attemptGeneration: 2,
+        toolCallId: `call-${randomUUID()}`,
+        ref: toolRefFor(current.installId),
+        args: { query: "notes" },
+        botId: current.botId,
+      });
+      expect(moved).toEqual({ outcome: "refused", code: "RUN_LEASE_INVALID" });
+      expect(vendorCalls).toHaveLength(1);
+
+      // Revoked while the approval waited: the pin leaves the offer, so the
+      // grant gate refuses the resume, and a fresh prepare refuses too.
+      await fixture.operator.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('app.tenant_id', ${companyA}, true), set_config('app.workspace_id', ${teamA1}, true)`,
+        );
+        await tx.execute(
+          sql`update enterprise_package_grants
+                set revoked_at = now()
+              where tenant_id = ${companyA} and install_id = ${current.installId}`,
+        );
+      });
+      const revokedPins = await dispatch.listPinnedTools(packageRun.scope, {
+        botId: current.botId,
+        runId: packageRun.runId,
+        attemptGeneration: packageRun.attemptGeneration,
+      });
+      expect(revokedPins).toEqual([]);
+      const revoked = await dispatch.preparePackageTool(packageRun.scope, {
+        runId: packageRun.runId,
+        attemptGeneration: packageRun.attemptGeneration,
+        toolCallId: `call-${randomUUID()}`,
+        ref: toolRefFor(current.installId),
+        args: { query: "notes" },
+        botId: current.botId,
+      });
+      expect(revoked).toEqual({ outcome: "refused", code: "NOT_AVAILABLE" });
+      expect(vendorCalls).toHaveLength(1);
     },
   );
 

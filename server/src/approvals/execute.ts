@@ -96,6 +96,26 @@ export type ApprovedActionDependencies = {
 };
 
 /**
+ * The run attempt a package proposal was PREPARED against, read from the
+ * proposal's own dispatch `target` (the package branch records it beside the
+ * connection generation the approval is already bound to).
+ *
+ * A proposal written before that binding existed carries no attempt; the
+ * caller then restores without one and the dispatch CAS still re-verifies the
+ * run/lease/pin facts. Anything malformed is treated the same way — this is a
+ * binding aid, never a source of authority.
+ */
+export function proposalAttemptOf(action: ApprovalAction): number | undefined {
+  const target = action.target;
+  if (!target || typeof target !== "object" || Array.isArray(target))
+    return undefined;
+  const value = (target as { attemptGeneration?: unknown }).attemptGeneration;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
+/**
  * Carry out one approved action as its own tool would have, so the action's own gate sees the
  * approval and lets it through. Also run under `validateReentry`, where that gate reports the action
  * it would have asked about instead of acting.
@@ -275,6 +295,8 @@ function packageResumeSentence(code: string): string {
       return "This approval names a Bot the run was not admitted for, so it cannot run.";
     case "PACKAGE_RUN_SCOPE_LOST":
       return "The team or membership this run belongs to changed while it waited, so the approval no longer applies.";
+    case "PACKAGE_RUN_ATTEMPT_STALE":
+      return "The run was cancelled or retried while this approval waited, so the approval no longer applies.";
     default:
       return "This package tool runs only inside a managed run, and none is reachable for this approval.";
   }

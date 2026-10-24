@@ -3164,13 +3164,18 @@ export function createPluginStore(options: PluginStoreOptions) {
       scope: `pkg:${ticket.installId}`,
       args: toolArgs,
       /*
-       * The approval is bound to the exact dispatch facts: install/resource,
-       * the tool contract, and the connection generation. A proposal whose
-       * connection was re-bound while it waited therefore is a different
-       * action at the approval digest, and the dispatch revalidation below
-       * refuses it even if some store replays it anyway (A07).
+       * The approval is bound to the exact dispatch facts: the run and the
+       * attempt it was prepared against, install/resource, the tool contract,
+       * and the connection generation. A proposal whose connection was
+       * re-bound while it waited therefore is a different action at the
+       * approval digest, and the dispatch revalidation below refuses it even
+       * if some store replays it anyway (A07). The attempt is what lets a
+       * resume refuse a proposal approved before a cancel/retry instead of
+       * executing it against the replacement attempt's pins (PKG09 L2).
        */
       target: {
+        runId: run.runId,
+        attemptGeneration: run.attemptGeneration,
         installId: ticket.installId,
         resourceId: ticket.resourceId,
         toolName: ticket.toolName,
