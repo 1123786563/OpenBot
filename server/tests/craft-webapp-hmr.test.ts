@@ -1003,7 +1003,7 @@ describe("webappHmrSocketHandlers — the client↔upstream bridge", () => {
 // wiring is pinned at the source level — the same shape the qa-batch1 pins use.
 describe("the boot file's preview HMR wiring (fix-ocr18 #3 — source pin)", () => {
   const source = readFileSync(
-    join(hereDir, "../src/index.ts"),
+    join(hereDir, "../src/assembly/runtime.ts"),
     "utf8",
   );
 
@@ -1181,7 +1181,7 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
 
   test("the boot file gates the upgrade on Origin inside the preview HMR branch, BEFORE the resolver (source pin)", () => {
     const source = readFileSync(
-      join(hereDir, "../src/index.ts"),
+      join(hereDir, "../src/assembly/runtime.ts"),
       "utf8",
     );
     const branch = source.slice(

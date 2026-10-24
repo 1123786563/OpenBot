@@ -1235,7 +1235,7 @@ describeDb(
       "the application assembly reaches enterprise data only through the verified restricted-role URLs",
       async () => {
         const source = await Bun.file(
-          new URL("../../src/index.ts", import.meta.url),
+          new URL("../../src/assembly/runtime.ts", import.meta.url),
         ).text();
         // 企业装配的三个 URL 全部来自受限角色配置变量，并逐一经
         // verifyXxxDatabase 能力校验（校验器拒绝 superuser/bypassrls/越权）。
