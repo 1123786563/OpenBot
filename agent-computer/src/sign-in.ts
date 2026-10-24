@@ -329,11 +329,19 @@ export async function fillSignIn(
         `The sign-in moved to ${originOfUrl(page.url()) || "another page"} to ask for a verification code. Take over the browser to finish signing in there.`,
         true,
       );
+    // A password field on another origin is that page's, not this login's refusal — an identity
+    // provider asking for the password again, say. The person takes over there, the same way they
+    // do for a code step that moved: the server is never told this login was refused.
+    if (refused && originOfUrl(page.url()) !== input.origin)
+      return answer(
+        `The sign-in moved to ${originOfUrl(page.url()) || "another page"}. Take over the browser to finish signing in there.`,
+        true,
+      );
     // On this origin, a password field still showing is the refusal, however code-like the page
     // also looks: the login's own form never went away, so the site has not moved on to a code
     // step — not even when it draws a real one-time-code field beside the unchanged login form.
-    // Read past the origin check above, so a code step that moved the page elsewhere keeps its own
-    // answer: a password field on the page it moved to is that page's, not the login's refusal.
+    // Read after the origin checks above, so a page that moved elsewhere keeps its take-over
+    // answer rather than this origin's reading of the login form.
     if (refused) codeRequested = false;
     return {
       submitted: true,

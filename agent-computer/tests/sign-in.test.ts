@@ -404,6 +404,12 @@ beforeAll(async () => {
         return page(`<form method="post" action="${otherOrigin}/cross-code">
           <label>Password <input name="password" type="password"></label>
           <button>Sign in</button></form>`);
+      // A site that hands the password step itself to another origin, which draws a password
+      // field of its own — an identity provider asking for the password again.
+      if (url.pathname === "/login-cross-password")
+        return page(`<form method="post" action="${otherOrigin}/cross-password">
+          <label>Password <input name="password" type="password"></label>
+          <button>Sign in</button></form>`);
       return new Response("not found", { status: 404 });
     },
   });
@@ -417,6 +423,11 @@ beforeAll(async () => {
         return page(
           `<p>Verify it is really you</p>${codeForm("/cross-check")}`,
         );
+      if (url.pathname === "/cross-password" && request.method === "POST")
+        return page(`<p>Sign in again to continue</p>
+          <form method="post" action="/cross-password">
+          <label>Password <input name="password" type="password"></label>
+          <button>Continue</button></form>`);
       return new Response("not found", { status: 404 });
     },
   });
@@ -720,6 +731,21 @@ describe.skipIf(!asked)("the code the site asks for after the password", () => {
     expect(
       await tab.locator("input[autocomplete=one-time-code]").inputValue(),
     ).toBe("");
+    await tab.close();
+  });
+
+  test("a site that moved the password step to another origin is not read as a refusal", async () => {
+    // The login hands the password step to another origin — an identity provider — and that page
+    // draws a password field of its own. The field is that page's, not this login's refusal: the
+    // person takes over, and the answer never tells the server the password was probably not
+    // accepted, which would reopen a request the retry cannot follow anyway.
+    const tab = await open("/login-cross-password");
+    const result = await fillSignIn(tab, { origin, password: PASSWORD });
+    expect(result.submitted).toBe(true);
+    expect(result.passwordFieldVisible).toBe(false);
+    expect(result.codeRequested).toBe(false);
+    expect(result.error).toContain(`moved to ${otherOrigin}`);
+    expect(result.url.startsWith(`${otherOrigin}/cross-password`)).toBe(true);
     await tab.close();
   });
 });
