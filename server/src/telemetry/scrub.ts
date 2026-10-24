@@ -52,7 +52,15 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
    * Each of these refuses a value that begins with `-`, so a flag left bare, which asks for the
    * password interactively, does not swallow the flag that follows it. And each ends where its
    * command does: at a line break, which starts another command whose `-p` is a port again, though
-   * not at a line continued with a backslash, which is the same command.
+   * not at a line continued with a backslash, which is the same command. A bare value stops at
+   * `;`, `|` and `&` too — in the shell's reading they start another command, an unquoted password
+   * cannot contain them, and redacting past one would make the command that followed disappear
+   * from the record (`docker login -p pass;whoami` folds `pass;whoami` into one token and the
+   * audit trail loses `whoami`). Nor does a bare value begin with one: a token whose first
+   * character is a separator is not a single argv word — `docker login -p;whoami` asks for the
+   * password at the prompt and then runs `whoami` — so there is nothing on the line to redact,
+   * and refusing it whole keeps the command after the separator in the record. A quoted value
+   * keeps its separators: inside the quotes they are part of the word, not the shell's.
    *
    * A quoted argument is consumed whole, quotes and all. The scan still stops at a line break
    * inside the quotes — a quote that spans lines is a quote the shell itself would not keep to one
@@ -67,7 +75,7 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // port (`mysql -h db -P3306`), and upstream's `i` reads it as a password — redacting the port while
   // a real `-phunter2` later in the same command line survives.
   [
-    /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
+    /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)("[^"]*"|'[^']*'|[^\s'";|&-][^\s;|&]*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `docker login -p secret`, where `-p` is the password rather than a port. docker's grammar puts
@@ -76,7 +84,7 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // subcommand cannot: `run` is not a flag, which is what keeps `docker run login -p 8080:80` a
   // port mapping instead of a registry password.
   [
-    /(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
+    /(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)("[^"]*"|'[^']*'|[^\s'";|&-][^\s;|&]*)/gi,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `sshpass -p secret ssh user@host`, where `-p` is the password handed to ssh. Only sshpass's own
@@ -87,24 +95,32 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // getopt folds `-v` into the next option, so `-vp hunter2` is `-v -p hunter2`, and a tail like
   // `\S*` would swallow the whole cluster — `p` and all — and never reach the password. Instead the
   // cluster's `p` is where the lead ends: the terminator matches a `-p` on its own or at the end of
-  // such a cluster (`-[^\sfdP]*p`), with `f`, `d` and `P` kept out of the cluster so `-Pprompt`
+  // such a cluster (`-[^\sfdPp]*p`), with `f`, `d` and `P` kept out of the cluster so `-Pprompt`
   // stays a prompt value rather than reading as a cluster ending in a password flag. The cluster
-  // arm still takes a lowercase `p` only; uppercase `-P` never ends the lead as one.
+  // keeps a lowercase `p` out too: a `p` allowed inside would let the greedy run backtrack into an
+  // attached password that itself contains one — `sshpass -phunter2p ssh user@host` read the
+  // password as the cluster and redacted the `ssh` after it, leaving the password whole in the
+  // lead — so, with `p` barred from the cluster, the `p` that ends the terminator can only be the
+  // flag's own. The cluster arm still takes a lowercase `p` only; uppercase `-P` never ends the
+  // lead as one.
   [
-    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:"[^"]*"|'[^']*'|[^\s'"-]\S*)|-[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdP]*p[ \t]*)("[^"]*"|'[^']*'|[^\s'"-]\S*)/g,
+    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:"[^"]*"|'[^']*'|[^\s'";|&-][^\s;|&]*)|-[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdPp]*p[ \t]*)("[^"]*"|'[^']*'|[^\s'";|&-][^\s;|&]*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `SSHPASS=secret sshpass -e ssh host`: the env form sshpass itself recommends over `-p`, because
   // the password stays out of the process list. `-e` carries no value of its own — the assignment in
   // front is the secret — and SSHPASS names no full word the NAME=value rule matches (no
-  // PASSWORD/PASSWD/PWD inside it), so without this rule the password survives verbatim.
+  // PASSWORD/PASSWD/PWD inside it), so without this rule the password survives verbatim. Its bare
+  // arm stops at `;`, `|` and `&` for the same reason the positional values above do: they end the
+  // assignment and start another command, which must stay in the record — and does not begin with
+  // one either (`SSHPASS=;cmd` is an empty assignment before another command, no secret to take).
   [
-    /(\bSSHPASS\s*=\s*)("[^"]*"|'[^']*'|[^\s'"]+)/g,
+    /(\bSSHPASS\s*=\s*)("[^"]*"|'[^']*'|[^\s'";|&][^\s;|&]*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `redis-cli -a secret`, `-asecret` and `--pass secret`, the same shape under redis-cli's names.
   [
-    /(\bredis-cli\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))("[^"]*"|'[^']*'|[^\s'"-]\S*)/gi,
+    /(\bredis-cli\b(?:[^|;&\\\r\n"']|"[^"\r\n]*"|'[^'\r\n]*'|\\[\s\S])*?(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))("[^"]*"|'[^']*'|[^\s'";|&-][^\s;|&]*)/gi,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // A quoted key in a JSON body: `-d '{"password":"x"}'`, or `-d "{\\"password\\":\\"x\\"}"` once the

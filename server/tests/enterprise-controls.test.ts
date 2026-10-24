@@ -431,6 +431,35 @@ describe("scrubbing commands", () => {
       "sshpass -P authprompt -p glorbwibble ssh deploy@host.example.test",
       "sshpass -P authprompt -p [REDACTED] ssh deploy@host.example.test",
     ],
+    // An attached password that itself contains a `p` (F04-6): the cluster before the
+    // terminator's `p` must not read back into the password, or the password leaks whole and the
+    // word after it is redacted in its place. A password that is exactly `p` is the next word.
+    [
+      "sshpass -phunter2p ssh deploy@host.example.test",
+      "sshpass -p[REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -papple ssh host.example.test",
+      "sshpass -p[REDACTED] ssh host.example.test",
+    ],
+    [
+      "sshpass -pp ssh deploy@host.example.test",
+      "sshpass -p[REDACTED] ssh deploy@host.example.test",
+    ],
+    // Shapes that keep working through that fix: a getopt cluster folds `-v` into the password
+    // flag; `-P` takes a prompt and `-f` a file, each with the word after it; none is a password.
+    [
+      "sshpass -vp hunter2 ssh deploy@host.example.test",
+      "sshpass -vp [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -Pprompt -p glorbwibble ssh deploy@host.example.test",
+      "sshpass -Pprompt -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "sshpass -f id_rsa -p glorbwibble ssh deploy@host.example.test",
+      "sshpass -f id_rsa -p [REDACTED] ssh deploy@host.example.test",
+    ],
     // The env form sshpass itself recommends over `-p`: the password is in the assignment, `-e`
     // carries no value of its own, and SSHPASS names no full word the NAME=value rules match.
     [
@@ -461,6 +490,34 @@ describe("scrubbing commands", () => {
     ["mysqldump -pglorbwibble appdb", "mysqldump -p[REDACTED] appdb"],
     // An uppercase -P is the attached port, not the password: only the lowercase flag reads as one.
     ["mysql -h db -P3306 -phunter2 app", "mysql -h db -P3306 -p[REDACTED] app"],
+    // A bare value ends where its command does (F04-4): in the shell's reading `;`, `|` and `&`
+    // start another command, so the redaction must not swallow what follows them.
+    ["docker login -p glorbwibble;whoami", "docker login -p [REDACTED];whoami"],
+    ["mysql -ppw|tee log", "mysql -p[REDACTED]|tee log"],
+    ["redis-cli -a glorbwibble&&ls", "redis-cli -a [REDACTED]&&ls"],
+    [
+      "sshpass -p glorbwibble;whoami ssh host.example.test",
+      "sshpass -p [REDACTED];whoami ssh host.example.test",
+    ],
+    // The SSHPASS= env form's bare arm shares the root cause and gets the same fix.
+    [
+      "SSHPASS=glorbwibble;whoami sshpass -e ssh deploy@host.example.test",
+      "SSHPASS=[REDACTED];whoami sshpass -e ssh deploy@host.example.test",
+    ],
+    // The same fix in the sshpass option loop: `-f`'s file stops at the separator, and the word
+    // after it belongs to another command — it is not a password to redact.
+    ["sshpass -f pass;ls -p x", "sshpass -f pass;ls -p x"],
+    // A separator with no value in front of it (R1-F1): a bare token does not begin with `;`, `|`
+    // or `&` — that position starts another command, and an empty value is nothing to redact —
+    // so the line survives whole instead of folding the next command into the redaction.
+    ["redis-cli -a;whoami", "redis-cli -a;whoami"],
+    ["SSHPASS=;cmd sshpass -e ssh h", "SSHPASS=;cmd sshpass -e ssh h"],
+    // A separated -p still means the password is prompted for, separators or not: the word after
+    // it is a database.
+    ["mysql -p pw|tee log", "mysql -p pw|tee log"],
+    // Separators inside a quoted password are part of the secret (T8a): the quote, not the `;`,
+    // ends the value.
+    ['mysql -h db -p"pa;ss" app', "mysql -h db -p[REDACTED] app"],
     [
       "open redis://:glorbwibble@cache:6379/0",
       "open redis://:[REDACTED]@cache:6379/0",
