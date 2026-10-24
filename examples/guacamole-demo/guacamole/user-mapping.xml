@@ -1,0 +1,9 @@
+<user-mapping>
+  <authorize username="demo" password="demo-local-only">
+    <connection name="OpenBot native desktop demo">
+      <protocol>vnc</protocol>
+      <param name="hostname">desktop</param>
+      <param name="port">5900</param>
+    </connection>
+  </authorize>
+</user-mapping>
