@@ -440,11 +440,23 @@ import {
   startGatewayKeyStateSyncScheduler,
 } from "./gateway/key-state-sync";
 import { assertGatewayReadyForBilling } from "./gateway/readiness";
+import { createAnswerEvidenceService } from "./hindsight/answer-evidence";
+import {
+  backupManifestDirFromEnv,
+  reconcileControlledBackups,
+} from "./hindsight/backup-registry";
+import { createCleanupEvidenceService } from "./hindsight/cleanup-evidence";
+import { parseHindsightPrivacy } from "./hindsight/config";
 import {
   createDegradedRecallFacade,
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
 } from "./hindsight/degraded-recall";
+import {
+  createDerivedJudgmentService,
+  createDrizzleDerivedJudgmentRecords,
+} from "./hindsight/derived-judgments";
+import { createDerivedJudgmentReviewService } from "./hindsight/judgment-review";
 import { createDrizzlePauseControls } from "./hindsight/pause-controls";
 import {
   createPersonalMemoryContext,
@@ -457,6 +469,8 @@ import {
 } from "./hindsight/preference-recall";
 import { createRestoreRecoveryService } from "./hindsight/restore-recovery";
 import { createRevocationService } from "./hindsight/revocation";
+import { createDrizzleRevocationLedger } from "./hindsight/revocation-ledger";
+import type { HindsightRouteServices } from "./hindsight/routes";
 import {
   createDrizzleSourceBoundAuthorizations,
   createDrizzleSourceBoundRecords,
@@ -4058,6 +4072,23 @@ const governedWakeUpTurn =
  * Hindsight service cannot empty the block or resurrect anything — exactly
  * the #385/#395 discipline.
  */
+/*
+ * The #387–#391 seams' HTTP face, filled in below only when BOTH halves exist: the
+ * Hindsight chain (the block) and the trusted scope resolver (enterprise capabilities).
+ * Without the resolver no personal placement can be derived, so the routes stay
+ * unmounted rather than guessing an identity — the r1 audit's RG4-1/RG5-1 wiring gap,
+ * closed here.
+ */
+let hindsightRouteServices: HindsightRouteServices | undefined;
+/*
+ * The remote-deletion retry drain (#391's "失败可重试"): the ledger's unfinished deletions are
+ * re-issued oldest-first, one document per call, on its own timer. Scheduling is SEPARATE from
+ * FIX-W2's sync queue (which owns the retain drain): this pass only retries deletes the block
+ * already recorded, so it neither depends on nor duplicates that queue. `repeatAfterEach`
+ * measures the next gap from the END of a pass, so one slow service answer can never stack
+ * overlapping drains (RG5-2's latency note); the block itself never waits on this loop.
+ */
+let hindsightDeletionSweep: Repeating | undefined;
 if (
   process.env.HINDSIGHT_API_URL?.trim() &&
   process.env.HINDSIGHT_API_TOKEN?.trim() &&
@@ -4079,17 +4110,118 @@ if (
     database,
     hindsightRevocations,
   );
+  // The authority-table record stores the seams share: one construction each, reused by
+  // the recall services, the judgment seams and the evidence seam, so every read of a
+  // row goes through one store (never a second copy with its own predicate drift).
+  const hindsightPreferenceRecords = createDrizzlePreferenceRecords(database);
+  const hindsightSourceBoundRecords = createDrizzleSourceBoundRecords(database);
+  const hindsightJudgmentRecords =
+    createDrizzleDerivedJudgmentRecords(database);
   const hindsightPreferences = createPreferenceRecallService(
-    createDrizzlePreferenceRecords(database),
+    hindsightPreferenceRecords,
     hindsightServiceConfig,
     { pause: hindsightPause, recovery: hindsightRecovery.gate },
   );
   const hindsightSourceBound = createSourceBoundRecallService(
-    createDrizzleSourceBoundRecords(database),
+    hindsightSourceBoundRecords,
     hindsightAuthorizations,
     hindsightServiceConfig,
     { pause: hindsightPause, recovery: hindsightRecovery.gate },
   );
+  /*
+   * The judgment chain (#388 propose/list, #389 review and forget). The review seam gets
+   * the same pause and recovery gates as the recall seams and the durable revocation
+   * ledger #390 attaches to every forget; the sync-queue `work` recorder stays unwired
+   * until FIX-W2 instantiates the queue — a confirm's retain is eager, and its retry row
+   * lands when that assembly arrives (integration conflict left to the orchestrator).
+   */
+  const hindsightJudgments = createDerivedJudgmentService(
+    hindsightPreferenceRecords,
+    hindsightSourceBoundRecords,
+    hindsightJudgmentRecords,
+    hindsightAuthorizations,
+    { pause: hindsightPause },
+  );
+  const hindsightJudgmentReview = createDerivedJudgmentReviewService(
+    hindsightPreferenceRecords,
+    hindsightSourceBoundRecords,
+    hindsightJudgmentRecords,
+    hindsightAuthorizations,
+    hindsightServiceConfig,
+    {
+      pause: hindsightPause,
+      recovery: hindsightRecovery.gate,
+      revocations: createDrizzleRevocationLedger(database),
+    },
+  );
+  const hindsightEvidence = createAnswerEvidenceService(
+    hindsightPreferences,
+    hindsightSourceBound,
+    hindsightPreferenceRecords,
+    hindsightSourceBoundRecords,
+    hindsightAuthorizations,
+    hindsightJudgmentReview,
+  );
+  const hindsightCleanup = createCleanupEvidenceService(
+    database,
+    hindsightServiceConfig,
+  );
+  hindsightDeletionSweep = repeatAfterEach(async () => {
+    try {
+      const pass = await hindsightRevocations.retryOutstandingDeletions();
+      if (pass.considered > 0)
+        log.info(
+          {
+            type: "hindsight-deletion-drain",
+            considered: pass.considered,
+            confirmed: pass.confirmed,
+            stillOutstanding: pass.stillOutstanding,
+            timestamp: new Date().toISOString(),
+          },
+          "hindsight-deletion-drain",
+        );
+    } catch (error) {
+      log.error(
+        {
+          type: "hindsight-deletion-drain-error",
+          error: error instanceof Error ? error.name : "UnknownError",
+          detail: error instanceof Error ? error.message : String(error),
+          timestamp: new Date().toISOString(),
+        },
+        "hindsight-deletion-drain-error",
+      );
+    }
+  }, 60_000);
+  const hindsightBackupManifestDir = backupManifestDirFromEnv(process.env);
+  if (enterpriseCapabilities) {
+    hindsightRouteServices = {
+      scopes: enterpriseCapabilities.scopes,
+      evidence: hindsightEvidence,
+      judgments: hindsightJudgments,
+      review: hindsightJudgmentReview,
+      revocations: hindsightRevocations,
+      cleanup: hindsightCleanup,
+      recovery: hindsightRecovery,
+      // Read per request: a redeployed declaration is honored by the next status read,
+      // and an undeclared window reports the payload leg unevidenced, never measured.
+      // (parseHindsightPrivacy takes the declaration's narrow key shape, so the read
+      // projects process.env onto exactly the keys that module owns.)
+      operationRetentionDays: () =>
+        parseHindsightPrivacy({
+          HINDSIGHT_PRIVACY_OPERATION_RETENTION_DAYS:
+            process.env.HINDSIGHT_PRIVACY_OPERATION_RETENTION_DAYS,
+        }).operationRetentionDays,
+      // The backup job's manifests, when the deployment made its directory visible here.
+      reconcileBackups: hindsightBackupManifestDir
+        ? () =>
+            reconcileControlledBackups({
+              database,
+              manifestDirectory: hindsightBackupManifestDir,
+              registry: hindsightCleanup,
+            })
+        : null,
+    };
+  }
   const personalMemoryContext = createPersonalMemoryContext({
     recall: createDegradedRecallFacade(
       hindsightPreferences,
@@ -8174,6 +8306,9 @@ const app = createApp(
       },
     },
     memory: { store: personalMemoryStore, ingestion: memoryIngestion },
+    // Hindsight's own surface family; undefined leaves /api/hindsight unmounted (see the
+    // assembly block that fills it — Hindsight chain AND trusted scopes, or nothing).
+    ...(hindsightRouteServices ? { hindsight: hindsightRouteServices } : {}),
     proactive: { store: proactiveStore, engine: proactiveEngine },
     responsibilities: {
       store: responsibilityStore,
@@ -8429,6 +8564,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     openMuseTaskSweep.stop();
     openMuseTaskReaper.stop();
     memorySweep.stop();
+    // The deletion retry drain (#391): stop claiming new passes; an in-flight one finishes.
+    hindsightDeletionSweep?.stop();
     proactiveSweep.stop();
     approvalSweep.stop();
     personResponseSweep.stop();

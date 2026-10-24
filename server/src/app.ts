@@ -150,6 +150,10 @@ import {
   createGatewayReadinessService,
   installGatewayReadinessService,
 } from "./gateway/readiness";
+import {
+  createHindsightRoutes,
+  type HindsightRouteServices,
+} from "./hindsight/routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
@@ -564,6 +568,13 @@ export function createApp(
       webhooks: Parameters<typeof createDeliveryWebhookRoutes>[0];
     };
     memory?: { store: MemoryStore; ingestion: MemoryIngestion };
+    /**
+     * The Hindsight memory surfaces (#387–#391): evidence, judgment review, revocation,
+     * cleanup progress and the operator restore/backup-registration routes. Present only
+     * where the assembly built the seams AND a trusted scope resolver exists; absent mounts
+     * nothing, the same "not configured, not broken" answer every optional neighbour gives.
+     */
+    hindsight?: HindsightRouteServices;
     proactive?: { store: ProactiveStore; engine: ProactiveEngine };
     responsibilities?: {
       store: ResponsibilityStore;
@@ -2788,6 +2799,19 @@ export function createApp(
         coworker.memory.ingestion,
         requireUser,
       ),
+    );
+  /*
+   * Hindsight's own family (#387–#391): the seams' identities arrive only as server-issued
+   * scopes from the deployment's resolver, which is why `requireUser` is added HERE (the
+   * middleware belongs to this assembly) and the operator routes re-check the administrator
+   * role themselves. Separate from `/api/memory`, whose connector-facing surface is a
+   * different audience; a deployment without the trusted tenancy connection mounts neither
+   * the routes nor a stand-in that guesses a scope.
+   */
+  if (coworker?.hindsight)
+    app.route(
+      "/api/hindsight",
+      createHindsightRoutes({ ...coworker.hindsight, requireUser }),
     );
   if (coworker?.responsibilities) {
     const { store, engine, bindings } = coworker.responsibilities;
