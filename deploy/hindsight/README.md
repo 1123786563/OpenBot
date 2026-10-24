@@ -62,6 +62,43 @@ explicitly is reported noncompliant, never assumed fine.
   the real-instance allow/deny matrix in `server/tests/hindsight-bank-isolation.contract.test.ts`
   (`start` / `stop` / `status`).
 
+## Controlled-backup manifests (`HINDSIGHT_BACKUP_MANIFEST_DIR`)
+
+The cleanup evidence OpenBot shows a person ("受控副本清除完成") stands on the manifests
+`backup.sh` writes beside each adopted archive. OpenBot only looks at them when the
+deployment declares where they are:
+
+| Item | Value |
+| --- | --- |
+| Key | `HINDSIGHT_BACKUP_MANIFEST_DIR` in the **OpenBot server's** environment |
+| Value | absolute path of the directory `backup.sh` writes into (default: `deploy/hindsight/backups`) |
+| Where it is read | `server/src/hindsight/backup-registry.ts` (`backupManifestDirFromEnv`), per request |
+| Not read by | `backup.sh`, `hindsight.env`, the compose stack — the key belongs to OpenBot only |
+
+- **Directory.** It must be the directory the backup job writes **archives and manifests** into
+  (they are always siblings: `hindsight-<stamp>.sql.gz` + `hindsight-<stamp>.manifest.json`).
+  When OpenBot runs in a container, bind-mount that host directory read-only into the server and
+  declare the path as the container sees it. A directory that does not exist yet answers "no
+  evidence", never "cleared"; one that is present but unreadable fails the reconcile pass loudly
+  (logged by the server) instead of passing for an empty directory.
+- **Permissions.** The backup job runs `umask 077`, so the directory and its files are owner-only
+  (`0700` / `0600`). The OpenBot server user must be able to traverse the directory and read the
+  manifests (and stat the archives); either run both as the same user, or give the server user a
+  group with `g+rx` on the directory and `g+r` on the files. OpenBot reads the manifest JSON and
+  checks archive presence — it never opens, copies or moves an archive.
+- **Single authoritative location.** The declared directory is the only place a controlled copy
+  may live or leave from. An archive that disappears while its manifest stays is indistinguishable
+  from the retention sweep's deletion and is recorded as purge evidence; moving an archive to cold
+  storage without moving its manifest therefore claims a purge that did not happen. If archives
+  are archived elsewhere, move the manifest with them (and the copy returns to "outstanding").
+  Conversely a purged archive that reappears in the directory (re-mounted volume, copy restored
+  back) has its purge evidence withdrawn on the next reconcile — the claim follows the last
+  reconcile pass, it is not a permanent latch.
+- **Reconciliation entry points.** `GET /api/hindsight/cleanup` is a pure read and reconciles
+  nothing; `POST /api/hindsight/cleanup/verify` (the person's own action) and
+  `POST /api/hindsight/ops/backups/reconcile` (admin) run the pass. The report returned to a
+  person carries counts only; the directory path appears on the admin route alone.
+
 ## Operating
 
 ```bash

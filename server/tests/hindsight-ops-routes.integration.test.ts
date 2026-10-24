@@ -4,8 +4,8 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import {
   afterAll,
   afterEach,
@@ -25,9 +25,11 @@ import {
   enterpriseWorkspaceMemberships,
   enterpriseWorkspaces,
 } from "../src/db/schema/enterprise-tenancy";
-import { hindsightBackupRestores } from "../src/db/schema/hindsight-restore";
-import { hindsightControlledBackups } from "../src/db/schema/hindsight-restore";
 import { derivedJudgmentCandidates } from "../src/db/schema/hindsight-judgments";
+import {
+  hindsightBackupRestores,
+  hindsightControlledBackups,
+} from "../src/db/schema/hindsight-restore";
 import { hindsightRevocations } from "../src/db/schema/hindsight-revocations";
 import { hindsightMemoryGrants } from "../src/db/schema/hindsight-source-bound";
 import type { PlatformScope } from "../src/enterprise/contracts";
@@ -46,6 +48,7 @@ import {
   derivedJudgmentDocumentIdFor,
 } from "../src/hindsight/derived-judgments";
 import { createDerivedJudgmentReviewService } from "../src/hindsight/judgment-review";
+import { createHindsightRoutes } from "../src/hindsight/ops-routes";
 import { createDrizzlePauseControls } from "../src/hindsight/pause-controls";
 import {
   createDrizzlePreferenceRecords,
@@ -58,7 +61,6 @@ import {
   createDrizzleRevocationLedger,
   STOPPED_USING_SUMMARY,
 } from "../src/hindsight/revocation-ledger";
-import { createHindsightRoutes } from "../src/hindsight/ops-routes";
 import {
   createDrizzleSourceBoundAuthorizations,
   createDrizzleSourceBoundRecords,
@@ -66,6 +68,7 @@ import {
   sourceBoundDocumentIdFor,
 } from "../src/hindsight/scoped-recall";
 import { SENSITIVE_CONFIRMATION_REQUIRED } from "../src/hindsight/sensitivity-gate";
+import { createHindsightSyncQueue } from "../src/hindsight/sync-queue";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -151,6 +154,7 @@ let evidence: ReturnType<typeof createAnswerEvidenceService>;
 let revocations: ReturnType<typeof createRevocationService>;
 let recovery: ReturnType<typeof createRestoreRecoveryService>;
 let cleanup: ReturnType<typeof createCleanupEvidenceService>;
+let syncQueue: ReturnType<typeof createHindsightSyncQueue>;
 
 /** The declared operation-retention window the cleanup leg measures against; per-test mutable. */
 let declaredOperationRetentionDays: number | null = 1;
@@ -550,8 +554,12 @@ beforeAll(async () => {
     authorizations,
     { pause },
   );
-  // The production shape: the durable ledger wired, the sync-queue recorder absent (that is
-  // FIX-W2's assembly — a confirm's retain here is eager, exactly like the index.ts wiring).
+  // The production shape since FIX-W9: the durable ledger and the sync-queue recorder both
+  // wired, exactly like the index.ts assembly — a confirm/edit's eager retain is best-effort,
+  // and a failed one leaves a retry row for the drain.
+  syncQueue = createHindsightSyncQueue(database, serviceConfig, {
+    authorizations,
+  });
   review = createDerivedJudgmentReviewService(
     preferenceRecords,
     sourceBoundRecords,
@@ -561,6 +569,7 @@ beforeAll(async () => {
     {
       pause,
       recovery: recovery.gate,
+      work: syncQueue,
       revocations: createDrizzleRevocationLedger(database),
     },
   );
@@ -613,6 +622,11 @@ afterAll(async () => {
   await database
     .delete(hindsightRevocations)
     .where(eq(hindsightRevocations.tenantId, TENANT));
+  // Complete every pending work row this suite's confirms recorded (a successful eager retain
+  // still leaves its work pending), so the shared test database never hands another suite's
+  // drain a straggler that would tilt its exact-count assertions.
+  scripted.state.retainStatus = 202;
+  await syncQueue.drain({ limit: 500 });
   await new Promise<void>((resolve) => {
     scripted.server.closeAllConnections?.();
     scripted.server.close(() => resolve());
@@ -721,6 +735,179 @@ describe("the evidence route (#387)", () => {
       contentType: "text/plain",
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe("the correction route (#387 AC2)", () => {
+  test("a preference basis is corrected from the evidence, and the next answer reflects the new fact", async () => {
+    const app = await harnessFor(PRINCIPAL_EMP, "user");
+    const original = await confirmPreference(
+      PRINCIPAL_EMP,
+      `更正前的事实 ${run}`,
+    );
+
+    // The evidence advertises `correct`; the route the surface relies on answers for it, so
+    // the action list and the HTTP face cannot drift apart (RA2-1).
+    const inspected = await call(app, {
+      method: "POST",
+      path: "/api/hindsight/evidence",
+      body: { ids: [original.id] },
+    });
+    const [basis] = (
+      (await inspected.json()) as {
+        evidence: { kind: string; actions: string[] }[];
+      }
+    ).evidence;
+    expect(basis?.kind).toBe("preference");
+    expect(basis?.actions).toEqual(["edit", "correct", "forget"]);
+
+    const corrected = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${original.id}/correction`,
+      body: { content: `更正后的事实 ${run}` },
+    });
+    expect(corrected.status).toBe(200);
+    const body = (await corrected.json()) as {
+      record: { id: string; content: string };
+      superseded: {
+        id: string;
+        content: string;
+        effectiveFrom: string | null;
+        effectiveUntil: string | null;
+      };
+      remoteSynced: boolean;
+    };
+    expect(body.record.id).not.toBe(original.id);
+    expect(body.record.content).toBe(`更正后的事实 ${run}`);
+    // The correction keeps the history: the old fact is closed, the new one is the head.
+    expect(body.superseded.id).toBe(original.id);
+    expect(body.superseded.content).toBe(`更正前的事实 ${run}`);
+    expect(body.superseded.effectiveUntil).toBeNull();
+    // The successor was retained (and recorded for the sync queue) before this answered.
+    expect(body.remoteSynced).toBe(true);
+
+    // The old basis still expands, now marked as the superseded historical fact.
+    const reexpanded = await call(app, {
+      method: "POST",
+      path: "/api/hindsight/evidence",
+      body: { ids: [original.id, body.record.id] },
+    });
+    const reexpandedBody = (await reexpanded.json()) as {
+      evidence: { id: string; content?: string; supersededBy?: string }[];
+    };
+    expect(reexpandedBody.evidence[0]?.supersededBy).toBe(body.record.id);
+    expect(reexpandedBody.evidence[1]?.content).toBe(`更正后的事实 ${run}`);
+
+    // The NEXT answer reflects the new fact: only the open head of the chain is eligible.
+    bankHits(USER_BANK_EMP, [
+      original.documentId,
+      preferenceDocumentIdFor(TENANT, body.record.id),
+    ]);
+    const recalled = await preferences.recallGenericPreferences(
+      await scopeForPrincipal(PRINCIPAL_EMP),
+      { query: "事实" },
+    );
+    expect(recalled.map((entry) => entry.content)).toEqual([
+      `更正后的事实 ${run}`,
+    ]);
+  });
+
+  test("foreign, missing, source-bound and judgment ids are refused; a sensitive correction needs its second confirmation", async () => {
+    const app = await harnessFor(PRINCIPAL_EMP, "user");
+    const peerApp = await harnessFor(PRINCIPAL_PEER, "user");
+    const mine = await confirmPreference(PRINCIPAL_EMP, `个人事实 ${run}`);
+
+    // Another principal asking with their own trusted scope: the id is not theirs. The
+    // answer is the same 404 a missing id gives, so it never discloses that the row exists.
+    const foreign = await call(peerApp, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${mine.id}/correction`,
+      body: { content: `越权更正 ${run}` },
+    });
+    expect(foreign.status).toBe(404);
+    expect(JSON.stringify(await foreign.json())).not.toContain(
+      `个人事实 ${run}`,
+    );
+    const missing = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${randomUUID()}/correction`,
+      body: { content: `没有这条 ${run}` },
+    });
+    expect(missing.status).toBe(404);
+
+    // The kinds whose evidence entry does not offer `correct` answer with the path that does.
+    const bound = await confirmBound(PRINCIPAL_EMP, `来源事实 ${run}`, {
+      kind: "source",
+      sourceId: SOURCE_ONE,
+    });
+    const boundAttempt = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${bound.id}/correction`,
+      body: { content: `不该出现 ${run}` },
+    });
+    expect(boundAttempt.status).toBe(400);
+    expect(((await boundAttempt.json()) as { error: string }).error).toContain(
+      "source-bound fact is corrected by editing",
+    );
+    const judgment = await confirmSourceBoundJudgment(`判断依据 ${run}`);
+    const judgmentAttempt = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${judgment.id}/correction`,
+      body: { content: `不该出现 ${run}` },
+    });
+    expect(judgmentAttempt.status).toBe(400);
+    expect(
+      ((await judgmentAttempt.json()) as { error: string }).error,
+    ).toContain("judgment is corrected by editing its text");
+
+    // No session, no scope, no correction — refused before any row is read.
+    const anonymous = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${mine.id}/correction`,
+      body: { content: `匿名更正 ${run}` },
+      authenticated: false,
+    });
+    expect(anonymous.status).toBe(401);
+
+    // A correction IS a new confirmed fact: the same sensitivity gate applies, and the
+    // refusal leaves the class-only trail.
+    auditTrail.length = 0;
+    const sensitive = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${mine.id}/correction`,
+      body: { content: `takes medication for blood pressure ${run}` },
+    });
+    expect(sensitive.status).toBe(400);
+    expect(await sensitive.json()).toEqual({
+      error: SENSITIVE_CONFIRMATION_REQUIRED,
+    });
+    expect(JSON.stringify(auditTrail)).not.toContain("blood pressure");
+    expect(auditTrail).toHaveLength(1);
+    expect(auditTrail[0]?.payload).toEqual({
+      subjectType: "preference",
+      sensitivity: "medical",
+    });
+
+    // Identity fields in the body name nobody: the resolver's scope is the only identity, and
+    // the correction lands on THIS person's own row.
+    const spoofed = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${mine.id}/correction`,
+      body: {
+        content: `takes medication for blood pressure ${run}`,
+        confirmSensitive: true,
+        tenantId: TENANT,
+        principalId: PRINCIPAL_PEER,
+        workspaceId: WORKSPACE_B,
+      },
+    });
+    expect(spoofed.status).toBe(200);
+    const spoofedBody = (await spoofed.json()) as {
+      record: { content: string };
+    };
+    expect(spoofedBody.record.content).toBe(
+      `takes medication for blood pressure ${run}`,
+    );
   });
 });
 
@@ -1233,6 +1420,8 @@ type CleanupBody = {
   activeData: {
     cleared: boolean;
     documents: number;
+    resurrected: number;
+    observedAt: string | null;
     blockedByOpenRestore: boolean;
   };
   finishedTaskPayloads: {
@@ -1246,13 +1435,23 @@ type CleanupBody = {
     outstanding: number | null;
     oldestOutstandingTakenAt: string | null;
   };
-  backupRegistration: {
-    manifests: number;
-    skipped: number;
-    registered: number;
-    alreadyRegistered: number;
-    purged: number;
-  } | null;
+};
+
+/** The reconcile report: counts only on the person's own verify action, plus the admin path. */
+type BackupRegistrationReport = {
+  directory?: string;
+  manifests: number;
+  skipped: number;
+  registered: number;
+  alreadyRegistered: number;
+  purged: number;
+  reopened: number;
+};
+
+/** What `POST /cleanup/verify` answers: the probe outcomes plus the reconcile's counts. */
+type VerifyBody = {
+  outcomes: { state: string }[];
+  backupRegistration: BackupRegistrationReport | null;
 };
 
 async function cleanupStatus(app: Hono): Promise<CleanupBody> {
@@ -1281,7 +1480,9 @@ describe("the cleanup-evidence routes (#391)", () => {
       await database.delete(hindsightControlledBackups);
 
       // One confirmed deletion of this person's, verified absent by the route's own probes.
-      const { id } = await confirmSourceBoundJudgment(`清理证据判断 ${run}`);
+      const { id, documentId } = await confirmSourceBoundJudgment(
+        `清理证据判断 ${run}`,
+      );
       const forgotten = await call(app, {
         method: "DELETE",
         path: `/api/hindsight/judgments/${id}`,
@@ -1292,27 +1493,67 @@ describe("the cleanup-evidence routes (#391)", () => {
         path: "/api/hindsight/cleanup/verify",
       });
       expect(verified.status).toBe(200);
-      const outcomes = (
-        (await verified.json()) as { outcomes: { state: string }[] }
-      ).outcomes;
-      expect(outcomes.length).toBeGreaterThanOrEqual(1);
-      expect(outcomes.every((outcome) => outcome.state === "absent")).toBe(
-        true,
-      );
+      const verifiedBody = (await verified.json()) as VerifyBody;
+      expect(verifiedBody.outcomes.length).toBeGreaterThanOrEqual(1);
+      expect(
+        verifiedBody.outcomes.every((outcome) => outcome.state === "absent"),
+      ).toBe(true);
 
       // A controlled copy taken AFTER the deletion cannot hold the content.
       const backupA = `hindsight-bk${run}-a.sql.gz`;
       await writeBackup(manifestDir, backupA, new Date(Date.now() + 3_600_000));
+
+      /*
+       * RA2-5: the status read is a pure read. A manifest written above stays unregistered
+       * until an explicit action asks for the reconcile, and the response carries no host
+       * path (the report's `directory` is operator detail, not a person's).
+       */
+      const documentProbes = () =>
+        scripted.calls.filter(
+          (captured) =>
+            captured.method === "GET" &&
+            /\/documents\/[^/]+$/.test(captured.path),
+        ).length;
+      const probesBeforeRead = documentProbes();
+      const unReconciled = await cleanupStatus(app);
+      expect(unReconciled.controlledBackups.registered).toBe(0);
+      // No document was probed and no manifest registered: the read wrote nothing.
+      expect(documentProbes()).toBe(probesBeforeRead);
+      expect(unReconciled.activeData.observedAt).not.toBeNull();
+      expect(JSON.stringify(unReconciled)).not.toContain(manifestDir);
+      expect(JSON.stringify(unReconciled)).not.toContain(documentId);
+      expect(
+        (unReconciled as unknown as Record<string, unknown>).backupRegistration,
+      ).toBeUndefined();
+
+      // The person's own verify action is where the reconcile runs: counts only, no path.
+      const verifiedAgain = await call(app, {
+        method: "POST",
+        path: "/api/hindsight/cleanup/verify",
+      });
+      expect(verifiedAgain.status).toBe(200);
+      const personalReport = ((await verifiedAgain.json()) as VerifyBody)
+        .backupRegistration;
+      expect(personalReport?.manifests).toBe(1);
+      expect(personalReport?.registered).toBe(1);
+      expect(personalReport?.skipped).toBe(0);
+      expect(personalReport?.reopened).toBe(0);
+      expect(JSON.stringify(personalReport)).not.toContain(manifestDir);
+      expect(JSON.stringify(personalReport)).not.toContain("directory");
+
+      // The admin route answers with the operator detail it is gated for; the same manifest is
+      // a no-op the second time.
       const reconciled = await call(adminApp, {
         method: "POST",
         path: "/api/hindsight/ops/backups/reconcile",
       });
       expect(reconciled.status).toBe(200);
-      const report =
-        (await reconciled.json()) as CleanupBody["backupRegistration"];
-      expect(report?.manifests).toBe(1);
-      expect(report?.registered).toBe(1);
-      expect(report?.skipped).toBe(0);
+      const report = (await reconciled.json()) as BackupRegistrationReport;
+      expect(report.directory).toBe(manifestDir);
+      expect(report.manifests).toBe(1);
+      expect(report.registered).toBe(0);
+      expect(report.alreadyRegistered).toBe(1);
+      expect(report.skipped).toBe(0);
 
       const cleared = await cleanupStatus(app);
       expect(cleared.activeData.cleared).toBe(true);
@@ -1323,8 +1564,6 @@ describe("the cleanup-evidence routes (#391)", () => {
       expect(cleared.controlledCopiesCleared).toBe(true);
       expect(cleared.summary).toBe(CONTROLLED_COPIES_CLEARED_SUMMARY);
       expect(cleared.externalModelLogs.coveredByThisClaim).toBe(false);
-      // The status read reconciles first; the same manifest is a no-op the second time.
-      expect(cleared.backupRegistration?.alreadyRegistered).toBe(1);
 
       // A copy taken BEFORE the deletion may hold it until purged: the claim drops, the
       // actual state stays visible.
@@ -1355,6 +1594,38 @@ describe("the cleanup-evidence routes (#391)", () => {
       const recovered = await cleanupStatus(app);
       expect(recovered.controlledCopiesCleared).toBe(true);
       expect(recovered.summary).toBe(CONTROLLED_COPIES_CLEARED_SUMMARY);
+
+      /*
+       * RA2-4: purge evidence is an observation, not a latch. The archive comes back (a
+       * re-mounted volume, a copy restored from cold storage) and the next reconcile pass
+       * withdraws the record: the claim drops back to the actual state instead of standing
+       * on a moment the deployment has moved past. Deleting it again re-establishes it.
+       */
+      await writeFile(join(manifestDir, backupB), "copy back", "utf8");
+      const reopened = await call(adminApp, {
+        method: "POST",
+        path: "/api/hindsight/ops/backups/reconcile",
+      });
+      expect(reopened.status).toBe(200);
+      expect(((await reopened.json()) as { reopened: number }).reopened).toBe(
+        1,
+      );
+      const reblocked = await cleanupStatus(app);
+      expect(reblocked.controlledCopiesCleared).toBe(false);
+      expect(reblocked.controlledBackups.outstanding).toBe(1);
+
+      await unlink(join(manifestDir, backupB));
+      const repurged = await call(adminApp, {
+        method: "POST",
+        path: "/api/hindsight/ops/backups/reconcile",
+      });
+      const repurgedBody = (await repurged.json()) as {
+        purged: number;
+        reopened: number;
+      };
+      expect(repurgedBody.purged).toBe(1);
+      expect(repurgedBody.reopened).toBe(0);
+      expect((await cleanupStatus(app)).controlledCopiesCleared).toBe(true);
 
       // An undeclared payload window is unevidenced, never measured against a guess.
       declaredOperationRetentionDays = null;

@@ -300,19 +300,31 @@ export function createAnswerEvidenceService(
 
     /**
      * Correct a basis from the evidence entry. For a preference this is #386's time-windowed
-     * correction; a source-bound fact has no correction chain — its correction is an edit of
-     * the confirmed original (editEvidence), and saying so is a refusal, not a silent
-     * downgrade.
+     * correction — the ONLY basis kind whose evidence entry offers `correct` — and the
+     * sensitivity gate of that seam applies to the corrected text. The other two kinds have
+     * no correction chain, and saying so is a refusal, never a silent downgrade: a
+     * source-bound fact is corrected by editing its original, and since #389 a judgment's
+     * text is re-asserted through its own edit (whose evidence gates re-run).
      */
     async correctEvidence(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown; effectiveFrom?: unknown },
+      input: {
+        content: unknown;
+        effectiveFrom?: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ) {
       const owner = await resolveOwner(scope, id);
       if (owner === "source_bound") {
         throw new EvidenceRefusedError(
           "A source-bound fact is corrected by editing its original; time-windowed corrections apply to general preferences only.",
+        );
+      }
+      if (owner === "derived_judgment") {
+        throw new EvidenceRefusedError(
+          "A judgment is corrected by editing its text; time-windowed corrections apply to general preferences only.",
         );
       }
       if (owner === "none") throw new EvidenceNotFoundError();
