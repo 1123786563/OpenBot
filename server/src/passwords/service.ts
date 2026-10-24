@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { getLogger } from "../../../shared/logger";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import {
+  type AuditStore,
+  DEPLOYMENT_INITIATOR,
+  recordAuditEvent,
+} from "../audit";
 import { ComputerUnreachableError } from "../computer/client";
 import type { ActionActor, ComputerGateway } from "../computer/gateway";
 import type { SignInCodeResult, SignInFillResult } from "../computer/schema";
@@ -125,6 +129,16 @@ const UNKNOWN_OUTCOME =
   "The sign-in attempt did not finish in time, so it is not known whether the login went through. Do not assume it did: check the site by taking over the browser, or start a new sign-in knowing this.";
 
 /**
+ * Who closes a request on the server's own motion — the lease-expired landing in `load`, where no
+ * caller's actor is in hand and none may be invented for it. The trail row says the deployment did
+ * this, not a person, and names no users row: the server is not one.
+ */
+const SERVER_ACTOR: ActionActor = {
+  id: "server",
+  initiator: DEPLOYMENT_INITIATOR,
+};
+
+/**
  * A string with every credential it could contain removed.
  *
  * Belt and braces: nothing on the fill path is supposed to echo a value, but an error message from a
@@ -189,6 +203,28 @@ export function createSignInService(deps: SignInServiceDependencies) {
         resolvedAt: new Date(),
       });
       if (failed) {
+        /*
+         * Every ending has an audit row, written by whoever closed it: this close is the server's
+         * own act, so it writes its own row under the deployment's name rather than borrowing an
+         * attempt's actor `load` never sees. The failure sentence is the row's own outcome — an
+         * attempt that later reports a definite refusal adds its `superseded` row beside this one
+         * (the fill and enterCode gates), and neither stands in for the other; one is the row's
+         * final state, the other a failed attempt under it. No `step` is named: a lease that ran
+         * out cannot say whether the attempt died at the login or the code.
+         */
+        await audit(
+          "computer.sign_in_failed",
+          SERVER_ACTOR,
+          "computer",
+          failed.botId,
+          {
+            bot: failed.botId,
+            request: id,
+            site: failed.origin,
+            ...(failed.method ? { method: failed.method } : {}),
+            failure: UNKNOWN_OUTCOME,
+          },
+        );
         await resolved(failed);
         return failed;
       }

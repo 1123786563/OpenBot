@@ -853,6 +853,63 @@ describe("a sign-in that is being entered", () => {
     ).toMatchObject({ request: request.id, step: "login", superseded: true });
   });
 
+  test("the lease-expired close leaves its own audit row, apart from the attempt's", async () => {
+    const context = setup({ fill: { passwordFieldVisible: true } });
+    const request = await context.service.request({
+      ownerUserId: "owner",
+      botId: "bot",
+      site: "example.com",
+      actor,
+    });
+    const inner = context.computer.gateway.signIn.bind(
+      context.computer.gateway,
+    );
+    // The attempt holds at the computer while its lease runs out, and a concurrent load() closes
+    // the row under it — backdating the lease is how the close an expired lease lands arrives
+    // mid-attempt, through the close path itself.
+    context.computer.gateway.signIn = async (botId, input) => {
+      await context.store.transition("owner", request.id, ["filling"], {
+        fillingUntil: new Date(Date.now() - 1_000),
+      });
+      const closed = await context.service.get("owner", request.id);
+      if (closed.status !== "failed")
+        throw new Error("the lease-expired close did not land");
+      return inner(botId, input);
+    };
+    await expect(
+      context.service.submit("owner", request.id, actor, {
+        username: USERNAME,
+        password: PASSWORD,
+      }),
+    ).rejects.toThrow(/password field/);
+    // The close keeps the row: this attempt's failure did not reopen it.
+    expect((await context.store.request("owner", request.id))?.status).toBe(
+      "failed",
+    );
+    // And the trail keeps both endings, neither swallowing the other. The close is the server's
+    // own act — the row's own ending, written by whoever closed it and marked neither superseded
+    // nor typed to a step nobody here knows — while the attempt's refusal stays superseded under
+    // it, exactly as T8a left it.
+    const failures = context.trail.rows.filter(
+      (row) => row.eventType === "computer.sign_in_failed",
+    );
+    const close = failures.find((row) => row.payload.superseded === undefined);
+    expect(close?.payload).toMatchObject({
+      actor: "server",
+      request: request.id,
+      failure: expect.stringMatching(/not known whether/),
+    });
+    expect(close?.initiator).toEqual({ kind: "deployment" });
+    expect(close?.actorUserId).toBeUndefined();
+    const attempt = failures.find((row) => row.payload.superseded === true);
+    expect(attempt?.payload).toMatchObject({
+      request: request.id,
+      step: "login",
+      superseded: true,
+    });
+    expect(attempt?.initiator).toEqual({ kind: "person" });
+  });
+
   test("claiming the lease clears the previous attempt's failure sentence", async () => {
     const fill = { passwordFieldVisible: true };
     const context = setup({ fill });
