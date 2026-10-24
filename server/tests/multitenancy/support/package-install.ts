@@ -54,6 +54,7 @@ import {
   type ResourcePolicyFixture,
   type TeamKey,
 } from "./resource-policy";
+import { reconcileTaskDrift } from "./task-drift";
 
 export type CompanyKey = "company-a" | "company-b";
 
@@ -76,58 +77,101 @@ export interface PackageTaskOutcomes {
  * and PKG04 (expert provenance storage + restricted creation function) in
  * order through the real migration tool. `up-to-date` is a legitimate
  * rerun; `refused`/`failed` throws with the tool's own reason.
+ *
+ * Before the chain runs, `reconcileTaskDrift` removes drizzle-restored
+ * objects that the chain's not-yet-journaled steps also create (0163's
+ * drift, see support/task-drift.ts). The chain then rebuilds them through its
+ * own SQL — RLS, FORCE and GRANT included — so the restricted-role
+ * assertions test the migration, not a leftover schema. The advisory lock
+ * spans reconcile→apply: e2e may drive the multitenancy group and the
+ * package-install integration group in separate workers against one database.
  */
+export const PACKAGE_CHAIN_TASK_IDS = [
+  "MT004",
+  "MT008",
+  "MT031",
+  "PKG02",
+  "MT016",
+  "PKG03",
+  "PKG04",
+] as const;
+
 export async function applyPackageTasks(): Promise<PackageTaskOutcomes> {
   const environment = { TEST_DATABASE_URL: enterpriseTestDatabaseUrlFrom() };
-  const outcomes: RunOutcome[] = [];
-  for (const taskId of [
-    "MT004",
-    "MT008",
-    "MT031",
-    "PKG02",
-    "MT016",
-    "PKG03",
-    "PKG04",
-  ]) {
-    const dryRun = await runMigrateTest(["migrate", taskId], {
-      environment,
-      out: () => {},
-    });
-    if (dryRun.kind === "refused") {
-      throw new Error(`${taskId} dry-run refused: ${dryRun.reason}`);
-    }
-    if (dryRun.kind !== "dry-run") {
-      throw new Error(`${taskId} dry-run did not produce a plan`);
-    }
-    const manifestPath = `/tmp/${taskId.toLowerCase()}-manifest-${randomUUID()}.json`;
-    await Bun.write(
-      manifestPath,
-      `${JSON.stringify(manifestFor(buildPlan(taskId)), null, 2)}\n`,
+  const lockAdvisory = createDatabase(enterpriseTestDatabaseUrlFrom(), {
+    max: 1,
+  });
+  try {
+    // Session-level lock: released by the connection close in `finally` even
+    // if the chain throws, so a failed apply cannot wedge later runs.
+    await lockAdvisory.$client.unsafe(
+      "select pg_advisory_lock(hashtextextended('openbot:mt-package-task-chain', 0))",
     );
-    try {
-      const applied = await runMigrateTest(
-        ["migrate", taskId, "--apply", "--manifest", manifestPath],
-        { environment, out: () => {} },
+    const drift = await reconcileTaskDrift(
+      lockAdvisory.$client,
+      PACKAGE_CHAIN_TASK_IDS,
+    );
+    if (
+      drift.droppedTables.length +
+        drift.droppedColumns.length +
+        drift.droppedConstraints.length >
+      0
+    ) {
+      console.log(
+        `[package-install] reconciled drizzle/MT-task drift before applying ${PACKAGE_CHAIN_TASK_IDS.length} tasks: ` +
+          `${drift.droppedTables.length} table(s), ${drift.droppedColumns.length} column(s), ${drift.droppedConstraints.length} constraint(s) ` +
+          `[${[...drift.droppedTables, ...drift.droppedColumns, ...drift.droppedConstraints].join(", ")}]`,
       );
-      if (applied.kind !== "applied" && applied.kind !== "up-to-date") {
-        throw new Error(
-          `${taskId} apply did not land: ${JSON.stringify(applied).slice(0, 300)}`,
-        );
-      }
-      outcomes.push(applied);
-    } finally {
-      await rm(manifestPath, { force: true });
     }
+    const outcomes: RunOutcome[] = [];
+    for (const taskId of PACKAGE_CHAIN_TASK_IDS) {
+      const dryRun = await runMigrateTest(["migrate", taskId], {
+        environment,
+        out: () => {},
+      });
+      if (dryRun.kind === "refused") {
+        throw new Error(`${taskId} dry-run refused: ${dryRun.reason}`);
+      }
+      if (dryRun.kind !== "dry-run") {
+        throw new Error(`${taskId} dry-run did not produce a plan`);
+      }
+      const manifestPath = `/tmp/${taskId.toLowerCase()}-manifest-${randomUUID()}.json`;
+      await Bun.write(
+        manifestPath,
+        `${JSON.stringify(manifestFor(buildPlan(taskId)), null, 2)}\n`,
+      );
+      try {
+        const applied = await runMigrateTest(
+          ["migrate", taskId, "--apply", "--manifest", manifestPath],
+          { environment, out: () => {} },
+        );
+        if (applied.kind !== "applied" && applied.kind !== "up-to-date") {
+          throw new Error(
+            `${taskId} apply did not land: ${JSON.stringify(applied).slice(0, 300)}`,
+          );
+        }
+        outcomes.push(applied);
+      } finally {
+        await rm(manifestPath, { force: true });
+      }
+    }
+    return {
+      mt004: outcomes[0],
+      mt008: outcomes[1],
+      mt031: outcomes[2],
+      pkg02: outcomes[3],
+      mt016: outcomes[4],
+      pkg03: outcomes[5],
+      pkg04: outcomes[6],
+    };
+  } finally {
+    await lockAdvisory.$client
+      .unsafe(
+        "select pg_advisory_unlock(hashtextextended('openbot:mt-package-task-chain', 0))",
+      )
+      .catch(() => {});
+    await lockAdvisory.$client.close().catch(() => {});
   }
-  return {
-    mt004: outcomes[0],
-    mt008: outcomes[1],
-    mt031: outcomes[2],
-    pkg02: outcomes[3],
-    mt016: outcomes[4],
-    pkg03: outcomes[5],
-    pkg04: outcomes[6],
-  };
 }
 
 export interface PackageInstallFixture {

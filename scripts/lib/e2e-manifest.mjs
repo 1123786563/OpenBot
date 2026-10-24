@@ -53,6 +53,49 @@ export const ISLANDS = [
 ];
 
 /*
+ * Files that must share one named group regardless of their directory. The name of an entry is the
+ * e2e test title and the E2E_BUN_ONLY filter is a substring match on it, so a member that belongs to
+ * the `server/tests/multitenancy` environment (the MT task chain's dedicated database) while living
+ * in `server/tests/` still needs a name that carries that island. Before this constant was restored,
+ * `groupsOf` threw `ReferenceError: EXPLICIT_GROUPS is not defined` and no writer could regenerate
+ * the manifest at all (the committed snapshot had drifted by hand instead).
+ */
+export const EXPLICIT_GROUPS = {
+  /*
+   * PKG02's end-to-end suite lives in server/tests/ but applies the same MT task chain
+   * (MT004→…→PKG04 through ./multitenancy/support/package-install) against the dedicated
+   * enterprise test database, and plugin-install's fixture builds on MT004/MT008 and applies
+   * MT031 in the same database. Keeping all six in one process is what makes the chain's
+   * reconcile→apply sequential instead of two e2e workers racing one schema, and the name
+   * carries the island so `MT_TEST_DATABASE_URL` routing in tests/bun-suites.test.ts applies.
+   */
+  "server/tests/multitenancy/package chain": [
+    /*
+     * plugin-install first: its AC1 asserts the catalog contains exactly its
+     * three seeded entries, and its dispose truncates the three plugin tables
+     * — running it after package-storage/package-install.integration (both
+     * leave `pkg02-*` catalog rows behind, measured) invents a red that no
+     * single-suite run gives.
+     */
+    "server/tests/multitenancy/plugin-install.test.ts",
+    "server/tests/multitenancy/package-storage.test.ts",
+    "server/tests/multitenancy/package-runtime.test.ts",
+    "server/tests/multitenancy/package-grants.test.ts",
+    "server/tests/multitenancy/package-expert.test.ts",
+    "server/tests/package-install.integration.test.ts",
+  ],
+  /*
+   * MT032's suite was written against the e2e (Node) layer while its fixture chain reaches
+   * Bun's SQL client through server/src/db/client; both runners rejected it (T00 B-3). It now
+   * imports bun-test-compat like its multitenancy siblings and gets its own group so the
+   * corrected tier can be driven and counted on its own.
+   */
+  "server/tests/multitenancy/tool-invocation": [
+    "server/tests/multitenancy/tool-invocation.test.ts",
+  ],
+};
+
+/*
  * Whole directories that need their own group because their *environment* differs from the rest of
  * the directory: the `multitenancy` suites build their own schema in-process through
  * `server/scripts/multitenancy/migrate-test.ts`, which refuses any `TEST_DATABASE_URL` whose database
@@ -157,7 +200,6 @@ export function writeManifest(
     generatedBy,
     audit,
     groups: groupsOf(list),
-    directoryIslands: DIRECTORY_ISLANDS,
     files: list,
     artifacts: [...artifacts].sort(),
     causes,

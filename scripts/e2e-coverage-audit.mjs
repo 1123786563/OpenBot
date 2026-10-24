@@ -30,6 +30,11 @@ const SKIP = new Set([
 const dirs = SUITE_DIRS;
 const files = [];
 function walk(dir) {
+  // SUITE_DIRS is shared with the runner config, where a not-yet-checked-out directory
+  // (`deliverables/`) simply has no suites; a missing directory contributes zero files instead of
+  // crashing the whole audit with ENOENT before it can report anything (bun run test:ci ran it
+  // before execution).
+  if (!existsSync(dir)) return;
   for (const entry of readdirSync(dir)) {
     if (SKIP.has(entry)) continue;
     const full = join(dir, entry);
@@ -55,10 +60,7 @@ const live = new Set(LIVE_SUITES);
 const broken = new Set(
   (
     JSON.parse(
-      readFileSync(
-        join(root, "tests/config/e2e-known-broken.json"),
-        "utf8",
-      ),
+      readFileSync(join(root, "tests/config/e2e-known-broken.json"), "utf8"),
     ).entries ?? []
   ).map((entry) => entry.file),
 );
@@ -161,22 +163,23 @@ function entryPointGaps() {
 const FOREIGN_TRIGGER = /(python -m pytest .*|cargo test .*|\bgo test .*)$/;
 function foreignGaps() {
   const gaps = [];
-  const registryPath = join(
-    root,
-    "tests/config/e2e-foreign-suites.json",
-  );
+  const registryPath = join(root, "tests/config/e2e-foreign-suites.json");
   if (!existsSync(registryPath))
     return [
       "tests/config/e2e-foreign-suites.json is missing: a corpus e2e cannot execute must be migrated or named there, not left out of the walk.",
     ];
-  const entries =
-    JSON.parse(readFileSync(registryPath, "utf8")).entries ?? [];
+  const entries = JSON.parse(readFileSync(registryPath, "utf8")).entries ?? [];
   const seen = new Set();
   const workflows = join(root, ".github", "workflows");
   for (const file of readdirSync(workflows)) {
     if (!/\.ya?ml$/.test(file)) continue;
-    for (const line of readFileSync(join(workflows, file), "utf8").split("\n")) {
-      const trimmed = line.trim().replace(/^-\s*/, "").replace(/^run:\s*/, "");
+    for (const line of readFileSync(join(workflows, file), "utf8").split(
+      "\n",
+    )) {
+      const trimmed = line
+        .trim()
+        .replace(/^-\s*/, "")
+        .replace(/^run:\s*/, "");
       if (!trimmed || trimmed.startsWith("#")) continue;
       const hit = trimmed.match(FOREIGN_TRIGGER);
       if (!hit) continue;
@@ -189,8 +192,7 @@ function foreignGaps() {
           `${file}: \`${command}\` runs a non-e2e test corpus that no entry in tests/config/e2e-foreign-suites.json names`,
         );
       entries.forEach((entry, index) => {
-        if (new RegExp(entry.pattern).test(command))
-          seen.add(index);
+        if (new RegExp(entry.pattern).test(command)) seen.add(index);
       });
     }
   }
@@ -215,9 +217,7 @@ function foreignGaps() {
  */
 function engineEntry() {
   const scripts = Object.entries(
-    JSON.parse(
-      readFileSync(join(root, "package.json"), "utf8"),
-    ).scripts ?? {},
+    JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts ?? {},
   );
   const entry = scripts.find(
     ([, command]) =>
@@ -232,7 +232,8 @@ function engineEntry() {
       "\n",
     )) {
       if (!/\be2e run\b/.test(line) || /unit\.config/.test(line)) continue;
-      if (/\.e2e\.(ts|tsx)/.test(line) || /run test:ui/.test(line)) inCI.push(file);
+      if (/\.e2e\.(ts|tsx)/.test(line) || /run test:ui/.test(line))
+        inCI.push(file);
     }
   }
   return {
