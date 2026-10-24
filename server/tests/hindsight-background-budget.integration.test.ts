@@ -17,6 +17,7 @@ import {
   enterpriseTenants,
   enterpriseWorkspaceMemberships,
 } from "../src/db/schema/enterprise-tenancy";
+import { hindsightBudgetReservations } from "../src/db/schema/hindsight-budget";
 import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
 import { hindsightSyncWork } from "../src/db/schema/hindsight-sync";
 import type { PlatformScope } from "../src/enterprise/contracts";
@@ -58,6 +59,16 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * 3. The admin health view carries service state, backlog and budget usage — and nothing
  *    else: the structural scan proves no seeded memory content, candidate text or work-row
  *    error text survives into the serialized snapshot.
+ *
+ * Plus the two hardening pins from the G6 review round:
+ *
+ * 4. (RG6-2) The PERSONAL cap branch: a company with room but a person at their ceiling has
+ *    that person's work deferred — charged nothing, the company ledger untouched by the
+ *    refusal, a peer's work still admitted, and the whole state visible in the ops view.
+ * 5. (RG6-3) A RELEASED reservation re-admitted on its original work key (the crash window
+ *    between the queue's release and its attempts bump) re-checks both caps first: it stays
+ *    released while either cap refuses, and re-reserves — once, under one row — when they
+ *    do not.
  */
 
 const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
@@ -65,6 +76,9 @@ const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const run = randomUUID().slice(0, 8);
 const TENANT_A = `tn_bud-a-${run}`;
 const TENANT_B = `tn_bud-b-${run}`;
+const TENANT_C = `tn_bud-c-${run}`;
+const PRINCIPAL_C_EMP = `prin_c-emp-${run}`;
+const PRINCIPAL_C_PEER = `prin_c-peer-${run}`;
 const PRINCIPAL_EMP = `prin_emp-${run}`;
 const PRINCIPAL_PEER = `prin_peer-${run}`;
 const GLOBAL_ACTOR = `usr_global-${run}`;
@@ -299,7 +313,7 @@ afterAll(async () => {
   // queue.drain() in this process does not count it.
   await database
     .delete(hindsightSyncWork)
-    .where(inArray(hindsightSyncWork.tenantId, [TENANT_A, TENANT_B]));
+    .where(inArray(hindsightSyncWork.tenantId, [TENANT_A, TENANT_B, TENANT_C]));
 });
 
 afterEach(() => {
@@ -504,8 +518,191 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       ["backlog", "budgets", "checkedAt", "service"].sort(),
     );
   });
-});
 
+  test("RG6-2: the personal cap defers that person's work, charges nothing, and leaves the company budget to peers", async () => {
+    await database.insert(users).values([
+      { id: `usr_c-emp-${run}`, email: `c-emp-${run}@example.invalid` },
+      { id: `usr_c-peer-${run}`, email: `c-peer-${run}@example.invalid` },
+    ]);
+    await database
+      .insert(enterpriseTenants)
+      .values({ id: TENANT_C, name: `Bud C ${run}` });
+    await database.insert(enterprisePrincipals).values([
+      { id: PRINCIPAL_C_EMP, userId: `usr_c-emp-${run}` },
+      { id: PRINCIPAL_C_PEER, userId: `usr_c-peer-${run}` },
+    ]);
+    await database.insert(enterpriseMemberships).values([
+      { tenantId: TENANT_C, principalId: PRINCIPAL_C_EMP, role: "member" },
+      { tenantId: TENANT_C, principalId: PRINCIPAL_C_PEER, role: "member" },
+    ]);
+
+    // The company has room; the person does not. EMP's ceiling is one unit and this month's
+    // one unit is already settled; PEER has spent nothing.
+    await budget.setCaps(TENANT_C, {
+      companyMonthlyUnits: 10,
+      personalMonthlyUnits: 1,
+    });
+    const spent = await budget.admitBackgroundWork({
+      tenantId: TENANT_C,
+      principalId: PRINCIPAL_C_EMP,
+      workKey: `spent:${TENANT_C}`,
+      units: 1,
+    });
+    expect(spent.ok).toBe(true);
+    if (spent.ok) await budget.settleBackgroundWork(spent.reservationId);
+
+    const empWork = await seedPendingWork(
+      TENANT_C,
+      PRINCIPAL_C_EMP,
+      `budget-personal-emp-${run}`,
+    );
+    const peerWork = await seedPendingWork(
+      TENANT_C,
+      PRINCIPAL_C_PEER,
+      `budget-personal-peer-${run}`,
+    );
+    const report = await queue.drain({ limit: 50 });
+    expect(report.deferred).toBeGreaterThanOrEqual(1);
+
+    // EMP's work waits with the personal-cap reason; PEER's ran — the company budget was
+    // never the constraint, and a person's ceiling does not reach their peers.
+    const [empRow] = await database
+      .select()
+      .from(hindsightSyncWork)
+      .where(eqSyncWork(TENANT_C, empWork));
+    expect(empRow.state).toBe("pending");
+    expect(empRow.lastError).toBe("budget: personal-cap");
+    const [peerRow] = await database
+      .select()
+      .from(hindsightSyncWork)
+      .where(eqSyncWork(TENANT_C, peerWork));
+    expect(peerRow.state).toBe("done");
+
+    // The refusal charged nothing: EMP sits at the one settled unit, PEER's admitted unit is
+    // the only new charge, and the company total is exactly those two.
+    const usage = await budget.currentUsage(TENANT_C);
+    expect(usage.companyUnits).toBe(2);
+    expect(
+      usage.personalUnits.find(
+        (entry) => entry.principalId === PRINCIPAL_C_EMP,
+      )?.units,
+    ).toBe(1);
+    expect(
+      usage.personalUnits.find(
+        (entry) => entry.principalId === PRINCIPAL_C_PEER,
+      )?.units,
+    ).toBe(1);
+
+    // And the state is where an operator looks: caps, usage and the waiting backlog.
+    const snapshot = await hindsightAdminHealthSnapshot(
+      database,
+      budget,
+      TENANT_C,
+      { serviceState: "service_up" },
+    );
+    expect(snapshot.budgets.companyMonthlyUnits).toBe(10);
+    expect(snapshot.budgets.personalMonthlyUnits).toBe(1);
+    expect(snapshot.budgets.companyUsedUnits).toBe(2);
+    expect(snapshot.budgets.companyOverCap).toBe(false);
+    expect(
+      snapshot.budgets.personalUsage.find(
+        (entry) => entry.principalId === PRINCIPAL_C_EMP,
+      )?.units,
+    ).toBe(1);
+    expect(snapshot.backlog.pendingWork).toBeGreaterThanOrEqual(1);
+  });
+
+  test("RG6-3: a released reservation re-admitted on its original work key re-checks both caps", async () => {
+    // Room for the first admission to succeed: EMP has one settled unit from RG6-2.
+    await budget.setCaps(TENANT_C, {
+      companyMonthlyUnits: 10,
+      personalMonthlyUnits: 5,
+    });
+    const workKey = `recheck:${TENANT_C}`;
+    const first = await budget.admitBackgroundWork({
+      tenantId: TENANT_C,
+      principalId: PRINCIPAL_C_EMP,
+      workKey,
+      units: 1,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    // A transport failure released the hold before the service was reached: it never counted
+    // (EMP's settled unit + PEER's admitted unit remain the whole company ledger).
+    await budget.releaseBackgroundWork(first.reservationId, "transport failure");
+    const afterRelease = await budget.currentUsage(TENANT_C);
+    expect(afterRelease.companyUnits).toBe(2);
+
+    // The crash window: the queue's release ran but its attempts bump did not, so the next
+    // drain re-admits the SAME work key — after the platform shrank the caps. The re-admission
+    // must re-check them, not flip the released row back to reserved on sight.
+    await budget.setCaps(TENANT_C, {
+      companyMonthlyUnits: 2,
+      personalMonthlyUnits: 5,
+    });
+    const deniedByCompany = await budget.admitBackgroundWork({
+      tenantId: TENANT_C,
+      principalId: PRINCIPAL_C_EMP,
+      workKey,
+      units: 1,
+    });
+    expect(deniedByCompany).toEqual({ ok: false, reason: "company-cap" });
+    const [stillReleased] = await database
+      .select()
+      .from(hindsightBudgetReservations)
+      .where(eq(hindsightBudgetReservations.workKey, workKey));
+    expect(stillReleased.state).toBe("released");
+
+    // The personal half, symmetrically: the company has room again, the person does not.
+    await budget.setCaps(TENANT_C, {
+      companyMonthlyUnits: 10,
+      personalMonthlyUnits: 1,
+    });
+    const deniedByPerson = await budget.admitBackgroundWork({
+      tenantId: TENANT_C,
+      principalId: PRINCIPAL_C_EMP,
+      workKey,
+      units: 1,
+    });
+    expect(deniedByPerson).toEqual({ ok: false, reason: "personal-cap" });
+    const [stillReleasedAgain] = await database
+      .select()
+      .from(hindsightBudgetReservations)
+      .where(eq(hindsightBudgetReservations.workKey, workKey));
+    expect(stillReleasedAgain.state).toBe("released");
+
+    // Within the caps again: the SAME reservation comes back, charged once — the release
+    // never counted and the re-admission is one row, not a second one beside the first.
+    await budget.setCaps(TENANT_C, {
+      companyMonthlyUnits: 10,
+      personalMonthlyUnits: 5,
+    });
+    const readmitted = await budget.admitBackgroundWork({
+      tenantId: TENANT_C,
+      principalId: PRINCIPAL_C_EMP,
+      workKey,
+      units: 1,
+    });
+    expect(readmitted.ok).toBe(true);
+    if (readmitted.ok) {
+      expect(readmitted.reservationId).toBe(first.reservationId);
+    }
+    const rows = await database
+      .select()
+      .from(hindsightBudgetReservations)
+      .where(eq(hindsightBudgetReservations.workKey, workKey));
+    expect(rows.length).toBe(1);
+    expect(rows[0].state).toBe("reserved");
+    const usageAfter = await budget.currentUsage(TENANT_C);
+    expect(usageAfter.companyUnits).toBe(3);
+    expect(
+      usageAfter.personalUnits.find(
+        (entry) => entry.principalId === PRINCIPAL_C_EMP,
+      )?.units,
+    ).toBe(2);
+  });
+});
 function eqSyncWork(tenantId: string, id: string) {
   return and(
     eq(hindsightSyncWork.tenantId, tenantId),

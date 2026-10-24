@@ -91,8 +91,13 @@ export function createDrizzleBudgetGate(
       const period = budgetPeriodOf(now());
       const units = input.units ?? 1;
       // Idempotency first: the same work key returns its existing reservation whatever its
-      // state — a deferred retry re-admits without a second charge, and a released row being
-      // re-admitted flips back to reserved (the release never counted, so one charge still).
+      // state — a deferred retry re-admits without a second charge. A RELEASED row never
+      // counted, so re-admitting it is a fresh admission in budget terms (RG6-3): the caps
+      // are re-checked inside the caps row lock and the flip back to reserved happens only
+      // within them — a released row cannot stand in as a bypass around a cap tightened
+      // since its release. The queue normally makes this unreachable (a release bumps
+      // attempts, so the next drain uses a fresh work key); it is the crash window between
+      // release and that bump where the same work key comes back.
       const [existing] = await database
         .select()
         .from(hindsightBudgetReservations)
@@ -105,40 +110,47 @@ export function createDrizzleBudgetGate(
         .limit(1);
       if (existing) {
         if (existing.state === "released") {
-          await database
-            .update(hindsightBudgetReservations)
-            .set({
-              state: "reserved",
+          const reAdmission = await database.transaction(async (tx) => {
+            const verdict = await capsVerdict(
+              tx,
+              input.tenantId,
+              input.principalId,
               period,
               units,
-              releasedAt: null,
-              releaseReason: null,
-              updatedAt: now(),
-            })
-            .where(eq(hindsightBudgetReservations.id, existing.id));
+            );
+            if (!verdict.ok) return verdict;
+            await tx
+              .update(hindsightBudgetReservations)
+              .set({
+                state: "reserved",
+                period,
+                units,
+                releasedAt: null,
+                releaseReason: null,
+                updatedAt: now(),
+              })
+              .where(
+                and(
+                  eq(hindsightBudgetReservations.id, existing.id),
+                  eq(hindsightBudgetReservations.state, "released"),
+                ),
+              );
+            return { ok: true as const };
+          });
+          if (!reAdmission.ok) {
+            return { ok: false, reason: reAdmission.reason };
+          }
         }
         return { ok: true, reservationId: existing.id };
       }
-      const [caps] = await database
-        .select()
-        .from(hindsightBudgetCaps)
-        .where(eq(hindsightBudgetCaps.tenantId, input.tenantId))
-        .limit(1);
-      if (caps) {
-        const [companyUsed, personalUsed] = await usageOf(
-          input.tenantId,
-          input.principalId,
-          period,
-        );
-        // A cap of 0 is the platform's "no background processing for this company" — an
-        // expressed limit, not an unset one (no row at all is the unset state).
-        if (companyUsed + units > caps.companyMonthlyUnits) {
-          return { ok: false, reason: "company-cap" };
-        }
-        if (personalUsed + units > caps.personalMonthlyUnits) {
-          return { ok: false, reason: "personal-cap" };
-        }
-      }
+      const verdict = await capsVerdict(
+        database,
+        input.tenantId,
+        input.principalId,
+        period,
+        units,
+      );
+      if (!verdict.ok) return { ok: false, reason: verdict.reason };
       const id = randomUUID();
       await database.insert(hindsightBudgetReservations).values({
         id,
@@ -247,13 +259,54 @@ export function createDrizzleBudgetGate(
     },
   };
 
+  /**
+   * Whether one admission fits the caps the platform has expressed — the same computation
+   * for a fresh reservation and the re-admission of a released one. Called inside the
+   * caller's transaction when it has one, so the caps row lock holds across the verdict and
+   * the write that acts on it: concurrent admissions of the same company serialize on their
+   * caps row, and each sees the charges the earlier one committed (READ COMMITTED re-reads
+   * the aggregate under the lock). No caps row = no cap expressed: admission runs. A cap of
+   * 0 is the platform's "no background processing" — an expressed limit, not an unset one.
+   */
+  async function capsVerdict(
+    db: Pick<Database, "select">,
+    tenantId: string,
+    principalId: string,
+    period: string,
+    units: number,
+  ): Promise<
+    { ok: true } | { ok: false; reason: "company-cap" | "personal-cap" }
+  > {
+    const [caps] = await db
+      .select()
+      .from(hindsightBudgetCaps)
+      .where(eq(hindsightBudgetCaps.tenantId, tenantId))
+      .for("update")
+      .limit(1);
+    if (!caps) return { ok: true };
+    const [companyUsed, personalUsed] = await usageOf(
+      db,
+      tenantId,
+      principalId,
+      period,
+    );
+    if (companyUsed + units > caps.companyMonthlyUnits) {
+      return { ok: false, reason: "company-cap" };
+    }
+    if (personalUsed + units > caps.personalMonthlyUnits) {
+      return { ok: false, reason: "personal-cap" };
+    }
+    return { ok: true };
+  }
+
   /** Company total and one principal's usage for a period, in one read each. */
   async function usageOf(
+    db: Pick<Database, "select">,
     tenantId: string,
     principalId: string,
     period: string,
   ): Promise<[number, number]> {
-    const rows = await database
+    const rows = await db
       .select({
         principalId: hindsightBudgetReservations.principalId,
         units: sql<number>`coalesce(sum(${hindsightBudgetReservations.units}), 0)::int`,

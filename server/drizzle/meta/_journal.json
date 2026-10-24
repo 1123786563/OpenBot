@@ -1464,6 +1464,13 @@
       "when": 1792857702000,
       "tag": "0208_mastra_execution_continuations",
       "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1792857703000,
+      "tag": "0209_hindsight_migration_quarantine_reasons",
+      "breakpoints": true
     }
   ]
 }
