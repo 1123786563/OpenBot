@@ -6,9 +6,11 @@
 // every adversarial behavior — never-resolving fetch, timeout, 5xx, malformed JSON, partial
 // envelopes, stale contract, ownership drift — is injected, never dialed. Live-instance
 // acceptance against a real self-hosted Opik belongs to #43, not this file.
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
-import { join } from "node:path";
+
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { SafeRecord, SafeText } from "../../shared/ai-observability";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { ObservationScopeError } from "../src/ai-observability/contracts";
 import {
   createOpikHttpPort,
@@ -26,16 +28,11 @@ import {
 } from "../src/ai-observability/scope";
 import { VERIFIED_TRACE_CREATE_BODY_KEYS } from "./support/opik-contract-fixtures";
 
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
 const manifest = (await Bun.file(
-  join(
-    hereDir,
-    "../src/ai-observability/opik-contract/47-manifest.json",
-  ),
+  join(hereDir, "../src/ai-observability/opik-contract/47-manifest.json"),
 ).json()) as VerifiedOpikContract;
 
 const trusted = resolveObservationScope({
@@ -183,6 +180,7 @@ describe("the verified contract gates every operation before network I/O", () =>
     );
     await expect(
       port({ contract: partial, fetch: transport }).writeSpans(trusted, {
+        binding: ownBinding,
         spans: [derivedSpan],
       }),
     ).rejects.toThrow(new OpikPortError("OPERATION_UNSUPPORTED"));
@@ -198,6 +196,7 @@ describe("the verified contract gates every operation before network I/O", () =>
     const { calls: none, transport: t1 } = recorder(() => new Response(""));
     await expect(
       port({ contract: noLimit, fetch: t1 }).writeSpans(trusted, {
+        binding: ownBinding,
         spans: [derivedSpan],
       }),
     ).rejects.toThrow(new OpikPortError("BODY_LIMIT_UNVERIFIED"));
@@ -212,6 +211,7 @@ describe("the verified contract gates every operation before network I/O", () =>
     const { calls: still, transport: t2 } = recorder(() => new Response(""));
     await expect(
       port({ contract: tiny, fetch: t2 }).writeSpans(trusted, {
+        binding: ownBinding,
         spans: [derivedSpan],
       }),
     ).rejects.toThrow(new OpikPortError("REQUEST_BODY_TOO_LARGE"));
@@ -311,6 +311,7 @@ describe("serialization follows the verified T04 contract exactly", () => {
       () => new Response("", { status: 200 }),
     );
     const result = await port({ fetch: transport }).writeSpans(trusted, {
+      binding: ownBinding,
       spans: [derivedSpan],
       binding: ownBinding,
     });
@@ -339,11 +340,73 @@ describe("serialization follows the verified T04 contract exactly", () => {
     });
   });
 
+  test("a span write without a binding is refused before any bytes move (FREV-02)", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 200 }),
+    );
+    const p = port({ fetch: transport });
+    // The port type still admits the absence; this is the runtime half that
+    // refuses it — an unattributable business write, exactly the shape the
+    // final review's recorder probe drove.
+    await expect(
+      p.writeSpans(trusted, { spans: [derivedSpan] }),
+    ).rejects.toThrow(new OpikPortError("OPERATION_INPUT_INVALID"));
+    expect(calls.length).toBe(0);
+  });
+
+  test("an explicit upstream trace id that disagrees with the recorded binding is drift (FREV-02)", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 200 }),
+    );
+    const p = port({ fetch: transport });
+    const recorded = {
+      ...ownBinding,
+      opikTraceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+    };
+    const result = await p.writeSpans(trusted, {
+      binding: recorded,
+      spans: [
+        {
+          ...derivedSpan,
+          endTimeUnixNano: "1760000000000000001",
+          opik: {
+            traceId: "01a1405b-f832-70cf-b204-f4dd5138700",
+            spanId: "01a1405b-f832-7c9a-8e2f-9a6b7c8d9e0f",
+          },
+        },
+      ],
+    });
+    // A second upstream trace for one run is the silent duplication drift
+    // exists to refuse; the first recorded claim stands. The drift suspends the
+    // scope's writes, so the replay half below runs on a fresh port.
+    const drift = driftOf(result);
+    expect(drift.reason).toBe("binding_mismatch");
+    expect(calls.length).toBe(0);
+
+    // The same explicit id the binding recorded is an idempotent replay, not drift.
+    const fresh = recorder(() => new Response("", { status: 200 }));
+    const replay = await port({ fetch: fresh.transport }).writeSpans(trusted, {
+      binding: recorded,
+      spans: [
+        {
+          ...derivedSpan,
+          endTimeUnixNano: "1760000000000000001",
+          opik: {
+            traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+            spanId: "01a1405b-f832-7c9a-8e2f-9a6b7c8d9e0f",
+          },
+        },
+      ],
+    });
+    expect(replay).toEqual({ outcome: "ok", value: { accepted: true } });
+  });
+
   test("explicit-path spans carry opik.* overrides as hyphenated UUIDv7 attributes", async () => {
     const { calls, transport } = recorder(
       () => new Response("", { status: 200 }),
     );
     await port({ fetch: transport }).writeSpans(trusted, {
+      binding: ownBinding,
       spans: [
         {
           traceId: "802441eacd7a6788824055d94e936c1a",
@@ -398,6 +461,7 @@ describe("serialization follows the verified T04 contract exactly", () => {
       cut: { state: "truncated", value: "prefix", originalBytes: 9_999 },
     });
     await port({ fetch: transport }).writeSpans(trusted, {
+      binding: ownBinding,
       spans: [{ ...derivedSpan, attributes }],
     });
     const sent = JSON.parse(String(calls[0].init.body));
@@ -440,6 +504,7 @@ describe("serialization follows the verified T04 contract exactly", () => {
     for (const spanPatch of cases) {
       await expect(
         p.writeSpans(trusted, {
+          binding: ownBinding,
           spans: [{ ...derivedSpan, ...spanPatch } as never],
         }),
       ).rejects.toThrow(new OpikPortError("OPERATION_INPUT_INVALID"));
@@ -447,6 +512,7 @@ describe("serialization follows the verified T04 contract exactly", () => {
     // A name the projection withheld cannot become a locatable span upstream.
     await expect(
       p.writeSpans(trusted, {
+        binding: ownBinding,
         spans: [
           { ...derivedSpan, name: { state: "omitted", reason: "credential" } },
         ],
@@ -455,6 +521,7 @@ describe("serialization follows the verified T04 contract exactly", () => {
     // Explicit overrides must be hyphenated UUIDv7, verbatim upstream identity is not guessed.
     await expect(
       p.writeSpans(trusted, {
+        binding: ownBinding,
         spans: [
           {
             ...derivedSpan,
@@ -959,7 +1026,10 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
 
     // The follow-on write never reaches the transport.
     const suspended = driftOf(
-      await p.writeSpans(trusted, { spans: [derivedSpan] }),
+      await p.writeSpans(trusted, {
+        binding: ownBinding,
+        spans: [derivedSpan],
+      }),
     );
     expect(suspended.reason).toBe("writes_suspended");
     expect(calls.length).toBe(1);
@@ -1118,7 +1188,6 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     expect(drift.reason).toBe("binding_mismatch");
     expect(drift.scopeKey).toBe(trusted.key);
     expect(calls.length).toBe(2);
-
   });
 
   test("suspension is per data range: the same Bot's other scope is suspended, another Bot's writes flow", async () => {
@@ -1135,7 +1204,12 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     // FREV-03: drift suspends the Bot's data range, so another actor's scope for
     // the same Bot is suspended too — the suspicious answer was about THAT range.
     expect(
-      driftOf(await p.writeSpans(otherScope, { spans: [derivedSpan] })).reason,
+      driftOf(
+        await p.writeSpans(otherScope, {
+          binding: ownBinding,
+          spans: [derivedSpan],
+        }),
+      ).reason,
     ).toBe("writes_suspended");
     // ...while another Bot's range answers independently.
     const otherBot = resolveObservationScope({
@@ -1144,7 +1218,15 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
       ownership: "owner",
       epoch: 1,
     });
-    const fine = await p.writeSpans(otherBot, { spans: [derivedSpan] });
+    const fine = await p.writeSpans(otherBot, {
+      binding: {
+        ...ownBinding,
+        scopeKey: otherBot.key,
+        locatorWorkspace: resolveStorageLocator(otherBot).workspace,
+        locatorProject: resolveStorageLocator(otherBot).project,
+      },
+      spans: [derivedSpan],
+    });
     expect(fine).toEqual({ outcome: "ok", value: { accepted: true } });
     expect(calls.length).toBe(2);
   });
@@ -1163,7 +1245,12 @@ describe("a configured credential rides every request; no key means no header (R
     const p = port({ fetch: transport, apiKey: "opik-api-key-1" });
     expect((await p.healthCheck()).outcome).toBe("ok");
     expect((await p.retrieveProject(trusted)).outcome).toBe("ok");
-    expect(await p.writeSpans(trusted, { spans: [derivedSpan] })).toEqual({
+    expect(
+      await p.writeSpans(trusted, {
+        binding: ownBinding,
+        spans: [derivedSpan],
+      }),
+    ).toEqual({
       outcome: "ok",
       value: { accepted: true },
     });

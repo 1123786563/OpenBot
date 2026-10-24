@@ -16,7 +16,10 @@
  * projection — and since FREV-01, span bodies carry free text only behind an approval
  * minted from the Bot's configured security policy; without one the span is
  * metrics-only. Even approved, the deny patterns run first and always win, so a
- * credential-shaped canary dies at the projection, not in transit.
+ * credential-shaped canary dies at the projection, not in transit. Since FREV-02 the
+ * write is also binding-gated: the run's local authoritative binding (T07) is
+ * established before the span reaches the port, and a binding that cannot be
+ * established fails the write closed — counted, never exported unattributed.
  *
  * Scoping: a span is written upstream only when the observation carries a scope this
  * process issued (T06). The built-in path's facts arrive without one today — the
@@ -24,6 +27,7 @@
  * nothing rather than inventing an owner.
  */
 import { randomBytes } from "node:crypto";
+import { type ObserverRunBindingGate, observerChainId } from "./bindings";
 import type { ObservationScope } from "./contracts";
 import type { OpikHealthService, OpikObservationWrite } from "./health";
 import type { OpikOtlpSpan } from "./opik-port";
@@ -246,17 +250,41 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
 }
 
 export function createModelSpanRecorder(
-  deps: Readonly<{ healthService: Pick<OpikHealthService, "submit"> }>,
+  deps: Readonly<{
+    healthService: Pick<OpikHealthService, "submit">;
+    /**
+     * FREV-02: the local authoritative run binding, established (or replayed)
+     * before any business span of the run is exported. Required on purpose: a
+     * recorder without a binding gate cannot be constructed, so no observation
+     * path can submit an unattributable business span — the final review drove
+     * exactly that recorder (scope, no binding) and watched the span queue.
+     */
+    bindings: Pick<ObserverRunBindingGate, "ensure">;
+  }>,
 ): ModelSpanRecorder {
   return {
     record(observation) {
       const scope = observation.scope;
       if (scope === undefined) return;
+      // FREV-02: the run's provable chain is the binding's identity. An
+      // observation without one has no local authority to export under, so it
+      // submits nothing rather than rooting a fresh trace per span — that
+      // fallback is precisely the unattributable write the review refused.
+      const chainTraceId = observerChainId(observation.trace?.traceId);
+      if (chainTraceId === null) return;
       const span = buildModelSpan(observation);
       const write: OpikObservationWrite = {
         scopeKey: scope.key,
         operation: "writeSpans",
-        perform: (port) => port.writeSpans(scope, { spans: [span] }),
+        perform: async (port) => {
+          // The binding first, on the write's own perform: its failure fails
+          // this write visibly (the queue counts every failure) and the span
+          // is never handed to the port.
+          const binding = await deps.bindings.ensure(scope, {
+            traceId: chainTraceId,
+          });
+          return port.writeSpans(scope, { spans: [span], binding });
+        },
       };
       deps.healthService.submit(write);
     },

@@ -16,6 +16,7 @@ import { context, trace } from "@opentelemetry/api";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
+import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
 import {
   createModelSpanRecorder,
   type ModelSpanObservation,
@@ -81,13 +82,30 @@ function aScope() {
   });
 }
 
-/** Records one observation and returns the spans the port would receive. */
+/** The default run chain: since FREV-02 every exported span binds one. */
+const DEFAULT_CHAIN = "c".repeat(32);
+
+/** Records one observation and returns the spans the port would receive.
+ *
+ * The binding gate is the test double (the real store's loop is proven in the
+ * bindings suites) and a default W3C chain stands in for the request span the
+ * production path captures — `chain: null` leaves the observation as written,
+ * for the cases that prove the fail-closed half.
+ */
 async function recordAndCapture(
   observation: ModelSpanObservation,
+  options: { chain?: string | null } = {},
 ): Promise<{ writes: ReturnType<typeof fakePort>["writes"] }> {
   const queue = fakeQueue();
-  const recorder = createModelSpanRecorder({ healthService: queue.queue });
-  recorder.record(observation);
+  const recorder = createModelSpanRecorder({
+    healthService: queue.queue,
+    bindings: observerRunBindingGateForTests(),
+  });
+  const chain =
+    observation.trace === undefined && options.chain !== null
+      ? { traceId: options.chain ?? DEFAULT_CHAIN }
+      : undefined;
+  recorder.record({ ...observation, ...(chain ? { trace: chain } : {}) });
   const port = fakePort();
   for (const write of queue.submitted) await write.perform(port.port);
   return { writes: port.writes };
@@ -136,7 +154,7 @@ describe("the model span recorder", () => {
     );
   });
 
-  test("a provable run chain is joined, a malformed one is never claimed (OCR h6)", async () => {
+  test("a provable run chain is joined; without one nothing exports (OCR h6, FREV-02)", async () => {
     const runTraceId = "a".repeat(32);
     const runSpanId = "b".repeat(16);
     const { writes } = await recordAndCapture({
@@ -155,19 +173,21 @@ describe("the model span recorder", () => {
     expect(joined.traceId).toBe(runTraceId);
     expect(joined.parentSpanId).toBe(runSpanId);
 
-    // A context that does not prove its shape is never fully claimed: a malformed
-    // trace id adopts nothing (fresh identity, no parent); a valid trace id with a
-    // malformed parent adopts the chain but refuses the parent.
-    const badTrace = await recordAndCapture({
-      occurredAt,
-      endedAt,
-      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
-      scope: aScope(),
-      trace: { traceId: "nothex!", parentSpanId: runSpanId },
-    });
-    expect(badTrace.writes[0]?.spans[0]?.traceId).toMatch(/^[0-9a-f]{32}$/);
-    expect(badTrace.writes[0]?.spans[0]?.traceId).not.toBe(runTraceId);
-    expect(badTrace.writes[0]?.spans[0]?.parentSpanId).toBeUndefined();
+    // A context that does not prove its shape is never claimed: a malformed
+    // trace id cannot be bound (FREV-02), so nothing exports at all — the old
+    // fresh-root fallback was exactly the unattributable write the final
+    // review's probe drove.
+    const badTrace = await recordAndCapture(
+      {
+        occurredAt,
+        endedAt,
+        ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+        scope: aScope(),
+        trace: { traceId: "nothex!", parentSpanId: runSpanId },
+      },
+      { chain: null },
+    );
+    expect(badTrace.writes).toHaveLength(0);
 
     const badParent = await recordAndCapture({
       occurredAt,
@@ -176,17 +196,22 @@ describe("the model span recorder", () => {
       scope: aScope(),
       trace: { traceId: runTraceId, parentSpanId: "short" },
     });
+    // A valid trace id with a malformed parent adopts the chain but refuses
+    // the parent — the chain binds, the parent claim does not.
     expect(badParent.writes[0]?.spans[0]?.traceId).toBe(runTraceId);
     expect(badParent.writes[0]?.spans[0]?.parentSpanId).toBeUndefined();
 
-    // No context at all: the pre-h6 behavior stands (fresh trace, no parent).
-    const absent = await recordAndCapture({
-      occurredAt,
-      endedAt,
-      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
-      scope: aScope(),
-    });
-    expect(absent.writes[0]?.spans[0]?.parentSpanId).toBeUndefined();
+    // No context at all: no chain, no binding, no export (FREV-02).
+    const absent = await recordAndCapture(
+      {
+        occurredAt,
+        endedAt,
+        ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+        scope: aScope(),
+      },
+      { chain: null },
+    );
+    expect(absent.writes).toHaveLength(0);
   });
 
   test("a settled call carries the actual provider usage (acceptance 1)", async () => {
@@ -352,12 +377,16 @@ describe("the model span recorder", () => {
 
   test("the span enters ONLY through the T09 write queue, one write per observation", () => {
     const queue = fakeQueue();
-    const recorder = createModelSpanRecorder({ healthService: queue.queue });
+    const recorder = createModelSpanRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
     recorder.record({
       occurredAt,
       endedAt,
       ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
       scope: aScope(),
+      trace: { traceId: DEFAULT_CHAIN },
     });
     expect(queue.submitted).toHaveLength(1);
     expect(queue.submitted[0].operation).toBe("writeSpans");
@@ -367,13 +396,17 @@ describe("the model span recorder", () => {
 
   test("an observation without a trusted scope writes nothing upstream", () => {
     const queue = fakeQueue();
-    const recorder = createModelSpanRecorder({ healthService: queue.queue });
+    const recorder = createModelSpanRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
     // The built-in path today: facts flow, but no trusted scope rides along yet —
     // nothing may reach the port (or pollute the queue counters) until one does.
     recorder.record({
       occurredAt,
       endedAt,
       ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+      trace: { traceId: DEFAULT_CHAIN },
     });
     expect(queue.submitted).toHaveLength(0);
   });

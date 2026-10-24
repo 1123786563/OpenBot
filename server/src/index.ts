@@ -8,7 +8,6 @@ import {
 } from "@copilotkit/runtime/v2";
 import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
-import { buildResponsibilityTurn } from "../../shared/responsibility-turn";
 import { initProcessTracing } from "@openbot/shared/trace";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
@@ -16,6 +15,7 @@ import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { serve } from "bun";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { buildResponsibilityTurn } from "../../shared/responsibility-turn";
 import { createActivityStore } from "./activity/activity";
 import {
   auditRoutineStore,
@@ -64,7 +64,11 @@ import {
   wakeUpInstruction,
   wakeUpTools,
 } from "./agents/wake-up";
-import { createRunBindingStore } from "./ai-observability/bindings";
+import {
+  createObserverRunBindingGate,
+  createRunBindingStore,
+  observerChainId,
+} from "./ai-observability/bindings";
 import { opikConfigFromEnv } from "./ai-observability/config";
 import type { BotManagementCheck } from "./ai-observability/context";
 import type { ObservationScope } from "./ai-observability/contracts";
@@ -325,11 +329,11 @@ import { createUnavailableConversationRoutes } from "./enterprise/conversations/
 import { createConversationService } from "./enterprise/conversations/service";
 import { createPackageService } from "./enterprise/plugin-packages/install-service";
 import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
-import { createPackageRuntime } from "./enterprise/plugin-packages/runtime";
 import {
   createPluginPackageRoutes,
   createUnavailablePluginPackageRoutes,
 } from "./enterprise/plugin-packages/routes";
+import { createPackageRuntime } from "./enterprise/plugin-packages/runtime";
 import { createPackageReadStore } from "./enterprise/plugin-packages/store";
 import {
   createGovernedModelExecution,
@@ -377,11 +381,11 @@ import {
   type ResourceInventoryService,
 } from "./enterprise/tenancy/not-found-semantics";
 import { createOAuthStateService } from "./enterprise/tenancy/oauth-state";
-import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
 import {
   createOpenMuseVoiceMobileTenancyService,
   type OpenMuseVoiceMobileTenancyRows,
 } from "./enterprise/tenancy/openmuse-voice-mobile-tenancy";
+import { createCompanyPeopleLifecycleService } from "./enterprise/tenancy/people-lifecycle";
 import {
   createPersonalShareAdminService,
   createPersonalShareDecisionService,
@@ -391,14 +395,14 @@ import {
   createPluginCatalogDecisionService,
 } from "./enterprise/tenancy/plugin-catalog";
 import {
+  applyReadinessEnforcementVerdict,
+  runReadinessEnforcement,
+} from "./enterprise/tenancy/readiness-enforcement";
+import {
   createSharedApprovalAdminService,
   createSharedApprovalService,
 } from "./enterprise/tenancy/shared-approvals";
 import { createCompanySsoScimConfigService } from "./enterprise/tenancy/sso-scim-config";
-import {
-  applyReadinessEnforcementVerdict,
-  runReadinessEnforcement,
-} from "./enterprise/tenancy/readiness-enforcement";
 import {
   applyStartupVerdict,
   runMultitenancyStartupChecks,
@@ -7683,8 +7687,20 @@ const opikTicketReaper = repeatAfterEach(
  * writes its spans upstream through the queue; a null scope (disabled, non-manager,
  * failed read) submits nothing, exactly as before the thread existed.
  */
+/*
+ * The observer-path binding gate (FREV-02): every business span the builtin
+ * recorders export is gated on this run's LOCAL authoritative binding — begin
+ * (idempotent, T07's store at 7517) before the first export of a chain, and
+ * the observed run close settling the binding after it. A binding that cannot
+ * be established fails the write closed: counted by the write queue, logged by
+ * the gate, never an unattributed span upstream.
+ */
+const opikObserverBindings = createObserverRunBindingGate(
+  aiObservabilityBindings,
+);
 const opikModelSpans = createModelSpanRecorder({
   healthService: opikHealthService,
+  bindings: opikObserverBindings,
 });
 if (opikBootConfig.enabled) {
   setBuiltinModelSpanObserver((fact) =>
@@ -7736,6 +7752,7 @@ if (opikBootConfig.enabled) {
  */
 const opikToolSteps = createToolStepRecorder({
   healthService: opikHealthService,
+  bindings: opikObserverBindings,
   /*
    * The id-mapping half (Issue #23/T17): a tool step whose span adopted an explicit
    * upstream id is linked after the write lands, chain-checked against the run
@@ -7748,7 +7765,7 @@ const opikToolSteps = createToolStepRecorder({
   }),
 });
 if (opikBootConfig.enabled) {
-  setBuiltinToolStepObserver((fact) =>
+  setBuiltinToolStepObserver((fact) => {
     opikToolSteps.record({
       toolCallId: fact.toolCallId,
       toolName: fact.toolName ?? undefined,
@@ -7784,8 +7801,26 @@ if (opikBootConfig.enabled) {
             },
           }
         : {}),
-    }),
-  );
+    });
+
+    // FREV-02's finish half: the tool-step window is the one run-close signal
+    // the fact face observes (RUN_FINISHED/RUN_ERROR/stream end close every
+    // open cell with it). The gate maps the window onto the honest binding
+    // state — interrupted stays interrupted; a terminal close whose outcome
+    // the fact could not name is the explicitly-unlearned unknown — and
+    // settles once per chain. Runs whose facts never carried a window (no
+    // tool steps at all) settle the same way through the binding lease's
+    // expiry sweeper.
+    const observedScope = fact.scope as ObservationScope | undefined;
+    const observedChainId = observerChainId(fact.trace?.traceId);
+    if (observedScope !== undefined && observedChainId !== null) {
+      opikObserverBindings.settleObservedWindow(
+        observedScope,
+        { traceId: observedChainId },
+        fact.window,
+      );
+    }
+  });
 }
 
 /*

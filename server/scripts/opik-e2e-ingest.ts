@@ -1,22 +1,31 @@
 // Issue #1123786563/OpenBot#4 — T37 E2E real-instance ingest acceptance.
 //
 // Drives the PRODUCTION observation chain exactly as server/src/index.ts wires it at
-// boot (index.ts:1087, 7518-7531, 7686): opikConfigFromEnv -> loadVerifiedOpikPort ->
-// createOpikHealthService -> createModelSpanRecorder. Nothing is reimplemented here:
-// the recorder projects content through T05 redaction (deny patterns run first and
-// always win), the health service's bounded queue performs the write against the
-// verified port, and the port speaks the T04 contract. This is the app-side seam, not
-// a raw OTLP curl.
+// boot: opikConfigFromEnv -> loadVerifiedOpikPort -> createOpikHealthService ->
+// createRunBindingStore -> createObserverRunBindingGate -> createModelSpanRecorder.
+// Nothing is reimplemented here: the recorder projects content through T05 redaction
+// (deny patterns run first and always win), the FREV-01 approval is minted by the
+// production approveSpanContent (the only minter), the FREV-02 binding gate begins the
+// run's local authoritative binding before the span exports, the health service's
+// bounded queue performs the write against the verified port, and the port speaks the
+// T04 contract. This is the app-side seam, not a raw OTLP curl — and not a bypass:
+// without a real DATABASE_URL behind the real binding store the write fails closed.
 //
 // Proves against a real self-hosted Opik instance:
-//   (a) a canary-bearing observation actually reaches storage (REST read-back), and
-//   (b) credential-shaped canaries never reach it (A4) — they die at projection, and a
-//       storage read-back over every row of the project confirms absence.
+//   (a) an approved canary-bearing observation actually reaches storage (REST
+//       read-back) — since F5A1 a proof-less body is omitted, so the canary rides
+//       a minted approval or it never lands;
+//   (b) credential-shaped canaries never reach it (A4) — they die at projection
+//       EVEN approved (deny patterns win over approval), and a storage read-back
+//       over every row of the project confirms absence;
+//   (c) the run's local authoritative binding exists (FREV-02): begun before the
+//       export and settled to its observed close, readable through the store.
 //
 // Read-only read-back through the same verified port. Evidence is sanitized: the safe
 // canary value may appear (it is the proof marker); secret canary VALUES never do —
 // only their labels. Exits nonzero on any failed check; writes no "passed" evidence.
 //
+//   DATABASE_URL=postgres://... (migrated; the binding store reads it) \
 //   bun server/scripts/opik-e2e-ingest.ts \
 //     --base-url http://127.0.0.1:5174/api \
 //     --api-key e2e-synthetic-key \
@@ -24,6 +33,10 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  createObserverRunBindingGate,
+  createRunBindingStore,
+} from "../src/ai-observability/bindings";
 import { opikConfigFromEnv } from "../src/ai-observability/config";
 import { createOpikHealthService } from "../src/ai-observability/health";
 import { createModelSpanRecorder } from "../src/ai-observability/model-span";
@@ -32,7 +45,9 @@ import {
   resolveObservationScope,
   resolveStorageLocator,
 } from "../src/ai-observability/scope";
+import { approveSpanContent } from "../src/ai-observability/span-support";
 import { loadVerifiedOpikPort } from "../src/ai-observability/wiring";
+import { createDatabase } from "../src/db/client";
 
 type Args = { baseUrl: string; apiKey: string; evidenceDir: string };
 
@@ -97,8 +112,25 @@ async function main(): Promise<void> {
   if (port === null)
     throw new Error("loadVerifiedOpikPort returned null (manifest untrusted)");
 
+  // FREV-02: the production binding gate over a real binding store — captured
+  // before createDatabase because that call takes $DATABASE_URL out of the
+  // environment (see db/client.ts), and a missing or unmigrated database must
+  // fail this run loudly, never silently fall back to a binding-less write.
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  if (databaseUrl.trim() === "") {
+    throw new Error(
+      "DATABASE_URL is required: the FREV-02 gate binds the run through the real binding store, and a run without one fails closed.",
+    );
+  }
+  const database = createDatabase(databaseUrl);
+  const bindings = createRunBindingStore(database);
+  const observerBindings = createObserverRunBindingGate(bindings);
+
   const healthService = createOpikHealthService({ config: () => config, port });
-  const recorder = createModelSpanRecorder({ healthService });
+  const recorder = createModelSpanRecorder({
+    healthService,
+    bindings: observerBindings,
+  });
 
   // The scope the production path issues per run (T06): synthetic ids, real issuer.
   const scope = resolveObservationScope({
@@ -109,6 +141,28 @@ async function main(): Promise<void> {
   });
   const locator = resolveStorageLocator(scope);
 
+  // The run's W3C chain — what the production path captures from the request's
+  // active span at doStream entry; here it is minted as one honest chain id for
+  // the whole run, because since FREV-02 a chain-less observation exports
+  // nothing (no chain, no binding, no export).
+  const runChainId = hex(32);
+  const runChain = { traceId: runChainId };
+
+  // F5A1/f5a1-F3: the proof the safe canary's body rides — minted by the ONE
+  // production minter from an approving policy, exactly as the run wiring
+  // would when the Bot's policy resolves. The secret canary rides it too: the
+  // assertion that matters is that the deny patterns win OVER the approval.
+  const contentApproval = approveSpanContent({
+    source: "bot_security_policy",
+    policyRef: `opik-e2e-ingest/canary-policy/${tag}`,
+    allowFreeText: true,
+  });
+  if (contentApproval === null) {
+    throw new Error(
+      "approveSpanContent minted nothing for an approving policy — the canary cannot ride a proof that does not exist.",
+    );
+  }
+
   let readiness = await healthService.readiness();
 
   // The bounded write entry fails closed until a probe has actually succeeded (T09), and a
@@ -116,7 +170,7 @@ async function main(): Promise<void> {
   // observations, and if the counters show either was refused behind a probe flip, wait out
   // the re-arm cooldown and resubmit both — up to three rounds, all visible in the counters.
   const submitBoth = (): void => {
-    // Clean observation: must arrive.
+    // Clean observation: must arrive — body behind the minted approval.
     recorder.record({
       occurredAt: new Date(),
       endedAt: new Date(),
@@ -126,8 +180,11 @@ async function main(): Promise<void> {
       input: `e2e real-instance ingest ${safeCanary}`,
       output: `e2e output ${safeCanary}`,
       scope,
+      trace: runChain,
+      contentApproval,
     });
-    // Credential-bearing observation: must be omitted at projection, never sent.
+    // Credential-bearing observation: approved LIKE THE SAFE ONE — it must be
+    // omitted anyway at projection (deny wins over approval), never sent.
     recorder.record({
       occurredAt: new Date(),
       endedAt: new Date(),
@@ -137,6 +194,8 @@ async function main(): Promise<void> {
       input: `secret probe ${secretCanaries.map((c) => c.value).join(" ")}`,
       output: `secret probe output`,
       scope,
+      trace: runChain,
+      contentApproval,
     });
   };
   const awaitReady = async (): Promise<void> => {
@@ -215,6 +274,40 @@ async function main(): Promise<void> {
     serialized.includes(c.value),
   );
 
+  // ---- FREV-02: the local authoritative binding, through the real store. ----
+  // The observed run close settles the binding exactly as the boot wiring
+  // forwards the tool-step window; the row is then read back through the
+  // production query seam (latestAttempt) — the same lookup the run detail
+  // route answers with, proving this run's content is locally locatable.
+  observerBindings.settleObservedWindow(scope, runChain, "terminal");
+  let bindingRead: Awaited<ReturnType<typeof bindings.latestAttempt>> = null;
+  let bindingReadError: string | null = null;
+  try {
+    // Poll past "running": the settle's finish races this read, and the check
+    // below wants the SETTLED row, not the begun one.
+    for (
+      let i = 0;
+      i < 30 && (bindingRead === null || bindingRead.state === "running");
+      i++
+    ) {
+      bindingRead = await bindings.latestAttempt(
+        scope,
+        `builtin:${runChainId}`,
+      );
+      if (bindingRead === null || bindingRead.state === "running") {
+        await new Promise((res) => setTimeout(res, 1000));
+      }
+    }
+  } catch (error) {
+    bindingReadError = error instanceof Error ? error.message : String(error);
+  }
+  const bindingEstablished =
+    bindingReadError === null &&
+    bindingRead !== null &&
+    bindingRead.traceId === runChainId &&
+    bindingRead.capability === "detailed" &&
+    bindingRead.state === "unknown";
+
   const checks = {
     readinessReady: readiness.ready,
     readinessAtEndReady: readinessAtEnd.ready,
@@ -223,6 +316,7 @@ async function main(): Promise<void> {
     projectResolved: projectId.length > 0,
     safeCanaryInStorage: safeFound,
     forbiddenCanariesAbsent: secretFound.length === 0,
+    runBindingEstablished: bindingEstablished,
   };
   const passed = Object.values(checks).every(Boolean);
 
@@ -244,7 +338,7 @@ async function main(): Promise<void> {
         startedAt: startedAt.toISOString(),
         baseUrl: args.baseUrl,
         apiKey: args.apiKey === "" ? null : "<present, not recorded>",
-        seam: "production modules: opikConfigFromEnv -> loadVerifiedOpikPort -> createOpikHealthService -> createModelSpanRecorder",
+        seam: "production modules: opikConfigFromEnv -> loadVerifiedOpikPort -> createOpikHealthService -> createRunBindingStore -> createObserverRunBindingGate -> createModelSpanRecorder (+ approveSpanContent for the canary proof)",
         scope: {
           key: scope.key,
           actorId: scope.actorId,
@@ -260,6 +354,21 @@ async function main(): Promise<void> {
           label: "SAFE_CANARY_T37",
           value: safeCanary,
           foundInStorage: safeFound,
+          ridesApproval: true,
+        },
+        runBinding: {
+          runId: `builtin:${runChainId}`,
+          traceId: runChainId,
+          read: bindingRead
+            ? {
+                id: bindingRead.id,
+                state: bindingRead.state,
+                capability: bindingRead.capability,
+                traceId: bindingRead.traceId,
+                createdAt: bindingRead.createdAt.toISOString(),
+              }
+            : null,
+          readError: bindingReadError,
         },
         forbiddenCanaries: secretCanaries.map((c) => ({
           label: c.label,
@@ -277,12 +386,13 @@ async function main(): Promise<void> {
     `${JSON.stringify(sanitized, null, 2)}\n`,
   );
 
+  await database.$client.close();
   if (!passed) {
     console.error(`FAILED checks: ${JSON.stringify(checks)}`);
     process.exit(1);
   }
   console.log(
-    `E2E ingest PASSED project=${locator.project} projectId=${projectId} accepted=${stats.accepted} safeCanaryFound=${safeFound} forbiddenFound=${secretFound.length}`,
+    `E2E ingest PASSED project=${locator.project} projectId=${projectId} accepted=${stats.accepted} safeCanaryFound=${safeFound} forbiddenFound=${secretFound.length} bindingState=${bindingRead?.state ?? "absent"}`,
   );
 }
 

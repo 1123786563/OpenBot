@@ -1,7 +1,13 @@
-import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import {
+  afterAll,
+  afterEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
+import {
+  createObserverRunBindingGate,
   createRunBindingStore,
   RunBindingError,
 } from "../src/ai-observability/bindings";
@@ -617,4 +623,95 @@ test("a deletion-in-flight binding is gone to every read seam (OCR m105)", async
     `trace-opik-105-1`,
   ]);
   expect(verdicts.has(`trace-opik-105-1`)).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// FREV-02: the observer-path gate against the real store
+// ---------------------------------------------------------------------------
+
+const CHAIN_A = "0123456789abcdef0123456789abcdef";
+const CHAIN_B = "fedcba9876543210fedcba9876543210";
+
+describe("the observer run-binding gate (FREV-02)", () => {
+  const gate = createObserverRunBindingGate(store);
+
+  test("ensure begins the chain's authoritative binding before any export", async () => {
+    const ref = await gate.ensure(scopeA, { traceId: CHAIN_A });
+    expect(ref).toMatchObject({
+      scopeKey: scopeA.key,
+      runId: `builtin:${CHAIN_A}`,
+      attemptId: `builtin:${CHAIN_A}`,
+      opikTraceId: null,
+    });
+    // The row is really there, locatable by the read seam the detail route uses.
+    const row = await store.latestAttempt(scopeA, `builtin:${CHAIN_A}`);
+    expect(row?.traceId).toBe(CHAIN_A);
+    expect(row?.capability).toBe("detailed");
+    expect(row?.state).toBe("running");
+  });
+
+  test("a second ensure of the same chain replays the same row, not a second one", async () => {
+    await gate.ensure(scopeA, { traceId: CHAIN_A });
+    const rows = await database
+      .select()
+      .from(aiObservationBindings)
+      .where(eq(aiObservationBindings.scopeKey, scopeA.key));
+    const forChain = rows.filter((row) => row.traceId === CHAIN_A);
+    expect(forChain).toHaveLength(1);
+  });
+
+  test("a carried runRef binds under the real run and attempt, and the chain check holds", async () => {
+    await gate.ensure(scopeA, {
+      traceId: CHAIN_B,
+      runRef: { runId: `${prefix}gate-run`, attemptId: "attempt-9" },
+    });
+    const row = await store.attempt(scopeA, `${prefix}gate-run`, "attempt-9");
+    expect(row?.traceId).toBe(CHAIN_B);
+  });
+
+  test("a divergent chain on the authoritative row refuses (the first claim stands)", async () => {
+    // The same (scope, run, attempt) already bound a DIFFERENT chain — the
+    // HTTP report path's row, say. The gate must refuse to export a run under
+    // a row that disagrees with the chain being exported. A fresh gate: the
+    // shared one memoizes chains it already established, by design.
+    const runId = `${prefix}gate-divergent`;
+    await store.begin(scopeA, {
+      runId,
+      attemptId: "attempt-1",
+      traceId: "a".repeat(32),
+      capability: "basic",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const fresh = createObserverRunBindingGate(store);
+    await expect(
+      fresh.ensure(scopeA, {
+        traceId: CHAIN_A,
+        runRef: { runId, attemptId: "attempt-1" },
+      }),
+    ).rejects.toThrow(RunBindingError);
+  });
+
+  test("an observed window settles the binding onto the honest state", async () => {
+    const traceId = "e".repeat(32);
+    await gate.ensure(scopeA, { traceId });
+    gate.settleObservedWindow(scopeA, { traceId }, "terminal");
+    // The settle rides a microtask chain; wait it out.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const row = await store.latestAttempt(scopeA, `builtin:${traceId}`);
+    expect(row?.state).toBe("unknown");
+
+    const interruptedChain = "d".repeat(32);
+    await gate.ensure(scopeA, { traceId: interruptedChain });
+    gate.settleObservedWindow(
+      scopeA,
+      { traceId: interruptedChain },
+      "interrupted",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const interruptedRow = await store.latestAttempt(
+      scopeA,
+      `builtin:${interruptedChain}`,
+    );
+    expect(interruptedRow?.state).toBe("interrupted");
+  });
 });

@@ -17,7 +17,6 @@
 // No database and no real Opik: the W3C helpers are real, the queue and port
 // are the same fakes the T15 suite uses, and HTTP is a real loopback serve.
 
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { context, trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
@@ -27,6 +26,8 @@ import {
   injectTraceHeaders,
   withTraceFetch,
 } from "../../shared/trace";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
+import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
 import { resolveObservationScope } from "../src/ai-observability/scope";
@@ -296,7 +297,10 @@ describe("a broken link is detectable", () => {
 describe("a step observation with the run's trace context", () => {
   test("writes its span under that trace, parented under the ambient span", async () => {
     const queue = fakeQueue();
-    const recorder = createToolStepRecorder({ healthService: queue.queue });
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
     recorder.record(aToolObservation());
     const port = okPort();
     for (const write of queue.submitted) await write.perform(port.port);
@@ -307,22 +311,28 @@ describe("a step observation with the run's trace context", () => {
     expect(span.parentSpanId).toBe(PARENT_SPAN_ID);
   });
 
-  test("without a trace context the span roots its own, as before", async () => {
+  test("without a trace context nothing exports — no chain, no binding (FREV-02)", async () => {
     const queue = fakeQueue();
-    const recorder = createToolStepRecorder({ healthService: queue.queue });
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
     recorder.record(aToolObservation({ trace: undefined }));
     const port = okPort();
     for (const write of queue.submitted) await write.perform(port.port);
 
-    const span = port.writes[0].spans[0];
-    expect(span.traceId).not.toBe(TRACE_ID);
-    expect(span.traceId).toMatch(/^[0-9a-f]{32}$/);
-    expect(span.parentSpanId).toBeUndefined();
+    // The old fresh-root fallback was the unattributable write the final
+    // review's probe drove; since FREV-02 a chain-less observation submits
+    // nothing at all.
+    expect(port.writes).toHaveLength(0);
   });
 
-  test("a malformed trace id or parent id is not adopted", async () => {
+  test("a malformed trace id is not adopted — and cannot bind, so nothing exports (FREV-02)", async () => {
     const queue = fakeQueue();
-    const recorder = createToolStepRecorder({ healthService: queue.queue });
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
     recorder.record(
       aToolObservation({
         trace: {
@@ -335,11 +345,7 @@ describe("a step observation with the run's trace context", () => {
     const port = okPort();
     for (const write of queue.submitted) await write.perform(port.port);
 
-    const span = port.writes[0].spans[0];
-    expect(span.traceId).toMatch(/^[0-9a-f]{32}$/);
-    expect(span.traceId).not.toBe("not-hex-at-all");
-    expect(span.parentSpanId).toBeUndefined();
-    expect(span.opik).toBeUndefined();
+    expect(port.writes).toHaveLength(0);
   });
 
   test("adopts explicit upstream ids only when honestly known, and links after the write lands", async () => {
@@ -347,6 +353,7 @@ describe("a step observation with the run's trace context", () => {
     const links: unknown[] = [];
     const recorder = createToolStepRecorder({
       healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
       idLinks: {
         link: async (_scope, input) => {
           links.push(input);
@@ -379,6 +386,7 @@ describe("a step observation with the run's trace context", () => {
     const links: unknown[] = [];
     const recorder = createToolStepRecorder({
       healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
       idLinks: {
         link: async (_scope, input) => {
           links.push(input);
@@ -403,6 +411,7 @@ describe("a step observation with the run's trace context", () => {
     const links: unknown[] = [];
     const recorder = createToolStepRecorder({
       healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
       idLinks: {
         link: async (_scope, input) => {
           links.push(input);
@@ -421,6 +430,7 @@ describe("a step observation with the run's trace context", () => {
     const queue = fakeQueue();
     const recorder = createToolStepRecorder({
       healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
       idLinks: {
         link: async () => ({
           linked: false as const,
@@ -447,6 +457,7 @@ describe("a step observation with the run's trace context", () => {
     ];
     const recorder = createToolStepRecorder({
       healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
       idLinks: {
         link: async () => verdicts.shift(),
       },
@@ -464,6 +475,7 @@ describe("a step observation with the run's trace context", () => {
     const queue = fakeQueue();
     const recorder = createToolStepRecorder({
       healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
       idLinks: {
         link: async () => {
           throw new Error("database went away");
@@ -481,7 +493,10 @@ describe("a step observation with the run's trace context", () => {
 
   test("no idLinks dependency means no link, and the span is unchanged", async () => {
     const queue = fakeQueue();
-    const recorder = createToolStepRecorder({ healthService: queue.queue });
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
     recorder.record(aToolObservation());
     const port = okPort();
     for (const write of queue.submitted) await write.perform(port.port);

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import {
   type AiObservationBindingCapability,
@@ -7,8 +8,10 @@ import {
   aiObservationBindings,
 } from "../db/schema/ai-observability-bindings";
 import type { ObservationScope } from "./contracts";
+import type { OpikRunBindingRef } from "./opik-port";
 import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
+import { W3C_TRACE_ID } from "./span-support";
 
 /**
  * The trusted seam between T06's ObservationScope and the binding table.
@@ -35,6 +38,11 @@ export type RunBindingErrorCode =
    * another live binding of this scope already recorded that upstream id. The
    * first claim stands; this attempt stays unreconciled and the caller hears a
    * deterministic 409, never the driver's bare constraint violation as a 500.
+   *
+   * FREV-02: also the observer gate's replay refusal — the authoritative
+   * (scope, run, attempt) row already exists and names a DIFFERENT W3C chain
+   * than the one being exported. The first claim stands there too: the gate
+   * refuses rather than exporting a run under a row that disagrees with it.
    */
   | "BINDING_TRACE_CONFLICT";
 
@@ -498,5 +506,267 @@ export function createRunBindingStore(db: Database): RunBindingStore {
         .limit(1);
       return rows[0] ?? null;
     },
+  };
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * The observer-path binding gate (FREV-02)
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * The chain id when provable — a W3C 32-hex trace id — else null. This is the
+ * binding gate's identity test: the run's chain is the one identity every
+ * builtin fact already carries, and an observation whose chain cannot be
+ * proven has no local authority to export under.
+ */
+export function observerChainId(traceId: string | undefined): string | null {
+  return traceId !== undefined && W3C_TRACE_ID.test(traceId) ? traceId : null;
+}
+
+/** The run a builtin observation binds as, keyed by what the fact face carries. */
+export type ObserverRunChain = Readonly<{
+  /** The run's W3C trace id — the chain every span of the run joins. */
+  traceId: string;
+  /**
+   * The run/attempt identity, when the fact honestly carried one (the
+   * tool-step seam's run association, when that threading lands). Absent —
+   * every wiring today — binds the chain itself as the run: one attempt per
+   * chain, origin stated in the id.
+   */
+  runRef?: Readonly<{ runId: string; attemptId: string }>;
+}>;
+
+export type ObserverRunBindingGate = Readonly<{
+  /**
+   * The chain's local authoritative binding, established (begin, idempotent)
+   * or replayed, BEFORE any business span of the run is exported. A store or
+   * constraint failure rejects; the caller fails the write closed on it — the
+   * span is not exported, and the drop is counted where the write queue
+   * counts every failure, never silent, never a faked success.
+   */
+  ensure(
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+  ): Promise<OpikRunBindingRef>;
+  /**
+   * Settle the chain's binding from an observed run close — the tool-step
+   * window is the one run-close signal the fact face observes. An interrupted
+   * close settles `interrupted`; a terminal close without an outcome the fact
+   * could name settles the explicitly-unlearned `unknown` (RUN_ERROR and
+   * RUN_FINISHED both close terminal there, and the difference is not carried
+   * — claiming completed or failed would invent it). First settle wins per
+   * chain; a settle that fails leaves the row running and the lease sweeper's
+   * `unknown` is the net, exactly as for a reporter that died mid-run.
+   */
+  settleObservedWindow(
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+    window: "interrupted" | "terminal",
+  ): void;
+}>;
+
+/** One binding row as the port's write guard reads it. */
+function observerBindingRef(row: RunBinding): OpikRunBindingRef {
+  return {
+    scopeKey: row.scopeKey,
+    runId: row.runId,
+    attemptId: row.attemptId,
+    locatorWorkspace: row.locatorWorkspace,
+    locatorProject: row.locatorProject,
+    opikTraceId: row.opikTraceId,
+  };
+}
+
+/** A non-empty carried reference; `null` when the fact carried none usable. */
+function carriedRef(value: string | undefined): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+/** The safe label a gate failure logs and nothing else — no ids, no content. */
+function gateReason(error: unknown): string {
+  return error instanceof RunBindingError ? error.code : "error";
+}
+
+/** The builtin path observes its own internal steps, so its capability is detailed. */
+const OBSERVER_CAPABILITY: AiObservationBindingCapability = "detailed";
+/** The same seven-day lease the HTTP report path writes (routes/basic-run.ts). */
+const DEFAULT_OBSERVER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Bounded memory: recent chains per scope, and scopes, before FIFO eviction. */
+const DEFAULT_MAX_CHAINS_PER_SCOPE = 2048;
+const DEFAULT_MAX_SCOPES = 4096;
+
+type ScopeChains = {
+  begun: Map<string, Promise<OpikRunBindingRef>>;
+  settled: Set<string>;
+  /** Insertion order of `begun`, the FIFO the bound evicts by. */
+  order: string[];
+};
+
+export function createObserverRunBindingGate(
+  store: Pick<RunBindingStore, "begin" | "finish">,
+  options: Readonly<{
+    now?: () => Date;
+    ttlMs?: number;
+    maxChainsPerScope?: number;
+    maxScopes?: number;
+  }> = {},
+): ObserverRunBindingGate {
+  const log = getLogger("server");
+  const now = options.now ?? (() => new Date());
+  const ttlMs = options.ttlMs ?? DEFAULT_OBSERVER_TTL_MS;
+  const maxChains = options.maxChainsPerScope ?? DEFAULT_MAX_CHAINS_PER_SCOPE;
+  const maxScopes = options.maxScopes ?? DEFAULT_MAX_SCOPES;
+  const scopes = new Map<string, ScopeChains>();
+
+  const chainsOf = (scope: ObservationScope): ScopeChains => {
+    const existing = scopes.get(scope.key);
+    if (existing !== undefined) return existing;
+    // Bound the scope map itself the same way each scope's chains are bounded:
+    // an evicted scope re-begins on its next fact, idempotently.
+    if (scopes.size >= maxScopes) {
+      const oldest = scopes.keys().next().value;
+      if (oldest !== undefined) scopes.delete(oldest);
+    }
+    const fresh: ScopeChains = {
+      begun: new Map(),
+      settled: new Set(),
+      order: [],
+    };
+    scopes.set(scope.key, fresh);
+    return fresh;
+  };
+
+  const ensure = async (
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+  ): Promise<OpikRunBindingRef> => {
+    const traceId = observerChainId(chain.traceId);
+    if (traceId === null) {
+      throw new RunBindingError("BINDING_INPUT_INVALID", 400);
+    }
+    const carriedRunId = carriedRef(chain.runRef?.runId);
+    const carriedAttemptId = carriedRef(chain.runRef?.attemptId);
+    if (
+      chain.runRef !== undefined &&
+      (carriedRunId === null || carriedAttemptId === null)
+    ) {
+      // A runRef was carried but unusable: an association that names the run
+      // half-honestly is worse than none — refuse rather than bind the chain
+      // under an id the caller thought it had overridden.
+      throw new RunBindingError("BINDING_INPUT_INVALID", 400);
+    }
+    // No carried runRef — the default — binds the chain itself as the run:
+    // one attempt per chain, origin stated in the id.
+    const runId = carriedRunId ?? `builtin:${traceId}`;
+    const attemptId = carriedAttemptId ?? `builtin:${traceId}`;
+    const chains = chainsOf(scope);
+    const pending = chains.begun.get(traceId);
+    if (pending !== undefined) return pending;
+
+    const attempt = (async () => {
+      const { binding } = await store.begin(scope, {
+        runId,
+        attemptId,
+        traceId,
+        capability: OBSERVER_CAPABILITY,
+        expiresAt: new Date(now().getTime() + ttlMs),
+      });
+      if (binding.traceId !== traceId) {
+        // The authoritative row exists and names a different chain: the first
+        // claim stands (the reconcile discipline), and a run whose spans would
+        // export under a row that disagrees with them exports nothing.
+        throw new RunBindingError("BINDING_TRACE_CONFLICT", 409);
+      }
+      return observerBindingRef(binding);
+    })();
+    chains.begun.set(traceId, attempt);
+    chains.order.push(traceId);
+    if (chains.order.length > maxChains) {
+      const oldest = chains.order.shift();
+      if (oldest !== undefined) {
+        chains.begun.delete(oldest);
+        chains.settled.delete(oldest);
+      }
+    }
+    try {
+      return await attempt;
+    } catch (error) {
+      // A failed establishment is not cached: the database may come back, and
+      // the next fact of the run asks again — each failure fails only the
+      // facts whose write it gated.
+      chains.begun.delete(traceId);
+      const at = chains.order.indexOf(traceId);
+      if (at >= 0) chains.order.splice(at, 1);
+      log.warn(
+        {
+          type: "opik-observer-binding-begin-failed",
+          reason: gateReason(error),
+        },
+        "opik-observer-binding-begin-failed",
+      );
+      throw error;
+    }
+  };
+
+  return {
+    ensure,
+    settleObservedWindow(scope, chain, window) {
+      const traceId = observerChainId(chain.traceId);
+      if (traceId === null) return; // nothing provable to settle
+      const chains = chainsOf(scope);
+      if (chains.settled.has(traceId)) return; // first settle wins
+      chains.settled.add(traceId);
+      const state = window === "interrupted" ? "interrupted" : "unknown";
+      void ensure(scope, chain)
+        .then((binding) =>
+          store.finish(scope, binding.runId, binding.attemptId, state),
+        )
+        .catch((error) => {
+          // Undo the once-mark so a later observed close retries; until one
+          // lands, the row stays running and the lease sweeper is the net.
+          chains.settled.delete(traceId);
+          log.warn(
+            {
+              type: "opik-observer-binding-settle-failed",
+              reason: gateReason(error),
+            },
+            "opik-observer-binding-settle-failed",
+          );
+        });
+    },
+  };
+}
+
+/** A binding ref consistent with `scope`, for suites driving the recorders
+ * without a store (the meteredModelForTests pattern: a test seam, never wired
+ * in production). */
+export function observerBindingRefForTests(
+  scope: ObservationScope,
+  run: Readonly<{
+    runId?: string;
+    attemptId?: string;
+    opikTraceId?: string | null;
+  }> = {},
+): OpikRunBindingRef {
+  const locator = resolveStorageLocator(scope);
+  return {
+    scopeKey: scope.key,
+    runId: run.runId ?? "run-test",
+    attemptId: run.attemptId ?? "attempt-test",
+    locatorWorkspace: locator.workspace,
+    locatorProject: locator.project,
+    opikTraceId: run.opikTraceId ?? null,
+  };
+}
+
+/** Test-only: a gate over no store — ensure always answers the consistent ref
+ * for the scope it is asked about, settle is a no-op. The binding loop itself
+ * is proven against the real store in the bindings suites. */
+export function observerRunBindingGateForTests(): ObserverRunBindingGate {
+  return {
+    ensure: async (scope) => observerBindingRefForTests(scope),
+    settleObservedWindow: () => {},
   };
 }

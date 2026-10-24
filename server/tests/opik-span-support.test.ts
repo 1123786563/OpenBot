@@ -14,6 +14,7 @@
 // first, so the omission is proven to come from the governance gate, not from a
 // keyword regex — Spec §7's whole point.
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
+import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
 import { createModelSpanRecorder } from "../src/ai-observability/model-span";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
@@ -64,17 +65,28 @@ function aScope() {
   });
 }
 
-/** Records one observation through the production recorder; returns the port writes. */
-function recordAndCapture(
+/** The run chain every exported span binds since FREV-02. */
+const CHAIN = "c".repeat(32);
+
+/** Records one observation through the production recorder; returns the port
+ * writes. The binding gate is the test double — this suite proves the CONTENT
+ * gate; the binding loop is proven in the bindings suites. */
+async function recordAndCapture(
   observation: Parameters<
     ReturnType<typeof createModelSpanRecorder>["record"]
   >[0],
-): Array<{ spans: readonly OpikOtlpSpan[] }> {
+): Promise<Array<{ spans: readonly OpikOtlpSpan[] }>> {
   const queue = fakeQueue();
-  const recorder = createModelSpanRecorder({ healthService: queue.queue });
-  recorder.record(observation);
+  const recorder = createModelSpanRecorder({
+    healthService: queue.queue,
+    bindings: observerRunBindingGateForTests(),
+  });
+  recorder.record({
+    ...observation,
+    trace: observation.trace ?? { traceId: CHAIN },
+  });
   const port = fakePort();
-  for (const write of queue.submitted) void write.perform(port.port);
+  for (const write of queue.submitted) await write.perform(port.port);
   return port.writes;
 }
 
@@ -114,11 +126,11 @@ const PASSPHRASE_SHAPE = `our office door code is 4-7-2-9, please don't share it
 // ---------------------------------------------------------------------------
 
 describe("span body governance (FREV-01)", () => {
-  test("the review counterexample (email + short password) is omitted without a proof, metrics survive", () => {
+  test("the review counterexample (email + short password) is omitted without a proof, metrics survive", async () => {
     // Premise: neither shape is on the deny list — a regex is not what stops it.
     expect(denyReason(FREV_BODY)).toBeUndefined();
 
-    const writes = recordAndCapture(anObservation({ input: FREV_BODY }));
+    const writes = await recordAndCapture(anObservation({ input: FREV_BODY }));
     expect(writes).toHaveLength(1);
     const span = writes[0].spans[0];
     const serialized = JSON.stringify(span);
@@ -150,9 +162,9 @@ describe("span body governance (FREV-01)", () => {
     expect(span.name.state).toBe("projected");
   });
 
-  test("non-regex shape regression A: business PII prose is omitted without a proof", () => {
+  test("non-regex shape regression A: business PII prose is omitted without a proof", async () => {
     expect(denyReason(PII_SHAPE)).toBeUndefined();
-    const writes = recordAndCapture(anObservation({ input: PII_SHAPE }));
+    const writes = await recordAndCapture(anObservation({ input: PII_SHAPE }));
     const span = writes[0].spans[0];
     expect(JSON.stringify(span)).not.toContain("Hans Müller");
     expect(span.attributes?.input).toEqual({
@@ -161,9 +173,11 @@ describe("span body governance (FREV-01)", () => {
     });
   });
 
-  test("non-regex shape regression B: a short shared passphrase is omitted without a proof", () => {
+  test("non-regex shape regression B: a short shared passphrase is omitted without a proof", async () => {
     expect(denyReason(PASSPHRASE_SHAPE)).toBeUndefined();
-    const writes = recordAndCapture(anObservation({ input: PASSPHRASE_SHAPE }));
+    const writes = await recordAndCapture(
+      anObservation({ input: PASSPHRASE_SHAPE }),
+    );
     const span = writes[0].spans[0];
     expect(JSON.stringify(span)).not.toContain("4-7-2-9");
     expect(span.attributes?.input).toEqual({
@@ -172,8 +186,8 @@ describe("span body governance (FREV-01)", () => {
     });
   });
 
-  test("the output body is governed exactly like the input body", () => {
-    const writes = recordAndCapture(
+  test("the output body is governed exactly like the input body", async () => {
+    const writes = await recordAndCapture(
       anObservation({ input: "What is the weather?", output: FREV_BODY }),
     );
     const span = writes[0].spans[0];
@@ -187,7 +201,7 @@ describe("span body governance (FREV-01)", () => {
   // The proof: only a Bot policy's approval carries free text
   // -------------------------------------------------------------------------
 
-  test("a Bot policy's approval lets a benign body project, and the span names its policy", () => {
+  test("a Bot policy's approval lets a benign body project, and the span names its policy", async () => {
     const approval = approveSpanContent({
       source: "bot_security_policy",
       policyRef: "bot-1/security-policy/v3",
@@ -195,7 +209,7 @@ describe("span body governance (FREV-01)", () => {
     });
     expect(approval).not.toBeNull();
 
-    const writes = recordAndCapture(
+    const writes = await recordAndCapture(
       anObservation({
         input: "What is the weather?",
         output: "Sunny.",
@@ -218,14 +232,14 @@ describe("span body governance (FREV-01)", () => {
     });
   });
 
-  test("the deny patterns still run first and win even over an approval", () => {
+  test("the deny patterns still run first and win even over an approval", async () => {
     const approval = approveSpanContent({
       source: "bot_security_policy",
       policyRef: "bot-1/security-policy/v3",
       allowFreeText: true,
     });
     const canary = `sk-live-${"a".repeat(24)}`;
-    const writes = recordAndCapture(
+    const writes = await recordAndCapture(
       anObservation({ input: `Please summarise. ${canary}`, approval }),
     );
     const span = writes[0].spans[0];
@@ -236,7 +250,7 @@ describe("span body governance (FREV-01)", () => {
     });
   });
 
-  test("an approving policy does carry the counterexample shape — the gate is the policy, not a regex", () => {
+  test("an approving policy does carry the counterexample shape — the gate is the policy, not a regex", async () => {
     // Spec §7: the wall is the policy proof, not keyword patterns. A Bot whose
     // security policy explicitly approves free-text bodies gets them projected —
     // only the deny list is unconditional, and it has no pattern for this shape.
@@ -247,7 +261,7 @@ describe("span body governance (FREV-01)", () => {
       policyRef: "bot-1/security-policy/v3",
       allowFreeText: true,
     });
-    const writes = recordAndCapture(
+    const writes = await recordAndCapture(
       anObservation({ input: FREV_BODY, approval }),
     );
     const span = writes[0].spans[0];
@@ -261,7 +275,7 @@ describe("span body governance (FREV-01)", () => {
     });
   });
 
-  test("a policy that does not approve free text mints no approval", () => {
+  test("a policy that does not approve free text mints no approval", async () => {
     const approval = approveSpanContent({
       source: "bot_security_policy",
       policyRef: "bot-1/security-policy/v3",
@@ -269,7 +283,7 @@ describe("span body governance (FREV-01)", () => {
     });
     expect(approval).toBeNull();
 
-    const writes = recordAndCapture(
+    const writes = await recordAndCapture(
       anObservation({ input: "What is the weather?", approval }),
     );
     expect(writes[0].spans[0].attributes?.input).toEqual({
@@ -280,12 +294,12 @@ describe("span body governance (FREV-01)", () => {
     expect(writes[0].spans[0].attributes?.content_policy_ref).toBeUndefined();
   });
 
-  test("a forged approval — structurally identical, never minted — projects nothing and names no policy", () => {
+  test("a forged approval — structurally identical, never minted — projects nothing and names no policy", async () => {
     const forged = {
       source: "bot_security_policy",
       policyRef: "attacker-chosen-policy-ref",
     } as unknown as SpanContentApproval;
-    const writes = recordAndCapture(
+    const writes = await recordAndCapture(
       anObservation({ input: "What is the weather?", approval: forged }),
     );
     const span = writes[0].spans[0];
@@ -299,7 +313,7 @@ describe("span body governance (FREV-01)", () => {
     expect(JSON.stringify(span)).not.toContain("attacker-chosen-policy-ref");
   });
 
-  test("a spread copy of a minted approval projects nothing and names no policy", () => {
+  test("a spread copy of a minted approval projects nothing and names no policy", async () => {
     const minted = approveSpanContent({
       source: "bot_security_policy",
       policyRef: "bot-1/security-policy/v3",
@@ -308,7 +322,7 @@ describe("span body governance (FREV-01)", () => {
     if (minted === null) throw new Error("the mint must succeed for this case");
     // A snapshot copy of the frozen token: the same strings, not the minted object.
     const copied: SpanContentApproval = { ...minted };
-    const writes = recordAndCapture(
+    const writes = await recordAndCapture(
       anObservation({ input: "What is the weather?", approval: copied }),
     );
     const span = writes[0].spans[0];
@@ -320,7 +334,7 @@ describe("span body governance (FREV-01)", () => {
     expect(JSON.stringify(span)).not.toContain("bot-1/security-policy/v3");
   });
 
-  test("the mint refuses an empty policy reference", () => {
+  test("the mint refuses an empty policy reference", async () => {
     expect(
       approveSpanContent({
         source: "bot_security_policy",

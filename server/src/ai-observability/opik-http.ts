@@ -758,10 +758,39 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
 
     async writeSpans(scope, input) {
       requireOperation("writeSpans");
+      // The scope trust check stands before everything else (the forged-scope
+      // refusal names the trust break, not a downstream input complaint).
+      assertObservationScope(scope);
+      // FREV-02: the binding is required here too — an OTLP span write with no
+      // binding is an unattributable business write, refused like any other
+      // unverified shape (the createTrace m154 precedent). The port type still
+      // admits the absence; this is the runtime half that refuses it, for
+      // callers that bypass or loosen the types. The final review drove the
+      // recorder without one and the span queued.
+      if (input.binding === undefined) {
+        throw new OpikPortError("OPERATION_INPUT_INVALID");
+      }
       const refused = guardWriteScope(scope, input.binding, "writeSpans");
       if (refused) return refused;
       if (!Array.isArray(input.spans) || input.spans.length === 0) {
         throw new OpikPortError("OPERATION_INPUT_INVALID");
+      }
+      // The upstream id coordination at the OTLP half (FREV-02, the createTrace
+      // R5-16 precedent): a span adopting an explicit upstream trace id that
+      // disagrees with the one this binding already recorded would mint a
+      // second upstream trace for one run — the silent duplication drift
+      // exists to refuse. A null recorded id is the first explicit write and
+      // passes.
+      const recordedUpstream = input.binding.opikTraceId;
+      if (
+        recordedUpstream !== null &&
+        input.spans.some(
+          (span) =>
+            span.opik?.traceId !== undefined &&
+            span.opik.traceId !== recordedUpstream,
+        )
+      ) {
+        return drift("writeSpans", scope.key, "binding_mismatch");
       }
       const payload = JSON.stringify({
         resourceSpans: [
