@@ -512,6 +512,16 @@ describe("scrubbing commands", () => {
       'sshpass -f "id\\"rsa" -p hunter2 ssh deploy@host.example.test',
       'sshpass -f "id\\"rsa" -p [REDACTED] ssh deploy@host.example.test',
     ],
+    // A quoted word in the lead may also hold a `;` outright, and may span a line the shell
+    // continues (`\` + line break keeps it one command). Both reach the flag through the same
+    // quoted arm (R10-C7 guards): the fallback for a quote with no pair must not fire while a
+    // closing quote is still reachable — through the continuation too — or these would lose their
+    // pairing and the scan its way to the flag.
+    [
+      'mysql -e "SELECT 1;" -phunter2 app',
+      'mysql -e "SELECT 1;" -p[REDACTED] app',
+    ],
+    ['mysql -u "a\\\nb" -phunter2 app', 'mysql -u "a\\\nb" -p[REDACTED] app'],
     // An unclosed quote in the lead falls back to reading the quote as an ordinary character
     // (R8-C5): a paired quote is still swallowed whole, but a lone apostrophe in a user's name
     // must not leave the scan dead short of the flag — the password behind the stalled scan used
@@ -570,6 +580,33 @@ describe("scrubbing commands", () => {
     [
       "SSHPASS=glorbwibble;whoami sshpass -e ssh deploy@host.example.test",
       "SSHPASS=[REDACTED];whoami sshpass -e ssh deploy@host.example.test",
+    ],
+    // An escaped separator belongs to the word, not the shell (R10-C7): in `pa\;ss` the backslash
+    // takes the `;` out of the shell's reading, so the whole word is the secret — ending the value
+    // at the backslash left the rest of the password in the record. The value arm consumes
+    // backslash pairs; the word still ends at an unescaped separator, so `&cmd` after `pa\;` is
+    // the next command and stays.
+    [
+      "docker login -p pa\\;ss registry.example.test",
+      "docker login -p [REDACTED] registry.example.test",
+    ],
+    ["mysql -h db -ppa\\|ss app", "mysql -h db -p[REDACTED] app"],
+    [
+      "sshpass -p pa\\&ss ssh deploy@host.example.test",
+      "sshpass -p [REDACTED] ssh deploy@host.example.test",
+    ],
+    [
+      "SSHPASS=pa\\;&cmd sshpass -e ssh deploy@host.example.test",
+      "SSHPASS=[REDACTED]&cmd sshpass -e ssh deploy@host.example.test",
+    ],
+    ["redis-cli -a pa\\;ss ping", "redis-cli -a [REDACTED] ping"],
+    // A value's quote stops at the line break like the lead's does (R10-C7): the shell would not
+    // keep a quote that spans a bare line break to one command, so the break ends the value and
+    // the next line's command stays in the record — it used to be swallowed whole into the
+    // redaction and deleted from the audit trail.
+    [
+      'docker login -p "oops\necho "hi"',
+      'docker login -p [REDACTED]\necho "hi"',
     ],
     // The same fix in the sshpass option loop: `-f`'s file stops at the separator, and the word
     // after it belongs to another command — it is not a password to redact.
@@ -642,5 +679,33 @@ describe("scrubbing commands", () => {
     expect(scrubCommand("ls -la /workspace && git status")).toBe(
       "ls -la /workspace && git status",
     );
+  });
+  test("a run of empty quoted pairs cannot stall the scrubber", () => {
+    // Before R10-C7 the quote arms overlapped: a pair could be taken whole, split into lone
+    // quotes, or re-paired across pairs, so a non-matching tail walked ~2^n derivations — twenty
+    // pairs stalled the loop for 0.6-3.4s (the adjudication measured 602.87ms; forty pairs run to
+    // minutes). Each quote now has exactly one arm that can match it, so the same inputs stay flat
+    // at any count. None of these carries a `-p`, so the output is the input, unchanged.
+    const shapes = [
+      (n: number) => `mysql ${'"" '.repeat(n)}`,
+      (n: number) => `mysql ${"'' ".repeat(n)}`,
+      (n: number) => `sshpass ${'-f "" '.repeat(n)}-v`,
+    ];
+    const start = performance.now();
+    for (const build of shapes)
+      for (const n of [8, 12, 16, 20, 24, 40]) {
+        const input = build(n);
+        expect(scrubCommand(input)).toBe(input);
+      }
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+  test("a quote held open by a line continuation cannot stall the scrubber either", () => {
+    // Pairing must stay unambiguous when the closing quote sits past a `\` + line break: the
+    // fallback fires only while no closing quote is left to reach — through the continuation too
+    // — so one derivation remains per quote however many are stacked.
+    const input = `mysql ${'"\\\nx" '.repeat(40)}-q`;
+    const start = performance.now();
+    expect(scrubCommand(input)).toBe(input);
+    expect(performance.now() - start).toBeLessThan(1000);
   });
 });

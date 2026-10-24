@@ -82,6 +82,21 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
    * (`docker login -p a"b;c"`, one argv word in the shell) stays part of the secret instead of
    * ending it at the `;` inside the quotes, while the word still refuses to begin with a separator
    * and still ends at an unquoted one.
+   *
+   * The fallback is guarded by a lookahead — a quote falls back to an ordinary character only when
+   * no same-type closing quote is left to reach on the line or through a backslash continuation —
+   * so at every quote exactly one arm can match. With the bare fallback, overlapping arms let one
+   * input split into exponentially many derivations, and a non-matching tail (`mysql "" "" …`
+   * without the `-p`) walked them all, stalling the loop for seconds on twenty pairs (R10-C7).
+   *
+   * The value's quote arms stop at a bare line break the same way the lead's do — an unclosed
+   * quote there used to swallow the whole next line into the redaction (`docker login -p "oops`
+   * and a second line of commands after it), deleting those commands from the record. And a
+   * backslash in a bare value escapes the character after it, as it does in the shell: `pa\;ss`
+   * is one argv word, the `;` escaped rather than a command separator, so the value arm consumes
+   * backslash pairs and the word is redacted whole instead of ending at the backslash and leaving
+   * the rest of the password in the record. A backslash at the value's line break is a
+   * continuation, not a word character: the word ends before it.
    */
   // `-psecret` for mysql and friends. Nothing separates them: a space means the password is asked for
   // at the prompt and the word after `-p` is the database, so only the attached form is redacted.
@@ -89,7 +104,7 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // port (`mysql -h db -P3306`), and upstream's `i` reads it as a password — redacting the port while
   // a real `-phunter2` later in the same command line survives.
   [
-    /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|'[^'\r\n]*'|["']|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)((?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&-])(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&])*)/g,
+    /(\bmysql(?:dump)?\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `docker login -p secret`, where `-p` is the password rather than a port. docker's grammar puts
@@ -98,7 +113,7 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // subcommand cannot: `run` is not a flag, which is what keeps `docker run login -p 8080:80` a
   // port mapping instead of a registry password.
   [
-    /(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|'[^'\r\n]*'|["']|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)((?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&-])(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&])*)/gi,
+    /(\bdocker(?:(?:[ \t]|\\\r?\n)+-[^\s]+(?:[ \t]+[^\s-]\S*)?)*?(?:[ \t]|\\\r?\n)+login\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|\\[\s\S])*?(?:[ \t]|\\\r?\n)-p[ \t]*)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/gi,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `sshpass -p secret ssh user@host`, where `-p` is the password handed to ssh. Only sshpass's own
@@ -118,7 +133,7 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // flag's own. The cluster arm still takes a lowercase `p` only; uppercase `-P` never ends the
   // lead as one.
   [
-    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&-])(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&])*|-[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdPp]*p[ \t]*)((?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&-])(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&])*)/g,
+    /(\bsshpass(?:(?:[ \t]|\\\r?\n)+(?:-[fdP][ \t]*(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*|-[^\sp]+))*?(?:[ \t]|\\\r?\n)+-[^\sfdPp]*p[ \t]*)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `SSHPASS=secret sshpass -e ssh host`: the env form sshpass itself recommends over `-p`, because
@@ -129,12 +144,12 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
   // assignment and start another command, which must stay in the record — and does not begin with
   // one either (`SSHPASS=;cmd` is an empty assignment before another command, no secret to take).
   [
-    /(\bSSHPASS\s*=\s*)((?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&])+)/g,
+    /(\bSSHPASS\s*=\s*)((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])+)/g,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // `redis-cli -a secret`, `-asecret` and `--pass secret`, the same shape under redis-cli's names.
   [
-    /(\bredis-cli\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|'[^'\r\n]*'|["']|\\[\s\S])*?(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))((?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&-])(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|["']|[^\s'";|&])*)/gi,
+    /(\bredis-cli\b(?:[^|;&\\\r\n"']|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|\\[\s\S])*?(?:[ \t]|\\\r?\n)(?:-a[ \t]*|--pass(?:=|[ \t]+)))((?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\-])(?:\\[^\r\n]|"(?:\\[\s\S]|[^"\\\r\n])*"|"(?!(?:\\[\s\S]|[^"\\\r\n])*")|'[^'\r\n]*'|'(?![^'\r\n]*')|[^\s'";|&\\])*)/gi,
     (_m, lead) => `${lead}${REDACTED}`,
   ],
   // A quoted key in a JSON body: `-d '{"password":"x"}'`, or `-d "{\\"password\\":\\"x\\"}"` once the
