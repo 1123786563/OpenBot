@@ -17,3 +17,13 @@
 ## 流程
 
 实施（Claude）→ 检查点（t22-* 四件套）→ 编排者字节核验 → R1（Claude 双轴）→ 集成（剥头 apply+字节核验+门）→ F12 收官门（十门复跑）→ **R12 全量 OCR（唯一一次，仅在 T22 集成后的最终 HEAD 上）** → R12 终裁 → f01-r12 Codex 终审（M1 闭合专项）→ 重新 V03/C01 收口。OCR 顺序调整（先 OCR 后 Codex）系利用 Codex 已在 4e57d0a4af 上完成七轮终审的事实——终审仅在最终 HEAD 重做一次。
+
+## 附录：T23/T24（R12 终裁追加，2026-10-25）
+
+R12 全量（r12-adjudication.md）：F12-1 scrub high 经双引擎 10 形状实测**无效**（≤1.3ms 有界）；有效项两 medium——
+
+**T23（F12-2）**：`agent-computer/src/sign-in.ts` fillSignInCode 返回前补与 fillSignIn（T19）对称的跨源守卫：`backToLogin && originOfUrl(page.url()) !== input.origin` ⇒ `answer("The sign-in moved to X. Take over the browser to finish signing in there.", true)`（`{submitted:true, codeFieldVisible:false, passwordFieldVisible:false}`）；同 origin 语义、2s 宽限、既有 30 用例零回退；新真实浏览器用例（提交验证码后跨源+仅密码框→take over 文案/字段全 false）。门：sign-in 30→31（真调度路径）、AC tsc 0、biome、enterprise 108/108 维持。owned=sign-in.ts+sign-in.test.ts。
+
+**T24（F12-3，doc-only）**：`server/src/mastra/tools.ts:116-121` 注释段同步已落地的 F11-1/T22 拨号期守卫（MASTRA_TOOL_NAME_INVALID，直连判定经 URL 规范化）——改写为描述现状+指向守卫位置；不改任何代码行。门：tsc 恰 3 BASE、biome、相关注释处 diff 仅注释。owned=tools.ts。
+
+流程：两任务并行→R1→串行集成→F13 收官门（十二门）→R13 全量（新最终 HEAD 唯一一次）→f01-r12→V03/C01。
