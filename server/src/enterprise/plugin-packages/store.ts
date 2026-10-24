@@ -47,6 +47,14 @@ interface InstallRowFacts {
   readonly membershipStatus: string | null;
   readonly membershipEpoch: number | null;
   readonly workspaceMembershipStatus: string | null;
+  /**
+   * PKG06 (#465): the CALLING principal's company role on the same joined
+   * membership row that decides eligibility — the fact `allowedActions` is
+   * computed from. Only tenant_admin manages an install; members and auditors
+   * browse. Null is unreachable for facts (eligibility requires an active
+   * membership) but stays in the row shape for the left join.
+   */
+  readonly callerRole: string | null;
 }
 
 async function readTransaction<T>(
@@ -225,6 +233,7 @@ const INSTALL_COLUMNS = {
   membershipStatus: enterpriseMemberships.status,
   membershipEpoch: enterpriseMemberships.epoch,
   workspaceMembershipStatus: enterpriseWorkspaceMemberships.status,
+  callerRole: enterpriseMemberships.role,
 } as const;
 
 function joinEligibility(
@@ -279,6 +288,9 @@ function toFacts(
     status: row.status as PackageInstallFacts["status"],
     links: Object.freeze([...links]),
     grants: Object.freeze([...grants]),
+    // Eligibility already required an active membership row; an unreachable
+    // null (defensive) reads as a non-managing caller.
+    callerCompanyRole: row.callerRole ?? "",
   });
 }
 

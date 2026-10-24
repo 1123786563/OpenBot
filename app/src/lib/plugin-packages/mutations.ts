@@ -38,11 +38,21 @@ import { type PluginPackageScope, pluginPackageKeys } from "./queries";
 
 const PACKAGE_ROOT = "/api/enterprise/plugin-packages";
 
+export type PackagePlanOperation = "install" | "upgrade" | "rollback";
+
 export type PackagePlanRequest = {
   scope: PluginPackageScope;
   packageKey: string;
   version: string;
   config: PackageConfig;
+  /**
+   * PKG06 (#465): an install plan carries no revision; an upgrade or rollback
+   * plan carries the EXACT revision the caller read — the server's CAS. The
+   * operation decides the preview the server answers with; it never decides
+   * authority, which the server re-checks per write.
+   */
+  operation: PackagePlanOperation;
+  expectedRevision: number | null;
 };
 
 export type PackageApplyRequest = {
@@ -60,11 +70,10 @@ export function packagePlanMutationOptions() {
       const response = await client(`${PACKAGE_ROOT}/plans`, {
         method: "POST",
         body: {
-          operation: "install",
+          operation: request.operation,
           packageKey: request.packageKey,
           version: request.version,
-          // PKG02 installs only; an existing install's revision CAS arrives with PKG06.
-          expectedRevision: null,
+          expectedRevision: request.expectedRevision,
           config: request.config,
           connectorInstalls: {},
         },

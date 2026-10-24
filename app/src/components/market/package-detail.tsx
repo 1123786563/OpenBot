@@ -1,5 +1,6 @@
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
+import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { PackageExpertsSection } from "@/components/market/package-experts";
 import { PackageGrantsSection } from "@/components/market/package-grants";
@@ -21,6 +22,7 @@ import {
 } from "@/lib/plugin-packages/queries";
 import type {
   PackageBlocker,
+  PackageCatalogueDetail,
   PackageInstallDTO,
 } from "../../../../shared/enterprise/plugin-package-contracts";
 
@@ -212,6 +214,109 @@ export function PackageInstallFacts({
   );
 }
 
+/**
+ * PKG06 (#465): the version-management face of an installed package — the
+ * current install's version and revision, the newest published release, and
+ * an exact target picker whose entry opens the operation-aware preview
+ * dialog with the CAS revision the caller just read. A package with no other
+ * published release says it is up to date instead of offering a no-op.
+ */
+function PackageVersionSection({
+  detail,
+  install,
+  onPreview,
+  displayName,
+  packageKey,
+  targetVersion,
+  onTargetChange,
+}: {
+  detail: PackageCatalogueDetail | null;
+  install: PackageInstallDTO | null;
+  onPreview?: (subject: PackagePreviewSubject) => void;
+  displayName: string;
+  packageKey: string;
+  targetVersion: string | null;
+  onTargetChange: (version: string | null) => void;
+}) {
+  const { t } = useTranslation("market");
+  if (install === null) return null;
+  const published = (detail?.versions ?? []).filter(
+    (entry) => entry.verified && entry.listed,
+  );
+  const targets = published.filter(
+    (entry) => entry.version !== install.version,
+  );
+  const latest = published[0]?.version ?? null;
+  const upgradable =
+    latest !== null && comparePackageVersions(install.version, latest) < 0;
+  const selected = targetVersion ?? targets[0]?.version ?? null;
+
+  const open = () => {
+    if (onPreview === undefined || selected === null) return;
+    const operation: "upgrade" | "rollback" =
+      comparePackageVersions(selected, install.version) > 0
+        ? "upgrade"
+        : "rollback";
+    onPreview({
+      packageKey,
+      version: selected,
+      displayName,
+      operation,
+      expectedRevision: install.revision,
+    });
+  };
+
+  return (
+    <section aria-label={t("packages.upgrade.sectionTitle")}>
+      <h3 className="text-sm font-medium text-foreground">
+        {t("packages.upgrade.sectionTitle")}
+      </h3>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <WbTag>{`v${install.version}`}</WbTag>
+        <WbTag>{`r${install.revision}`}</WbTag>
+        {upgradable ? (
+          <WbTag className="text-primary">
+            {t("packages.upgrade.upgradable")}
+          </WbTag>
+        ) : null}
+      </div>
+      <p className="mt-1 text-xs leading-5 text-foreground/60">
+        {latest === null
+          ? t("packages.upgrade.publishedUnknown")
+          : t("packages.upgrade.publishedLatest", { version: latest })}
+      </p>
+      {targets.length === 0 ? (
+        <p className="mt-1 text-xs leading-5 text-foreground/50">
+          {t("packages.upgrade.upToDate")}
+        </p>
+      ) : (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select
+            aria-label={t("packages.upgrade.targetLabel")}
+            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+            onChange={(event) => onTargetChange(event.target.value)}
+            value={selected ?? ""}
+          >
+            {targets.map((entry) => (
+              <option key={entry.version} value={entry.version}>
+                {`v${entry.version}`}
+              </option>
+            ))}
+          </select>
+          {onPreview !== undefined ? (
+            <Button onClick={open} size="sm" type="button">
+              {selected !== null &&
+              comparePackageVersions(selected, install.version) < 0
+                ? t("packages.upgrade.openRollback")
+                : t("packages.upgrade.openUpgrade")}
+            </Button>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /** The identity the pane already holds; the dialog reads the rest from the detail endpoint. */
 export type PackageDetailSubject = {
   publisher: string;
@@ -225,7 +330,35 @@ export type PackagePreviewSubject = {
   packageKey: string;
   version: string;
   displayName: string;
+  /**
+   * PKG06 (#465): present when the detail screen hands over an upgrade or
+   * rollback — the exact target version plus the install revision the caller
+   * read (the plan's CAS). Absent means a first install.
+   */
+  operation?: "install" | "upgrade" | "rollback";
+  expectedRevision?: number | null;
 };
+
+/**
+ * Three-part semantic-version compare, client-side only for choosing the
+ * VERB (upgrade vs rollback) and the upgradable hint. The server compares
+ * and re-validates on its own; this never decides authority.
+ */
+export function comparePackageVersions(left: string, right: string): number {
+  const parts = (value: string) => value.split(".").map(Number);
+  const [aMajor, aMinor, aPatch] = parts(left);
+  const [bMajor, bMinor, bPatch] = parts(right);
+  for (const pair of [
+    [aMajor, bMajor],
+    [aMinor, bMinor],
+    [aPatch, bPatch],
+  ] as const) {
+    if (pair[0] !== pair[1]) {
+      return (pair[0] ?? 0) < (pair[1] ?? 0) ? -1 : 1;
+    }
+  }
+  return 0;
+}
 
 export function PackageDetailWb({
   scope,
@@ -251,6 +384,13 @@ export function PackageDetailWb({
   const detail = useQuery(
     pluginPackageDetailQueryOptions(scope, subject.publisher, subject.name),
   );
+  /*
+   * PKG06: the admin's target-version choice for an upgrade or rollback. The
+   * published versions come from the catalogue detail read (the server's own
+   * published facts, newest first); the verb is derived by comparison — the
+   * server decides everything again at plan and apply.
+   */
+  const [targetVersion, setTargetVersion] = React.useState<string | null>(null);
   /*
    * The install facts' single source is the install-detail read — the very entry a grant,
    * revoke or expert creation invalidates — so a write made inside this dialog shows in the
@@ -338,6 +478,18 @@ export function PackageDetailWb({
                */}
               {managesInstall ? (
                 <>
+                  <PackageVersionSection
+                    detail={detail.data ?? null}
+                    install={installFacts ?? install}
+                    onPreview={onPreview}
+                    displayName={subject.displayName}
+                    packageKey={
+                      detail.data?.packageKey ??
+                      `${subject.publisher}/${subject.name}`
+                    }
+                    targetVersion={targetVersion}
+                    onTargetChange={setTargetVersion}
+                  />
                   <PackageGrantsSection install={install} scope={scope} />
                   <PackageExpertsSection
                     install={install}

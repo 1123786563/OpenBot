@@ -4,6 +4,7 @@ import type {
   PackageManifestV1,
   PackagePlanDTO,
   PackagePlanInput,
+  PackagePlanVersionDiff,
   PackageResourceKind,
   PackageToolGrant,
 } from "../../../../shared/enterprise/plugin-package-contracts";
@@ -220,7 +221,10 @@ export function toPlanDTO(input: {
   expiresAt: Date;
   resources: PackagePlanDTO["resources"];
   addedTools: PackagePlanDTO["addedTools"];
+  removedTools: PackagePlanDTO["removedTools"];
   blockers: PackagePlanDTO["blockers"];
+  /** PKG06: present on upgrade/rollback plans; omitted on install plans. */
+  diff?: PackagePlanVersionDiff;
 }): PackagePlanDTO {
   return {
     planId: input.planId,
@@ -232,8 +236,155 @@ export function toPlanDTO(input: {
     expiresAt: input.expiresAt.toISOString(),
     resources: input.resources,
     addedTools: input.addedTools,
-    removedTools: [],
+    removedTools: input.removedTools,
     blockers: input.blockers,
+    ...(input.diff === undefined ? {} : { diff: input.diff }),
+  };
+}
+
+/**
+ * PKG06 (#465): the current→target version diff an upgrade/rollback plan
+ * previews. `current` is the install's live revision facts as the plan read
+ * them inside the plan transaction (version, revision, config, linked
+ * resources); `currentManifest` is null when the current release no longer
+ * resolves in the catalogue — then the resource/tool diff degrades to the
+ * facts that still exist (links; all target tools count as the increment)
+ * rather than guessing, and the config diff stays exact (the revision row
+ * keeps the config).
+ *
+ * The comparison is per resource id and per tool ref, never per position:
+ * a renamed resource is an add+remove, a same-ref tool with a new schema
+ * digest or effect is a change, and a config key that merely moved in the
+ * canonical spelling is no change at all.
+ */
+export function versionDiff(input: {
+  readonly target: PackageManifestV1;
+  /** The plan's full non-secret target config (one spelling, sorted keys). */
+  readonly targetConfig: Record<string, unknown>;
+  readonly currentVersion: string;
+  readonly currentRevision: number;
+  readonly currentConfig: Record<string, unknown>;
+  readonly currentResources: readonly {
+    resourceId: string;
+    kind: PackageResourceKind;
+  }[];
+  readonly currentManifest: PackageManifestV1 | null;
+}): PackagePlanVersionDiff & {
+  /** The permission increment: new tools plus contract-changed tools. */
+  readonly addedTools: PackageToolGrant[];
+  /** Current-revision tool refs the target no longer declares. */
+  readonly removedTools: string[];
+} {
+  const targetTools = addedToolsOf(input.target);
+  const currentTools = input.currentManifest
+    ? addedToolsOf(input.currentManifest)
+    : [];
+  const currentToolByRef = new Map(
+    currentTools.map((tool) => [tool.ref, tool]),
+  );
+
+  const addedTools: PackageToolGrant[] = [];
+  const changedTools: PackagePlanVersionDiff["changedTools"] = [];
+  const removedToolRefs: string[] = [];
+  for (const tool of targetTools) {
+    const previous = currentToolByRef.get(tool.ref);
+    if (!previous) {
+      addedTools.push(tool);
+      continue;
+    }
+    if (
+      previous.schemaDigest !== tool.schemaDigest ||
+      previous.effect !== tool.effect
+    ) {
+      // A same-ref tool whose contract moved is part of the increment (it
+      // needs a fresh grant) AND carries the before/after for the preview.
+      addedTools.push(tool);
+      changedTools.push({
+        ref: tool.ref,
+        previousEffect: previous.effect,
+        effect: tool.effect,
+        previousSchemaDigest: previous.schemaDigest,
+        schemaDigest: tool.schemaDigest,
+      });
+    }
+  }
+  const targetRefs = new Set(targetTools.map((tool) => tool.ref));
+  for (const tool of currentTools) {
+    if (!targetRefs.has(tool.ref)) removedToolRefs.push(tool.ref);
+  }
+  removedToolRefs.sort();
+
+  const targetResourceIds = new Set(input.target.resources.map((r) => r.id));
+  const currentResourceById = new Map(
+    input.currentResources.map((resource) => [resource.resourceId, resource]),
+  );
+  const addedResources: PackagePlanVersionDiff["addedResources"] = [];
+  for (const resource of input.target.resources) {
+    if (!currentResourceById.has(resource.id)) {
+      addedResources.push({ id: resource.id, kind: resource.kind });
+    }
+  }
+  const removedResources: PackagePlanVersionDiff["removedResources"] = [];
+  for (const [resourceId, resource] of currentResourceById) {
+    if (!targetResourceIds.has(resourceId)) {
+      removedResources.push({ id: resourceId, kind: resource.kind });
+    }
+  }
+
+  // Config: the plan always carries the FULL target config (no migration
+  // scripts in V1); the diff only narrates what changed against the current
+  // revision's stored config, key by key.
+  const configChanges: PackagePlanVersionDiff["configChanges"] = [];
+  const targetConfigKeys = new Set(Object.keys(input.targetConfig));
+  for (const key of Object.keys(input.currentConfig)) {
+    if (!targetConfigKeys.has(key)) {
+      configChanges.push({ key, change: "removed" });
+    } else if (
+      canonicalJson(input.currentConfig[key]) !==
+      canonicalJson(input.targetConfig[key])
+    ) {
+      configChanges.push({ key, change: "changed" });
+    }
+  }
+  for (const key of targetConfigKeys) {
+    if (!Object.hasOwn(input.currentConfig, key)) {
+      configChanges.push({ key, change: "added" });
+    }
+  }
+  configChanges.sort((left, right) => (left.key < right.key ? -1 : 1));
+
+  // Connection requirements: a resource required by the target that the
+  // current revision did not require (new connector resource or a flip to
+  // required), and the reverse.
+  const targetRequired = new Set(requiredConnectorIds(input.target));
+  const currentRequired = new Set(
+    input.currentManifest ? requiredConnectorIds(input.currentManifest) : [],
+  );
+  const connectionChanges: PackagePlanVersionDiff["connectionChanges"] = [];
+  for (const resourceId of targetRequired) {
+    if (!currentRequired.has(resourceId)) {
+      connectionChanges.push({ resourceId, change: "added" });
+    }
+  }
+  for (const resourceId of currentRequired) {
+    if (!targetRequired.has(resourceId)) {
+      connectionChanges.push({ resourceId, change: "removed" });
+    }
+  }
+  connectionChanges.sort((left, right) =>
+    left.resourceId < right.resourceId ? -1 : 1,
+  );
+
+  return {
+    currentVersion: input.currentVersion,
+    currentRevision: input.currentRevision,
+    addedResources,
+    removedResources,
+    changedTools,
+    configChanges,
+    connectionChanges,
+    addedTools,
+    removedTools: removedToolRefs,
   };
 }
 
@@ -245,6 +396,12 @@ export function changeDiff(input: {
   artifactDigest: string;
   revision: number;
   config: Record<string, unknown>;
+  /**
+   * PKG06: the install's version/revision BEFORE an upgrade/rollback moved
+   * it (absent on install receipts — there was nothing before).
+   */
+  previousVersion?: string;
+  previousRevision?: number;
 }): Record<string, unknown> {
   return {
     action: input.operation,
@@ -253,5 +410,11 @@ export function changeDiff(input: {
     packageKey: input.packageKey,
     revision: input.revision,
     version: input.version,
+    ...(input.previousVersion === undefined
+      ? {}
+      : { previousVersion: input.previousVersion }),
+    ...(input.previousRevision === undefined
+      ? {}
+      : { previousRevision: input.previousRevision }),
   };
 }

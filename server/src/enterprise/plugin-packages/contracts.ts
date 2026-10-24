@@ -143,6 +143,15 @@ export interface PackageInstallFacts {
   readonly status: PackageInstallDTO["status"];
   readonly links: readonly PackageResourceLinkFact[];
   readonly grants: readonly PackageGrantFact[];
+  /**
+   * PKG06 (#465): the caller's company role, joined on the same membership
+   * row that proves eligibility. `allowedActions` is computed from it — a
+   * list/detail read answers what THIS caller may do, never a global claim.
+   * The field is only absent on facts built inside a write path whose actor
+   * the mutation store already revalidated as `tenant_admin`; writers pass
+   * the role explicitly there.
+   */
+  readonly callerCompanyRole: string;
 }
 
 export interface PackageReadStore {

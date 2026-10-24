@@ -156,6 +156,35 @@
         "unavailable": "不可用"
       }
     },
+    "upgrade": {
+      "sectionTitle": "版本",
+      "upgradable": "可升级",
+      "publishedLatest": "最新发布版本：v{{version}}。",
+      "publishedUnknown": "当前没有可用的新发布版本。",
+      "upToDate": "已安装版本就是最新发布版本。",
+      "targetLabel": "目标版本",
+      "openUpgrade": "查看升级",
+      "openRollback": "查看回滚",
+      "titleUpgrade": "升级 {{name}}",
+      "titleRollback": "回滚 {{name}}",
+      "confirmUpgrade": "升级到 v{{version}}",
+      "confirmRollback": "回滚到 v{{version}}",
+      "diffTitle": "版本变化",
+      "fromTo": "v{{from}} → v{{to}}",
+      "resourceAdded": "新增资源",
+      "resourceRemoved": "移除资源",
+      "toolChanged": "工具已变化——需要重新授权",
+      "toolRemoved": "移除的工具",
+      "configChange": "配置",
+      "connectionChange": "连接要求",
+      "changeKind": {
+        "added": "新增",
+        "removed": "移除",
+        "changed": "已变化"
+      },
+      "effectChange": "效果 {{from}} → {{to}}",
+      "reauthorizationNotice": "新增或发生变化的工具只有在重新向 Bot 授权后才会生效；正在运行的会话继续使用其钉住的版本。"
+    },
     "grants": {
       "title": "Bot 授权",
       "hint": "授权允许某一个 Bot 在运行中使用该包固定的技能。仅安装不会授予任何能力。",
