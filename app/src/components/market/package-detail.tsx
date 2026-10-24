@@ -2,6 +2,7 @@ import { IconAlertTriangle } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { PackageDispatchesSection } from "@/components/market/package-dispatches";
 import { PackageExpertsSection } from "@/components/market/package-experts";
 import { PackageGrantsSection } from "@/components/market/package-grants";
 import {
@@ -582,6 +583,15 @@ export function PackageDetailWb({
                     install={installFacts}
                     onPick={setLifecycleAction}
                   />
+                ) : null}
+                {/*
+                 * PKG10 (#469): the dispatch ledger rides the install detail
+                 * for every eligible member, not only admins — an unknown
+                 * effect is the caller's fact. It renders in every install
+                 * state; rows survive disable, uninstall and withdrawal.
+                 */}
+                {install ? (
+                  <PackageDispatchesSection install={install} scope={scope} />
                 ) : null}
                 <section>
                   <h3 className="text-sm font-medium text-foreground">

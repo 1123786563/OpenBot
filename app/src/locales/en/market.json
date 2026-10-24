@@ -280,6 +280,41 @@
       "forbidden": "You do not have permission to create experts in this team.",
       "unavailable": "Expert creation is unavailable on this deployment right now.",
       "error": "The expert could not be created. Review the fields and try again."
+    },
+    "dispatches": {
+      "title": "Tool calls",
+      "summary": "Tool calls Bots made through this package. A call with an unknown effect is never sent again.",
+      "noDispatches": "No tool calls yet.",
+      "loadError": "Couldn't load the tool calls. Reopen this panel.",
+      "loading": "Loading…",
+      "statePrepared": "Waiting",
+      "stateDispatched": "In progress",
+      "stateSucceeded": "Succeeded",
+      "stateFailed": "Failed",
+      "stateUnknown": "Effect unknown",
+      "stateCancelled": "Cancelled",
+      "stateSettled": "Settled",
+      "reasonNoProtocol": "This call's effect can't be checked yet. The vendor offers no way to look it up, and OpenBot won't send it again.",
+      "reasonUnresolved": "The vendor has no record of this call. Its effect is still unknown, and OpenBot won't send it again.",
+      "recoveryReady": "You can continue. New calls re-check every condition.",
+      "recoveryBlocked": "Can't continue yet: {{code}}. Fix what it names before making the next call.",
+      "verifyAction": "Check with the vendor",
+      "verifyUnresolved": "The vendor has no record of this call. Its effect is still unknown.",
+      "verifyVerified": "This call is now confirmed against the vendor's records.",
+      "verifyFailed": "The check didn't finish. Try again later.",
+      "relatedReceiptsTitle": "Receipts from the same conversation",
+      "relatedReceiptsNone": "No settled receipts in this conversation yet.",
+      "evidenceTitle": "What this call is bound to",
+      "evidenceAccount": "Account",
+      "evidenceAccountNone": "None (deployment connection)",
+      "evidenceArgs": "Arguments digest",
+      "evidenceGeneration": "Connection revision",
+      "verifiedByVendor": " (checked with the vendor)",
+      "effect": {
+        "confirmed": "External effect confirmed",
+        "none": "No external effect",
+        "unknown": "External effect unknown"
+      }
     }
   },
   "wb": {

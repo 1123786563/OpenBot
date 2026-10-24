@@ -280,6 +280,41 @@
       "forbidden": "你没有权限在该团队创建专家。",
       "unavailable": "此部署当前无法创建专家。",
       "error": "专家创建失败。请检查字段后重试。"
+    },
+    "dispatches": {
+      "title": "工具调用",
+      "summary": "Bot 通过这个包发起的工具调用。效果未确认的调用不会自动重发。",
+      "noDispatches": "还没有工具调用。",
+      "loadError": "工具调用记录加载失败。请重新打开。",
+      "loading": "正在读取…",
+      "statePrepared": "待发送",
+      "stateDispatched": "进行中",
+      "stateSucceeded": "已成功",
+      "stateFailed": "已失败",
+      "stateUnknown": "效果未确认",
+      "stateCancelled": "已取消",
+      "stateSettled": "已结束",
+      "reasonNoProtocol": "这条调用的效果还无法确认。供应商没有提供查询方式，OpenBot 也不会重发它。",
+      "reasonUnresolved": "供应商没有这条调用的记录。效果仍未确认，OpenBot 不会重发它。",
+      "recoveryReady": "可以继续。新的调用会重新核对每一项条件。",
+      "recoveryBlocked": "暂时不能继续：{{code}}。按提示恢复条件后，才能发起下一条调用。",
+      "verifyAction": "向供应商核对",
+      "verifyUnresolved": "供应商没有这条调用的记录。效果仍未确认。",
+      "verifyVerified": "已按供应商的记录确认这条调用。",
+      "verifyFailed": "核对没有完成。请稍后再试。",
+      "relatedReceiptsTitle": "同一次会话的已有回执",
+      "relatedReceiptsNone": "这次会话还没有确定的回执。",
+      "evidenceTitle": "这条调用绑定的信息",
+      "evidenceAccount": "原账号",
+      "evidenceAccountNone": "无账号（使用部署自带连接）",
+      "evidenceArgs": "参数摘要",
+      "evidenceGeneration": "连接代次",
+      "verifiedByVendor": "（经供应商核对）",
+      "effect": {
+        "confirmed": "外部效果已确认",
+        "none": "没有外部效果",
+        "unknown": "外部效果未确认"
+      }
     }
   },
   "wb": {

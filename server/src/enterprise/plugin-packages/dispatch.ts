@@ -24,8 +24,10 @@
 //      prepared，批准后 dispatch 重验全部事实再放行（A07）。
 
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
+  type PackageDispatchSummaryDTO,
+  PackageDispatchSummaryDTOSchema,
   packageToolRefFor,
   parsePackageToolRef,
 } from "../../../../shared/enterprise/plugin-package-contracts";
@@ -193,6 +195,45 @@ export type PackageToolDispatchResult =
   | { readonly outcome: "ok"; readonly text: string; readonly isError: boolean }
   | { readonly outcome: "refused"; readonly code: PackageDispatchRefusalCode };
 
+// ---------------------------------------------------------------------------
+// PKG10（#469）：unknown 查询 / 核对 / 恢复面。只读取与写回派发事实；
+// 状态机语义（T05）不变——本面永不派发、永不重发、永不删除。
+// ---------------------------------------------------------------------------
+
+/** PKG10 surface refusal codes（非 beginDispatch 词表；映射见 routes）。 */
+export type PackageDispatchSurfaceCode =
+  | "NOT_AVAILABLE"
+  | "DISPATCH_NOT_UNKNOWN"
+  | "VENDOR_QUERY_PROTOCOL_UNAVAILABLE"
+  | "DISPATCH_ACCOUNT_UNAVAILABLE";
+
+/**
+ * 已验证的供应商查询协议（AC3 的「支持协议」半边）。只在核对时按原
+ * operation 身份查询；repository 当前的 mcp/brokered transport 均未提供
+ * 这种协议（无幂等查询接口），因此生产装配不注册——显式记录，核对面
+ * 因此恒为「不可查询、不可自动重发」（见 index.ts 接线注释）。
+ */
+export type PackageVendorQueryProtocol = (input: {
+  readonly access: ResolvedManagedAccess;
+  readonly toolName: string;
+  /** 原 operation 身份——协议只允许以此查询，不接受新调用形态。 */
+  readonly operationId: string;
+  readonly argsDigest: string;
+  readonly effect: "read" | "write";
+}) => Promise<
+  | {
+      readonly found: true;
+      readonly outcome: "succeeded" | "failed";
+      readonly effectStatus: "confirmed" | "none";
+      readonly receiptRef?: Record<string, unknown>;
+    }
+  | { readonly found: false }
+>;
+
+export type PackageDispatchSurfaceResult<T> =
+  | { readonly outcome: "found"; readonly value: T }
+  | { readonly outcome: "refused"; readonly code: PackageDispatchSurfaceCode };
+
 export interface PackageDispatchService {
   /**
    * Spec §9 线性化点：重验全部事实后 CAS `prepared → dispatched`。返回的
@@ -289,6 +330,85 @@ export interface PackageDispatchService {
     ticket: PackageToolTicket,
     args: Record<string, unknown>,
   ): Promise<PackageToolDispatchResult>;
+  /**
+   * PKG10：本安装的派发台账（脱敏摘要，含 unknown）。跨范围/未知安装
+   * 同形 NOT_AVAILABLE；只读，不触发任何 transport。
+   */
+  listDispatches(
+    scope: PlatformScope,
+    input: { installId: string },
+  ): Promise<
+    PackageDispatchSurfaceResult<readonly PackageDispatchSummaryDTO[]>
+  >;
+  /**
+   * PKG10：单个派发的核对视图——事实 + 证据绑定（原账号/目标/参数摘要）
+   * + 关联回执 + unknown 的不可自动重发原因与恢复门。只读。
+   */
+  inspectDispatch(
+    scope: PlatformScope,
+    input: { installId: string; operationId: string },
+  ): Promise<
+    PackageDispatchSurfaceResult<{
+      dispatch: PackageDispatchSummaryDTO;
+      evidence: {
+        connectionId: string | null;
+        accountHandle: string | null;
+        connectorInstallId: string;
+        argsDigest: string;
+        connectionGeneration: number;
+      };
+      verification:
+        | {
+            kind: "unknown";
+            canQueryVendor: boolean;
+            noAutoResendReason:
+              | "NO_VENDOR_QUERY_PROTOCOL"
+              | "VENDOR_QUERY_UNRESOLVED";
+            relatedReceipts: readonly PackageDispatchSummaryDTO[];
+          }
+        | { kind: "definite" }
+        | { kind: "in_flight" };
+      recovery:
+        | { readonly ready: true }
+        | { readonly ready: false; readonly refusalCode: string }
+        | null;
+    }>
+  >;
+  /**
+   * PKG10：协议核对的写回半边。仅 unknown 行、仅原 operation 身份、仅原
+   * 调用者本人（原账号的归属者）；无协议 → 拒绝；结果写回保留撤权前已
+   * 发生的事实（prior 段）。本方法不派发、不重发。
+   */
+  verifyDispatch(
+    scope: PlatformScope,
+    input: { installId: string; operationId: string },
+  ): Promise<
+    PackageDispatchSurfaceResult<{
+      outcome: "verified" | "unresolved";
+      dispatch: PackageDispatchSummaryDTO;
+    }>
+  >;
+  /**
+   * PKG10：恢复门重验（只读探针）。以该 Run 快照当前的绑定重走派发链的
+   * 全部门（成员/租约/pin/安装代次/发布状态/grant/连接代次/每调用重验），
+   * 回答「后续动作现在能否通过」；args 仅作形状探针——真正的后续派发以
+   * 自己的参数走完整链，绝不因探针通过而免验。
+   */
+  probeRecovery(
+    scope: PlatformScope,
+    input: {
+      runId: string;
+      attemptGeneration: number;
+      bindingRef: string;
+      args?: Record<string, unknown>;
+    },
+  ): Promise<
+    | { readonly outcome: "ready" }
+    | {
+        readonly outcome: "refused";
+        readonly code: PackageDispatchRefusalCode;
+      }
+  >;
 }
 
 export class PackageDispatchRefusedError extends Error {
@@ -412,6 +532,103 @@ function argsDigestOf(args: Record<string, unknown>): string {
   );
 }
 
+// PKG10 read helpers: one column set, one strict-DTO mapper, one visibility
+// probe — the ledger surface never widens beyond what beginDispatch wrote.
+
+const DISPATCH_COLUMNS = {
+  operationId: dispatchRows.operationId,
+  runId: dispatchRows.runId,
+  attemptGeneration: dispatchRows.attemptGeneration,
+  toolCallId: dispatchRows.toolCallId,
+  installId: dispatchRows.installId,
+  resourceId: dispatchRows.resourceId,
+  toolRef: dispatchRows.toolRef,
+  effect: dispatchRows.effect,
+  state: dispatchRows.state,
+  receiptRef: dispatchRows.receiptRef,
+  errorCode: dispatchRows.errorCode,
+  createdAt: dispatchRows.createdAt,
+  completedAt: dispatchRows.completedAt,
+} as const;
+
+interface DispatchLedgerRow {
+  readonly operationId: string;
+  readonly runId: string;
+  readonly attemptGeneration: number;
+  readonly toolCallId: string;
+  readonly installId: string;
+  readonly resourceId: string;
+  readonly toolRef: string;
+  readonly effect: string;
+  readonly state: string;
+  readonly receiptRef: unknown;
+  readonly errorCode: string | null;
+  readonly createdAt: Date;
+  readonly completedAt: Date | null;
+}
+
+/** The PKG10 evidence columns a verification view binds to (AC3). */
+const DISPATCH_EVIDENCE_COLUMNS = {
+  ...DISPATCH_COLUMNS,
+  connectorInstallId: dispatchRows.connectorInstallId,
+  connectionId: dispatchRows.connectionId,
+  connectionGeneration: dispatchRows.connectionGeneration,
+  argsDigest: dispatchRows.argsDigest,
+} as const;
+
+/** Strict wire shape at the seam: anything wider is a contract break, not a leak. */
+function dispatchSummaryOf(row: DispatchLedgerRow): PackageDispatchSummaryDTO {
+  return PackageDispatchSummaryDTOSchema.parse({
+    operationId: row.operationId,
+    runId: row.runId,
+    attemptGeneration: row.attemptGeneration,
+    toolCallId: row.toolCallId,
+    installId: row.installId,
+    resourceId: row.resourceId,
+    toolRef: row.toolRef,
+    effect: row.effect,
+    state: row.state,
+    receiptRef: (row.receiptRef as Record<string, unknown> | null) ?? null,
+    errorCode: row.errorCode,
+    createdAt: row.createdAt.toISOString(),
+    completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+  });
+}
+
+function surfaceRefused(code: PackageDispatchSurfaceCode): {
+  readonly outcome: "refused";
+  readonly code: PackageDispatchSurfaceCode;
+} {
+  return { outcome: "refused", code };
+}
+
+const OPERATION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+async function installVisibleUnder(
+  tx: DataTransaction,
+  scope: PlatformScope,
+  installId: string,
+): Promise<boolean> {
+  const [install] = await tx
+    .select({ id: installRows.id })
+    .from(installRows)
+    .where(
+      and(
+        eq(installRows.tenantId, scope.tenantId),
+        eq(installRows.workspaceId, scope.workspaceId),
+        eq(installRows.id, installId),
+      ),
+    )
+    .limit(1);
+  return install !== undefined;
+}
+
+/** `notes:lookup` → `lookup`（与 dispatchPackageTool 的 toolNameOf 同式）。 */
+function toolNameOfRef(resourceId: string, toolRef: string): string {
+  return toolRef.slice(resourceId.length + 1);
+}
+
 interface ResolvedBinding {
   readonly installId: string;
   readonly resourceId: string;
@@ -473,6 +690,13 @@ export interface CreatePackageDispatchInput {
   readonly pinnedTools: PinnedToolsReader;
   /** 可控 transport（测试注入）；缺省仅 mcp kind 有真实拨号。 */
   readonly vendorCall?: PackageVendorCaller;
+  /**
+   * PKG10：已验证的供应商查询协议（可选）。生产装配不注册——当前仓库
+   * 的 mcp/brokered transport 均无幂等查询协议（callTool 之外无按
+   * operation 查询的接口），显式留空即「不可核对、不可自动重发」；测试
+   * 注入用（package-unknown.test.ts 的协议路径）。
+   */
+  readonly vendorQuery?: PackageVendorQueryProtocol;
 }
 
 const DEFAULT_VENDOR: PackageVendorCaller = async (access, toolName, args) => {
@@ -506,6 +730,8 @@ export function createPackageDispatchService(
     catalogDecisions,
   } = input;
   const vendorCall: PackageVendorCaller = input.vendorCall ?? DEFAULT_VENDOR;
+  // PKG10：查询协议只在显式注册时存在；未注册即「不可核对、不可自动重发」。
+  const vendorQuery: PackageVendorQueryProtocol | undefined = input.vendorQuery;
 
   /**
    * 连接/账号访问解析（Spec §9 resolveManagedAccess）。判定面只读、无网络：
@@ -1662,6 +1888,403 @@ export function createPackageDispatchService(
         }).catch(() => undefined);
         throw error;
       }
+    },
+
+    // -------------------------------------------------------------------------
+    // PKG10（#469）：unknown 查询 / 核对 / 恢复面。全部只读或按原 operation
+    // 写回；绝不派发、绝不重发、绝不删除（无 DELETE 策略，台账 append/
+    // update-only）。失权调用者的 scope 在路由解析层即告失效；这里的显式
+    // 谓词 + RLS 是第二、三道独立防线。
+    // -------------------------------------------------------------------------
+
+    async listDispatches(scope, rawInput) {
+      assertTrustedScope(scope);
+      if (
+        !rawInput ||
+        typeof rawInput.installId !== "string" ||
+        !rawInput.installId.trim() ||
+        rawInput.installId.length > 128
+      ) {
+        return surfaceRefused("NOT_AVAILABLE");
+      }
+      return openTransaction(scope, async (tx) => {
+        if (!(await installVisibleUnder(tx, scope, rawInput.installId))) {
+          return surfaceRefused("NOT_AVAILABLE");
+        }
+        const rows = await tx
+          .select(DISPATCH_COLUMNS)
+          .from(dispatchRows)
+          .where(
+            and(
+              eq(dispatchRows.tenantId, scope.tenantId),
+              eq(dispatchRows.workspaceId, scope.workspaceId),
+              eq(dispatchRows.installId, rawInput.installId),
+            ),
+          )
+          .orderBy(desc(dispatchRows.createdAt), desc(dispatchRows.operationId))
+          .limit(50);
+        return {
+          outcome: "found" as const,
+          value: rows.map((row) => dispatchSummaryOf(row)),
+        };
+      });
+    },
+
+    async inspectDispatch(scope, rawInput) {
+      assertTrustedScope(scope);
+      if (
+        !rawInput ||
+        typeof rawInput.installId !== "string" ||
+        !rawInput.installId.trim() ||
+        rawInput.installId.length > 128 ||
+        typeof rawInput.operationId !== "string" ||
+        !OPERATION_ID_PATTERN.test(rawInput.operationId)
+      ) {
+        return surfaceRefused("NOT_AVAILABLE");
+      }
+      const read = await openTransaction(scope, async (tx) => {
+        if (!(await installVisibleUnder(tx, scope, rawInput.installId))) {
+          return surfaceRefused("NOT_AVAILABLE");
+        }
+        const [row] = await tx
+          .select({
+            ...DISPATCH_EVIDENCE_COLUMNS,
+            accountHandle: enterprisePluginConnections.vendorRef,
+          })
+          .from(dispatchRows)
+          .leftJoin(
+            enterprisePluginConnections,
+            and(
+              eq(enterprisePluginConnections.tenantId, dispatchRows.tenantId),
+              eq(enterprisePluginConnections.id, dispatchRows.connectionId),
+            ),
+          )
+          .where(
+            and(
+              eq(dispatchRows.tenantId, scope.tenantId),
+              eq(dispatchRows.workspaceId, scope.workspaceId),
+              eq(dispatchRows.installId, rawInput.installId),
+              eq(dispatchRows.operationId, rawInput.operationId),
+            ),
+          )
+          .limit(1);
+        if (!row) return surfaceRefused("NOT_AVAILABLE");
+        // 关联回执：同 Run 已确定（succeeded/failed）的其他派发——核对面
+        // 展示给处理人对照的「已有回执」，不伪造本调用的结果。
+        const related =
+          row.state === "unknown"
+            ? await tx
+                .select(DISPATCH_COLUMNS)
+                .from(dispatchRows)
+                .where(
+                  and(
+                    eq(dispatchRows.tenantId, scope.tenantId),
+                    eq(dispatchRows.workspaceId, scope.workspaceId),
+                    eq(dispatchRows.runId, row.runId),
+                    inArray(dispatchRows.state, ["succeeded", "failed"]),
+                    ne(dispatchRows.operationId, row.operationId),
+                  ),
+                )
+                .orderBy(desc(dispatchRows.completedAt))
+                .limit(10)
+            : [];
+        return { outcome: "found" as const, row, related };
+      });
+      if (read.outcome === "refused") return read;
+      const { row, related } = read;
+      const evidence = {
+        connectionId: row.connectionId,
+        accountHandle: row.accountHandle ?? null,
+        connectorInstallId: row.connectorInstallId,
+        argsDigest: row.argsDigest,
+        connectionGeneration: row.connectionGeneration,
+      };
+      if (row.state === "unknown") {
+        const verification = {
+          kind: "unknown" as const,
+          canQueryVendor: vendorQuery !== undefined,
+          noAutoResendReason: (vendorQuery
+            ? "VENDOR_QUERY_UNRESOLVED"
+            : "NO_VENDOR_QUERY_PROTOCOL") as
+            | "NO_VENDOR_QUERY_PROTOCOL"
+            | "VENDOR_QUERY_UNRESOLVED",
+          relatedReceipts: related.map((entry) => dispatchSummaryOf(entry)),
+        };
+        // 恢复门在只读事务之外探针（probe 自开事务；绝不嵌套）。
+        const probe = await this.probeRecovery(scope, {
+          runId: row.runId,
+          attemptGeneration: row.attemptGeneration,
+          bindingRef: packageToolRefFor(
+            row.installId,
+            row.resourceId,
+            toolNameOfRef(row.resourceId, row.toolRef),
+          ),
+        });
+        return {
+          outcome: "found" as const,
+          value: {
+            dispatch: dispatchSummaryOf(row),
+            evidence,
+            verification,
+            recovery:
+              probe.outcome === "ready"
+                ? { ready: true as const }
+                : { ready: false as const, refusalCode: probe.code },
+          },
+        };
+      }
+      return {
+        outcome: "found" as const,
+        value: {
+          dispatch: dispatchSummaryOf(row),
+          evidence,
+          verification:
+            row.state === "succeeded" || row.state === "failed"
+              ? { kind: "definite" as const }
+              : { kind: "in_flight" as const },
+          recovery: null,
+        },
+      };
+    },
+
+    async verifyDispatch(scope, rawInput) {
+      assertTrustedScope(scope);
+      if (
+        !rawInput ||
+        typeof rawInput.installId !== "string" ||
+        !rawInput.installId.trim() ||
+        rawInput.installId.length > 128 ||
+        typeof rawInput.operationId !== "string" ||
+        !OPERATION_ID_PATTERN.test(rawInput.operationId)
+      ) {
+        return surfaceRefused("NOT_AVAILABLE");
+      }
+      // 1) 读原行 + Run 发起人。只有原调用者本人能触发核对——供应商查询
+      //    拨的是他们自己绑定的原账号；他人（含管理员）经查询面保留事实。
+      const read = await openTransaction(scope, async (tx) => {
+        const [row] = await tx
+          .select(DISPATCH_EVIDENCE_COLUMNS)
+          .from(dispatchRows)
+          .where(
+            and(
+              eq(dispatchRows.tenantId, scope.tenantId),
+              eq(dispatchRows.workspaceId, scope.workspaceId),
+              eq(dispatchRows.installId, rawInput.installId),
+              eq(dispatchRows.operationId, rawInput.operationId),
+            ),
+          )
+          .limit(1);
+        if (!row) return null;
+        const [run] = await tx
+          .select({ principalId: enterpriseRuns.principalId })
+          .from(enterpriseRuns)
+          .where(
+            and(
+              eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.id, row.runId),
+            ),
+          )
+          .limit(1);
+        return { row, initiator: run?.principalId ?? null };
+      });
+      if (!read || read.initiator !== scope.principalId) {
+        // 跨范围/不存在/非本人：同一 NOT_AVAILABLE 形状，不泄露存在性。
+        return surfaceRefused("NOT_AVAILABLE");
+      }
+      const row = read.row;
+      if (row.state !== "unknown") {
+        return surfaceRefused("DISPATCH_NOT_UNKNOWN");
+      }
+      if (!vendorQuery) {
+        // 无已验证协议（当前生产装配恒走此臂）：拒绝路径，transport 0 次。
+        return surfaceRefused("VENDOR_QUERY_PROTOCOL_UNAVAILABLE");
+      }
+      // 2) 解析原账号访问（只读；envelope 仅进程内解封）。原连接行消失或
+      //    换绑到他人时无法按原账号查询——拒绝，绝不借用别的账号。
+      const binding: ResolvedBinding = {
+        installId: row.installId,
+        resourceId: row.resourceId,
+        toolName: toolNameOfRef(row.resourceId, row.toolRef),
+        toolRef: row.toolRef,
+      };
+      const staged = await openTransaction(scope, (tx) =>
+        readBindingTargets(
+          tx,
+          scope,
+          row.runId,
+          row.attemptGeneration,
+          binding,
+        ),
+      );
+      const accessResolution = await openTransaction(scope, async (tx) => {
+        await takeSharedLocks(tx, [
+          ...memberLockKeys(scope),
+          pluginInstallKey(scope, row.connectorInstallId),
+          ...(row.connectionId
+            ? [pluginConnectionKey(scope, row.connectionId)]
+            : []),
+        ]);
+        const resolution = await resolveManagedAccessWithin(
+          tx,
+          scope,
+          staged.botId ?? "",
+          row.connectorInstallId,
+          row.connectionId ?? undefined,
+        );
+        if (resolution.outcome !== "allow") return resolution;
+        if (resolution.facts.envelope !== null && !vault) {
+          return refused("NOT_AVAILABLE");
+        }
+        const token =
+          resolution.facts.envelope !== null && vault
+            ? await vault.open(resolution.facts.envelope)
+            : null;
+        return {
+          outcome: "allow" as const,
+          access: { ...resolution.access, token },
+        };
+      });
+      if (accessResolution.outcome !== "allow") {
+        return surfaceRefused("DISPATCH_ACCOUNT_UNAVAILABLE");
+      }
+      // 3) 仅按原 operation 身份查询；参数摘要随行作证据绑定。
+      const query = await vendorQuery({
+        access: accessResolution.access,
+        toolName: binding.toolName,
+        operationId: row.operationId,
+        argsDigest: row.argsDigest,
+        effect: row.effect as "read" | "write",
+      });
+      if (!query.found) {
+        // 协议无匹配：行保持 unknown 原样，不改写任何事实。
+        return {
+          outcome: "found" as const,
+          value: {
+            outcome: "unresolved" as const,
+            dispatch: dispatchSummaryOf(row),
+          },
+        };
+      }
+      // 4) 写回：不做 grant 重验（效果已发生）；prior 段保留撤权前的
+      //    unknown 事实（不丢弃）。CAS 仅在 unknown 行上生效。
+      const verifiedAt = new Date();
+      const written = await openTransaction(scope, async (tx) => {
+        const updated = await tx
+          .update(dispatchRows)
+          .set({
+            state: query.outcome,
+            receiptRef: {
+              effectStatus: query.effectStatus,
+              isError: query.outcome === "failed",
+              verifiedVia: "vendor_query",
+              operationId: row.operationId,
+              evidence: {
+                connectionId: row.connectionId,
+                accountHandle: accessResolution.access.accountHandle,
+                connectorInstallId: row.connectorInstallId,
+                argsDigest: row.argsDigest,
+                connectionGeneration: row.connectionGeneration,
+              },
+              vendorReceipt: query.receiptRef ?? null,
+              prior: {
+                state: "unknown",
+                errorCode: row.errorCode,
+                receiptRef:
+                  (row.receiptRef as Record<string, unknown> | null) ?? null,
+              },
+            },
+            errorCode: null,
+            completedAt: verifiedAt,
+            updatedAt: verifiedAt,
+          })
+          .where(
+            and(
+              eq(dispatchRows.tenantId, scope.tenantId),
+              eq(dispatchRows.operationId, row.operationId),
+              eq(dispatchRows.state, "unknown"),
+            ),
+          )
+          .returning(DISPATCH_COLUMNS);
+        return updated[0] ?? null;
+      });
+      if (!written) {
+        // 并发下已被写回：按现状拒绝，调用者重读。
+        return surfaceRefused("DISPATCH_NOT_UNKNOWN");
+      }
+      return {
+        outcome: "found" as const,
+        value: {
+          outcome: "verified" as const,
+          dispatch: dispatchSummaryOf(written),
+        },
+      };
+    },
+
+    async probeRecovery(scope, rawInput) {
+      assertTrustedScope(scope);
+      if (
+        !rawInput ||
+        typeof rawInput.runId !== "string" ||
+        !rawInput.runId.trim() ||
+        !Number.isSafeInteger(rawInput.attemptGeneration) ||
+        rawInput.attemptGeneration <= 0 ||
+        typeof rawInput.bindingRef !== "string"
+      ) {
+        return { outcome: "refused", code: "NOT_AVAILABLE" as const };
+      }
+      const binding = resolveBinding(rawInput.bindingRef);
+      if (!binding) {
+        return { outcome: "refused", code: "NOT_AVAILABLE" as const };
+      }
+      const preTargets = await readTargets(
+        scope,
+        rawInput.runId,
+        rawInput.attemptGeneration,
+        binding,
+      );
+      if (!preTargets.botId) {
+        return { outcome: "refused", code: "RUN_LEASE_INVALID" as const };
+      }
+      const surfacesBefore = await authorizeSurfaces(
+        scope,
+        preTargets.botId,
+        binding.toolRef,
+        preTargets.connectorInstallId,
+      );
+      if (surfacesBefore) return surfacesBefore;
+      return openTransaction(scope, async (tx) => {
+        await takeSharedLocks(tx, memberLockKeys(scope));
+        const staged = await readBindingTargets(
+          tx,
+          scope,
+          rawInput.runId,
+          rawInput.attemptGeneration,
+          binding,
+        );
+        await takeSharedLocks(tx, [
+          packageInstallKey(scope, binding.installId),
+          packageGrantKey(scope, staged.botId ?? "", binding.installId),
+          ...(staged.connectorInstallId
+            ? [pluginInstallKey(scope, staged.connectorInstallId)]
+            : []),
+          ...(staged.connectionId
+            ? [pluginConnectionKey(scope, staged.connectionId)]
+            : []),
+        ]);
+        const resolution = await resolveFacts(
+          tx,
+          scope,
+          null,
+          rawInput.runId,
+          rawInput.attemptGeneration,
+          binding,
+          rawInput.args ?? {},
+        );
+        if (resolution.outcome !== "facts") {
+          return { outcome: "refused", code: resolution.code };
+        }
+        return { outcome: "ready" as const };
+      });
     },
   };
 }

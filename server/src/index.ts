@@ -1487,6 +1487,14 @@ const pluginPackageRoutes = await (async () => {
         artifactRoot: config.pluginArtifactRoot,
       }),
       resolveScope: (request) => enterpriseCapabilities.scopes.resolve(request),
+      /*
+       * PKG10 (#469): the dispatch ledger surface, resolved lazily because
+       * the dispatch service (packageTooling below) assembles after this
+       * factory runs. Requests only arrive once startup completed, so the
+       * late-bound getter is safe; a degraded tooling chain keeps these
+       * paths 503 rather than answering an empty ledger.
+       */
+      dispatches: () => packageTooling?.dispatch ?? null,
       resolveAdmin: operator
         ? (request) => adminAuthorizer.resolveAdminContext(request)
         : undefined,
@@ -1729,6 +1737,15 @@ const packageTooling = await (async () => {
     toolInvocation,
     catalogDecisions: pluginCatalog.decisions,
     pinnedTools: runtime.readPinnedTools,
+    /*
+     * PKG10 (#469) — explicit record: this deployment registers NO vendor
+     * query protocol. The repository's mcp transport exposes only callTool;
+     * the brokered transports expose no idempotent query interface either.
+     * Consequence, by design: an unknown-effect dispatch can be listed and
+     * inspected but never auto-verified, and the verify endpoint answers its
+     * closed 422 refusal. A protocol is only wired here after it has been
+     * verified against a real vendor contract.
+     */
   });
   /*
    * The adapter that turns the dispatch service into the store seam. The
