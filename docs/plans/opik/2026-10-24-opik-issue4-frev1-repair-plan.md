@@ -15,9 +15,12 @@
 | F5C2 公共执行路径 | FREV-04 (high) | 评测 runner 装配被测 Bot 公共执行引擎/隔离 thread/工具 schema；toolFixtures 真实拦截 callTool 并影响输出与拒绝计数（#29 语义） | execution-runner.ts、execution-boot.ts、executions.ts（runner 面） | F5C1 |
 | F5D1 删除完成判定 | FREV-07 (medium) | delete 请求 accepted 与 observed-absent 分离：markUpstreamDone 前必须经验证的有界查无；失败留 pending/failed 重试；定位保留至物理删除完成 | retention.ts、opik-http.ts（deleteTraces/deleteDataset 语义） | — |
 
-## 不属代码修复
+## F5E1 真实链路证据（FREV-06，用户已裁决：补证据）
 
-- **FREV-06 (medium)**：真实 builtin/LangGraph/多宿主链路证据缺口（A2/A13、#22/#23/#43）。两条路：补完整环境真实执行证据（重）或按批准流程缩小交付声明。**需用户裁决**，不阻塞其余 6 项。
+- **2026-10-24 用户裁决**：补完整环境真实执行证据（全套 auth/casdoor/provider + 真实 Agent run），不缩小交付声明。
+- Wave 3 派发（F5A2/F5C2 集成后）：证据取自波二集成后的组合树，避免投影/绑定修复使证据失效。
+- 验收面：A2（builtin+LangGraph 各一次真实工具/检索执行）、A13（宿主/容器/动态进程跨服务传播+ID 映射）、#22/#23/#43。
+- 环境前置（已预检）：主 checkout .env 具备 OPENAI_*/CASDOOR_*/DATABASE_URL 全套；agent-langgraph `bun src/index.ts` 可起；casdir/postgres/opik 栈以独立 compose project（opik4-f5e1-*）隔离；宿主负载门槛 load<5。
 
 ## 门禁
 
