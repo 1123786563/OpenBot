@@ -212,11 +212,24 @@ export function ConnectAppCard({
         }
         resetOutcome();
         setWaiting(true);
-        if (tab) {
-          tab.location.replace(url);
+        if (!tab || tab.closed) {
+          /*
+           * The tab was blocked — or the person closed the blank one while the url was being
+           * minted. The url is still good, so offer it as something to click.
+           */
+          setBlockedUrl(url);
+        } else {
+          /*
+           * A browsing context that is gone can still make the navigation throw instead of
+           * no-op, closed flag or no closed flag — and a navigation that cannot happen is a
+           * blocked tab, so it lands in the same place one does.
+           */
+          try {
+            tab.location.replace(url);
+          } catch {
+            setBlockedUrl(url);
+          }
         }
-        // The tab was blocked. The url is still good, so offer it as something to click.
-        else setBlockedUrl(url);
       },
       // A failed start is its own ending too: the stale outcomes go with it, so the alert shows
       // the one failure the connector answered with and nothing it replaces.
