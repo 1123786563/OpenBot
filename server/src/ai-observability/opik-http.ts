@@ -72,6 +72,24 @@ const VERIFIED_STATUS: Record<OpikOperation, number> = {
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 
+/**
+ * The bounded absence window a deletion completes through (FREV-07): a delete's
+ * verified 204 is acceptance, while Opik's physical delete is asynchronous on the
+ * analytics side — the operation is only done once the read-back observes the
+ * object gone. The window reuses the configured deadline as its whole-operation
+ * budget (one exchange's worth of patience), and the poll gap keeps a slow
+ * upstream asked, not hammered. Attempts are bounded so the budget is a fact,
+ * not a hope; what survives both is the port's timeout, retried by the caller.
+ */
+const DELETE_ABSENCE_POLL_MS = 1_000;
+const DELETE_ABSENCE_MAX_ATTEMPTS = 6;
+
+/** A bounded wait between absence polls. */
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
 const HEX32 = /^[0-9a-f]{32}$/;
 const HEX16 = /^[0-9a-f]{16}$/;
 const UUIDV7 =
@@ -534,6 +552,60 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
     });
 
   /**
+   * One absence read-back: the same object-detail GET the delete capability's own
+   * evidence verified as the not-found proof (the contract runner's absence polls —
+   * delete 204, then GET until 404). Statuses carry the whole fact and the body is
+   * never read: 404 is absent, 200 is still queryable, anything else is the failure
+   * it is — surfaced as itself, never polled into a success.
+   */
+  const readbackAbsent = (
+    operation: OpikOperation,
+    path: string,
+  ): Promise<OpikPortResult<{ absent: boolean }>> => {
+    const readBody = async (
+      response: Response,
+    ): Promise<OpikPortResult<{ absent: boolean }>> => {
+      if (response.status === 404) {
+        return { outcome: "ok" as const, value: { absent: true } };
+      }
+      if (response.status === 200) {
+        return { outcome: "ok" as const, value: { absent: false } };
+      }
+      return statusFailure(operation, response.status);
+    };
+    return exchange(operation, path, { method: "GET" }, readBody);
+  };
+
+  /**
+   * The second half of a deletion (FREV-07): drive every read-back path to an
+   * observed 404 inside the bounded window before the caller may treat the delete
+   * as done. A hard read-back failure (an upstream error, drift, malformed)
+   * surfaces immediately — it is a fact about the verification, not a poll
+   * condition. What is still queryable when the window closes answers the port's
+   * timeout: retryable by the caller, never a disguised success.
+   */
+  const awaitAbsence = async (
+    operation: OpikOperation,
+    paths: readonly string[],
+  ): Promise<Failure | null> => {
+    const deadline = Date.now() + timeoutMs;
+    let remaining = [...new Set(paths)];
+    for (let attempt = 0; attempt < DELETE_ABSENCE_MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) await sleep(DELETE_ABSENCE_POLL_MS);
+      const stillPresent: string[] = [];
+      for (const path of remaining) {
+        const read = await readbackAbsent(operation, path);
+        if (read.outcome !== "ok") return read;
+        if (!read.value.absent) stillPresent.push(path);
+      }
+      if (stillPresent.length === 0) return null;
+      remaining = stillPresent;
+      if (Date.now() + DELETE_ABSENCE_POLL_MS > deadline) break;
+    }
+    return unavailable(operation, "OPIK_TIMEOUT");
+  };
+
+  /**
    * One project resolution, two callers (OCR m151): retrieveProject and deleteTraces
    * used to carry near-identical inline retrieve logic, and the embedded copy labeled
    * every failure "retrieveProject" — misclassifying deleteTraces failures downstream.
@@ -831,6 +903,19 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         if (exchanged.value.status !== VERIFIED_STATUS.deleteTraces) {
           return statusFailure("deleteTraces", exchanged.value.status);
         }
+        // Accepted, now observed (FREV-07): the 204 freed the request, the
+        // read-back window must free the caller. Completion is bound to the
+        // verified absence of every requested trace — still-queryable ids leave
+        // the operation retryable, so a caller's "done" can never outrun the
+        // upstream's actual cleanup.
+        const absent = await awaitAbsence(
+          "deleteTraces",
+          input.traceIds.map(
+            (id) =>
+              `/v1/private/traces/${encodeURIComponent(id)}?project_id=${encodeURIComponent(project.id)}`,
+          ),
+        );
+        if (absent !== null) return absent;
         return { outcome: "ok" as const, value: { deleted: true } };
       })();
     },
@@ -857,6 +942,13 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
           // failure, never a success.
           return statusFailure("deleteDataset", exchanged.value.status);
         }
+        // Accepted, now observed — the same FREV-07 discipline as trace deletion,
+        // on the dataset-detail GET the delete capability's evidence verified as
+        // the not-found proof.
+        const absent = await awaitAbsence("deleteDataset", [
+          `/v1/private/datasets/${encodeURIComponent(input.datasetId)}`,
+        ]);
+        if (absent !== null) return absent;
         return { outcome: "ok" as const, value: { deleted: true } };
       })();
     },

@@ -1,8 +1,14 @@
-import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
+import {
+  afterAll,
+  afterEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
@@ -13,7 +19,12 @@ import {
   type ObservationExportStore,
 } from "../src/ai-observability/exports";
 import { createIdLinkStore } from "../src/ai-observability/id-links";
-import type { OpikPort, OpikTraceRow } from "../src/ai-observability/opik-port";
+import { createOpikHttpPort } from "../src/ai-observability/opik-http";
+import type {
+  OpikPort,
+  OpikTraceRow,
+  VerifiedOpikContract,
+} from "../src/ai-observability/opik-port";
 import { createRunsQueryService } from "../src/ai-observability/queries/runs";
 import {
   createObservationRetentionStore,
@@ -87,6 +98,14 @@ const enabledConfig: OpikConfig = {
   otlpGrpcPort: 5417,
 };
 const disabledConfig: OpikConfig = { ...enabledConfig, enabled: false };
+
+/** The verified T04 manifest — the same evidence the production adapter is gated on. */
+const manifest = (await Bun.file(
+  join(
+    import.meta.dir,
+    "../src/ai-observability/opik-contract/47-manifest.json",
+  ),
+).json()) as VerifiedOpikContract;
 
 /**
  * The upstream, faked at the port seam. Trace deletion is observable: the ids
@@ -832,6 +851,81 @@ test("upstream failure parks in failed with the row intact, and a retry complete
   expect(records[0].lastError).toBeNull();
   expect(records[0].attempts).toBe(2);
   expect(upstream.calls.deleteTraces).toHaveLength(2);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("an accepted delete is not completion: the record parks until the read-back observes absence (FREV-07)", async () => {
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51387${randomUUID().slice(0, 4)}`;
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: traceId,
+    days: 8,
+  });
+
+  // The production adapter against a scripted upstream (no fake port at the
+  // seam — the final review's counterexample rides the real delete semantics):
+  // the delete POST is accepted with 204, but the trace stays queryable until
+  // the script flips to gone. The window is a short configured deadline, so the
+  // first pass exhausts it in one poll.
+  let traceGone = false;
+  let deletePosts = 0;
+  let readbacks = 0;
+  const transport = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/private/projects/retrieve")) {
+      return new Response(JSON.stringify({ id: "proj-frev07" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.endsWith("/v1/private/traces/delete")) {
+      deletePosts += 1;
+      return new Response(null, { status: 204 });
+    }
+    if (url.startsWith(`http://opik.test/api/v1/private/traces/${traceId}?`)) {
+      readbacks += 1;
+      return traceGone
+        ? new Response("{}", { status: 404 })
+        : new Response(JSON.stringify({ id: traceId }), { status: 200 });
+    }
+    throw new Error(`unexpected upstream call: GET ${url}`);
+  }) as typeof fetch;
+  const worker = workerFor({
+    port: createOpikHttpPort({
+      baseUrl: "http://opik.test/api",
+      contract: manifest,
+      fetch: transport,
+      timeoutMs: 200,
+    }),
+  });
+
+  // Pass one: the delete was accepted, the read-back still finds the trace —
+  // so the record parks failed for retry, keeps its locator, and nothing local
+  // is "completed": the binding row survives and no audit was written.
+  await worker.sweep();
+  let records = await deletionsFor(scopeA);
+  expect(records[0].state).toBe("failed");
+  expect(records[0].lastError).toBe("OPIK_TIMEOUT");
+  expect(records[0].attempts).toBe(1);
+  expect(deletePosts).toBe(1);
+  expect(readbacks).toBeGreaterThanOrEqual(1);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 1 }]);
+  expect(await auditRows(binding.id)).toEqual([]);
+
+  // The upstream finishes; only now does the retry complete the deletion.
+  traceGone = true;
+  await worker.sweep();
+  records = await deletionsFor(scopeA);
+  expect(records[0].state).toBe("deleted");
+  expect(records[0].lastError).toBeNull();
+  expect(records[0].attempts).toBe(2);
+  // The retry re-fired the (idempotent) delete and then read the absence back —
+  // acceptance twice, completion exactly once, on the observed-absent answer.
+  expect(deletePosts).toBe(2);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
   expect(await auditRows(binding.id)).toHaveLength(1);
 });
 
