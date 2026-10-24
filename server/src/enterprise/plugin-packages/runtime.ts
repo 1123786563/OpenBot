@@ -66,9 +66,59 @@ import { packageError } from "./contracts";
  *     `grantedSkills` catalogue — never a downgrade of legacy grants). A run
  *     with no package context keeps the legacy contract untouched.
  *   - approvals resume / schedules & responsibility / memory ingestion /
- *     `plugins/routes.ts` call / `app.ts` internal call: NOT WIRED — later
- *     tickets; until wired they must not serve package resources
- *     (PACKAGE_RUN_REQUIRED semantics belong to the dispatch slice).
+ *     `plugins/routes.ts` call / `app.ts` internal call: WIRED by PKG09 (T09,
+ *     #468) — the per-entry state now reads:
+ *   - chat runtime tool offer + call: WIRED (PKG05, T05) — `grantedTools` adds
+ *     the run's pinned tools when the caller passes the server-issued
+ *     `packageRun` context, and each executes through the `pkg:` branch of
+ *     `PluginStore.callTool` → `preparePackageTool` → dispatch CAS. Without a
+ *     context no package tool is offered and the legacy offer is unchanged.
+ *   - approvals resume: WIRED (PKG09) — a GOVERNED parking resumes through the
+ *     continuation install: the six gates + a reactivated lease re-drive the
+ *     parked engine step, and the resumed loop is re-offered the tools that
+ *     attempt may dispatch — including the run's pinned package tools, under
+ *     the continuation's OWN (run, attempt) binding and the resume's
+ *     freshly-signed scope. `toolGrantCurrent` re-checks the SAME binding, so
+ *     a pin or grant revoked while the approval waited removes the name and
+ *     the resume answers MASTRA_CONTINUATION_GRANT_REVOKED. This is the
+ *     production arm: a deployment that can carry a package tool runs the
+ *     builtin engine on Mastra. A LEGACY parking (an engine parking the
+ *     governed drive does not recognise) re-enters `callTool` through
+ *     `ApprovedActionDependencies.packageRunFor` →
+ *     `PackageEntrypoints.restoreRunContext`, which re-derives the trusted
+ *     scope + (run, attempt, admitted Bot) from the persistent run row and
+ *     current directory membership — never from the deserialized proposal —
+ *     refuses a proposal whose recorded attempt the run has left behind, and
+ *     the dispatch CAS revalidates args digest / connection generation /
+ *     grant / lease (A07). No reachable run → typed refusal, no fabricated
+ *     run. A package proposal exists only in a managed run, so in practice
+ *     this fallback is not reached with one; it is kept wired and truthful
+ *     rather than documented as the production path.
+ *   - schedules & responsibility (governed headless turns): WIRED (PKG09) — the
+ *     turn's scope is re-issued from its own persistent scheduling record
+ *     (`governedHeadlessScopeFor`), `runs.start` pins the run, and the shared
+ *     headless surface hands `grantedTools` the admitted binding's run
+ *     context, so the turn offers exactly its pinned tools and dispatches
+ *     through the same chain. The surface is SHARED: routine firings,
+ *     responsibility, delivery and wake-up all assemble through it, so all of
+ *     them are offered the run's pinned package tools, each under its own
+ *     admitted run and revalidated at the CAS. (Proactive background research
+ *     is read-only by contract and never gets a package tool: a `pkg:` ref is
+ *     not a catalogue read.)
+ *   - memory ingestion: EXPLICITLY REFUSED (PKG09) — a `pkg:` source is refused
+ *     by name in `authorize` before any grant read (PACKAGE_RUN_REQUIRED
+ *     semantics); ingestion has no managed run and none is fabricated.
+ *   - `plugins/routes.ts` `/call`: EXPLICITLY REFUSED (PKG09, inherited from the
+ *     PKG05 branch) — an HTTP caller cannot present a server-issued run
+ *     context, so a `pkg:` ref answers the PACKAGE_RUN_REQUIRED refusal (403)
+ *     and never falls back to a legacy grant.
+ *   - `app.ts` `/api/agent-tools/call`: EXPLICITLY REFUSED (PKG09) — the signed
+ *     run assertion proves which black-box Bot is calling, not a managed
+ *     admission (no attempt/pin), so a `pkg:` ref is refused the same way. Such
+ *     a Bot cannot be granted a package at all (the grant binding requires a
+ *     workspace-owned expert Bot: `readBotInScope` answers PACKAGE_BOT_SCOPE_
+ *     UNAVAILABLE / not-found), which is what makes the UI show "this package
+ *     does not support this Bot" instead of promising a call that cannot run.
  */
 
 /**

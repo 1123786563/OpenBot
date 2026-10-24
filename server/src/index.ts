@@ -99,7 +99,10 @@ import {
   loadVerifiedOpikPort,
 } from "./ai-observability/wiring";
 import { createApp, createDeploymentRequireUser } from "./app";
-import { createApprovedActionExecutor } from "./approvals/execute";
+import {
+  createApprovedActionExecutor,
+  proposalAttemptOf,
+} from "./approvals/execute";
 import { resumePersonQuestion } from "./approvals/question-resume";
 import {
   type PersonQuestion,
@@ -109,6 +112,7 @@ import {
 import type { ApprovalResumeDependencies } from "./approvals/service";
 import { createApprovalStore } from "./approvals/store";
 import {
+  type ApprovalAction,
   ApprovalRefusedError,
   parseApprovalContinuation,
   parseApprovalResult,
@@ -325,6 +329,10 @@ import type { PlatformScope, RunnerRequestLease } from "./enterprise/contracts";
 import { createUnavailableConversationRoutes } from "./enterprise/conversations/routes";
 import { createConversationService } from "./enterprise/conversations/service";
 import { createPackageDispatchService } from "./enterprise/plugin-packages/dispatch";
+import {
+  createPackageEntrypoints,
+  packageRunForBinding,
+} from "./enterprise/plugin-packages/entrypoints";
 import { createPackageService } from "./enterprise/plugin-packages/install-service";
 import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
 import {
@@ -3310,6 +3318,21 @@ const packageRuntime = enterpriseCapabilities
     }))
   : undefined;
 
+/**
+ * PKG09 (Spec §9): the background-entry scope rebuild. An approved package
+ * tool resumed outside its run re-enters the package branch with the context
+ * this service re-derives from the persistent run row — run tenant/workspace/
+ * principal from `enterprise_runs`, the admitted Bot from the run's expert
+ * version, and a scope issued NOW (membership re-verified) by the real scope
+ * resolver. Nothing from the deserialized proposal reaches it.
+ */
+const packageEntrypoints = enterpriseCapabilities
+  ? createPackageEntrypoints({
+      directory: enterpriseCapabilities.directory,
+      data: enterpriseCapabilities.data,
+    })
+  : undefined;
+
 const enterpriseRunner =
   enterpriseCapabilities && packageRuntime
     ? createProductionRunnerComposition({
@@ -3477,12 +3500,30 @@ if (enterpriseRunner && enterpriseCapabilities) {
     // is the evidence the run's terminal settlement answers to (the gate the
     // governed headless turn and the browser relay both apply at finish).
     state.carrier = carrier;
+    /*
+     * PKG09 (Spec §9): the resumed loop is re-offered the tools the PARKED
+     * ATTEMPT may dispatch — including the run's pinned package tools, under
+     * the same server-issued context the original turn mounted them with. The
+     * identity is the continuation's own binding (re-verified field-wise by
+     * the claim; `reactivateSuspensionLease` re-armed exactly this attempt)
+     * and the scope is the caller's freshly-signed one. Without this context
+     * a `pkg:` tool is not offered at all, so the resume could not execute
+     * the very call it was resumed for.
+     */
+    const packageRun = packageRunForBinding({
+      scope,
+      binding: {
+        runId: claim.binding.runId,
+        attemptGeneration: claim.binding.generation,
+      },
+    });
     const tools = await grantedTools({
       store: pluginStore,
       botId,
       actorId: scope.actorId,
       initiator: PERSON_INITIATOR,
       credentialActorFor: teamBots.credentialActorFor(scope.actorId, botId),
+      packageRun,
     });
     const actor = await actorFor(scope.actorId);
     const registered = await loadAgentsForActor(actor);
@@ -3619,7 +3660,14 @@ if (mastraContinuationStore && enterpriseCapabilities && enterpriseRunner) {
     // unpaused (the actor's membership itself is re-verified field-wise by
     // the store before this gate runs), so a revoked or paused participant
     // cannot resume a waiting participation call.
-    toolGrantCurrent: async ({ scope, botId, toolName, kind }) => {
+    //
+    // PKG09 (Spec §9): the ledger a PACKAGE tool was granted on is its run's
+    // pin set, and the seam offers those tools only under a server-issued run
+    // context. The continuation's own binding is passed through, so a parked
+    // `pkg:` call is re-checked against the pins of the attempt that parked it
+    // — and a pin or grant revoked while it waited removes the name, which is
+    // the refusal this gate exists for.
+    toolGrantCurrent: async ({ scope, botId, toolName, kind, boundRun }) => {
       if (kind === "frontend_tool") {
         try {
           await guardBotTurn({ ownerUserId: scope.actorId, agentId: botId });
@@ -3634,6 +3682,9 @@ if (mastraContinuationStore && enterpriseCapabilities && enterpriseRunner) {
         actorId: scope.actorId,
         initiator: PERSON_INITIATOR,
         credentialActorFor: teamBots.credentialActorFor(scope.actorId, botId),
+        ...(boundRun
+          ? { packageRun: packageRunForBinding({ scope, binding: boundRun }) }
+          : {}),
       });
       return tools.some((tool) => tool.name === toolName);
     },
@@ -3787,6 +3838,33 @@ const governedHeadlessSurfaceFor =
     // The granted connector tools, resolved for this owner exactly as the
     // browser run resolves them (grant → policy → credential → audit stay
     // inside the granted path).
+    /*
+     * PKG09 (Spec §9): the entry runs as a MANAGED run — `runs.start` pinned
+     * this turn's package grants in the same transaction that wrote the run
+     * row — so the surface offers exactly the tools that attempt may
+     * dispatch. The context is the server's own (scope from this entry's
+     * re-issued scope, run/attempt from the admitted binding), never a queue
+     * field; a run with no pins offers nothing extra and the legacy offer is
+     * untouched. Every dispatch revalidates pin ∩ current grant ∩ membership
+     * at its CAS.
+     *
+     * WHICH ENTRIES GET PACKAGE TOOLS. This is the ONE shared headless
+     * surface (see the block comment above): schedule/routine firings,
+     * responsibility advance, delivery and wake-up all assemble through it,
+     * so all of them are offered the run's pinned package tools — each under
+     * its OWN admitted run and the scope re-signed for that entry, and each
+     * call revalidated at the dispatch CAS. That is the Spec §9 rule for a
+     * managed background run, not an accident of sharing; the approval
+     * continuation resuming such a turn re-offers the same set under the
+     * embedded approval binding.
+     */
+    const packageRun = packageRunForBinding({
+      scope,
+      binding: {
+        runId: binding.runId,
+        attemptGeneration: binding.generation,
+      },
+    });
     const tools = await restrictToolsForRun(
       initiator,
       () =>
@@ -3799,6 +3877,7 @@ const governedHeadlessSurfaceFor =
             scope.actorId,
             agentId,
           ),
+          packageRun,
         }),
       proactiveReadOnlyRefs,
     )();
@@ -4614,6 +4693,57 @@ const executeApprovedAction = createApprovedActionExecutor({
   callTool: (input) => pluginStore.callTool(input),
   credentialActorFor: (actorId, botId, ref) =>
     teamBots.credentialActorFor(actorId, botId)(ref),
+  /*
+   * PKG09 (Spec §9): the resume of an approved PACKAGE tool re-enters
+   * callTool with the run context rebuilt from the persistent run row —
+   * the run's own tenant/workspace/principal and the admitted Bot, with
+   * membership re-verified at issue time. The deserialized proposal's
+   * scope/target fields are never consulted for authority; the dispatch CAS
+   * revalidates args digest, connection generation, grant and lease anyway
+   * (A07). An unwired deployment answers the typed refusal instead — no run
+   * is fabricated for compatibility.
+   *
+   * WHICH ARM A PACKAGE APPROVAL TAKES. In a deployment that can carry a
+   * package tool at all (enterprise capabilities, hence the Mastra engine),
+   * the parked call is driven by the governed continuation orchestrator —
+   * six gates, the continuation's own attempt re-armed, and the resumed loop
+   * re-offered the run's pinned tools (see `toolGrantCurrent` and
+   * `governedResumeSurface`). THIS executor is the fallback for parkings the
+   * governed drive does not recognise; a package proposal can only exist in a
+   * managed run, so in practice it is not reached with one. It stays wired
+   * and truthful rather than describing itself as the production path.
+   */
+  ...(packageEntrypoints
+    ? {
+        packageRunFor: async (action: ApprovalAction) => {
+          /*
+           * L2: the proposal's OWN attempt (recorded in its `target` when the
+           * call was prepared) is handed to the restore, so an approved
+           * proposal cannot ride a run that was cancelled/retried while it
+           * waited. The attempt is a dispatch fact of the proposal, not an
+           * authority claim: the run row still decides who/where, and the
+           * dispatch CAS re-verifies lease/pins.
+           */
+          const expectedAttempt = proposalAttemptOf(action);
+          const restored = await packageEntrypoints.restoreRunContext({
+            ownerUserId: action.actorId,
+            runId: action.runId,
+            botId: action.botId,
+            ...(expectedAttempt !== undefined
+              ? { expectedAttemptGeneration: expectedAttempt }
+              : {}),
+          });
+          return restored.outcome === "context"
+            ? {
+                outcome: "context" as const,
+                runId: restored.run.runId,
+                attemptGeneration: restored.run.attemptGeneration,
+                scope: restored.run.scope,
+              }
+            : { outcome: "refused" as const, code: restored.code };
+        },
+      }
+    : {}),
   coordinationCall: (input) => coordination.call(input),
   readRun: (value) => readApprovedRunAssertion(value, config.keyEncryptionKey),
   answer: vendorAnswer,

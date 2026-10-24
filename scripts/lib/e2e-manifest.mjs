@@ -89,7 +89,21 @@ export const EXPLICIT_GROUPS = {
      * racing sibling group.
      */
     "server/tests/multitenancy/package-dispatch.test.ts",
+    /*
+     * PKG09 (#468): the entrypoint suite seeds the same chain (applyPackageTasks)
+     * against the same dedicated database, so it runs in this one sequential
+     * process after the dispatch/upgrade suites rather than as a racing sibling.
+     */
+    "server/tests/multitenancy/package-entrypoints.test.ts",
     "server/tests/package-install.integration.test.ts",
+  ],
+  /*
+   * PKG09 (#468): the store/executor face of the entry support matrix. It reads
+   * the shared dev test database for the audit/plugin tables (like PKG05's call
+   * suite) and needs no enterprise roles, so it gets its own group.
+   */
+  "server/tests/package-entrypoints": [
+    "server/tests/package-entrypoints.test.ts",
   ],
   /*
    * MT032's suite was written against the e2e (Node) layer while its fixture chain reaches

@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { type GrantedTool, parametersFor } from "@openbot/toolkit/granted-tool";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { z } from "zod";
+import { parsePackageToolRef } from "../../../shared/enterprise/plugin-package-contracts";
 import {
   RESEARCH_TOOLS,
   type ResearchRole,
@@ -303,47 +305,65 @@ export async function grantedTools(options: {
    * reason the pinned Skill read does: a revocation landing mid-build must
    * cost the tool, not the conversation.
    */
-  const packageDescriptors: readonly PackageToolDescriptor[] = packageRun
-    ? await (
-        store.packageTool?.list({ context: packageRun, botId }) ??
-        Promise.resolve([])
-      ).catch(() => [])
-    : [];
-  const packageTools = packageDescriptors.map((descriptor) => ({
-    name: toolNameFor(descriptor.ref),
-    ref: descriptor.ref,
-    initiator,
-    description: `A package tool (${descriptor.resourceId} · ${descriptor.toolName}, ${descriptor.effect}).`,
-    parameters: parametersFor({}),
-    execute: async (args: unknown) => {
-      try {
-        const result = await store.callTool({
-          ref: descriptor.ref,
-          args:
-            args && typeof args === "object" && !Array.isArray(args)
-              ? (args as Record<string, unknown>)
-              : {},
-          botId,
-          actorId,
-          ...(initiator ? { initiator } : {}),
-          packageRun,
-        });
-        return vendorAnswer(result);
-      } catch (error) {
-        if (error instanceof HeadlessToolSuspension) throw error;
-        if (
-          error instanceof PluginRefusedError ||
-          error instanceof ApprovalRefusedError
-        ) {
-          return `${REFUSAL_MARKER} ${error.message}`;
-        }
-        if (isDeploymentFault(error)) return "That tool could not be called.";
-        return error instanceof Error
-          ? `That tool could not be called: ${error.message}`
-          : "That tool could not be called.";
-      }
-    },
-  }));
+  const packageTools: GrantedTool[] = [];
+  if (packageRun) {
+    // Narrowed ONCE here: the offer and every execute closure below carry the
+    // same server-issued context, and a resume re-runs these closures.
+    const runContext = packageRun;
+    const packageDescriptors: readonly PackageToolDescriptor[] = await (
+      store.packageTool?.list({ context: runContext, botId }) ??
+      Promise.resolve([])
+    ).catch(() => []);
+    for (const descriptor of packageDescriptors) {
+      packageTools.push({
+        name: packageToolModelName(descriptor.ref),
+        ref: descriptor.ref,
+        initiator,
+        description: `A package tool (${descriptor.resourceId} · ${descriptor.toolName}, ${descriptor.effect}).`,
+        parameters: parametersFor({}),
+        execute: async (args: unknown, context?: { toolCallId?: string }) => {
+          try {
+            const result = await store.callTool({
+              ref: descriptor.ref,
+              args:
+                args && typeof args === "object" && !Array.isArray(args)
+                  ? (args as Record<string, unknown>)
+                  : {},
+              botId,
+              actorId,
+              ...(initiator ? { initiator } : {}),
+              /*
+               * PKG09: the engine's own call id, when the runtime carries
+               * one, is the dispatch's operation identity. A parked approval
+               * then leaves a prepared row the RESUMED call completes (same
+               * run/attempt/call id) instead of a new row beside an orphaned
+               * one — and a replay of the same call can no longer dispatch a
+               * second time. Runtimes that carry no id keep the store's
+               * random one.
+               */
+              packageRun: context?.toolCallId
+                ? { ...runContext, toolCallId: context.toolCallId }
+                : runContext,
+            });
+            return vendorAnswer(result);
+          } catch (error) {
+            if (error instanceof HeadlessToolSuspension) throw error;
+            if (
+              error instanceof PluginRefusedError ||
+              error instanceof ApprovalRefusedError
+            ) {
+              return `${REFUSAL_MARKER} ${error.message}`;
+            }
+            if (isDeploymentFault(error))
+              return "That tool could not be called.";
+            return error instanceof Error
+              ? `That tool could not be called: ${error.message}`
+              : "That tool could not be called.";
+          }
+        },
+      });
+    }
+  }
 
   return [
     ...granted.tools.map((tool) => ({
@@ -404,6 +424,43 @@ export async function grantedTools(options: {
     })),
     ...packageTools,
   ];
+}
+
+/**
+ * The model-facing name of one package tool.
+ *
+ * NOT `toolNameFor(ref)`. A package ref is `pkg:<installId>:<resourceId>/
+ * <toolName>`, and its colon is outside the charset every provider accepts
+ * (`VALID_TOOL_NAME`, the same rule the grant write enforces as
+ * GRANT_TOOL_NAME_INVALID). A name minted through `toolNameFor` therefore
+ * could not be MOUNTED at all: the Mastra wrapper refuses an unmountable name
+ * for the whole toolset, so no package tool would ever reach a model. The
+ * spelling below keeps the readable resource/tool and replaces the install
+ * identity with a short digest of it — stable across a resume (the
+ * suspension's `toolName` and the approval's continuation name the same call),
+ * unique per install, and inside the charset and the 64-character cap. The
+ * authoritative identity still rides the granted tool's `ref`; this is a
+ * label, never an authorization fact.
+ */
+export const PACKAGE_TOOL_MODEL_PREFIX = "mcp__pkg_";
+
+export function packageToolModelName(ref: string): string {
+  const parsed = parsePackageToolRef(ref);
+  if (!parsed) return toolNameFor(ref);
+  const installTag = createHash("sha256")
+    .update(parsed.installId)
+    .digest("hex")
+    .slice(0, 10);
+  const readable = (value: string) => value.replace(/[^A-Za-z0-9._-]/g, "_");
+  const base = `${PACKAGE_TOOL_MODEL_PREFIX}${installTag}_${readable(parsed.resourceId)}_${readable(parsed.toolName)}`;
+  /*
+   * Past the cap, keep the install identity and a digest of the WHOLE ref as
+   * the tail. Truncating the readable halves is what would make two different
+   * tools collide, and a collision refuses the whole mount.
+   */
+  return base.length <= 64
+    ? base
+    : `${PACKAGE_TOOL_MODEL_PREFIX}${installTag}_${createHash("sha256").update(ref).digest("hex").slice(0, 16)}`;
 }
 
 /**
