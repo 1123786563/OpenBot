@@ -445,6 +445,8 @@ import {
   backupManifestDirFromEnv,
   reconcileControlledBackups,
 } from "./hindsight/backup-registry";
+import { resolveHindsightBankScope } from "./hindsight/bank-scope";
+import { createDrizzleBudgetGate } from "./hindsight/budget-gate";
 import { createCleanupEvidenceService } from "./hindsight/cleanup-evidence";
 import { parseHindsightPrivacy } from "./hindsight/config";
 import {
@@ -457,6 +459,7 @@ import {
   createDrizzleDerivedJudgmentRecords,
 } from "./hindsight/derived-judgments";
 import { createDerivedJudgmentReviewService } from "./hindsight/judgment-review";
+import { hindsightAdminHealthSnapshotForRoute } from "./hindsight/ops-view";
 import {
   createDrizzlePauseControls,
   createUserPauseGate,
@@ -4156,13 +4159,19 @@ if (
     database,
     hindsightRevocations,
   );
+  // The background-processing budget gate (FIX-W11 A-2, #393): the platform-side control
+  // over whether its own background work runs. The durable sync queue (#384) drains through
+  // it — an exhausted cap defers the retain, the work stays pending and retries on the next
+  // drain — and the judgment review's eager retains below admit through the same gate.
+  // Authorized reads never consult it: exhaustion changes what runs, never what recalls.
+  const hindsightBudgetGate = createDrizzleBudgetGate(database);
   // The durable sync queue (#384): what the confirm seams record into and the
   // sweep below drains. Identity at task time is the work row's own
   // attribution, re-read under its tenant pin.
   const hindsightSyncQueue = createHindsightSyncQueue(
     database,
     hindsightServiceConfig,
-    { authorizations: hindsightAuthorizations },
+    { authorizations: hindsightAuthorizations, budget: hindsightBudgetGate },
   );
   // The authority-table record stores the seams share: one construction each, reused by
   // the recall services, the judgment seams and the evidence seam, so every read of a
@@ -4217,6 +4226,10 @@ if (
       recovery: hindsightRecovery.gate,
       work: hindsightSyncQueue,
       revocations: hindsightRevocationLedger,
+      // FIX-W11 A-2: the confirm/edit eager retain is the model-call path of a judgment's
+      // adoption — it admits through the budget gate, and an exhausted budget defers to the
+      // work row's drain instead of failing the person's decision.
+      budget: hindsightBudgetGate,
     },
   );
   const hindsightEvidence = createAnswerEvidenceService(
@@ -4262,6 +4275,20 @@ if (
               registry: hindsightCleanup,
             })
         : null,
+      // FIX-W11 A-2 (#393): the company administrator's health view — service state, backlog
+      // counts and budget usage of the caller's own company (the trusted scope's tenant,
+      // never a request field); the shape guarantees no memory, candidate or basis text can
+      // ride along, and an undeclared health configuration answers "unknown" honestly.
+      opsHealth: {
+        snapshot: (scope: PlatformScope) => {
+          const identity = resolveHindsightBankScope(scope);
+          return hindsightAdminHealthSnapshotForRoute(
+            database,
+            hindsightBudgetGate,
+            identity.tenantId,
+          );
+        },
+      },
     };
   }
   const personalMemoryContext = createPersonalMemoryContext({
@@ -4275,6 +4302,9 @@ if (
     preferenceSearch: hindsightPreferenceSearch,
     sourceBoundSearch: hindsightSourceBoundSearch,
     authorizations: hindsightAuthorizations,
+    // FIX-W11 A-1: the judgment half — adopted judgments through the review seam's own
+    // query-less gates, so every entry below carries them with no new consumption face.
+    judgments: hindsightJudgmentReview,
     pause: hindsightPause,
     recovery: hindsightRecovery.gate,
   });
