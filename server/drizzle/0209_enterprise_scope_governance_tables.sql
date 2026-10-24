@@ -719,5 +719,3 @@ ALTER TABLE "enterprise_personal_memories" ADD CONSTRAINT "enterprise_personal_m
 ALTER TABLE "enterprise_personal_memories" ADD CONSTRAINT "enterprise_personal_memories_tenant_id_principal_id_enterprise_memberships_tenant_id_principal_id_fk" FOREIGN KEY ("tenant_id", "principal_id") REFERENCES "enterprise_memberships"("tenant_id", "principal_id");
 
 --> statement-breakpoint
-
---> statement-breakpoint

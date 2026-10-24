@@ -131,7 +131,7 @@ export const enterprisePluginInstalls = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.tenantId, table.id] }),
-    // Authority PKG02 (`scripts/multitenancy/migrate-test.ts`): the (tenant, workspace, id)
+    // Authority PKG02 (`server/scripts/multitenancy/migrate-test.ts`): the (tenant, workspace, id)
     // scope-unique index that the package-market `enterprise_package_link_connector_fk`
     // points at. The authoritative DDL has always carried it; 0163 restored this table
     // without it and the typed mirror never declared it, so migration 0210 (issue-358 F1)
