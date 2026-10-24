@@ -193,6 +193,17 @@ export async function createPluginInstallFixture(): Promise<PluginInstallFixture
   const setup: Database = createDatabase(enterpriseTestDatabaseUrlFrom(), {
     max: 1,
   });
+  // Setup-side twin of the dispose() truncate: this suite owns the three
+  // plugin tables on the dedicated test database (superuser, disclosed), and
+  // its AC1 asserts the catalog contains exactly the entries it seeds. Other
+  // suites on the same database (package-storage / package-install.integration)
+  // leave `pkg02-*` catalog rows behind after this suite has already run, so
+  // idempotent reruns need the clean slate here, not only at dispose.
+  await setup.$client
+    .unsafe(
+      "truncate enterprise_plugin_connections, enterprise_plugin_installs, enterprise_plugin_catalog cascade",
+    )
+    .catch(() => {});
   const vault = new MemoryVault();
   const admin = createPluginCatalogAdminService(base.operator, vault);
 
