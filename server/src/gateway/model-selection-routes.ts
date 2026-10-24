@@ -72,6 +72,7 @@ import {
   createEnterpriseGatewayPriceSnapshotStore,
   type GatewayPriceSnapshotStore,
 } from "./price-snapshot";
+import { createModelAccessPublic } from "./public";
 
 /**
  * Why the selection on record may not be offerable right now. Closed and
@@ -243,37 +244,38 @@ export function createModelSelectionRoutes(
     const conversationId = context.req.query("conversationId") ?? "";
     const userId = context.var.actor.id;
 
-    // One answer each: the offered list (03.8, verbatim) and the stored
-    // resolution (03.9, verbatim — it never falls through or substitutes).
-    const [selection, effective, snapshots] = await Promise.all([
-      ready.selectable.listSelectableModels(ready.capabilities, {
-        kind: "user",
-        id: userId,
+    // One answer each: the offered list through M06's business facade (Issue
+    // #628 — 03.8's judgment and the price annotation inside it, verbatim) and
+    // the stored resolution (03.9, verbatim — it never falls through or
+    // substitutes).
+    const modelAccess = createModelAccessPublic({
+      models: {
+        selectable: ready.selectable,
+        priceSnapshots: ready.priceSnapshots,
+      },
+    });
+    const [answer, effective] = await Promise.all([
+      modelAccess.availableModels({
+        botCapabilities: ready.capabilities,
+        requester: { kind: "user", id: userId },
       }),
       ready.preferences.resolveEffectiveModel({
         userId,
         botId: WORKBENCH_BOT_ID,
         conversationId,
       }),
-      ready.priceSnapshots.listLatestPriceSnapshots(),
     ]);
-    const priceStatusByRef = new Map(
-      snapshots.map((snapshot) => [
-        modelRefKey(snapshot.ref),
-        snapshot.classification.status,
-      ]),
-    );
-    const selectableViews: SelectableModelView[] = selection.selectable.map(
-      (ref) => ({
-        ref,
-        priceStatus: priceStatusByRef.get(modelRefKey(ref)) ?? "unmapped",
-      }),
+    const selectableViews: SelectableModelView[] = answer.selectable.map(
+      (entry) => ({ ref: entry.ref, priceStatus: entry.priceStatus }),
     );
 
     return context.json({
       bot: { botId: ready.bot.botId, displayName: ready.bot.displayName },
       selectable: selectableViews,
-      effective: effectiveView(effective, selection),
+      effective: effectiveView(effective, {
+        selectable: answer.selectable.map((entry) => entry.ref),
+        excluded: answer.excluded,
+      }),
     });
   });
 

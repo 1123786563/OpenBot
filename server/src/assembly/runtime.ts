@@ -448,15 +448,11 @@ import {
 } from "../enterprise/tenancy/workspace-scope-routes";
 import {
   createGatewayAdminCredentialService,
-  gatewayAdminCredentialControls,
   installGatewayAdminCredentialService,
 } from "../gateway/admin-credential";
 import { startGatewayCatalogSyncScheduler } from "../gateway/catalog-sync";
 import { gatewayEndpointControls } from "../gateway/endpoint-config";
-import {
-  createGatewayVirtualKeyStateClient,
-  startGatewayKeyStateSyncScheduler,
-} from "../gateway/key-state-sync";
+import { createGatewayKeyStateSyncArm } from "../gateway/integration";
 import { assertGatewayReadyForBilling } from "../gateway/readiness";
 import {
   createDegradedRecallFacade,
@@ -8407,20 +8403,10 @@ const catalogSyncScheduler = startGatewayCatalogSyncScheduler({
  * the gateway wired keeps booting: the scheduler answers undefined and logs. Stopped in
  * the signal handler below, with the other sweeps.
  */
-const keyStateSyncScheduler = startGatewayKeyStateSyncScheduler({
+const keyStateSyncScheduler = createGatewayKeyStateSyncArm({
   database,
   // The drift alerts (05.9) ride the boot audit trail, like every other gateway act.
   auditStore: bootAuditStore,
-  client: createGatewayVirtualKeyStateClient({
-    readGatewayEndpoint: async () => {
-      const controls = gatewayEndpointControls();
-      return controls ? controls.readGatewayEndpoint() : undefined;
-    },
-    resolveGatewayAdminCredential: async () =>
-      // ponytail: non-null by construction — the controls exist whenever the gateway is wired;
-      // a null assert is cheaper than widening the whole seam for a state boot already refuses.
-      gatewayAdminCredentialControls()!.resolveGatewayAdminCredential(),
-  }),
 });
 
 /**
