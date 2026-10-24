@@ -31,7 +31,7 @@ import {
   toolStepExecutionState,
   toolStepTerminalState,
 } from "../src/ai-observability/tool-steps";
-import { HeadlessToolSuspension } from "../src/computer/headless-tools";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import {
   type BuiltinToolStepFact,
   setBuiltinToolStepObserver,
