@@ -1061,9 +1061,10 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     expect(first.outcome).toBe("ok");
   });
 
-  test("a binding that no longer matches the trusted scope is drift before any I/O", async () => {
-    // An epoch bump is a transfer or revocation: the locator moved, the stale binding did not.
-    const revoked = resolveObservationScope({
+  test("an epoch bump no longer drifts the Bot's own binding; another Bot's binding is drift before any I/O", async () => {
+    // FREV-03: the data address is the Bot's stable key, so an epoch bump leaves
+    // this binding matching the scope — the write proceeds on the same address.
+    const bumped = resolveObservationScope({
       actorId: "user-a",
       botId: "agent-1",
       ownership: "owner",
@@ -1073,30 +1074,54 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
       () => new Response("", { status: 200 }),
     );
     const p = port({ fetch: transport });
+    const fine = await p.writeSpans(bumped, {
+      spans: [derivedSpan],
+      binding: ownBinding,
+    });
+    expect(fine).toEqual({ outcome: "ok", value: { accepted: true } });
+    expect(calls.length).toBe(1);
+
+    // A binding from the same Bot but under another actor's scope is the SAME
+    // range now — no drift either. (Checked before any drift is recorded: a
+    // recorded drift suspends the whole range, which the next test pins.)
+    const sameRange = await p.writeSpans(otherScope, {
+      spans: [derivedSpan],
+      binding: ownBinding,
+    });
+    expect(sameRange).toEqual({ outcome: "ok", value: { accepted: true } });
+    expect(calls.length).toBe(2);
+
+    // A binding minted for ANOTHER BOT's range is the refusal that stays.
+    const otherBot = resolveObservationScope({
+      actorId: "user-a",
+      botId: "agent-2",
+      ownership: "owner",
+      epoch: 1,
+    });
+    const otherLocator = resolveStorageLocator(otherBot);
+    const foreignBinding = {
+      scopeKey: otherBot.key,
+      runId: "run-1",
+      attemptId: "attempt-1",
+      locatorWorkspace: otherLocator.workspace,
+      locatorProject: otherLocator.project,
+      opikTraceId: null,
+    };
     const drift = driftOf(
-      await p.createTrace(revoked, {
+      await p.createTrace(trusted, {
         traceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
         name: okText("agent run trace"),
         startTime: new Date(),
-        binding: ownBinding,
+        binding: foreignBinding,
       }),
     );
     expect(drift.reason).toBe("binding_mismatch");
-    expect(drift.scopeKey).toBe(revoked.key);
-    expect(calls.length).toBe(0);
+    expect(drift.scopeKey).toBe(trusted.key);
+    expect(calls.length).toBe(2);
 
-    // A binding from another scope is the same refusal.
-    const foreign = driftOf(
-      await p.writeSpans(otherScope, {
-        spans: [derivedSpan],
-        binding: ownBinding,
-      }),
-    );
-    expect(foreign.reason).toBe("binding_mismatch");
-    expect(calls.length).toBe(0);
   });
 
-  test("suspension is per scope: another scope's writes still flow", async () => {
+  test("suspension is per data range: the same Bot's other scope is suspended, another Bot's writes flow", async () => {
     let answer = json(200, JSON.stringify({ id: "abc", name: "wrong" }));
     const { calls, transport } = recorder(() => {
       const current = answer;
@@ -1107,7 +1132,19 @@ describe("ownership drift fails closed and stops the writes behind it", () => {
     expect(driftOf(await p.retrieveProject(trusted)).reason).toBe(
       "response_name_mismatch",
     );
-    const fine = await p.writeSpans(otherScope, { spans: [derivedSpan] });
+    // FREV-03: drift suspends the Bot's data range, so another actor's scope for
+    // the same Bot is suspended too — the suspicious answer was about THAT range.
+    expect(
+      driftOf(await p.writeSpans(otherScope, { spans: [derivedSpan] })).reason,
+    ).toBe("writes_suspended");
+    // ...while another Bot's range answers independently.
+    const otherBot = resolveObservationScope({
+      actorId: "user-a",
+      botId: "agent-2",
+      ownership: "owner",
+      epoch: 1,
+    });
+    const fine = await p.writeSpans(otherBot, { spans: [derivedSpan] });
     expect(fine).toEqual({ outcome: "ok", value: { accepted: true } });
     expect(calls.length).toBe(2);
   });

@@ -66,13 +66,13 @@ const fresh = postgres(testDatabaseUrl(), { max: 1 });
 
 const scopeA = resolveObservationScope({
   actorId: `t35-a-${randomUUID()}`,
-  botId: "agent-1",
+  botId: `opik-retention-integration-bot-a-${randomUUID()}`,
   ownership: "owner",
   epoch: 1,
 });
 const scopeB = resolveObservationScope({
   actorId: `t35-b-${randomUUID()}`,
-  botId: "agent-1",
+  botId: `opik-retention-integration-bot-b-${randomUUID()}`,
   ownership: "admin",
   epoch: 1,
 });
