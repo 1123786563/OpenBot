@@ -128,7 +128,11 @@ export function createPersonalMemoryContext(options: {
    * The context half for source-bound memories: confirmed rows whose restriction a live
    * authorization snapshot still covers — the asking workspace's team bank, this principal's
    * enabled sources, and the asking Bot's own bank when it still holds its app. An empty
-   * snapshot answers empty, as it does on every other path.
+   * snapshot answers empty, as it does on every other path. The authorization is read a
+   * second time after the authority rows load (FR-5): a row answers only when BOTH snapshots
+   * cover it, so a grant revoked while the rows were loading leaves the block instead of
+   * answering from the earlier read — the same TOCTOU clause the indexed and degraded paths
+   * enforce. The second read costs one extra authorization snapshot per context answer.
    */
   async function sourceBoundContext(
     scope: PlatformScope,
@@ -146,10 +150,21 @@ export function createPersonalMemoryContext(options: {
       identity.tenantId,
       identity.principalId,
     );
+    // The second read (FR-5): what the authorization looks like NOW, after the rows came
+    // back — a revocation that landed while they were loading is caught exactly here.
+    const current: AuthorizationSnapshot = await readScopedAuthorization(
+      options.authorizations,
+      identity.tenantId,
+      identity.principalId,
+      scope.workspaceId,
+      askingAgentId,
+    );
     return rows
       .filter(
         (row) =>
-          sourceBoundRecallEligible(row) && stillAuthorized(row, snapshot),
+          sourceBoundRecallEligible(row) &&
+          stillAuthorized(row, snapshot) &&
+          stillAuthorized(row, current),
       )
       .slice(0, CONTEXT_LIMIT)
       .map((row) => ({

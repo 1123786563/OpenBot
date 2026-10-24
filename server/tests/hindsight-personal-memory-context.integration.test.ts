@@ -36,6 +36,7 @@ import {
   createDegradedRecallFacade,
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
+  type DegradedSourceBoundSearch,
 } from "../src/hindsight/degraded-recall";
 import {
   createDerivedJudgmentService,
@@ -628,5 +629,131 @@ describe("Hindsight 18 (#395) — Bot consumption over the single authority", ()
     expect(rendered).toContain("untrusted data");
     expect(rendered).toContain("Prefers bullet points");
     expect(renderPersonalMemoryContext([])).toBe("");
+  });
+});
+
+/*
+ * FR-5 (#395/#383): the query-less context half's authorization is read twice, and the
+ * interleave below proves the second read is real. The source-bound authority load is held
+ * open by a manual promise; its entry proves the FIRST authorization read completed (it
+ * strictly precedes the load), so a grant revoked after entry lands exactly between the two
+ * reads. A row revoked in that window must leave the block (and the degraded query answer,
+ * which reaches the same fallback through the stalled facade) while a row still authorized
+ * stays — the same TOCTOU clause the indexed path enforces after the remote answers.
+ */
+describe("FR-5 (#395/#383): rows revoked during the authority read never reach the context", () => {
+  function heldSourceBoundSearch() {
+    const inner = createDrizzleDegradedSourceBoundSearch(database);
+    let signalEntry: () => void;
+    const entered = new Promise<void>((resolve) => (signalEntry = resolve));
+    let openGate: () => void;
+    const gate = new Promise<void>((resolve) => (openGate = resolve));
+    const search: DegradedSourceBoundSearch = {
+      async loadRecallEligible(tenantId, principalId) {
+        signalEntry();
+        await gate;
+        return inner.loadRecallEligible(tenantId, principalId);
+      },
+    };
+    return { search, entered, open: openGate };
+  }
+
+  /** A context wired exactly as beforeAll wires it, but with the test's own search. */
+  function contextWith(
+    sourceBoundSearch: DegradedSourceBoundSearch,
+  ): ReturnType<typeof createPersonalMemoryContext> {
+    return createPersonalMemoryContext({
+      recall: createDegradedRecallFacade(
+        preferences,
+        sourceBound,
+        createDrizzleDegradedPreferenceSearch(database),
+        sourceBoundSearch,
+        createDrizzleSourceBoundAuthorizations(database),
+      ),
+      preferenceSearch: createDrizzleDegradedPreferenceSearch(database),
+      sourceBoundSearch,
+      authorizations: createDrizzleSourceBoundAuthorizations(database),
+      judgments: judgmentReview,
+      pause,
+      recovery: { recallOpen: () => Promise.resolve(recoveryOpen) },
+    });
+  }
+
+  test("a source revoked while the authority rows load leaves the query-less block", async () => {
+    const pref = await preferences.confirmGenericPreference(scope, {
+      content: `ctx-fr5-pref-${run}`,
+    });
+    const sourceFact = await sourceBound.confirmSourceBoundMemory(scope, {
+      content: `ctx-fr5-src-${run}`,
+      restriction: { kind: "source", sourceId: SOURCE_ON },
+    });
+    const teamFact = await sourceBound.confirmSourceBoundMemory(scope, {
+      content: `ctx-fr5-team-${run}`,
+      restriction: { kind: "team", workspaceId: WORKSPACE },
+    });
+
+    const held = heldSourceBoundSearch();
+    const gated = contextWith(held.search);
+    const blockPromise = gated.personalMemoryContext(scope, ASKING_BOT);
+    // The load has been entered, so the half's first authorization read is done; the
+    // revocation below lands strictly between that read and the second one.
+    await held.entered;
+    await database
+      .update(hindsightMemoryGrants)
+      .set({ enabled: false })
+      .where(eq(hindsightMemoryGrants.targetId, SOURCE_ON));
+    try {
+      held.open();
+      const block = await blockPromise;
+      const contents = block.memories.map((memory) => memory.content);
+      expect(contents).not.toContain(`ctx-fr5-src-${run}`);
+      expect(contents).toContain(`ctx-fr5-pref-${run}`);
+      expect(contents).toContain(`ctx-fr5-team-${run}`);
+    } finally {
+      await database
+        .update(hindsightMemoryGrants)
+        .set({ enabled: true })
+        .where(eq(hindsightMemoryGrants.targetId, SOURCE_ON));
+    }
+    expect(sourceFact.record.id).not.toBe(teamFact.record.id);
+    expect(pref.record.id).toBeTruthy();
+  });
+
+  test("the query entry degrades under a stall and drops rows revoked mid-read the same way", async () => {
+    await sourceBound.confirmSourceBoundMemory(scope, {
+      content: `ctx-fr5q-src-${run}`,
+      restriction: { kind: "source", sourceId: SOURCE_ON },
+    });
+    const teamFact = await sourceBound.confirmSourceBoundMemory(scope, {
+      content: `ctx-fr5q-team-${run}`,
+      restriction: { kind: "team", workspaceId: WORKSPACE },
+    });
+
+    scripted.state.stallMs = STALL_MS;
+    const held = heldSourceBoundSearch();
+    const gated = contextWith(held.search);
+    const answerPromise = gated.recallPersonalMemories(scope, {
+      query: `fr5q ${run}`,
+      botId: ASKING_BOT,
+    });
+    await held.entered;
+    await database
+      .update(hindsightMemoryGrants)
+      .set({ enabled: false })
+      .where(eq(hindsightMemoryGrants.targetId, SOURCE_ON));
+    try {
+      held.open();
+      const answer = await answerPromise;
+      expect(answer.degraded).toBe(true);
+      const contents = answer.memories.map((memory) => memory.content);
+      expect(contents).not.toContain(`ctx-fr5q-src-${run}`);
+      expect(contents).toContain(`ctx-fr5q-team-${run}`);
+    } finally {
+      await database
+        .update(hindsightMemoryGrants)
+        .set({ enabled: true })
+        .where(eq(hindsightMemoryGrants.targetId, SOURCE_ON));
+    }
+    expect(teamFact.record.id).toBeTruthy();
   });
 });
