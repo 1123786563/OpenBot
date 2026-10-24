@@ -465,6 +465,7 @@
     "server/tests/hindsight-judgment-review.contract.test.ts",
     "server/tests/hindsight-judgment-review.integration.test.ts",
     "server/tests/hindsight-legacy-migration.integration.test.ts",
+    "server/tests/hindsight-pause-controls-entry.integration.test.ts",
     "server/tests/hindsight-pause-controls.integration.test.ts",
     "server/tests/hindsight-personal-memory-context.integration.test.ts"
    ]
@@ -1452,6 +1453,7 @@
   "server/tests/hindsight-judgment-review.contract.test.ts",
   "server/tests/hindsight-judgment-review.integration.test.ts",
   "server/tests/hindsight-legacy-migration.integration.test.ts",
+  "server/tests/hindsight-pause-controls-entry.integration.test.ts",
   "server/tests/hindsight-pause-controls.integration.test.ts",
   "server/tests/hindsight-personal-memory-context.integration.test.ts",
   "server/tests/hindsight-preference-recall.integration.test.ts",
@@ -1870,6 +1872,7 @@
   "app/tests/usage-breakdown-ui.test.tsx": "runner named it: wave3 bf11 套件",
   "server/tests/hindsight-revocation.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
   "server/tests/hindsight-pause-controls.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
+  "server/tests/hindsight-pause-controls-entry.integration.test.ts": "runner named it: 2026-10-24 hindsight-376 FIX-W1 套件：pause-controls 生产接线集成（本人入口/legacy 门/派生判断过期 sweep），DB 直跑登记",
   "server/tests/hindsight-background-budget.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
   "server/tests/hindsight-legacy-migration.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
   "server/tests/multitenancy/openmuse-files.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",

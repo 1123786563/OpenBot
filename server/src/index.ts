@@ -445,7 +445,12 @@ import {
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
 } from "./hindsight/degraded-recall";
-import { createDrizzlePauseControls } from "./hindsight/pause-controls";
+import { createDrizzleDerivedJudgmentRecords } from "./hindsight/derived-judgments";
+import { createDerivedJudgmentReviewService } from "./hindsight/judgment-review";
+import {
+  createDrizzlePauseControls,
+  createUserPauseGate,
+} from "./hindsight/pause-controls";
 import {
   createPersonalMemoryContext,
   renderPersonalMemoryContext,
@@ -2507,7 +2512,19 @@ const hostAccessBroker = createHostAccessBroker(Date.now, {
 // receives only opaque grant ids and relative paths.
 // Personal memory lives in OpenBot's own tables only — the Intelligence path exited (Hindsight 18 /
 // #395); indexed cross-session recall runs over the Hindsight chain. See memory/store.ts.
-const personalMemoryStore = createMemoryStore(database);
+/*
+ * Hindsight 14 (#392, FIX-W1): the person's two pause switches — ONE instance for the recall
+ * seams, the legacy gates below and the `/api/memory/pause-controls` entry, so the switch a
+ * person flips is the one every seam reads. The legacy surfaces carry a session actor rather
+ * than a request-resolved scope, so their gates go through the same-table user bridge; the
+ * switches themselves are keyless here — identity derivation stays server-side on both paths.
+ */
+const personalMemoryPauseControls = createDrizzlePauseControls(database);
+const personalMemoryUserPause = createUserPauseGate(database);
+const personalMemoryStore = createMemoryStore(database, {
+  learningPaused: (ownerUserId) =>
+    personalMemoryUserPause.learningPaused(ownerUserId),
+});
 const demonstrationStore = createDemonstrationStore(database);
 const demonstrationRecorder = createDemonstrationRecorder({
   store: demonstrationStore,
@@ -2525,6 +2542,10 @@ const memoryIngestion = createMemoryIngestion({
   canUseBot: async (owner, bot) =>
     (await pluginStore.agentOwner(bot)) === owner ||
     (await agentProfileStore.get(await actorFor(owner), bot)) !== null,
+  // Pause-usage (#392): the legacy injection and recall seams answer empty while the person's
+  // own switch is on — the same switch the chain seams and the settings entry read.
+  usagePaused: (ownerUserId) =>
+    personalMemoryUserPause.usagePaused(ownerUserId),
 });
 // Proactive research may only read; see proactive/restriction.ts. Read from the catalogue per call.
 const proactiveReadOnlyRefs = createReadOnlyClassifier(pluginStore);
@@ -2614,6 +2635,15 @@ const sweepStep = async (operation: string, fn: () => Promise<unknown>) => {
     );
   }
 };
+/**
+ * Hindsight 14 (#392, F-G1-5): the derived-judgment expiry the sweep runs. The chain — the only
+ * producer of such candidates — is assembled further down, gated on the Hindsight connection
+ * env, so this stays undefined where the chain is unwired and the sweep keeps the stages it
+ * always had. The callback fires at 60s intervals, long after this module's body has run.
+ */
+let hindsightJudgmentExpiry:
+  | (() => Promise<{ expired: number; cutoff: Date }>)
+  | undefined;
 const memorySweep = repeatAfterEach(async () => {
   await sweepStep("syncDue", () => memoryIngestion.syncDue());
   // Candidates nobody handled for 30 days are expired with the same tombstone forgetting uses.
@@ -2621,6 +2651,11 @@ const memorySweep = repeatAfterEach(async () => {
   await sweepStep("expireStaleCandidates", () =>
     personalMemoryStore.expireStaleCandidates(),
   );
+  // Derived-judgment candidates age out on the same sweep (#378 AC3 covers both candidate
+  // kinds): the expiry is idempotent and owns no scope, exactly like the one above.
+  await sweepStep("expireStaleDerivedJudgmentCandidates", async () => {
+    await hindsightJudgmentExpiry?.();
+  });
 }, 60_000);
 // Follow-ups a Bot schedules for itself, on the shared work queue. See agents/wake-up.ts.
 const wakeUpStore = createWakeUpStore(database, { auditStore: bootAuditStore });
@@ -4064,7 +4099,8 @@ if (
   process.env.HINDSIGHT_BANK_ASSERTION_SECRET?.trim()
 ) {
   const hindsightServiceConfig = preferenceRecallConfigFromEnv(process.env);
-  const hindsightPause = createDrizzlePauseControls(database);
+  // The ONE switch instance (#392): the same object the legacy gates and the settings entry use.
+  const hindsightPause = personalMemoryPauseControls;
   const hindsightAuthorizations =
     createDrizzleSourceBoundAuthorizations(database);
   const hindsightPreferenceSearch =
@@ -4117,6 +4153,23 @@ if (
       (await personalMemoryContext.personalMemoryContext(scope, botId))
         .memories,
     );
+  /*
+   * Hindsight 14 (#392, F-G1-5): the derived-judgment expiry, handed to the sweep above. The
+   * review service is the same production assembly the review entries read (authority rows,
+   * authorization store, the one pause instance and the restore gate); only its scope-less
+   * expiry stage is consumed here, and it is idempotent, so a repeated sweep expires nothing
+   * more.
+   */
+  const hindsightJudgments = createDerivedJudgmentReviewService(
+    createDrizzlePreferenceRecords(database),
+    createDrizzleSourceBoundRecords(database),
+    createDrizzleDerivedJudgmentRecords(database),
+    hindsightAuthorizations,
+    hindsightServiceConfig,
+    { pause: hindsightPause, recovery: hindsightRecovery.gate },
+  );
+  hindsightJudgmentExpiry = () =>
+    hindsightJudgments.expireStaleDerivedJudgmentCandidates();
 }
 
 const mastraContinuationRouteDeps =
@@ -8173,7 +8226,21 @@ const app = createApp(
         identity: slackCodeRedeemer(identityStore, bootAuditStore),
       },
     },
-    memory: { store: personalMemoryStore, ingestion: memoryIngestion },
+    memory: {
+      store: personalMemoryStore,
+      ingestion: memoryIngestion,
+      // The person's own pause switches (#392, F-G1-1), behind the deployment's trusted
+      // scope resolver — mounted only where enterprise capabilities proved the directory.
+      ...(enterpriseCapabilities
+        ? {
+            pauseControls: {
+              pause: personalMemoryPauseControls,
+              resolveScope: (request: Request) =>
+                enterpriseCapabilities.scopes.resolve(request),
+            },
+          }
+        : {}),
+    },
     proactive: { store: proactiveStore, engine: proactiveEngine },
     responsibilities: {
       store: responsibilityStore,

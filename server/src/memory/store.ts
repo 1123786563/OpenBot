@@ -13,6 +13,7 @@ import {
   type FormedMemoryInput,
   formedMemorySchema,
   type ImportedMemory,
+  LEARNING_PAUSED_REFUSAL,
   MemoryNotFoundError,
   type MemoryRecord,
   MemoryRefusedError,
@@ -41,7 +42,19 @@ const CANDIDATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  * from, whether it is reviewed or paused, which Bot formed it and which source it was imported
  * from — so the exit changes only whose copy is read, never who may see what.
  */
-export function createMemoryStore(database: Database) {
+export function createMemoryStore(
+  database: Database,
+  options: {
+    /**
+     * Hindsight 14 (#392): the person's pause-learning switch, read live at the two
+     * candidate-generation entries this store owns — a Bot's observation (`formMemory`) and a
+     * connector import (`completeSync`). Paused means neither produces a new candidate; nothing
+     * already stored is deleted, hidden or confirmed, and the person's own explicit remember
+     * (`create`) is not this switch's business.
+     */
+    learningPaused?: (ownerUserId: string) => Promise<boolean>;
+  } = {},
+) {
   const getSource = async (ownerUserId: string, id: string) => {
     const [row] = await database
       .select()
@@ -169,6 +182,11 @@ export function createMemoryStore(database: Database) {
         throw new MemoryRefusedError(
           parsed.error.issues[0]?.message ?? "Invalid memory.",
         );
+      // Pause-learning (#392): the switch stops the automatic candidate here, before anything
+      // of the observation is read further — the refusal is the person's own decision, said
+      // plainly, and it changes nothing that already exists.
+      if (options.learningPaused && (await options.learningPaused(ownerUserId)))
+        throw new MemoryRefusedError(LEARNING_PAUSED_REFUSAL);
       // Nothing a Bot observed becomes sensitive material, whatever it read: the person never
       // asked for this, and a candidate is already more exposure than a refusal. Credentials go
       // the same way, so none of it is written, even as a candidate awaiting review.
@@ -461,6 +479,13 @@ export function createMemoryStore(database: Database) {
       sourceId: string,
       records: ImportedMemory[],
     ) {
+      // Pause-learning (#392): read before the transaction, so the gate never asks for a
+      // second connection while the row lock is held. Paused means the import produces no
+      // candidate — the sync still completes (the connector was read, and the source's health
+      // is bookkeeping), but no row is written and nothing already imported changes.
+      const learningPaused = options.learningPaused
+        ? await options.learningPaused(ownerUserId)
+        : false;
       await database.transaction(async (transaction) => {
         const [source] = await transaction
           .select()
@@ -482,7 +507,7 @@ export function createMemoryStore(database: Database) {
         // the upstream defense was bypassed, it says so at error level, with a count only,
         // never content.
         let droppedSensitiveInner = 0;
-        for (const record of records) {
+        for (const record of learningPaused ? [] : records) {
           // A sync may not write sensitive material even as a candidate: it was read, not asked
           // for. Dropped whole, so nothing of it reaches the person's candidates or any index.
           if (classifyMemorySensitivity(record.content) !== "normal") {
@@ -523,6 +548,15 @@ export function createMemoryStore(database: Database) {
               timestamp: new Date().toISOString(),
             },
             "memory-sync-sensitive-dropped-inner",
+          );
+        if (learningPaused && records.length > 0)
+          log.info(
+            {
+              type: "memory-sync-learning-paused",
+              context: { sourceId, skipped: records.length },
+              timestamp: new Date().toISOString(),
+            },
+            "memory-sync-learning-paused",
           );
         await transaction
           .update(memorySources)
