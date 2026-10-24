@@ -47,6 +47,7 @@ import {
   type PersonalMemoryRevocationRecorder,
   STOPPED_USING_SUMMARY,
 } from "./revocation-ledger";
+import { assertMemoryContentAdmissible } from "./sensitivity-gate";
 
 /** What a Bot receives: the confirmed original, and nothing remote-derived. */
 export type RecalledGenericPreference = {
@@ -469,13 +470,21 @@ export function createPreferenceRecallService(
      */
     async confirmGenericPreference(
       scope: PlatformScope,
-      input: { content: unknown; provenance?: unknown },
+      input: {
+        content: unknown;
+        provenance?: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{
       record: RecalledGenericPreference;
       remoteSynced: boolean;
     }> {
       const grant = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // The chain-side sensitivity gate (audit F-G1-4): the same classifier the personal
+      // store applies. Credentials never store; sensitive classes need the second confirmation.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const provenance = plainString(
         input.provenance ?? "You",
         "provenance",
@@ -531,10 +540,16 @@ export function createPreferenceRecallService(
     async editGenericPreference(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown },
+      input: {
+        content: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{ record: RecalledGenericPreference; remoteSynced: boolean }> {
       const grant = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // An edit may not walk a credential in through the back door either — same gate as confirm.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const row = await store.load(grant.tenantId, id);
       if (
         !row ||
@@ -574,7 +589,12 @@ export function createPreferenceRecallService(
     async correctGenericPreference(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown; effectiveFrom?: unknown },
+      input: {
+        content: unknown;
+        effectiveFrom?: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{
       record: RecalledGenericPreference;
       superseded: RecalledGenericPreference;
@@ -582,6 +602,8 @@ export function createPreferenceRecallService(
     }> {
       const grant = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // A correction IS a new confirmed fact, so it answers to the same sensitivity gate.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       let effectiveFrom: Date | null = null;
       if (input.effectiveFrom !== undefined) {
         const parsed =
@@ -598,7 +620,11 @@ export function createPreferenceRecallService(
         effectiveFrom = parsed;
       }
       const row = await store.load(grant.tenantId, id);
-      if (!row || row.principalId !== grant.principalId || row.deletedAt !== null)
+      if (
+        !row ||
+        row.principalId !== grant.principalId ||
+        row.deletedAt !== null
+      )
         throw new PreferenceNotFoundError();
       if (row.supersededBy !== null) {
         throw new PreferenceRefusedError(
@@ -633,7 +659,10 @@ export function createPreferenceRecallService(
         enabled: true,
         deletedAt: null,
         markedGenericAt: at,
-        hindsightDocumentId: preferenceDocumentIdFor(grant.tenantId, successorId),
+        hindsightDocumentId: preferenceDocumentIdFor(
+          grant.tenantId,
+          successorId,
+        ),
         syncedContentDigest: null,
         syncedAt: null,
         effectiveFrom,

@@ -150,6 +150,10 @@ import {
   createGatewayReadinessService,
   installGatewayReadinessService,
 } from "./gateway/readiness";
+import {
+  createHindsightMemoryRoutes,
+  type HindsightMemoryRoutesDeps,
+} from "./hindsight/routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
@@ -563,7 +567,16 @@ export function createApp(
       >;
       webhooks: Parameters<typeof createDeliveryWebhookRoutes>[0];
     };
-    memory?: { store: MemoryStore; ingestion: MemoryIngestion };
+    memory?: {
+      store: MemoryStore;
+      ingestion: MemoryIngestion;
+      /**
+       * The Hindsight chain's person-scoped confirm/edit/forget/status operations
+       * (#384/#385). Present only where both the chain is wired and a trusted-scope
+       * resolver exists; absent mounts no such routes.
+       */
+      hindsight?: HindsightMemoryRoutesDeps;
+    };
     proactive?: { store: ProactiveStore; engine: ProactiveEngine };
     responsibilities?: {
       store: ResponsibilityStore;
@@ -2787,6 +2800,11 @@ export function createApp(
         coworker.memory.store,
         coworker.memory.ingestion,
         requireUser,
+        // Built here, where the family's middleware lives: the chain's operations ride the
+        // same `requireUser` + body limit as the rest of `/api/memory`.
+        coworker.memory.hindsight
+          ? createHindsightMemoryRoutes(coworker.memory.hindsight)
+          : undefined,
       ),
     );
   if (coworker?.responsibilities) {

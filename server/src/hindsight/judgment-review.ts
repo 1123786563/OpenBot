@@ -90,6 +90,7 @@ import {
   type SourceBoundAuthorizationStore,
   type SourceBoundRecordStore,
 } from "./scoped-recall";
+import { assertMemoryContentAdmissible } from "./sensitivity-gate";
 export interface JudgmentWorkRecorder {
   record(input: {
     subjectType: "derived_judgment";
@@ -480,6 +481,10 @@ export function createDerivedJudgmentReviewService(
     async confirmDerivedJudgment(
       scope: PlatformScope,
       id: string,
+      input: {
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      } = {},
     ): Promise<{ judgment: ReviewedDerivedJudgment; remoteSynced: boolean }> {
       const identity = resolveHindsightBankScope(scope);
       const row = await loadOwned(scope, id);
@@ -490,6 +495,9 @@ export function createDerivedJudgmentReviewService(
           `This judgment was already ${row.reviewState}; only an unreviewed candidate can be confirmed.`,
         );
       }
+      // Adopting a candidate is a confirm/retain path too: the stored content answers to the
+      // same sensitivity gate before it can ever be indexed (audit F-G1-4).
+      assertMemoryContentAdmissible(row.content, input.confirmSensitive);
       const snapshot = await snapshotFor(scope);
       const verified = await verifier.verifyStoredEvidence(
         identity.tenantId,
@@ -532,7 +540,11 @@ export function createDerivedJudgmentReviewService(
     async editDerivedJudgment(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown },
+      input: {
+        content: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{ judgment: ReviewedDerivedJudgment; remoteSynced: boolean }> {
       const identity = resolveHindsightBankScope(scope);
       const content = plainString(
@@ -540,6 +552,8 @@ export function createDerivedJudgmentReviewService(
         "a judgment",
         JUDGMENT_CONTENT_MAX,
       );
+      // Editing a judgment re-asserts its text into the index; the same gate applies.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const row = await loadOwned(scope, id);
       if (!row || row.deletedAt !== null)
         throw new DerivedJudgmentNotFoundError();

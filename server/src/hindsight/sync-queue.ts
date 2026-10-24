@@ -278,14 +278,22 @@ export function createHindsightSyncQueue(
      * The truthful status of one subject: "indexed" only when the row's retained digest
      * equals its current content (and the row is still eligible); pending and failed are
      * reported as exactly that. A missing row answers unknown-subject, never indexed.
+     *
+     * `principalId` is the self-scoped surface's ownership pin: when the caller names one, a
+     * subject that belongs to another principal answers unknown-subject — the same answer a
+     * missing row gives, so the status surface never discloses that somebody else's subject
+     * exists.
      */
     async syncStatus(
       tenantId: string,
       subjectType: SyncSubjectType,
       subjectId: string,
+      principalId?: string,
     ): Promise<SyncStatus> {
       const row = await loadSubject(tenantId, subjectType, subjectId);
       if (!row) return { state: "unknown-subject" };
+      if (principalId !== undefined && row.principalId !== principalId)
+        return { state: "unknown-subject" };
       const [work] = await database
         .select()
         .from(hindsightSyncWork)

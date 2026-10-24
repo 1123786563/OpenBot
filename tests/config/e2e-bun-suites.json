@@ -472,11 +472,13 @@
   {
    "name": "server/tests part 7",
    "files": [
+    "server/tests/hindsight-memory-ops.integration.test.ts",
     "server/tests/hindsight-preference-recall.integration.test.ts",
     "server/tests/hindsight-purge-restore.contract.test.ts",
     "server/tests/hindsight-purge-restore.integration.test.ts",
     "server/tests/hindsight-revocation.integration.test.ts",
     "server/tests/hindsight-source-bound-recall.integration.test.ts",
+    "server/tests/hindsight-sync-drain.contract.test.ts",
     "server/tests/hindsight-sync-queue.integration.test.ts",
     "server/tests/hindsight-temporal-correction.integration.test.ts",
     "server/tests/human-input-end-to-end.test.ts"
@@ -1452,6 +1454,7 @@
   "server/tests/hindsight-judgment-review.contract.test.ts",
   "server/tests/hindsight-judgment-review.integration.test.ts",
   "server/tests/hindsight-legacy-migration.integration.test.ts",
+  "server/tests/hindsight-memory-ops.integration.test.ts",
   "server/tests/hindsight-pause-controls.integration.test.ts",
   "server/tests/hindsight-personal-memory-context.integration.test.ts",
   "server/tests/hindsight-preference-recall.integration.test.ts",
@@ -1459,6 +1462,7 @@
   "server/tests/hindsight-purge-restore.integration.test.ts",
   "server/tests/hindsight-revocation.integration.test.ts",
   "server/tests/hindsight-source-bound-recall.integration.test.ts",
+  "server/tests/hindsight-sync-drain.contract.test.ts",
   "server/tests/hindsight-sync-queue.integration.test.ts",
   "server/tests/hindsight-temporal-correction.integration.test.ts",
   "server/tests/human-input-end-to-end.test.ts",
@@ -1833,6 +1837,8 @@
   "app/tests/user-key-status-ui.test.tsx": "runner named it: wave3 重放登记",
   "server/tests/recovery-provider-query.integration.test.ts": "runner named it: wave3 重放登记",
   "server/tests/hindsight-source-bound-recall.integration.test.ts": "runner named it: wave3 重放登记",
+  "server/tests/hindsight-sync-drain.contract.test.ts": "runner named it: wave3 重放登记",
+  "server/tests/hindsight-memory-ops.integration.test.ts": "runner named it: wave3 重放登记",
   "server/tests/hindsight-sync-queue.integration.test.ts": "runner named it: wave3 重放登记",
   "server/tests/hindsight-temporal-correction.integration.test.ts": "runner named it: wave3 重放登记",
   "server/tests/recovery-ack-lost.integration.test.ts": "runner named it: wave3 重放登记",

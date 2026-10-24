@@ -457,11 +457,14 @@ import {
 } from "./hindsight/preference-recall";
 import { createRestoreRecoveryService } from "./hindsight/restore-recovery";
 import { createRevocationService } from "./hindsight/revocation";
+import { createDrizzleRevocationLedger } from "./hindsight/revocation-ledger";
+import type { HindsightMemoryRoutesDeps } from "./hindsight/routes";
 import {
   createDrizzleSourceBoundAuthorizations,
   createDrizzleSourceBoundRecords,
   createSourceBoundRecallService,
 } from "./hindsight/scoped-recall";
+import { createHindsightSyncQueue } from "./hindsight/sync-queue";
 import {
   createHostAccessBroker,
   HostAccessRefusedError,
@@ -4057,7 +4060,23 @@ const governedWakeUpTurn =
  * authority rows directly through the same predicates, so an outage of the
  * Hindsight service cannot empty the block or resurrect anything — exactly
  * the #385/#395 discipline.
+ *
+ * G3-F2 / FIX-W2: the chain's WRITE face is wired here too. The durable sync
+ * queue (#384) is the recorder both confirm seams carry, the revocation ledger
+ * (#390) is the recorder both forget seams carry, and the person-scoped
+ * confirm/edit/forget/status routes (hindsight/routes.ts) are handed to the
+ * `/api/memory` family below — only where a trusted-scope resolver exists,
+ * because the seams refuse any scope the enterprise tenancy layer did not
+ * issue. The drain sweep runs on the memory sweep's cadence and is stopped
+ * with the other sweeps on the way out.
  */
+let hindsightMemoryRoutes: HindsightMemoryRoutesDeps | undefined;
+let hindsightSyncSweep: Repeating | undefined;
+/** One drain pass a minute — the memory sweep's cadence; the env override mirrors the BIFROST_* pattern. */
+const HINDSIGHT_SYNC_DRAIN_INTERVAL_MS = (() => {
+  const raw = Number(process.env.HINDSIGHT_SYNC_DRAIN_INTERVAL_MS ?? 60_000);
+  return Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+})();
 if (
   process.env.HINDSIGHT_API_URL?.trim() &&
   process.env.HINDSIGHT_API_TOKEN?.trim() &&
@@ -4075,20 +4094,41 @@ if (
     database,
     hindsightServiceConfig,
   );
+  // The per-document ledger recorder the forget seams write (#390); the
+  // composite service above owns the authorization-revocation flow.
+  const hindsightRevocationLedger = createDrizzleRevocationLedger(database);
   const hindsightRecovery = createRestoreRecoveryService(
     database,
     hindsightRevocations,
   );
+  // The durable sync queue (#384): what the confirm seams record into and the
+  // sweep below drains. Identity at task time is the work row's own
+  // attribution, re-read under its tenant pin.
+  const hindsightSyncQueue = createHindsightSyncQueue(
+    database,
+    hindsightServiceConfig,
+    { authorizations: hindsightAuthorizations },
+  );
   const hindsightPreferences = createPreferenceRecallService(
     createDrizzlePreferenceRecords(database),
     hindsightServiceConfig,
-    { pause: hindsightPause, recovery: hindsightRecovery.gate },
+    {
+      pause: hindsightPause,
+      recovery: hindsightRecovery.gate,
+      work: hindsightSyncQueue,
+      revocations: hindsightRevocationLedger,
+    },
   );
   const hindsightSourceBound = createSourceBoundRecallService(
     createDrizzleSourceBoundRecords(database),
     hindsightAuthorizations,
     hindsightServiceConfig,
-    { pause: hindsightPause, recovery: hindsightRecovery.gate },
+    {
+      pause: hindsightPause,
+      recovery: hindsightRecovery.gate,
+      work: hindsightSyncQueue,
+      revocations: hindsightRevocationLedger,
+    },
   );
   const personalMemoryContext = createPersonalMemoryContext({
     recall: createDegradedRecallFacade(
@@ -4117,6 +4157,26 @@ if (
       (await personalMemoryContext.personalMemoryContext(scope, botId))
         .memories,
     );
+  if (enterpriseCapabilities) {
+    hindsightMemoryRoutes = {
+      preferences: hindsightPreferences,
+      sourceBound: hindsightSourceBound,
+      syncQueue: hindsightSyncQueue,
+      resolveScope: (request) => enterpriseCapabilities.scopes.resolve(request),
+      audit: auditSink(bootAuditStore),
+    };
+  }
+  // The background drains (#384's 排空 and #390's 再重试删除), the same
+  // repeatAfterEach family the memory sweep belongs to: one pass at a time,
+  // each stage under the sweep's own logged swallow, and every pass idempotent
+  // — the queue's drain re-reads ownership and authorization at task time, so
+  // an interrupted pass simply retries.
+  hindsightSyncSweep = repeatAfterEach(async () => {
+    await sweepStep("hindsightSyncDrain", () => hindsightSyncQueue.drain());
+    await sweepStep("hindsightDeletionRetry", () =>
+      hindsightRevocations.retryOutstandingDeletions(),
+    );
+  }, HINDSIGHT_SYNC_DRAIN_INTERVAL_MS);
 }
 
 const mastraContinuationRouteDeps =
@@ -8173,7 +8233,13 @@ const app = createApp(
         identity: slackCodeRedeemer(identityStore, bootAuditStore),
       },
     },
-    memory: { store: personalMemoryStore, ingestion: memoryIngestion },
+    memory: {
+      store: personalMemoryStore,
+      ingestion: memoryIngestion,
+      // The chain's operations surface (G3-F2): only where the chain AND a
+      // trusted-scope resolver both exist — never for a hand-shaped identity.
+      ...(hindsightMemoryRoutes ? { hindsight: hindsightMemoryRoutes } : {}),
+    },
     proactive: { store: proactiveStore, engine: proactiveEngine },
     responsibilities: {
       store: responsibilityStore,
@@ -8429,6 +8495,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     openMuseTaskSweep.stop();
     openMuseTaskReaper.stop();
     memorySweep.stop();
+    // The Hindsight sync/deletion drain (G3-F2): undefined where no chain is wired.
+    hindsightSyncSweep?.stop();
     proactiveSweep.stop();
     approvalSweep.stop();
     personResponseSweep.stop();
