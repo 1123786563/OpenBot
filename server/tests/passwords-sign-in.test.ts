@@ -1,4 +1,3 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   type AbstractAgent,
   type BaseEvent,
@@ -6,8 +5,11 @@ import {
   HttpAgent,
   type RunAgentInput,
 } from "@ag-ui/client";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
+import { createTurnRunner, type RunnerLike } from "@openbot/toolkit/run-turn";
 import { Hono } from "hono";
 import { Observable } from "rxjs";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { serverTurnAdmission } from "../src/agents/turn-admission";
 import { parseApprovalContinuation } from "../src/approvals/types";
 import type { AuditEventInput, AuditStore } from "../src/audit";
@@ -18,7 +20,6 @@ import {
 } from "../src/computer/client";
 import type { ComputerGateway } from "../src/computer/gateway";
 import { createHeadlessComputerTools } from "../src/computer/headless-tools";
-import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import type {
   SignInCodeInput,
   SignInCodeResult,
@@ -36,7 +37,6 @@ import {
 } from "../src/passwords/service";
 import { createMemoryPasswordStore } from "../src/passwords/store";
 import { originOf, type SignInRequestRecord } from "../src/passwords/types";
-import { createTurnRunner, type RunnerLike } from "@openbot/toolkit/run-turn";
 
 /**
  * The private sign-in request and the Passwords vault, as properties:
@@ -1056,6 +1056,90 @@ describe("a verification code the site asks for after the password", () => {
     expect(computer.codes).toHaveLength(2);
     expect(resolved.map((row) => row.status)).toEqual(["signed_in"]);
     expectNoCredential(everything(trail.rows, [...store.requests.values()]));
+  });
+
+  test("the fifth refused code closes the request, and a sixth code is typed nowhere", async () => {
+    const code = { codeFieldVisible: true, passwordFieldVisible: false };
+    const { service, request, store, trail, resolved, computer } =
+      await withCodeStep({ fill: { codeRequested: true }, code });
+    // Five wrong codes, five real submissions to the site. The first four are refused and leave
+    // the request at the code step; the fifth is refused too, and closes the request for good.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const last = attempt === 5;
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(
+        last
+          ? /too many incorrect verification codes/
+          : /did not accept that code/,
+      );
+      if (!last) {
+        const row = await store.request("owner", request.id);
+        expect(row?.status).toBe("code_required");
+      }
+    }
+    // The close is terminal: failed, its own sentence, the waiting turn resumed.
+    const [row] = [...store.requests.values()];
+    expect(row?.status).toBe("failed");
+    expect(row?.outcome).toMatch(/too many incorrect verification codes/);
+    expect(row?.resolvedAt).not.toBeNull();
+    expect(resolved.map((row) => row.status)).toEqual(["failed"]);
+    // The close is the server's own act: its own trail row, no step named, not superseded — the
+    // shape the lease-expired close takes. The four earlier refusals stay the attempt's own rows.
+    const failures = trail.rows.filter(
+      (row) => row.eventType === "computer.sign_in_failed",
+    );
+    expect(failures).toHaveLength(5);
+    const closes = failures.filter(
+      (row) =>
+        row.payload.superseded === undefined && row.payload.step === undefined,
+    );
+    expect(closes).toHaveLength(1);
+    expect(closes[0]?.payload).toMatchObject({
+      actor: "server",
+      request: request.id,
+      failure: expect.stringMatching(/too many incorrect verification codes/),
+    });
+    expect(closes[0]?.initiator).toEqual({ kind: "deployment" });
+    expect(closes[0]?.actorUserId).toBeUndefined();
+    expect(
+      failures.filter(
+        (row) =>
+          row.payload.step === "code" && row.payload.superseded === undefined,
+      ),
+    ).toHaveLength(4);
+    // A correct code changes nothing now: the request is closed, and the computer is not called
+    // again — the sixth submission drives no browser anywhere.
+    code.codeFieldVisible = false;
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/no longer open/);
+    expect(computer.codes).toHaveLength(5);
+  });
+
+  test("four refused codes still leave the correct one working inside the cap", async () => {
+    const code = { codeFieldVisible: true, passwordFieldVisible: false };
+    const { service, request, computer, resolved, store } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(/did not accept that code/);
+    }
+    // Four wrong codes: the request is still open at the code step, and the correct fifth
+    // submission signs in — the cap counts refusals, never a code the site accepted.
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    code.codeFieldVisible = false;
+    const done = await service.submitCode("owner", request.id, actor, {
+      code: CODE,
+    });
+    expect(done.status).toBe("signed_in");
+    expect(computer.codes).toHaveLength(5);
+    expect(resolved.map((row) => row.status)).toEqual(["signed_in"]);
   });
 
   test("a site that goes back to its login page asks for the whole login again", async () => {
