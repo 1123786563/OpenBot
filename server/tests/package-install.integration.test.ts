@@ -460,7 +460,14 @@ describeDb(
           expect.arrayContaining([
             { id: "summarize", kind: "skill", available: true },
             { id: "assistant", kind: "expertTemplate", available: true },
-            { id: "calendar", kind: "managedConnector", available: true },
+            // PKG05 (#464): a connector resource also names the tools its
+            // current revision declares — the grant form offers exactly these.
+            {
+              id: "calendar",
+              kind: "managedConnector",
+              available: true,
+              tools: [{ ref: "calendar:list-events", effect: "read" }],
+            },
           ]),
         );
         await expectCode(

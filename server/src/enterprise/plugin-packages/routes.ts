@@ -86,6 +86,7 @@ const ERROR_STATUS: Record<
   PACKAGE_UNSUPPORTED: 422,
   RESOURCE_KIND_UNSUPPORTED: 422,
   PACKAGE_BOT_SCOPE_UNAVAILABLE: 422,
+  PACKAGE_RUN_REQUIRED: 422,
   TEMPLATE_FIELD_REJECTED: 400,
   PACKAGE_STORAGE_UNAVAILABLE: 503,
   ADMIN_CHANNEL_UNAVAILABLE: 503,
@@ -109,6 +110,8 @@ const ERROR_MESSAGE: Record<PackageErrorCode, string> = {
     "Only skill resources can be granted in this version.",
   PACKAGE_BOT_SCOPE_UNAVAILABLE:
     "This Bot's execution scope cannot be resolved for package use in this version.",
+  PACKAGE_RUN_REQUIRED:
+    "Package tools run only inside a managed run; this entry point has none.",
   TEMPLATE_FIELD_REJECTED:
     "The expert template carries fields this version refuses.",
   PACKAGE_STORAGE_UNAVAILABLE: "Package storage is unavailable.",

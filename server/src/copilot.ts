@@ -119,6 +119,7 @@ import {
   currentRunObservationScope,
   withRunObservationScope,
 } from "./observation-run-scope";
+import type { PackageToolRunContext } from "./plugins/package-tools";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -2932,6 +2933,8 @@ export async function buildAgents(
    * every built Bot. Appended last for the positional reason.
    */
   pinnedPackageSkills?: readonly SelectableSkill[],
+  /** PKG05: forwarded from {@link resolveRuntimeAgents}. Appended last. */
+  packageRun?: PackageToolRunContext,
 ): Promise<Record<string, AbstractAgent>> {
   let vendors: readonly string[] = [];
   try {
@@ -2999,6 +3002,7 @@ export async function buildAgents(
               }
             : undefined,
           pinnedPackageSkills,
+          packageRun,
         );
         // ME14 (carried ME07 review F1): the middleware is the LEGACY engine's
         // personal-memory block. A build the selector routes to the Mastra
@@ -3292,6 +3296,8 @@ async function buildAgent(
   observation?: BuiltinRunObservationThreading,
   /** PKG03B (T03-fix): the admitted run's pinned package skills. Appended last. */
   pinnedPackageSkills?: readonly SelectableSkill[],
+  /** PKG05: the admitted run's package context, handed to the tool offer. */
+  packageRun?: PackageToolRunContext,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -3304,7 +3310,7 @@ async function buildAgent(
     });
   }
 
-  const granted = await loadTools(agent.id);
+  const granted = await loadTools(agent.id, packageRun);
 
   /*
    * Whether narrowing can do anything here at all.
@@ -4145,6 +4151,13 @@ export async function resolveRuntimeAgents(
    * contract.
    */
   pinnedPackageSkills?: readonly SelectableSkill[],
+  /**
+   * PKG05: the admitted run's package execution context. Present, the build's
+   * `loadTools` is handed it so the run's dispatchable package tools join its
+   * offer beside — never instead of — the legacy grants. Absent leaves every
+   * build on the legacy contract.
+   */
+  packageRun?: PackageToolRunContext,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -4200,11 +4213,16 @@ export async function resolveRuntimeAgents(
     gatewayModelDial,
     observation,
     pinnedPackageSkills,
+    packageRun,
   );
 }
 
 /** What one Bot may call, for the person whose request this is. */
-export type LoadToolsForBot = (botId: string) => Promise<GrantedTool[]>;
+export type LoadToolsForBot = (
+  botId: string,
+  /** PKG05: present only for a build the Runner re-resolved with a package run. */
+  packageRun?: PackageToolRunContext,
+) => Promise<GrantedTool[]>;
 
 /**
  * The deployment's signed statement of what a run is, for the agent that will run it.

@@ -67,6 +67,8 @@ export interface PackageTaskOutcomes {
   readonly pkg03: RunOutcome;
   /** PKG04A (#463): expert provenance table + restricted creation function. */
   readonly pkg04?: RunOutcome;
+  /** PKG05 (#464): dispatch ledger + connector-tool grants + pin bindings. */
+  readonly pkg05?: RunOutcome;
 }
 
 /**
@@ -94,6 +96,12 @@ export const PACKAGE_CHAIN_TASK_IDS = [
   "MT016",
   "PKG03",
   "PKG04",
+  /**
+   * PKG05 (Issue #464): the dispatch ledger + connector-tool grant columns +
+   * pinned tool bindings. Ordered after PKG04: it ALTERs PKG03's tables and
+   * creates the dispatch table, whose FKs pin PKG02's installs.
+   */
+  "PKG05",
 ] as const;
 
 export async function applyPackageTasks(): Promise<PackageTaskOutcomes> {
@@ -163,6 +171,7 @@ export async function applyPackageTasks(): Promise<PackageTaskOutcomes> {
       mt016: outcomes[4],
       pkg03: outcomes[5],
       pkg04: outcomes[6],
+      pkg05: outcomes[7],
     };
   } finally {
     await lockAdvisory.$client

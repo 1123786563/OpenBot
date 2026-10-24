@@ -1,3 +1,5 @@
+import { type GrantedTool, parametersFor } from "@openbot/toolkit/granted-tool";
+import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { z } from "zod";
 import {
   RESEARCH_TOOLS,
@@ -6,19 +8,22 @@ import {
 } from "../../../shared/research";
 import { ApprovalRefusedError } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
-import { type GrantedTool, parametersFor } from "@openbot/toolkit/granted-tool";
-import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { markUntrusted } from "../untrusted-content";
 import {
   type CatalogueEntry,
   catalogueEntry,
   researchRoleFor,
 } from "./catalogue";
+import type {
+  PackageToolDescriptor,
+  PackageToolRunContext,
+} from "./package-tools";
 import type { SelectableSkill } from "./selection";
 import {
   isDeploymentFault,
   PluginRefusedError,
   type PluginStore,
+  toolNameFor,
 } from "./store";
 
 /**
@@ -279,22 +284,41 @@ export async function grantedTools(options: {
   initiator?: AuditInitiator;
   /** Whose account a call reaches, when not the asker's; see `callTool`'s `credentialActorId`. */
   credentialActorFor?: (ref: string) => Promise<string>;
+  /**
+   * PKG05 (Spec §9): the server-issued run context. Present, the package tools
+   * this run's pins still authorize join the offer beside the legacy grants —
+   * merged after them, never instead of them. Each executes through the
+   * package branch of `callTool`, carrying this context; absent, no package
+   * tool is offered at all and the legacy offer is byte-for-byte unchanged.
+   */
+  packageRun?: PackageToolRunContext;
 }): Promise<GrantedTool[]> {
-  const { store, botId, actorId, initiator, credentialActorFor } = options;
+  const { store, botId, actorId, initiator, credentialActorFor, packageRun } =
+    options;
   const granted = await store.listForAgent(botId);
 
-  return granted.tools.map((tool) => ({
-    name: tool.toolName,
-    ref: tool.ref,
+  /*
+   * The package half of the offer. A failed or absent read degrades to an
+   * empty set — the offer narrows, the run does not fail — for the same
+   * reason the pinned Skill read does: a revocation landing mid-build must
+   * cost the tool, not the conversation.
+   */
+  const packageDescriptors: readonly PackageToolDescriptor[] = packageRun
+    ? await (
+        store.packageTool?.list({ context: packageRun, botId }) ??
+        Promise.resolve([])
+      ).catch(() => [])
+    : [];
+  const packageTools = packageDescriptors.map((descriptor) => ({
+    name: toolNameFor(descriptor.ref),
+    ref: descriptor.ref,
     initiator,
-    description: tool.description,
-    parameters: parametersFor(tool.inputSchema),
+    description: `A package tool (${descriptor.resourceId} · ${descriptor.toolName}, ${descriptor.effect}).`,
+    parameters: parametersFor({}),
     execute: async (args: unknown) => {
       try {
         const result = await store.callTool({
-          ref: tool.ref,
-          // The runtime hands through whatever the model produced. Anything that is not an object
-          // is not a set of arguments, and the vendor should be the one to say so.
+          ref: descriptor.ref,
           args:
             args && typeof args === "object" && !Array.isArray(args)
               ? (args as Record<string, unknown>)
@@ -302,9 +326,7 @@ export async function grantedTools(options: {
           botId,
           actorId,
           ...(initiator ? { initiator } : {}),
-          ...(credentialActorFor
-            ? { credentialActorId: await credentialActorFor(tool.ref) }
-            : {}),
+          packageRun,
         });
         return vendorAnswer(result);
       } catch (error) {
@@ -315,30 +337,73 @@ export async function grantedTools(options: {
         ) {
           return `${REFUSAL_MARKER} ${error.message}`;
         }
-        /*
-         * A contradiction in this deployment's own tables says nothing to a model.
-         *
-         * CRITERION. Nothing on the `isDeploymentFault` shelf may have its message relayed from
-         * here, whatever it says.
-         *
-         * REASON. The branch below hands `error.message` to the model, which is right for a
-         * vendor's own words — that is somebody else's software explaining itself, and the
-         * diagnosis is worth having. These are not that. `ServerRowAmbiguousError` names two of
-         * our columns and tells the reader to rename a row or correct its provenance: an
-         * instruction only an operator can carry out, arriving in an end user's model context as
-         * the reason their tool failed, from which the model can only invent something to tell
-         * them. The operator who can act on it is served on the admin surface instead, where the
-         * refresh route now answers with the sentence in full.
-         */
         if (isDeploymentFault(error)) return "That tool could not be called.";
-        // A vendor that failed is not a refusal, and the difference matters to the person reading
-        // the answer: one means "not allowed", the other means "it broke".
         return error instanceof Error
           ? `That tool could not be called: ${error.message}`
           : "That tool could not be called.";
       }
     },
   }));
+
+  return [
+    ...granted.tools.map((tool) => ({
+      name: tool.toolName,
+      ref: tool.ref,
+      initiator,
+      description: tool.description,
+      parameters: parametersFor(tool.inputSchema),
+      execute: async (args: unknown) => {
+        try {
+          const result = await store.callTool({
+            ref: tool.ref,
+            // The runtime hands through whatever the model produced. Anything that is not an object
+            // is not a set of arguments, and the vendor should be the one to say so.
+            args:
+              args && typeof args === "object" && !Array.isArray(args)
+                ? (args as Record<string, unknown>)
+                : {},
+            botId,
+            actorId,
+            ...(initiator ? { initiator } : {}),
+            ...(credentialActorFor
+              ? { credentialActorId: await credentialActorFor(tool.ref) }
+              : {}),
+          });
+          return vendorAnswer(result);
+        } catch (error) {
+          if (error instanceof HeadlessToolSuspension) throw error;
+          if (
+            error instanceof PluginRefusedError ||
+            error instanceof ApprovalRefusedError
+          ) {
+            return `${REFUSAL_MARKER} ${error.message}`;
+          }
+          /*
+           * A contradiction in this deployment's own tables says nothing to a model.
+           *
+           * CRITERION. Nothing on the `isDeploymentFault` shelf may have its message relayed from
+           * here, whatever it says.
+           *
+           * REASON. The branch below hands `error.message` to the model, which is right for a
+           * vendor's own words — that is somebody else's software explaining itself, and the
+           * diagnosis is worth having. These are not that. `ServerRowAmbiguousError` names two of
+           * our columns and tells the reader to rename a row or correct its provenance: an
+           * instruction only an operator can carry out, arriving in an end user's model context as
+           * the reason their tool failed, from which the model can only invent something to tell
+           * them. The operator who can act on it is served on the admin surface instead, where the
+           * refresh route now answers with the sentence in full.
+           */
+          if (isDeploymentFault(error)) return "That tool could not be called.";
+          // A vendor that failed is not a refusal, and the difference matters to the person reading
+          // the answer: one means "not allowed", the other means "it broke".
+          return error instanceof Error
+            ? `That tool could not be called: ${error.message}`
+            : "That tool could not be called.";
+        }
+      },
+    })),
+    ...packageTools,
+  ];
 }
 
 /**

@@ -1,4 +1,5 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
+import type { PackageManifestV1 } from "../../../../shared/enterprise/plugin-package-contracts";
 import {
   type PackageGrantDTO,
   type PackageGrantInput,
@@ -12,7 +13,9 @@ import {
   enterprisePackageGrants as grantRows,
   enterprisePackageInstalls as installRows,
   enterprisePackageResourceLinks as linkRows,
+  enterprisePackageRevisions as revisionRows,
 } from "../../db/schema/enterprise-plugin-packages";
+import { loadArtifact } from "../../plugin-packages/artifact";
 import type { PlatformScope } from "../contracts";
 import { PERSONAL_BOT_ID_PREFIX } from "../tenancy/personal-bot";
 import type { CompanyAdminContext } from "../tenancy/workspace-admin";
@@ -23,10 +26,14 @@ import {
   type PackageWriteTx,
   packageError,
 } from "./contracts";
-import { canonicalJson, sha256Hex } from "./plans";
+import { addedToolsOf, canonicalJson, sha256Hex } from "./plans";
 
 /**
- * PKG03A package Bot grants (slice A: skill resources only).
+ * PKG03A package Bot grants (slice A: skill resources) + PKG05 (#464)
+ * connector-tool grants: `kind: "managedConnector"` with explicit `toolRefs`.
+ * The tool contract (schema digest and effect) is re-derived from the install's
+ * CURRENT revision manifest — never accepted from the request — and stored on
+ * the row so dispatch can prove what was granted (A06 capability changes).
  *
  * The grant model, per Spec §6/§9 and the task brief:
  *
@@ -42,10 +49,12 @@ import { canonicalJson, sha256Hex } from "./plans";
  *   - Every write revalidates, inside the same operator transaction: trusted
  *     admin context (the mutation store already re-validated membership and
  *     epoch), install present in scope and enabled (set only), Bot ownership
- *     active and registered to the same workspace, and every resource id a
- *     skill of the install's CURRENT revision. Connector-kind requests are
- *     refused with `RESOURCE_KIND_UNSUPPORTED` — connector tool grants are
- *     a later slice, and never a silent skill alias.
+ *     active and registered to the same workspace, every skill resource id a
+ *     skill of the install's CURRENT revision, and every connector tool a
+ *     declared tool of that revision's managed-connector link. An
+ *     expertTemplate or an unknown kind is refused with
+ *     `RESOURCE_KIND_UNSUPPORTED`; a connector tool the manifest does not
+ *     declare is `RESOURCE_NOT_FOUND`.
  *   - Idempotency mirrors apply exactly: the `Idempotency-Key` addresses a
  *     receipt row in `enterprise_package_changes` (unique per tenant,
  *     workspace, actor); same key + same request digest replays the stored
@@ -203,14 +212,31 @@ async function readGrantGenerations(
   return new Set(rows.map((row) => row.generation));
 }
 
-async function readActiveGrantResources(
+/** The active grant rows of one (install, bot), with their contract columns. */
+interface ActiveGrantRow {
+  readonly resourceId: string;
+  readonly resourceKind: string;
+  readonly toolRef: string;
+  readonly schemaDigest: string | null;
+  readonly effect: string | null;
+  readonly connectorInstallId: string | null;
+}
+
+async function readActiveGrantRows(
   tx: PackageWriteTx,
   scope: PlatformScope,
   installId: string,
   botId: string,
-): Promise<string[]> {
-  const rows = await tx.db
-    .select({ resourceId: grantRows.resourceId })
+): Promise<ActiveGrantRow[]> {
+  return tx.db
+    .select({
+      resourceId: grantRows.resourceId,
+      resourceKind: grantRows.resourceKind,
+      toolRef: grantRows.toolRef,
+      schemaDigest: grantRows.schemaDigest,
+      effect: grantRows.effect,
+      connectorInstallId: grantRows.connectorInstallId,
+    })
     .from(grantRows)
     .where(
       and(
@@ -220,7 +246,44 @@ async function readActiveGrantResources(
         isNull(grantRows.revokedAt),
       ),
     );
-  return rows.map((row) => row.resourceId).sort();
+}
+
+/**
+ * The revocation generation: one born-revoked row per revoked row, with its
+ * kind and tool contract preserved (a connector-tool row must carry its
+ * digest/effect/connector install — the table's CHECK says so, and the
+ * evidence must say WHAT was revoked, not merely that a resource name was).
+ */
+async function insertRevokedGrantRows(input: {
+  tx: PackageWriteTx;
+  scope: PlatformScope;
+  install: InstallRevisionRef;
+  botId: string;
+  generation: number;
+  rows: readonly ActiveGrantRow[];
+  grantedBy: string;
+  revivedAt: Date;
+  revokedAt: Date;
+}): Promise<void> {
+  if (input.rows.length === 0) return;
+  await input.tx.db.insert(grantRows).values(
+    input.rows.map((row) => ({
+      tenantId: input.scope.tenantId,
+      installId: input.install.id,
+      generation: input.generation,
+      botId: input.botId,
+      resourceId: row.resourceId,
+      workspaceId: input.scope.workspaceId,
+      resourceKind: row.resourceKind,
+      toolRef: row.toolRef,
+      schemaDigest: row.schemaDigest,
+      effect: row.effect,
+      connectorInstallId: row.connectorInstallId,
+      grantedBy: input.grantedBy,
+      grantedAt: input.revivedAt,
+      revokedAt: input.revokedAt,
+    })),
+  );
 }
 
 /**
@@ -280,6 +343,44 @@ async function readCurrentSkillIds(
   return new Set(rows.map((row) => row.resourceId));
 }
 
+/** Roll grant rows up into the DTO's per-resource shape (tools per resource). */
+function groupGrantResources(
+  rows: readonly ActiveGrantRow[],
+): PackageGrantResource[] {
+  const skills: string[] = [];
+  const tools = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.resourceKind === "connectorTool") {
+      const list = tools.get(row.resourceId) ?? [];
+      list.push(row.toolRef);
+      tools.set(row.resourceId, list);
+      continue;
+    }
+    skills.push(row.resourceId);
+  }
+  return [
+    ...[...new Set(skills)]
+      .sort()
+      .map(
+        (resourceId): PackageGrantResource => ({ resourceId, kind: "skill" }),
+      ),
+    ...[...tools.entries()]
+      .sort(([left], [right]) => (left < right ? -1 : 1))
+      .map(
+        ([resourceId, toolRefs]): PackageGrantResource => ({
+          resourceId,
+          kind: "managedConnector",
+          toolRefs: toolRefs.sort(),
+        }),
+      ),
+  ];
+}
+
+/**
+ * The template seam (PKG04A) grants skills only; connector tools are never
+ * granted implicitly. Kept as a named helper so the seam reads the way it
+ * did before PKG05.
+ */
 function assertSkillResources(
   resources: readonly PackageGrantResource[],
   skillIds: Set<string>,
@@ -297,6 +398,126 @@ function assertSkillResources(
   }
 }
 
+/** One connector tool row to write: the manifest decides digest and effect. */
+interface ConnectorToolGrant {
+  readonly resourceId: string;
+  readonly toolRef: string;
+  readonly schemaDigest: string;
+  readonly effect: "read" | "write";
+  readonly connectorInstallId: string;
+}
+
+/** The install's CURRENT-revision managed-connector links. */
+async function readCurrentConnectorLinks(
+  tx: PackageWriteTx,
+  scope: PlatformScope,
+  install: InstallRevisionRef,
+): Promise<Map<string, string>> {
+  const rows = await tx.db
+    .select({
+      resourceId: linkRows.resourceId,
+      connectorInstallId: linkRows.connectorInstallId,
+    })
+    .from(linkRows)
+    .where(
+      and(
+        eq(linkRows.tenantId, scope.tenantId),
+        eq(linkRows.installId, install.id),
+        eq(linkRows.revision, install.revision),
+        eq(linkRows.kind, "managedConnector"),
+      ),
+    );
+  const links = new Map<string, string>();
+  for (const row of rows) {
+    if (row.connectorInstallId) {
+      links.set(row.resourceId, row.connectorInstallId);
+    }
+  }
+  return links;
+}
+
+/** The install's CURRENT-revision artifact digest (manifest source). */
+async function readRevisionDigest(
+  tx: PackageWriteTx,
+  scope: PlatformScope,
+  install: InstallRevisionRef,
+): Promise<string | null> {
+  const [row] = await tx.db
+    .select({ artifactDigest: revisionRows.artifactDigest })
+    .from(revisionRows)
+    .where(
+      and(
+        eq(revisionRows.tenantId, scope.tenantId),
+        eq(revisionRows.installId, install.id),
+        eq(revisionRows.revision, install.revision),
+      ),
+    )
+    .limit(1);
+  return row?.artifactDigest ?? null;
+}
+
+/**
+ * Validates the requested resources and returns the connector tool rows.
+ *
+ * A skill resource names a skill of the current revision and declares no
+ * tools. A managed-connector resource MUST declare at least one tool, each
+ * `<resourceId>:<toolName>` declared by the current revision's manifest for
+ * that resource; the digest and effect are the manifest's, never the
+ * request's. Anything else is refused rather than silently narrowed.
+ */
+function validateGrantResources(input: {
+  resources: readonly PackageGrantResource[];
+  skillIds: Set<string>;
+  connectorLinks: Map<string, string>;
+  declaredTools: readonly {
+    ref: string;
+    effect: "read" | "write";
+    schemaDigest: string;
+  }[];
+}): ConnectorToolGrant[] {
+  const declaredByRef = new Map(
+    input.declaredTools.map((tool) => [tool.ref, tool]),
+  );
+  const seen = new Set<string>();
+  const tools: ConnectorToolGrant[] = [];
+  for (const resource of input.resources) {
+    if (resource.kind === "skill") {
+      if (resource.toolRefs !== undefined) throw packageError("INPUT_INVALID");
+      const key = `skill\u0000${resource.resourceId}`;
+      if (seen.has(key)) throw packageError("INPUT_INVALID");
+      seen.add(key);
+      if (!input.skillIds.has(resource.resourceId)) {
+        throw packageError("RESOURCE_NOT_FOUND");
+      }
+      continue;
+    }
+    if (resource.kind !== "managedConnector") {
+      throw packageError("RESOURCE_KIND_UNSUPPORTED");
+    }
+    const toolRefs = resource.toolRefs;
+    if (!toolRefs || toolRefs.length === 0) throw packageError("INPUT_INVALID");
+    const connectorInstallId = input.connectorLinks.get(resource.resourceId);
+    if (!connectorInstallId) throw packageError("RESOURCE_NOT_FOUND");
+    for (const ref of toolRefs) {
+      const declared = declaredByRef.get(ref);
+      if (!declared || !ref.startsWith(`${resource.resourceId}:`)) {
+        throw packageError("RESOURCE_NOT_FOUND");
+      }
+      const key = `tool\u0000${ref}`;
+      if (seen.has(key)) throw packageError("INPUT_INVALID");
+      seen.add(key);
+      tools.push({
+        resourceId: resource.resourceId,
+        toolRef: ref,
+        schemaDigest: declared.schemaDigest,
+        effect: declared.effect,
+        connectorInstallId,
+      });
+    }
+  }
+  return tools;
+}
+
 async function insertGrantRows(input: {
   tx: PackageWriteTx;
   scope: PlatformScope;
@@ -304,13 +525,15 @@ async function insertGrantRows(input: {
   botId: string;
   generation: number;
   resources: readonly PackageGrantResource[];
+  connectorTools: readonly ConnectorToolGrant[];
   grantedBy: string;
   grantedAt: Date;
   revokedAt: Date | null;
 }): Promise<void> {
   const { tx, scope, install, botId, generation } = input;
-  await tx.db.insert(grantRows).values(
-    input.resources.map((resource) => ({
+  const skillRows = input.resources
+    .filter((resource) => resource.kind === "skill")
+    .map((resource) => ({
       tenantId: scope.tenantId,
       installId: install.id,
       generation,
@@ -319,11 +542,31 @@ async function insertGrantRows(input: {
       workspaceId: scope.workspaceId,
       resourceKind: "skill",
       toolRef: "",
+      schemaDigest: null,
+      effect: null,
+      connectorInstallId: null,
       grantedBy: input.grantedBy,
       grantedAt: input.grantedAt,
       revokedAt: input.revokedAt,
-    })),
-  );
+    }));
+  const toolRows = input.connectorTools.map((tool) => ({
+    tenantId: scope.tenantId,
+    installId: install.id,
+    generation,
+    botId,
+    resourceId: tool.resourceId,
+    workspaceId: scope.workspaceId,
+    resourceKind: "connectorTool",
+    toolRef: tool.toolRef,
+    schemaDigest: tool.schemaDigest,
+    effect: tool.effect,
+    connectorInstallId: tool.connectorInstallId,
+    grantedBy: input.grantedBy,
+    grantedAt: input.grantedAt,
+    revokedAt: input.revokedAt,
+  }));
+  const rows = [...skillRows, ...toolRows];
+  if (rows.length > 0) await tx.db.insert(grantRows).values(rows);
 }
 
 async function recordGrantChange(input: {
@@ -364,6 +607,13 @@ async function recordGrantChange(input: {
 export interface CreatePackageGrantServiceInput {
   /** Null when the restricted operator channel could not be verified. */
   readonly mutation: PackageMutationStore | null;
+  /**
+   * PKG05: the content-addressed artifact root. Connector-tool grants take
+   * their schema digest and effect from the install's CURRENT revision
+   * manifest, so a deployment without the root refuses them (fail closed)
+   * instead of writing an unverifiable contract. Skill grants never need it.
+   */
+  readonly artifactRoot?: string | null;
   readonly now?: () => Date;
 }
 
@@ -386,6 +636,7 @@ export function createPackageGrantService(
   input: CreatePackageGrantServiceInput,
 ): PackageGrantService {
   const { mutation } = input;
+  const artifactRoot = input.artifactRoot ?? null;
   const now = input.now ?? (() => new Date());
 
   const requireMutation = (): PackageMutationStore => {
@@ -461,10 +712,64 @@ export function createPackageGrantService(
             throw packageError("PACKAGE_UNSUPPORTED");
           }
           await readBotInScope(tx, scope, grantInput.botId);
-          assertSkillResources(
-            grantInput.resources,
-            await readCurrentSkillIds(tx, scope, install),
+          /*
+           * Validation order: request SHAPE first (a connector grant must
+           * name its tools; a skill grant must not), then the install's own
+           * links (a resource with no managed-connector link is a not-found
+           * regardless of deployment config), and only then the manifest that
+           * decides the tool contract. A missing artifact root therefore
+           * fails a would-be-valid connector grant closed as
+           * PACKAGE_UNSUPPORTED rather than letting it through unverified.
+           */
+          for (const resource of grantInput.resources) {
+            if (
+              resource.kind === "managedConnector" &&
+              (!resource.toolRefs || resource.toolRefs.length === 0)
+            ) {
+              throw packageError("INPUT_INVALID");
+            }
+            if (resource.kind === "skill" && resource.toolRefs !== undefined) {
+              throw packageError("INPUT_INVALID");
+            }
+          }
+          const connectorLinks = await readCurrentConnectorLinks(
+            tx,
+            scope,
+            install,
           );
+          // A connector resource this install has no link for is not found,
+          // independent of the artifact root (no manifest could describe it).
+          for (const resource of grantInput.resources) {
+            if (
+              resource.kind === "managedConnector" &&
+              !connectorLinks.has(resource.resourceId)
+            ) {
+              throw packageError("RESOURCE_NOT_FOUND");
+            }
+          }
+          let declaredTools: ReturnType<typeof addedToolsOf> = [];
+          if (
+            grantInput.resources.some(
+              (resource) => resource.kind === "managedConnector",
+            )
+          ) {
+            if (!artifactRoot) throw packageError("PACKAGE_UNSUPPORTED");
+            const digest = await readRevisionDigest(tx, scope, install);
+            if (!digest) throw packageError("PACKAGE_UNSUPPORTED");
+            let manifest: PackageManifestV1;
+            try {
+              ({ manifest } = await loadArtifact(artifactRoot, digest));
+            } catch {
+              throw packageError("PACKAGE_UNSUPPORTED");
+            }
+            declaredTools = addedToolsOf(manifest);
+          }
+          const connectorTools = validateGrantResources({
+            resources: grantInput.resources,
+            skillIds: await readCurrentSkillIds(tx, scope, install),
+            connectorLinks,
+            declaredTools,
+          });
 
           const generations = await readGrantGenerations(
             tx,
@@ -500,6 +805,7 @@ export function createPackageGrantService(
             botId: grantInput.botId,
             generation: nextGeneration,
             resources: grantInput.resources,
+            connectorTools,
             grantedBy: scope.principalId,
             grantedAt,
             revokedAt: null,
@@ -613,13 +919,14 @@ export function createPackageGrantService(
             throw packageError("REVISION_CONFLICT");
           }
 
-          const active = await readActiveGrantResources(
+          const activeRows = await readActiveGrantRows(
             tx,
             scope,
             install.id,
             revokeInput.botId,
           );
-          if (active.length === 0) {
+          const activeResources = groupGrantResources(activeRows);
+          if (activeRows.length === 0) {
             // Nothing to revoke. A pair that never held any grant generation
             // has no current grant at all: answering a fabricated revision 1
             // would hand back a CAS counter that is not the real count (0) and
@@ -664,20 +971,18 @@ export function createPackageGrantService(
               ),
             );
           // The revocation generation records WHAT was revoked, born revoked:
-          // append-only evidence per resource, and the distinct-generation
-          // count — the grant revision — advances with the revocation.
-          await insertGrantRows({
+          // append-only evidence per row (kind and tool contract included),
+          // and the distinct-generation count — the grant revision — advances
+          // with the revocation.
+          await insertRevokedGrantRows({
             tx,
             scope,
             install,
             botId: revokeInput.botId,
             generation: nextGeneration,
-            resources: active.map((resourceId) => ({
-              resourceId,
-              kind: "skill" as const,
-            })),
+            rows: activeRows,
             grantedBy: scope.principalId,
-            grantedAt: revokedAt,
+            revivedAt: revokedAt,
             revokedAt,
           });
 
@@ -685,10 +990,7 @@ export function createPackageGrantService(
             installId: install.id,
             botId: revokeInput.botId,
             revision: nextGeneration,
-            resources: active.map((resourceId) => ({
-              resourceId,
-              kind: "skill" as const,
-            })),
+            resources: activeResources.map((resource) => resource),
           };
           await recordGrantChange({
             tx,
@@ -776,6 +1078,7 @@ export async function grantTemplateSkillsWithin(
     botId,
     generation: nextGeneration,
     resources,
+    connectorTools: [],
     grantedBy,
     grantedAt,
     revokedAt: null,

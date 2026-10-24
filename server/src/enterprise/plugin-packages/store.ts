@@ -145,6 +145,8 @@ async function loadGrants(
       installId: grantRows.installId,
       botId: grantRows.botId,
       resourceId: grantRows.resourceId,
+      resourceKind: grantRows.resourceKind,
+      toolRef: grantRows.toolRef,
       generation: grantRows.generation,
       revokedAt: grantRows.revokedAt,
     })
@@ -159,33 +161,51 @@ async function loadGrants(
     .orderBy(asc(grantRows.installId), asc(grantRows.botId));
   interface Accumulator {
     readonly generations: Set<number>;
-    readonly resources: string[];
+    readonly skills: Set<string>;
+    readonly tools: Map<string, Set<string>>;
   }
   const byBot = new Map<string, Accumulator>();
   for (const row of rows) {
     const key = `${row.installId}\u0000${row.botId}`;
     const accumulator = byBot.get(key) ?? {
       generations: new Set<number>(),
-      resources: [],
+      skills: new Set<string>(),
+      tools: new Map<string, Set<string>>(),
     };
     accumulator.generations.add(row.generation);
-    if (row.revokedAt === null) accumulator.resources.push(row.resourceId);
+    if (row.revokedAt === null) {
+      if (row.resourceKind === "connectorTool") {
+        const set = accumulator.tools.get(row.resourceId) ?? new Set<string>();
+        set.add(row.toolRef);
+        accumulator.tools.set(row.resourceId, set);
+      } else {
+        accumulator.skills.add(row.resourceId);
+      }
+    }
     byBot.set(key, accumulator);
   }
   for (const [key, accumulator] of byBot) {
     // A Bot with no active rows has no grant to surface (its generations are
     // history); only bots with at least one live resource appear.
-    if (accumulator.resources.length === 0) continue;
+    if (accumulator.skills.size === 0 && accumulator.tools.size === 0) continue;
     const installId = key.split("\u0000")[0] as string;
     const botId = key.split("\u0000")[1] as string;
     const list = byInstall.get(installId) ?? [];
     list.push({
       botId,
       revision: accumulator.generations.size,
-      resources: accumulator.resources.sort().map((resourceId) => ({
-        resourceId,
-        kind: "skill" as const,
-      })),
+      resources: [
+        ...[...accumulator.skills]
+          .sort()
+          .map((resourceId) => ({ resourceId, kind: "skill" as const })),
+        ...[...accumulator.tools.entries()]
+          .sort(([left], [right]) => (left < right ? -1 : 1))
+          .map(([resourceId, toolRefs]) => ({
+            resourceId,
+            kind: "managedConnector" as const,
+            toolRefs: [...toolRefs].sort(),
+          })),
+      ],
     });
     byInstall.set(installId, list);
   }

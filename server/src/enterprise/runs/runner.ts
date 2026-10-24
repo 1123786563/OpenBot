@@ -37,6 +37,7 @@ import { ExpertVersionCatalog } from "../experts/version-catalog";
 import type { RuntimeModelRoute } from "../models/runtime-adapter";
 import type {
   PinnedSkillSummary,
+  PinnedToolBinding,
   PreparePackageRunInput,
 } from "../plugin-packages/runtime";
 import type { DataDatabase } from "../tenancy/connections";
@@ -116,6 +117,17 @@ export interface ProductionRunnerDependencies {
     scope: PlatformScope,
     input: PreparePackageRunInput,
   ) => Promise<readonly PinnedSkillSummary[]>;
+  /**
+   * PKG05 (#464): the package runtime's pinned TOOL read. Present, a run whose
+   * attempt pinned dispatchable connector tools re-resolves its executing agent
+   * WITH the package run context, so the model is offered exactly the tools
+   * this attempt's snapshot authorizes. Absent (or empty) leaves every build on
+   * the legacy offer untouched.
+   */
+  readonly readPinnedTools?: (
+    scope: PlatformScope,
+    input: PreparePackageRunInput,
+  ) => Promise<readonly PinnedToolBinding[]>;
 }
 
 /** Server-issued Bot Expert identity, frozen for the governed executor slice. */
@@ -535,22 +547,42 @@ class DurableProductionRunner extends AgentRunner {
     // downgraded. A failed read fails closed to the empty set: skills narrow
     // the offer and never gate the run.
     let executing = resolvedAgent;
-    if (deps.readPinnedSkills) {
-      const pinned = await deps
-        .readPinnedSkills(scope, {
-          botId: agentId,
-          runId: run.run_id,
-          attemptGeneration: lease.generation,
-        })
-        .catch(() => []);
-      if (pinned.length > 0) {
-        const rebound = await deps.resolveBuiltInBotForActor(actor, agentId, {
-          ...(carrier ? { governedModel: carrier.governedModel } : {}),
-          pinnedPackageSkills: pinned,
-        });
-        if (rebound.definitionFacts.agentId === agentId) {
-          executing = rebound.agent;
-        }
+    const packageRunInput: PreparePackageRunInput = {
+      botId: agentId,
+      runId: run.run_id,
+      attemptGeneration: lease.generation,
+    };
+    const pinnedSkills = deps.readPinnedSkills
+      ? await deps.readPinnedSkills(scope, packageRunInput).catch(() => [])
+      : [];
+    /*
+     * PKG05: the run's pinned TOOLS, read separately so a tool-only package
+     * run still re-resolves. The context handed to the build is the server's
+     * own (runId/attempt from THIS admission, scope from THIS admission) —
+     * never a client field — and it is what every package tool call carries
+     * into the dispatch chain.
+     */
+    const pinnedTools = deps.readPinnedTools
+      ? await deps.readPinnedTools(scope, packageRunInput).catch(() => [])
+      : [];
+    if (pinnedSkills.length > 0 || pinnedTools.length > 0) {
+      const rebound = await deps.resolveBuiltInBotForActor(actor, agentId, {
+        ...(carrier ? { governedModel: carrier.governedModel } : {}),
+        ...(pinnedSkills.length > 0
+          ? { pinnedPackageSkills: pinnedSkills }
+          : {}),
+        ...(pinnedTools.length > 0
+          ? {
+              packageRun: {
+                scope,
+                runId: run.run_id,
+                attemptGeneration: lease.generation,
+              },
+            }
+          : {}),
+      });
+      if (rebound.definitionFacts.agentId === agentId) {
+        executing = rebound.agent;
       }
     }
 
@@ -934,6 +966,8 @@ export interface ProductionRunnerCompositionDependencies {
    * the SAME `createPackageRuntime` instance.
    */
   readonly readPinnedSkills?: ProductionRunnerDependencies["readPinnedSkills"];
+  /** PKG05: package runtime `readPinnedTools`, forwarded to the Runner. */
+  readonly readPinnedTools?: ProductionRunnerDependencies["readPinnedTools"];
 }
 
 export interface ProductionRunnerComposition {
@@ -1004,6 +1038,7 @@ export function createProductionRunnerComposition(
     ...(deps.readPinnedSkills
       ? { readPinnedSkills: deps.readPinnedSkills }
       : {}),
+    ...(deps.readPinnedTools ? { readPinnedTools: deps.readPinnedTools } : {}),
   });
   return { runnerForRequest, runs, events, expertVersions, modelRoutes };
 }

@@ -178,7 +178,9 @@
       "grantConflict": "This grant changed while you were editing. The list below is fresh — review it and try again.",
       "revokeError": "The grant could not be revoked. Try again.",
       "revokeForbidden": "You do not have permission to manage Bot grants in this team.",
-      "revokeConflict": "This grant changed while you were viewing it. The list below is fresh — review it and try again."
+      "revokeConflict": "This grant changed while you were viewing it. The list below is fresh — review it and try again.",
+      "toolsLabel": "Connector tools of the current revision (a grant replaces the Bot's previous set)",
+      "noConnectorTools": "This revision declares no tools for this connector."
     },
     "experts": {
       "title": "Experts from templates",

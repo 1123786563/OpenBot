@@ -4,6 +4,7 @@ import {
   customType,
   foreignKey,
   index,
+  integer,
   pgPolicy,
   pgTable,
   primaryKey,
@@ -204,6 +205,13 @@ export const enterprisePluginConnections = pgTable(
     boundBy: text("bound_by").notNull(),
     /** 非机密供应商侧别名（Composio account id / OpenConnector alias）。 */
     vendorRef: text("vendor_ref").notNull(),
+    /**
+     * PKG05 (#464, Spec §6): connection generation. Dispatch records the
+     * generation it resolved and revalidates it at the dispatch CAS, so a
+     * connection re-bound (or its authorization replaced) between an approval
+     * proposal and the call refuses the stale proposal (A07).
+     */
+    generation: integer("generation").notNull().default(1),
     createdAt: createdAt(),
   },
   (table) => [
@@ -229,6 +237,10 @@ export const enterprisePluginConnections = pgTable(
     check(
       "enterprise_plugin_connection_vendor_ref",
       sql`char_length(${table.vendorRef}) between 1 and 512`,
+    ),
+    check(
+      "enterprise_plugin_connection_generation",
+      sql`${table.generation} > 0`,
     ),
     index("enterprise_plugin_connection_install_idx").on(
       table.tenantId,

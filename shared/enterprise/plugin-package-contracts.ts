@@ -220,6 +220,23 @@ export const PackageResourceSummarySchema = z
     id: PackageIdSchema,
     kind: PackageResourceKindSchema,
     available: z.boolean(),
+    /**
+     * PKG05 (#464): the tools a managed-connector resource declares in the
+     * install's current revision manifest. The grant form offers exactly this
+     * list (a grant is per tool; the server re-derives each digest/effect from
+     * this same manifest). Absent for skills and templates.
+     */
+    tools: z
+      .array(
+        z
+          .object({
+            ref: z.string().min(1).max(256),
+            effect: z.enum(["read", "write"]),
+          })
+          .strict(),
+      )
+      .max(256)
+      .optional(),
   })
   .strict();
 
@@ -354,6 +371,46 @@ export const PackagePlanInputSchema = z
 export type PackagePlanInput = z.infer<typeof PackagePlanInputSchema>;
 
 /** 1–128 printable ASCII characters (an HTTP header value). */
+/**
+ * PKG05: the model-facing ref of one package connector tool.
+ *
+ * `pkg:<installId>:<resourceId>/<toolName>`. The prefix names the package
+ * source, so a call carrying one is routed to the package dispatch branch and a
+ * call carrying one WITHOUT a server-issued run context is refused
+ * `PACKAGE_RUN_REQUIRED` — never quietly resolved as a legacy grant. The server
+ * id / tool name split matches the legacy `mcp__<server>__<tool>` convention
+ * (`serverId` = the part before the first `/`), so the same tool-name rules
+ * apply to both sources.
+ */
+export const PACKAGE_TOOL_REF_PREFIX = "pkg:";
+
+export function packageToolRefFor(
+  installId: string,
+  resourceId: string,
+  toolName: string,
+): string {
+  return `${PACKAGE_TOOL_REF_PREFIX}${installId}:${resourceId}/${toolName}`;
+}
+
+export function parsePackageToolRef(
+  ref: string,
+): { installId: string; resourceId: string; toolName: string } | null {
+  if (typeof ref !== "string" || !ref.startsWith(PACKAGE_TOOL_REF_PREFIX)) {
+    return null;
+  }
+  const body = ref.slice(PACKAGE_TOOL_REF_PREFIX.length);
+  const slash = body.indexOf("/");
+  if (slash <= 0) return null;
+  const identity = body.slice(0, slash);
+  const toolName = body.slice(slash + 1);
+  const colon = identity.indexOf(":");
+  if (colon <= 0 || colon === identity.length - 1) return null;
+  const installId = identity.slice(0, colon);
+  const resourceId = identity.slice(colon + 1);
+  if (!toolName || toolName.length > 200) return null;
+  return { installId, resourceId, toolName };
+}
+
 export const PackageIdempotencyKeySchema = z
   .string()
   .min(1)
@@ -432,6 +489,14 @@ export const PackageGrantResourceSchema = z
   .object({
     resourceId: PackageIdSchema,
     kind: PackageResourceKindSchema,
+    /**
+     * PKG05: the connector tools this resource grant covers, each written
+     * `<resourceId>:<toolName>` and each declared by the install's CURRENT
+     * revision manifest. Present exactly for `kind: "managedConnector"` rows
+     * (a skill grant declares no tools); the server re-derives the schema
+     * digest and effect from the reviewed manifest, never from the request.
+     */
+    toolRefs: z.array(z.string().min(1).max(256)).max(256).optional(),
   })
   .strict();
 
@@ -621,6 +686,7 @@ export const PackageErrorCodes = [
   "PACKAGE_UNSUPPORTED",
   "RESOURCE_KIND_UNSUPPORTED",
   "PACKAGE_BOT_SCOPE_UNAVAILABLE",
+  "PACKAGE_RUN_REQUIRED",
   "TEMPLATE_FIELD_REJECTED",
   "PACKAGE_STORAGE_UNAVAILABLE",
   "ADMIN_CHANNEL_UNAVAILABLE",
