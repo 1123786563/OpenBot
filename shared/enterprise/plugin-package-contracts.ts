@@ -286,6 +286,24 @@ export const PackageCatalogueDetailSchema = z
     resources: z.array(PackageResourceSummarySchema),
     installable: z.boolean(),
     blockers: z.array(PackageBlockerSchema),
+    /**
+     * PKG06 (#465): the package's published (listed) releases, newest first.
+     * The upgrade/rollback picker draws its exact target versions from here;
+     * unlisted releases stay invisible (PKG08 owns withdrawal), and a plan
+     * re-verifies the exact version server-side regardless.
+     */
+    versions: z
+      .array(
+        z
+          .object({
+            version: PackageVersionSchema,
+            artifactDigest: z.string().regex(/^[0-9a-f]{64}$/),
+            verified: z.boolean(),
+            listed: z.boolean(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 
@@ -434,6 +452,61 @@ export const PackageToolGrantSchema = z
 
 export type PackageToolGrant = z.infer<typeof PackageToolGrantSchema>;
 
+/**
+ * PKG06 (#465): the current→target version diff an upgrade/rollback plan
+ * previews. Every entry is what the administrator must re-confirm: added and
+ * removed resources, same-ref tools whose effect or schema digest changed
+ * (the read→write / digest re-authorization cases), flat config key changes
+ * (V1 has no migration script — the plan always carries the FULL target
+ * config), and required-connector requirement changes. Present only on
+ * upgrade/rollback plans (an install plan has nothing to diff).
+ */
+export const PackagePlanVersionDiffSchema = z
+  .object({
+    currentVersion: PackageVersionSchema,
+    currentRevision: z.number().int().positive(),
+    addedResources: z.array(PackagePlanResourceSchema),
+    removedResources: z.array(PackagePlanResourceSchema),
+    changedTools: z
+      .array(
+        z
+          .object({
+            ref: z.string().min(1).max(256),
+            previousEffect: z.enum(["read", "write"]),
+            effect: z.enum(["read", "write"]),
+            previousSchemaDigest: z.string().regex(/^[0-9a-f]{64}$/),
+            schemaDigest: z.string().regex(/^[0-9a-f]{64}$/),
+          })
+          .strict(),
+      )
+      .max(256),
+    configChanges: z
+      .array(
+        z
+          .object({
+            key: z.string().min(1).max(64),
+            change: z.enum(["added", "removed", "changed"]),
+          })
+          .strict(),
+      )
+      .max(64),
+    connectionChanges: z
+      .array(
+        z
+          .object({
+            resourceId: PackageIdSchema,
+            change: z.enum(["added", "removed"]),
+          })
+          .strict(),
+      )
+      .max(256),
+  })
+  .strict();
+
+export type PackagePlanVersionDiff = z.infer<
+  typeof PackagePlanVersionDiffSchema
+>;
+
 export const PackagePlanDTOSchema = z
   .object({
     planId: z.string().min(1).max(128),
@@ -444,9 +517,17 @@ export const PackagePlanDTOSchema = z
     expectedRevision: z.number().int().positive().nullable(),
     expiresAt: z.string().datetime(),
     resources: z.array(PackagePlanResourceSchema),
+    /**
+     * Install plans: every connector tool the release declares. Upgrade and
+     * rollback plans: the PERMISSION INCREMENT — new tools plus same-ref tools
+     * whose effect or schema digest changed — because those are exactly the
+     * tools that need fresh authorization before any run may dispatch them.
+     */
     addedTools: z.array(PackageToolGrantSchema),
     removedTools: z.array(z.string()),
     blockers: z.array(PackageBlockerSchema),
+    /** PKG06: present on upgrade/rollback plans (null on install plans). */
+    diff: PackagePlanVersionDiffSchema.optional(),
   })
   .strict();
 
@@ -474,6 +555,8 @@ export const PackageInstallActionSchema = z.enum([
   "enable",
   "uninstall",
 ]);
+
+export type PackageInstallAction = z.infer<typeof PackageInstallActionSchema>;
 
 // ---------------------------------------------------------------------------
 // PKG03A: Bot grants (skill resources only in slice A)
@@ -578,6 +661,23 @@ export const PackageInstallDetailDTOSchema = z
     resources: z.array(PackageResourceSummarySchema),
     /** Active (never revoked) Bot grants of this install, per Bot. */
     grants: z.array(PackageGrantDTOSchema),
+    /**
+     * PKG06 (#465): the deployment's newest published (listed + verified)
+     * release of this package — null when nothing listed verifies. The
+     * upgrade/rollback facts the detail screen draws beside the install.
+     */
+    latestPublishedVersion: PackageVersionSchema.nullable().optional(),
+    /** PKG06: published exact targets an upgrade/rollback plan may name. */
+    availableVersions: z
+      .array(
+        z
+          .object({
+            version: PackageVersionSchema,
+            artifactDigest: z.string().regex(/^[0-9a-f]{64}$/),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 

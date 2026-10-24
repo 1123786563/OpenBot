@@ -56,6 +56,21 @@ export interface PackageCatalogue {
     packageKey: string,
     version: string,
   ): Promise<PackageReleaseFacts | null>;
+  /**
+   * PKG06 (#465): the package's listed releases, newest first, with the
+   * verification fact per release. The upgrade/rollback planner and the
+   * detail reads draw their exact target versions from here; unlisted
+   * releases stay invisible (withdrawal is PKG08's surface).
+   */
+  listVersions(packageKey: string): Promise<readonly ListedReleaseFacts[]>;
+}
+
+/** One listed release as a version picker sees it. */
+export interface ListedReleaseFacts {
+  readonly version: string;
+  readonly artifactDigest: string;
+  readonly verified: boolean;
+  readonly listed: true;
 }
 
 /** Server-internal release facts; the manifest never leaves the server. */
@@ -318,6 +333,28 @@ export async function loadPackageCatalogue({
     else records.set(record.packageKey, [record]);
   }
 
+  /** Listed releases of one package, newest first (the PKG06 picker source). */
+  const listedVersionsOf = async (
+    packageKey: string,
+  ): Promise<ListedReleaseFacts[]> => {
+    if (!PACKAGE_KEY_PATTERN.test(packageKey)) return [];
+    const group = records.get(packageKey) ?? [];
+    return group
+      .filter((record) => record.listed)
+      .sort((left, right) => {
+        const byVersion = comparePackageVersions(right.version, left.version);
+        if (byVersion !== 0) return byVersion;
+        // Stable within one version: digest descending, mirroring isNewer.
+        return left.artifactDigest > right.artifactDigest ? 1 : -1;
+      })
+      .map((record) => ({
+        version: record.version,
+        artifactDigest: record.artifactDigest,
+        verified: record.verified,
+        listed: true as const,
+      }));
+  };
+
   return {
     async list(_scope, query, options) {
       const limit = assertQuery(query);
@@ -364,6 +401,7 @@ export async function loadPackageCatalogue({
       // Branded, not bare: routes.ts maps this by error code, never by message
       // text, so a message drift cannot silently degrade a 404 into a 500.
       if (!record) throw packageError("RESOURCE_NOT_FOUND");
+      const listedVersions = await listedVersionsOf(`${publisher}/${name}`);
       return PackageCatalogueDetailSchema.parse({
         packageKey: record.packageKey,
         version: record.version,
@@ -376,6 +414,12 @@ export async function loadPackageCatalogue({
         resources: record.resources,
         installable: record.blockers.length === 0,
         blockers: record.blockers,
+        versions: listedVersions.map((entry) => ({
+          version: entry.version,
+          artifactDigest: entry.artifactDigest,
+          verified: entry.verified,
+          listed: entry.listed,
+        })),
       });
     },
 
@@ -402,6 +446,10 @@ export async function loadPackageCatalogue({
         blockers: record.blockers,
         manifest: record.manifest,
       };
+    },
+
+    async listVersions(packageKey) {
+      return listedVersionsOf(packageKey);
     },
   };
 }

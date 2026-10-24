@@ -156,6 +156,35 @@
         "unavailable": "Unavailable"
       }
     },
+    "upgrade": {
+      "sectionTitle": "Versions",
+      "upgradable": "Upgrade available",
+      "publishedLatest": "Newest published release: v{{version}}.",
+      "publishedUnknown": "No published release is currently available.",
+      "upToDate": "The installed version is the newest published release.",
+      "targetLabel": "Target version",
+      "openUpgrade": "Review upgrade",
+      "openRollback": "Review rollback",
+      "titleUpgrade": "Upgrade {{name}}",
+      "titleRollback": "Roll back {{name}}",
+      "confirmUpgrade": "Upgrade to v{{version}}",
+      "confirmRollback": "Roll back to v{{version}}",
+      "diffTitle": "Version changes",
+      "fromTo": "v{{from}} → v{{to}}",
+      "resourceAdded": "New resource",
+      "resourceRemoved": "Removed resource",
+      "toolChanged": "Tool changed — needs new authorization",
+      "toolRemoved": "Removed tool",
+      "configChange": "Configuration",
+      "connectionChange": "Connection requirement",
+      "changeKind": {
+        "added": "added",
+        "removed": "removed",
+        "changed": "changed"
+      },
+      "effectChange": "effect {{from}} → {{to}}",
+      "reauthorizationNotice": "New tools and changed tools take effect only after a Bot is granted them again. Running sessions keep the version they were pinned to."
+    },
     "grants": {
       "title": "Bot grants",
       "hint": "A grant authorizes one Bot to use this package's pinned skills in runs. Installing alone grants nothing.",

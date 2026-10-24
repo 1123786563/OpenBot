@@ -36,6 +36,7 @@ import {
   enterprisePackageGrants as grantRows,
   enterprisePackageInstalls as installRows,
   enterpriseRunPackagePins as pinRows,
+  enterprisePackageRevisions as revisionRows,
 } from "../../db/schema/enterprise-plugin-packages";
 import {
   enterprisePluginCatalog,
@@ -912,19 +913,57 @@ export function createPackageDispatchService(
       // 没有受管目录/制品根：不做任何派发（fail closed；浏览面不受影响）。
       return refused("NOT_AVAILABLE");
     }
-    const release = await catalogue.resolveRelease(
+    /*
+     * PKG06 (#465) 升级后一个 install 的 currentVersion 会前移，而旧 Run 的
+     * pin 仍钉在旧 revision：门 4 因此拆成两半——
+     *   (a) PIN 侧：按 pin.revision 读不可变 revision 行，解析该
+     *       releaseVersion 的发布事实并核对 digest==pin.releaseDigest
+     *       （制品漂移/发布丢失 → PACKAGE_WITHDRAWN；旧 Run 保留旧版本）。
+     *   (b) 当前侧：install 当前版本的 manifest 决定 declared 契约——
+     *       新 revision 已移除/变更的工具（digest/effect 不同）即使仍在
+     *       旧 pin 与旧 grant 内也立即不可派发（#465 AC3、§10 交集语义）；
+     *       两版本契约相同的工具继续放行（pin ∩ 当前有效 grant）。
+     */
+    const [pinnedRevision] = await tx
+      .select({
+        releaseVersion: revisionRows.releaseVersion,
+        artifactDigest: revisionRows.artifactDigest,
+      })
+      .from(revisionRows)
+      .where(
+        and(
+          eq(revisionRows.tenantId, scope.tenantId),
+          eq(revisionRows.installId, binding.installId),
+          eq(revisionRows.revision, pin.revision),
+        ),
+      )
+      .limit(1);
+    if (
+      !pinnedRevision ||
+      pinnedRevision.artifactDigest !== pin.releaseDigest
+    ) {
+      return refused("PACKAGE_WITHDRAWN");
+    }
+    const pinnedRelease = await catalogue.resolveRelease(
       install.packageKey,
-      install.version,
+      pinnedRevision.releaseVersion,
     );
     if (
-      !release?.verified ||
-      !release.manifest ||
-      release.artifactDigest !== pin.releaseDigest
+      !pinnedRelease?.verified ||
+      !pinnedRelease.manifest ||
+      pinnedRelease.artifactDigest !== pin.releaseDigest
     ) {
       // 发布撤回/制品漂移：不能新派发此版本。
       return refused("PACKAGE_WITHDRAWN");
     }
-    const declared = addedToolsOf(release.manifest).find(
+    const currentRelease = await catalogue.resolveRelease(
+      install.packageKey,
+      install.version,
+    );
+    if (!currentRelease?.verified || !currentRelease.manifest) {
+      return refused("PACKAGE_WITHDRAWN");
+    }
+    const declared = addedToolsOf(currentRelease.manifest).find(
       (tool) => tool.ref === binding.toolRef,
     );
     if (!declared) return refused("NOT_AVAILABLE");
