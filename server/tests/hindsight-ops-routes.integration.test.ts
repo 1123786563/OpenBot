@@ -65,6 +65,7 @@ import {
   createSourceBoundRecallService,
   sourceBoundDocumentIdFor,
 } from "../src/hindsight/scoped-recall";
+import { SENSITIVE_CONFIRMATION_REQUIRED } from "../src/hindsight/sensitivity-gate";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -106,6 +107,17 @@ type CapturedCall = {
   body: unknown;
   bank: string;
 };
+
+type CapturedAuditEvent = {
+  eventType: string;
+  targetType: string;
+  targetId?: string;
+  actorUserId?: string;
+  payload: Record<string, unknown>;
+};
+
+/** The F-G1-4 trail a sensitivity refusal leaves on this face, captured for assertions. */
+const auditTrail: CapturedAuditEvent[] = [];
 
 type ScriptedState = {
   recallByBank: Map<string, { status: number; body: unknown }>;
@@ -339,6 +351,11 @@ async function harnessFor(
       revocations,
       cleanup,
       recovery,
+      audit: {
+        record: async (event) => {
+          auditTrail.push(event);
+        },
+      },
       requireUser,
       operationRetentionDays: () => declaredOperationRetentionDays,
       reconcileBackups: currentManifestDir
@@ -559,6 +576,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  auditTrail.length = 0;
   scripted.calls.length = 0;
   scripted.state.recallByBank.clear();
   scripted.state.retainStatus = 202;
@@ -817,6 +835,81 @@ describe("the judgment review routes (#388/#389)", () => {
       path: `/api/hindsight/judgments/${secondId}/confirm`,
     });
     expect(confirmRejected.status).toBe(409);
+  });
+
+  test("the confirm and edit decisions answer to the sensitivity gate (F-G1-4)", async () => {
+    const app = await harnessFor(PRINCIPAL_EMP, "user");
+    const first = await confirmPreference(PRINCIPAL_EMP, `敏感门依据甲 ${run}`);
+    const second = await confirmPreference(
+      PRINCIPAL_EMP,
+      `敏感门依据乙 ${run}`,
+    );
+    const proposed = await call(app, {
+      method: "POST",
+      path: "/api/hindsight/judgments/candidates",
+      body: {
+        judgment: `diagnosed with diabetes recently ${run}`,
+        evidence: [first.documentId, second.documentId],
+      },
+    });
+    expect(proposed.status).toBe(201);
+    const candidate = ((await proposed.json()) as { candidate: { id: string } })
+      .candidate;
+
+    // Sensitive material is refused without the person's explicit second confirmation,
+    // the trail holds the class and the judgment's id — never the content — and the
+    // candidate is still unreviewed, so the same confirm can adopt it a moment later.
+    const refused = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/judgments/${candidate.id}/confirm`,
+    });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({
+      error: SENSITIVE_CONFIRMATION_REQUIRED,
+    });
+    expect(auditTrail).toHaveLength(1);
+    expect(auditTrail[0]).toEqual({
+      eventType: "memory.sensitivity_refused",
+      targetType: "memory",
+      targetId: candidate.id,
+      actorUserId: ACTOR_EMP,
+      payload: { subjectType: "derived_judgment", sensitivity: "medical" },
+    });
+    expect(JSON.stringify(auditTrail)).not.toContain("diabetes");
+
+    // The second look is the ask: the same confirm adopts the judgment.
+    const adopted = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/judgments/${candidate.id}/confirm`,
+      body: { confirmSensitive: true },
+    });
+    expect(adopted.status).toBe(200);
+
+    // An edit into sensitive text answers to the same gate, and passes the same way.
+    auditTrail.length = 0;
+    const refusedEdit = await call(app, {
+      method: "PATCH",
+      path: `/api/hindsight/judgments/${candidate.id}`,
+      body: { content: `manages blood pressure with medication ${run}` },
+    });
+    expect(refusedEdit.status).toBe(400);
+    expect(await refusedEdit.json()).toEqual({
+      error: SENSITIVE_CONFIRMATION_REQUIRED,
+    });
+    expect(auditTrail).toHaveLength(1);
+    expect(auditTrail[0]?.payload).toEqual({
+      subjectType: "derived_judgment",
+      sensitivity: "medical",
+    });
+    const edited = await call(app, {
+      method: "PATCH",
+      path: `/api/hindsight/judgments/${candidate.id}`,
+      body: {
+        content: `manages blood pressure with medication ${run}`,
+        confirmSensitive: true,
+      },
+    });
+    expect(edited.status).toBe(200);
   });
 
   test("another principal's candidate is invisible and cannot be acted on through my identity", async () => {

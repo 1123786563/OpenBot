@@ -4230,32 +4230,6 @@ if (
     database,
     hindsightServiceConfig,
   );
-  hindsightDeletionSweep = repeatAfterEach(async () => {
-    try {
-      const pass = await hindsightRevocations.retryOutstandingDeletions();
-      if (pass.considered > 0)
-        log.info(
-          {
-            type: "hindsight-deletion-drain",
-            considered: pass.considered,
-            confirmed: pass.confirmed,
-            stillOutstanding: pass.stillOutstanding,
-            timestamp: new Date().toISOString(),
-          },
-          "hindsight-deletion-drain",
-        );
-    } catch (error) {
-      log.error(
-        {
-          type: "hindsight-deletion-drain-error",
-          error: error instanceof Error ? error.name : "UnknownError",
-          detail: error instanceof Error ? error.message : String(error),
-          timestamp: new Date().toISOString(),
-        },
-        "hindsight-deletion-drain-error",
-      );
-    }
-  }, 60_000);
   const hindsightBackupManifestDir = backupManifestDirFromEnv(process.env);
   if (enterpriseCapabilities) {
     hindsightRouteServices = {
@@ -4266,6 +4240,9 @@ if (
       revocations: hindsightRevocations,
       cleanup: hindsightCleanup,
       recovery: hindsightRecovery,
+      // Where a sensitivity refusal on this face lands: the class, never the content
+      // (the F-G1-4 trail, same as the /api/memory face).
+      audit: auditSink(bootAuditStore),
       // Read per request: a redeployed declaration is honored by the next status read,
       // and an undeclared window reports the payload leg unevidenced, never measured.
       // (parseHindsightPrivacy takes the declaration's narrow key shape, so the read
@@ -4320,16 +4297,8 @@ if (
    * expiry stage is consumed here, and it is idempotent, so a repeated sweep expires nothing
    * more.
    */
-  const hindsightJudgments = createDerivedJudgmentReviewService(
-    createDrizzlePreferenceRecords(database),
-    createDrizzleSourceBoundRecords(database),
-    createDrizzleDerivedJudgmentRecords(database),
-    hindsightAuthorizations,
-    hindsightServiceConfig,
-    { pause: hindsightPause, recovery: hindsightRecovery.gate },
-  );
   hindsightJudgmentExpiry = () =>
-    hindsightJudgments.expireStaleDerivedJudgmentCandidates();
+    hindsightJudgmentReview.expireStaleDerivedJudgmentCandidates();
   if (enterpriseCapabilities) {
     hindsightMemoryRoutes = {
       preferences: hindsightPreferences,

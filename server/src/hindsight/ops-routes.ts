@@ -16,7 +16,10 @@
  *
  *   - THE PERSON'S SURFACES. Evidence expansion, the judgment candidate listing and the
  *     confirm/edit/reject/forget decisions, the source-or-Bot revocation, and the cleanup
- *     progress of the person's own forgotten records. None of these makes an administrator's
+ *     progress of the person's own forgotten records. The confirm/edit decisions answer to
+ *     the same sensitivity gate as the /api/memory face: sensitive material is refused
+ *     without the person's explicit second confirmation, and a refusal leaves the
+ *     class-only audit trail. None of these makes an administrator's
  *     answer wider: an operator asking the same routes answers as themselves, and the operator
  *     surface below returns counts only.
  *
@@ -35,6 +38,7 @@ import { bodyLimit } from "hono/body-limit";
 import { getLogger } from "../../../shared/logger";
 import type { AppVariables } from "../auth/guards";
 import { requireAdmin } from "../auth/guards";
+import type { AuditSink } from "../audit";
 import type { PlatformScope, ScopeResolver } from "../enterprise/contracts";
 import {
   type AnswerEvidenceService,
@@ -56,6 +60,7 @@ import {
 } from "./judgment-review";
 import type { RestoreRecoveryService } from "./restore-recovery";
 import type { RevocationService } from "./revocation";
+import { MemorySensitivityRefusedError } from "./sensitivity-gate";
 
 const log = getLogger("server");
 
@@ -95,6 +100,12 @@ export type HindsightRouteServices = {
     RestoreRecoveryService,
     "noteBackupRestored" | "gateStatus" | "replayBackupRestore"
   >;
+  /**
+   * Where a sensitivity refusal lands in the audit trail: the refused class and the
+   * judgment's id, never the content — the same F-G1-4 trail the /api/memory face writes.
+   * Absent on a deployment that wires no audit sink; the refusal is still the answer.
+   */
+  audit?: AuditSink;
   /**
    * The DECLARED operation-retention window, read per request so a redeclared deployment is
    * honored by the next status read. `null` means undeclared: the payload leg reports itself
@@ -189,7 +200,8 @@ export function createHindsightRoutes(
     if (
       error instanceof EvidenceRefusedError ||
       error instanceof DerivedJudgmentRefusedError ||
-      error instanceof HindsightRouteRefusedError
+      error instanceof HindsightRouteRefusedError ||
+      error instanceof MemorySensitivityRefusedError
     )
       return context.json({ error: error.message }, 400);
     if (
@@ -244,6 +256,66 @@ export function createHindsightRoutes(
     deps.scopes.resolve(context.req.raw);
 
   /*
+   * A sensitivity refusal on this face leaves the same F-G1-4 trail the /api/memory face
+   * writes: the refused class and the judgment's id — never the content. A trail that
+   * cannot be written is logged and swallowed; the refusal is already the answer.
+   */
+  async function recorded<T>(
+    scope: PlatformScope,
+    judgmentId: string,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof MemorySensitivityRefusedError && deps.audit) {
+        await deps.audit
+          .record({
+            eventType: "memory.sensitivity_refused",
+            targetType: "memory",
+            targetId: judgmentId,
+            actorUserId: scope.actorId,
+            payload: {
+              subjectType: "derived_judgment",
+              sensitivity: error.sensitivity,
+            },
+          })
+          .catch((auditError) => {
+            // The refusal is the answer; a trail that cannot be written changes nothing.
+            log.error(
+              {
+                type: "hindsight-route-audit-error",
+                error:
+                  auditError instanceof Error
+                    ? auditError.name
+                    : "UnknownError",
+                context: { route: "judgment" },
+                timestamp: new Date().toISOString(),
+              },
+              "hindsight-route-audit-error",
+            );
+          });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The confirm's one optional field: the person's explicit second confirmation for
+   * sensitive material (F-G1-4). A confirm carries no body unless that second look is
+   * being given, so a request without one reads as the seam's own default — no second
+   * confirmation — and a request with one must be the module's usual JSON object.
+   */
+  async function confirmationInput(
+    request: Request,
+  ): Promise<{ confirmSensitive?: unknown }> {
+    if (!request.headers.get("content-type")?.includes("application/json"))
+      return {};
+    const input = await body(request);
+    return { confirmSensitive: input.confirmSensitive };
+  }
+
+  /*
    * Evidence: the ids an answer cited, expanded into what the person is entitled to see NOW.
    * Anything missing, foreign, unreviewed, forgotten or no longer authorized answers
    * `{ state: "unavailable" }` with no content — the seam's own vocabulary, forwarded as-is.
@@ -288,23 +360,29 @@ export function createHindsightRoutes(
     );
   });
 
-  routes.post("/judgments/:id/confirm", async (context) =>
-    context.json(
-      await deps.review.confirmDerivedJudgment(
-        await scopeFor(context),
-        context.req.param("id"),
+  routes.post("/judgments/:id/confirm", async (context) => {
+    const scope = await scopeFor(context);
+    const id = context.req.param("id");
+    const input = await confirmationInput(context.req.raw);
+    return context.json(
+      await recorded(scope, id, () =>
+        deps.review.confirmDerivedJudgment(scope, id, input),
       ),
-    ),
-  );
+    );
+  });
 
   /* Editing touches the text alone: the evidence relation and scope never move through it. */
   routes.patch("/judgments/:id", async (context) => {
     const scope = await scopeFor(context);
     const input = await body(context.req.raw);
+    const id = context.req.param("id");
     return context.json(
-      await deps.review.editDerivedJudgment(scope, context.req.param("id"), {
-        content: input.content,
-      }),
+      await recorded(scope, id, () =>
+        deps.review.editDerivedJudgment(scope, id, {
+          content: input.content,
+          confirmSensitive: input.confirmSensitive,
+        }),
+      ),
     );
   });
 

@@ -474,11 +474,11 @@
    "name": "server/tests part 7",
    "files": [
     "server/tests/hindsight-memory-ops.integration.test.ts",
+    "server/tests/hindsight-ops-routes.integration.test.ts",
     "server/tests/hindsight-preference-recall.integration.test.ts",
     "server/tests/hindsight-purge-restore.contract.test.ts",
     "server/tests/hindsight-purge-restore.integration.test.ts",
     "server/tests/hindsight-revocation.integration.test.ts",
-    "server/tests/hindsight-routes.integration.test.ts",
     "server/tests/hindsight-source-bound-recall.integration.test.ts",
     "server/tests/hindsight-sync-drain.contract.test.ts",
     "server/tests/hindsight-sync-queue.integration.test.ts",
@@ -1457,6 +1457,7 @@
   "server/tests/hindsight-judgment-review.integration.test.ts",
   "server/tests/hindsight-legacy-migration.integration.test.ts",
   "server/tests/hindsight-memory-ops.integration.test.ts",
+  "server/tests/hindsight-ops-routes.integration.test.ts",
   "server/tests/hindsight-pause-controls-entry.integration.test.ts",
   "server/tests/hindsight-pause-controls.integration.test.ts",
   "server/tests/hindsight-personal-memory-context.integration.test.ts",
@@ -1464,7 +1465,6 @@
   "server/tests/hindsight-purge-restore.contract.test.ts",
   "server/tests/hindsight-purge-restore.integration.test.ts",
   "server/tests/hindsight-revocation.integration.test.ts",
-  "server/tests/hindsight-routes.integration.test.ts",
   "server/tests/hindsight-source-bound-recall.integration.test.ts",
   "server/tests/hindsight-sync-drain.contract.test.ts",
   "server/tests/hindsight-sync-queue.integration.test.ts",
@@ -1958,6 +1958,6 @@
   "server/tests/multitenancy/workshop-scope.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/multitenancy/share-tokens.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）",
-  "server/tests/hindsight-routes.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-W2b /api/hindsight 路由族集成套件（bun 驱动，TEST_DATABASE_URL + 脚本化 Hindsight 服务）"
+  "server/tests/hindsight-ops-routes.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-W2b /api/hindsight 路由族集成套件（bun 驱动，TEST_DATABASE_URL + 脚本化 Hindsight 服务；FIX-INTG RINTG-4 收口改名，原登记名 hindsight-routes.integration.test.ts）"
  }
 }
