@@ -1378,6 +1378,107 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
       });
     })()
   : createUnavailableWorkspaceScopeRoutes();
+// PKG01 (#460) / PKG02 (#461): the plugin-package marketplace. The marketplace
+// index and the content-addressed artifacts are deployment build outputs,
+// verified once at startup. A missing or invalid index leaves the routes
+// answering 503 — browsing is unavailable, never an empty or partly fabricated
+// catalogue. R6-7 (OCR round 6): a missing artifact root is deliberately NOT a
+// 503 — the catalogue still loads and each affected entry stays listed as
+// unavailable under an ARTIFACT_MISSING blocker (see loadPackageCatalogue), so
+// browsing degrades instead of disappearing. Reads reuse the enterprise
+// entry's trusted Scope resolver (`scopes` above) instead of standing up a
+// second one.
+//
+// PKG02 adds install facts to reads (restricted data channel) and plan/apply
+// (restricted operator channel). Without a verified operator channel the
+// service still serves reads but every plan/apply answers 503
+// ADMIN_CHANNEL_UNAVAILABLE — never an owner-database fallback. Plan/apply also
+// require a verified CompanyAdminContext issued by the same authorizer the
+// workspace-scope admin routes use, so a platform administrator gains no
+// implicit company authority.
+const pluginPackageRoutes = await (async () => {
+  if (!enterpriseCapabilities) return createUnavailablePluginPackageRoutes();
+  try {
+    // R4-5: the index path is deployment configuration
+    // (`OPENBOT_PLUGIN_MARKETPLACE_INDEX`); the default is the same
+    // repository-root `plugins/marketplace.json` this path always read.
+    const indexSource = await readFile(
+      config.pluginMarketplaceIndexPath,
+      "utf8",
+    );
+    const catalogue = await loadPackageCatalogue({
+      index: JSON.parse(indexSource),
+      artifactRoot: config.pluginArtifactRoot,
+    });
+    const operatorUrl = config.enterpriseOperatorDatabaseUrl;
+    // R6-2 (OCR round 6): the degradation itself is unchanged — plan/apply
+    // answer 503 and read-only browsing stays up — but it is no longer
+    // silent. The structured records (same shape as the catalogue-unavailable
+    // log.error beside the catch below) let operations tell "not configured"
+    // apart from "configured but broken" when every plan/apply 503s.
+    let operator: OperatorDatabase | null = null;
+    if (!operatorUrl) {
+      log.info(
+        {
+          type: "plugin-package-operator-unavailable",
+          reason: "OPERATOR_DATABASE_NOT_CONFIGURED",
+        },
+        "plugin-package-operator-unavailable",
+      );
+    } else {
+      let database: ReturnType<typeof createDatabase> | undefined;
+      try {
+        // createDatabase itself can reject on a malformed connection
+        // string; that failure degrades exactly like a failed capability
+        // check — plan/apply answer 503, read-only browsing stays up —
+        // instead of taking the whole catalogue route down.
+        database = createDatabase(operatorUrl);
+        operator = await verifyOperatorDatabase(database);
+      } catch (error) {
+        await database?.$client.close().catch(() => {});
+        log.error(
+          {
+            type: "plugin-package-operator-unavailable",
+            reason: "OPERATOR_DATABASE_UNUSABLE",
+            cause: error instanceof Error ? error.message : String(error),
+          },
+          "plugin-package-operator-unavailable",
+        );
+      }
+    }
+    const adminAuthorizer = createCompanyAdminAuthorizer(
+      enterpriseCapabilities.directory,
+      {
+        authenticate: authenticateWorkspaceScopeRequest,
+        selectTenant: (request) => request.headers.get("x-openbot-tenant"),
+      },
+    );
+    return createPluginPackageRoutes({
+      catalogue,
+      service: createPackageService({
+        catalogue,
+        readStore: createPackageReadStore(enterpriseCapabilities.data),
+        mutation: operator ? createPackageMutationStore(operator) : null,
+        // PKG04A: expert templates are read from the same verified,
+        // content-addressed artifacts the catalogue resolves.
+        artifactRoot: config.pluginArtifactRoot,
+      }),
+      resolveScope: (request) => enterpriseCapabilities.scopes.resolve(request),
+      resolveAdmin: operator
+        ? (request) => adminAuthorizer.resolveAdminContext(request)
+        : undefined,
+    });
+  } catch (error) {
+    log.error(
+      {
+        type: "plugin-package-catalogue-unavailable",
+        cause: error instanceof Error ? error.message : String(error),
+      },
+      "plugin-package-catalogue-unavailable",
+    );
+    return createUnavailablePluginPackageRoutes();
+  }
+})();
 // MT125 (Issue #168) / MT126 (Issue #169): the legacy-family and stream-entry
 // unified assemblies. Both ride the SAME entry-context factory the enterprise
 // conversation entry uses — one session resolution, one issuance WeakSet, one
@@ -8185,6 +8286,7 @@ const app = createApp(
     teamBots,
     enterpriseConversations: enterpriseConversationRoutes,
     enterpriseWorkspaceScope: enterpriseWorkspaceScopeRoutes,
+    pluginPackages: pluginPackageRoutes,
     ...(enterpriseMobileAggregateAndStreamEntry
       ? {
           enterpriseMobileAggregate:
