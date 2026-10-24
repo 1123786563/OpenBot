@@ -351,10 +351,8 @@ import {
   createUnavailablePluginPackageRoutes,
 } from "../enterprise/plugin-packages/routes";
 import { createPackageReadStore } from "../enterprise/plugin-packages/store";
-import {
-  createGovernedModelExecution,
-  type GovernedModelExecution,
-} from "../enterprise/runs/governed-execution";
+import type { GovernedModelExecution } from "../enterprise/runs/governed-execution";
+import { createGovernedExecutionArm } from "../enterprise/runs/integration";
 import { isPositiveInt32TokenCount } from "../enterprise/runs/output-ceiling";
 import {
   createProductionRunnerComposition,
@@ -3278,7 +3276,7 @@ if (enterpriseRunner && enterpriseCapabilities) {
     // caller-supplied route) and its ceiling. Capability issuance keeps
     // checking the run's remaining budget — the re-activation minted no new
     // reservation, it only re-armed the lease the budget is spent under.
-    const carrier = createGovernedModelExecution({
+    const carrier = createGovernedExecutionArm({
       scope,
       agentId: botId,
       routeRef: state.modelRouteRef,
@@ -3812,7 +3810,7 @@ const governedHeadlessTurnFor = (entry: {
           return { routeRef: route.routeRef, maximumTokens: ceiling };
         },
         governedExecutionFor: ({ scope, agentId, routeRef, ceiling }) =>
-          createGovernedModelExecution({
+          createGovernedExecutionArm({
             scope,
             agentId,
             routeRef,
