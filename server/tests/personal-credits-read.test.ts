@@ -376,7 +376,9 @@ describe("GET /api/billing/credits/summary answers the signed-in user's own acco
   test("the response structure is exactly the ticket's contract — key sets and types", async () => {
     const response = await app(SELF).request("/api/billing/credits/summary");
     const body = (await response.json()) as Record<string, unknown>;
+    // 02.6's contract plus `account`, the capability status BP07/#375 added to this answer.
     expect(Object.keys(body).sort()).toEqual([
+      "account",
       "accountType",
       "available",
       "consumed",
