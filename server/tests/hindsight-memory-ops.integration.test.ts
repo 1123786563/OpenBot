@@ -443,7 +443,8 @@ beforeAll(async () => {
       // The /sources surface this suite never touches; the hindsight sub-routes are its subject.
       {} as unknown as MemoryIngestion,
       requireUser,
-      createHindsightMemoryRoutes({
+      {
+        hindsight: createHindsightMemoryRoutes({
         preferences,
         sourceBound: scoped,
         syncQueue: queue,
@@ -454,6 +455,7 @@ beforeAll(async () => {
           },
         },
       }),
+      },
     ),
   );
   scope = await makeTrustedScope(PRINCIPAL);
