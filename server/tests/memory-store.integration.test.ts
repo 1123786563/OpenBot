@@ -23,7 +23,7 @@ import { createPluginStore } from "../src/plugins/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-const prefix = `memory-${randomUUID()}`;
+const prefix = `memory-${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 const owner = `${prefix}-owner`;
 const other = `${prefix}-other`;
 const bot = `${prefix}-bot`;
