@@ -250,6 +250,39 @@ describe("#427 rotation: single-token revocation", () => {
     expect(codec().revoke(SESSION_ID, "no-such-token")).toBe(false);
     expect(codec().revoke(SESSION_ID, "")).toBe(false);
   });
+
+  test("N4-01: a malformed MAC part (`!!!`) never revokes — the shape gate runs before the index, the real pass stays alive", () => {
+    // The token slot names a LIVE index entry, but the value is not a
+    // well-formed pass: verify refuses it on the macPart charset, and
+    // revoke must refuse at the SAME shape gate instead of deleting the
+    // entry behind the token — otherwise a caller could retire a valid
+    // pass with a half-frame it never proved possession of.
+    const c = codec();
+    const pass = c.issue(SESSION_ID, USER_ID);
+    const [version, token] = pass.split(".");
+    const malformed = `${version}.${token}.!!!`;
+    expect(c.verify(SESSION_ID, malformed)).toBeNull();
+    expect(c.revoke(SESSION_ID, malformed)).toBe(false);
+    // Not deleted either: the original pass still verifies.
+    expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+  });
+
+  test("N4-01: a charset-legal but non-16-byte token refuses — strict shape, never a bare lookup on a half-frame", () => {
+    const c = codec();
+    const wrongLengthToken = Buffer.alloc(17, 1).toString("base64url");
+    const macPart = Buffer.alloc(32, 1).toString("base64url"); // 43 chars
+    const candidate = `v1.${wrongLengthToken}.${macPart}`;
+    expect(c.verify(SESSION_ID, candidate)).toBeNull();
+    expect(c.revoke(SESSION_ID, candidate)).toBe(false);
+  });
+
+  test("a legal value revokes true once; the second revoke is a clean false (N4-01 shape suite)", () => {
+    const c = codec();
+    const pass = c.issue(SESSION_ID, USER_ID);
+    expect(c.revoke(SESSION_ID, pass)).toBe(true);
+    expect(c.revoke(SESSION_ID, pass)).toBe(false);
+    expect(c.verify(SESSION_ID, pass)).toBeNull();
+  });
 });
 
 describe("previewSessionCookieHeader carries the signed pass", () => {

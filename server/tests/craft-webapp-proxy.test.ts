@@ -2738,6 +2738,28 @@ describe("POST /sessions/:id/preview-ticket: the current-generation mount re-che
     expect(tickets.size()).toBe(0);
   });
 
+  test("the never-written record (the first-build window — dev server never started) MINTS (OCR R1 medium)", async () => {
+    // RED before the fix: readMountRecord folded readFile's null into "",
+    // and "" !== "/label" refused this population with WEBAPP_MOUNT_STALE —
+    // a repair sentence accusing a start script that never ran, while
+    // webapp-info hands the same state its address (the verdict there is
+    // ready-gated; fix-ocr18 #2 — no accusation of a rebuild that never
+    // happened). The mint has no ready probe, so the never-written record
+    // itself plays the ready gate's role: "never written" (null) and
+    // "cannot vouch" (undefined) mint on — only a record that was WRITTEN
+    // and disagrees refuses. The #437 root-mount guard convicts "written
+    // and different", nothing else.
+    const { app, tickets } = mountApp(CURRENT_APP);
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/preview-ticket`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { origin: string };
+    expect(body.origin).toBe("http://127.0.0.1:3005/label");
+    expect(tickets.size()).toBe(1);
+  });
+
   test("recovery: once the record names the address's mount again, the mint answers 200 (the repair arm closes)", async () => {
     const { app, tickets } = mountApp({
       ...CURRENT_APP,
@@ -3027,20 +3049,29 @@ describe("the .webapp-mount read is single-sourced (fix-ocr28 #4 — source pins
     "utf8",
   );
 
-  test("readMountRecord exists and exactly the three consumers call it", () => {
+  test("readMountRecord exists and exactly the two info-face consumers call it", () => {
     expect(source).toContain("async function readMountRecord(");
-    // Definition line excluded: exactly 3 call sites (the mint's D10/mount
-    // mirror — both resolved generations share it, fix-ocr27 #3 + #437 GAP-C
-    // — webapp-info's legacy branch, webapp-info's current branch).
+    // Definition line excluded: exactly 2 call sites (webapp-info's legacy
+    // and current branches — the FOLDED read, kept under the ready gate).
+    // The mint's mirror moved to readMountRecordExact (OCR R1 medium: the
+    // mint must see "never written" apart from "no fileApi / thrown read"),
+    // pinned in its own test below.
     const calls = [...source.matchAll(/await readMountRecord\(/g)];
-    expect(calls.length).toBe(3);
+    expect(calls.length).toBe(2);
     // No site kept a private copy of the raw read: the marker's readFile is
-    // spelled nowhere outside the helper.
-    const outsideHelper = source.replace(
-      /async function readMountRecord\([\S\s]*?\n\}/,
-      "",
-    );
-    expect(outsideHelper).not.toContain(`${WEBAPP_MOUNT_MARKER}\`)`);
+    // spelled nowhere outside the two helpers.
+    const outsideHelpers = source
+      .replace(/async function readMountRecord\([\S\s]*?\n\}/, "")
+      .replace(/async function readMountRecordExact\([\S\s]*?\n\}/, "");
+    expect(outsideHelpers).not.toContain(`${WEBAPP_MOUNT_MARKER}\`)`);
+  });
+
+  test("readMountRecordExact exists and exactly the mint's one shared read calls it (OCR R1 medium)", () => {
+    expect(source).toContain("async function readMountRecordExact(");
+    const calls = [...source.matchAll(/await readMountRecordExact\(/g)];
+    // Definition line excluded: 1 call site — the preview-ticket mint's
+    // shared read, both resolved generations (fix-ocr27 #3 + #437 GAP-C).
+    expect(calls.length).toBe(1);
   });
 
   test("expectedMountFor exists and exactly the three consumers derive through it", () => {

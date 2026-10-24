@@ -397,5 +397,3 @@ ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package
 ALTER TABLE "enterprise_run_package_pins" ADD CONSTRAINT "enterprise_run_package_pin_install_fk" FOREIGN KEY ("tenant_id", "workspace_id", "install_id") REFERENCES "enterprise_package_installs"("tenant_id", "workspace_id", "id") ON DELETE CASCADE;
 
 --> statement-breakpoint
-
---> statement-breakpoint
