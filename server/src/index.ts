@@ -325,6 +325,7 @@ import type { PlatformScope, RunnerRequestLease } from "./enterprise/contracts";
 import { createUnavailableConversationRoutes } from "./enterprise/conversations/routes";
 import { createConversationService } from "./enterprise/conversations/service";
 import { createPackageDispatchService } from "./enterprise/plugin-packages/dispatch";
+import { createPackageEntrypoints } from "./enterprise/plugin-packages/entrypoints";
 import { createPackageService } from "./enterprise/plugin-packages/install-service";
 import { createPackageMutationStore } from "./enterprise/plugin-packages/mutation-context";
 import {
@@ -3310,6 +3311,21 @@ const packageRuntime = enterpriseCapabilities
     }))
   : undefined;
 
+/**
+ * PKG09 (Spec §9): the background-entry scope rebuild. An approved package
+ * tool resumed outside its run re-enters the package branch with the context
+ * this service re-derives from the persistent run row — run tenant/workspace/
+ * principal from `enterprise_runs`, the admitted Bot from the run's expert
+ * version, and a scope issued NOW (membership re-verified) by the real scope
+ * resolver. Nothing from the deserialized proposal reaches it.
+ */
+const packageEntrypoints = enterpriseCapabilities
+  ? createPackageEntrypoints({
+      directory: enterpriseCapabilities.directory,
+      data: enterpriseCapabilities.data,
+    })
+  : undefined;
+
 const enterpriseRunner =
   enterpriseCapabilities && packageRuntime
     ? createProductionRunnerComposition({
@@ -3787,6 +3803,21 @@ const governedHeadlessSurfaceFor =
     // The granted connector tools, resolved for this owner exactly as the
     // browser run resolves them (grant → policy → credential → audit stay
     // inside the granted path).
+    /*
+     * PKG09 (Spec §9): the schedule/responsibility entry runs as a MANAGED
+     * run — `runs.start` pinned this turn's package grants in the same
+     * transaction that wrote the run row — so the surface offers exactly the
+     * tools that attempt may dispatch. The context is the server's own
+     * (scope from this firing's re-issued scope, run/attempt from the
+     * admitted binding), never a queue field; a run with no pins offers
+     * nothing extra and the legacy offer is untouched. Every dispatch
+     * revalidates pin ∩ current grant ∩ membership at its CAS.
+     */
+    const packageRun = {
+      scope,
+      runId: binding.runId,
+      attemptGeneration: binding.generation,
+    };
     const tools = await restrictToolsForRun(
       initiator,
       () =>
@@ -3799,6 +3830,7 @@ const governedHeadlessSurfaceFor =
             scope.actorId,
             agentId,
           ),
+          packageRun,
         }),
       proactiveReadOnlyRefs,
     )();
@@ -4614,6 +4646,39 @@ const executeApprovedAction = createApprovedActionExecutor({
   callTool: (input) => pluginStore.callTool(input),
   credentialActorFor: (actorId, botId, ref) =>
     teamBots.credentialActorFor(actorId, botId)(ref),
+  /*
+   * PKG09 (Spec §9): the resume of an approved PACKAGE tool re-enters
+   * callTool with the run context rebuilt from the persistent run row —
+   * the run's own tenant/workspace/principal and the admitted Bot, with
+   * membership re-verified at issue time. The deserialized proposal's
+   * scope/target fields are never consulted; the dispatch CAS revalidates
+   * args digest, connection generation, grant and lease anyway (A07). An
+   * unwired deployment answers the typed refusal instead — no run is
+   * fabricated for compatibility.
+   */
+  ...(packageEntrypoints
+    ? {
+        packageRunFor: async (action: {
+          actorId: string;
+          runId: string;
+          botId: string;
+        }) => {
+          const restored = await packageEntrypoints.restoreRunContext({
+            ownerUserId: action.actorId,
+            runId: action.runId,
+            botId: action.botId,
+          });
+          return restored.outcome === "context"
+            ? {
+                outcome: "context" as const,
+                runId: restored.run.runId,
+                attemptGeneration: restored.run.attemptGeneration,
+                scope: restored.run.scope,
+              }
+            : { outcome: "refused" as const, code: restored.code };
+        },
+      }
+    : {}),
   coordinationCall: (input) => coordination.call(input),
   readRun: (value) => readApprovedRunAssertion(value, config.keyEncryptionKey),
   answer: vendorAnswer,
