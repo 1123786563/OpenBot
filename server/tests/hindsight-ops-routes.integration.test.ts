@@ -909,6 +909,88 @@ describe("the correction route (#387 AC2)", () => {
       `takes medication for blood pressure ${run}`,
     );
   });
+
+  /*
+   * RFW9-1: the seam's routine refusals are not outages. This route reaches #386's own
+   * vocabulary, and while the two preference errors were unmapped the catch-all branch
+   * answered every one of them with 503 "Personal memory is unavailable. Try again." and a
+   * level-50 log — for a fact that had merely been corrected twice, a malformed content, or
+   * an id whose row is gone. The same three shapes answer 400/404 on the /api/memory face,
+   * so the two faces now agree.
+   */
+  test("the seam's routine refusals answer 400/404, never the 503 outage path (RFW9-1)", async () => {
+    const app = await harnessFor(PRINCIPAL_EMP, "user");
+    const original = await confirmPreference(
+      PRINCIPAL_EMP,
+      `拒绝路径事实 ${run}`,
+    );
+
+    // (1) A malformed content or effective time is the person's to fix: 400, never 503, and
+    // the refusal is the seam's own sentence (which names the rule, never the content).
+    for (const content of ["", "   ", "x".repeat(6001)]) {
+      const malformed = await call(app, {
+        method: "POST",
+        path: `/api/hindsight/evidence/${original.id}/correction`,
+        body: { content },
+      });
+      expect(malformed.status).toBe(400);
+      expect(((await malformed.json()) as { error: string }).error).toContain(
+        "needs content of 1..6000 characters",
+      );
+    }
+    const badTime = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${original.id}/correction`,
+      body: { content: `时间非法 ${run}`, effectiveFrom: "not-a-date" },
+    });
+    expect(badTime.status).toBe(400);
+    expect(((await badTime.json()) as { error: string }).error).toContain(
+      "effective time must be a date",
+    );
+
+    // (2) The chain has one head. The evidence entry advertises `correct` on the historical
+    // fact too, so this refusal is user-reachable: it answers 400 naming the current fact.
+    const corrected = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${original.id}/correction`,
+      body: { content: `拒绝路径更正 ${run}` },
+    });
+    expect(corrected.status).toBe(200);
+    const twice = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${original.id}/correction`,
+      body: { content: `再次更正 ${run}` },
+    });
+    expect(twice.status).toBe(400);
+    const twiceBody = (await twice.json()) as { error: string };
+    expect(twiceBody.error).toContain("already corrected");
+    expect(JSON.stringify(twiceBody)).not.toContain(`再次更正 ${run}`);
+
+    // (3) A forgotten fact is gone as far as correction is concerned: 404 with the seam's
+    // fixed sentence. It says which kind of basis, never what was in it — and a never-existed
+    // or another principal's id reaches the generic 404 of the test above, so asking with a
+    // foreign id still discloses nothing about whether the row exists.
+    const forgotten = await confirmPreference(
+      PRINCIPAL_EMP,
+      `已遗忘事实 ${run}`,
+    );
+    await preferences.forgetGenericPreference(
+      await scopeForPrincipal(PRINCIPAL_EMP),
+      forgotten.id,
+    );
+    const afterForget = await call(app, {
+      method: "POST",
+      path: `/api/hindsight/evidence/${forgotten.id}/correction`,
+      body: { content: `不该出现 ${run}` },
+    });
+    expect(afterForget.status).toBe(404);
+    const afterForgetBody = (await afterForget.json()) as { error: string };
+    expect(afterForgetBody.error).not.toContain(`已遗忘事实 ${run}`);
+    expect(afterForgetBody.error).not.toContain(`不该出现 ${run}`);
+
+    // None of the refusals above was answered as an outage of the deployment.
+    expect([twice.status, afterForget.status]).not.toContain(503);
+  });
 });
 
 describe("the judgment review routes (#388/#389)", () => {
