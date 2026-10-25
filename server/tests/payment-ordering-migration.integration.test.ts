@@ -1,13 +1,24 @@
 import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createDatabase } from "../src/db/client";
 import { testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), { max: 1 }).$client;
-// 0077 after the merge renumbered this branch's migrations past main's 0075_noisy_adam_destine.
+// The migration's serial number drifts every time a merge renumbers the tree (0077 at birth,
+// 0087 after bifrost-5 landed), so resolve it by its stable slug instead of pinning a number
+// that goes stale. The unique-match guard turns a future slug collision into a clear error
+// rather than a silently wrong file.
+const productiveNextwave = readdirSync(
+  new URL("../drizzle", import.meta.url),
+).filter((file) => file.endsWith("productive_nextwave.sql"));
+if (productiveNextwave.length !== 1) {
+  throw new Error(
+    `expected exactly one productive_nextwave migration, found ${productiveNextwave.length}`,
+  );
+}
 const migration = readFileSync(
-  new URL("../drizzle/0077_productive_nextwave.sql", import.meta.url),
+  new URL(`../drizzle/${productiveNextwave[0]}`, import.meta.url),
   "utf8",
 ).split("--> statement-breakpoint");
 
