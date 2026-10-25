@@ -2310,8 +2310,20 @@ export async function resumeFromApprovalDecision(input: {
  * authorization anyway, and an id the person can no longer see answers unavailable there.
  *
  * Every assistant text message of the run carries the same set (one block per run, one read
- * of the authority), so live view and event-store replay agree on what an answer used. An
- * absent or empty basis wraps nothing: an answer with no memory behind it shows no basis.
+ * of the authority), so live view and event-store replay agree on what an answer used. Since
+ * FIX-OCR3 (O3-H1) the stamp also survives the store: the produced-message fold keeps the
+ * START frame's metadata, the stored envelope carries the pointers, and a rebuilt history
+ * (refresh included) re-attaches them — the person's basis rows no longer vanish on reload.
+ *
+ * SCOPE (O3-M7, disclosed): the wrap covers the FIRST-EXECUTION stream alone. A run that
+ * pauses on a durable continuation and resumes goes through the resume driver's own event
+ * drain, which never passes through this wrapper — its final answer carries no basis stamp,
+ * on the live stream or in the store. The resume path would need the run's pointer set
+ * persisted with the continuation and re-stamped at the drain's event exit; that seam is not
+ * wired, and this comment says so rather than letting "replay agrees" be read wider than it
+ * holds.
+ *
+ * An absent or empty basis wraps nothing: an answer with no memory behind it shows no basis.
  */
 function withAnswerMemoryBasis(
   basis: readonly PersonalMemoryBasisPointer[] | undefined,

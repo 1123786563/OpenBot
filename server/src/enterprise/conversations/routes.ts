@@ -168,6 +168,46 @@ export function createConversationRoutes(
       );
     }
   });
+  /*
+   * FIX-OCR3 (O3-H1): the answer-basis re-export a browser restoring a transcript reads.
+   * The platform's own thread-history DTO carries no per-message metadata, so the basis
+   * rows the live stream stamped would vanish on refresh; this answers the same pointers
+   * from THIS store's rows, keyed by engine message id. A refresh merges it into the
+   * platform's messages; a failure there draws no basis and changes nothing else.
+   */
+  routes.get("/:threadId/answer-basis", async (context) => {
+    try {
+      const scope = await scopes.resolveForThread(
+        context.req.raw,
+        context.req.param("threadId"),
+      );
+      const threadId = context.req.param("threadId");
+      const basis: Record<string, { id: string; kind: string }[]> = {};
+      let beforeSeq: number | null = null;
+      // One whole-history walk, capped at the model context's own ceiling: a thread longer
+      // than this has basis rows the refresh could not pair anyway.
+      for (let pages = 0; pages < 50; pages += 1) {
+        const page = await service.history(scope, {
+          threadId,
+          beforeSeq,
+          limit: 100,
+        });
+        for (const item of page.items) {
+          if (item.basis !== undefined && item.engineMessageId !== undefined)
+            basis[item.engineMessageId] = [...item.basis];
+        }
+        if (page.nextBeforeSeq === null) break;
+        beforeSeq = page.nextBeforeSeq;
+      }
+      return context.json({ basis });
+    } catch (error) {
+      const response = errorResponse(error);
+      return context.json(
+        response.body,
+        response.status as 400 | 401 | 403 | 404 | 409 | 500 | 503,
+      );
+    }
+  });
   routes.get("/:threadId/messages", async (context) => {
     try {
       const scope = await scopes.resolveForThread(

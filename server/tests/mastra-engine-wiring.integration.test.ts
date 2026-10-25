@@ -64,6 +64,9 @@ const ownerPrincipal = `me03w-principal-${suffix}`;
 let fixture: Me03Fixture;
 let admin: Database;
 let directory: DirectoryDatabase;
+/** Requests are authenticated by identity in this WeakMap (the route legs below mint some). */
+const authenticated = new WeakMap<Request, string>();
+let resolver: ReturnType<typeof createScopeResolver>;
 let data: DataDatabase;
 let operator: OperatorDatabase;
 let storage: ReturnType<typeof createTenantMastraStorage>;
@@ -300,17 +303,19 @@ beforeAll(async () => {
     },
   ]);
 
-  const authenticated = new WeakMap<Request, string>();
-  const resolver = createScopeResolver(directory, {
-    authenticate: async (request) => {
-      const actor = authenticated.get(request);
+  const request = new Request("https://me03w.invalid/turn");
+  authenticated.set(request, ownerActor);
+  resolver = createScopeResolver(directory, {
+    authenticate: async (req) => {
+      const actor = authenticated.get(req);
       return actor ? { actorId: actor, entrypoint: "web" } : null;
     },
     selectTenant: () => tenantA,
     selectWorkspace: () => workspaceA,
+    // The thread-resolving half (the answer-basis route leg below) reads the
+    // data database; the turn-side resolve() calls never touch it.
+    data,
   });
-  const request = new Request("https://me03w.invalid/turn");
-  authenticated.set(request, ownerActor);
   scopeA = await resolver.resolve(request);
 
   storage = createTenantMastraStorage(fixture.lookup());
@@ -550,5 +555,73 @@ test("forged_client_history_never_reaches_the_model", async () => {
     "question after activity",
     "wiring answer 4",
     "question three",
+  ]);
+});
+
+/*
+ * FIX-OCR3 (O3-H1): the basis a live run stamped must survive the store and come back on the
+ * refresh path. The stamp rides the assistant message's AG-UI metadata; the persistence fold
+ * keeps it, the stored envelope carries it, the history projection answers it, and the
+ * re-export route pages it out keyed by engine message id — the id the platform's own
+ * thread-history rows answer by, which is what a browser restoring a transcript holds.
+ */
+test("answer_basis_survives_persistence_and_answers_on_the_reexport_path", async () => {
+  const stamped = {
+    id: `engine-basis-${suffix}`,
+    role: "assistant",
+    content: `wiring answer with basis ${suffix}`,
+    metadata: {
+      openbot: {
+        personalMemoryBasis: [
+          { id: "pref-wiring", kind: "general-preference" },
+          { id: "judg-wiring", kind: "derived-judgment" },
+        ],
+      },
+    },
+  } as Message;
+  await runtime.persistExecutionMessages(
+    {
+      scope: scopeA,
+      botId: "wiring-bot",
+      runId: `wiring-run-basis-${suffix}`,
+      attemptId: `wiring-attempt-basis-${suffix}`,
+      generation: 1,
+      executionKey: `wiring-exec-basis-${suffix}`,
+      threadId,
+    },
+    [stamped],
+  );
+
+  // (a) The stored row answers its basis on the history projection, keyed for the browser.
+  const page = await service.history(scopeA, {
+    threadId,
+    beforeSeq: null,
+    limit: 50,
+  });
+  const basisRow = page.items.find(
+    (item) => item.engineMessageId === stamped.id,
+  );
+  expect(basisRow?.basis).toEqual([
+    { id: "pref-wiring", kind: "general-preference" },
+    { id: "judg-wiring", kind: "derived-judgment" },
+  ]);
+
+  // (b) The re-export route pages the whole thread and answers the same map.
+  const { createConversationRoutes } = await import(
+    "../src/enterprise/conversations/routes"
+  );
+  const routes = createConversationRoutes(service as never, resolver as never);
+  // Hono's request() accepts a prepared Request, so the WeakMap identity the
+  // resolver authenticates by stays the suite's own mechanism.
+  const read = new Request(`https://me03w.invalid/${threadId}/answer-basis`);
+  authenticated.set(read, ownerActor);
+  const response = await routes.request(read);
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as {
+    basis: Record<string, { id: string; kind: string }[]>;
+  };
+  expect(body.basis[stamped.id]).toEqual([
+    { id: "pref-wiring", kind: "general-preference" },
+    { id: "judg-wiring", kind: "derived-judgment" },
   ]);
 });
