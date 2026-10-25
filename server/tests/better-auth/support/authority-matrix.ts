@@ -97,6 +97,62 @@ export const AUTHORITY_MATRIX_SCENARIOS: readonly AuthorityMatrixScenario[] =
     }),
   ] satisfies AuthorityMatrixScenario[]);
 
+/**
+ * The migration-state scenarios of the original P25 tooling slices (T02.15 /
+ * #537): every phase the offline tools sit between — M0 through M3 — plus the
+ * M4 those tools must refuse to perform. The three authority modes of the
+ * base list stay the coverage requirement (legacy/paused/ba); what this list
+ * adds is one scenario per migration phase, so a tool's authority handling is
+ * asserted against the exact persisted state it will meet on a real target
+ * (the M3 verify window is `paused` at phase M3, not just "paused"), and a
+ * legacy tool run at M0 versus M1 is two different database facts. The
+ * versions are distinct from the base list's and from each other, so a
+ * scenario that reuses another's row still fails its own CAS comparison.
+ */
+export const MIGRATION_STATE_SCENARIOS: readonly AuthorityMatrixScenario[] =
+  Object.freeze([
+    Object.freeze({
+      name: "legacy",
+      authorityVersion: 17,
+      phase: "M0",
+      directoryAuthority: "legacy",
+      multiTenantReleased: false,
+      expectedWriter: "legacy",
+    }),
+    Object.freeze({
+      name: "legacy",
+      authorityVersion: 19,
+      phase: "M1",
+      directoryAuthority: "legacy",
+      multiTenantReleased: false,
+      expectedWriter: "legacy",
+    }),
+    Object.freeze({
+      name: "paused",
+      authorityVersion: 23,
+      phase: "M2",
+      directoryAuthority: "paused",
+      multiTenantReleased: false,
+      expectedWriter: null,
+    }),
+    Object.freeze({
+      name: "paused",
+      authorityVersion: 29,
+      phase: "M3",
+      directoryAuthority: "paused",
+      multiTenantReleased: false,
+      expectedWriter: null,
+    }),
+    Object.freeze({
+      name: "ba",
+      authorityVersion: 31,
+      phase: "M4",
+      directoryAuthority: "ba",
+      multiTenantReleased: true,
+      expectedWriter: "ba",
+    }),
+  ] satisfies AuthorityMatrixScenario[]);
+
 /** What one scenario callback receives. */
 export interface AuthorityMatrixContext {
   readonly authority: VerifiedDirectoryAuthority;
