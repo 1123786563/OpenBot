@@ -155,6 +155,100 @@ describe("toVisibleChatItems", () => {
     expect(toVisibleChatItems([thinking])).toEqual([]);
   });
 
+  /*
+   * The answer's own basis (FIX-W14, #387 AC1): an assistant message carrying the id set in its
+   * metadata draws one basis row after its prose; one without it draws none. The set is carried
+   * whole, checked by the reader, and one row per TURN survives — a multi-round turn's messages
+   * all carry the same set, and only the last (the final answer's) is kept.
+   */
+  const WITH_BASIS: Message = {
+    id: "answer-1",
+    role: "assistant",
+    content: "Here is what I recall.",
+    metadata: {
+      openbot: {
+        personalMemoryBasis: [
+          { id: "p1", kind: "general-preference" },
+          { id: "j1", kind: "derived-judgment" },
+        ],
+      },
+    },
+  } as Message;
+
+  test("an answer carrying a basis draws one row after its prose", () => {
+    expect(toVisibleChatItems([WITH_BASIS])).toEqual([
+      {
+        kind: "text",
+        id: "answer-1",
+        role: "assistant",
+        text: WITH_BASIS.content,
+      },
+      {
+        kind: "answer-basis",
+        id: "answer-1:basis",
+        basis: [
+          { id: "p1", kind: "general-preference" },
+          { id: "j1", kind: "derived-judgment" },
+        ],
+      },
+    ]);
+  });
+
+  test("an answer with no basis metadata draws no basis row", () => {
+    const plain: Message = {
+      id: "answer-2",
+      role: "assistant",
+      content: "Nothing remembered here.",
+    };
+    expect(toVisibleChatItems([plain])).toEqual([
+      { kind: "text", id: "answer-2", role: "assistant", text: plain.content },
+    ]);
+    // Malformed sets are refused rather than drawn partially (see the reader's tests).
+    const forged = {
+      id: "answer-3",
+      role: "assistant",
+      content: "Answer three.",
+      metadata: {
+        openbot: { personalMemoryBasis: [{ id: "x", kind: "nope" }] },
+      },
+    } as unknown as Message;
+    expect(toVisibleChatItems([forged]).map((item) => item.kind)).toEqual([
+      "text",
+    ]);
+  });
+
+  test("a multi-round turn keeps only the final answer's basis row", () => {
+    const rounds: Message[] = [
+      { id: "q1", role: "user", content: "What do you know?" },
+      {
+        id: "a-round-1",
+        role: "assistant",
+        content: "Let me check.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+      {
+        id: "a-final",
+        role: "assistant",
+        content: "Here is what I recall.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+      { id: "q2", role: "user", content: "And the rest?" },
+      {
+        id: "a-next",
+        role: "assistant",
+        content: "Answering again.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+    ];
+    const drawn = toVisibleChatItems(rounds).filter(
+      (item) => item.kind === "answer-basis",
+    );
+    expect(drawn.map((item) => item.id)).toEqual([
+      "a-final:basis",
+      "a-next:basis",
+    ]);
+  });
+
   test("drops a malformed live user turn instead of throwing", () => {
     // Live turns bypass schema validation; one bad turn must not unmount the transcript.
     for (const content of [undefined, null, 42] as unknown[]) {

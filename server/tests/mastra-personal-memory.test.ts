@@ -244,6 +244,74 @@ describe("ME07 personal memory on the Mastra execution path", () => {
     }
   });
 
+  /*
+   * FIX-W14 (FR3-1, #387): the answer binds the basis it actually used. The
+   * run's assistant text messages carry, in the AG-UI event metadata the
+   * client already reconstructs messages from, the SAME {id, kind} pointers
+   * the rendered block put in the prompt — read back out by the renderer's
+   * own module, never a second authority read, never a client field. What the
+   * model saw is what the answer cites.
+   */
+  it("the_answers_carry_the_blocks_own_id_set_as_their_basis", async () => {
+    const dials: DialRecord[] = [];
+    const harness = await answerRunCarrier(dials);
+    engineOn();
+    try {
+      setMastraPersonalMemoryContext(async () => PREFERENCE_BLOCK);
+      const events = await driveFactory({
+        governedModel: harness.governedModel,
+      });
+      expect(events.map((event) => event.type).at(-1)).toBe("RUN_FINISHED");
+      const starts = events.filter(
+        (event): event is Extract<BaseEvent, { type: "TEXT_MESSAGE_START" }> =>
+          event.type === "TEXT_MESSAGE_START",
+      );
+      // The scripted carrier answers with one assistant text message; every
+      // assistant text START of the run carries the whole pointer set.
+      expect(starts.length).toBeGreaterThanOrEqual(1);
+      for (const start of starts) {
+        expect(start.metadata).toEqual({
+          openbot: {
+            personalMemoryBasis: [
+              { id: "hgp-unit-1", kind: "general-preference" },
+              { id: "hsb-unit-2", kind: "source-bound" },
+            ],
+          },
+        });
+      }
+      // The block itself still reaches the model exactly as ME07 pinned it.
+      expect(dials[0]!.systemText).toContain(MEMORY_PREFIX);
+    } finally {
+      engineOff();
+    }
+  });
+
+  it("without_a_block_no_basis_is_stamped_on_the_answer", async () => {
+    const dials: DialRecord[] = [];
+    const harness = await answerRunCarrier(dials);
+    engineOn();
+    try {
+      // Nothing confirmed right now: the renderer answers "" — the answer has
+      // no memory behind it and must show no basis, not an empty one.
+      setMastraPersonalMemoryContext(async () =>
+        renderPersonalMemoryContext([]),
+      );
+      const events = await driveFactory({
+        governedModel: harness.governedModel,
+      });
+      expect(events.map((event) => event.type).at(-1)).toBe("RUN_FINISHED");
+      for (const event of events) {
+        if (event.type !== "TEXT_MESSAGE_START") continue;
+        const metadata = (
+          event as Extract<BaseEvent, { type: "TEXT_MESSAGE_START" }>
+        ).metadata as Record<string, unknown> | undefined;
+        expect(metadata?.openbot).toBeUndefined();
+      }
+    } finally {
+      engineOff();
+    }
+  });
+
   it("empty_memory_block_composes_nothing", async () => {
     const dials: DialRecord[] = [];
     const harness = await answerRunCarrier(dials);
