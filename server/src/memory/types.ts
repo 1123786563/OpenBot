@@ -112,6 +112,13 @@ export type MemoryRecord = MemoryInput & {
 export type MemorySource = MemorySourceInput & {
   id: string;
   ownerUserId: string;
+  /**
+   * FIX-W13 (#376, FR2-2): the company this source belongs to, fixed at binding — the
+   * (person, Bot)'s own proven company, never a request's selection. NULL is an ISOLATED
+   * source: no company's to list, operate or sync in an enterprise deployment, and the
+   * single-user deployment's ordinary standing.
+   */
+  tenantId: string | null;
   enabled: boolean;
   syncStatus: "idle" | "running" | "succeeded" | "error";
   syncError: string | null;

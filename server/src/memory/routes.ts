@@ -173,12 +173,23 @@ export function createMemoryRoutes(
       201,
     ),
   );
-  // The sources are the person's own connector settings, not memory rows: this family's
-  // gate still resolves the trusted scope in an enterprise deployment (an unresolvable
-  // identity refuses here too, fail closed), while the rows themselves stay owner-keyed.
+  /*
+   * The sources are the person's own connector settings, not memory rows — but each one
+   * belongs to the company its Bot proved at binding (FIX-W13 / FR2-2): the trusted scope
+   * this family resolves decides which sources a request may see, operate or sync, and a
+   * source of another company, or one nobody could attribute, is not this scope's to touch
+   * (the same not-found the owner-keyed paths give). The gate still resolves the trusted
+   * scope first in an enterprise deployment, so an unresolvable identity refuses here too,
+   * fail closed; a deployment without the enterprise layer wires no company through and the
+   * rows stay owner-keyed exactly as they always were.
+   */
   routes.get("/sources", async (context) => {
-    await companyFor(context.req.raw);
-    return context.json({ sources: await store.sources(context.var.actor.id) });
+    return context.json({
+      sources: await store.sources(
+        context.var.actor.id,
+        await companyFor(context.req.raw),
+      ),
+    });
   });
   routes.get("/sources/available/:botId", async (context) => {
     await companyFor(context.req.raw);
@@ -190,17 +201,17 @@ export function createMemoryRoutes(
     });
   });
   routes.post("/sources", async (context) => {
-    await companyFor(context.req.raw);
     return context.json(
       await ingestion.createSource(
         context.var.actor.id,
         await body(context.req.raw),
+        await companyFor(context.req.raw),
       ),
       201,
     );
   });
   routes.patch("/sources/:id", async (context) => {
-    await companyFor(context.req.raw);
+    const company = await companyFor(context.req.raw);
     const input = await body(context.req.raw);
     if (
       !input ||
@@ -214,10 +225,13 @@ export function createMemoryRoutes(
         context.var.actor.id,
         context.req.param("id"),
         input.enabled,
+        company,
       ),
     });
   });
   routes.post("/sources/:id/sync", async (context) => {
+    // FIX-W13 (FR2-2): the request's company only authorizes the sync; the source's own
+    // persisted company — never the selection — stamps the import (ingestion.sync).
     const company = await companyFor(context.req.raw);
     return context.json(
       await ingestion.sync(
@@ -228,8 +242,11 @@ export function createMemoryRoutes(
     );
   });
   routes.delete("/sources/:id", async (context) => {
-    await companyFor(context.req.raw);
-    await store.removeSource(context.var.actor.id, context.req.param("id"));
+    await store.removeSource(
+      context.var.actor.id,
+      context.req.param("id"),
+      await companyFor(context.req.raw),
+    );
     return context.body(null, 204);
   });
   routes.patch("/:id", async (context) =>

@@ -11,6 +11,7 @@ import { classifyMemorySensitivity } from "./sensitivity";
 import type { MemoryStore } from "./store";
 import {
   type ImportedMemory,
+  MemoryNotFoundError,
   MemoryRefusedError,
   type MemorySource,
   parseMemorySourceInput,
@@ -203,7 +204,8 @@ export function createMemoryIngestion(options: {
    * enterprise deployment — absent, every seam below answers exactly as it always did, which is
    * the single-user deployment's standing. A call that names no company of its own asks this
    * resolver; an undefined answer (no provable company) fails closed: recall and the context
-   * injection answer nothing, and an import lands isolated rather than global.
+   * injection answer nothing, a source refuses to bind, and an already-bound source nobody
+   * could attribute does not sync at all.
    */
   companyFor?: (input: {
     ownerUserId: string;
@@ -311,15 +313,40 @@ export function createMemoryIngestion(options: {
     id: string,
     company?: MemoryCompany,
   ) {
-    await store.getSource(ownerUserId, id);
-    const source = await store.claimSync(ownerUserId, id);
-    if (!source)
+    const source = await store.getSource(ownerUserId, id);
+    /*
+     * FIX-W13 (FR2-2): the source's OWN company — fixed at the binding below and persisted
+     * on the row — decides everything this sync stamps. The request's company, when one
+     * resolved, only authorizes: a source that is not provably this company's (another
+     * company's, or an isolated NULL nobody could attribute) is not this company's to read,
+     * and the answer is the same not-found the owner-keyed paths already give — never a
+     * restamp by the page's current selection, and never a connector call for it.
+     */
+    if (company && source.tenantId !== company.tenantId)
+      throw new MemoryNotFoundError();
+    /*
+     * The background loop (and a binding's first read) has no request of its own: it runs
+     * the source's own rule too. In an enterprise deployment an isolated source does not
+     * run at all — nothing is read, nothing stamped, the row untouched — rather than
+     * importing content no company could ever see. A deployment without the enterprise
+     * layer has no company to prove and keeps the behaviour it always had.
+     */
+    if (!company && options.companyFor && source.tenantId === null) {
+      log.info(
+        {
+          type: "memory-sync-isolated-skipped",
+          context: { sourceId: id },
+          timestamp: new Date().toISOString(),
+        },
+        "memory-sync-isolated-skipped",
+      );
+      return { imported: 0, source };
+    }
+    const claimed = await store.claimSync(ownerUserId, id);
+    if (!claimed)
       throw new MemoryRefusedError(
         "This source is disabled or already syncing.",
       );
-    // FIX-F1 (FR-1): the import stamps the company it belongs to — the caller's (a
-    // request-scoped sync) or this deployment's answer for the source's own Bot.
-    const stamp = await companyAnswer(company, ownerUserId, source.agentId);
     try {
       await authorize(source);
       const result = await plugins.callTool({
@@ -352,12 +379,9 @@ export function createMemoryIngestion(options: {
           },
           "memory-sync-sensitive-dropped",
         );
-      await store.completeSync(
-        ownerUserId,
-        id,
-        kept,
-        stamp.company ?? undefined,
-      );
+      // The stamp is the source's own persisted company (completeSync reads the row itself);
+      // in a deployment without the enterprise layer the row carries no company to stamp.
+      await store.completeSync(ownerUserId, id, kept);
       return {
         imported: kept.length,
         source: await store.getSource(ownerUserId, id),
@@ -412,10 +436,30 @@ export function createMemoryIngestion(options: {
   }
   return {
     authorize,
-    async createSource(ownerUserId: string, input: unknown) {
+    async createSource(
+      ownerUserId: string,
+      input: unknown,
+      company?: MemoryCompany,
+    ) {
       const parsed = parseMemorySourceInput(input);
       await authorize({ ...parsed, ownerUserId });
-      const source = await store.createSource(ownerUserId, parsed);
+      /*
+       * FIX-W13 (FR2-2): the binding moment. The source's company is resolved once, from
+       * durable server state for the (person, Bot) — resolveMemoryCompany, the same rules
+       * migration 0212 backfilled — and PERSISTED on the row; every later sync stamps what
+       * the row says, never the page's current selection. A request company that cannot
+       * agree with the Bot's provable company (another company's Bot, or a personal Bot of
+       * a person whose company is ambiguous) refuses the binding outright: a cross-company
+       * source would be born invisible to the very scope that created it.
+       */
+      const attributed = options.companyFor
+        ? await options.companyFor({ ownerUserId, agentId: parsed.agentId })
+        : undefined;
+      if (company && attributed?.tenantId !== company.tenantId)
+        throw new MemoryRefusedError(
+          "Choose one of this company's Bots for this source.",
+        );
+      const source = await store.createSource(ownerUserId, parsed, attributed);
       return sync(ownerUserId, source.id);
     },
     sync,
