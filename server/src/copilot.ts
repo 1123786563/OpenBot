@@ -1696,6 +1696,13 @@ export type RemoteRunFact = {
   traceId: string | null;
   /** The trusted scope the threading minted for this run, when it minted one. */
   scope: unknown;
+  /**
+   * The derived dial span's coordinates and window (F9A), when the chain was derived: the
+   * recorder materializes this span under the binding's trace, so the run's governed record
+   * carries the dial the endpoint's chain continued from — the same-source contract, one
+   * derivation shared by the dial, the binding and the materialized span.
+   */
+  dial: { spanId: string; startedAt: Date; endedAt: Date } | null;
   events: readonly RemoteRunEventFact[];
   endedAt: Date;
 };
@@ -4286,10 +4293,14 @@ function withTraceparent(inner: AgentFetch): AgentFetch {
  *     span on its own trace — and no span is invented;
  *   * DERIVED, when nothing is active: the trace id is derived from the run's identity
  *     (`botId` + `runId`, one derivation, idempotent across a re-dial or re-execution of the
- *     same run), and the parent is a REAL span this middleware starts for the dial window and
- *     exports like any other, parented under the run-root id the binding store derives for
- *     that trace (`runUpstreamIdentity`) so the exported tree and the governance tree name
- *     one root;
+ *     same run), and the dial span is a NON-RECORDING context with its own deterministic id
+ *     (`derivedRemoteRunDialSpanId`) — written upstream through the two channels that can
+ *     carry chosen ids: the W3C anchors ({@link postDialChainAnchors}) for the tracing
+ *     channel the endpoint's continuation resolves against, and the governed record through
+ *     the port, where the recorder materializes the dial span under the run-root id the
+ *     binding store derives for that trace (`runUpstreamIdentity`) so the governed tree and
+ *     the binding name one root (F9A — the F8A SDK span exported with a parent the backend
+ *     dropped, which took the endpoint's whole continuation with it);
  *   * UNAVAILABLE, when not even a run identity is there: no header, ever — no context is
  *     synthesized — and the degradation is COUNTED and logged, not smoothed over.
  *
@@ -4323,6 +4334,33 @@ export function derivedRemoteRunTraceId(botId: string, runId: string): string {
   return /^0+$/.test(hex.slice(0, 32))
     ? `${"0".repeat(31)}1`
     : hex.slice(0, 32);
+}
+
+/**
+ * The dial span's OWN span id (F9A / F8D-1): the first 16 hex of the same
+ * domain-separated digest discipline as the trace id, over its own domain. Deterministic for
+ * the same reason the trace id is — a re-dial of the same run re-derives the same dial span
+ * instead of minting a second one, so the chain's `traceparent` parent id and every upstream
+ * copy of the dial span name one span per run.
+ *
+ * The dial span is NOT an SDK recording span (see {@link bindRemoteDialChain}): the SDK
+ * cannot start a span with a chosen span id, and the F8D evidence proved the backend drops
+ * SDK dial spans whose parent is the synthetic run-root id (Opik 2.2.100 silently drops an
+ * OTLP span whose `parent_span_id` cannot be resolved within the receiving project — the
+ * whole continuation tree under it goes with it, which is exactly the "server remote run
+ * span and langgraph continuation both absent" of F8D-1). The dial span is therefore written
+ * twice, deliberately, through the two channels that can carry a chosen id: the W3C anchors
+ * below (the tracing channel, where the endpoint's continuation parents) and the governed
+ * record through the port (where the run's trace the binding names is materialized).
+ */
+export function derivedRemoteRunDialSpanId(
+  botId: string,
+  runId: string,
+): string {
+  const hex = createHash("sha256")
+    .update(`openbot.remote.run.dial:${botId}:${runId}`)
+    .digest("hex");
+  return /^0+$/.test(hex.slice(0, 16)) ? "0000000000000001" : hex.slice(0, 16);
 }
 
 /**
@@ -4371,13 +4409,136 @@ type BoundRemoteDial = Readonly<{
   context?: Context;
   /** Ends the derived dial span, once; a no-op for the other origins. */
   close: () => void;
+  /**
+   * The derived dial span's own coordinates and window (F9A), for the governed record: the
+   * recorder materializes this span under the binding's trace through the port. Null for the
+   * other origins — an ambient dial continues a span the ambient pipeline already owns, and
+   * `unavailable` carries no chain to record.
+   */
+  dial: { spanId: string; startedAt: Date; endedAt: Date } | null;
 }>;
 
 /**
+ * The two W3C spans a derived dial chain needs in the tracing channel (F9A / F8D-1), written
+ * as one raw OTLP post at dial-bind time:
+ *
+ *   * the CHAIN ROOT — trace id = the run's derived trace, span id =
+ *     `runUpstreamIdentity(traceId).rootSpanId` (the same root the binding's governance tree
+ *     hangs from), NO parent — the span that roots the chain, so every span under it has a
+ *     parent the receiving backend can resolve;
+ *   * the DIAL SPAN — the deterministic dial id, parented at the chain root — the span the
+ *     endpoint's whole continuation tree parents at through the `traceparent` this dial sent.
+ *
+ * WHY RAW, AND WHY AT BIND TIME. The F8D live evidence (10/10 derived dials, zero in Opik)
+ * decomposed — on the pinned Opik 2.2.100 image, probed directly — into one backend rule:
+ * an OTLP span whose parent id cannot be resolved WITHIN the receiving project is silently
+ * dropped, and the drop cascades to everything parented under it. F8A's SDK dial span
+ * exported parented at the run-root id, which no W3C-pure span in that pipeline ever
+ * carried: the dial span dropped, and the endpoint's tree — parented at the dial span's id
+ * — dropped with it. The OTel SDK cannot produce the two spans this chain needs (it cannot
+ * start a span with a chosen span id, nor a span with a chosen trace id and no parent), so
+ * they are written here in the OTLP/HTTP JSON shape the SDK's own exporter sends, to the
+ * endpoint `initProcessTracing` exports to (unrouted: the deployment-wide default project,
+ * the same place the SDK's spans land — so the endpoint's continuation, which exports the
+ * same way, finds its parent already there). Posted BEFORE the fetch fires, so the parent
+ * the endpoint's first span names is ingested seconds before that span's batch flushes.
+ *
+ * A chain that cannot resolve (no endpoint configured, tracing off) posts nothing — the
+ * same honest nothing `initProcessTracing` exports. A repeat post of the same chain (a
+ * re-dial re-derives the same deterministic ids) is a duplicate the backend refuses (409)
+ * and this side treats as done, never as a failure — the chain was already anchored. This
+ * is a tracing-channel write, not a governed one: no content rides on either span, only
+ * structural ids, and the governed record of the dial (timing, binding attribution) is
+ * materialized through the port by the recorder, not here.
+ */
+function postDialChainAnchors(
+  traceId: string,
+  dialSpanId: string,
+  botId: string,
+  runId: string,
+  startedAt: Date,
+): void {
+  const tracesEndpoint =
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim() ||
+    (process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+      ? `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT.trim().replace(/\/$/, "")}/v1/traces`
+      : undefined);
+  if (
+    tracesEndpoint === undefined ||
+    process.env.OPENBOT_TRACES?.trim().toLowerCase() === "off"
+  ) {
+    return; // nothing exports from this process; the dial carries the header regardless
+  }
+  const rootSpanId = runUpstreamIdentity(traceId).rootSpanId;
+  const startNanos = (BigInt(startedAt.getTime()) * 1_000_000n).toString();
+  const span = (
+    spanId: string,
+    name: string,
+    parentSpanId: string | undefined,
+    extraAttributes: { key: string; value: { stringValue: string } }[],
+  ) => ({
+    traceId,
+    spanId,
+    ...(parentSpanId === undefined ? {} : { parentSpanId }),
+    name,
+    kind: 1,
+    startTimeUnixNano: startNanos,
+    attributes: [
+      { key: "openbot.bot.id", value: { stringValue: botId } },
+      { key: "openbot.run.id", value: { stringValue: runId } },
+      ...extraAttributes,
+    ],
+  });
+  void fetch(tracesEndpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [
+              { key: "service.name", value: { stringValue: "openbot-server" } },
+            ],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                span(rootSpanId, "run", undefined, []),
+                span(dialSpanId, "remote run", rootSpanId, [
+                  {
+                    key: "openbot.dial.chain",
+                    value: { stringValue: "derived" },
+                  },
+                ]),
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+  }).then(
+    (response) => {
+      // 409 is the duplicate a re-dial of the same run earns: the chain is already
+      // anchored, which is the outcome this post exists to reach.
+      if (!response.ok && response.status !== 409) {
+        log.warn(
+          { type: "remote-dial-chain-anchor-failed", status: response.status },
+          "remote-dial-chain-anchor-failed",
+        );
+      }
+    },
+    () => {
+      // The anchor is best-effort tracing plumbing: an unreachable collector must never
+      // take the dial down, and the governed record does not depend on it.
+    },
+  );
+}
+
+/**
  * Bind a decided chain to the dial it was decided for: count it, say it in the log, and for a
- * derived chain START the real span the endpoint's chain parents under. Started here rather
- * than at decision time because a span is a measurement — a run refused at admission
- * measured nothing.
+ * derived chain post the chain's W3C anchors and open the dial window the governed record
+ * measures. Bound here rather than at decision time because a span is a measurement — a run
+ * refused at admission measured nothing.
  *
  * Exported for the one contract no product path can reach on purpose: the `unavailable`
  * binding, whose visible absence (no context, a counted degradation) is pinned by its suite.
@@ -4413,38 +4574,41 @@ export function bindRemoteDialChain(
         }),
       ),
       close: () => {},
+      dial: null,
     };
   }
   if (chain.origin === "derived") {
     dialChainCounts.derived += 1;
     /*
-     * The root the binding store derives for this trace — the id the run's governance tree
-     * hangs its business spans under (`runUpstreamIdentity`, F5E1-F3). Parenting the dial span
-     * under it means the tree this export lands in names the same root the binding
-     * materialized upstream, and the endpoint's whole chain hangs off a span this deployment
-     * actually wrote.
+     * F9A / F8D-1: the dial span is a NON-RECORDING span context with a DETERMINISTIC id
+     * (`derivedRemoteRunDialSpanId`) rather than the SDK span F8A started here. Two reasons,
+     * both proven on the real stack:
+     *
+     * 1. The SDK span this branch used to start exported through the generic OTLP pipeline
+     *    parented under the run-root id — an id no W3C-pure span in that pipeline ever
+     *    carries — and Opik 2.2.100 SILENTLY DROPS an OTLP span whose parent id cannot be
+     *    resolved in the receiving project (probed on the pinned 2.2.100 image: same-batch
+     *    and prior-batch parents resolve, cross-project and never-seen parents drop, and the
+     *    drop cascades — every span parented under the dropped one drops too). That single
+     *    rule is the whole of F8D-1's "server remote run span and agent-langgraph
+     *    continuation both absent": the SDK dial span dropped, and the endpoint's tree,
+     *    parented at the dial span's id, dropped with it.
+     * 2. The SDK cannot start a span with a chosen span id or a chosen trace id and no
+     *    parent, so the W3C chain's own root and dial can only be written with real, chosen
+     *    ids through a channel this deployment addresses directly: the raw OTLP post below
+     *    (the anchors) for the tracing channel, and the verified port for the governed
+     *    record (the recorder in `remote-run.ts` materializes the dial span under the
+     *    binding's trace at settle).
+     *
+     * The context the dial's fetch reads is therefore exactly the dial span: trace id = the
+     * run's derived trace, span id = the deterministic dial id — so the `traceparent` the
+     * endpoint receives names the dial span, whatever the runtime scheduling, and a
+     * re-dial re-derives the same coordinates instead of new ones.
      */
-    const parent = trace.setSpan(
-      context.active(),
-      trace.wrapSpanContext({
-        traceId: chain.traceId ?? "",
-        spanId: runUpstreamIdentity(chain.traceId ?? "").rootSpanId,
-        traceFlags: TraceFlags.SAMPLED,
-        isRemote: false,
-        traceState: undefined,
-      }),
-    );
-    const span = trace.getTracer("openbot.remote").startSpan(
-      "remote run",
-      {
-        attributes: {
-          "openbot.bot.id": botId,
-          "openbot.run.id": runId,
-          "openbot.dial.chain": "derived",
-        },
-      },
-      parent,
-    );
+    const traceId = chain.traceId ?? "";
+    const spanId = derivedRemoteRunDialSpanId(botId, runId);
+    const startedAt = new Date();
+    postDialChainAnchors(traceId, spanId, botId, runId, startedAt);
     log.info(
       {
         type: "remote-run-dial-chain",
@@ -4452,33 +4616,32 @@ export function bindRemoteDialChain(
         runId,
         origin: "derived",
         traceId: chain.traceId,
-        spanId: span.spanContext().spanId,
+        spanId,
       },
       "remote-run-dial-chain",
     );
-    /*
-     * With no provider registered (`OPENBOT_TRACES=off`), the API hands back a no-op span
-     * with no ids of its own — a dial under it would name nothing, and the header the
-     * acceptance counts on would silently vanish while the count above said "derived". The
-     * dial then names the run-root id instead: the one span of this chain this deployment
-     * writes regardless of the OTEL pipeline, through the binding's own materialization.
-     */
-    const dialParent = trace.isSpanContextValid(span.spanContext())
-      ? span
-      : trace.wrapSpanContext({
-          traceId: chain.traceId ?? "",
-          spanId: runUpstreamIdentity(chain.traceId ?? "").rootSpanId,
+    let endedAt: Date | null = null;
+    return {
+      context: trace.setSpan(
+        context.active(),
+        trace.wrapSpanContext({
+          traceId,
+          spanId,
           traceFlags: TraceFlags.SAMPLED,
           isRemote: false,
           traceState: undefined,
-        });
-    let closed = false;
-    return {
-      context: trace.setSpan(context.active(), dialParent),
+        }),
+      ),
+      /** The dial window's end, captured for the governed record; safe to call twice. */
       close: () => {
-        if (closed) return;
-        closed = true;
-        span.end();
+        if (endedAt === null) endedAt = new Date();
+      },
+      get dial() {
+        return {
+          spanId,
+          startedAt,
+          endedAt: endedAt ?? new Date(),
+        };
       },
     };
   }
@@ -4491,7 +4654,7 @@ export function bindRemoteDialChain(
     },
     "remote-run-dial-chain-unavailable: no active span and no run identity to derive a chain from; the dial carries no traceparent",
   );
-  return { close: () => {} };
+  return { close: () => {}, dial: null };
 }
 
 /**
@@ -4916,6 +5079,7 @@ function governedRemoteRun(
                 attemptId: runId,
                 traceId,
                 scope,
+                dial: dial.dial,
                 events,
                 endedAt: new Date(),
               });
@@ -5017,7 +5181,11 @@ function governedRemoteRun(
                     if (!toolCellCapped) {
                       toolCellCapped = true;
                       log.warn(
-                        { type: "remote-tool-cells-capped", botId: agent.id, runId },
+                        {
+                          type: "remote-tool-cells-capped",
+                          botId: agent.id,
+                          runId,
+                        },
                         "remote-tool-cells-capped: the endpoint's proposals exceeded the capture ceiling; further calls are counted as events only",
                       );
                     }
@@ -5040,7 +5208,9 @@ function governedRemoteRun(
             case "TOOL_CALL_ARGS": {
               const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
               const cell =
-                typeof toolCallId === "string" ? toolCells.get(toolCallId) : undefined;
+                typeof toolCallId === "string"
+                  ? toolCells.get(toolCallId)
+                  : undefined;
               const delta = (event as { delta?: unknown }).delta;
               if (cell && typeof delta === "string") {
                 appendRemoteToolArg(cell, delta);
@@ -5064,10 +5234,11 @@ function governedRemoteRun(
                       );
                     } else if (content !== undefined && content !== null) {
                       try {
-                        cell.output = JSON.stringify(content)?.slice(
-                          0,
-                          TOOL_STEP_OUTPUT_CAPTURE_CHARS,
-                        ) ?? null;
+                        cell.output =
+                          JSON.stringify(content)?.slice(
+                            0,
+                            TOOL_STEP_OUTPUT_CAPTURE_CHARS,
+                          ) ?? null;
                       } catch {
                         // A receipt that cannot serialize carries no observation payload.
                       }

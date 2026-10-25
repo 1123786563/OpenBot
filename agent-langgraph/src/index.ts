@@ -1,3 +1,11 @@
+/*
+ * F9A / F8D-1: the tracing registration must run BEFORE the framework and provider modules
+ * below evaluate — the OpenTelemetry API's global slots (provider, context manager, W3C
+ * propagator) refuse a second registration, so the first module to touch them wins for the
+ * process's whole life. Keeping this import first is the controlled initialisation order;
+ * see ./tracing.ts for the mechanism and the history.
+ */
+import "./tracing";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
 import { ChatAnthropic } from "@langchain/anthropic";
@@ -26,11 +34,7 @@ import {
   keyVariableFor,
   requiresResponsesApi,
 } from "../../shared/model-providers";
-import {
-  initProcessTracing,
-  injectTraceHeaders,
-  withTraceFetch,
-} from "../../shared/trace";
+import { injectTraceHeaders, withTraceFetch } from "../../shared/trace";
 import {
   type BudgetContract,
   BudgetContractInvalidError,
@@ -544,9 +548,9 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
 }
 
 // Trace context propagation and, when a collector is configured, trace export — the same one
-// provider every other process in this deployment rides (shared/trace.ts). Installed before the
-// listener so the first request already runs inside a span.
-initProcessTracing("agent-langgraph", process.env);
+// provider every other process in this deployment rides (shared/trace.ts). Registered by the
+// first import above (./tracing.ts, F9A), before any framework module could claim the
+// OpenTelemetry globals; the listener below starts only after it.
 
 serve({
   port: PORT,

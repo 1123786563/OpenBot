@@ -22,7 +22,8 @@
     "agent-langgraph/tests/google-oauth-proxy.test.ts",
     "agent-langgraph/tests/governed-export-bytes.test.ts",
     "agent-langgraph/tests/governed-tracing.test.ts",
-    "agent-langgraph/tests/trace-chain.test.ts"
+    "agent-langgraph/tests/trace-chain.test.ts",
+    "agent-langgraph/tests/trace-continuation.test.ts"
    ]
   },
   {
@@ -1161,6 +1162,7 @@
   "agent-computer/tests/workspace-download.test.ts",
   "agent-langgraph/tests/governed-export-bytes.test.ts",
   "agent-langgraph/tests/trace-chain.test.ts",
+  "agent-langgraph/tests/trace-continuation.test.ts",
   "agent-mastra/src/mastra/index.test.ts",
   "agent-sandbox/tests/proxy.test.ts",
   "agent-sandbox/tests/snapshot.test.ts",

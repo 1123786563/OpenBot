@@ -83,6 +83,14 @@ export type RemoteRunRecordInput = Readonly<{
   attemptId: string;
   /** The run's W3C trace id; a fact that carried none provable records nothing. */
   traceId: string | null;
+  /**
+   * The derived dial span's coordinates and window (F9A / F8D-1): the span the endpoint's
+   * continuation parents at, materialized under the binding's trace so the run's governed
+   * record carries the dial — the same derivation the binding recorded, never a second one.
+   * Null for ambient chains (the ambient pipeline already owns the dial's parent) and for
+   * facts with no chain.
+   */
+  dial: { spanId: string; startedAt: Date; endedAt: Date } | null;
   events: readonly (
     | {
         type:
@@ -198,6 +206,75 @@ async function recordRemoteRun(
       "opik-remote-run-materialize-failed",
     );
   });
+
+  /*
+   * F9A / F8D-1: the DIAL SPAN of a derived chain, materialized under the binding's trace —
+   * the run's governed record carries the span the endpoint's whole continuation tree
+   * parents at. F8A exported this span only through the generic OTLP pipeline, parented at
+   * the run-root id; Opik 2.2.100 silently drops an OTLP span whose parent cannot be
+   * resolved in the receiving project, so the dial span (and the endpoint's tree under it)
+   * never landed — the "zero materialization" of the finding. Here the span carries no
+   * upstream ids of its own on purpose: the port completes them from the AUTHORITATIVE
+   * binding — the run's trace, the span's own id, its parent the run root — the same
+   * `runUpstreamIdentity(traceId)` derivation the binding's own `opikTraceId` came from, so
+   * the dial span and the record that claims it cannot name different chains. Only written
+   * once the binding names an upstream trace (a materialization that failed leaves nothing
+   * to parent under, and that degradation is the materialize failure already logged).
+   */
+  if (input.dial !== null) {
+    const identity = runUpstreamIdentity(traceId);
+    const upstream = binding.opikTraceId ?? identity.opikTraceId;
+    const port = deps.port();
+    if (port !== null && upstream === identity.opikTraceId) {
+      const dialSpan: OpikOtlpSpan = {
+        traceId,
+        spanId: input.dial.spanId,
+        parentSpanId: identity.rootSpanId,
+        name: { state: "projected", text: "remote run" },
+        startTimeUnixNano: nanos(input.dial.startedAt) ?? nowNs(),
+        endTimeUnixNano: nanos(input.dial.endedAt) ?? nowNs(),
+        attributes: {
+          "openbot.bot.id": { state: "projected", value: input.botId },
+          "openbot.run.id": { state: "projected", value: input.runId },
+          "openbot.dial.chain": { state: "projected", value: "derived" },
+        },
+      };
+      await port
+        .writeSpans(scope, {
+          spans: [dialSpan],
+          binding: {
+            scopeKey: binding.scopeKey,
+            runId: binding.runId,
+            attemptId: binding.attemptId,
+            locatorWorkspace: binding.locatorWorkspace,
+            locatorProject: binding.locatorProject,
+            opikTraceId: identity.opikTraceId,
+          },
+        })
+        .then(
+          (written) => {
+            if (written.outcome !== "ok") {
+              log.warn(
+                {
+                  type: "opik-remote-run-dial-failed",
+                  outcome: written.outcome,
+                },
+                "opik-remote-run-dial-failed",
+              );
+            }
+          },
+          (error: unknown) => {
+            log.warn(
+              {
+                type: "opik-remote-run-dial-failed",
+                name: (error as Error | null | undefined)?.name,
+              },
+              "opik-remote-run-dial-failed",
+            );
+          },
+        );
+    }
+  }
 
   /*
    * The classification, under the same first-terminal-wins discipline the HTTP reporter
