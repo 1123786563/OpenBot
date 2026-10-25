@@ -29,7 +29,10 @@ import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
 import { userBankFor } from "../src/hindsight/bank-scope";
-import { createDrizzleBudgetGate } from "../src/hindsight/budget-gate";
+import {
+  budgetPeriodOf,
+  createDrizzleBudgetGate,
+} from "../src/hindsight/budget-gate";
 import {
   createDegradedRecallFacade,
   createDrizzleDegradedPreferenceSearch,
@@ -398,10 +401,7 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       body: {
         results: [
           {
-            document_id: preferenceDocumentIdFor(
-              TENANT_A,
-              confirmed.record.id,
-            ),
+            document_id: preferenceDocumentIdFor(TENANT_A, confirmed.record.id),
           },
         ],
       },
@@ -417,9 +417,9 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       query: "budget readable",
     });
     expect(degradedAnswer.degraded).toBe(true);
-    expect(
-      degradedAnswer.memories.map((memory) => memory.id),
-    ).toContain(confirmed.record.id);
+    expect(degradedAnswer.memories.map((memory) => memory.id)).toContain(
+      confirmed.record.id,
+    );
   });
 
   test("AC2: recovery resumes the deferred work under its original identity, charged once, never across companies", async () => {
@@ -435,11 +435,7 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       PRINCIPAL_EMP,
       `recovery-fact-a2-${run}`,
     );
-    await seedPendingWork(
-      TENANT_B,
-      PRINCIPAL_EMP,
-      `recovery-fact-b-${run}`,
-    );
+    await seedPendingWork(TENANT_B, PRINCIPAL_EMP, `recovery-fact-b-${run}`);
     await budget.setCaps(TENANT_A, {
       companyMonthlyUnits: 1,
       personalMonthlyUnits: 5,
@@ -508,7 +504,6 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       expect(admissionOneAgain.reservationId).toBe(admissionOne.reservationId);
       expect(admissionTwo.reservationId).not.toBe(admissionOne.reservationId);
     }
-
   });
 
   test("AC3: the admin health view shows service, backlog and budgets — and no content", async () => {
@@ -621,9 +616,8 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
     const usage = await budget.currentUsage(TENANT_C);
     expect(usage.companyUnits).toBe(2);
     expect(
-      usage.personalUnits.find(
-        (entry) => entry.principalId === PRINCIPAL_C_EMP,
-      )?.units,
+      usage.personalUnits.find((entry) => entry.principalId === PRINCIPAL_C_EMP)
+        ?.units,
     ).toBe(1);
     expect(
       usage.personalUnits.find(
@@ -668,7 +662,10 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
 
     // A transport failure released the hold before the service was reached: it never counted
     // (EMP's settled unit + PEER's admitted unit remain the whole company ledger).
-    await budget.releaseBackgroundWork(first.reservationId, "transport failure");
+    await budget.releaseBackgroundWork(
+      first.reservationId,
+      "transport failure",
+    );
     const afterRelease = await budget.currentUsage(TENANT_C);
     expect(afterRelease.companyUnits).toBe(2);
 
@@ -746,16 +743,20 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
     // SAME budget gate and work recorder the production assembly wires (FIX-W11 index.ts).
     await database
       .insert(users)
-      .values([{ id: `usr_d-emp-${run}`, email: `d-emp-${run}@example.invalid` }]);
+      .values([
+        { id: `usr_d-emp-${run}`, email: `d-emp-${run}@example.invalid` },
+      ]);
     await database
       .insert(enterpriseTenants)
       .values({ id: TENANT_D, name: `Bud D ${run}` });
     await database
       .insert(enterprisePrincipals)
       .values({ id: PRINCIPAL_D_EMP, userId: `usr_d-emp-${run}` });
-    await database.insert(enterpriseMemberships).values([
-      { tenantId: TENANT_D, principalId: PRINCIPAL_D_EMP, role: "member" },
-    ]);
+    await database
+      .insert(enterpriseMemberships)
+      .values([
+        { tenantId: TENANT_D, principalId: PRINCIPAL_D_EMP, role: "member" },
+      ]);
     const scope = await makeTrustedScope(PRINCIPAL_D_EMP, TENANT_D);
     const preferenceRecords = createDrizzlePreferenceRecords(database);
     const sourceBoundRecords = createDrizzleSourceBoundRecords(database);
@@ -841,11 +842,7 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       judgment: `fixw11-judgment-b-${run}`,
       evidence: lead,
     });
-    const eager = await review.confirmDerivedJudgment(
-      scope,
-      candidateB.id,
-      {},
-    );
+    const eager = await review.confirmDerivedJudgment(scope, candidateB.id, {});
     expect(eager.remoteSynced).toBe(true);
     expect((await budget.currentUsage(TENANT_D)).companyUnits).toBe(2);
     await queue.drain({ limit: 50 });
@@ -864,23 +861,37 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
     // assembly hands them.
     await database
       .insert(users)
-      .values([{ id: `usr_e-emp-${run}`, email: `e-emp-${run}@example.invalid` }]);
+      .values([
+        { id: `usr_e-emp-${run}`, email: `e-emp-${run}@example.invalid` },
+      ]);
     await database
       .insert(enterpriseTenants)
       .values({ id: TENANT_E, name: `Bud E ${run}` });
     await database
       .insert(enterprisePrincipals)
       .values({ id: PRINCIPAL_E_EMP, userId: `usr_e-emp-${run}` });
-    await database.insert(enterpriseMemberships).values([
-      { tenantId: TENANT_E, principalId: PRINCIPAL_E_EMP, role: "member" },
-    ]);
-    await database.insert(enterpriseWorkspaces).values([
-      { tenantId: TENANT_E, id: WORKSPACE_E, name: `Bud E Team ${run}` },
-    ]);
+    await database
+      .insert(enterpriseMemberships)
+      .values([
+        { tenantId: TENANT_E, principalId: PRINCIPAL_E_EMP, role: "member" },
+      ]);
+    await database
+      .insert(enterpriseWorkspaces)
+      .values([
+        { tenantId: TENANT_E, id: WORKSPACE_E, name: `Bud E Team ${run}` },
+      ]);
     await database.insert(enterpriseWorkspaceMemberships).values([
-      { tenantId: TENANT_E, workspaceId: WORKSPACE_E, principalId: PRINCIPAL_E_EMP },
+      {
+        tenantId: TENANT_E,
+        workspaceId: WORKSPACE_E,
+        principalId: PRINCIPAL_E_EMP,
+      },
     ]);
-    const scope = await makeTrustedScope(PRINCIPAL_E_EMP, TENANT_E, WORKSPACE_E);
+    const scope = await makeTrustedScope(
+      PRINCIPAL_E_EMP,
+      TENANT_E,
+      WORKSPACE_E,
+    );
     const preferences = createPreferenceRecallService(
       createDrizzlePreferenceRecords(database),
       serviceConfig,
@@ -1054,16 +1065,20 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
         probeTenants.push(tenant);
         await database
           .insert(users)
-          .values([{ id: probeUser, email: `probe-r${round}-${run}@example.invalid` }]);
+          .values([
+            { id: probeUser, email: `probe-r${round}-${run}@example.invalid` },
+          ]);
         await database
           .insert(enterpriseTenants)
           .values({ id: tenant, name: `Probe ${run} ${round}` });
         await database
           .insert(enterprisePrincipals)
           .values({ id: principal, userId: probeUser });
-        await database.insert(enterpriseMemberships).values([
-          { tenantId: tenant, principalId: principal, role: "member" },
-        ]);
+        await database
+          .insert(enterpriseMemberships)
+          .values([
+            { tenantId: tenant, principalId: principal, role: "member" },
+          ]);
         await budget.setCaps(tenant, {
           companyMonthlyUnits: 1,
           personalMonthlyUnits: 1,
@@ -1104,17 +1119,19 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       probeUsers.push(keyUser);
       probeTenants.push(keyTenant);
       await database
-          .insert(users)
-          .values([{ id: keyUser, email: `probe-key-${run}@example.invalid` }]);
+        .insert(users)
+        .values([{ id: keyUser, email: `probe-key-${run}@example.invalid` }]);
       await database
         .insert(enterpriseTenants)
         .values({ id: keyTenant, name: `Probe Key ${run}` });
       await database
         .insert(enterprisePrincipals)
         .values({ id: keyPrincipal, userId: keyUser });
-      await database.insert(enterpriseMemberships).values([
-        { tenantId: keyTenant, principalId: keyPrincipal, role: "member" },
-      ]);
+      await database
+        .insert(enterpriseMemberships)
+        .values([
+          { tenantId: keyTenant, principalId: keyPrincipal, role: "member" },
+        ]);
       const [sameA, sameB] = await Promise.all([
         gateOne.admitBackgroundWork({
           tenantId: keyTenant,
@@ -1144,9 +1161,7 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       if (probeTenants.length > 0) {
         await database
           .delete(hindsightBudgetReservations)
-          .where(
-            inArray(hindsightBudgetReservations.tenantId, probeTenants),
-          );
+          .where(inArray(hindsightBudgetReservations.tenantId, probeTenants));
         await database
           .delete(hindsightBudgetCaps)
           .where(inArray(hindsightBudgetCaps.tenantId, probeTenants));
@@ -1155,12 +1170,14 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
           .where(inArray(enterpriseMemberships.tenantId, probeTenants));
         await database
           .delete(enterprisePrincipals)
-          .where(inArray(enterprisePrincipals.id, [
-            `prin_probe-r0-${run}`,
-            `prin_probe-r1-${run}`,
-            `prin_probe-r2-${run}`,
-            `prin_probe-key-${run}`,
-          ]));
+          .where(
+            inArray(enterprisePrincipals.id, [
+              `prin_probe-r0-${run}`,
+              `prin_probe-r1-${run}`,
+              `prin_probe-r2-${run}`,
+              `prin_probe-key-${run}`,
+            ]),
+          );
         await database
           .delete(enterpriseTenants)
           .where(inArray(enterpriseTenants.id, probeTenants));
@@ -1168,7 +1185,239 @@ describe("Hindsight 15 (#393) — background budget and operational backlog", ()
       }
     }
   });
+
+  /*
+   * FIX-OCR2 (O2-M5): the unique-violation fold must dispatch on the row's state the way
+   * the in-transaction path does. The window: two admissions of one work key race past the
+   * dedup read, the winner's row commits and is RELEASED before the loser's fallback
+   * re-reads it — on BASE the loser folded into the released row unconditionally, so an
+   * admission slipped past a cap tightened since the release, and its later settle was a
+   * no-op against the released row (one unit of silent escape).
+   *
+   * The race is made deterministic rather than hoped for: the loser's admission runs on a
+   * wrapped single-connection database whose first reservation INSERT fires the test lane's
+   * commits on a SEPARATE connection the instant before the statement goes to the server —
+   * by then the loser's dedup read has already missed and its own caps verdict has already
+   * passed, so the insert lands in the unique index and the fold path answers.
+   */
+  test("FIX-OCR2 O2-M5: the unique-race fold re-admits a released row through the caps re-check", async () => {
+    const tenant = `tn_o2m5-${run}`;
+    const principal = `prin_o2m5-${run}`;
+    const probeUser = `usr_o2m5-${run}`;
+    const period = budgetPeriodOf(new Date());
+    await database
+      .insert(users)
+      .values([{ id: probeUser, email: `o2m5-${run}@example.invalid` }]);
+    await database
+      .insert(enterpriseTenants)
+      .values({ id: tenant, name: `O2M5 ${run}` });
+    await database.insert(enterprisePrincipals).values({
+      id: principal,
+      userId: probeUser,
+    });
+    await database
+      .insert(enterpriseMemberships)
+      .values([{ tenantId: tenant, principalId: principal, role: "member" }]);
+    const loserDb = createDatabase(testDatabaseUrl(), { max: 1 });
+    try {
+      await budget.setCaps(tenant, {
+        companyMonthlyUnits: 2,
+        personalMonthlyUnits: 10,
+      });
+      const seedRow = (
+        id: string,
+        workKey: string,
+        state: "settled" | "released",
+      ) =>
+        database.insert(hindsightBudgetReservations).values({
+          id,
+          tenantId: tenant,
+          principalId: principal,
+          workKey,
+          period,
+          units: 1,
+          state,
+        });
+      // Standing usage of 1 < 2: the loser's own verdict passes before the race fires.
+      await seedRow(`o2m5-standing-${run}`, `o2m5-standing:${run}`, "settled");
+
+      // ---- Leg 1: the fold's re-check REFUSES. The race commits a released winner on the
+      // loser's work key AND a second settled unit that fills the company cap, so the
+      // re-admission's own verdict sees 2 + 1 > 2 and the row must stay released.
+      const winnerId = `o2m5-winner-${run}`;
+      const racing = createDrizzleBudgetGate(
+        insertRacingGateDatabase(loserDb, async () => {
+          await seedRow(winnerId, `o2m5-race:${run}`, "released");
+          await seedRow(`o2m5-fill-${run}`, `o2m5-fill:${run}`, "settled");
+        }),
+      );
+      const refused = await racing.admitBackgroundWork({
+        tenantId: tenant,
+        principalId: principal,
+        workKey: `o2m5-race:${run}`,
+        units: 1,
+      });
+      expect(refused).toEqual({ ok: false, reason: "company-cap" });
+      const [winnerAfterRefusal] = await database
+        .select()
+        .from(hindsightBudgetReservations)
+        .where(eq(hindsightBudgetReservations.id, winnerId));
+      expect(winnerAfterRefusal.state).toBe("released");
+
+      // ---- Leg 2: the fold's re-check PASSES. The race commits only the released winner;
+      // the re-admission flips it back to reserved — one row, the winner's reservation id.
+      // (The platform raising the caps between the legs is the ordinary story: the refusal
+      // above was the tightened cap, and this is the recovery.)
+      await budget.setCaps(tenant, {
+        companyMonthlyUnits: 4,
+        personalMonthlyUnits: 10,
+      });
+      const passWinnerId = `o2m5-winner-pass-${run}`;
+      const folding = createDrizzleBudgetGate(
+        insertRacingGateDatabase(loserDb, () =>
+          seedRow(passWinnerId, `o2m5-race-pass:${run}`, "released"),
+        ),
+      );
+      const admitted = await folding.admitBackgroundWork({
+        tenantId: tenant,
+        principalId: principal,
+        workKey: `o2m5-race-pass:${run}`,
+        units: 1,
+      });
+      expect(admitted.ok).toBe(true);
+      if (admitted.ok) {
+        expect(admitted.reservationId).toBe(passWinnerId);
+      }
+      const [flipped] = await database
+        .select()
+        .from(hindsightBudgetReservations)
+        .where(eq(hindsightBudgetReservations.id, passWinnerId));
+      expect(flipped.state).toBe("reserved");
+      // The flipped row counts again: 1 standing + 1 fill + 1 re-admitted, released never.
+      expect((await budget.currentUsage(tenant)).companyUnits).toBe(3);
+
+      // ---- Leg 3: a settled row in the fold folds as before — no re-check, no state
+      // change, the charge that already stands is the charge.
+      await seedRow(
+        `o2m5-settled-${run}`,
+        `o2m5-settled-key:${run}`,
+        "settled",
+      );
+      const folded = await budget.admitBackgroundWork({
+        tenantId: tenant,
+        principalId: principal,
+        workKey: `o2m5-settled-key:${run}`,
+        units: 1,
+      });
+      expect(folded.ok).toBe(true);
+      if (folded.ok) {
+        expect(folded.reservationId).toBe(`o2m5-settled-${run}`);
+      }
+      const [settledRow] = await database
+        .select()
+        .from(hindsightBudgetReservations)
+        .where(eq(hindsightBudgetReservations.id, `o2m5-settled-${run}`));
+      expect(settledRow.state).toBe("settled");
+    } finally {
+      // The reviewer's probe discipline: the fixture leaves nothing behind.
+      await database
+        .delete(hindsightBudgetReservations)
+        .where(eq(hindsightBudgetReservations.tenantId, tenant));
+      await database
+        .delete(hindsightBudgetCaps)
+        .where(eq(hindsightBudgetCaps.tenantId, tenant));
+      await database
+        .delete(enterpriseMemberships)
+        .where(eq(enterpriseMemberships.tenantId, tenant));
+      await database
+        .delete(enterprisePrincipals)
+        .where(eq(enterprisePrincipals.id, principal));
+      await database
+        .delete(enterpriseTenants)
+        .where(eq(enterpriseTenants.id, tenant));
+      await database.delete(users).where(eq(users.id, probeUser));
+    }
+  });
 });
+/**
+ * A database whose FIRST insert-in-transaction fires `before` (on whatever connection that
+ * callback uses) the instant the statement is awaited — after the transaction's earlier
+ * reads have completed and before the insert reaches the server. This is the FIX-OCR2 O2-M5
+ * test lane's way of making a unique-index race deterministic: the admission's dedup read
+ * and caps verdict have both run by then, the conflicting row commits beside the still-open
+ * transaction, and the insert fails into the fold path exactly as a real race would.
+ */
+function insertRacingGateDatabase(
+  db: Database,
+  before: () => Promise<void>,
+): Database {
+  const armed = { fired: false };
+  const hookAwaitable = (statement: object): object =>
+    new Proxy(statement, {
+      get(target, prop) {
+        if (prop !== "then") {
+          const value = Reflect.get(target, prop, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return (onFulfilled: unknown, onRejected: unknown) =>
+          before().then(
+            () =>
+              (
+                target as {
+                  then(onFulfilled: unknown, onRejected: unknown): unknown;
+                }
+              ).then(onFulfilled, onRejected),
+            onRejected,
+          );
+      },
+    });
+  const hookBuilder = (builder: object): object =>
+    new Proxy(builder, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          const next = value.apply(target, args);
+          if (prop === "values" && typeof next === "object" && next !== null) {
+            return hookAwaitable(next);
+          }
+          return next;
+        };
+      },
+    });
+  const hookTransaction = (tx: unknown): unknown =>
+    new Proxy(tx, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target);
+        if (prop !== "insert" || armed.fired || typeof value !== "function") {
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        armed.fired = true;
+        return (...args: unknown[]) => {
+          const builder = value.apply(target, args);
+          return typeof builder === "object" && builder !== null
+            ? hookBuilder(builder)
+            : builder;
+        };
+      },
+    });
+  return new Proxy(db, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (prop !== "transaction" || typeof value !== "function") {
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      const runTransaction = (
+        callback: (tx: unknown) => Promise<unknown>,
+      ): Promise<unknown> =>
+        value.call(target, async (tx: unknown) =>
+          callback(hookTransaction(tx)),
+        );
+      return runTransaction;
+    },
+  }) as unknown as Database;
+}
+
 function eqSyncWork(tenantId: string, id: string) {
   return and(
     eq(hindsightSyncWork.tenantId, tenantId),
