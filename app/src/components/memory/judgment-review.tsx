@@ -28,7 +28,10 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { useDateTime } from "@/lib/i18n/datetime";
+import {
+  type ScopedCache,
+  useScopedCache,
+} from "@/lib/enterprise/tenant/scoped-cache";
 import {
   confirmJudgmentMutationOptions,
   editJudgmentMutationOptions,
@@ -36,11 +39,13 @@ import {
   rejectJudgmentMutationOptions,
 } from "@/lib/hindsight/mutations";
 import {
-  judgmentCandidatesQueryOptions,
   type JudgmentCandidate,
   type JudgmentScope,
   type ReviewedJudgment,
+  scopedAdoptedJudgmentsQueryOptions,
+  scopedJudgmentCandidatesQueryOptions,
 } from "@/lib/hindsight/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 import { EvidenceDialog } from "./evidence";
 
 /**
@@ -49,26 +54,25 @@ import { EvidenceDialog } from "./evidence";
  * re-asserts the words alone (the basis and its authority never move through the edit), and
  * rejecting closes it.
  *
- * The confirmed-judgment half manages what THIS surface adopted: the confirm and edit answers
- * carry the complete judgment, so it moves straight into the adopted list with its own edit and
- * forget. The API behind this page lists open candidates only — there is no adopted-judgment
- * listing endpoint in this wave's scope — so the adopted group holds what the person adopted
- * here rather than pretending to a durability the surface does not have.
+ * The adopted half is the SERVER's own listing (FIX-W12 FR2-3): what the person confirmed or
+ * edited, re-read on every visit, so a reload or a fresh session still shows the judgments
+ * they stand behind — with the same edit, basis and forget actions the candidates have. The
+ * listing re-verifies current authorization row by row, so a judgment whose basis died is
+ * simply not in it until the authority returns.
  */
 export function JudgmentReviewSections() {
   const { t } = useTranslation("agents");
-  const candidates = useQuery(judgmentCandidatesQueryOptions());
-  /** Judgments adopted through this surface, newest decision first. */
-  const [adopted, setAdopted] = useState<ReviewedJudgment[]>([]);
+  // Both halves ride the scope the screen holds, like every other memory call (MT089).
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const candidates = useQuery(
+    scopedJudgmentCandidatesQueryOptions(queryClient, scope),
+  );
+  const adopted = useQuery(
+    scopedAdoptedJudgmentsQueryOptions(queryClient, scope),
+  );
   /** The instant the last judgment forget took effect, for the honest "stopped" sentence. */
   const [stoppedAt, setStoppedAt] = useState<string | null>(null);
-  const adopt = (judgment: ReviewedJudgment) => {
-    setStoppedAt(null);
-    setAdopted((current) => [
-      judgment,
-      ...current.filter((held) => held.id !== judgment.id),
-    ]);
-  };
   return (
     <>
       <PageSection
@@ -84,7 +88,7 @@ export function JudgmentReviewSections() {
             {candidates.data.map((candidate, index) => (
               <Fragment key={candidate.id}>
                 {index > 0 ? <Separator /> : null}
-                <CandidateRow candidate={candidate} onAdopted={adopt} />
+                <CandidateRow candidate={candidate} scope={scope} />
               </Fragment>
             ))}
           </PageRows>
@@ -92,31 +96,33 @@ export function JudgmentReviewSections() {
           <PageEmpty>{t("memory.judgments.empty")}</PageEmpty>
         )}
       </PageSection>
-      <PageSection title={t("memory.judgments.adoptedTitle")}>
-        {adopted.length ? (
-          <>
-            <PageRows>
-              {adopted.map((judgment, index) => (
-                <Fragment key={judgment.id}>
-                  {index > 0 ? <Separator /> : null}
-                  <AdoptedRow
-                    judgment={judgment}
-                    onChanged={adopt}
-                    onForgotten={(at) => {
-                      setAdopted((current) =>
-                        current.filter((held) => held.id !== judgment.id),
-                      );
-                      setStoppedAt(at);
-                    }}
-                  />
-                </Fragment>
-              ))}
-            </PageRows>
-            {stoppedAt !== null ? <StoppedNote at={stoppedAt} /> : null}
-          </>
+      <PageSection
+        description={t("memory.judgments.adoptedDescription")}
+        title={t("memory.judgments.adoptedTitle")}
+      >
+        {adopted.isPending ? null : adopted.error ? (
+          <p role="alert" className="mt-4 text-destructive text-sm">
+            {adopted.error.message}
+          </p>
+        ) : adopted.data.length ? (
+          <PageRows>
+            {adopted.data.map((judgment, index) => (
+              <Fragment key={judgment.id}>
+                {index > 0 ? <Separator /> : null}
+                <AdoptedRow
+                  judgment={judgment}
+                  scope={scope}
+                  onForgotten={(at) => setStoppedAt(at)}
+                />
+              </Fragment>
+            ))}
+          </PageRows>
         ) : (
           <PageEmpty>{t("memory.judgments.adoptedEmpty")}</PageEmpty>
         )}
+        {/* Outside the length branch on purpose (FR2-5): forgetting the LAST judgment still
+            leaves the honest "stopped" sentence on the page, beside the empty state. */}
+        {stoppedAt !== null ? <StoppedNote at={stoppedAt} /> : null}
       </PageSection>
     </>
   );
@@ -125,18 +131,20 @@ export function JudgmentReviewSections() {
 /** One candidate: the claim, where it came from, and Confirm / Edit / Reject beneath it. */
 function CandidateRow({
   candidate,
-  onAdopted,
+  scope,
 }: {
   candidate: JudgmentCandidate;
-  onAdopted: (judgment: ReviewedJudgment) => void;
+  scope: ScopedCache;
 }) {
   const { t } = useTranslation("agents");
   const { formatDateTime } = useDateTime();
   const scopeLabel = useScopeLabel();
   const queryClient = useQueryClient();
-  const confirm = useMutation(confirmJudgmentMutationOptions(queryClient));
-  const edit = useMutation(editJudgmentMutationOptions(queryClient));
-  const reject = useMutation(rejectJudgmentMutationOptions(queryClient));
+  const confirm = useMutation(
+    confirmJudgmentMutationOptions(queryClient, scope),
+  );
+  const edit = useMutation(editJudgmentMutationOptions(queryClient, scope));
+  const reject = useMutation(rejectJudgmentMutationOptions(queryClient, scope));
   const [editing, setEditing] = useState(false);
   const [showingBasis, setShowingBasis] = useState(false);
   return (
@@ -170,11 +178,7 @@ function CandidateRow({
             </Button>
             <Button
               disabled={confirm.isPending}
-              onClick={() =>
-                confirm.mutate(candidate.id, {
-                  onSuccess: (judgment) => onAdopted(judgment),
-                })
-              }
+              onClick={() => confirm.mutate(candidate.id)}
               size="sm"
               variant="outline"
             >
@@ -217,10 +221,7 @@ function CandidateRow({
             edit.mutate(
               { id: candidate.id, input: { content } },
               {
-                onSuccess: (judgment) => {
-                  onAdopted(judgment);
-                  setEditing(false);
-                },
+                onSuccess: () => setEditing(false),
               },
             )
           }
@@ -242,19 +243,19 @@ function CandidateRow({
 /** One adopted judgment: manage its words, or forget it entirely. */
 function AdoptedRow({
   judgment,
-  onChanged,
+  scope,
   onForgotten,
 }: {
   judgment: ReviewedJudgment;
-  onChanged: (judgment: ReviewedJudgment) => void;
+  scope: ScopedCache;
   onForgotten: (stoppedAt: string) => void;
 }) {
   const { t } = useTranslation("agents");
   const { formatDateTime } = useDateTime();
   const scopeLabel = useScopeLabel();
   const queryClient = useQueryClient();
-  const edit = useMutation(editJudgmentMutationOptions(queryClient));
-  const forget = useMutation(forgetJudgmentMutationOptions(queryClient));
+  const edit = useMutation(editJudgmentMutationOptions(queryClient, scope));
+  const forget = useMutation(forgetJudgmentMutationOptions(queryClient, scope));
   const [editing, setEditing] = useState(false);
   const [showingBasis, setShowingBasis] = useState(false);
   return (
@@ -329,10 +330,7 @@ function AdoptedRow({
             edit.mutate(
               { id: judgment.id, input: { content } },
               {
-                onSuccess: (next) => {
-                  onChanged(next);
-                  setEditing(false);
-                },
+                onSuccess: () => setEditing(false),
               },
             )
           }

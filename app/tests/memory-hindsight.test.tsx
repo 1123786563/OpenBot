@@ -4,8 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
+import { MemoryAnswerBasisSection } from "@/components/memory/answer-basis";
 import { MemoryCleanupSection } from "@/components/memory/cleanup-progress";
 import { JudgmentReviewSections } from "@/components/memory/judgment-review";
+import { storeSelection } from "@/lib/enterprise/tenant/selection";
 import {
   afterAll,
   afterEach,
@@ -16,10 +18,14 @@ import {
 import { settleReactWork } from "./settle-react-work";
 
 /**
- * Settings → Memory, the Hindsight half (FR-4): judgment candidates with their complete basis,
- * the three review decisions, the correction and forgetting an expanded basis offers, and the
- * cleanup picture's two states. The fetches here are the person's own /api/hindsight surface —
- * no company or team selection rides any of them.
+ * Settings → Memory, the Hindsight half (FR-4 + FIX-W12): judgment candidates with their
+ * complete basis, the three review decisions, the adopted group the SERVER lists across
+ * sessions, the answer-basis listing with its expansion and correct/forget actions, and the
+ * cleanup picture's two states.
+ *
+ * The fetches here ride the scope the screen holds (MT089's family, FR2-1): the default serving
+ * seeds a stored company/team selection, so the requests carry the selection pair the production
+ * resolver demands — and the no-selection test pins the fail-closed refusal.
  */
 
 beforeAll(() => GlobalRegistrator.register());
@@ -63,17 +69,6 @@ const candidate = {
   ],
 };
 
-/** The judgment as a confirm or edit answers it: adopted, with the same basis. */
-const reviewed = (content: string, state: "confirmed" | "edited") => ({
-  id: "j1",
-  content,
-  provenance: "Derived from your memories",
-  scope: { kind: "general" },
-  reviewState: state,
-  reviewedAt: "2026-10-25T10:00:00Z",
-  evidence: candidate.evidence,
-});
-
 /** The honest forget answer (#390): stopped now, remote cleanup tracked, never "cleared". */
 const revocation = {
   stoppedUsingAt: "2026-10-25T10:00:01Z",
@@ -85,8 +80,14 @@ const revocation = {
 let evidence: Record<string, Record<string, unknown>>;
 /** The candidate rows the listing holds; a decision removes the row. */
 let candidates: Record<string, unknown>[];
+/** The adopted rows the server listing holds (#389, FR2-3); it outlives any one page. */
+let adopted: Record<string, unknown>[];
+/** The memory entries the answer-basis listing holds (FR2-3). */
+let memoryEntries: Record<string, unknown>[];
 /** The cleanup picture; "Check now" flips it to the fully evidenced state. */
 let cleanupStatus: Record<string, unknown>;
+/** Every request the surface made, with the headers it rode — the selection pair's evidence. */
+let seen: { method: string; url: string; headers: Record<string, string> }[];
 
 const notCleared = () => ({
   controlledCopiesCleared: false,
@@ -144,9 +145,31 @@ const cleared = () => ({
 
 const writes: { request: string; body: unknown }[] = [];
 
+/** One adopted judgment, exactly as the confirm or edit answer carries it. */
+const adoptedJudgment = (
+  id: string,
+  content: string,
+  state: "confirmed" | "edited",
+  provenance = "Derived from your memories",
+) => ({
+  id,
+  content,
+  provenance,
+  scope: { kind: "general" },
+  reviewState: state,
+  reviewedAt: "2026-10-25T10:00:00Z",
+  evidence: candidate.evidence,
+});
+
 function serving() {
   writes.length = 0;
+  seen = [];
   candidates = [structuredClone(candidate)];
+  adopted = [];
+  memoryEntries = [];
+  cleanupStatus = notCleared();
+  window.localStorage.clear();
+  storeSelection("user-1", { tenantId: "t1", workspaceId: "w1" });
   evidence = {
     p1: {
       state: "available",
@@ -171,11 +194,31 @@ function serving() {
     const method = init?.method ?? "GET";
     const body =
       typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    seen.push({ method, url, headers });
     if (method !== "GET") {
       writes.push({ request: `${method} ${url}`, body });
     }
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
+    // The resolver's own refusal (FR2-1's fail-closed half): no selection, no answer.
+    if (
+      url.startsWith("/api/hindsight") &&
+      !headers["x-openbot-tenant"] &&
+      !headers["x-openbot-workspace"]
+    ) {
+      return Response.json(
+        { error: "Select the company and workspace first." },
+        { status: 400 },
+      );
+    }
     if (url === "/api/hindsight/judgments/candidates") {
       return Response.json({ candidates });
+    }
+    if (url === "/api/hindsight/judgments/adopted") {
+      return Response.json({ adopted });
+    }
+    if (url === "/api/hindsight/memories") {
+      return Response.json({ memories: memoryEntries });
     }
     if (url === "/api/hindsight/evidence") {
       return Response.json({
@@ -186,8 +229,17 @@ function serving() {
     }
     if (url === "/api/hindsight/judgments/j1/confirm") {
       candidates = [];
+      adopted = [
+        adoptedJudgment(
+          "j1",
+          "Prefers written summaries over calls.",
+          "confirmed",
+        ),
+        ...adopted,
+      ];
       return Response.json({
-        judgment: reviewed(
+        judgment: adoptedJudgment(
+          "j1",
           "Prefers written summaries over calls.",
           "confirmed",
         ),
@@ -196,8 +248,12 @@ function serving() {
     }
     if (url === "/api/hindsight/judgments/j1" && method === "PATCH") {
       candidates = [];
+      adopted = [
+        adoptedJudgment("j1", body.content as string, "edited"),
+        ...adopted.filter((held) => held.id !== "j1"),
+      ];
       return Response.json({
-        judgment: reviewed(body.content as string, "edited"),
+        judgment: adoptedJudgment("j1", body.content as string, "edited"),
         remoteSynced: false,
       });
     }
@@ -208,6 +264,7 @@ function serving() {
       });
     }
     if (url === "/api/hindsight/judgments/j1" && method === "DELETE") {
+      adopted = adopted.filter((held) => held.id !== "j1");
       return Response.json(revocation);
     }
     if (url === "/api/hindsight/evidence/p1/correction") {
@@ -215,6 +272,10 @@ function serving() {
     }
     if (url === "/api/memory/hindsight/preferences/p1" && method === "DELETE") {
       evidence.p1 = { state: "unavailable", id: "p1" };
+      return Response.json(revocation);
+    }
+    if (url === "/api/memory/hindsight/preferences/p9" && method === "DELETE") {
+      memoryEntries = [];
       return Response.json(revocation);
     }
     if (url === "/api/hindsight/cleanup") {
@@ -237,8 +298,11 @@ function draw(node: ReactNode) {
   );
 }
 
-/** Every request the surface makes names its own scope: no tenant, workspace or bank rides one. */
-test("the hindsight reads and writes carry no company or team selection", async () => {
+/**
+ * FR2-1's contract: the open scope's selection pair rides every read and write — the reviewed
+ * headers the production resolver demands — and nothing beyond the pair ever rides one.
+ */
+test("the hindsight reads and writes ride the open scope's selection pair", async () => {
   serving();
   const view = draw(<JudgmentReviewSections />);
   await view.findByText(/Prefers written summaries over calls/);
@@ -249,12 +313,33 @@ test("the hindsight reads and writes carry no company or team selection", async 
       body: undefined,
     }),
   );
-  const seen = writes.map((write) => write.request);
-  expect(seen).not.toContain(
-    seen.find(
-      (request) => request.includes("tenant") || request.includes("workspace"),
-    ),
+  const rode = seen.filter((call) => call.url.startsWith("/api/hindsight"));
+  expect(rode.length).toBeGreaterThanOrEqual(3);
+  for (const call of rode) {
+    expect(call.headers["x-openbot-tenant"]).toBe("t1");
+    expect(call.headers["x-openbot-workspace"]).toBe("w1");
+    // The pair selects and nothing else: no principal, no bank, no other identity rides along.
+    expect(
+      Object.keys(call.headers).filter((name) => name.startsWith("x-openbot-")),
+    ).toEqual(["x-openbot-tenant", "x-openbot-workspace"]);
+  }
+});
+
+/** FR2-1's fail-closed half: the personal context selects nothing, and the resolver refuses. */
+test("with no company selected the surface answers the resolver's own sentence", async () => {
+  serving();
+  window.localStorage.clear();
+  const view = draw(<JudgmentReviewSections />);
+  const refusals = await view.findAllByText(
+    "Select the company and workspace first.",
   );
+  expect(refusals.length).toBeGreaterThanOrEqual(1);
+  const asked = seen.find(
+    (call) => call.url === "/api/hindsight/judgments/candidates",
+  );
+  expect(asked).toBeDefined();
+  expect(asked?.headers["x-openbot-tenant"]).toBeUndefined();
+  expect(asked?.headers["x-openbot-workspace"]).toBeUndefined();
 });
 
 test("a candidate shows its judgment text and where it came from", async () => {
@@ -322,6 +407,114 @@ test("rejecting closes the candidate", async () => {
   );
   expect(
     await view.findByText("No judgments are waiting for review."),
+  ).toBeTruthy();
+});
+
+/**
+ * FR2-3's cross-session half (#389): the adopted group is the SERVER's listing, so a reload —
+ * a fresh cache, the page state gone — still shows the judgments the person stood behind.
+ */
+test("the adopted group survives a reload", async () => {
+  serving();
+  candidates = [];
+  adopted = [
+    adoptedJudgment("j1", "Prefers written summaries over calls.", "confirmed"),
+    adoptedJudgment(
+      "j2",
+      "Weekly reports go out on Fridays.",
+      "edited",
+      "Derived from a team source",
+    ),
+  ];
+  const first = draw(<JudgmentReviewSections />);
+  expect(
+    await first.findByText("Weekly reports go out on Fridays."),
+  ).toBeTruthy();
+  expect(first.getByText("Prefers written summaries over calls.")).toBeTruthy();
+  // A reload: the page's own state is gone, the server listing is what answers.
+  cleanup();
+  const second = draw(<JudgmentReviewSections />);
+  expect(
+    await second.findByText("Prefers written summaries over calls."),
+  ).toBeTruthy();
+  expect(second.getByText("Weekly reports go out on Fridays.")).toBeTruthy();
+  expect(second.getByText(/Edited /)).toBeTruthy();
+});
+
+/**
+ * FR2-5 beside FR2-3: forgetting the LAST adopted judgment still leaves the honest "stopped"
+ * sentence on the page, beside the empty state — the note is not the list's to swallow.
+ */
+test("forgetting the last adopted judgment keeps the stopped note beside the empty state", async () => {
+  serving();
+  adopted = [
+    adoptedJudgment("j1", "Prefers written summaries over calls.", "confirmed"),
+  ];
+  const view = draw(<JudgmentReviewSections />);
+  fireEvent.click(await view.findByRole("button", { name: "Forget" }));
+  await waitFor(() =>
+    expect(writes).toContainEqual({
+      request: "DELETE /api/hindsight/judgments/j1",
+      body: undefined,
+    }),
+  );
+  expect(await view.findByText(/Stopped using this memory/)).toBeTruthy();
+  expect(
+    await view.findByText("None yet. Confirm a judgment and it appears here."),
+  ).toBeTruthy();
+});
+
+/**
+ * FR2-3's answer-basis half (#387 AC1/AC2): the memory entries a Bot's answers read list with
+ * their basis expansion, and the expansion's forget closes the loop — the entry leaves the
+ * listing, and the honest two-part status is what stays on the page.
+ */
+test("a memory entry expands its basis and forgets from the expansion", async () => {
+  serving();
+  memoryEntries = [
+    {
+      kind: "preference",
+      id: "p9",
+      content: "Prefers written summaries over calls.",
+      provenance: "You told a Bot",
+      markedGenericAt: "2026-10-20T10:00:00Z",
+      effectiveFrom: "2026-10-20T10:00:00Z",
+      effectiveUntil: null,
+    },
+  ];
+  evidence.p9 = {
+    state: "available",
+    kind: "preference",
+    id: "p9",
+    content: "Prefers written summaries over calls.",
+    provenance: "You told a Bot",
+    markedGenericAt: "2026-10-20T10:00:00Z",
+    effectiveFrom: "2026-10-20T10:00:00Z",
+    effectiveUntil: null,
+    supersededBy: null,
+    supersededTimeUnknown: false,
+    correctedAt: null,
+    actions: ["correct", "forget"],
+  };
+  const view = draw(<MemoryAnswerBasisSection />);
+  expect(
+    await view.findByText("Prefers written summaries over calls."),
+  ).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Basis" }));
+  const dialog = await view.findByRole("dialog", { name: "Basis" });
+  expect(dialog.textContent).toContain("You told a Bot");
+  fireEvent.click(view.getByRole("button", { name: "Forget" }));
+  await waitFor(() =>
+    expect(writes).toContainEqual({
+      request: "DELETE /api/memory/hindsight/preferences/p9",
+      body: undefined,
+    }),
+  );
+  expect(await view.findByText(/Stopped using this memory/)).toBeTruthy();
+  expect(
+    await view.findByText(
+      "Nothing here yet. Memories your Bots confirm appear with their basis.",
+    ),
   ).toBeTruthy();
 });
 
@@ -404,6 +597,7 @@ test("a fully evidenced cleanup shows the claim", async () => {
 test("Check now re-probes, and the picture refreshes into the claim", async () => {
   serving();
   const view = draw(<MemoryCleanupSection />);
+  await view.findByText("Not everything is cleared yet.");
   fireEvent.click(await view.findByRole("button", { name: "Check now" }));
   await waitFor(() =>
     expect(writes).toContainEqual({

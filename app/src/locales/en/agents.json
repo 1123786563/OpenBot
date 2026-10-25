@@ -392,6 +392,7 @@
       "contentLabel": "Judgment",
       "adoptedTitle": "Confirmed judgments",
       "adoptedEmpty": "None yet. Confirm a judgment and it appears here.",
+      "adoptedDescription": "Judgments you stood behind. Your Bots keep answering with them until you forget one.",
       "adopted": {
         "confirmed": "Confirmed {{when}}",
         "edited": "Edited {{when}}"
@@ -419,6 +420,12 @@
       "corrected": "Saved. Your Bots will use the new fact from their next answer.",
       "forget": "Forget",
       "stopped": "Stopped using this memory {{when}}. Cleanup of copies outside OpenBot is tracked separately."
+    },
+    "answerBasis": {
+      "title": "Answer basis",
+      "description": "The memories your Bots answer from. Expand one to see its source, correct it, or forget it.",
+      "empty": "Nothing here yet. Memories your Bots confirm appear with their basis.",
+      "basis": "Basis"
     },
     "cleanup": {
       "title": "Cleanup",

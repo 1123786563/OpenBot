@@ -31,7 +31,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { genericPersonalPreferences } from "../db/schema/hindsight-preferences";
 import type { PlatformScope } from "../enterprise/contracts";
@@ -112,6 +112,16 @@ export interface PreferenceRecordStore {
     tenantId: string,
     principalId: string,
     documentIds: readonly string[],
+  ): Promise<PreferenceAuthorityRow[]>;
+  /**
+   * This principal's living rows in this company, newest change first (FIX-W12 FR2-3): the raw
+   * feed the answer-basis listing filters further — the service decides eligibility, the store
+   * only narrows to the principal's own, not-yet-forgotten rows.
+   */
+  listLiving(
+    tenantId: string,
+    principalId: string,
+    limit: number,
   ): Promise<PreferenceAuthorityRow[]>;
 }
 
@@ -953,6 +963,20 @@ export function createDrizzlePreferenceRecords(
             inArray(table.hindsightDocumentId, [...documentIds]),
           ),
         );
+    },
+    async listLiving(tenantId, principalId, limit) {
+      return database
+        .select()
+        .from(table)
+        .where(
+          and(
+            eq(table.tenantId, tenantId),
+            eq(table.principalId, principalId),
+            isNull(table.deletedAt),
+          ),
+        )
+        .orderBy(desc(table.updatedAt))
+        .limit(limit);
     },
   };
 }

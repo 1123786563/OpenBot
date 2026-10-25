@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
-import { useDateTime } from "@/lib/i18n/datetime";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   correctEvidenceMutationOptions,
   forgetJudgmentMutationOptions,
@@ -21,15 +21,17 @@ import {
   forgetSourceBoundEvidenceMutationOptions,
 } from "@/lib/hindsight/mutations";
 import {
-  evidenceInspectionQueryOptions,
   type EvidenceInspection,
+  scopedEvidenceInspectionQueryOptions,
 } from "@/lib/hindsight/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 
 /**
- * The basis behind a judgment, expanded (#387 AC1): every entry the listing cited, re-decided
- * NOW by the evidence seam. An entry the person can no longer see draws "Unavailable" and
- * nothing else — no content, no source, no date — because the seam refuses to distinguish a
- * revoked basis from one that never existed, and the screen does not invent the difference.
+ * The basis behind a judgment or a memory entry, expanded (#387 AC1): every id the caller
+ * cited, re-decided NOW by the evidence seam. An entry the person can no longer see draws
+ * "Unavailable" and nothing else — no content, no source, no date — because the seam refuses to
+ * distinguish a revoked basis from one that never existed, and the screen does not invent the
+ * difference.
  *
  * The person can also act FROM an entry (#387 AC2): correct a preference basis, forget any
  * forgettable one. Both settle the namespace, so the expansion the person is reading refreshes
@@ -40,24 +42,37 @@ export function EvidenceDialog({
   ids,
   title,
   onClose,
+  onForgotten,
 }: {
   ids: string[];
   title: string;
   onClose: () => void;
+  /**
+   * Where a forget's honest instant also goes when the dialog's own row may not survive it
+   * (the answer-basis listing drops the entry that was forgotten). The dialog's own note
+   * says it either way.
+   */
+  onForgotten?: (stoppedAt: string) => void;
 }) {
   const { t } = useTranslation("agents");
   const { formatDateTime } = useDateTime();
+  // The expansion rides the scope the screen holds, like every other memory call (MT089).
   const queryClient = useQueryClient();
-  const inspection = useQuery(evidenceInspectionQueryOptions(ids));
-  const correct = useMutation(correctEvidenceMutationOptions(queryClient));
+  const scope = useScopedCache();
+  const inspection = useQuery(
+    scopedEvidenceInspectionQueryOptions(queryClient, scope, ids),
+  );
+  const correct = useMutation(
+    correctEvidenceMutationOptions(queryClient, scope),
+  );
   const forgetPreference = useMutation(
-    forgetPreferenceEvidenceMutationOptions(queryClient),
+    forgetPreferenceEvidenceMutationOptions(queryClient, scope),
   );
   const forgetSourceBound = useMutation(
-    forgetSourceBoundEvidenceMutationOptions(queryClient),
+    forgetSourceBoundEvidenceMutationOptions(queryClient, scope),
   );
   const forgetJudgment = useMutation(
-    forgetJudgmentMutationOptions(queryClient),
+    forgetJudgmentMutationOptions(queryClient, scope),
   );
   const [correcting, setCorrecting] = useState<EvidenceInspection | null>(null);
   /** The instant the last forget took effect, so the screen says "stopped" and nothing wider. */
@@ -74,7 +89,10 @@ export function EvidenceDialog({
             : forgetJudgment;
     if (run === undefined) return;
     run.mutate(entry.id, {
-      onSuccess: (revocation) => setStoppedAt(revocation.stoppedUsingAt),
+      onSuccess: (revocation) => {
+        setStoppedAt(revocation.stoppedUsingAt);
+        onForgotten?.(revocation.stoppedUsingAt);
+      },
     });
   };
   return (

@@ -16,8 +16,9 @@
  *
  *   - THE PERSON'S SURFACES. Evidence expansion and the time-windowed correction launched
  *     FROM a basis (the `correct` action the preference evidence advertises), the judgment
- *     candidate listing and the confirm/edit/reject/forget decisions, the source-or-Bot
- *     revocation, and the cleanup progress of the person's own forgotten records. The
+ *     candidate listing with the confirm/edit/reject/forget decisions and the adopted listing
+ *     that carries them across sessions, the source-or-Bot revocation, and the cleanup
+ *     progress of the person's own forgotten records. The
  *     confirm/edit decisions answer to the same sensitivity gate as the /api/memory face:
  *     sensitive material is refused without the person's explicit second confirmation, and
  *     a refusal leaves the class-only audit trail. None of these makes an administrator's
@@ -87,7 +88,10 @@ export type HindsightRouteServices = {
    * the #387 "correct FROM the evidence" entry — the only production caller of #386's
    * time-windowed correction, and the dispatcher that refuses the kinds without one.
    */
-  evidence: Pick<AnswerEvidenceService, "inspectEvidence" | "correctEvidence">;
+  evidence: Pick<
+    AnswerEvidenceService,
+    "inspectEvidence" | "correctEvidence" | "listPersonalMemories"
+  >;
   judgments: Pick<
     DerivedJudgmentService,
     "proposeDerivedJudgmentCandidate" | "listDerivedJudgmentCandidates"
@@ -98,6 +102,7 @@ export type HindsightRouteServices = {
     | "editDerivedJudgment"
     | "rejectDerivedJudgment"
     | "forgetDerivedJudgment"
+    | "listAdoptedJudgments"
   >;
   revocations: Pick<RevocationService, "revokeAuthorizationTarget">;
   cleanup: Pick<
@@ -369,6 +374,24 @@ export function createHindsightRoutes(
   }
 
   /*
+   * The person's own Hindsight memory entries (FIX-W12 FR2-3, #387 AC1): the confirmed
+   * preferences and source-bound facts a Bot's answers read, newest change first, each row
+   * re-verified against current authorization — the listing the answer-basis surface expands
+   * and acts from. Judgments have their own two listings above; this one is the raw memories.
+   */
+  routes.get("/memories", async (context) => {
+    const scope = await scopeFor(context);
+    const raw = context.req.query("limit");
+    const limit = raw === undefined ? undefined : Number(raw);
+    return context.json({
+      memories: await deps.evidence.listPersonalMemories(
+        scope,
+        limit === undefined ? {} : { limit },
+      ),
+    });
+  });
+
+  /*
    * Evidence: the ids an answer cited, expanded into what the person is entitled to see NOW.
    * Anything missing, foreign, unreviewed, forgotten or no longer authorized answers
    * `{ state: "unavailable" }` with no content — the seam's own vocabulary, forwarded as-is.
@@ -470,6 +493,26 @@ export function createHindsightRoutes(
       ),
     }),
   );
+
+  /*
+   * The adopted half of the person's review surface (FIX-W12 / FR2-3, #389): what they already
+   * confirmed or edited, across sessions — the list a fresh browser reads after the confirm's
+   * answer is gone. Each row is re-verified against current authorization and its whole stored
+   * basis, so a judgment whose basis died is withheld rather than shown, and the list the
+   * person manages is exactly the list the next answer may use. A management read, not a Bot
+   * use path: no pause or restore gate runs here.
+   */
+  routes.get("/judgments/adopted", async (context) => {
+    const scope = await scopeFor(context);
+    const raw = context.req.query("limit");
+    const limit = raw === undefined ? undefined : Number(raw);
+    return context.json({
+      adopted: await deps.review.listAdoptedJudgments(
+        scope,
+        limit === undefined ? {} : { limit },
+      ),
+    });
+  });
 
   /*
    * Forgetting a judgment: the durable block first (tombstone + revocation ledger), the remote

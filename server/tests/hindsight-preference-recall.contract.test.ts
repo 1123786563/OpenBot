@@ -180,6 +180,17 @@ function memoryStore() {
           wanted.has(row.hindsightDocumentId),
       );
     },
+    async listLiving(tenantId, principalId, limit) {
+      return [...rows.values()]
+        .filter(
+          (row) =>
+            row.tenantId === tenantId &&
+            row.principalId === principalId &&
+            row.deletedAt === null,
+        )
+        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+        .slice(0, limit);
+    },
   };
   return { store, rows };
 }

@@ -213,6 +213,11 @@ const RECALL_LIMIT = 20;
  * limit: rows whose basis died are withheld, so a full page may need to look past them.
  */
 const CONTEXT_SCAN_MAX = 200;
+/** The adopted listing's page discipline: the same ceilings the candidates listing keeps. */
+const ADOPTED_LIST_DEFAULT = 50;
+const ADOPTED_LIST_MAX = 100;
+/** How many adopted rows one management listing scans past withheld rows to fill its page. */
+const ADOPTED_LIST_SCAN_MAX = 200;
 /** The spec's candidate rule: unhandled proposals expire after thirty days. */
 const CANDIDATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -776,6 +781,61 @@ export function createDerivedJudgmentReviewService(
       const cutoff = new Date(now().getTime() - CANDIDATE_TTL_MS);
       const expired = await judgments.expireUnreviewedBefore(cutoff);
       return { expired, cutoff };
+    },
+
+    /**
+     * The adopted half of the person's review surface (FIX-W12 / FR2-3, #389): the judgments
+     * the person already stood behind, listed across sessions — the refresh-and-still-there
+     * control a confirm's one answer cannot give. Availability is re-decided NOW per row,
+     * exactly as the expansion seam decides it: the row must still be adopted and alive, still
+     * sit inside its own scope's CURRENT authorization, and still pass the four evidence gates
+     * over its stored relation. A judgment whose basis died is withheld, not refused — the
+     * person did nothing wrong, and it returns by itself when the authority returns, the same
+     * withholding the candidates listing and the query-less context half apply. No pause or
+     * restore gate runs here: those stop a Bot's USE of memory, not the person's management
+     * of it — a paused person can still read and forget what they adopted.
+     */
+    async listAdoptedJudgments(
+      scope: PlatformScope,
+      input: { limit?: unknown } = {},
+    ): Promise<ReviewedDerivedJudgment[]> {
+      let limit = ADOPTED_LIST_DEFAULT;
+      if (input.limit !== undefined) {
+        if (
+          typeof input.limit !== "number" ||
+          !Number.isInteger(input.limit) ||
+          input.limit < 1 ||
+          input.limit > ADOPTED_LIST_MAX
+        ) {
+          throw new DerivedJudgmentRefusedError(
+            "shape",
+            `An adopted listing needs a limit of 1..${ADOPTED_LIST_MAX}.`,
+          );
+        }
+        limit = input.limit;
+      }
+      const identity = resolveHindsightBankScope(scope);
+      const snapshot = await snapshotFor(scope);
+      const adopted = await judgments.loadAdopted(
+        identity.tenantId,
+        identity.principalId,
+        ADOPTED_LIST_SCAN_MAX,
+      );
+      const listed: ReviewedDerivedJudgment[] = [];
+      for (const row of adopted) {
+        if (!derivedJudgmentEligible(row)) continue;
+        if (!(await judgmentScopeAuthorizedNow(row, snapshot))) continue;
+        const verified = await verifier.verifyStoredEvidence(
+          identity.tenantId,
+          identity.principalId,
+          row,
+          snapshot,
+        );
+        if (!verified.ok) continue;
+        listed.push(reviewedView(row, verified.evidence));
+        if (listed.length === limit) break;
+      }
+      return listed;
     },
 
     /**
