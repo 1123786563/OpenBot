@@ -393,27 +393,49 @@ export function createMemoryStore(
         .returning({ id: personalMemories.id });
       return expired.length;
     },
-    async sources(ownerUserId: string) {
+    async sources(ownerUserId: string, company?: MemoryCompany) {
       return database
         .select()
         .from(memorySources)
-        .where(eq(memorySources.ownerUserId, ownerUserId))
+        .where(
+          and(
+            eq(memorySources.ownerUserId, ownerUserId),
+            // FIX-W13 (FR2-2): one company's scope lists that company's sources alone — an
+            // isolated source (NULL, nobody could prove its company) is on nobody's list,
+            // never a global row. Without a company pin (a deployment without the
+            // enterprise layer) the query is exactly what it always was.
+            company ? eq(memorySources.tenantId, company.tenantId) : undefined,
+          ),
+        )
         .orderBy(desc(memorySources.createdAt));
     },
     getSource,
-    async createSource(ownerUserId: string, input: unknown) {
+    async createSource(
+      ownerUserId: string,
+      input: unknown,
+      company?: MemoryCompany,
+    ) {
       const [row] = await database
         .insert(memorySources)
         .values({
           id: randomUUID(),
           ownerUserId,
+          // FIX-W13 (FR2-2): the company fixed at binding — the (person, Bot)'s own proven
+          // company, resolved by the caller — stamped once here and read by every later
+          // sync. A request's selection never reaches this column.
+          tenantId: company?.tenantId ?? null,
           ...parseMemorySourceInput(input),
         })
         .returning();
       if (!row) throw new Error("Memory source insert returned no row.");
       return row;
     },
-    async setSourceEnabled(ownerUserId: string, id: string, enabled: boolean) {
+    async setSourceEnabled(
+      ownerUserId: string,
+      id: string,
+      enabled: boolean,
+      company?: MemoryCompany,
+    ) {
       const [row] = await database
         .update(memorySources)
         .set({ enabled, nextSyncAt: new Date(), updatedAt: new Date() })
@@ -421,13 +443,21 @@ export function createMemoryStore(
           and(
             eq(memorySources.id, id),
             eq(memorySources.ownerUserId, ownerUserId),
+            // FIX-W13 (FR2-2): operating a source is a company-scoped act — a source of
+            // another company (or an isolated one) is not this company's to turn on or
+            // off, and the answer is the same not-found as a missing row.
+            company ? eq(memorySources.tenantId, company.tenantId) : undefined,
           ),
         )
         .returning();
       if (!row) throw new MemoryNotFoundError();
       return row;
     },
-    async removeSource(ownerUserId: string, id: string) {
+    async removeSource(
+      ownerUserId: string,
+      id: string,
+      company?: MemoryCompany,
+    ) {
       // The source's memories cascade with it.
       const [source] = await database
         .select({ agentId: memorySources.agentId })
@@ -436,6 +466,9 @@ export function createMemoryStore(
           and(
             eq(memorySources.id, id),
             eq(memorySources.ownerUserId, ownerUserId),
+            // FIX-W13 (FR2-2): deleting is a company-scoped act too, same rule as
+            // enabling: another company's source (or an isolated one) is not-found here.
+            company ? eq(memorySources.tenantId, company.tenantId) : undefined,
           ),
         )
         .limit(1);
@@ -449,6 +482,9 @@ export function createMemoryStore(
             and(
               eq(memorySources.id, id),
               eq(memorySources.ownerUserId, ownerUserId),
+              company
+                ? eq(memorySources.tenantId, company.tenantId)
+                : undefined,
             ),
           )
           .returning({ toolRef: memorySources.toolRef });
@@ -516,7 +552,6 @@ export function createMemoryStore(
       ownerUserId: string,
       sourceId: string,
       records: ImportedMemory[],
-      company?: MemoryCompany,
     ) {
       // Pause-learning (#392): read before the transaction, so the gate never asks for a
       // second connection while the row lock is held. Paused means the import produces no
@@ -558,10 +593,13 @@ export function createMemoryStore(
             .values({
               id: randomUUID(),
               ownerUserId,
-              // FIX-F1 (FR-1): the import stamps the company its run resolved; an
-              // unattributed import (no provable company) lands isolated — NULL
-              // answers no company's read — never global.
-              tenantId: company?.tenantId ?? null,
+              // FIX-W13 (FR2-2): the import stamps the SOURCE's own company, read from the
+              // row this transaction just locked — the attribution fixed at binding and
+              // backfilled by migration 0212. No caller-supplied company reaches this
+              // column: the request's selection authorizes a sync upstream, it never
+              // restamps one. NULL (an isolated source, or a deployment without the
+              // enterprise layer) lands isolated, 0211's discipline.
+              tenantId: source.tenantId,
               sourceId,
               externalId: record.externalId,
               importDigest: record.digest,

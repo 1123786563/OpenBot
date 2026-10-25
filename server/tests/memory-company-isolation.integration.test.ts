@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import {
   afterAll,
@@ -13,7 +13,7 @@ import {
 } from "../../tests/support/bun-test-compat";
 import type { AppVariables } from "../src/auth/guards";
 import { createDatabase, type Database } from "../src/db/client";
-import { users } from "../src/db/schema/core";
+import { agents, users } from "../src/db/schema/core";
 import { enterpriseBotOwnership } from "../src/db/schema/enterprise-bot-ownership";
 import {
   enterpriseMemberships,
@@ -26,7 +26,7 @@ import {
   hindsightMigrationQuarantine,
   hindsightMigrationRuns,
 } from "../src/db/schema/hindsight-legacy-migration";
-import { personalMemories } from "../src/db/schema/memory";
+import { memorySources, personalMemories } from "../src/db/schema/memory";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
@@ -59,8 +59,17 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  *   - A wiring WITHOUT the company options (a deployment without the enterprise layer) keeps
  *     the global-owner behaviour unchanged — the standing the brief tells us to preserve.
  *
+ *   - FIX-W13 (FR2-2), the source family: a source's company is its own — fixed at binding,
+ *     persisted on the row, backfilled by migration 0212 — and the request's company only
+ *     authorizes. Another company's source (or an isolated one) is not on the asking
+ *     company's list, not its to enable, disable or delete, and its sync is not-found with
+ *     the connector never read; the same-company paths stamp the row's own company, the
+ *     binding of another company's Bot is refused, and the background loop uses the same
+ *     rule — attributed sources sync, isolated ones are skipped untouched.
+ *
  * The migration block at the bottom drives migration 0211's own SQL — read from the shipped
- * file — over a prepared pre-migration state and pins the backfill and isolation-list rules.
+ * file — over a prepared pre-migration state and pins the backfill and isolation-list rules;
+ * the FIX-W13 migration block after it does the same for 0212.
  *
  * Trusted scopes are minted by the same controlled directory stand-in the pause-entry suite
  * established (hindsight-pause-controls-entry.integration.test.ts): just enough of the tenancy
@@ -90,13 +99,46 @@ const UNATTRIBUTED_FACT = `ca unattributed fact ${run}`;
 const SOLO_FACT = `ca solo person fact ${run}`;
 
 const store = createMemoryStore(database);
+/*
+ * FIX-W13: the connector stand-in. The FIX-F1 seams above need no source work at all; the
+ * source cases below key a little state into the same mock — which Bots hold the fixture
+ * tool, whose Bots they answer as owner, and what one sync reads — so the production
+ * `createMemoryIngestion` runs the binding and sync paths without a vendor. The defaults
+ * stay the FIX-F1 answers (no grants, no servers, nobody's Bot), which is what every
+ * recall and injection case above still sees.
+ */
+const SOURCE_TOOL = {
+  ref: `notes_${run}/read_notes`,
+  effect: "read" as const,
+  destructive: false,
+};
+const SOURCE_SERVER = {
+  id: `notes_${run}`,
+  title: "Notes",
+  provenance: "mcp",
+  url: `https://notes-${run}.example.invalid`,
+  authScheme: null,
+  accountMode: null,
+  tools: [SOURCE_TOOL],
+};
+const grantedBots = new Set<string>();
+const ownedBots = new Set<string>();
+let vendorText = "[]";
+/** Every connector read, by source id: what the sync paths actually reached. */
+const connectorReads: string[] = [];
 const plugins = {
-  listForAgent: async () => ({ tools: [] }),
-  listServers: async () => [],
-  agentOwner: async () => null,
+  agentOwner: async (botId: string) => (ownedBots.has(botId) ? USER : null),
+  listForAgent: async (agentId: string) => ({
+    tools: grantedBots.has(agentId) ? [{ ref: SOURCE_TOOL.ref }] : [],
+  }),
+  listServers: async () => [SOURCE_SERVER],
   connectionsFor: async () => [],
   brokeredConnectionsFor: async () => [],
   deploymentConnectionFor: async () => null,
+  callTool: async (request: { initiator?: { id?: string } }) => {
+    connectorReads.push(request.initiator?.id ?? "unknown");
+    return { text: vendorText, isError: false };
+  },
 } as never;
 // The enterprise wiring's ingestion: the production `companyFor` (memory/company.ts) behind it.
 const ingestion = createMemoryIngestion({
@@ -708,5 +750,501 @@ describe("FIX-F1 — migration 0211 backfills proven attribution and isolates th
     await database
       .delete(users)
       .where(inArray(users.id, [PROV_USER, AMBIG_USER, NOPRIN_USER]));
+  });
+});
+
+/*
+ * FIX-W13 (FR2-2): the source family over the same production seams — the same route app
+ * (real `createMemoryRoutes` behind the trusted-scope `companyScope`), the same
+ * enterprise-wired `ingestion`, one connector stand-in answering every sync.
+ */
+describe("FIX-W13 — a source's own company decides; the request only authorizes", () => {
+  const SRC_A = `${run}-src-a`;
+  const SRC_B = `${run}-src-b`;
+  const SRC_ISO = `${run}-src-iso`;
+  const SRC_BG = `${run}-src-bg`;
+  const A_RECORD = `[{"id":"w13-a-1","text":"W13 company A record ${run}","title":"Notes"}]`;
+  const B_RECORD = `[{"id":"w13-b-1","text":"W13 company B record ${run}","title":"Notes"}]`;
+  const B_RECORD_NEXT = `[{"id":"w13-b-2","text":"W13 company B follow-up ${run}","title":"Notes"}]`;
+  const boundIds: string[] = [];
+  const importedOf = (sourceId: string) =>
+    database
+      .select({ id: personalMemories.id, tenantId: personalMemories.tenantId })
+      .from(personalMemories)
+      .where(eq(personalMemories.sourceId, sourceId));
+
+  beforeAll(async () => {
+    for (const bot of [BOT_A, BOT_B, PERSONAL_BOT]) {
+      grantedBots.add(bot);
+      ownedBots.add(bot);
+    }
+    // The source rows' agent_id FK needs the Bots to exist as agents rows at all.
+    await database.insert(agents).values(
+      [BOT_A, BOT_B, PERSONAL_BOT].map((id) => ({
+        id,
+        name: `Isolation agent ${id}`,
+        type: "built_in" as const,
+        configuration: {},
+      })),
+    );
+    await database.insert(memorySources).values([
+      {
+        id: SRC_A,
+        ownerUserId: USER,
+        tenantId: TENANT_A,
+        agentId: BOT_A,
+        toolRef: SOURCE_TOOL.ref,
+        title: "Notes A",
+        enabled: true,
+      },
+      {
+        id: SRC_B,
+        ownerUserId: USER,
+        tenantId: TENANT_B,
+        agentId: BOT_B,
+        toolRef: SOURCE_TOOL.ref,
+        title: "Notes B",
+        enabled: true,
+      },
+      // A source nobody could attribute: a personal Bot of a person in two companies.
+      {
+        id: SRC_ISO,
+        ownerUserId: USER,
+        tenantId: null,
+        agentId: PERSONAL_BOT,
+        toolRef: SOURCE_TOOL.ref,
+        title: "Notes isolated",
+        enabled: true,
+      },
+      {
+        id: SRC_BG,
+        ownerUserId: USER,
+        tenantId: TENANT_A,
+        agentId: BOT_A,
+        toolRef: SOURCE_TOOL.ref,
+        title: "Notes background",
+        enabled: true,
+      },
+    ]);
+  });
+
+  test("the asking company's source list is that company's alone", async () => {
+    const listA = await requestAs(USER, "/sources", { tenant: TENANT_A });
+    expect(listA.status).toBe(200);
+    const idsA = (
+      (await listA.json()) as { sources: { id: string }[] }
+    ).sources.map((row) => row.id);
+    expect(idsA).toContain(SRC_A);
+    expect(idsA).toContain(SRC_BG);
+    expect(idsA).not.toContain(SRC_B);
+    expect(idsA).not.toContain(SRC_ISO);
+
+    const listB = await requestAs(USER, "/sources", { tenant: TENANT_B });
+    const idsB = (
+      (await listB.json()) as { sources: { id: string }[] }
+    ).sources.map((row) => row.id);
+    expect(idsB).toContain(SRC_B);
+    expect(idsB).not.toContain(SRC_A);
+    expect(idsB).not.toContain(SRC_ISO);
+  });
+
+  test("a manual sync of another company's source is not-found, reads nothing and stamps nothing", async () => {
+    vendorText = A_RECORD;
+    const readsBefore = connectorReads.length;
+    const refused = await requestAs(USER, `/sources/${SRC_A}/sync`, {
+      method: "POST",
+      tenant: TENANT_B,
+    });
+    // Not this company's source: the same not-found a missing row answers, and the
+    // connector was never read — nothing of company A reached this request at all.
+    expect(refused.status).toBe(404);
+    expect(connectorReads.length).toBe(readsBefore);
+    expect(await importedOf(SRC_A)).toEqual([]);
+  });
+
+  test("an isolated source is nobody's to sync: not-found from every company", async () => {
+    const asA = await requestAs(USER, `/sources/${SRC_ISO}/sync`, {
+      method: "POST",
+      tenant: TENANT_A,
+    });
+    expect(asA.status).toBe(404);
+    const asB = await requestAs(USER, `/sources/${SRC_ISO}/sync`, {
+      method: "POST",
+      tenant: TENANT_B,
+    });
+    expect(asB.status).toBe(404);
+    expect(connectorReads).not.toContain(SRC_ISO);
+  });
+
+  test("the same-company sync stamps the source's own company, and a new externalId keeps it", async () => {
+    vendorText = B_RECORD;
+    const synced = await requestAs(USER, `/sources/${SRC_B}/sync`, {
+      method: "POST",
+      tenant: TENANT_B,
+    });
+    expect(synced.status).toBe(200);
+    expect(((await synced.json()) as { imported: number }).imported).toBe(1);
+    const [first] = await database
+      .select({ tenantId: personalMemories.tenantId })
+      .from(personalMemories)
+      .where(
+        and(
+          eq(personalMemories.sourceId, SRC_B),
+          eq(personalMemories.externalId, "w13-b-1"),
+        ),
+      );
+    expect(first.tenantId).toBe(TENANT_B);
+
+    // A NEW externalId on the next sync carries the same stamp — the row's own company,
+    // whatever scope happens to be asking (here the matching one; the refusing leg above
+    // is the mismatch case).
+    vendorText = B_RECORD_NEXT;
+    const again = await requestAs(USER, `/sources/${SRC_B}/sync`, {
+      method: "POST",
+      tenant: TENANT_B,
+    });
+    expect(again.status).toBe(200);
+    const [next] = await database
+      .select({ tenantId: personalMemories.tenantId })
+      .from(personalMemories)
+      .where(
+        and(
+          eq(personalMemories.sourceId, SRC_B),
+          eq(personalMemories.externalId, "w13-b-2"),
+        ),
+      );
+    expect(next.tenantId).toBe(TENANT_B);
+
+    // Company A's list of the same person never offers company B's new candidates.
+    const listA = await requestAs(USER, "/", { tenant: TENANT_A });
+    const contentsA = (
+      (await listA.json()) as { memories: { content: string }[] }
+    ).memories.map((memory) => memory.content);
+    expect(contentsA).not.toContain(`W13 company B record ${run}`);
+  });
+
+  test("the background loop uses the source's own rule: attributed sources sync, isolated ones are skipped untouched", async () => {
+    vendorText = A_RECORD;
+    await ingestion.syncDue();
+    expect(connectorReads).toContain(SRC_BG);
+    const [stamped] = await importedOf(SRC_BG);
+    expect(stamped.tenantId).toBe(TENANT_A);
+    // The isolated source sat in the same due set: not read, not claimed, not imported.
+    expect(connectorReads).not.toContain(SRC_ISO);
+    const [iso] = await database
+      .select({ syncStatus: memorySources.syncStatus })
+      .from(memorySources)
+      .where(eq(memorySources.id, SRC_ISO));
+    expect(iso.syncStatus).toBe("idle");
+    expect(await importedOf(SRC_ISO)).toEqual([]);
+  });
+
+  test("binding reaches only the current company's Bots; the row carries its company from birth", async () => {
+    const cross = await requestAs(USER, "/sources", {
+      method: "POST",
+      tenant: TENANT_B,
+      body: JSON.stringify({
+        agentId: BOT_A,
+        toolRef: SOURCE_TOOL.ref,
+        title: "Cross",
+        args: {},
+      }),
+    });
+    expect(cross.status).toBe(400);
+    expect(await cross.json()).toEqual({
+      error: "Choose one of this company's Bots for this source.",
+    });
+    // A personal Bot of a two-company person has no provable company either: fail closed.
+    const ambiguous = await requestAs(USER, "/sources", {
+      method: "POST",
+      tenant: TENANT_A,
+      body: JSON.stringify({
+        agentId: PERSONAL_BOT,
+        toolRef: SOURCE_TOOL.ref,
+        title: "Ambiguous",
+        args: {},
+      }),
+    });
+    expect(ambiguous.status).toBe(400);
+
+    // The same company's Bot binds, is stamped at binding, and imports under that stamp.
+    vendorText = B_RECORD;
+    const bound = await requestAs(USER, "/sources", {
+      method: "POST",
+      tenant: TENANT_B,
+      body: JSON.stringify({
+        agentId: BOT_B,
+        toolRef: SOURCE_TOOL.ref,
+        title: `Notes bound ${run}`,
+        args: {},
+      }),
+    });
+    expect(bound.status).toBe(201);
+    const boundBody = (await bound.json()) as {
+      source: { id: string; tenantId: string | null };
+    };
+    expect(boundBody.source.tenantId).toBe(TENANT_B);
+    boundIds.push(boundBody.source.id);
+  });
+
+  test("enable, disable and delete reach only the current company's sources", async () => {
+    const patched = await requestAs(USER, `/sources/${SRC_A}`, {
+      method: "PATCH",
+      tenant: TENANT_B,
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(patched.status).toBe(404);
+    const [row] = await database
+      .select({ enabled: memorySources.enabled })
+      .from(memorySources)
+      .where(eq(memorySources.id, SRC_A));
+    expect(row.enabled).toBe(true);
+
+    const removed = await requestAs(USER, `/sources/${SRC_A}`, {
+      method: "DELETE",
+      tenant: TENANT_B,
+    });
+    expect(removed.status).toBe(404);
+    expect(
+      (
+        await database
+          .select({ id: memorySources.id })
+          .from(memorySources)
+          .where(eq(memorySources.id, SRC_A))
+      ).length,
+    ).toBe(1);
+    // An isolated source is nobody's to delete either.
+    const isoDelete = await requestAs(USER, `/sources/${SRC_ISO}`, {
+      method: "DELETE",
+      tenant: TENANT_A,
+    });
+    expect(isoDelete.status).toBe(404);
+
+    // The asking company's own source answers normally.
+    const off = await requestAs(USER, `/sources/${SRC_B}`, {
+      method: "PATCH",
+      tenant: TENANT_B,
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(off.status).toBe(200);
+    const on = await requestAs(USER, `/sources/${SRC_B}`, {
+      method: "PATCH",
+      tenant: TENANT_B,
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(on.status).toBe(200);
+  });
+
+  test("a wiring without the enterprise layer keeps the owner-global source behaviour unchanged", async () => {
+    vendorText = B_RECORD;
+    const created = await unscopedIngestion.createSource(USER, {
+      agentId: BOT_B,
+      toolRef: SOURCE_TOOL.ref,
+      title: `Notes unscoped ${run}`,
+      args: {},
+    });
+    expect(created.source.tenantId).toBeNull();
+    expect(created.imported).toBe(1);
+    const [row] = await importedOf(created.source.id);
+    expect(row.tenantId).toBeNull();
+    boundIds.push(created.source.id);
+  });
+
+  afterAll(async () => {
+    // The imported memories cascade with their sources, the sources with their Bots.
+    await database
+      .delete(memorySources)
+      .where(
+        inArray(memorySources.id, [SRC_A, SRC_B, SRC_ISO, SRC_BG, ...boundIds]),
+      );
+    await database
+      .delete(agents)
+      .where(inArray(agents.id, [BOT_A, BOT_B, PERSONAL_BOT]));
+  });
+});
+
+/*
+ * Migration 0212's own rules, driven over a prepared pre-migration state — the replay
+ * pattern the 0211 block above established: the chain has already applied 0212 to this
+ * database (its DDL is in place), so this block reads the SHIPPED file, pins the DDL by
+ * shape, and executes the state-based data statements again (each one idempotent).
+ */
+const SOURCE_BACKFILL_RUN = "0212-memory-sources-company-attribution";
+const TENANT_C = `tn_ca-c-${run}`;
+const WS_C = `ws_ca-c-${run}`;
+const BOT_C = `bot_ca-c-${run}`;
+
+describe("FIX-W13 — migration 0212 backfills proven source attribution and isolates the rest", () => {
+  const ids = {
+    botOwned: `${run}-src-mig-bot`,
+    botNotMember: `${run}-src-mig-notmember`,
+    personalAmbiguous: `${run}-src-mig-amb`,
+    soloPersonal: `${run}-src-mig-solo`,
+  };
+
+  beforeAll(async () => {
+    /*
+     * A third company whose Bot this person's principal owns WITHOUT the person being an
+     * active member — rule 1's membership leg, the case an ownership-only backfill would
+     * get wrong. The ownership FK demands the (tenant, principal) membership row exist, so
+     * the fixture creates it and then suspends it: the person left the company while their
+     * Bot stayed behind, the exact shape resolveMemoryCompany refuses at runtime.
+     */
+    await database
+      .insert(enterpriseTenants)
+      .values({ id: TENANT_C, name: `Isolation C ${run}` });
+    await database.insert(enterpriseWorkspaces).values({
+      tenantId: TENANT_C,
+      id: WS_C,
+      name: `Isolation C ws ${run}`,
+    });
+    await database.insert(enterpriseMemberships).values({
+      tenantId: TENANT_C,
+      principalId: PRIN,
+      role: "member",
+    });
+    await database.insert(enterpriseBotOwnership).values({
+      tenantId: TENANT_C,
+      agentId: BOT_C,
+      workspaceId: WS_C,
+      ownerPrincipalId: PRIN,
+      displayName: `Isolation Bot C ${run}`,
+      defaultConfig: {},
+    });
+    await database
+      .update(enterpriseMemberships)
+      .set({ status: "suspended" })
+      .where(
+        and(
+          eq(enterpriseMemberships.tenantId, TENANT_C),
+          eq(enterpriseMemberships.principalId, PRIN),
+        ),
+      );
+    // The agent rows this block's sources point at (the route block deleted its own).
+    await database.insert(agents).values(
+      [BOT_A, BOT_C, PERSONAL_BOT, SOLO_BOT].map((id) => ({
+        id,
+        name: `Isolation agent ${id}`,
+        type: "built_in" as const,
+        configuration: {},
+      })),
+    );
+    const row = (id: string, ownerUserId: string, agentId: string) => ({
+      id,
+      ownerUserId,
+      tenantId: null,
+      agentId,
+      toolRef: SOURCE_TOOL.ref,
+      title: `Migration ${id}`,
+      enabled: true,
+    });
+    await database
+      .insert(memorySources)
+      .values([
+        row(ids.botOwned, USER, BOT_A),
+        row(ids.botNotMember, USER, BOT_C),
+        row(ids.personalAmbiguous, USER, PERSONAL_BOT),
+        row(ids.soloPersonal, SOLO, SOLO_BOT),
+      ]);
+    // The shipped file's data statements, after pinning the DDL shape in front of them.
+    const file = await readFile(
+      join(
+        hereDir,
+        "..",
+        "drizzle",
+        "0212_memory_sources_company_attribution.sql",
+      ),
+      "utf8",
+    );
+    const statements = file
+      .split("-->")
+      .map((statement) =>
+        statement
+          // The breakpoint marker half, then any leading comment block, then the gap.
+          .replace(/^ statement-breakpoint.*$/m, "")
+          .replace(/^(--[^\n]*\n\s*)+/, "")
+          .trim(),
+      )
+      .filter(Boolean);
+    expect(statements[0]).toMatch(
+      /^ALTER TABLE "memory_sources" ADD COLUMN "tenant_id"/,
+    );
+    expect(statements[1]).toMatch(
+      /^ALTER TABLE "memory_sources" ADD CONSTRAINT/,
+    );
+    expect(statements[2]).toMatch(/^CREATE INDEX "memory_sources_tenant_idx"/);
+    for (const statement of statements.slice(3)) {
+      await database.execute(sql.raw(statement));
+    }
+  });
+
+  test("rule 1 backfills the Bot's company while the person is a live member of it; a Bot of a company the person left stays NULL", async () => {
+    const rows = await database
+      .select({ id: memorySources.id, tenantId: memorySources.tenantId })
+      .from(memorySources)
+      .where(inArray(memorySources.id, [ids.botOwned, ids.botNotMember]));
+    expect(
+      Object.fromEntries(rows.map((row) => [row.id, row.tenantId])),
+    ).toEqual({
+      [ids.botOwned]: TENANT_A,
+      [ids.botNotMember]: null,
+    });
+  });
+
+  test("rule 2 follows the person's one provable membership; ambiguity stays NULL, never guessed", async () => {
+    const rows = await database
+      .select({ id: memorySources.id, tenantId: memorySources.tenantId })
+      .from(memorySources)
+      .where(
+        inArray(memorySources.id, [ids.personalAmbiguous, ids.soloPersonal]),
+      );
+    expect(
+      Object.fromEntries(rows.map((row) => [row.id, row.tenantId])),
+    ).toEqual({
+      [ids.personalAmbiguous]: null,
+      [ids.soloPersonal]: TENANT_A,
+    });
+  });
+
+  test("the run row records what the pass decided, and no per-row isolation list was written", async () => {
+    const [runRow] = await database
+      .select()
+      .from(hindsightMigrationRuns)
+      .where(eq(hindsightMigrationRuns.id, SOURCE_BACKFILL_RUN));
+    expect(runRow.state).toBe("succeeded");
+    expect(runRow.quarantined).toBeGreaterThanOrEqual(2);
+    expect(runRow.processed).toBeGreaterThanOrEqual(runRow.quarantined);
+    // The isolation list stays the #394 reconciliation's own: source ids never land in it.
+    const listed = await database
+      .select({ oldRecordId: hindsightMigrationQuarantine.oldRecordId })
+      .from(hindsightMigrationQuarantine)
+      .where(
+        inArray(hindsightMigrationQuarantine.oldRecordId, Object.values(ids)),
+      );
+    expect(listed).toEqual([]);
+  });
+
+  afterAll(async () => {
+    await database
+      .delete(memorySources)
+      .where(inArray(memorySources.id, Object.values(ids)));
+    await database
+      .delete(hindsightMigrationRuns)
+      .where(eq(hindsightMigrationRuns.id, SOURCE_BACKFILL_RUN));
+    await database
+      .delete(enterpriseMemberships)
+      .where(
+        and(
+          eq(enterpriseMemberships.tenantId, TENANT_C),
+          eq(enterpriseMemberships.principalId, PRIN),
+        ),
+      );
+    await database.delete(agents).where(eq(agents.id, BOT_C));
+    await database
+      .delete(agents)
+      .where(inArray(agents.id, [BOT_A, PERSONAL_BOT, SOLO_BOT]));
+    await database
+      .delete(enterpriseTenants)
+      .where(eq(enterpriseTenants.id, TENANT_C));
   });
 });

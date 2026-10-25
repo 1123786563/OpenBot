@@ -2622,6 +2622,15 @@ const deliveryScopeFor: DeliveryScopeResolver = async (
 const memoryDefaults = createMemoryDefaults({
   database,
   ingestion: memoryIngestion,
+  // FIX-W13 (#376, FR2-2): a default source binds to the (person, Bot)'s own proven
+  // company, the same resolver the hand-made binding reads — wired only where the
+  // enterprise layer is, so a single-user deployment adopts exactly as it always did.
+  ...(enterpriseCapabilities
+    ? {
+        companyFor: (input: { ownerUserId: string; agentId: string }) =>
+          resolveMemoryCompany(database, input),
+      }
+    : {}),
   sources: config.memoryDefaults.sources,
   research: config.memoryDefaults.research,
   channelBots: async (ownerUserId, channelId) =>
