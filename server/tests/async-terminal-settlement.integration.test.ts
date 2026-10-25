@@ -15,7 +15,9 @@ import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
 import type { AuditEventInput } from "../src/audit";
 import {
   GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  PRICE_DIMENSIONS,
   createEnterpriseGatewayPriceSnapshotStore,
+  type PriceDimension,
 } from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
 import {
@@ -66,7 +68,7 @@ const reserveService = createCreditReserveService({
   catalogFreshnessWindowMs: 15 * 60 * 1000,
 });
 
-const V1_AMOUNTS = {
+const V1_AMOUNTS: Record<PriceDimension, string> = {
   input: "0.000001",
   output: "0.000002",
   reasoning: "0.000003",
@@ -84,7 +86,32 @@ const V1_AMOUNTS = {
   surcharge_a2a_call: "0.003",
 };
 
+/**
+ * The price and usage literals below are hand-written copies of the FULL dimension
+ * vocabulary (`V1_AMOUNTS`, `TERMINAL_USAGE`): a complete basis prices every dimension, wire
+ * or not. Check the copy against `PRICE_DIMENSIONS` in both directions — missing and
+ * unexpected named — so a vocabulary expansion cannot leave this suite's constants behind
+ * (R2-F1), silently turning a complete basis into an incomplete one.
+ */
+function assertFullVocabularyCoverage(
+  covered: readonly string[],
+  label: string,
+): void {
+  const coveredSet = new Set<string>(covered);
+  const expected = new Set<string>(PRICE_DIMENSIONS);
+  const missing = [...expected].filter((dim) => !coveredSet.has(dim)).sort();
+  const unexpected = [...coveredSet].filter((dim) => !expected.has(dim)).sort();
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `${label} drifted from price-snapshot.ts's PRICE_DIMENSIONS: ` +
+        `missing [${missing.join(", ")}], ` +
+        `unexpected [${unexpected.join(", ")}]`,
+    );
+  }
+}
+
 function dimsOf(amounts: Record<string, string>) {
+  assertFullVocabularyCoverage(Object.keys(amounts), "async fixture amounts");
   const dims: Record<string, { status: "known"; amount: string }> = {};
   for (const [dimension, amount] of Object.entries(amounts)) {
     dims[dimension] = { status: "known", amount };
@@ -244,7 +271,7 @@ function makeAuditSpy() {
   };
 }
 
-const TERMINAL_USAGE = {
+const TERMINAL_USAGE: Record<PriceDimension, number> = {
   input: 0,
   output: 0,
   reasoning: 0,
@@ -260,7 +287,7 @@ const TERMINAL_USAGE = {
   surcharge_per_request: 0,
   surcharge_tool_call: 0,
   surcharge_a2a_call: 0,
-} as const;
+};
 
 function terminalOf(
   jobId: string,
@@ -276,6 +303,10 @@ function terminalOf(
     evidence: { kind: "provider_usage_report" };
   };
 } {
+  assertFullVocabularyCoverage(
+    Object.keys(TERMINAL_USAGE),
+    "async TERMINAL_USAGE",
+  );
   return {
     jobId,
     terminal: {
