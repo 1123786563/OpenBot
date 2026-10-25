@@ -53,3 +53,14 @@
 | F7C builtin 终态接线 | R3-03 medium | 公共 builtin 事件入口记录真实 start/terminal（success/error 区分）；工具 fact 不提前终结 run；首终态优先；断连才 unknown；补无工具成功/工具后成败/取消/断连/重试的 list/detail/根时间回归 | 2（后） |
 | F7D remote 可强制合同 | R3-02 high | 受支持端点接可强制的预算/能力合同（本仓 agent-langgraph 可实现端点侧执行），无法校验仍拒绝；不借 generic policy 配置；补经 OpenBot 默认 LangGraph 真实执行 | 3 |
 | F7E 冻结树全链证据 | R3-04 medium | 修复后冻结组合树补完整环境真实证据（stock builtin + 经 OpenBot LangGraph、工具 ID 对应、跨服务父子、多次 run 定位）；缺失保留 GAP 不相加局部 PASS | 4（终） |
+
+## FREV R4（2026-10-25）终裁 FAIL：4 阻塞（全 medium，high/critical=0）→ 波六
+
+R3 五项全部 CLOSED。R4 剩余：R4-01 W3C 跨服务链非确定（3/9）、R4-02 默认系统 Bot 观测域缺席（systemOwned 规则复用到观测域）、R4-03 真实业务工具 call ID 无治理 span、R4-04 A7/A9/A11 实环境证据缺。非阻塞：查询面 usage 聚合（可披露后续）、F7E-F3 low。
+
+| 任务 | finding | 关闭条件（R4 §4） | 流 |
+| --- | --- | --- | --- |
+| F8A W3C 链确定化 | R4-01 medium | 解释 runtime 调度/上下文断点并使受支持人面执行同链；两类身份（driver 供给 / 派生）+ 默认 Bot 多 run 真实 Opik 验证；保留原始 span 父子与拨号数据；不伪造 trace | 1（前） |
+| F8C 业务工具关联 | R4-03 medium | 真实可观察业务工具/检索全链证据；按可信事实记录 proposed/receipt/unobserved（绝不伪造 executed）；真实 call 不得从治理步骤消失 | 1（后，同 copilot.ts 区） |
+| F8B 默认 Bot 观测域 | R4-02 medium | 以明确授权边界设计默认 Bot 观测 scope（不牺牲隔离、不放开编辑权）；默认 Bot 查询+上游关联同时恢复 | 2 |
+| F8D 终证据波 | R4-04 medium + F8A/B/C 真实复核 | 冻结树补 A7（同冻结集两配置+Judge 真机闭环）、A9（退化回链）、A11（全存储/导出/备份与故障恢复，无备份给拓扑证明）；并对 F8A/B/C 修复做真实环境复核 | 3（终） |
