@@ -131,6 +131,14 @@ export type ToolStepObservation = Readonly<{
    * a chain-less step has no local authority to export under.
    */
   trace?: StepTraceContext;
+  /**
+   * R4-03: which path observed the step. `builtin` (the default) saw the run's
+   * own event stream; `remote-agui` saw an endpoint's stream THROUGH this
+   * server — a run whose tools executed elsewhere, whose observations therefore
+   * never claim an execution, and whose binding is the run identity the fact
+   * carried (not the chain-minted one). The span's `origin` attribute names it.
+   */
+  origin?: "builtin" | "remote-agui";
 }>;
 
 /**
@@ -420,7 +428,15 @@ function buildToolStepSpan(observation: ToolStepObservation): OpikOtlpSpan {
       receipt_observed: observation.receiptObserved,
       window: observation.window,
       span_state: toolStepTerminalState(observation),
-      origin: "builtin",
+      /*
+       * R4-03: the span names the path that observed it — `builtin` for the run's
+       * own stream, `remote-agui` for an endpoint's stream this server mediated.
+       * The call id ↔ step linkage this attribute set carries is the finding's
+       * closure: a real business call never disappears from governance steps for
+       * want of its identity, and a surface/endpoint execution reads unobserved,
+       * never executed.
+       */
+      origin: observation.origin ?? "builtin",
       // The FREV-01 audit chain: a span that carried bodies names the policy
       // that approved them; a proof-less span carries no bodies to name.
       ...(approval ? { content_policy_ref: approval.policyRef } : {}),

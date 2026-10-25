@@ -122,6 +122,12 @@ export type RunStep = {
   endedAt: string;
   /** Tool steps only: T15's determination over the three separately observed facts. */
   executionState?: RunStepExecutionState;
+  /**
+   * Tool steps only (R4-03): the call id the run's own protocol named the tool call
+   * by — the correspondence that keeps a real business call locatable in the
+   * governance record. Absent when the recorded span carried none.
+   */
+  toolCallId?: string;
   /** The projected call arguments, or the retrieval query. */
   input?: SafeValue | null;
   /** The projected result or error text. */

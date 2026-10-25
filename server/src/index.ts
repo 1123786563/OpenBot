@@ -7945,14 +7945,21 @@ if (opikBootConfig.enabled) {
       scope: fact.scope as ObservationScope | undefined,
       // The run's W3C chain captured at cell open (Issue #23/T17): the step span
       // joins the cross-service trace instead of rooting a fresh random one.
+      // R4-03: a remote-mediated fact names its run identity too — the binding
+      // gate must reuse the binding the run's basic record began (the run's own
+      // run id), never mint a second chain-keyed row for the same trace.
       ...(fact.trace
         ? {
             trace: {
               traceId: fact.trace.traceId,
               parentSpanId: fact.trace.spanId,
+              ...(fact.runRef ? { runRef: fact.runRef } : {}),
             },
           }
         : {}),
+      // R4-03: the observing path's own name — builtin facts carry no origin and
+      // read as `builtin` at the recorder; a remote-agui fact names itself.
+      ...(fact.origin ? { origin: fact.origin } : {}),
     });
     // R3-03: the tool-step window no longer settles the run. The fact face's
     // window was the ONLY run-close signal the wiring had, so every terminal
