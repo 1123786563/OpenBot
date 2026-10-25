@@ -1,12 +1,20 @@
 /**
  * Who may observe a Bot.
  *
- * Observation access is MANAGEMENT access, not chat access. `canAccessAgent`
- * (server/src/agents/profile-policy.ts) answers yes for a `public` Bot, which is
- * exactly the widening the parent Spec forbids: public chat access must not become
- * access to another creator's traces. So this module asks the manage-level question
- * and nothing else, and the answer is injected the same way `BotAccessCheck` is —
- * a surface that observes a Bot depends on the question, not on the agents table.
+ * Observation access is its own authorization question, not chat access and not
+ * edit access. `canAccessAgent` (server/src/agents/profile-policy.ts) answers yes
+ * for a `public` Bot, which is exactly the widening the parent Spec forbids: public
+ * chat access must not become access to another creator's traces. But the manage
+ * rule `canManageAgent` is not the answer either (R4-02): it refuses `systemOwned`
+ * for every role, which is right for editing and wrong for reading — a system Bot
+ * has no personal creator, and the parent Spec's access contract hands its
+ * observation data to the administrator, so routing observation through the manage
+ * question left the deployment's default LangGraph Bot executing and billing while
+ * its own query face answered 404. The observe-level policy is
+ * `canObserveAgent` in the same file: creator or administrator for a user-owned
+ * Bot, administrator alone for a system Bot, nobody on chat rights. The answer is
+ * injected the same way `BotAccessCheck` is — a surface that observes a Bot
+ * depends on the question, not on the agents table.
  *
  * Deliberately absent: any tenant or enterprise scope. Unknown enterprise scope is
  * refused by the scope seam (ticket #12), not here; this file must not grow a
@@ -19,6 +27,11 @@ import type { AgentActor, AgentProfile } from "../agents/profile-types";
  * downstream readers need the ownership and version references off the same row the
  * authorization decision was made on — a second lookup could observe a different Bot
  * after a transfer.
+ *
+ * The name predates R4-02: the production wiring backs this with the observe-level
+ * policy (`canObserveAgent`), never the manage gate — for a user-owned Bot the two
+ * agree, and for a system Bot the manage gate would refuse every role, which is the
+ * defect this seam's injection had to stop reusing.
  */
 export type BotManagementCheck = (
   actor: AgentActor,
@@ -36,12 +49,14 @@ export type ObservationOwnership = "owner" | "admin";
  * was made on: the profile's owner is "owner", a global admin is "admin", and
  * anything else is a refusal — never an inference.
  *
- * Today's manage gate only lets an owner or a global admin through, so the refusal
+ * Today's gate only lets an owner or a global admin through, so the refusal
  * branch is unreachable in production — and that is exactly the point: the scope
  * minting must not inherit the gate's implementation details. A future widening of
  * the gate (shared management, organization roles — the enterprise seam's reserved
  * direction) then fails closed here instead of silently granting observation scopes
- * to whoever the widened gate lets through (OCR round-1 h10/m182).
+ * to whoever the widened gate lets through (OCR round-1 h10/m182). For a system Bot
+ * the owner arm is structurally dead — `ownerUserId` is null by provisioning — so
+ * "admin" is the only answer a system Bot's observation scope is ever minted under.
  */
 export function explicitObservationOwnership(
   actor: AgentActor,

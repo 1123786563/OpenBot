@@ -52,7 +52,7 @@ import {
   createOpenMuseTemplateRevisionStore,
   createOpenMuseTemplateStore,
 } from "./agents/openmuse-template-store";
-import { canManageAgent } from "./agents/profile-policy";
+import { canObserveAgent } from "./agents/profile-policy";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -1098,12 +1098,21 @@ learningAutoAssign.start();
  * where its await belongs.
  */
 const opikBootConfig = opikConfigFromEnv(process.env);
-const aiObservabilityCanManageBot: BotManagementCheck = async (
+/*
+ * R4-02: the observation domain's ONE gate is the observe-level policy, not the
+ * manage rule. `canManageAgent` refuses `systemOwned` for every role — right for
+ * editing, wrong for reading — so routing this seam through it left the default
+ * LangGraph Bot executing, billing and writing traces upstream while every
+ * observation face answered 404 and no binding ever existed. `canObserveAgent`
+ * keeps the manage answer for user-owned Bots and hands a creatorless system
+ * Bot's data to the administrator alone; the edit paths keep `canManageAgent`.
+ */
+const aiObservabilityCanObserveBot: BotManagementCheck = async (
   actor,
   botId,
 ) => {
   const profile = await agentProfileStore.get(actor, botId).catch(() => null);
-  return profile && canManageAgent(actor, profile) ? profile : null;
+  return profile && canObserveAgent(actor, profile) ? profile : null;
 };
 const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
 /*
@@ -1117,7 +1126,7 @@ const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
  */
 const aiObservabilityRunScope = createBuiltinRunScopeResolver({
   enabled: () => opikBootConfig.enabled,
-  canManageBot: aiObservabilityCanManageBot,
+  canManageBot: aiObservabilityCanObserveBot,
   scopeEpoch: aiObservabilityScopeEpoch,
 });
 /*
@@ -7654,7 +7663,7 @@ const aiObservability = createAiObservabilityRoutes({
   // The shared guard, not a second construction (OCR m209): one deployment-level
   // requireUser per process, or two copies age separately and fork silently.
   requireUser: deploymentRequireUser,
-  canManageBot: aiObservabilityCanManageBot,
+  canManageBot: aiObservabilityCanObserveBot,
   healthService: opikHealthService,
   database,
   scopeEpoch: aiObservabilityScopeEpoch,
@@ -7697,7 +7706,7 @@ const aiObservability = createAiObservabilityRoutes({
  */
 const observationExportStore = createObservationExportStore(database);
 const opikExportReauthorize = createExportReauthorization({
-  canManageBot: aiObservabilityCanManageBot,
+  canManageBot: aiObservabilityCanObserveBot,
   scopeEpoch: aiObservabilityScopeEpoch,
   resolveActor: createActorResolver((userId) =>
     roleRepository.rolesForUser(userId),
@@ -8020,7 +8029,7 @@ if (
         policy: opikEvaluationCreditPolicy.models,
         externalCustomerId: billing.externalCustomerKey,
       },
-      canManageBot: aiObservabilityCanManageBot,
+      canManageBot: aiObservabilityCanObserveBot,
       scopeEpoch: aiObservabilityScopeEpoch,
       resolveActor: createActorResolver((userId) =>
         roleRepository.rolesForUser(userId),
