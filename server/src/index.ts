@@ -87,6 +87,7 @@ import { createOpikHealthService } from "./ai-observability/health";
 import { createIdLinkStore } from "./ai-observability/id-links";
 import { createModelSpanRecorder } from "./ai-observability/model-span";
 import { createRunsQueryService } from "./ai-observability/queries/runs";
+import { createRemoteRunRecorder } from "./ai-observability/remote-run";
 import {
   createObservationRetentionWorker,
   RETENTION_WORK_KIND,
@@ -254,6 +255,8 @@ import {
   setMastraPersonalMemoryContext,
   setModelBillingAudit,
   setModelUsageGate,
+  setRemoteRunBudgetGate,
+  setRemoteRunObserver,
   setWorkbenchGatewayModel,
   type ToolSelection,
 } from "./copilot";
@@ -6235,8 +6238,112 @@ if (billing !== undefined && usageOutbox !== undefined) {
       },
     }).catch(() => undefined);
   });
+
+  /*
+   * The remote dial's budget admission (F5E1-F2). The gate exists exactly when the
+   * deployment can verify a budget: billing composed AND the credit policy configured —
+   * a deployment without either keeps its remote Bots fail-closed
+   * (REMOTE_RUN_BUDGET_UNVERIFIED), because a dial nobody can budget is a dial nobody can
+   * account for. This IS the deploy-level budget authorization: the policy's `codeRun`
+   * class is the per-run ceiling a remote run is held to, since the endpoint's own model
+   * is not this deployment's to price.
+   *
+   * Settlement is the unknown-cost doctrine, not an invented charge: AG-UI carries no
+   * usage receipt, so an admitted run's hold is MARKED UNKNOWN (06.8 — it outlives its own
+   * expiry for reconciliation) with the observed outcome as its reason. Nothing releases,
+   * because nothing this side can observe ever confirms a remote run was free. The usage
+   * outbox's closed source vocabulary ("llm" | "code_run") has no remote member yet, so
+   * the evidence row waits on that contract change rather than mislabeling a fact — the
+   * hold plus this log line is what reconciliation reads today.
+   */
+  const remoteRunCreditPolicy =
+    creditPolicy?.configured === true ? creditPolicy : undefined;
+  if (remoteRunCreditPolicy !== undefined) {
+    setRemoteRunBudgetGate(async (input) => {
+      // The request's one payer (B5-219), resolved once, exactly as the model gate does:
+      // the request's own binding when the surface bound one, else the deployment's.
+      const payerBinding = resolveConsumptionPayerBinding({
+        requestBinding: currentPayerBinding(),
+        deploymentBinding: billing.deploymentPayerBinding,
+      });
+      let reservation: Awaited<
+        ReturnType<typeof billing.creditWriter.reserveCredits>
+      >;
+      try {
+        reservation = await billing.creditWriter.reserveCredits({
+          externalCustomerId: payerBinding.externalCustomerId,
+          idempotencyKey: `${USAGE_IDEMPOTENCY_KEY_PREFIX}${input.eventId}`,
+          maximumCents: Number(
+            remoteRunCreditPolicy.codeRun.maximumReservationUnits,
+          ),
+          expiresAt: new Date(
+            input.occurredAt.getTime() + MODEL_RESERVATION_WINDOW_MS,
+          ),
+        });
+      } catch (error) {
+        // The ledger read/write failed: refused, never free (fail-closed, the same sentence
+        // the model gate keeps). The name alone is logged.
+        log.error(
+          {
+            type: "remote-run-credit-gate-failed",
+            eventId: input.eventId,
+            botId: input.botId,
+            name: (error as Error | null | undefined)?.name,
+          },
+          "remote-run-credit-gate-failed",
+        );
+        throw new CreditGateFailureError();
+      }
+      if (!reservation.reserved) {
+        // The hold is the run-class worst case, so the log keeps the two causes
+        // distinguishable: an empty balance and one smaller than one remote run's ceiling.
+        log.warn(
+          {
+            type: "remote-run-credit-reservation-refused",
+            eventId: input.eventId,
+            botId: input.botId,
+            payerKind: payerBinding.payer.kind,
+            available: reservation.availableCents,
+          },
+          "remote-run-credit-reservation-refused",
+        );
+        // The same displayable refusal the built-in path answers with (B5-219 / AC13): the
+        // bound account's kind and its own available amount, no other account's data, no
+        // second resolution, no switch.
+        throw new CreditInsufficientError({
+          payerKind: payerBinding.payer.kind,
+          availableCents: reservation.availableCents,
+        });
+      }
+      return {
+        finish: async ({ outcome }) => {
+          try {
+            await billing.creditWriter.markReservationUnknown(
+              reservation.reservationId,
+              `remote_usage_unreported:${outcome}`,
+            );
+          } catch (error) {
+            // The settlement mark failed: the hold stays plain-reserved and expires on its
+            // own clock — visible to reconciliation, logged here, never the run's failure
+            // (the answer was already delivered).
+            log.error(
+              {
+                type: "remote-run-credit-settle-failed",
+                eventId: input.eventId,
+                botId: input.botId,
+                outcome,
+                name: (error as Error | null | undefined)?.name,
+              },
+              "remote-run-credit-settle-failed",
+            );
+          }
+        },
+      };
+    });
+  }
 } else {
   setModelUsageGate(undefined);
+  setRemoteRunBudgetGate(undefined);
   setWorkbenchGatewayModel(undefined);
   setModelBillingAudit(undefined);
 }
@@ -7708,6 +7815,33 @@ const opikModelSpans = createModelSpanRecorder({
   healthService: opikHealthService,
   bindings: opikObserverBindings,
 });
+/*
+ * The remote run's basic record (F5E1-F2): one recorder over the same T07 binding store the
+ * observer gate reads and the same verified port its materialization rides, keeping the
+ * remote origin's governed records on the machinery every other observed run uses — binding
+ * gate, deterministic upstream identity, authoritative reconcile — rather than a parallel
+ * path around it. Registered on the same inert-until-proven footing as the span observer
+ * above: an Opik-disabled deployment keeps the dial (the budget gate governs it) and simply
+ * keeps no basic record.
+ */
+const opikRemoteRuns = createRemoteRunRecorder({
+  bindings: aiObservabilityBindings,
+  port: () => opikObservationPort,
+});
+if (opikBootConfig.enabled) {
+  setRemoteRunObserver((fact) =>
+    opikRemoteRuns.record({
+      scope: fact.scope,
+      botId: fact.botId,
+      threadId: fact.threadId,
+      runId: fact.runId,
+      attemptId: fact.attemptId,
+      traceId: fact.traceId,
+      events: fact.events,
+      endedAt: fact.endedAt,
+    }),
+  );
+}
 if (opikBootConfig.enabled) {
   setBuiltinModelSpanObserver((fact) =>
     opikModelSpans.record({
