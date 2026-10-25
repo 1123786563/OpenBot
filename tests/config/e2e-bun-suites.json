@@ -1254,6 +1254,7 @@
     "app/tests/live-screen-app-shortcuts.test.tsx",
     "app/tests/live-screen-keyboard.test.tsx",
     "app/tests/mastra-runtime-compat.test.tsx",
+    "app/tests/memory-answer-basis.test.tsx",
     "app/tests/memory-hindsight.test.tsx",
     "app/tests/memory-settings.test.tsx",
     "app/tests/model-picker-ui.test.tsx",
