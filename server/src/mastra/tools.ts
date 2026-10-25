@@ -290,6 +290,18 @@ export function createMastraTools(
       );
     }
     const claimed = wireName(granted.name);
+    // F19-1 (T36): the reserved pair must be refused in its WIRE spelling
+    // too. The learned system tools mount dot-free (`copilotkit_load_skill`,
+    // learning/runtime.ts) and the engine rewrites every `.` to `_` before
+    // the wire, so a dotted grant (`copilotkit.load_skill`) passed the
+    // exact-match check above, claimed this name, and collapsed the run at
+    // the engine's AGENT_TOOL_NAME_COLLISION once the learned pair mounted
+    // beside it. Refusing here makes that death path unreachable at mount.
+    if (isReservedToolName(claimed)) {
+      throw new MastraToolRefusal(
+        `MASTRA_TOOL_NAME_RESERVED: ${granted.name} reaches the model as ${claimed}, a system tool name and cannot be overridden by a grant.`,
+      );
+    }
     const firstClaim = claimedWireNames.get(claimed);
     if (firstClaim !== undefined) {
       throw new MastraToolRefusal(
@@ -442,7 +454,9 @@ export interface MastraLearnedToolGuard extends MastraToolGuard {
    * Names already mounted as granted (server-executed) tools. A learned
    * surface claiming one refuses — though `createMastraTools` already
    * refuses any grant carrying a reserved name, so this is defense in
-   * depth, not the primary rule.
+   * depth, not the primary rule. Callers may pass raw grant spellings
+   * (execution.ts passes `Object.keys(tools)`): the set is normalized to
+   * the wire spelling here, so a dotted twin cannot slip through.
    */
   readonly grantedNames?: readonly string[];
 }
@@ -466,7 +480,14 @@ export function createMastraLearnedTools(
     );
   }
   const operations = new Map<string, MastraToolOperation>();
-  const granted = new Set(guard.grantedNames ?? []);
+  // F19-2 (T36): the granted set enters in its WIRE spelling, exactly as the
+  // frontend bridge's collision set does (F18-4). A raw-spelling set let the
+  // dotted grant `copilotkit.load_skill` pass this gate and mount beside the
+  // dot-free reserved pair, which the engine then collapses into one name
+  // (AGENT_TOOL_NAME_COLLISION, whole run). The learned names themselves
+  // carry no dot — LEARNED_SKILL_TOOL_NAMES is underscored — so the
+  // comparison below is wire against wire and lossless.
+  const granted = new Set((guard.grantedNames ?? []).map(wireName));
   for (const [index, spec] of surface.tools.entries()) {
     if (!spec || typeof spec.name !== "string") {
       throw new MastraToolRefusal(

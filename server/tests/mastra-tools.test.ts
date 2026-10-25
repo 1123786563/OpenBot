@@ -331,6 +331,31 @@ describe("createMastraTools wrapping", () => {
     expect(wireName(".")).toBe("_");
   });
 
+  it("dotted_reserved_pair_refused_on_the_wire_name", () => {
+    // F19-1 (T36): the reserved-name check above judges the ORIGINAL
+    // spelling, but the learned system tools mount dot-free and the engine
+    // rewrites the dot before the wire — so a grant `copilotkit.load_skill`
+    // passed the exact-match check, claimed the wire name, and collapsed
+    // the run at the engine's AGENT_TOOL_NAME_COLLISION once the learned
+    // pair mounted beside it. The reserved pair is refused in its WIRE
+    // spelling too: named, with both spellings so the grant is findable.
+    const dotted = () =>
+      createMastraTools([tool({ name: "copilotkit.load_skill" })]);
+    expect(dotted).toThrow(/MASTRA_TOOL_NAME_RESERVED/);
+    expect(dotted).toThrow("copilotkit.load_skill");
+    expect(dotted).toThrow("copilotkit_load_skill");
+    // The other member of the reserved pair rides the same refusal.
+    expect(() =>
+      createMastraTools([tool({ name: "copilotkit.read_skill_file" })]),
+    ).toThrow(/MASTRA_TOOL_NAME_RESERVED/);
+    // Zero widening: a dot that lands nowhere near the reserved pair still
+    // mounts — refusing the wire spelling of a reserved name never refuses
+    // plain dotted brokered names (the twin test's positive pin is beside).
+    expect(() =>
+      createMastraTools([tool({ name: "github.get_current_user" })]),
+    ).not.toThrow();
+  });
+
   it("grant_write_refuses_model_unaddressable_tool_names", async () => {
     // OCR fix wave 3 (R3-2): the model tool name is minted at the grant write
     // (toolNameFor, plugins/store.ts). A name no provider can address must
