@@ -35,8 +35,14 @@
  *  - `admit` is the per-call billing admission — T25's seam. This ticket wires
  *    nothing behind it; a refused admission is an honestly failed case (the call
  *    never happened) observed as a `refused` span. It is asked ONCE, before the
- *    loop: a case is one billed unit, and the engine's steps run under the one
- *    reservation the settlement chain prices the case's total usage against.
+ *    loop: it admits the case's FIRST provider request.
+ *  - `stepBudget` is the loop's per-step budget (FREV-R2-01): the same admission
+ *    seam applied to every request after the first, asked before each step is dialed
+ *    and told each step's own usage after it finishes. A case with a tool surface
+ *    can cost several calls, and one hold priced for one call cannot bound that
+ *    spend; the budget is how the billed layer keeps every step inside its own
+ *    admission instead of discovering the overrun at settlement. Absent on
+ *    single-shot callers, where the one admission covers the one call.
  *  - `observe` carries each call through the T14/T15 model-span channel: the
  *    same recorder the built-in path uses, so evaluation calls are observable in
  *    exactly the place production calls are. The observation bypass rules hold —
@@ -98,6 +104,16 @@ export type EvaluationModelCall = (input: {
    * with no cancellation source — the pre-FREV-05 contract, bounded by the timeout.
    */
   signal?: AbortSignal;
+  /**
+   * The per-step budget the billed layer lends a tool loop (FREV-R2-01). Asked
+   * before EVERY provider request the loop makes and told each finished step's own
+   * usage, so a case never spends several calls under one admission: a step the
+   * budget refuses is never dialed, and every step that was dialed is settled
+   * against the hold that admitted it. Absent on single-call callers (the judge,
+   * a case with no tool surface) and on the pre-FREV-R2-01 contract, where one
+   * admission covers the one call.
+   */
+  stepBudget?: EvaluationStepBudget;
 }) => Promise<{
   output: string;
   /** The provider's settled usage; missing means unknown, never zero. */
@@ -111,6 +127,48 @@ export type EvaluationModelCall = (input: {
    * never produce because it called no tool at all.
    */
   undeclaredToolCalls?: readonly string[];
+  /**
+   * The tool-loop step the budget refused BEFORE its provider request (FREV-R2-01),
+   * and the budget's own word for it. Its presence means the loop stopped short of a
+   * final answer by an admission, not by a provider failure: the runner answers the
+   * case as a refusal with that reason, and the steps that did run are settled by the
+   * billed layer's own per-step records — never through this answer's usage.
+   */
+  budgetRefusal?: Readonly<{ step: number; reason?: string }>;
+}>;
+
+/** One finished step's own usage, as the provider reported it. */
+export type EvaluationStepUsage = Readonly<{
+  index: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}>;
+
+/**
+ * The per-step budget of one evaluation case's tool loop (FREV-R2-01).
+ *
+ * A case with a tool surface can cost up to `EVALUATION_TOOL_LOOP_MAX_STEPS` provider
+ * calls, and one hold priced for a single call cannot bound that spend. This seam is
+ * how the billed layer keeps the loop inside the ONE credit machinery: `admit` is
+ * asked before each step — a refusal means the step's request is never sent — and
+ * `record` carries each finished step's own usage, which the billed layer settles
+ * against that step's reservation. The budget is a seam, not a policy: how a step is
+ * admitted (a fresh hold, a case-level allowance) belongs to the implementation.
+ */
+export type EvaluationStepBudget = Readonly<{
+  /**
+   * May this step be spent? `maxOutputTokens`, when given, is the ceiling the step's
+   * request must carry — the remaining output the step's admission covers — so the
+   * provider can never generate past what was held for it.
+   */
+  admit: (
+    stepIndex: number,
+  ) => Promise<
+    | { allowed: true; maxOutputTokens?: number }
+    | { allowed: false; reason?: string }
+  >;
+  /** The step's own usage, as the provider reported it; missing counts stay unknown. */
+  record: (step: EvaluationStepUsage) => void;
 }>;
 
 /**
@@ -217,6 +275,12 @@ export function createProductionEvaluationCaseRunner(
     callModel: EvaluationModelCall;
     admit?: ExecutionCaseBillingAdmission;
     observe?: EvaluationModelCallObserver;
+    /**
+     * The per-step budget of a tool loop (FREV-R2-01), lent to the call so every
+     * provider request the loop makes is admitted before it is sent and recorded
+     * after it finishes. Absent for a runner whose calls are single-shot.
+     */
+    stepBudget?: EvaluationStepBudget;
   }>,
 ): EvaluationCaseRunner {
   // The bypass rule, inherited from T14: observability never fails the product path.
@@ -315,6 +379,9 @@ export function createProductionEvaluationCaseRunner(
         system,
         user,
         ...(tools.length === 0 ? {} : { tools }),
+        ...(deps.stepBudget === undefined
+          ? {}
+          : { stepBudget: deps.stepBudget }),
         signal: context.signal,
       });
       // FREV-04: a tool the model invented is a call it made, and the gate is where
@@ -329,6 +396,21 @@ export function createProductionEvaluationCaseRunner(
         } catch {
           // swallowed by contract: a counted refusal is never a case failure
         }
+      }
+      // FREV-R2-01: the loop stopped because an admission refused the next step
+      // BEFORE it was dialed. That is the same refusal class as a case whose first
+      // admission said no — the answer's output is a partial loop, not this case's
+      // answer, and the steps that did run are settled by the billed layer's own
+      // per-step records. The reason rides the span and the outcome verbatim.
+      if (answer.budgetRefusal !== undefined) {
+        const reason = answer.budgetRefusal.reason ?? "budget_refused";
+        report({
+          ...base,
+          occurredAt: startedAt,
+          endedAt: new Date(),
+          ending: { kind: "refused", code: reason },
+        });
+        return { status: "failed", reason };
       }
       const knownUsage =
         answer.inputTokens !== undefined && answer.outputTokens !== undefined;
@@ -429,6 +511,7 @@ export function createGatewayModelCall(
     user,
     tools,
     signal,
+    stepBudget,
   }) => {
     const settings = gatewaySettings(modelParameters);
     // The call's own time bound and the task's cancellation are one signal
@@ -440,7 +523,32 @@ export function createGatewayModelCall(
       options.timeoutMs ?? GATEWAY_CALL_TIMEOUT_MS,
     );
     const declared = tools !== undefined && tools.length > 0 ? tools : null;
-    const result = await generateText({
+    // FREV-R2-01: a tool loop is up to EVALUATION_TOOL_LOOP_MAX_STEPS provider
+    // calls, and a case-level admission priced for one call cannot bound that
+    // spend. The budget the billed layer lends is asked BEFORE every step's request
+    // — refusal there means the step is never sent — and told every finished step's
+    // own usage. Without a budget the loop keeps the pre-FREV-R2-01 shape: one
+    // admission, the case's total usage settled in one fact.
+    const budget = declared === null ? undefined : stepBudget;
+    const { maxOutputTokens: configuredTokens, ...rest } = settings;
+    // What already happened when a later step was refused: their usage is recorded
+    // against their own admissions, and their invented tool names still go through
+    // the gate — a refused loop must not lose the calls that were really made.
+    const finished: {
+      readonly text: string;
+      readonly toolCalls: readonly { readonly toolName: string }[];
+    }[] = [];
+    let refusal: Readonly<{ step: number; reason?: string }> | undefined;
+    // The step's output ceiling: the frozen configuration's own cap narrowed to what
+    // the step's admission covers, so the provider can never generate past the hold.
+    const outputCeiling = (admitted: number | undefined) => {
+      const caps = [configuredTokens, admitted].filter(
+        (one): one is number => one !== undefined,
+      );
+      return caps.length === 0 ? {} : { maxOutputTokens: Math.min(...caps) };
+    };
+
+    const answer = await generateText({
       model: openai().chat(modelName),
       system,
       prompt: user,
@@ -460,22 +568,101 @@ export function createGatewayModelCall(
               ]),
             ),
             stopWhen: stepCountIs(EVALUATION_TOOL_LOOP_MAX_STEPS),
+            ...(budget === undefined
+              ? {}
+              : {
+                  // Asked before each step's provider request, awaited by the engine:
+                  // the refused step is never dialed, and the throw is turned into
+                  // the budgetRefusal answer below rather than a provider failure.
+                  prepareStep: async ({
+                    stepNumber,
+                  }: {
+                    stepNumber: number;
+                  }) => {
+                    const verdict = await budget.admit(stepNumber);
+                    if (!verdict.allowed) {
+                      refusal = {
+                        step: stepNumber,
+                        ...(verdict.reason === undefined
+                          ? {}
+                          : { reason: verdict.reason }),
+                      };
+                      throw new StepBudgetRefusal();
+                    }
+                    return outputCeiling(verdict.maxOutputTokens);
+                  },
+                  onStepFinish: (step: {
+                    readonly stepNumber: number;
+                    readonly text: string;
+                    readonly toolCalls: readonly {
+                      readonly toolName: string;
+                    }[];
+                    readonly usage: {
+                      readonly inputTokens?: number;
+                      readonly outputTokens?: number;
+                    };
+                  }) => {
+                    budget.record({
+                      index: step.stepNumber,
+                      inputTokens: step.usage.inputTokens,
+                      outputTokens: step.usage.outputTokens,
+                    });
+                    finished.push({
+                      text: step.text,
+                      toolCalls: step.toolCalls,
+                    });
+                  },
+                }),
           }),
-      ...settings,
+      // With a budget the output ceiling is a per-step decision (what that step's
+      // admission covers); without one it is the frozen configuration's, exactly as
+      // before, so the single-call wire stays byte-identical.
+      ...(budget === undefined
+        ? settings
+        : { ...rest, ...outputCeiling(undefined) }),
+    }).catch((error: unknown) => {
+      // A throw that is not the budget's own stop is the provider's failure and stays
+      // one — the billed layer's unknown-cost doctrine is unchanged.
+      if (refusal === undefined) throw error;
+      return null;
     });
-    const undeclared = undeclaredToolCalls(result, declared ?? []);
+    if (answer === null) {
+      // The refused step never reached the wire; the steps that did run are this
+      // call's whole truth, and the runner answers the case as refused, not failed.
+      const undeclared = undeclaredToolCalls(
+        { steps: finished },
+        declared ?? [],
+      );
+      return {
+        output: finished.at(-1)?.text ?? "",
+        ...(undeclared.length === 0 ? {} : { undeclaredToolCalls: undeclared }),
+        budgetRefusal: refusal as Readonly<{ step: number; reason?: string }>,
+      };
+    }
+    const undeclared = undeclaredToolCalls(answer, declared ?? []);
     return {
-      output: result.text,
+      output: answer.text,
       // A tool loop spends several provider calls; the case is settled against what
       // it actually consumed (the sum of every step), never the last step alone.
-      inputTokens: result.totalUsage.inputTokens ?? undefined,
-      outputTokens: result.totalUsage.outputTokens ?? undefined,
+      inputTokens: answer.totalUsage.inputTokens ?? undefined,
+      outputTokens: answer.totalUsage.outputTokens ?? undefined,
       // Reported for a case with no declared tools too: a model that invents a tool
       // made a call either way, and the gate is what judges it. Only when there is
       // something to report, so the single-call contract stays byte-identical.
       ...(undeclared.length === 0 ? {} : { undeclaredToolCalls: undeclared }),
     };
   };
+}
+
+/**
+ * The loop's stop signal when the step budget refuses the next request (FREV-R2-01).
+ * Thrown from `prepareStep`, which the engine awaits before every provider request, so
+ * the refused step never reaches the wire. The gateway answers `budgetRefusal` rather
+ * than an error: the steps that DID run were paid for, and their accounting must not
+ * be reported as a provider failure.
+ */
+class StepBudgetRefusal extends Error {
+  override name = "StepBudgetRefusal";
 }
 
 /**

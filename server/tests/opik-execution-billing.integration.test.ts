@@ -1,17 +1,24 @@
-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
 import {
   createBilledEvaluationCaseRunner,
   createExecutionBudgetPrecheck,
+  evaluationCaseStepUsageId,
 } from "../src/ai-observability/execution-billing";
-import type { EvaluationModelCall } from "../src/ai-observability/execution-runner";
 import {
+  createGatewayModelCall,
+  type EvaluationModelCall,
+} from "../src/ai-observability/execution-runner";
+import {
+  createEvaluationToolGate,
   createExperimentExecutionService,
   createObservationExecutionStore,
   createObservationExecutionWorker,
+  type EvaluationCaseContext,
+  type EvaluationToolSurface,
   EXECUTION_WORK_KIND,
 } from "../src/ai-observability/executions";
 import {
@@ -562,4 +569,361 @@ test("a swept execution runs its cases through the billed runner and a resume sw
   await worker.sweep();
   expect(calls.length).toBe(1);
   expect(await ledgerRowsOf(reservation?.id ?? "")).toHaveLength(1);
+});
+
+/*
+ * FREV-R2-01: one case with a tool surface is up to
+ * `EVALUATION_TOOL_LOOP_MAX_STEPS` provider calls, and a case-level hold priced for a
+ * single call cannot bound that spend. These tests drive the REAL gateway adapter
+ * against a scripted OpenAI-compatible upstream (no mocked fetch, no paid request) and
+ * the REAL credit writer and outbox: every step is admitted before it is dialed, a
+ * step nobody can fund never reaches the wire, and every step that ran settles against
+ * the hold that admitted it.
+ */
+
+/** One scripted upstream round: prompt/completion counts the wire will report. */
+const roundUsage = (usage: { input: number; output: number }) => ({
+  prompt_tokens: usage.input,
+  completion_tokens: usage.output,
+  total_tokens: usage.input + usage.output,
+});
+
+function completion(
+  message: Record<string, unknown>,
+  finish: string,
+  usage: { input: number; output: number },
+) {
+  return Response.json({
+    id: `chatcmpl-${Math.random().toString(36).slice(2)}`,
+    object: "chat.completion",
+    choices: [{ index: 0, message, finish_reason: finish }],
+    usage: roundUsage(usage),
+  });
+}
+
+/** One round that answers with a tool call the model "made". */
+const toolCallRound =
+  (usage: { input: number; output: number }) => (): Response =>
+    completion(
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: { name: "search", arguments: '{"q":"outage"}' },
+          },
+        ],
+      },
+      "tool_calls",
+      usage,
+    );
+
+/** One round that answers with plain text. */
+const answerRound =
+  (text: string, usage: { input: number; output: number }) => (): Response =>
+    completion({ role: "assistant", content: text }, "stop", usage);
+
+/**
+ * A scripted upstream: rounds are consumed in order (the last repeats), every request
+ * body is kept, and `when(n)` resolves once n requests have arrived.
+ */
+function scriptedGateway(rounds: (() => Response | Promise<Response>)[]) {
+  const bodies: Record<string, unknown>[] = [];
+  const waiters: (() => void)[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const body = (await request.json()) as Record<string, unknown>;
+      bodies.push(body);
+      for (const wake of waiters.splice(0)) wake();
+      const round = rounds[Math.min(bodies.length - 1, rounds.length - 1)];
+      return round === undefined
+        ? new Response(null, { status: 500 })
+        : round();
+    },
+  });
+  const when = (count: number) =>
+    new Promise<void>((resolve) => {
+      const check = () => {
+        if (bodies.length >= count) resolve();
+        else waiters.push(check);
+      };
+      check();
+    });
+  return { port: server.port, bodies, when, stop: () => server.stop(true) };
+}
+
+/**
+ * The single-call ceiling the finding's counterexample is written against: N = 1000
+ * output tokens at 2 units each, 1000 input tokens at 1, so one call's worst-case hold
+ * (`maximumReservationUnits`) is 3000 units. Two steps of 0.6N output each (600) are
+ * EACH inside the single call's own ceiling and together are not — exactly the shape
+ * the old one-hold settlement discovered only after both calls had been paid for.
+ */
+const stepPolicy: BillingModelCreditPolicyEntry = {
+  input: {
+    rate: { numerator: 1n, denominator: 1n },
+    maximumTokens: 1000n,
+    maximumCostUnits: 1000n,
+  },
+  output: {
+    rate: { numerator: 2n, denominator: 1n },
+    maximumTokens: 1000n,
+    maximumCostUnits: 2000n,
+  },
+  maximumReservationUnits: 3000n,
+};
+const stepPolicies = new Map([["gateway-model", stepPolicy]]);
+
+/** The same frozen case, with one whitelisted read tool the model can reach for. */
+const toolConfig = freezeExperimentConfig({
+  ...configInput,
+  readOnlyTools: ["search"],
+  toolFixtures: { search: { summary: "three regions of impact" } },
+});
+
+/**
+ * One tool-declaring case context, wired through the real gate so the loop's tool call
+ * answers with the replayed frozen fixture — the same chain the runner suite proves.
+ */
+const toolContextFor = (
+  executionId: string,
+  signal?: AbortSignal,
+): EvaluationCaseContext => {
+  const gate = createEvaluationToolGate(toolConfig, () => "read");
+  return {
+    ...contextFor(executionId, 0, toolConfig),
+    callTool: async (name) =>
+      gate.call(name, [frozenCase.toolFixtures, toolConfig.toolFixtures]),
+    resolveToolSurface: (name): EvaluationToolSurface | undefined =>
+      name === "search"
+        ? {
+            description: "Search the support knowledge base.",
+            parameters: {
+              type: "object",
+              properties: { q: { type: "string" } },
+              required: ["q"],
+            },
+            effect: "read",
+          }
+        : undefined,
+    ...(signal === undefined ? {} : { signal }),
+  };
+};
+
+/** A billed runner over the real gateway adapter pointed at the script. */
+function gatewayRunner(input: {
+  customer: string;
+  baseURL: string;
+  observations?: ModelSpanObservation[];
+  timeoutMs?: number;
+}) {
+  return createBilledEvaluationCaseRunner({
+    callModel: createGatewayModelCall({
+      apiKey: "test-key",
+      baseURL: input.baseURL,
+      ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+    }),
+    ...(input.observations === undefined
+      ? {}
+      : {
+          observe: (fact: ModelSpanObservation) =>
+            input.observations?.push(fact),
+        }),
+    billing: {
+      creditWriter: writer,
+      outbox,
+      policy: stepPolicies,
+      externalCustomerId: input.customer,
+    },
+  });
+}
+
+test("the loop's next step is refused BEFORE its request when its hold is not spendable (FREV-R2-01)", async () => {
+  const customer = `${prefix}-loop-refused`;
+  // Exactly ONE call's worst-case hold: the case may start, and the loop's second
+  // provider call cannot be covered. The old wiring found this out at settlement —
+  // `usage_over_token_max` after both calls had already been paid for.
+  await grant(customer, 3_000);
+  const gateway = scriptedGateway([
+    toolCallRound({ input: 100, output: 600 }),
+    answerRound("the outage reached three regions", {
+      input: 150,
+      output: 600,
+    }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-loop-refused`;
+    const observations: ModelSpanObservation[] = [];
+    const runner = gatewayRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      observations,
+    });
+
+    const outcome = await runner(toolContextFor(executionId));
+
+    // The adversarial core: the second provider request never reached the wire, and
+    // the case says why instead of throwing after the spend.
+    expect(gateway.bodies.length).toBe(1);
+    expect(outcome).toEqual({ status: "failed", reason: "credits_exhausted" });
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "credits_exhausted",
+    });
+
+    // The step that DID run is settled exactly against the hold that admitted it.
+    const eventId = eventIdOf(executionId, 0);
+    const row = await outboxRow(eventId);
+    expect(row).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+      actualCostDenominator: "1",
+    });
+    expect(row?.reservationId).toBe((await reservationOf(eventId))?.id);
+
+    // The refused step left no hold and no fact behind — nothing was spent for it.
+    const refusedStepEvent = evaluationCaseStepUsageId(executionId, 0, 1);
+    expect(await outboxRow(refusedStepEvent)).toBeUndefined();
+    expect(
+      (
+        await database
+          .select()
+          .from(creditReservations)
+          .where(
+            eq(creditReservations.idempotencyKey, `usage:${refusedStepEvent}`),
+          )
+      )[0],
+    ).toBeUndefined();
+
+    // The step's request carried the policy's own output ceiling — the bound the
+    // step's hold prices, applied on the wire before the provider can exceed it.
+    expect(gateway.bodies[0]).toMatchObject({ max_tokens: 1000 });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("a two-step loop admits each step, settles each against its own hold, and charges exactly what it spent (FREV-R2-01)", async () => {
+  const customer = `${prefix}-loop-two`;
+  await grant(customer, 10_000);
+  const gateway = scriptedGateway([
+    toolCallRound({ input: 100, output: 600 }),
+    answerRound("the outage reached three regions", {
+      input: 150,
+      output: 300,
+    }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-loop-two`;
+    const runner = gatewayRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+    });
+
+    const outcome = await runner(toolContextFor(executionId));
+
+    // Both steps were dialed, and the loop's answer is the case's answer.
+    expect(gateway.bodies.length).toBe(2);
+    expect(outcome.status).toBe("completed");
+    expect(outcome.output).toBe("the outage reached three regions");
+    expect(outcome.usage).toEqual({ inputTokens: 250, outputTokens: 900 });
+    // The second request carries the replayed frozen fixture as the tool result.
+    expect(JSON.stringify(gateway.bodies[1])).toContain(
+      "three regions of impact",
+    );
+
+    // One immutable fact per step, each under its own natural key and its own hold.
+    const eventId = eventIdOf(executionId, 0);
+    const secondEventId = evaluationCaseStepUsageId(executionId, 0, 1);
+    const firstFact = await outboxRow(eventId);
+    const secondFact = await outboxRow(secondEventId);
+    expect(firstFact).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+    });
+    expect(secondFact).toMatchObject({
+      inputTokens: 150,
+      outputTokens: 300,
+      actualCostNumerator: "750",
+    });
+    const firstHold = await reservationOf(eventId);
+    const secondHold = await reservationOf(secondEventId);
+    expect(firstFact?.reservationId).toBe(firstHold?.id);
+    expect(secondFact?.reservationId).toBe(secondHold?.id);
+    expect(firstHold?.id).not.toBe(secondHold?.id);
+
+    // Downstream through the same credits target the built-in path settles with:
+    // each hold settles its own step, and the grant pays exactly the sum.
+    await deliverCharges(eventId, secondEventId);
+    expect(await reservationOf(eventId)).toMatchObject({
+      status: "settled",
+      charged: 1300,
+      applied: 1300,
+    });
+    expect(await reservationOf(secondEventId)).toMatchObject({
+      status: "settled",
+      charged: 750,
+      applied: 750,
+    });
+    const [grantRow] = await database
+      .select()
+      .from(creditGrants)
+      .where(eq(creditGrants.externalCustomerId, customer));
+    expect(grantRow.used).toBe(2050);
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("a loop cancelled between steps charges what ran and keeps the interrupted step's hold (FREV-R2-01)", async () => {
+  const customer = `${prefix}-loop-cancel`;
+  await grant(customer, 10_000);
+  const hanging = () => new Promise<Response>(() => {});
+  const gateway = scriptedGateway([
+    toolCallRound({ input: 100, output: 600 }),
+    hanging,
+  ]);
+  try {
+    const executionId = `${prefix}-exec-loop-cancel`;
+    const controller = new AbortController();
+    const runner = gatewayRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      timeoutMs: 5_000,
+    });
+
+    const run = runner(toolContextFor(executionId, controller.signal));
+    await gateway.when(2);
+    controller.abort();
+    const outcome = await run;
+
+    expect(outcome).toEqual({ status: "failed", reason: "cancelled" });
+    expect(gateway.bodies.length).toBe(2);
+
+    // The step that finished is charged against its own hold.
+    const eventId = eventIdOf(executionId, 0);
+    expect(await outboxRow(eventId)).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+    });
+
+    // The step that was away when the task was cancelled is an UNKNOWN outcome, never
+    // a zero: evidence row, hold retained — the existing ledger rule, per step.
+    const interruptedEventId = evaluationCaseStepUsageId(executionId, 0, 1);
+    expect(await outboxRow(interruptedEventId)).toMatchObject({
+      status: "provider_error",
+      reservationId: null,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect((await reservationOf(interruptedEventId))?.status).toBe("reserved");
+  } finally {
+    gateway.stop();
+  }
 });
