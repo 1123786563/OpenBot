@@ -796,4 +796,80 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     ).toBe(3);
     expect(reconciled.balanced).toBe(true);
   });
+
+  /*
+   * FIX-OCR1 (OCR low, #376): 0211's pre-written isolation rows and a #394 pass share the
+   * old_record_id space, and the flip — an owner isolated at deployment time later holding
+   * exactly one active membership — had no cleanup path: the record migrated while its
+   * isolation row stayed behind, reconcile's balanced check read the leftover as a
+   * breakpoint still to run, and the isolation list kept mis-reporting a migrated record. A
+   * successful migration now deletes the old id's isolation row, so the map is the one
+   * durable fact and a record is in the map or the quarantine, never both.
+   */
+  test("a quarantined record that later proves attribution migrates and takes its isolation row with it", async () => {
+    const USER_FLIP = `usr_flip-${run}`;
+    const PRINCIPAL_FLIP = `prin_flip-${run}`;
+    const TENANT_FLIP_B = `tn_flip-b-${run}`;
+    await database.insert(enterpriseTenants).values([
+      { id: TENANT_FLIP_B, name: `Mig Flip B ${run}` },
+    ]);
+    await database
+      .insert(users)
+      .values({ id: USER_FLIP, email: `flip-${run}@example.invalid` });
+    await database
+      .insert(enterprisePrincipals)
+      .values({ id: PRINCIPAL_FLIP, userId: USER_FLIP });
+    await database.insert(enterpriseMemberships).values([
+      { tenantId: TENANT_A, principalId: PRINCIPAL_FLIP, role: "member" },
+      { tenantId: TENANT_FLIP_B, principalId: PRINCIPAL_FLIP, role: "member" },
+    ]);
+
+    // Pass one: two active memberships — attribution is ambiguous, the row is isolated.
+    const rowId = await seedOld(USER_FLIP, {
+      content: `mig-flip-fact-${run}`,
+    });
+    const first = await migrator.run({ owners: [USER_FLIP] });
+    expect(first.completed).toBe(true);
+    expect(first.quarantined).toBe(1);
+    const [isolated] = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, rowId));
+    expect(isolated.reason).toBe("ambiguous-company");
+
+    // The flip: the second membership lapses, so the owner's attribution becomes provable —
+    // exactly the shape a deployment-time isolation row could not see coming.
+    await database
+      .update(enterpriseMemberships)
+      .set({ status: "suspended" })
+      .where(
+        and(
+          eq(enterpriseMemberships.tenantId, TENANT_FLIP_B),
+          eq(enterpriseMemberships.principalId, PRINCIPAL_FLIP),
+        ),
+      );
+    const second = await migrator.run({ owners: [USER_FLIP] });
+    expect(second.completed).toBe(true);
+    expect(second.migrated).toBe(1);
+
+    const [mapped] = await database
+      .select()
+      .from(hindsightMigrationMap)
+      .where(eq(hindsightMigrationMap.oldRecordId, rowId));
+    expect(mapped.tenantId).toBe(TENANT_A);
+    expect(mapped.principalId).toBe(PRINCIPAL_FLIP);
+    // The isolation row did not survive the migration it stood against.
+    const leftover = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, rowId));
+    expect(leftover).toEqual([]);
+    // One confirmed-alive row, one migration, no quarantine — balanced reads true here,
+    // where the leftover row would have made it read false forever.
+    const reconciliation = await migrator.reconcile({ owners: [USER_FLIP] });
+    expect(reconciliation.oldSide.confirmedAlive).toBe(1);
+    expect(reconciliation.newSide.migrated).toBe(1);
+    expect(reconciliation.quarantined.total).toBe(0);
+    expect(reconciliation.balanced).toBe(true);
+  });
 });
