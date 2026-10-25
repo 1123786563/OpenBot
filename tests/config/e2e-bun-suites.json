@@ -869,6 +869,7 @@
    "name": "server/tests part 14",
    "files": [
     "server/tests/sandboxed-publication.integration.test.ts",
+    "server/tests/scrub-command.test.ts",
     "server/tests/server-side-tools.integration.test.ts",
     "server/tests/settle-conflict-grant-expiry.integration.test.ts",
     "server/tests/settle-idempotency.integration.test.ts",
@@ -1759,6 +1760,7 @@
   "server/tests/sandbox-state.test.ts",
   "server/tests/sandboxed-components.integration.test.ts",
   "server/tests/sandboxed-publication.integration.test.ts",
+  "server/tests/scrub-command.test.ts",
   "server/tests/server-side-tools.integration.test.ts",
   "server/tests/settle-conflict-grant-expiry.integration.test.ts",
   "server/tests/settle-idempotency.integration.test.ts",
@@ -1946,6 +1948,7 @@
   "server/tests/multitenancy/signed-download.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/multitenancy/workshop-scope.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/multitenancy/share-tokens.test.ts": "runner named it: wave3 mt28 套件",
-  "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）"
+  "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）",
+  "server/tests/scrub-command.test.ts": "runner named it: T30 (#489 F16) scrubCommand 对抗钉子套件，与 otel-export-scrubbing.test.ts 同置 Bun 层（bun test 直跑；brief t30-scrubtests）"
  }
 }
