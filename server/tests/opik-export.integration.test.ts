@@ -75,6 +75,9 @@ function fakePort(options: {
   total?: number;
   gated?: boolean;
   project?: Awaited<ReturnType<OpikPort["retrieveProject"]>>;
+  /** The real contract shape F8D-2 proved on Opik 2.2.100: page=0 answers
+   * 400 (OPIK_CLIENT_ERROR through the port), never a first page of data. */
+  rejectPageZero?: boolean;
 }) {
   const calls: {
     listTraces: number;
@@ -94,21 +97,30 @@ function fakePort(options: {
     listTraces: async (_scope, input) => {
       calls.listTraces += 1;
       calls.sizes.push(input.size ?? -1);
-      calls.pages.push(input.page ?? 0);
+      calls.pages.push(input.page ?? 1);
       inFlight += 1;
       maxInFlight = Math.max(maxInFlight, inFlight);
       try {
         if (options.gated) {
           await new Promise<void>((resolve) => waiting.push(resolve));
         }
+        if (options.rejectPageZero && (input.page ?? 1) === 0) {
+          return {
+            outcome: "upstream_error" as const,
+            operation: "listTraces" as const,
+            code: "OPIK_CLIENT_ERROR" as const,
+            status: 400,
+          };
+        }
         const rows = options.rows ?? [];
         const total = options.total ?? rows.length;
         const size = input.size ?? rows.length;
-        const start = (input.page ?? 0) * size;
+        // Upstream pages are 1-based (F8D-2): page 1 is the first slice.
+        const start = ((input.page ?? 1) - 1) * size;
         return {
           outcome: "ok" as const,
           value: {
-            page: input.page ?? 0,
+            page: input.page ?? 1,
             size,
             total,
             content: rows.slice(start, start + size),
@@ -139,12 +151,13 @@ function fakePort(options: {
 /** The worker over one fake upstream. `revoked` answers null from live authorization. */
 function workerFor(
   port: OpikPort | null,
-  input: { revoked?: boolean; concurrency?: number } = {},
+  input: { revoked?: boolean; concurrency?: number; pageSize?: number } = {},
 ): ObservationExportWorker {
   return createObservationExportWorker({
     database,
     config: () => enabledConfig,
     port,
+    pageSize: input.pageSize,
     // The test's stand-in for wiring's live ownership check: the scope this
     // process would issue for that actor and bot now, or null once the
     // actor's authorization ended.
@@ -444,6 +457,30 @@ test("a total above the row cap fails explicitly, never truncates (AC5)", async 
   expect(done?.rowCount).toBeNull();
   // The refusal happens on the first page: no second fetch for a doomed export.
   expect(upstream.calls.listTraces).toBe(1);
+});
+
+test("the export opens the upstream walk at page 1 — page=0 is the 400 F8D-2 proved real", async () => {
+  // Real Opik 2.2.100 answers 400 on page=0 (F8D a11-export evidence): the
+  // 0-based fold failed every real-deployment job as OPIK_CLIENT_ERROR before
+  // it read a row. The scripted port carries that contract shape — page=0
+  // answers OPIK_CLIENT_ERROR 400 — so the first request being page=1 is what
+  // lets this job complete at all, and the multi-page walk still terminates
+  // on the envelope's total.
+  const rows: OpikTraceRow[] = Array.from({ length: 7 }, (_, i) => ({
+    id: `trace-${i}`,
+    status: "COMPLETED",
+  }));
+  const upstream = fakePort({ rows, rejectPageZero: true });
+  const worker = workerFor(upstream.port, { pageSize: 3 });
+  const job = await store.enqueue(scopeA, 10);
+  await worker.sweep();
+  const done = await store.get(scopeA, job.id);
+  expect(done?.state).toBe("completed");
+  // page=0 is never requested; the walk is 1, 2, 3 for 7 rows at size 3.
+  expect(upstream.calls.pages).toEqual([1, 2, 3]);
+  expect((done?.artifact ?? []).map((row) => row.opikTraceId)).toEqual(
+    rows.map((row) => row.id),
+  );
 });
 
 test("revocation mid-run cancels the job and the artifact never lands (AC3)", async () => {
