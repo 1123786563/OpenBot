@@ -518,3 +518,130 @@ export function createUnavailableCompanyAdminRoutes(): Hono {
   );
   return routes;
 }
+
+// ---------------------------------------------------------------------------
+// T03.03（#540，P06）：平台公司开通入口（platform 面，非 company 面）
+// ---------------------------------------------------------------------------
+
+import { isCompanyLifecycleRefusal } from "../../auth/directory/lifecycle";
+import { isDirectoryCommandRefusal } from "../../auth/directory/executor";
+import { isAuthorityRefusal } from "../../auth/directory/authority";
+import type { AuthenticatedRequestIdentity } from "./store";
+import type {
+  PlatformCompanyProvisionInput,
+  PlatformCompanyProvisionOutcome,
+  PlatformCompanyProvisionService,
+} from "./provision";
+
+/** The platform face's dependencies: authentication plus the provision service. */
+export interface PlatformCompanyRouteDeps {
+  authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
+  provisioner: PlatformCompanyProvisionService;
+}
+
+const IDEMPOTENCY_HEADER = "idempotency-key";
+const IDEMPOTENCY_KEY_MAX = 512;
+
+function isPrintableText(value: string): boolean {
+  return value
+    .split("")
+    .every((character) => character >= " " && character !== "\u007f");
+}
+
+/**
+ * The platform company-provision surface, mounted at
+ * `/api/enterprise/companies`. Exactly one route: `POST /` with
+ * {name,slug,ownerUserId,defaultTeamName} and the idempotency-key header.
+ * The plane is the platform's, not a company's — the admin gate lives in the
+ * provision service (and is re-verified inside the locked command), so no
+ * company role ever reaches this surface and the route never mounts under
+ * the workspace-scope company entrance.
+ */
+export function createPlatformCompanyRoutes(
+  deps: PlatformCompanyRouteDeps,
+): Hono {
+  const routes = new Hono();
+
+  routes.post("/", async (context) => {
+    try {
+      const identity = await deps.authenticate(context.req.raw);
+      if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
+      const idempotencyKey = context.req.header(IDEMPOTENCY_HEADER);
+      if (
+        idempotencyKey === undefined ||
+        idempotencyKey.trim() === "" ||
+        idempotencyKey.length > IDEMPOTENCY_KEY_MAX ||
+        !isPrintableText(idempotencyKey)
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const body = await readJsonObject(context.req.raw);
+      const text = (field: string): string => {
+        const value = body[field];
+        if (typeof value !== "string" || value.trim() === "") {
+          throw new Error("INVALID_REQUEST");
+        }
+        return value;
+      };
+      const input: PlatformCompanyProvisionInput = {
+        actorUserId: identity.actorId,
+        name: text("name"),
+        slug: text("slug"),
+        ownerUserId: text("ownerUserId"),
+        defaultTeamName: text("defaultTeamName"),
+        idempotencyKey,
+      };
+      const outcome: PlatformCompanyProvisionOutcome =
+        await deps.provisioner.provision(input);
+      return context.json({ company: outcome }, outcome.replayed ? 200 : 201);
+    } catch (error) {
+      const response = platformErrorResponse(error);
+      return context.json(response.body, response.status);
+    }
+  });
+
+  return routes;
+}
+
+/** The platform face's own refusal projection (no company-plane codes leak in). */
+function platformErrorResponse(error: unknown): {
+  status: 400 | 401 | 403 | 404 | 409 | 500 | 503;
+  body: { error: { code: string; message: string } };
+} {
+  if (isCompanyLifecycleRefusal(error)) {
+    return {
+      status: error.status,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isDirectoryCommandRefusal(error)) {
+    return {
+      status: error.status,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isAuthorityRefusal(error)) {
+    return {
+      status: 503,
+      body: { error: { code: error.message, message: "Request refused." } },
+    };
+  }
+  if (error instanceof Error && error.message === "AUTH_REQUIRED") {
+    return {
+      status: 401,
+      body: { error: { code: "AUTH_REQUIRED", message: "Request refused." } },
+    };
+  }
+  if (error instanceof Error && error.message === "INVALID_REQUEST") {
+    return {
+      status: 400,
+      body: {
+        error: { code: "INVALID_REQUEST", message: "Request refused." },
+      },
+    };
+  }
+  return {
+    status: 500,
+    body: { error: { code: "internal", message: "Request failed." } },
+  };
+}

@@ -247,3 +247,25 @@ export async function ensureDeploymentPayerBinding(
     throw error;
   }
 }
+
+/*
+ * The platform provision twin (T03.03 / #540, B5-219's provision half): the
+ * payer a committed `company.provision` command FIXES to the company it just
+ * created. The request-facing half of this module binds from a trusted
+ * scope so a request channel can never name the company; this constructor
+ * takes the one input that is not a request — the tenant id the server's own
+ * command pre-allocated and committed — and freezes the same coherent
+ * binding, so the platform entry's activation, audit and later consumption
+ * all name the account through the identical frozen object rather than a
+ * re-derived key.
+ */
+export function bindProvisionedCompanyPayer(input: {
+  readonly tenantId: string;
+}): PayerBinding {
+  if (typeof input?.tenantId !== "string" || input.tenantId.trim() === "") {
+    throw new PayerBindingConflictError(
+      "bindProvisionedCompanyPayer: a platform provision names the tenant it committed; an empty tenant id binds nothing and is refused",
+    );
+  }
+  return bindPayer({ kind: "company", id: input.tenantId });
+}

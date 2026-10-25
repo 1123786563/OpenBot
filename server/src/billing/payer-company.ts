@@ -86,3 +86,32 @@ export async function resolveCompanyPayerAccount(
   );
   return account;
 }
+
+/**
+ * The provision path's company payer (T03.03 / #540): create the mapping a
+ * platform `company.provision` command fixed to the company it committed.
+ * The request-facing resolver above demands a trusted company scope — a
+ * request channel can never name the company billed — and this function is
+ * the other, narrower door: its tenant id is the server command's own
+ * committed pre-allocation, never a request body, header or query value.
+ * It goes through the payer layer's race-safe `createPayerAccount`, so the
+ * Customer floor row and the account mapping are exactly one row however
+ * many retries converge, and the account is born a mapping row and nothing
+ * else (no grant, no ledger row, no balance, no half benefit).
+ */
+export async function ensureProvisionedCompanyPayerAccount(
+  database: Database,
+  input: { readonly tenantId: string },
+): Promise<PayerAccount> {
+  if (typeof input?.tenantId !== "string" || input.tenantId.trim() === "") {
+    throw new CompanyScopeRequiredError(
+      "missing",
+      "ensureProvisionedCompanyPayerAccount needs the committed provision's tenant id; an empty tenant id is refused before any account is touched",
+    );
+  }
+  const { account } = await createPayerAccount(database, {
+    kind: "company",
+    id: input.tenantId,
+  });
+  return account;
+}

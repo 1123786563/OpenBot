@@ -579,3 +579,282 @@ export async function revokeResourceRead(
     return { changed: deleted.length > 0, aclEpoch };
   });
 }
+
+// ---------------------------------------------------------------------------
+// T03.03（#540，P06）：平台入口的公司开通编排
+// ---------------------------------------------------------------------------
+
+import type {
+  Directory,
+  DirectoryResult,
+} from "../../auth/directory/contracts";
+import {
+  activateProvisionedCompany,
+  CompanyLifecycleRefusal,
+  normalizeCompanySlug,
+  preAllocateProvisionTenantId,
+  preAllocateProvisionWorkspaceId,
+} from "../../auth/directory/lifecycle";
+import {
+  isPrincipalRegistryRefusal,
+  PRINCIPAL_REGISTRY_UNKNOWN_USER,
+  type PrincipalRegistryRefusal,
+} from "../../auth/directory/principal-registry";
+import {
+  PayerAccountConflictError,
+  type PayerAccount,
+} from "../../billing/payer";
+import { bindProvisionedCompanyPayer } from "../../billing/payer-binding";
+import type { Database } from "../../db/client";
+
+/** The platform entry's shape: 接{name,slug,ownerUserId,defaultTeamName}+幂等头. */
+export const PlatformCompanyProvisionInputSchema = z
+  .object({
+    actorUserId: Id,
+    name: z.string().trim().min(1).max(256),
+    slug: z.string().trim().min(1).max(256),
+    ownerUserId: Id,
+    defaultTeamName: z.string().trim().min(1).max(200),
+    idempotencyKey: z
+      .string()
+      .trim()
+      .min(1)
+      .max(512)
+      .refine(
+        (value) =>
+          value
+            .split("")
+            .every((character) => character >= " " && character !== "\u007f"),
+        "idempotencyKey must be printable text; the receipt domain is what makes a replay safe",
+      ),
+  })
+  .strict();
+export type PlatformCompanyProvisionInput = z.infer<
+  typeof PlatformCompanyProvisionInputSchema
+>;
+
+/** What one platform provision answers — never a payer key, never half benefits. */
+export interface PlatformCompanyProvisionOutcome {
+  readonly tenantId: string;
+  readonly name: string;
+  readonly slug: string;
+  /** `active` only when the external billing initialization is confirmed ready. */
+  readonly status: "provisioning" | "active";
+  /** The default team's stable workspace id, when a default team was provisioned. */
+  readonly defaultWorkspaceId: string | null;
+  readonly replayed: boolean;
+  readonly commandId: string;
+}
+
+/**
+ * The external billing boundary: the idempotent Customer/payer initialization
+ * for one company, outside the directory command's transaction (plan Task 6
+ * Steps 2–3 — a fault here is injected, classified and retried; real
+ * provider acceptance is P24's). Must be idempotent by construction:
+ * retries converge on the one mapping row.
+ */
+export interface CompanyBillingInitializationPort {
+  initialize(tenantId: string): Promise<PayerAccount>;
+}
+
+export interface PlatformCompanyProvisionServiceDeps {
+  /** The single-writer connection the directory command transaction runs on. */
+  readonly database: Database;
+  readonly directory: Directory;
+  readonly billing: CompanyBillingInitializationPort;
+}
+
+export interface PlatformCompanyProvisionService {
+  provision(
+    input: PlatformCompanyProvisionInput,
+  ): Promise<PlatformCompanyProvisionOutcome>;
+}
+
+export const PLATFORM_ADMIN_REQUIRED = "PLATFORM_ADMIN_REQUIRED";
+export const COMPANY_PROVISION_OWNER_UNKNOWN =
+  "COMPANY_PROVISION_OWNER_UNKNOWN";
+export const COMPANY_PROVISION_SLUG_TAKEN = "COMPANY_PROVISION_SLUG_TAKEN";
+export const COMPANY_PROVISION_PAYER_CONFLICT =
+  "COMPANY_PROVISION_PAYER_CONFLICT";
+
+/**
+ * Drizzle wraps statement errors, so the unique violation rides the cause
+ * chain, and postgres.js carries the constraint name inside the message
+ * rather than as a SQLSTATE-paired field. The slug index's name is unique
+ * enough to be the matcher: every other failure is a real fault, rethrown
+ * untouched.
+ */
+function isSlugUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 8 && current; depth += 1) {
+    if (
+      String((current as Error).message).includes("auth_organization_slug_uq")
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** The closed-vocabulary input read the admin pre-check and the handler re-run share. */
+async function readHoldsAdminRole(
+  database: Database,
+  userId: string,
+): Promise<boolean> {
+  const rows = await database.execute(
+    sql`SELECT 1 AS ok FROM user_roles WHERE user_id = ${userId} AND role = 'admin' LIMIT 1`,
+  );
+  const list = Array.isArray(rows)
+    ? (rows as Record<string, unknown>[])
+    : ((rows as { rows?: Record<string, unknown>[] }).rows ?? []);
+  return list.length > 0;
+}
+
+/**
+ * The platform provisioning orchestrator: verify the actor, run the private
+ * `company.provision` directory command (the atomic local half), then drive
+ * the external billing initialization to ready and only then activate. A
+ * billing failure is an outcome, never a rollback and never a half benefit:
+ * the company stays `provisioning` with its outbox intent pending, and the
+ * same idempotency key retries into the SAME company. The tenant id is the
+ * server's deterministic pre-allocation from that key (interfaces §2), so
+ * replays converge before any receipt is read.
+ */
+export function createPlatformCompanyProvisionService(
+  deps: PlatformCompanyProvisionServiceDeps,
+): PlatformCompanyProvisionService {
+  if (!deps?.database) {
+    throw new Error(
+      "PLATFORM_PROVISION_DEPS_REQUIRED: createPlatformCompanyProvisionService needs the single-writer database the directory command runs on",
+    );
+  }
+  if (typeof deps?.directory?.execute !== "function") {
+    throw new Error(
+      "PLATFORM_PROVISION_DEPS_REQUIRED: createPlatformCompanyProvisionService needs the Directory executor; without the command envelope there is no provision, and a permissive substitute is the bypass interfaces §3.3 forbids",
+    );
+  }
+  if (typeof deps?.billing?.initialize !== "function") {
+    throw new Error(
+      "PLATFORM_PROVISION_DEPS_REQUIRED: createPlatformCompanyProvisionService needs the billing initialization port — a company cannot activate without it, and an optional port is the half-benefit hole",
+    );
+  }
+
+  return {
+    async provision(rawInput) {
+      const input = PlatformCompanyProvisionInputSchema.parse(rawInput);
+      // The actor gate before the command: the same CURRENT global admin role
+      // the handler re-verifies inside the locked transaction. Fail fast,
+      // before any receipt or advisory lock, with the named 403.
+      if (!(await readHoldsAdminRole(deps.database, input.actorUserId))) {
+        throw new CompanyLifecycleRefusal(
+          PLATFORM_ADMIN_REQUIRED,
+          `actor ${input.actorUserId} holds no current global admin role; platform provisioning is a platform action and company roles never substitute for it`,
+          403,
+        );
+      }
+      const slug = normalizeCompanySlug(input.slug);
+      if (slug === "") {
+        throw new CompanyLifecycleRefusal(
+          "COMPANY_SLUG_INVALID",
+          "the requested slug normalizes to nothing; interfaces §2's tenant-digest fallback is the M2 backfill's derivation, and a provision request names its slug explicitly",
+          400,
+        );
+      }
+      const tenantId = preAllocateProvisionTenantId(input.idempotencyKey);
+      const workspaceId = preAllocateProvisionWorkspaceId(tenantId);
+      const actor = Object.freeze({
+        userId: input.actorUserId,
+        principalId: null,
+        sessionId: null,
+        kind: "platform" as const,
+        bindingId: null,
+        provisioning: null,
+      });
+      let result: DirectoryResult;
+      try {
+        result = await deps.directory.execute(actor, {
+          operation: "company.provision",
+          tenantId,
+          idempotencyKey: input.idempotencyKey,
+          payload: {
+            name: input.name,
+            slug: input.slug,
+            ownerUserId: input.ownerUserId,
+            defaultTeamName: input.defaultTeamName,
+          },
+        });
+      } catch (error) {
+        if (
+          isPrincipalRegistryRefusal(error) &&
+          (error as PrincipalRegistryRefusal).code ===
+            PRINCIPAL_REGISTRY_UNKNOWN_USER
+        ) {
+          // The SPECIFIED owner is verified and unknown: the command's atomic
+          // rollback already removed every local row (the test pins the zero).
+          throw new CompanyLifecycleRefusal(
+            COMPANY_PROVISION_OWNER_UNKNOWN,
+            `owner ${input.ownerUserId} does not exist; the command verifies the owner it was given and never falls back to another user`,
+            404,
+          );
+        }
+        if (isSlugUniqueViolation(error)) {
+          // interfaces §2: the unique-slug conflict blocks and reports — no
+          // silent re-slug, no mapping lost, and the transaction is gone.
+          throw new CompanyLifecycleRefusal(
+            COMPANY_PROVISION_SLUG_TAKEN,
+            `slug "${slug}" already names another company; the conflict is reported, never re-derived`,
+            409,
+          );
+        }
+        throw error;
+      }
+      // The fixed payer and its external initialization: outside the command
+      // transaction, idempotent, and a fault is classified, never swallowed.
+      const binding = bindProvisionedCompanyPayer({ tenantId });
+      let account: PayerAccount;
+      try {
+        account = await deps.billing.initialize(tenantId);
+      } catch (error) {
+        if (error instanceof PayerAccountConflictError) {
+          // A mapping conflict is a DETERMINED refusal (plan Task 6 Step 5):
+          // the company stays provisioning and no benefit opens.
+          throw new CompanyLifecycleRefusal(
+            COMPANY_PROVISION_PAYER_CONFLICT,
+            "the company's payer key is already held by a different subject's mapping; the conflict is named and the company stays provisioning",
+            409,
+          );
+        }
+        // A transient boundary fault: the local company is durable and the
+        // intent is pending — an outcome, not a failure of the provision.
+        return {
+          tenantId,
+          name: input.name,
+          slug,
+          status: "provisioning",
+          defaultWorkspaceId: workspaceId,
+          replayed: result.replayed,
+          commandId: result.commandId,
+        };
+      }
+      // Only a mapping this binding can name activates the company; a
+      // mismatch is activateProvisionedCompany's named refusal.
+      await activateProvisionedCompany(deps.database, {
+        tenantId,
+        binding,
+        payerAccount: account,
+        actorUserId: input.actorUserId,
+        commandId: result.commandId,
+      });
+      return {
+        tenantId,
+        name: input.name,
+        slug,
+        status: "active",
+        defaultWorkspaceId: workspaceId,
+        replayed: result.replayed,
+        commandId: result.commandId,
+      };
+    },
+  };
+}
