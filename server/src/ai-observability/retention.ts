@@ -30,7 +30,7 @@
  *    vanish with their job row, and a fresh connection cannot read any of it back.
  */
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, lte, ne, type SQL, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, ne, type SQL, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { getLogger } from "../../../shared/logger";
 import { workOwner } from "../../../shared/work-owner";
@@ -52,6 +52,7 @@ import {
   createObservationExportStore,
   type ObservationExportStore,
 } from "./exports";
+import { runUpstreamIdentity } from "./opik-http";
 import { type OpikPort, OpikPortError, type OpikPortResult } from "./opik-port";
 import { assertObservationScope } from "./scope";
 
@@ -740,6 +741,38 @@ export function createObservationRetentionWorker(
       .where(eq(aiObservationRetentionDeletions.id, id));
   };
 
+  /*
+   * R3-05: persist the derived upstream reference onto a frozen-null run record, BEFORE
+   * the upstream half runs. The promotion is the deletion-side half of the materializer's
+   * crash window: the binding's null opik_trace_id may hide a trace/root the create and
+   * root writes landed upstream while the reconcile that would have recorded them never
+   * did, and the deterministic derivation is the identity every materializing caller
+   * used — so the record now names the object the upstream half must verify absent (or
+   * delete), and a retry after the binding row is gone needs nothing but the record. The
+   * update only lands from the frozen-null shape; null back means another pass already
+   * promoted (the lease makes that unreachable, the deterministic id makes it harmless).
+   */
+  const promoteUpstreamReference = async (
+    id: string,
+    upstreamId: string,
+  ): Promise<typeof aiObservationRetentionDeletions.$inferSelect | null> => {
+    const rows = await db
+      .update(aiObservationRetentionDeletions)
+      .set({
+        upstreamKind: "trace",
+        upstreamId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(aiObservationRetentionDeletions.id, id),
+          isNull(aiObservationRetentionDeletions.upstreamKind),
+        ),
+      )
+      .returning();
+    return rows[0] ?? null;
+  };
+
   /** Terminal, exactly once: only a non-deleted row can become deleted. */
   const markDeleted = async (
     id: string,
@@ -813,6 +846,9 @@ export function createObservationRetentionWorker(
         kind: record.kind,
       });
       /*
+       * The run record's frozen upstream view, re-read against the authoritative binding
+       * at execution time — two findings' worth of checks in one pass:
+       *
        * F5E1-F3: a run record with no upstream reference is honest only while the
        * authoritative binding itself still records none. The record freezes its view at
        * discovery; a binding that reconciled afterwards (materialization completing under
@@ -820,10 +856,34 @@ export function createObservationRetentionWorker(
        * the exact "null opik_trace_id skips the real upstream cleanup" the review refused.
        * The binding row is re-read at execution time, and a row that moved parks the
        * record with its locator instead of deleting underneath it.
+       *
+       * R3-05: a binding that records NO upstream id is not proof that no upstream object
+       * exists — the materialization writes the trace and the run root BEFORE it records
+       * the mapping, so a create/root that a failed (or crashed) reconcile never recorded
+       * leaves a real upstream trace, and a frozen null would delete the local rows out
+       * from under it — the upstream orphan the review replayed. The deterministic
+       * identity the materializer would have written is derived from the binding's own
+       * authoritative chain (`runUpstreamIdentity` — every materializing caller derives
+       * its upstream ids with it), persisted ONTO the record BEFORE the upstream half
+       * runs, and then cleaned through the exact path a reconciled record takes: the
+       * port's verified-absence deletion, which answers ok only once the trace (and its
+       * spans) read back gone. A deployment that cannot verify (no port, unreadable
+       * upstream) parks the record with its locator and its new reference — unknown never
+       * completes local-only.
+       *
+       * A binding row that is already gone can only mean a previous pass ran this record's
+       * local half — deletion is the binding rows' only channel, and under this ordering
+       * the upstream half ran before it — so the idempotent local delete below finishes
+       * what that pass started.
        */
-      if (record.kind === "run" && record.upstreamKind === null) {
+      let upstreamKind = record.upstreamKind;
+      let upstreamId = record.upstreamId;
+      if (record.kind === "run") {
         const binding = await db
-          .select({ opikTraceId: aiObservationBindings.opikTraceId })
+          .select({
+            opikTraceId: aiObservationBindings.opikTraceId,
+            traceId: aiObservationBindings.traceId,
+          })
           .from(aiObservationBindings)
           .where(
             and(
@@ -831,11 +891,31 @@ export function createObservationRetentionWorker(
               eq(aiObservationBindings.scopeKey, record.scopeKey),
             ),
           );
-        if (binding[0] !== undefined && binding[0].opikTraceId !== null) {
-          throw new RetentionFailure("OPIK_UPSTREAM_UNLOCATED");
+        const row = binding[0];
+        if (row !== undefined && row.opikTraceId !== null) {
+          // The binding records an upstream id the record does not freeze exactly: the
+          // record's view is stale, and deleting underneath it would strand the copy the
+          // binding names — park with the locator, as F5E1-F3 decided.
+          if (
+            record.upstreamKind === null ||
+            record.upstreamId !== row.opikTraceId
+          ) {
+            throw new RetentionFailure("OPIK_UPSTREAM_UNLOCATED");
+          }
+        } else if (row !== undefined && record.upstreamKind === null) {
+          // R3-05: derive the candidate the materializer would have written, and freeze
+          // it on the record before any upstream I/O — the record's own promise is that a
+          // retry needs nothing but the record, and the binding row does not outlive the
+          // local half.
+          const derived = runUpstreamIdentity(row.traceId).opikTraceId;
+          const promoted = await promoteUpstreamReference(id, derived);
+          // The lease keeps one pass on this record; a concurrent promote could only have
+          // written the same deterministic id, and the fallback keeps this pass on it.
+          upstreamKind = promoted?.upstreamKind ?? "trace";
+          upstreamId = promoted?.upstreamId ?? derived;
         }
       }
-      if (record.upstreamKind !== null && record.state !== "upstream_done") {
+      if (upstreamKind !== null && record.state !== "upstream_done") {
         const port = gate();
         if (stopWork) {
           await exportStore.cancelForScope(record.scopeKey);
@@ -847,19 +927,19 @@ export function createObservationRetentionWorker(
           project: record.locatorProject ?? "",
         });
         const result =
-          record.upstreamKind === "trace"
+          upstreamKind === "trace"
             ? await port.deleteTraces(locator, {
-                traceIds: [record.upstreamId ?? ""],
+                traceIds: [upstreamId ?? ""],
               })
             : await port.deleteDataset(locator, {
-                datasetId: record.upstreamId ?? "",
+                datasetId: upstreamId ?? "",
               });
         if (result.outcome !== "ok") {
           throw new RetentionFailure(
             // FREV-07: a missing locator project answers 404, and its traces may well be
             // the rows the E2E evidence watched survive a project delete — named apart so
             // the parked record says what it is waiting on, not a generic client error.
-            record.upstreamKind === "trace" &&
+            upstreamKind === "trace" &&
               result.outcome === "upstream_error" &&
               result.status === 404
               ? "OPIK_PROJECT_MISSING"
@@ -880,9 +960,10 @@ export function createObservationRetentionWorker(
           return;
         }
       } else if (stopWork) {
-        // No upstream half to gate on (an unreconciled run): the same
-        // once-per-record stop still applies before the local deletion changes
-        // the run's data face.
+        // No upstream half to gate on: a run record whose binding row is already
+        // gone (the retry of a pass whose local half ran — R3-05's ordering). The
+        // same once-per-record stop still applies before the local deletion
+        // changes the run's data face.
         await exportStore.cancelForScope(record.scopeKey);
         await markWorkStopped(id);
       }
