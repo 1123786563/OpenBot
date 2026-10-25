@@ -249,6 +249,139 @@ describe("toVisibleChatItems", () => {
     ]);
   });
 
+  /*
+   * FIX-OCR2 (O2-M7): the turn boundary the dedup keeps its row against. The engine stamps
+   * every assistant text of a run with the same set, so only the last basis row before the
+   * next thing the person initiated survives — and "what the person initiated" includes a
+   * voice call, which reaches the transcript as an activity card ahead of the run it
+   * started (`withVoiceChats`). Before the voice leg, a voice round did not flush and the
+   * previous voice round's basis row was silently dropped; a Bot's own activity (a drawing)
+   * is mid-turn, not a boundary. The malformed and empty sets are the fail-closed half the
+   * reader's own docblock promises, pinned here end to end through the projection.
+   */
+  test("a multi-round tool turn keeps only the final answer's basis row", () => {
+    const call: ToolCall = {
+      id: "basis-call-1",
+      type: "function",
+      function: { name: "botActivity", arguments: "{}" },
+    };
+    const rounds: Message[] = [
+      {
+        id: "q-tool",
+        role: "user",
+        content: "What did I ask you to remember?",
+      },
+      {
+        id: "a-tool-round",
+        role: "assistant",
+        content: "Checking the records.",
+        toolCalls: [call],
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+      {
+        id: "r-tool-round",
+        role: "tool",
+        toolCallId: "basis-call-1",
+        content: "record 7",
+      },
+      {
+        id: "a-tool-final",
+        role: "assistant",
+        content: "Here is what stands.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+    ];
+    const drawn = toVisibleChatItems(rounds).filter(
+      (item) => item.kind === "answer-basis",
+    );
+    expect(drawn.map((item) => item.id)).toEqual(["a-tool-final:basis"]);
+  });
+
+  test("a voice chat card is a turn boundary: each voice turn keeps its own last basis row", () => {
+    const voiceCard = (id: string): Message =>
+      ({
+        id,
+        role: "activity",
+        activityType: "openbot-voice-chat",
+        content: { callId: id, state: "completed" },
+      }) as unknown as Message;
+    const rounds: Message[] = [
+      { id: "q-voice-1", role: "user", content: "First voice round." },
+      {
+        id: "a-voice-1",
+        role: "assistant",
+        content: "Answer one.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+      voiceCard("voice-1"),
+      {
+        id: "a-voice-2",
+        role: "assistant",
+        content: "Answer two.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+      voiceCard("voice-2"),
+      {
+        id: "a-voice-3",
+        role: "assistant",
+        content: "Answer three.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+    ];
+    const drawn = toVisibleChatItems(rounds).filter(
+      (item) => item.kind === "answer-basis",
+    );
+    expect(drawn.map((item) => item.id)).toEqual([
+      "a-voice-1:basis",
+      "a-voice-2:basis",
+      "a-voice-3:basis",
+    ]);
+  });
+
+  test("a Bot's own activity is not a boundary: the turn's last basis row still wins", () => {
+    const rounds: Message[] = [
+      { id: "q-drawing", role: "user", content: "Draw me the plan." },
+      {
+        id: "a-drawing-1",
+        role: "assistant",
+        content: "Let me draw it.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+      DRAWING,
+      {
+        id: "a-drawing-2",
+        role: "assistant",
+        content: "There is the plan.",
+        metadata: WITH_BASIS.metadata,
+      } as Message,
+    ];
+    const drawn = toVisibleChatItems(rounds).filter(
+      (item) => item.kind === "answer-basis",
+    );
+    expect(drawn.map((item) => item.id)).toEqual(["a-drawing-2:basis"]);
+  });
+
+  test("an empty or malformed basis set draws no row at all", () => {
+    const empty = {
+      id: "answer-empty-basis",
+      role: "assistant",
+      content: "Nothing behind this one.",
+      metadata: { openbot: { personalMemoryBasis: [] } },
+    } as unknown as Message;
+    expect(toVisibleChatItems([empty]).map((item) => item.kind)).toEqual([
+      "text",
+    ]);
+    const holed = {
+      id: "answer-holed-basis",
+      role: "assistant",
+      content: "Nor this one.",
+      metadata: { openbot: { personalMemoryBasis: [{ id: "p1" }, null] } },
+    } as unknown as Message;
+    expect(toVisibleChatItems([holed]).map((item) => item.kind)).toEqual([
+      "text",
+    ]);
+  });
+
   test("drops a malformed live user turn instead of throwing", () => {
     // Live turns bypass schema validation; one bad turn must not unmount the transcript.
     for (const content of [undefined, null, 42] as unknown[]) {

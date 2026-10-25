@@ -4,6 +4,7 @@ import {
   type AnswerMemoryBasisPointer,
   answerMemoryBasisOf,
 } from "@/lib/hindsight/answer-basis";
+import { VOICE_CHAT_ACTIVITY } from "@/lib/voice/archive";
 
 /**
  * Transcript projection that pairs assistant tool calls with later tool-result messages.
@@ -624,9 +625,17 @@ function keepLastBasisPerTurn(
       lastInTurn = item;
       continue;
     }
+    // A voice chat card is a person-initiated turn boundary too (FIX-OCR2 O2-M7): see
+    // `withVoiceChats`, which inserts it as an activity message ahead of the run it started.
+    // Without this leg a voice round did not flush, and the previous voice round's basis row
+    // was replaced instead of kept — exactly the "the last row before the next thing the
+    // person said" this docblock promises. Other activities (a Bot's own drawing, progress)
+    // stay mid-turn: they are the answer, not a new question.
     const personSpoke =
       item.kind === "attachments" ||
-      (item.kind === "text" && item.role === "user");
+      (item.kind === "text" && item.role === "user") ||
+      (item.kind === "activity" &&
+        item.message.activityType === VOICE_CHAT_ACTIVITY);
     if (personSpoke) flush();
   }
   flush();
