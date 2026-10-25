@@ -57,7 +57,10 @@ export async function resolveMemoryCompany(
     if (ownership) {
       // The person must still be an active member of the Bot's company — the same
       // live-membership discipline the request face's scope resolution enforces.
-      const member = await database
+      // (FIX-OCR2 O2-M3: the row is destructured, because a result set is ALWAYS truthy —
+      // an empty one included — and the undestructured form answered the Bot's company for
+      // a person who had left it, which made the ingestion drift re-check dead code.)
+      const [member] = await database
         .select({ tenantId: enterpriseMemberships.tenantId })
         .from(enterpriseMemberships)
         .innerJoin(

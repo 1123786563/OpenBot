@@ -99,7 +99,16 @@ const B_FACT = `ca company B fact ${run}`;
 const UNATTRIBUTED_FACT = `ca unattributed fact ${run}`;
 const SOLO_FACT = `ca solo person fact ${run}`;
 
-const store = createMemoryStore(database);
+/*
+ * FIX-OCR2 (O2-M2): the production wiring hands the store the person's learning switch
+ * (index.ts bridges the pause controls in); here an in-test set stands in for that bridge,
+ * so the paused-import count is observable without minting pause rows.
+ */
+const learningPausedUsers = new Set<string>();
+const store = createMemoryStore(database, {
+  learningPaused: (ownerUserId) =>
+    Promise.resolve(learningPausedUsers.has(ownerUserId)),
+});
 /*
  * FIX-W13: the connector stand-in. The FIX-F1 seams above need no source work at all; the
  * source cases below key a little state into the same mock — which Bots hold the fixture
@@ -963,6 +972,135 @@ describe("FIX-W13 — a source's own company decides; the request only authorize
     ).not.toContain(SRC_ISO);
     await ingestion.syncDue();
     expect(connectorReads).not.toContain(SRC_ISO);
+  });
+
+  /*
+   * FIX-OCR2 (O2-M2): the sync answer says what was actually KEPT. While the person's
+   * learning switch is on, completeSync writes no candidate — the sync still completes, the
+   * source's health advances — but the count used to echo `kept.length`, so the response
+   * and the SyncBadge told the person "imported N" over zero rows written. It now echoes
+   * the rows the upserts touched (0 while paused), and resume imports the same payload.
+   */
+  test("a paused learner's sync answers imported: 0, writes nothing, and still succeeds", async () => {
+    const PAUSED_RECORD = `[{"id":"w13-b-3","text":"W13 paused record ${run}","title":"Notes"}]`;
+    const importedRow = async () =>
+      (
+        await database
+          .select({ id: personalMemories.id })
+          .from(personalMemories)
+          .where(
+            and(
+              eq(personalMemories.sourceId, SRC_B),
+              eq(personalMemories.externalId, "w13-b-3"),
+            ),
+          )
+      ).length;
+    vendorText = PAUSED_RECORD;
+    learningPausedUsers.add(USER);
+    try {
+      const paused = await requestAs(USER, `/sources/${SRC_B}/sync`, {
+        method: "POST",
+        tenant: TENANT_B,
+      });
+      expect(paused.status).toBe(200);
+      expect(((await paused.json()) as { imported: number }).imported).toBe(0);
+      // Nothing landed — the answer said so.
+      expect(await importedRow()).toBe(0);
+      // And the sync still completed: the connector was read, the source's health advanced.
+      const [source] = await database
+        .select({ syncStatus: memorySources.syncStatus })
+        .from(memorySources)
+        .where(eq(memorySources.id, SRC_B));
+      expect(source.syncStatus).toBe("succeeded");
+    } finally {
+      learningPausedUsers.delete(USER);
+    }
+    // Resume: the same payload imports, and the count says one.
+    const resumed = await requestAs(USER, `/sources/${SRC_B}/sync`, {
+      method: "POST",
+      tenant: TENANT_B,
+    });
+    expect(resumed.status).toBe(200);
+    expect(((await resumed.json()) as { imported: number }).imported).toBe(1);
+    expect(await importedRow()).toBe(1);
+  });
+
+  /*
+   * FIX-OCR2 (O2-M3): the background sync RE-PROVES the attribution instead of trusting the
+   * stamp the row carries. The drift is reachable: a person who leaves the company leaves
+   * behind a row whose tenant_id still says TENANT_A while resolveMemoryCompany can no
+   * longer prove it — and because that person's source list is tenant-filtered, nobody can
+   * stop or delete the source from any scope. Without the drift check the sweep would keep
+   * reading the connector on that credential and writing rows no company could ever see or
+   * manage; the drift is now skipped and deferred exactly like an isolated source, and the
+   * authority returning is what resumes it.
+   */
+  test("the background sync re-proves attribution: a drifted source is skipped and deferred", async () => {
+    const SRC_DRIFT = `${run}-src-drift`;
+    await database.insert(memorySources).values({
+      id: SRC_DRIFT,
+      ownerUserId: USER,
+      tenantId: TENANT_A,
+      agentId: BOT_A,
+      toolRef: SOURCE_TOOL.ref,
+      title: "Notes drifted",
+      enabled: true,
+      nextSyncAt: new Date(Date.now() - 1_000),
+    });
+    boundIds.push(SRC_DRIFT);
+
+    // The drift: the person's company-A membership lapses, so BOT_A's company is no longer
+    // provable for them — while the row still says TENANT_A.
+    const suspend = (status: "active" | "suspended") =>
+      database
+        .update(enterpriseMemberships)
+        .set({ status })
+        .where(
+          and(
+            eq(enterpriseMemberships.tenantId, TENANT_A),
+            eq(enterpriseMemberships.principalId, PRIN),
+          ),
+        );
+    await suspend("suspended");
+    try {
+      const [before] = await database
+        .select({ nextSyncAt: memorySources.nextSyncAt })
+        .from(memorySources)
+        .where(eq(memorySources.id, SRC_DRIFT));
+      const readsBefore = connectorReads.length;
+      const skipped = await ingestion.sync(USER, SRC_DRIFT);
+      expect(skipped.imported).toBe(0);
+      // Not read, not imported, nothing stamped on the row.
+      expect(connectorReads.length).toBe(readsBefore);
+      expect(await importedOf(SRC_DRIFT)).toEqual([]);
+      const [drifted] = await database
+        .select({
+          syncStatus: memorySources.syncStatus,
+          nextSyncAt: memorySources.nextSyncAt,
+        })
+        .from(memorySources)
+        .where(eq(memorySources.id, SRC_DRIFT));
+      expect(drifted.syncStatus).not.toBe("succeeded");
+      // Deferred out of the due set with the failed-sync backoff, so the sweep is not
+      // crowded by a source that can never run — the isolated half's rule.
+      expect(drifted.nextSyncAt.getTime()).toBeGreaterThan(
+        before.nextSyncAt.getTime(),
+      );
+      expect(drifted.nextSyncAt.getTime()).toBeGreaterThan(Date.now());
+      expect((await store.dueSources()).map((row) => row.id)).not.toContain(
+        SRC_DRIFT,
+      );
+    } finally {
+      await suspend("active");
+    }
+    // The authority returning is what resumes it: the same source now reads under its own
+    // company again and stamps that company on what it imports.
+    vendorText = A_RECORD;
+    const resumed = await ingestion.sync(USER, SRC_DRIFT);
+    expect(resumed.imported).toBe(1);
+    expect(connectorReads).toContain(SRC_DRIFT);
+    const [stamped] = await importedOf(SRC_DRIFT);
+    expect(stamped.tenantId).toBe(TENANT_A);
   });
 
   test("binding reaches only the current company's Bots; the row carries its company from birth", async () => {
