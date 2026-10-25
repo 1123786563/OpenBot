@@ -45,6 +45,10 @@ import {
   scopedAdoptedJudgmentsQueryOptions,
   scopedJudgmentCandidatesQueryOptions,
 } from "@/lib/hindsight/queries";
+import {
+  sensitiveConfirmationRefused,
+  sensitiveRefusalNote,
+} from "@/lib/hindsight/sensitive-refusal";
 import { useDateTime } from "@/lib/i18n/datetime";
 import { EvidenceDialog } from "./evidence";
 
@@ -137,6 +141,7 @@ function CandidateRow({
   scope: ScopedCache;
 }) {
   const { t } = useTranslation("agents");
+  const { t: tErrors } = useTranslation("errors");
   const { formatDateTime } = useDateTime();
   const scopeLabel = useScopeLabel();
   const queryClient = useQueryClient();
@@ -178,7 +183,7 @@ function CandidateRow({
             </Button>
             <Button
               disabled={confirm.isPending}
-              onClick={() => confirm.mutate(candidate.id)}
+              onClick={() => confirm.mutate({ id: candidate.id })}
               size="sm"
               variant="outline"
             >
@@ -206,10 +211,36 @@ function CandidateRow({
         </ItemFooter>
         {!editing && (confirm.error || edit.error || reject.error) && (
           <p role="alert" className="text-destructive text-sm">
-            {confirm.error?.message ||
-              edit.error?.message ||
+            {sensitiveRefusalNote(
+              confirm.error ?? edit.error ?? reject.error,
+              tErrors,
+            ) ??
+              confirm.error?.message ??
+              edit.error?.message ??
               reject.error?.message}
           </p>
+        )}
+        {!editing && sensitiveConfirmationRefused(confirm.error) && (
+          /*
+           * O3-M4: the gate's second look. The refusal above said sensitive material needs
+           * the person's own second confirmation; this button IS that confirmation, and the
+           * retry carries it — the confirm is no longer a dead end for medical, financial
+           * or customer text.
+           */
+          <Button
+            className="mt-2"
+            disabled={confirm.isPending}
+            onClick={() =>
+              confirm.mutate({
+                id: candidate.id,
+                confirmSensitive: true,
+              })
+            }
+            size="sm"
+            variant="outline"
+          >
+            {t("memory.judgments.confirmSensitive")}
+          </Button>
         )}
       </ItemContent>
       {editing ? (
@@ -373,10 +404,11 @@ function EditJudgmentDialog({
   title: string;
   saving: boolean;
   error: string | null;
-  onSave: (content: string) => void;
+  onSave: (content: string, confirmSensitive?: boolean) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation("agents");
+  const { t: tErrors } = useTranslation("errors");
   const [content, setContent] = useState(initial);
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>
@@ -404,11 +436,22 @@ function EditJudgmentDialog({
           <p className="text-muted-foreground text-sm">{title}</p>
           {error ? (
             <p role="alert" className="text-destructive text-sm">
-              {error}
+              {sensitiveRefusalNote(error, tErrors) ?? error}
             </p>
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
+          {error !== null && sensitiveConfirmationRefused(new Error(error)) && (
+            // O3-M4: the gate's second look, inside the edit it refused.
+            <Button
+              disabled={saving || !content.trim()}
+              onClick={() => onSave(content, true)}
+              size="sm"
+              variant="outline"
+            >
+              {t("memory.judgments.confirmSensitive")}
+            </Button>
+          )}
           <Button onClick={onClose} size="sm" variant="outline">
             {t("memory.judgments.cancel")}
           </Button>

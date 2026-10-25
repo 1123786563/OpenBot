@@ -99,6 +99,8 @@ let seen: { method: string; url: string; headers: Record<string, string> }[];
 let memoryRows: Record<string, unknown>[];
 /** A refusal the next basis forget gets, or none — the silent-failure regression (FIX-OCR1). */
 let refuseForgetNext = false;
+/** FIX-OCR3 (O3-M4): the next confirm answers the sensitive gate's first refusal. */
+let refuseSensitiveConfirmNext = false;
 
 const notCleared = () => ({
   controlledCopiesCleared: false,
@@ -180,6 +182,7 @@ function serving() {
   memoryEntries = [];
   memoryRows = [];
   refuseForgetNext = false;
+  refuseSensitiveConfirmNext = false;
   cleanupStatus = notCleared();
   window.localStorage.clear();
   storeSelection("user-1", { tenantId: "t1", workspaceId: "w1" });
@@ -241,6 +244,16 @@ function serving() {
       });
     }
     if (url === "/api/hindsight/judgments/j1/confirm") {
+      if (refuseSensitiveConfirmNext && body?.confirmSensitive !== true) {
+        return Response.json(
+          {
+            error:
+              "Medical, financial and customer information is remembered only when you ask for it yourself and confirm a second time.",
+          },
+          { status: 400 },
+        );
+      }
+      refuseSensitiveConfirmNext = false;
       candidates = [];
       adopted = [
         adoptedJudgment(
@@ -286,6 +299,7 @@ function serving() {
     if (url === "/api/memory/hindsight/preferences/p1" && method === "DELETE") {
       if (refuseForgetNext) {
         refuseForgetNext = false;
+        refuseSensitiveConfirmNext = false;
         return Response.json({ error: "Access denied." }, { status: 403 });
       }
       evidence.p1 = { state: "unavailable", id: "p1" };
@@ -754,5 +768,40 @@ test("Check now re-probes, and the picture refreshes into the claim", async () =
   );
   expect(
     await view.findByText(/All controlled copies are cleared/),
+  ).toBeTruthy();
+});
+
+/*
+ * FIX-OCR3 (O3-M4): the F-G1-4 gate's browser half. A confirm whose text lands in the
+ * medical/financial/customer classes refuses once with the gate's own sentence; until now
+ * that was a dead end — the mutation never sent the second confirmation and no UI offered
+ * one. Now the refusal note names the reason in the person's language and the retry beside
+ * it carries `confirmSensitive: true`, which the server accepts.
+ */
+test("a sensitive confirm refuses once and the explicit second look adopts it", async () => {
+  serving();
+  refuseSensitiveConfirmNext = true;
+  const view = draw(<JudgmentReviewSections />);
+  fireEvent.click(await view.findByRole("button", { name: "Confirm" }));
+  // The first refusal: the gate's sentence, and the affordance it asks for.
+  const retry = await view.findByRole("button", { name: "Keep it anyway" });
+  expect(await view.findByText(/confirm a second time/)).toBeTruthy();
+  expect(
+    writes.some(
+      (write) =>
+        write.request === "POST /api/hindsight/judgments/j1/confirm" &&
+        write.body === undefined,
+    ),
+  ).toBe(true);
+  fireEvent.click(retry);
+  // The retry carries the person's explicit second confirmation.
+  await waitFor(() =>
+    expect(writes).toContainEqual({
+      request: "POST /api/hindsight/judgments/j1/confirm",
+      body: { confirmSensitive: true },
+    }),
+  );
+  expect(
+    await view.findByText("No judgments are waiting for review."),
   ).toBeTruthy();
 });

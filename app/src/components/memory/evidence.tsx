@@ -24,6 +24,10 @@ import {
   type EvidenceInspection,
   scopedEvidenceInspectionQueryOptions,
 } from "@/lib/hindsight/queries";
+import {
+  sensitiveConfirmationRefused,
+  sensitiveRefusalNote,
+} from "@/lib/hindsight/sensitive-refusal";
 import { useDateTime } from "@/lib/i18n/datetime";
 
 /**
@@ -169,9 +173,15 @@ export function EvidenceDialog({
           entry={correcting}
           error={correct.error?.message ?? null}
           onClose={() => setCorrecting(null)}
-          onSave={(content) =>
+          onSave={(content, confirmSensitive) =>
             correct.mutate(
-              { id: correcting.id, input: { content } },
+              {
+                id: correcting.id,
+                input: {
+                  content,
+                  ...(confirmSensitive === true ? { confirmSensitive } : {}),
+                },
+              },
               {
                 onSuccess: () => {
                   setCorrecting(null);
@@ -306,10 +316,11 @@ function CorrectEvidenceDialog({
   entry: EvidenceInspection;
   saving: boolean;
   error: string | null;
-  onSave: (content: string) => void;
+  onSave: (content: string, confirmSensitive?: boolean) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation("agents");
+  const { t: tErrors } = useTranslation("errors");
   const initial = entry.state === "available" ? entry.content : "";
   const [content, setContent] = useState(initial);
   return (
@@ -337,11 +348,26 @@ function CorrectEvidenceDialog({
           </Field>
           {error ? (
             <p role="alert" className="text-destructive text-sm">
-              {error}
+              {sensitiveRefusalNote(error, tErrors) ?? error}
             </p>
           ) : null}
         </DialogBody>
         <DialogFooter className="mt-4">
+          {error !== null && sensitiveConfirmationRefused(new Error(error)) && (
+            /*
+             * O3-M4: the correction's second look. A corrected text that lands in the
+             * medical/financial/customer classes refuses once; this button is the explicit
+             * confirmation the gate asks for, and the retry carries it.
+             */
+            <Button
+              disabled={saving || !content.trim()}
+              onClick={() => onSave(content, true)}
+              size="sm"
+              variant="outline"
+            >
+              {t("memory.evidence.confirmSensitive")}
+            </Button>
+          )}
           <Button onClick={onClose} size="sm" variant="outline">
             {t("memory.evidence.cancel")}
           </Button>
