@@ -114,8 +114,8 @@ export type PodEventBusOptions = {
  * stream that quietly "works".
  */
 class EventStreamForbiddenError extends Error {
-  constructor(status: number) {
-    super(`/event answered HTTP ${status}`);
+  constructor() {
+    super("/event answered HTTP 403");
     this.name = "EventStreamForbiddenError";
   }
 }
@@ -253,7 +253,13 @@ export class PodEventBus {
         await this.readOneStream();
         hadSuccessfulRead = this.streamReady;
       } catch (error) {
-        if (error instanceof EventStreamForbiddenError) {
+        if (
+          error instanceof EventStreamForbiddenError ||
+          // #618 (OCR#8): the belt's scope refusal is a deployment config fact —
+          // equally terminal, never something a redial can heal, so it must not
+          // feed the ladder either (the belt exists to be loud exactly here).
+          error instanceof SandboxExecutionScopeUnavailableError
+        ) {
           // #618 (FR-F2): terminal — stop the reader and signal closed now; the
           // ladder below is for transient stream failures, not authorization.
           this.stopped = true;
@@ -316,7 +322,7 @@ export class PodEventBus {
     });
     if (!response.ok) {
       if (response.status === 403) {
-        throw new EventStreamForbiddenError(response.status);
+        throw new EventStreamForbiddenError();
       }
       throw new Error(`/event answered HTTP ${response.status}`);
     }

@@ -14,6 +14,7 @@ import {
   type ExecutionScope,
   isPlainScopeId,
 } from "../../../shared/execution-scope";
+import { getLogger } from "../../../shared/logger";
 
 /** What `loadCraftConfig` reads. `NodeJS.ProcessEnv` shaped so tests can build fakes. */
 export type CraftEnv = Record<string, string | undefined>;
@@ -317,9 +318,20 @@ function craftSandboxExecutionScope(env: CraftEnv): ExecutionScope | null {
     "OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID",
     "",
   );
-  return isPlainScopeId(tenantId) && isPlainScopeId(workspaceId)
-    ? { tenantId, workspaceId }
-    : null;
+  const valid = isPlainScopeId(tenantId) && isPlainScopeId(workspaceId);
+  if (!valid && (tenantId !== "" || workspaceId !== "")) {
+    // #618 (OCR#13): "set but invalid or half-set" is otherwise indistinguishable
+    // from "not set at all" — the 503 sentence says an admin has to finish the
+    // setup, so give the admin the one boot-time clue that separates a mis-typed pair from an unset one.
+    // Names only, never the values (the no-leak constraint).
+    getLogger("server").warn(
+      "OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID / " +
+        "OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID are set but did not resolve " +
+        "into a valid scope pair (plain lowercase ids, both halves) — every craft " +
+        "sandbox call will fail closed until the pair is fixed",
+    );
+  }
+  return valid ? { tenantId, workspaceId } : null;
 }
 
 export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {

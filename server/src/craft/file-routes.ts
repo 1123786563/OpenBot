@@ -22,7 +22,7 @@ import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";
 import { packDirectoryZip, WorkspaceListingError } from "./directory-archive";
 import type { SandboxGateway } from "./sandbox-gateway";
-import { sandboxScopeRefusalOf } from "./scope-refusal";
+import { scopeRefusalResponse } from "./scope-refusal";
 import type { CraftStore } from "./store";
 import {
   collisionFreeName,
@@ -179,10 +179,8 @@ export function createFileRoutes(
       // #618: the scope refusal answers as its own 503 before the write failure's
       // generic 502 can wear it (R1-F2); like the turn face, no log line — the fixed
       // sentence IS the reason, and it names no value to leak.
-      const refusal = sandboxScopeRefusalOf(error);
-      if (refusal) {
-        return context.json({ error: refusal.message }, 503);
-      }
+      const refusalResponse = scopeRefusalResponse(context, error);
+      if (refusalResponse) return refusalResponse;
       const message = error instanceof Error ? error.message : String(error);
       if (/answered 413/.test(message)) {
         return context.json(
@@ -289,10 +287,8 @@ export function createFileRoutes(
       // upload and archive — the refusal must not wear this face's "could not be
       // deleted" 502. Same no-log contract: the fixed sentence IS the reason, and
       // it names no value to leak.
-      const refusal = sandboxScopeRefusalOf(error);
-      if (refusal) {
-        return context.json({ error: refusal.message }, 503);
-      }
+      const refusalResponse = scopeRefusalResponse(context, error);
+      if (refusalResponse) return refusalResponse;
       return context.json({ error: "The file could not be deleted." }, 502);
     }
     if (!deleted) {
@@ -356,10 +352,8 @@ export function createFileRoutes(
         // deployment must read as "finish the setup" (503), not as "could not be
         // read" (502), and least of all as onyx's "does not exist" 404 the walk's
         // listing wrap would otherwise answer for it.
-        const refusal = sandboxScopeRefusalOf(error);
-        if (refusal) {
-          return context.json({ error: refusal.message }, 503);
-        }
+        const refusalResponse = scopeRefusalResponse(context, error);
+        if (refusalResponse) return refusalResponse;
         // ONLY the root listing's failure is onyx's None → 404; anything past it
         // (the writer's ceiling, an unexpected walk failure) is a real error that
         // must not wear the "does not exist" mask — the 502 says the directory

@@ -84,6 +84,10 @@ const snapshotRow = (): CraftSnapshotRow => ({
 function unscopedScopeRoutes(input?: {
   session?: CraftSessionRow;
   withSnapshot?: boolean;
+  /** Live managed-content fingerprints — make a runtime stale so reload reaches its first write. */
+  managedContentHashesFor?: (
+    session: CraftSessionRow,
+  ) => Promise<{ skillsHash: string | null; mcpConfigHash: string | null }>;
 }) {
   const calls: { method: string; url: string }[] = [];
   const fetchImpl = (async (input_: unknown, init?: RequestInit) => {
@@ -130,6 +134,10 @@ function unscopedScopeRoutes(input?: {
       const row = rows.get(sessionId);
       return row && row.userId === userId ? { ...row } : undefined;
     },
+    async findSession(sessionId: string, userId: string) {
+      const row = rows.get(sessionId);
+      return row && row.userId === userId ? { ...row } : undefined;
+    },
     async getEmptySessionForUser() {
       return undefined; // every POST /sessions takes the genuine create path
     },
@@ -170,6 +178,7 @@ function unscopedScopeRoutes(input?: {
     gateway,
     llmConfigFor: async () => llm,
     botIdFor: async () => "craft",
+    managedContentHashesFor: input?.managedContentHashesFor,
   });
 
   const app = createSessionRoutes(fakeRequireUser(), {
@@ -187,6 +196,12 @@ function unscopedScopeRoutes(input?: {
     objectStore: objectStore as never,
     botIdFor: async () => "craft",
     userNameFor: async () => null,
+    turnState: {
+      async getActiveTurn() {
+        return null; // no live turn: the reload reaches its gateway write
+      },
+    } as never,
+    managedContentHashesFor: input?.managedContentHashesFor,
   } as never);
   return { app, calls };
 }
@@ -241,10 +256,13 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
     expect(calls).toEqual([]);
   });
 
-  test("the read face stays available: GET detail degrades the wake, not the answer", async () => {
+  test("the read face stays available: GET detail leaves the row honestly idle", async () => {
     // The detail read is not a lifecycle entrance — a scopeless deployment must
     // still open the sidebar's session (the turn face carries the refusal when
-    // the person actually acts). The wake fails, the row still answers 200.
+    // the person actually acts). The wake is refused, and the row must NOT be
+    // CASed active behind a wake that never ran — that mask (200 + "active" +
+    // nothing restored) is exactly what stranded the restore entrance's 503
+    // behind a warm path. The honest answer is 200 + still sleeping (OCR#11).
     const { app, calls } = unscopedScopeRoutes({
       session: sessionRow({ status: "idle" }),
       withSnapshot: true,
@@ -253,7 +271,72 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
     expect(response.status).toBe(200);
     const body = (await response.json()) as { id: string; status: string };
     expect(body.id).toBe(SESSION_ID);
-    expect(body.status).toBe("active"); // the CAS half of the wake still ran
+    expect(body.status).toBe("idle"); // not woken: the refusal keeps the row honest
+    expect(calls).toEqual([]);
+  });
+
+  test("after a refused detail read, POST restore still answers 503 — the wake entrance is not preempted", async () => {
+    // The detail-first flow (open the session, then hit restore): only the
+    // refusal-not-CAS discipline above keeps THIS entrance reachable — a row
+    // already flipped active would take the warm fast path and answer 200
+    // forever, leaving the person to discover the refusal on their first turn.
+    const { app, calls } = unscopedScopeRoutes({
+      session: sessionRow({ status: "idle" }),
+      withSnapshot: true,
+    });
+    const detail = await app.request(`/sessions/${SESSION_ID}`);
+    expect(detail.status).toBe(200);
+    const response = await app.request(`/sessions/${SESSION_ID}/restore`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(calls).toEqual([]);
+  });
+
+  test("skills reload answers 503 with the fixed sentence, zero outbound calls", async () => {
+    // OCR#1: reload is a person's explicit action and routes through the
+    // gateway's file verbs (the opencode.json rewrite) — a scopeless deployment
+    // answers the fixed sentence here too, not the misleading "Failed to reload
+    // session." 502 its catch used to wear.
+    const { app, calls } = unscopedScopeRoutes({
+      session: sessionRow({
+        status: "active",
+        opencodeSessionId: "ses_scope",
+        skillsHash: "old",
+      }),
+      managedContentHashesFor: async () => ({
+        skillsHash: "live",
+        mcpConfigHash: null,
+      }),
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/skills/reload`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
+
+  test("sandbox-status answers failed, not an eternal provisioning", async () => {
+    // OCR#12: a missing scope is an admin-level permanent failure — the chip
+    // must wear the settled red "failed", never a "provisioning" that can
+    // never clear (the cold-start mask the null probe used to fold into).
+    const { app, calls } = unscopedScopeRoutes({
+      session: sessionRow({ status: "active" }),
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/sandbox-status`,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { status: string };
+    expect(body.status).toBe("failed");
     expect(calls).toEqual([]);
   });
 

@@ -6,6 +6,7 @@
  * FR-F1 brought the session-lifecycle entrances (create/snapshot/restore) to the same
  * recognizer, so every craft face answers the one sentence the same way.
  */
+import type { Context } from "hono";
 import { WorkspaceListingError } from "./directory-archive";
 import { SandboxExecutionScopeUnavailableError } from "./errors";
 
@@ -22,4 +23,20 @@ export function sandboxScopeRefusalOf(
     return SANDBOX_SCOPE_REFUSAL;
   }
   return null;
+}
+
+/**
+ * The one-line answer every catch-bearing route face gives the scope refusal — 503
+ * with the fixed sentence, nothing else (no log line: the sentence IS the reason, and
+ * it names no value to leak). A null return means "not a refusal": fall through to
+ * the face's own masking branch. Folding the status code AND the
+ * must-precede-the-masking-branch order into one helper is what keeps the next face
+ * (skills/reload, #618 OCR#1) from mistyping or reordering the contract.
+ */
+export function scopeRefusalResponse(
+  context: Context,
+  error: unknown,
+): Response | null {
+  const refusal = sandboxScopeRefusalOf(error);
+  return refusal ? context.json({ error: refusal.message }, 503) : null;
 }

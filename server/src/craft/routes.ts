@@ -206,9 +206,7 @@ export function createCraftRoutes(input: {
     },
     // #618: the boot file's scope lambda when it wired one (same facts as every other
     // craft gateway assembly); otherwise the gateway reads the config's parsed pair.
-    ...(deps.executionScopeFor
-      ? { executionScopeFor: deps.executionScopeFor }
-      : {}),
+    executionScopeFor: deps.executionScopeFor,
   });
   // The approval rendezvous signals (announce + wake), Redis-backed when the
   // deployment runs multi-replica, in-process otherwise — turn-state's shape.
