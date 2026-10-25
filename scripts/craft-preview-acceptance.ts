@@ -98,6 +98,7 @@ import {
   checkRangeCovered,
   dockerPortPublishedPorts,
   type PortRange,
+  publishedSpanSummary,
   resolvePortRange,
 } from "./craft-port-range-preflight";
 
@@ -1175,7 +1176,7 @@ try {
       const coverage = checkRangeCovered(range, published.ports);
       if (!coverage.ok) {
         throw new Error(
-          `配置段 ${range.start}-${range.end} 有 ${coverage.missing.length} 个端口未被容器 ${SANDBOX_CONTAINER} 发布（如 ${coverage.missing.slice(0, 5).join("、")}）：栈与配置不一致 —— 改 .env 的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END 后 docker compose up -d agent-sandbox（宿主 API server 一并重启），或对齐 CRAFT_ACCEPTANCE_* / .env 让两侧指向同一段`,
+          `配置段 ${range.start}-${range.end} 有 ${coverage.missing.length} 个端口未被容器 ${SANDBOX_CONTAINER} 发布（如 ${coverage.missing.slice(0, 5).join("、")}）：栈与配置不一致 —— 容器实际发布 ${publishedSpanSummary(published.ports)}。改 .env 的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END 为目标段后 docker compose up -d agent-sandbox 重建发布，宿主 API server 一并重启（它在启动时读这对键）`,
         );
       }
       return `段 ${range.start}-${range.end}（${range.end - range.start + 1} 端口）已全部由 ${SANDBOX_CONTAINER} 发布`;

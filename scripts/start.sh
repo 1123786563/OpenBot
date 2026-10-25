@@ -228,7 +228,11 @@ info "1/4  Docker services"
 # and the two fixes (move the range, or free the port), and treats a range held by this stack's
 # own agent-sandbox as ours — the same `require_free_or_ours` leniency the host services below
 # get, so a rerun is never blocked by the sandbox this very script started the time before.
-if ! bun scripts/craft-port-range-preflight.ts; then
+# `--no-env-file` is part of that "same two keys" claim: Bun by default preloads the .env
+# family from the working directory — including `.env.local` variants compose never reads —
+# into the environment, and the preflight's highest-priority source is that environment.
+# Without the flag, a stray `.env.local` makes the preflight judge a range compose will not use.
+if ! bun --no-env-file scripts/craft-port-range-preflight.ts; then
   red "  agent-sandbox port range preflight failed; see the steps it printed."
   exit 1
 fi

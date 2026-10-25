@@ -1,11 +1,17 @@
 import {
   type ContainerPublish,
   checkRangeCovered,
+  composeProjectFromDirectory,
   type DockerSnapshot,
+  expectedComposeProject,
   type LsofSnapshot,
+  lsofSnapshotFromSpawn,
   type ProcessListen,
   parseDockerPortLines,
+  parseDockerPortsField,
   parseDotEnv,
+  parseLsofFOutput,
+  publishedSpanSummary,
   runPreflightCli,
 } from "../scripts/craft-port-range-preflight";
 import { expect, test } from "./support/e2e-compat";
@@ -37,6 +43,7 @@ test("free range passes with the two families named", () => {
       OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3012",
     },
     { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
   );
   expect(outcome.code).toBe(0);
   expect(text(outcome)).toContain("3011-3012");
@@ -65,6 +72,7 @@ test("process occupant reports port, pid and both remediation steps", () => {
           family: "127.0.0.1",
         }),
     },
+    "openbot",
   );
   expect(outcome.code).toBe(1);
   const output = text(outcome);
@@ -89,24 +97,27 @@ test("foreign container occupant is named with its image", () => {
           name: "strange-dashboard",
           image: "strange/dashboard:latest",
           service: "strange-dashboard",
+          project: "strange",
           port: 3011,
           family: "::1",
         }),
       lsof: () => lsofOk(),
     },
+    "openbot",
   );
   expect(outcome.code).toBe(1);
   const output = text(outcome);
   expect(output).toContain(
-    "strange-dashboard (image=strange/dashboard:latest)",
+    "strange-dashboard (image=strange/dashboard:latest, project=strange)",
   );
   expect(output).toContain("[::1]");
 });
 
 /**
- * 自己人：本栈 agent-sandbox 已发布的端口（compose label 匹配）不算冲突，start.sh 重跑
- * 安全 —— 与 require_free_or_ours 同一语义；docker 代理在宿主侧的监听影子也一并跳过
- * （两族各给一条 ours 发布，lsof 快照里放同端口的 com.docker.backend 影子）。
+ * 自己人：本栈 agent-sandbox 已发布的端口（compose label 的 service 与 project 都匹配）
+ * 不算冲突，start.sh 重跑安全 —— 与 require_free_or_ours 同一语义；ours 行带容器名与
+ * project（人眼可分辨「是谁的沙箱」）；docker 代理在宿主侧的监听影子也一并跳过（两族
+ * 各给一条 ours 发布，lsof 快照里放同端口的 com.docker.backend 影子）。
  */
 test("agent-sandbox occupant is ours and passes", () => {
   const outcome = runPreflightCli(
@@ -121,6 +132,7 @@ test("agent-sandbox occupant is ours and passes", () => {
             name: "openbot-agent-sandbox-1",
             image: "openbot/agent-sandbox:dev",
             service: "agent-sandbox",
+            project: "openbot",
             port: 3011,
             family: "127.0.0.1",
           },
@@ -128,8 +140,18 @@ test("agent-sandbox occupant is ours and passes", () => {
             name: "openbot-agent-sandbox-1",
             image: "openbot/agent-sandbox:dev",
             service: "agent-sandbox",
+            project: "openbot",
             port: 3011,
             family: "::1",
+          },
+          // 段外的 ours 发布：容器更宽的发布不改变「其中 N 个」的计数口径。
+          {
+            name: "openbot-agent-sandbox-1",
+            image: "openbot/agent-sandbox:dev",
+            service: "agent-sandbox",
+            project: "openbot",
+            port: 3012,
+            family: "127.0.0.1",
           },
         ),
       lsof: () =>
@@ -143,10 +165,15 @@ test("agent-sandbox occupant is ours and passes", () => {
           { name: "com.docker.backend", pid: 999, port: 3011, family: "::1" },
         ),
     },
+    "openbot",
   );
   expect(outcome.code).toBe(0);
   const output = text(outcome);
   expect(output).toContain("ours");
+  // ours 行带容器名与 project：冒名者（同 service 异 project）一眼可辨（R2-F2）。
+  expect(output).toContain("project=openbot：openbot-agent-sandbox-1");
+  // 计数只算段内（3011）；段外的 3012 不进「其中 N 个端口」。
+  expect(output).toContain("已发布其中 1 个端口");
   expect(output).not.toContain("解决");
 });
 
@@ -158,6 +185,7 @@ test("inverted range is rejected naming both keys", () => {
       OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3011",
     },
     { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
   );
   expect(outcome.code).toBe(2);
   const output = text(outcome);
@@ -174,6 +202,7 @@ test("non-integer port is rejected naming the key and value", () => {
       OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3011",
     },
     { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
   );
   expect(outcome.code).toBe(2);
   const output = text(outcome);
@@ -189,6 +218,7 @@ test("START-only falls back to the default END with an explicit note", () => {
   const outcome = runPreflightCli(
     { OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "3011" },
     { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
   );
   expect(outcome.code).toBe(0);
   const output = text(outcome);
@@ -214,6 +244,7 @@ test("missing lsof is reported as unable-to-probe, never as silence", () => {
         reason: "无法执行 lsof（缺 CLI？）：spawn lsof ENOENT",
       }),
     },
+    "openbot",
   );
   expect(outcome.code).toBe(0);
   const output = text(outcome);
@@ -238,6 +269,7 @@ test("both probes unavailable refuses to certify the range", () => {
       }),
       lsof: () => ({ status: "unavailable", reason: "spawn lsof ENOENT" }),
     },
+    "openbot",
   );
   expect(outcome.code).toBe(3);
   const output = text(outcome);
@@ -269,6 +301,7 @@ test("docker-unavailable shadow of a docker proxy is a flagged conflict", () => 
           family: "127.0.0.1",
         }),
     },
+    "openbot",
   );
   expect(outcome.code).toBe(1);
   const output = text(outcome);
@@ -286,6 +319,7 @@ test("oversized range warns with the size but passes", () => {
       OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "2500",
     },
     { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
   );
   expect(outcome.code).toBe(0);
   const output = text(outcome);
@@ -362,6 +396,7 @@ test("engine proxy shadow behind a foreign publish is not double-reported", () =
           name: "openbot-test-db-1",
           image: "pgvector/pgvector:pg17",
           service: "postgres",
+          project: "openbot",
           port: 55441,
           family: "127.0.0.1",
         }),
@@ -373,10 +408,290 @@ test("engine proxy shadow behind a foreign publish is not double-reported", () =
           family: "127.0.0.1",
         }),
     },
+    "openbot",
   );
   expect(outcome.code).toBe(1);
   const output = text(outcome);
-  expect(output).toContain("openbot-test-db-1 (image=pgvector/pgvector:pg17)");
+  expect(output).toContain(
+    "openbot-test-db-1 (image=pgvector/pgvector:pg17, project=openbot)",
+  );
   expect(output).not.toContain("pid=");
   expect(output.match(/- 端口 55441/g)?.length).toBe(1);
+});
+
+/*
+ * ── r2 整改新增（R2-F1–F6）──────────────────────────────────────────────────
+ */
+
+/**
+ * R2-F2：同 service 异 project 的 agent-sandbox 是「另一份 checkout 的栈」，不是 ours ——
+ * 冒名不得假绿；冲突行带容器名、project 与「非本栈」注记，人眼可直接对出预期 project。
+ */
+test("foreign-project agent-sandbox is a conflict naming container and project", () => {
+  const outcome = runPreflightCli(
+    {
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "3011",
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3011",
+    },
+    {
+      docker: () =>
+        dockerOk({
+          name: "other-wt-agent-sandbox-1",
+          image: "openbot/agent-sandbox:dev",
+          service: "agent-sandbox",
+          project: "other-wt",
+          port: 3011,
+          family: "127.0.0.1",
+        }),
+      lsof: () => lsofOk(),
+    },
+    "openbot",
+  );
+  expect(outcome.code).toBe(1);
+  const output = text(outcome);
+  expect(output).toContain("other-wt-agent-sandbox-1");
+  expect(output).toContain("project=other-wt");
+  expect(output).toContain("非本栈沙箱");
+  expect(output).toContain("本栈预期 openbot");
+});
+
+/**
+ * R2-F2：compose 对未命名 project 的默认取法 —— 目录名转小写并剔除非
+ * [小写字母数字-] 字符。OpenBot → openbot 正是主 checkout 的栈名来源（docker-compose.yml
+ * 无 `name:` 字段，project 恒由此派生）。
+ */
+test("composeProjectFromDirectory lowercases and strips invalid characters", () => {
+  expect(composeProjectFromDirectory("OpenBot")).toBe("openbot");
+  expect(composeProjectFromDirectory("i619-t2-port-preflight")).toBe(
+    "i619-t2-port-preflight",
+  );
+  expect(composeProjectFromDirectory("My.Repo")).toBe("myrepo");
+  expect(composeProjectFromDirectory("Repo_Name")).toBe("reponame");
+});
+
+/** R2-F2：COMPOSE_PROJECT_NAME（进程环境或 .env）优先于目录派生，与 compose 同序。 */
+test("expectedComposeProject prefers COMPOSE_PROJECT_NAME over the directory", () => {
+  expect(
+    expectedComposeProject(
+      { COMPOSE_PROJECT_NAME: "explicit-name" },
+      "OpenBot",
+    ),
+  ).toBe("explicit-name");
+  expect(expectedComposeProject({}, "OpenBot")).toBe("openbot");
+});
+
+/**
+ * R2-F1：parseDotEnv 的行内注释边界与 compose 对齐 —— 空白前置的 `#` 起注释；引号内的
+ * `#` 保留；无空白的 `#` 是值的一部分（compose 同样如此，随后端口校验如实拒绝）；
+ * `KEY="3011" # c` 裁注释后恰好成引号段，剥成 3011。
+ */
+test("parseDotEnv strips whitespace-preceded inline comments like compose", () => {
+  const parsed = parseDotEnv(
+    [
+      "OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START=3011 # dev range",
+      "INLINE_NO_SPACE=3011#x",
+      'QUOTED_HASH="a # b"',
+      'AFTER_QUOTE="3011" # trailing',
+    ].join("\n"),
+  );
+  expect(parsed.OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START).toBe("3011");
+  expect(parsed.INLINE_NO_SPACE).toBe("3011#x");
+  expect(parsed.QUOTED_HASH).toBe("a # b");
+  expect(parsed.AFTER_QUOTE).toBe("3011");
+});
+
+/**
+ * R2-F3：docker ps Ports 列方言表测。`0.0.0.0` 与 `::` 是族通配（覆盖 loopback）；
+ * 段形态展开；不带 `->` 的容器侧端口与空串跳过；project 由调用方透传。
+ */
+test("parseDockerPortsField handles the docker ps dialects", () => {
+  const publishes = [
+    ...parseDockerPortsField(
+      "0.0.0.0:9000-9001->9000-9001/tcp",
+      "minio",
+      "minio:latest",
+      "minio",
+      "some-stack",
+    ),
+    ...parseDockerPortsField(
+      ":::3011->3011/tcp",
+      "sb",
+      "img",
+      "agent-sandbox",
+      "openbot",
+    ),
+    ...parseDockerPortsField(
+      "[::1]:3012->3012/tcp",
+      "sb",
+      "img",
+      "agent-sandbox",
+      "openbot",
+    ),
+    ...parseDockerPortsField("9999/tcp", "no-publish", "img", "svc", "proj"),
+    ...parseDockerPortsField("", "empty", "img", "svc", "proj"),
+  ];
+  expect(publishes).toEqual([
+    {
+      name: "minio",
+      image: "minio:latest",
+      service: "minio",
+      project: "some-stack",
+      port: 9000,
+      family: "127.0.0.1",
+    },
+    {
+      name: "minio",
+      image: "minio:latest",
+      service: "minio",
+      project: "some-stack",
+      port: 9001,
+      family: "127.0.0.1",
+    },
+    {
+      name: "sb",
+      image: "img",
+      service: "agent-sandbox",
+      project: "openbot",
+      port: 3011,
+      family: "::1",
+    },
+    {
+      name: "sb",
+      image: "img",
+      service: "agent-sandbox",
+      project: "openbot",
+      port: 3012,
+      family: "::1",
+    },
+  ]);
+});
+
+/**
+ * R2-F3：lsof -Fpcn 状态机表测 —— p/c 每进程一次、n 每 fd 一次；`*` 通配按两族；非
+ * loopback 显式绑定不覆盖两族；p 行未到的 n 行照样收（pid 0，占用事实不依赖 pid）。
+ */
+test("parseLsofFOutput walks the -Fpcn stream", () => {
+  const listens = parseLsofFOutput(
+    [
+      "p48121",
+      "cPython",
+      "n127.0.0.1:3050",
+      "n*:3051",
+      "p999",
+      "ccom.docker.backend",
+      "n[::1]:3052",
+      "n192.168.1.5:3053",
+      "n[::1]:3054",
+    ].join("\n"),
+  );
+  expect(listens).toEqual([
+    { name: "Python", pid: 48121, port: 3050, family: "127.0.0.1" },
+    { name: "Python", pid: 48121, port: 3051, family: "127.0.0.1" },
+    { name: "Python", pid: 48121, port: 3051, family: "::1" },
+    { name: "com.docker.backend", pid: 999, port: 3052, family: "::1" },
+    { name: "com.docker.backend", pid: 999, port: 3054, family: "::1" },
+  ]);
+});
+
+/**
+ * R2-F3 补缺：docker 侧 unavailable 而 lsof 正常的绿路径 —— 退出 0，成功行之外跟一条
+ * 「无法探测（缺 docker）」并注明本结论只覆盖宿主进程侧（不含 ours 判定）。
+ */
+test("docker unavailable with healthy lsof passes covering only the process side", () => {
+  const outcome = runPreflightCli(
+    {
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "3011",
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3011",
+    },
+    {
+      docker: () => ({
+        status: "unavailable",
+        reason: "Cannot connect to the Docker daemon",
+      }),
+      lsof: () => lsofOk(),
+    },
+    "openbot",
+  );
+  expect(outcome.code).toBe(0);
+  const output = text(outcome);
+  expect(output).toContain("无法探测（缺 docker）");
+  expect(output).toContain("只覆盖宿主进程侧");
+});
+
+/**
+ * R2-F4：lsof 的退出码裁决 —— 1 = 无匹配（空闲）；2+ = 真失败；任何 stderr 输出都按
+ * unavailable（结果集可能不完整，如非特权看不到 root 的监听）。真失败不背书空闲。
+ */
+test("lsofSnapshotFromSpawn treats exit>1 and stderr as unavailable", () => {
+  const exited2 = lsofSnapshotFromSpawn({
+    exitCode: 2,
+    stdout: "",
+    stderr: "",
+  });
+  expect(exited2.status).toBe("unavailable");
+
+  const warned = lsofSnapshotFromSpawn({
+    exitCode: 0,
+    stdout: "p1\ncx\nn127.0.0.1:3050",
+    stderr: "lsof: some warning",
+  });
+  expect(warned.status).toBe("unavailable");
+
+  const free = lsofSnapshotFromSpawn({ exitCode: 1, stdout: "", stderr: "" });
+  expect(free.status).toBe("ok");
+
+  const parsed = lsofSnapshotFromSpawn({
+    exitCode: 0,
+    stdout: "p7\ncPython\nn127.0.0.1:3050",
+    stderr: "",
+  });
+  expect(parsed.status).toBe("ok");
+  if (parsed.status === "ok") {
+    expect(parsed.listens).toEqual([
+      { name: "Python", pid: 7, port: 3050, family: "127.0.0.1" },
+    ]);
+  }
+});
+
+/**
+ * R2-F5：发布面摘要 —— AC3 FAIL 文案里的「另一侧段值」。端口数小于跨度即暴露段内有洞
+ * （3011-3013 共 2），读者不必另跑 docker port。
+ */
+test("publishedSpanSummary names the published span and count", () => {
+  expect(publishedSpanSummary([])).toBe("未发布任何端口");
+  expect(publishedSpanSummary([3011])).toBe("3011（共 1 个端口）");
+  expect(publishedSpanSummary([3011, 3012, 3013])).toBe(
+    "3011-3013（共 3 个端口）",
+  );
+  expect(publishedSpanSummary([3011, 3013])).toBe("3011-3013（共 2 个端口）");
+});
+
+/**
+ * R2-F6：同一键既有 error 时不再输出「未设置，按默认」note —— 两方向都核（START 非法 /
+ * END 非法），错误文案本身仍点名键与原值。
+ */
+test("invalid value suppresses the unset-default note for the same key", () => {
+  const startBad = runPreflightCli(
+    {
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "abc",
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3011",
+    },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(startBad.code).toBe(2);
+  const startOutput = text(startBad);
+  expect(startOutput).toContain('"abc"');
+  expect(startOutput).not.toContain("未设置");
+
+  const endBad = runPreflightCli(
+    {
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "3011",
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "99999",
+    },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(endBad.code).toBe(2);
+  expect(text(endBad)).not.toContain("未设置");
 });
