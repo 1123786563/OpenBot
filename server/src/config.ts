@@ -5,11 +5,11 @@ function spreadOptional<K extends string, V>(
   return value === undefined ? {} : ({ [key]: value } as { [_ in K]?: V });
 }
 
+import { createRequire } from "node:module";
 // Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
 // without putting it in this module's eager import graph. Node has no such global, so the same
 // laziness needs a handle.
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
  * for durable threads and memory. Configuration the product cannot function without belongs at the
@@ -282,6 +282,14 @@ export type DeploymentConfig = {
   enterpriseDataDatabaseUrl?: string;
   /** Restricted operator-channel database; unwired → workspace admin routes answer 503. */
   enterpriseOperatorDatabaseUrl?: string;
+  /**
+   * The Better Auth directory-writer database (T02.06): current_user is exactly
+   * ob_ent_auth_writer, verified by tenancy/connections.ts beside the
+   * schema-roles probe the BA boot path runs. Optional while directory
+   * authority is legacy (M0/M1): its absence must never stop a legacy boot —
+   * the BA phases that require it gate it themselves, so nothing here throws.
+   */
+  enterpriseAuthWriterDatabaseUrl?: string;
   tenantStorageRuntimeDatabaseUrl?: string;
   /**
    * Content-addressed root of trusted plugin-package artifacts
@@ -3026,6 +3034,10 @@ export function loadConfig(
       optional(environment, "ENTERPRISE_OPERATOR_DATABASE_URL"),
     ),
     ...spreadOptional(
+      "enterpriseAuthWriterDatabaseUrl",
+      optional(environment, "ENTERPRISE_AUTH_WRITER_DATABASE_URL"),
+    ),
+    ...spreadOptional(
       "tenantStorageRuntimeDatabaseUrl",
       optional(environment, "OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL"),
     ),
@@ -3156,9 +3168,7 @@ function multitenancyConfig(environment: Environment): {
     enabled,
     ...(inventoryPath ? { inventoryPath } : {}),
     ...(waiversPath ? { waiversPath } : {}),
-    ...(quarantineDefaultWorkspaceId
-      ? { quarantineDefaultWorkspaceId }
-      : {}),
+    ...(quarantineDefaultWorkspaceId ? { quarantineDefaultWorkspaceId } : {}),
   };
 }
 

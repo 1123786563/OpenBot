@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "task": "T01.03 (#515)",
+  "spec": "docs/plans/better-auth/full-integration/interfaces.md \u00a73.1 (\u5ef6\u8fdf hook \u4e0e\u9519\u8bef\u5f52\u5c5e)",
+  "rule": "A direct write is a write-method use whose receiver is the raw `ctx.context.adapter` expression, or an alias bound to it (assignment or parameter default, declared per file below), or a helper parameter that a pinned anchor call site receives `ctx.context.adapter` through. Scope is exactly the files declared below \u2014 the fixed composition this plan mounts (core db/api/oauth2 layers, the organization plugin, @better-auth/sso, @better-auth/scim, @better-auth/core). Other plugin directories bundled inside better-auth are not mounted by this composition and are out of scope by declaration; mounting a new plugin is a reviewed scope change to this manifest. Every structural use in scope must appear here; a package upgrade that changes versions, line numbers, snippets or the set of uses fails the scan (scripts/check-better-auth-adapter-writes.mjs).",
+  "packages": {
+    "better-auth": "1.7.1",
+    "@better-auth/sso": "1.7.1",
+    "@better-auth/scim": "1.7.1",
+    "@better-auth/core": "1.7.1"
+  },
+  "scope": {
+    "better-auth": [
+      "dist/plugins/organization",
+      "dist/db",
+      "dist/api",
+      "dist/oauth2"
+    ],
+    "@better-auth/sso": ["dist/index.mjs"],
+    "@better-auth/scim": ["dist/index.mjs"],
+    "@better-auth/core": ["dist"]
+  },
+  "writeMethods": [
+    "create",
+    "update",
+    "updateMany",
+    "delete",
+    "deleteMany",
+    "consumeOne",
+    "incrementOne"
+  ],
+  "adapterMethods": [
+    "create",
+    "findOne",
+    "findMany",
+    "update",
+    "updateMany",
+    "delete",
+    "deleteMany",
+    "count",
+    "consumeOne",
+    "incrementOne"
+  ],
+  "aliases": {
+    "better-auth:dist/db/internal-adapter.mjs": {
+      "adapter": "createInternalAdapter(adapter, ctx) receives ctx.context.adapter; raw parameter uses below bypass the ALS store"
+    }
+  },
+  "writes": [
+    {
+      "package": "better-auth",
+      "file": "dist/plugins/organization/routes/crud-invites.mjs",
+      "line": 138,
+      "method": "update",
+      "snippet": "ctx.context.adapter.update({",
+      "disposition": "invite-member native resend branch rewrites expiresAt; invitation.resend is an OpenBot controlled cancel+create command, and the native resend branch is unreachable through the ingress"
+    },
+    {
+      "package": "better-auth",
+      "file": "dist/plugins/organization/routes/crud-access-control.mjs",
+      "line": 131,
+      "method": "create",
+      "snippet": "ctx.context.adapter.create({",
+      "disposition": "dynamic role create; dynamicAccessControl is off and every role endpoint is X in interfaces \u00a73.2"
+    },
+    {
+      "package": "better-auth",
+      "file": "dist/plugins/organization/routes/crud-access-control.mjs",
+      "line": 271,
+      "method": "delete",
+      "snippet": "ctx.context.adapter.delete({",
+      "disposition": "dynamic role delete; dynamicAccessControl is off and every role endpoint is X in interfaces \u00a73.2"
+    },
+    {
+      "package": "better-auth",
+      "file": "dist/plugins/organization/routes/crud-access-control.mjs",
+      "line": 567,
+      "method": "updateMany",
+      "snippet": "ctx.context.adapter.updateMany({",
+      "disposition": "dynamic role update; dynamicAccessControl is off and every role endpoint is X in interfaces \u00a73.2"
+    },
+    {
+      "package": "@better-auth/sso",
+      "file": "dist/index.mjs",
+      "line": 267,
+      "method": "create",
+      "snippet": "ctx.context.adapter.create({",
+      "disposition": "assignOrganization writes a member row; organizationProvisioning.disabled:true is a hard precondition, so the callback cannot reach this branch"
+    },
+    {
+      "package": "@better-auth/sso",
+      "file": "dist/index.mjs",
+      "line": 3473,
+      "method": "create",
+      "snippet": "ctx.context.adapter.create({",
+      "disposition": "register writes an ssoProvider row; the controlled config write goes through ingress \u2192 auth.api inside the executor transaction and rejects a client-supplied organizationId"
+    },
+    {
+      "package": "@better-auth/scim",
+      "file": "dist/index.mjs",
+      "line": 3264,
+      "method": "update",
+      "snippet": "update: ctx.context.adapter.update",
+      "disposition": "managed SCIM bearer-token verification hands the raw adapter method to a database object; SCIM writes are translated by the ingress to auth.api inside the executor transaction and the native handler is never mounted for writes"
+    },
+    {
+      "package": "better-auth",
+      "file": "dist/db/internal-adapter.mjs",
+      "line": 893,
+      "method": "create",
+      "snippet": "await adapter.create({",
+      "disposition": "reserveVerificationValue writes the verification reservation on the base adapter; only the recovery ingress reaches it, through auth.api inside the identity transaction, so the reservation lands in the outer tx and a failure rolls the command back"
+    },
+    {
+      "package": "better-auth",
+      "file": "dist/db/internal-adapter.mjs",
+      "line": 906,
+      "method": "findOne",
+      "snippet": "if (await adapter.findOne({",
+      "disposition": "reserveVerificationValue re-reads the reservation on the base adapter to make a duplicate portable; part of the same unclassified-adapter flow as line 893"
+    },
+    {
+      "package": "@better-auth/sso",
+      "file": "dist/index.mjs",
+      "line": 2504,
+      "method": "incrementOne",
+      "snippet": "adapter.incrementOne({",
+      "anchor": {
+        "file": "dist/index.mjs",
+        "line": 2624,
+        "snippet": "completeDomainVerification(ctx.context.adapter, provider)"
+      },
+      "parameterAliased": true,
+      "disposition": "verify-domain hands the raw base adapter to completeDomainVerification as a parameter; the incrementOne on ssoProvider bypasses the ALS store and would land on a pool connection even inside an executor transaction. Not in interfaces \u00a73.1's original table; found by the T01.03 audit and added here so the fixed build's bypass set is complete. The /sso/verify-domain controlled config write is owned by the SSO task (P12) and the mount audit (P23): until it is translated through ingress \u2192 auth.api or closed, this pin keeps the bypass visible instead of silently reclassified."
+    }
+  ]
+}

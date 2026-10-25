@@ -1,0 +1,150 @@
+{
+  "manifestVersion": 1,
+  "task": "T01.08",
+  "source": {
+    "name": "better-auth-ui",
+    "package": "better-auth-ui",
+    "version": "3.2.13",
+    "url": "https://registry.npmjs.org/better-auth-ui/-/better-auth-ui-3.2.13.tgz",
+    "digest": "sha512-tq9kQ/EWCcE626uwc4c12IQo5Mi8XBFttwLKpBMdY1RKWCvRfOJRolTqwhcA5sJZmlGfvzkY7VUmBuVTEjPdAQ==",
+    "license": "MIT",
+    "licenseSource": "LICENSE file in the pinned tarball; matches the registry metadata",
+    "compatibility": {
+      "better-auth": "1.7.1",
+      "peerRange": ">=1.5.2"
+    },
+    "compatibilityNote": "3.2.13 is the newest release whose bundle loads against better-auth 1.7.1: 3.2.14+ imports genericOAuthClient from better-auth/client/plugins, which 1.7.1 does not export."
+  },
+  "registryRoot": "app/src/components/auth",
+  "organizationRegistryDir": "app/src/components/auth/organization",
+  "xClassEndpoints": [
+    "/organization/list",
+    "/organization/list-user-teams",
+    "/organization/get-invitation",
+    "/organization/list-user-invitations",
+    "/organization/get-role",
+    "/organization/list-roles"
+  ],
+  "vendored": [
+    {
+      "path": "app/src/components/auth/provider.tsx",
+      "upstream": "src/lib/auth-ui-provider.tsx",
+      "sha256": "099ae641797354c7fa59fe38cffc26694b7ffff47bd496b1940f3abe33c38334",
+      "note": "OpenBot wiring around the pinned AuthUIProvider: same auth client, existing TanStack router, declaration gate for organization components."
+    },
+    {
+      "path": "app/src/components/auth/sign-in.tsx",
+      "upstream": "src/components/auth/forms/sign-in-form.tsx",
+      "sha256": "df90cbd4c358b622746998d8e9f68b38b75a414e26cf330bd5ee3786a3b51254",
+      "note": "OpenBot's fixed auth entry wrapping the pinned SignInForm; OpenBot method props arrive with the T01.09 client adapters."
+    }
+  ],
+  "organization": {
+    "AcceptInvitationCard": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/accept-invitation-card.tsx",
+      "xClassDependencies": [
+        "/organization/get-invitation"
+      ],
+      "note": "Invitation landing; minimal invitation info via the OpenBot invitations adapter."
+    },
+    "CreateOrganizationDialog": {
+      "reuse": "not-reused",
+      "upstream": "src/components/organization/create-organization-dialog.tsx",
+      "note": "POST /organization/create is X; provisioning goes through the platform command, not a user-facing create."
+    },
+    "DeleteOrganizationCard": {
+      "reuse": "not-reused",
+      "upstream": "src/components/organization/delete-organization-card.tsx",
+      "note": "POST /organization/delete is X; deletion goes through the deletion-request flow."
+    },
+    "OrganizationCellView": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-cell-view.tsx"
+    },
+    "OrganizationInvitationsCard": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-invitations-card.tsx",
+      "note": "Server-side pagination and authorization via adapter; list-invitations is an R-class gate read."
+    },
+    "OrganizationLogo": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-logo.tsx"
+    },
+    "OrganizationLogoCard": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-logo-card.tsx",
+      "note": "Safe logo upload via adapter."
+    },
+    "OrganizationMembersCard": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-members-card.tsx",
+      "note": "Member listing is an R-class gate read; fixed roles and authorization via adapter."
+    },
+    "OrganizationNameCard": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-name-card.tsx",
+      "note": "Profile update through the Directory command adapter."
+    },
+    "OrganizationRefetcher": {
+      "reuse": "not-reused",
+      "upstream": "src/lib/organization-refetcher.tsx",
+      "xClassDependencies": [
+        "/organization/list"
+      ],
+      "note": "Refetch follows native organization hooks; OpenBot adapters own refetch semantics."
+    },
+    "OrganizationSettingsCards": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-settings-cards.tsx",
+      "note": "Composes the adapted cards."
+    },
+    "OrganizationSlugCard": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-slug-card.tsx",
+      "note": "Slug changes follow the platform check-slug rules."
+    },
+    "OrganizationSwitcher": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-switcher.tsx",
+      "xClassDependencies": [
+        "/organization/list"
+      ],
+      "note": "Built-in discovery reads /organization/list; scope comes from OpenBot workspace-scope."
+    },
+    "OrganizationView": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organization-view.tsx",
+      "note": "Entry view composing adapted cards."
+    },
+    "OrganizationsCard": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/organizations-card.tsx",
+      "xClassDependencies": [
+        "/organization/list"
+      ],
+      "note": "Built-in listing reads /organization/list; adapted to workspace-scope."
+    },
+    "UserInvitationsCard": {
+      "reuse": "inject-openbot-adapter",
+      "upstream": "src/components/organization/user-invitations-card.tsx",
+      "xClassDependencies": [
+        "/organization/list",
+        "/organization/list-user-invitations"
+      ],
+      "note": "Built-in reads include /organization/list-user-invitations; adapted to the OpenBot invitations adapter."
+    },
+    "useCurrentOrganization": {
+      "reuse": "not-reused",
+      "upstream": "src/hooks/use-current-organization.ts",
+      "xClassDependencies": [
+        "/organization/list"
+      ],
+      "note": "Active organization is only a preference; business scope comes from verified ID pairs, never a native read."
+    }
+  },
+  "upstreamHashes": {
+    "src/lib/auth-ui-provider.tsx": "673b680d4f8ff2ae676a9effbb341de90ef38336579ab6ec7feb419c2c88add1",
+    "src/components/auth/forms/sign-in-form.tsx": "f7ea071587b70b0ca2848b95abe0ff459dd50c21734fdbaad2ab90ffd678c6f2"
+  }
+}

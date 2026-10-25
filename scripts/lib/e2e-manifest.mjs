@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /** Shared shape and grouping for tests/config/e2e-bun-suites.json. */
@@ -68,6 +68,23 @@ export const DIRECTORY_ISLANDS = [
 ];
 
 /*
+ * The better-auth island. Its suites need the five BA_TEST_* role URLs of their own, so — like the
+ * multitenancy islands — they must not be re-sliced into their directory's shared-process batches.
+ * Each task registers its own files through writeManifest with `payload.task`, and the batch is
+ * named after the TaskId: `server/tests/better-auth:Txx.nn`. The `nn` is the task's batch counter,
+ * so the name is stable no matter how many other tasks registered before or after, and one Issue
+ * holds at most GROUP_SIZE files — more than that is a split-Issue signal, not a bigger batch.
+ */
+export const BA_ISLAND_DIR = "server/tests/better-auth";
+export const BA_GROUP_NAME =
+  /^server\/tests\/better-auth:(T\d+\.\d+)\.(\d{2,})$/;
+const TASK_ID = /^T\d+\.\d+$/;
+
+export function baBatchName(task, batch) {
+  return `${BA_ISLAND_DIR}:${task}.${String(batch).padStart(2, "0")}`;
+}
+
+/*
  * Suites that only mean something against a running deployment, so `e2e.unit.config.ts` keeps them out
  * of the default corpus and `bun run test:api` runs them on demand. The list lives here because the
  * audit has to know they are *named exclusions with their own entry point*: while it read only the
@@ -92,80 +109,317 @@ export function readManifest() {
   };
 }
 
+/** The grouping key a file lands under when the grouping is derived from scratch. */
+function groupingKey(file) {
+  const segments = file.split("/");
+  const directory = segments.slice(0, 2).join("/");
+  if (file.startsWith(`${BA_ISLAND_DIR}/`)) return BA_ISLAND_DIR;
+  // A directory island keeps its full path as the key, because what separates it from the other
+  // suites in the directory is the environment the group runs with, not the file name.
+  const dirIsland = DIRECTORY_ISLANDS.find((dir) => file.startsWith(`${dir}/`));
+  if (dirIsland) return dirIsland;
+  const island = ISLANDS.find((prefix) => segments.at(-1).startsWith(prefix));
+  return island ? `${directory}/${island.replace(/-$/, "")}` : directory;
+}
+
+/*
+ * The from-scratch partition: what the directory/island rules say the corpus looks like with no
+ * history. writeManifest no longer derives the groups this way — a full re-derivation renames and
+ * re-slices groups that earlier tasks registered incrementally, which is exactly the drift the
+ * preservation contract forbids. This stays exported for the process-shape measurements
+ * (`scripts/e2e-driven-file-equality.mjs`) and for "what would a clean regroup look like" compares.
+ */
 export function groupsOf(files) {
-  const byDirectory = new Map();
-  const present = new Set(files);
-  const explicit = new Set(Object.values(EXPLICIT_GROUPS).flat());
+  const byKey = new Map();
   for (const file of [...files].sort()) {
-    if (explicit.has(file)) continue;
-    const segments = file.split("/");
-    const directory = segments.slice(0, 2).join("/");
-    const island = ISLANDS.find((prefix) => segments.at(-1).startsWith(prefix));
-    // A directory island keeps its full path as the key, because what separates it from the other
-    // suites in the directory is the environment the group runs with, not the file name.
-    const dirIsland = DIRECTORY_ISLANDS.find((dir) =>
-      file.startsWith(`${dir}/`),
-    );
-    const key = dirIsland
-      ? dirIsland
-      : island
-        ? `${directory}/${island.replace(/-$/, "")}`
-        : directory;
-    if (!byDirectory.has(key)) byDirectory.set(key, []);
-    byDirectory.get(key).push(file);
+    const key = groupingKey(file);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(file);
   }
   const groups = [];
-  for (const [directory, list] of byDirectory) {
+  for (const [key, list] of byKey) {
     for (let index = 0; index < list.length; index += GROUP_SIZE) {
       groups.push({
-        name: `${directory}${list.length > GROUP_SIZE ? ` part ${index / GROUP_SIZE + 1}` : ""}`,
+        name: `${key}${list.length > GROUP_SIZE ? ` part ${index / GROUP_SIZE + 1}` : ""}`,
         files: list.slice(index, index + GROUP_SIZE),
       });
     }
-  }
-  for (const [name, files] of Object.entries(EXPLICIT_GROUPS)) {
-    const members = files.filter((file) => present.has(file));
-    if (members.length > 0) groups.push({ name, files: members });
   }
   return groups;
 }
 
 /*
- * THE one writer. Every generator records the same payload shape here: the
- * grouping (`groups`), the driven files, the non-executable artifacts, the
- * per-file `causes` evidence, and the `directoryIslands` the driver
- * (`tests/bun-suites.test.ts`) reads to hand the multitenancy groups their
- * dedicated `MT_TEST_DATABASE_URL`. Before this convergence the manifest had
- * two mutually exclusive output shapes — any writer could silently strip
- * `directoryIslands` (51 multitenancy suites aborting on the shared URL) or
- * wipe another writer's `causes`. `audit` is a passthrough for generators
- * that derive the file list from an audit snapshot; writers that don't have
- * one simply omit it (JSON.stringify drops `undefined`).
+ * The manifest contract, as checkable accounting (T01.01 / #513):
+ *
+ *   - `files` is exactly flatten(`groups`): every driven file is scheduled by one group, every group
+ *     member is a driven file. A file in `files` but in no group is a files-only registration — the
+ *     driver would never run it. A group member missing from `files` schedules work the manifest
+ *     does not own.
+ *   - no file appears twice, in `files` or across groups: bun would run it twice and the accounting
+ *     would count it once.
+ *   - every group holds at most GROUP_SIZE files: that is the process-isolation unit the driver was
+ *     measured at (ADR 0008 补充二), not a soft target.
+ *   - better-auth files live in `server/tests/better-auth:Txx.nn` task batches and nowhere else, and
+ *     those batches hold only better-auth files: a BA file drifting into a shared slice would run
+ *     without its five dedicated role URLs.
+ *   - group names are unique: the driver's E2E_BUN_ONLY filter matches by substring, and two groups
+ *     with one name make "run exactly that group" ambiguous.
+ *
+ * The audit gate (`scripts/e2e-coverage-audit.mjs`) and writeManifest's own pre-write check both run
+ * this, so the writer and the auditor cannot drift apart.
+ */
+export function manifestGaps(manifest) {
+  const gaps = [];
+  const files = Array.isArray(manifest?.files) ? manifest.files : [];
+  const groups = Array.isArray(manifest?.groups) ? manifest.groups : [];
+  const listed = new Set();
+  for (const file of files) {
+    if (listed.has(file))
+      gaps.push(`${file} is listed in files more than once`);
+    listed.add(file);
+  }
+  if (files.length && !groups.length)
+    gaps.push(
+      `files-only registration: ${files.length} driven file(s) and no groups — write files and groups together through writeManifest, or the driver has nothing to schedule`,
+    );
+  const owner = new Map();
+  const seenGroupNames = new Set();
+  for (const group of groups) {
+    const name = String(group?.name ?? "");
+    const members = Array.isArray(group?.files) ? group.files : [];
+    if (!name) gaps.push("a group has no name");
+    if (seenGroupNames.has(name))
+      gaps.push(`group name "${name}" is used by more than one group`);
+    seenGroupNames.add(name);
+    if (!members.length) gaps.push(`group "${name}" is empty`);
+    if (members.length > GROUP_SIZE)
+      gaps.push(
+        `group "${name}" holds ${members.length} files (max ${GROUP_SIZE})`,
+      );
+    const isBaBatch = name.startsWith(`${BA_ISLAND_DIR}:`);
+    if (isBaBatch && !BA_GROUP_NAME.test(name))
+      gaps.push(
+        `better-auth group "${name}" is not a TaskId batch (${BA_ISLAND_DIR}:Txx.nn)`,
+      );
+    for (const file of members) {
+      const inBaDir = file.startsWith(`${BA_ISLAND_DIR}/`);
+      if (isBaBatch && !inBaDir)
+        gaps.push(
+          `group "${name}" contains ${file}, which is not under ${BA_ISLAND_DIR}/`,
+        );
+      if (!isBaBatch && inBaDir)
+        gaps.push(
+          `better-auth file ${file} sits in "${name}" instead of a ${BA_ISLAND_DIR}:Txx.nn batch`,
+        );
+      if (owner.has(file))
+        gaps.push(
+          `${file} is a member of both "${owner.get(file)}" and "${name}"`,
+        );
+      else owner.set(file, name);
+      if (!listed.has(file))
+        gaps.push(`group "${name}" lists ${file}, which is not in files`);
+    }
+  }
+  for (const file of files)
+    if (!owner.has(file)) gaps.push(`${file} is in files but in no group`);
+  return gaps;
+}
+
+/** The groups an existing manifest on `target` established, for preservation. */
+function readGroups(target) {
+  if (!existsSync(target)) return [];
+  const parsed = JSON.parse(readFileSync(target, "utf8"));
+  return Array.isArray(parsed.groups) ? parsed.groups : [];
+}
+
+/*
+ * Groups for files no preserved group covers. Better-auth files need their owning TaskId and become
+ * that task's next `server/tests/better-auth:Txx.nn` batch; everything else is grouped by the
+ * from-scratch rules, with a deterministic ` increment N` suffix when the natural name is already
+ * taken — a preserved group owns its name, so an increment never borrows it.
+ */
+function freshGroups(fresh, task, taken, preserved) {
+  const groups = [];
+  const baFiles = fresh.filter((file) => file.startsWith(`${BA_ISLAND_DIR}/`));
+  const rest = fresh.filter((file) => !file.startsWith(`${BA_ISLAND_DIR}/`));
+  if (baFiles.length) {
+    if (!task)
+      throw new Error(
+        `${baFiles.length} better-auth file(s) arrived with no owning TaskId (${baFiles.slice(0, 3).join(", ")}): register them through the task's own writeManifest call with payload.task set, so the batch gets a stable ${BA_ISLAND_DIR}:Txx.nn name`,
+      );
+    if (!TASK_ID.test(String(task)))
+      throw new Error(
+        `payload.task "${task}" is not a TaskId of the form Txx.nn`,
+      );
+    const held = preserved
+      .filter((group) => BA_GROUP_NAME.exec(group.name)?.[1] === String(task))
+      .reduce((total, group) => total + group.files.length, 0);
+    if (held + baFiles.length > GROUP_SIZE)
+      throw new Error(
+        `task ${task} would hold ${held + baFiles.length} better-auth files (max ${GROUP_SIZE} per Issue): split the Issue before registering more`,
+      );
+    const batch = preserved.filter(
+      (group) => BA_GROUP_NAME.exec(group.name)?.[1] === String(task),
+    ).length;
+    const name = baBatchName(task, batch + 1);
+    taken.add(name);
+    groups.push({ name, files: [...baFiles].sort() });
+  }
+  const byKey = new Map();
+  for (const file of [...rest].sort()) {
+    const key = groupingKey(file);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(file);
+  }
+  for (const [key, members] of byKey) {
+    for (let index = 0; index < members.length; index += GROUP_SIZE) {
+      const natural = `${key}${members.length > GROUP_SIZE ? ` part ${index / GROUP_SIZE + 1}` : ""}`;
+      let name = natural;
+      let bump = 1;
+      while (taken.has(name)) name = `${natural} increment ${bump++}`;
+      taken.add(name);
+      groups.push({ name, files: members.slice(index, index + GROUP_SIZE) });
+    }
+  }
+  return groups;
+}
+
+/*
+ * THE one writer — and an incremental one. Groups the manifest on disk already establishes are kept
+ * verbatim (name and members, in order): a registration may only append, never re-partition, so a
+ * task's batch keeps its name and its membership for as long as its files exist. Only files no
+ * existing group covers are grouped, by the new-group rules above. Before anything is written, the
+ * resulting payload must satisfy manifestGaps() — files = flatten(groups), no duplicates, no
+ * oversized group — so a writer that would break the accounting refuses instead of writing it.
+ *
+ * Every generator records the same payload shape here: the grouping (`groups`), the driven files, the
+ * non-executable artifacts, the per-file `causes` evidence, and the `directoryIslands` the driver
+ * (`tests/bun-suites.test.ts`) reads to hand the multitenancy groups their dedicated
+ * `MT_TEST_DATABASE_URL`. Before this convergence the manifest had two mutually exclusive output
+ * shapes — any writer could silently strip `directoryIslands` (51 multitenancy suites aborting on
+ * the shared URL) or wipe another writer's `causes`. `audit` is a passthrough for generators that
+ * derive the file list from an audit snapshot; writers that don't have one simply omit it
+ * (JSON.stringify drops `undefined`). `target` exists for the contract tests: production callers
+ * write the committed config, tests write a scratch file.
  */
 export function writeManifest(
-  { files, artifacts, causes, audit },
+  { files, artifacts, causes, audit, task },
   generatedBy,
+  target = MANIFEST,
 ) {
   const list = [...files].sort();
-  /*
-   * `directoryIslands` is part of the contract, not a comment: tests/bun-suites.test.ts reads it to
-   * decide which groups get `MT_TEST_DATABASE_URL`. The key was added to the manifest by hand after
-   * this writer existed, so a re-run of `writeManifest` would have silently dropped it and sent the
-   * multitenancy groups back to the shared URL, where every one of them aborts at collection.
-   */
+  const present = new Set(list);
+  const previous = readGroups(target);
+  const claimed = new Set();
+  const preserved = [];
+  for (const group of previous) {
+    const members = (group?.files ?? []).filter(
+      (file) => present.has(file) && !claimed.has(file),
+    );
+    if (!members.length) continue;
+    for (const file of members) claimed.add(file);
+    preserved.push({ name: group.name, files: members });
+  }
+  const taken = new Set(preserved.map((group) => group.name));
+  const fresh = list.filter((file) => !claimed.has(file));
+  const groups = [...preserved, ...freshGroups(fresh, task, taken, preserved)];
+  const gaps = manifestGaps({ files: list, groups });
+  if (gaps.length)
+    throw new Error(
+      `refusing to write ${target}: the payload breaks the manifest contract\n  ${gaps.join("\n  ")}`,
+    );
   const payload = {
     generatedBy,
     audit,
-    groups: groupsOf(list),
-    directoryIslands: DIRECTORY_ISLANDS,
+    groups,
+    directoryIslands: [...DIRECTORY_ISLANDS],
     files: list,
     artifacts: [...artifacts].sort(),
     causes,
-    directoryIslands: [...DIRECTORY_ISLANDS],
   };
-  // Two-space indent, matching `biome format` for JSON: a regeneration then
-  // leaves the committed file byte-identical instead of trading a reorder diff
-  // (OCR round2 M1) for a whole-file reindent diff.
-  writeFileSync(MANIFEST, `${JSON.stringify(payload, null, 2)}\n`);
+  // Two-space indent with every array expanded: this writer owns the manifest's bytes, so a
+  // regeneration of the same payload is byte-identical instead of trading a reorder diff
+  // (OCR round2 M1) for a whole-file reindent diff. `biome format` would restyle short arrays
+  // onto one line, so the committed file is deliberately not formatter-styled — the pre-T01.01
+  // manifest was 1-space indent and never formatter-styled either.
+  writeFileSync(target, `${JSON.stringify(payload, null, 2)}\n`);
   return payload.groups.length;
+}
+
+const MT_ROLE_URLS = {
+  ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: "MT_TEST_DIRECTORY_DATABASE_URL",
+  ENTERPRISE_TEST_DATA_DATABASE_URL: "MT_TEST_DATA_DATABASE_URL",
+  ENTERPRISE_TEST_OPERATOR_DATABASE_URL: "MT_TEST_OPERATOR_DATABASE_URL",
+};
+
+/*
+ * The better-auth island's five role URLs (acceptance V-B): all required, all mapped into the names
+ * the BA fixture actually reads. `BA_TEST_AUTH_WRITER_DATABASE_URL` keeps its own name; the other
+ * four are re-injected under their fixture names, with the setup/data URL doubling as the generic
+ * `TEST_DATABASE_URL`/`DATABASE_URL` the data layer falls back to. Parent `ENTERPRISE_TEST_*` URLs
+ * are stripped, never passed through: every role URL a better-auth subprocess sees was injected
+ * from this table, so a job-level leftover cannot stand in for a BA role.
+ */
+const BA_ROLE_URLS = [
+  [
+    "BA_TEST_DATABASE_URL",
+    ["TEST_DATABASE_URL", "DATABASE_URL", "ENTERPRISE_TEST_SETUP_DATABASE_URL"],
+  ],
+  [
+    "BA_TEST_DIRECTORY_DATABASE_URL",
+    ["ENTERPRISE_TEST_DIRECTORY_DATABASE_URL"],
+  ],
+  ["BA_TEST_DATA_DATABASE_URL", ["ENTERPRISE_TEST_DATA_DATABASE_URL"]],
+  ["BA_TEST_OPERATOR_DATABASE_URL", ["ENTERPRISE_TEST_OPERATOR_DATABASE_URL"]],
+  ["BA_TEST_AUTH_WRITER_DATABASE_URL", ["BA_TEST_AUTH_WRITER_DATABASE_URL"]],
+];
+
+/*
+ * Per-group environment routing for the driver (tests/bun-suites.test.ts). The multitenancy islands
+ * take `MT_TEST_DATABASE_URL` when the environment offers one, and each capability role comes from
+ * its `MT_TEST_*` counterpart — the island is self-contained and the job-level `ENTERPRISE_TEST_*`
+ * URLs stay owned by the enterprise suites; with the override unset, routing is a passthrough and
+ * the driver behaves exactly as it did before. The better-auth island is the other direction: it
+ * runs only on its five BA_TEST_* role URLs (all five required, each missing one named) and never
+ * inherits the shared, MT, or job-level URLs — the shared `openbot_test` database has no BA schema,
+ * so a missing role URL is a blocked group (thrown, therefore a red result), never a quiet
+ * downgrade. Presence-only by design: this routing hands URLs through and reads none of them.
+ */
+export function bunSuiteEnv(
+  groupName,
+  { env = process.env, directoryIslands = [] } = {},
+) {
+  if (groupName.startsWith(`${BA_ISLAND_DIR}:`)) {
+    const missing = BA_ROLE_URLS.map(([name]) => name).filter(
+      (name) => !env[name],
+    );
+    if (missing.length)
+      throw new Error(
+        `${groupName} is blocked: ${missing.length} of the 5 required BA_TEST_* URL(s) not set: ${missing.join(", ")}. A better-auth island group runs only on its five BA_TEST_* role URLs and does not inherit TEST_DATABASE_URL/DATABASE_URL/MT_TEST_*/ENTERPRISE_TEST_*; set all five to run it.`,
+      );
+    const scoped = { ...env };
+    delete scoped.TEST_DATABASE_URL;
+    delete scoped.DATABASE_URL;
+    for (const key of Object.keys(scoped)) {
+      if (key.startsWith("MT_TEST_") || key.startsWith("ENTERPRISE_TEST_"))
+        delete scoped[key];
+    }
+    for (const [source, targets] of BA_ROLE_URLS) {
+      for (const target of targets) scoped[target] = env[source];
+    }
+    return scoped;
+  }
+  const override = env.MT_TEST_DATABASE_URL;
+  if (!override) return env;
+  if (!directoryIslands.some((dir) => groupName.startsWith(dir))) return env;
+  const scoped = {
+    ...env,
+    TEST_DATABASE_URL: override,
+    DATABASE_URL: override,
+  };
+  for (const [target, source] of Object.entries(MT_ROLE_URLS)) {
+    const url = env[source];
+    if (url) scoped[target] = url;
+  }
+  return scoped;
 }

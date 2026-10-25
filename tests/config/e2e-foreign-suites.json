@@ -51,6 +51,33 @@
    "reason": "Provider-boundary regressions for the Python agent harnesses. tester-army e2e ships a Node/TypeScript engine plus web/mobile drivers; there is no Python engine, and these suites assert on the Python packages' own imports and mock providers. Migrating them means porting the harness, not re-scheduling it.",
    "invoked": true,
    "note": "invoked by a CI job, so the corpus runs \u2014 it just does not run through e2e"
+  },
+  {
+   "runner": "bun test (apps/openmuse submodule)",
+   "pattern": "^BA_FOREIGN_SUITE=\\S+ .*$",
+   "suites": [
+    "openmuse server",
+    "openmuse mobile"
+   ],
+   "files": 0,
+   "executedBy": "tests/better-auth-foreign.test.ts via tests/config/better-auth-foreign-suites.json \u2014 scheduled and reported by root e2e; no workflow invokes the channel yet",
+   "status": "channel exists (T01.10), no target registered yet",
+   "reason": "The openmuse suites run on Bun inside a submodule checkout, which root e2e cannot collect natively. T01.10 (#522) makes that boundary executable under accounting instead of silent: BA_FOREIGN_SUITE=TaskId selects only fixed cwd/runner/argv targets the whitelist registers per task, and the driver refuses unknown tasks, missing targets, zero tests, skips and failures rather than passing them.",
+   "invoked": false,
+   "note": "invoked: false is the shape of a named channel with no CI entry and no registered target yet: leaf tasks register targets they already own (never pre-registered), and node scripts/e2e-coverage-audit.mjs pins the runner types and names this executor on every run"
+  },
+  {
+   "runner": "go test (bifrost submodule, governance)",
+   "pattern": "^BA_FOREIGN_SUITE=\\S+ .*$",
+   "suites": [
+    "bifrost governance"
+   ],
+   "files": 0,
+   "executedBy": "tests/better-auth-foreign.test.ts via tests/config/better-auth-foreign-suites.json \u2014 scheduled and reported by root e2e; no workflow invokes the channel yet",
+   "status": "channel exists (T01.10), no target registered yet",
+   "reason": "The bifrost governance suites are Go tests inside the bifrost submodule, driven by root e2e through `go test -json`: the driver parses the child's own report and accepts only verdicts with a positive test count, no skips and no failures. In a checkout where the submodule is not initialized a registered target blocks explicitly (non-zero) instead of passing.",
+   "invoked": false,
+   "note": "the runtime-go/agent-trpc entry above is a different corpus (in-tree Go dirs no job runs); the bifrost corpora reach e2e only through the fixed whitelist this entry names"
   }
  ]
 }

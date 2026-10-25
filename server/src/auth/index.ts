@@ -27,6 +27,10 @@ import {
   users,
   verifications,
 } from "../db/schema";
+import {
+  assertBaAuthorityPreconditions,
+  BA_AUTHORITY_CONFIG_VIOLATION,
+} from "./directory/transaction-adapter";
 import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
 import { applyConfiguredAdmin, isConfiguredAdmin, seedRole } from "./roles";
@@ -351,6 +355,33 @@ export type AuthBootstrapConfig = Pick<
   "auth" | "keyEncryptionKey"
 >;
 
+/**
+ * The frozen organization-plugin options of interfaces §3.2 (T02.11 / P04).
+ *
+ * The plugin itself is not mounted yet: the pinned schema it needs on
+ * `sessions` (activeOrganizationId/activeTeamId) and on `users` (the Admin
+ * plugin's ban/role columns) is a schema task's, and mounting it before those
+ * columns exist would make every session write fail. These options are
+ * exported now so the task that mounts it cannot drift from the decision:
+ *
+ * - `allowUserToCreateOrganization: false` — opening a company is the private
+ *   platform command (P06), never a self-service native call;
+ * - `disableOrganizationDeletion: true` — removal is a reviewed request that
+ *   archives assets, never a physical delete;
+ * - `dynamicAccessControl` is deliberately absent — the first phase has fixed
+ *   roles only, and the native create/update/delete-role endpoints are closed
+ *   in the ingress table.
+ *
+ * The Admin plugin's impersonate permission is removed the same way: it is not
+ * part of the access control this deployment assembles, and the ingress
+ * refuses /admin/impersonate-user and /admin/stop-impersonating outright.
+ */
+export const DIRECTORY_ORGANIZATION_PLUGIN_OPTIONS = Object.freeze({
+  allowUserToCreateOrganization: false,
+  disableOrganizationDeletion: true,
+  teams: Object.freeze({ enabled: true }),
+});
+
 export function createAuth(
   config: AuthBootstrapConfig,
   database: Database,
@@ -461,10 +492,18 @@ export function createAuth(
           authConfig.initialAdminEmails,
         );
       },
+      /*
+       * §3.2's SSO callback contract: an organizationId a provider carries
+       * creates no member (T02.11 / P04). Off is the fixed decision, and the
+       * factory asserts below that the assembled plugin still says so — a
+       * future edit that flips it would provision companies from a login
+       * claim, which is exactly what the directory command exists to prevent.
+       */
+      organizationProvisioning: { disabled: true },
     }),
   ];
 
-  return betterAuth({
+  const options: Parameters<typeof betterAuth>[0] = {
     user: {
       additionalFields: {
         preferences: {
@@ -586,6 +625,20 @@ export function createAuth(
           },
         }
       : {}),
+    /*
+     * §3.1's storage preconditions, stated explicitly (T02.11 / P04): session
+     * and verification rows are the transaction database's, so the executor's
+     * adapter and the identity finalizer read exactly what they wrote. These
+     * are the pinned build's defaults; spelling them out is what makes the
+     * boot assertion below a fact about the assembled object rather than a
+     * hope about a default that a future version could change.
+     */
+    session: {
+      storeSessionInDatabase: true,
+    },
+    verification: {
+      storeInDatabase: true,
+    },
     plugins,
     socialProviders: {
       ...(authConfig.google ? { google: authConfig.google } : {}),
@@ -771,5 +824,44 @@ export function createAuth(
         },
       },
     },
-  });
+  };
+
+  /*
+   * The §3.1 factory preconditions, asserted on the object this factory is
+   * about to hand to the pinned build (T02.11 / P04):
+   *
+   * - session and verification rows live in the transaction database, so the
+   *   executor's transaction-bound adapter can read and write them and no
+   *   second storage is silently consulted;
+   * - no secondaryStorage and no cookie cache — the internal cache sources
+   *   those configurations enable register cache-writing post-commit hooks the
+   *   hook fence must never drain (T01.04);
+   * - no backgroundTasks.handler: the pinned build would run the work outside
+   *   the command transaction, after the commit semantics the executor owns.
+   *
+   * A contrary option is a startup refusal, never a warning: a deployment that
+   * boots with these violated would take directory writes whose side effects
+   * left the transaction.
+   */
+  assertBaAuthorityPreconditions(options);
+  const ssoPlugin = (options.plugins ?? []).find(
+    (
+      plugin,
+    ): plugin is {
+      id: string;
+      options?: { organizationProvisioning?: { disabled?: boolean } };
+    } => Boolean(plugin) && (plugin as { id?: string }).id === "sso",
+  );
+  if (ssoPlugin?.options?.organizationProvisioning?.disabled !== true) {
+    throw new Error(
+      `${BA_AUTHORITY_CONFIG_VIOLATION}: the SSO plugin must run with organizationProvisioning:{disabled:true} — a provider-carried organizationId may never provision a member (interfaces §3.2's callback contract); refusing before any route runs`,
+    );
+  }
+  if (options.advanced?.backgroundTasks !== undefined) {
+    throw new Error(
+      `${BA_AUTHORITY_CONFIG_VIOLATION}: backgroundTasks is configured; the pinned build would run that work outside the directory command transaction, which is the boundary interfaces §3.1 fixes — remove it before booting`,
+    );
+  }
+
+  return betterAuth(options);
 }

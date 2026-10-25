@@ -12,6 +12,7 @@ import {
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { bunEnv } from "./support/bun-suite-env";
 import { expect, test } from "./support/e2e-compat";
 
 /*
@@ -71,26 +72,15 @@ const all: Group[] = manifestJson.groups;
  * did before.
  */
 const directoryIslands = manifestJson.directoryIslands ?? [];
-const MT_ROLE_URLS: Record<string, string> = {
-  ENTERPRISE_TEST_DIRECTORY_DATABASE_URL: "MT_TEST_DIRECTORY_DATABASE_URL",
-  ENTERPRISE_TEST_DATA_DATABASE_URL: "MT_TEST_DATA_DATABASE_URL",
-  ENTERPRISE_TEST_OPERATOR_DATABASE_URL: "MT_TEST_OPERATOR_DATABASE_URL",
-};
-function bunEnv(groupName: string): Record<string, string | undefined> {
-  const override = process.env.MT_TEST_DATABASE_URL;
-  if (!override) return process.env;
-  if (!directoryIslands.some((dir) => groupName.startsWith(dir)))
-    return process.env;
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-    TEST_DATABASE_URL: override,
-    DATABASE_URL: override,
-  };
-  for (const [target, source] of Object.entries(MT_ROLE_URLS)) {
-    const url = process.env[source];
-    if (url) env[target] = url;
-  }
-  return env;
+/*
+ * Environment routing (multitenancy override, better-auth role URLs, passthrough) is exposed
+ * through tests/support/bun-suite-env.ts (T01.02), the seam the contract probes share with this
+ * driver; the rules themselves live next to the grouping they mirror, in
+ * scripts/lib/e2e-manifest.mjs, where the manifest contract test can exercise them without
+ * spawning bun. The driver only supplies what it read from the manifest.
+ */
+function groupEnv(groupName: string): Record<string, string | undefined> {
+  return bunEnv(groupName, { env: process.env, directoryIslands });
 }
 // E2E_BUN_ONLY=agent-computer runs one group: enough to prove the driver without spending an hour
 // on the server groups, which need the shared Postgres.
@@ -98,11 +88,19 @@ const only = (process.env.E2E_BUN_ONLY ?? "").trim();
 const groups = only ? all.filter((group) => group.name.includes(only)) : all;
 
 if (only && !groups.length) {
+  // Used to skip, which read as "nothing asked for" in a green run: an E2E_BUN_ONLY filter that
+  // matches no group proves nothing about the group the caller named — typically the task's own
+  // registered batch — so the miss has to fail the run instead (T01.01).
   test(`bun runtime group ${only} exists`, () => {
-    test.skip(
-      true,
-      `no driven group names "${only}" (${all.length} groups in the manifest)`,
-    );
+    expect(
+      all.some((group) => group.name.includes(only)),
+      `no driven group names "${only}" (${all.length} groups in the manifest, named: ${all
+        .slice(0, 6)
+        .map((group) => group.name)
+        .join(
+          ", ",
+        )}…). Register the file through writeManifest (payload.task for a better-auth batch) before asking the driver to run it.`,
+    ).toBe(true);
   });
 } else if (!groups.length) {
   // An absent manifest would otherwise read as "nothing to run on Bun" and shrink the suite.
@@ -444,7 +442,7 @@ for (const group of groups) {
   }, async () => {
     const started = await runBun(
       group.files.map((f) => `./${f}`),
-      bunEnv(group.name),
+      groupEnv(group.name),
     );
     // A group that ran nothing is not a pass: an unusable path or a crashed loader reports zero.
     expect(
@@ -509,7 +507,7 @@ for (const group of groups) {
         file,
         await runBun(
           [file.startsWith("./") ? file : `./${file}`],
-          bunEnv(group.name),
+          groupEnv(group.name),
         ),
       );
     }

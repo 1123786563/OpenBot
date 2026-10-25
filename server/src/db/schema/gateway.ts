@@ -19,6 +19,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
   index,
   integer,
@@ -685,6 +686,18 @@ export const gatewayVirtualKeys = pgTable(
       .$type<GatewayVirtualKeyStatus>()
       .notNull()
       .default("active"),
+    /**
+     * The identity generation of the source grant's principal at issuance
+     * (T02.04 / #526, design §4.2/§5.3, interfaces §5.3: Key 固定来源 Grant 及
+     * 签发代际). Nullable at expand and deliberately NOT backfilled: a
+     * pre-T02.04 key has no verified source generation, and claim/renew plus
+     * every real dispatch compare it live — a missing version is "cannot
+     * compare" and refuses, it is never stamped from the current active state
+     * (design §5.3: 旧 Grant/Key 无代际不自动补有效；M2/M3 逐项核验重签或撤销).
+     */
+    sourceIdentityGeneration: bigint("source_identity_generation", {
+      mode: "number",
+    }),
     /** The expiry the key was minted under (05.5's term); null only on pre-05.5 records. */
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -711,6 +724,10 @@ export const gatewayVirtualKeys = pgTable(
     check(
       "gateway_virtual_keys_version_check",
       sql`${table.credentialVersion} >= 1`,
+    ),
+    check(
+      "gateway_virtual_keys_source_identity_generation_check",
+      sql`${table.sourceIdentityGeneration} IS NULL OR (${table.sourceIdentityGeneration} >= 0 AND ${table.sourceIdentityGeneration} <= 9007199254740991)`,
     ),
   ],
 );

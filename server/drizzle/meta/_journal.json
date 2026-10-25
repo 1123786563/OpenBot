@@ -1464,6 +1464,48 @@
       "when": 1792857702000,
       "tag": "0208_mastra_execution_continuations",
       "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1792870645200,
+      "tag": "0209_better_auth_directory",
+      "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1792881446929,
+      "tag": "0210_better_auth_clocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1792883454900,
+      "tag": "0211_better_auth_command_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1792887000000,
+      "tag": "0212_better_auth_authority_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1792888078374,
+      "tag": "0213_better_auth_assurance",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1792892119284,
+      "tag": "0214_better_auth_schema_roles",
+      "breakpoints": true
     }
   ]
 }

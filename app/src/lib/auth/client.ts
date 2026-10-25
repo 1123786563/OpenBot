@@ -1,8 +1,12 @@
-import { ssoClient } from "@better-auth/sso/client";
 import { createAuthClient } from "better-auth/react";
+import { openBotClientPlugins } from "./auth-plugin";
 import type { AuthProviderId } from "./queries";
 
-export const authClient = createAuthClient({ plugins: [ssoClient()] });
+/**
+ * The app's one Better Auth client. Its plugin composition — the preserved SSO client and
+ * the fixed organization client — lives in auth-plugin.ts (T01.09, #521).
+ */
+export const authClient = createAuthClient({ plugins: openBotClientPlugins() });
 
 /** What each provider is called on the button, since none of them are called by their id. */
 const PROVIDER_NAMES: Record<AuthProviderId, string> = {

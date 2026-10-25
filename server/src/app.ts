@@ -1,11 +1,11 @@
+import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
+import { getLogger } from "@openbot/shared/logger";
 import { sql } from "drizzle-orm";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
-import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import { cors } from "hono/cors";
-import { getLogger } from "@openbot/shared/logger";
 import { enterpriseControls } from "./admin/controls";
 import { createEnterpriseGate } from "./admin/gate";
 import { createOpenMuseTemplateAdminRoutes } from "./admin/openmuse-template-routes";
@@ -42,7 +42,22 @@ import {
   readAuditExportRows,
   recordAuditEvent,
 } from "./audit";
+import {
+  type CompanyProofPolicyView,
+  createClosedCompanyAssurance,
+} from "./auth/company-assurance";
 import { createDevRequireUser } from "./auth/dev-actor";
+import { createDirectoryAuthority } from "./auth/directory/authority";
+import type { Directory } from "./auth/directory/contracts";
+import type { IdentityExecutor } from "./auth/directory/identity";
+import {
+  createDirectoryIngress,
+  type NativeAuthPort,
+} from "./auth/directory/ingress";
+import {
+  createDirectoryReadGate,
+  createPlatformReadGate,
+} from "./auth/directory/read-gate";
 import {
   type AppVariables,
   type AuthService,
@@ -538,6 +553,29 @@ export function createApp(
   voiceSessions?: VoiceSessionServices,
   learning?: LearningAdminDependencies,
   coworker?: {
+    /**
+     * The company-proof answer the native directory read gate asks (T02.11;
+     * interfaces §5). A field rather than another positional parameter: the
+     * proof port must be injectable (a proof-demanding company is a real
+     * deployment state), while appending a 51st argument would shift every
+     * createApp call site's tail offsets.
+     *
+     * Absent means no company demands an additional proof yet — the stored
+     * policy model arrives with P11, and demanding proof with no evidence
+     * bridge would refuse every company read.
+     */
+    directory?: {
+      proofPolicy?: CompanyProofPolicyView;
+      /**
+       * The production directory/identity executors, when the assembly built
+       * them (P08/P09/P12 register the operations). A field for the same
+       * reason as proofPolicy: an appended positional would shift every
+       * createApp call site's tail offsets. Absent keeps the honest 503 — a
+       * translated write never happens without its transaction owner.
+       */
+      directory?: Directory;
+      identity?: Pick<IdentityExecutor, "execute">;
+    };
     demonstrations?: {
       store: DemonstrationStore;
       recorder: DemonstrationRecorder;
@@ -1022,6 +1060,56 @@ export function createApp(
     app.route("/api/enterprise/plugin-packages", coworker.pluginPackages);
   }
   /*
+   * The native directory ingress (T02.11 / P04; interfaces §3.2).
+   *
+   * Mounted when the deployment has both a session store (auth) and its own
+   * database, because the read gate opens a real transaction per native
+   * directory read. It answers:
+   *
+   * - refused endpoints of the frozen table (X): a backend 403, never the
+   *   pinned build's handler;
+   * - unknown methods/paths under /admin, /organization, /sso, /scim: 404;
+   * - directory/identity writes: translated into Directory/Identity commands.
+   *   No executor is assembled here yet — the P08/P09/P12 tasks register the
+   *   operations and the assembly — so every such write refuses with 503
+   *   before anything is written, rather than reaching a handler that would
+   *   open its own transaction (F-01);
+   * - native directory reads: gated in this deployment's transaction and then
+   *   forwarded to the pinned build, which answers;
+   * - everything outside the table (sign-in, sessions, desktop, SCIM/SSO paths
+   *   the table defers to P12): null, so the existing mount below behaves
+   *   exactly as before.
+   *
+   * The company proof port answers "this company demands an additional proof".
+   * Until the stored policy model arrives (P11), no company demands one, and
+   * the port says so; demanding proof with no evidence bridge would refuse
+   * every company read, which is why P11 replaces this port rather than the
+   * gate.
+   */
+  const nativeDirectoryIngress =
+    auth && attachmentDatabase
+      ? createDirectoryIngress({
+          database: attachmentDatabase,
+          auth: auth as unknown as NativeAuthPort,
+          readGate: createDirectoryReadGate({
+            authority: createDirectoryAuthority(),
+            assurance: createClosedCompanyAssurance({
+              policy: coworker?.directory?.proofPolicy ?? {
+                requiresProof: async () => false,
+              },
+            }),
+          }),
+          platformReadGate: createPlatformReadGate(),
+          ...(coworker?.directory?.directory
+            ? { directory: coworker.directory.directory }
+            : {}),
+          ...(coworker?.directory?.identity
+            ? { identity: coworker.directory.identity }
+            : {}),
+        })
+      : null;
+
+  /*
    * Registering an identity provider is an administrator's decision, not a signed-in one.
    *
    * Better Auth's SSO plugin guards these with `sessionMiddleware`, which asks only that somebody is
@@ -1057,6 +1145,16 @@ export function createApp(
         503,
       );
     }
+
+    /*
+     * The closed native directory table decides before the pinned build's
+     * handler runs; `null` means "not a directory endpoint" and the mount
+     * continues unchanged.
+     */
+    const nativeDirectoryAnswer = nativeDirectoryIngress
+      ? await nativeDirectoryIngress.handle(context.req.raw)
+      : null;
+    if (nativeDirectoryAnswer) return nativeDirectoryAnswer;
 
     if (ADMIN_ONLY_AUTH_ROUTES.has(new URL(context.req.url).pathname)) {
       const session = await auth.api.getSession({
@@ -1171,11 +1269,24 @@ export function createApp(
       }),
     );
   }
-  app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/*", (context) =>
-    auth
-      ? auth.handler(context.req.raw)
-      : context.json({ error: "No identity provider is configured." }, 503),
-  );
+  app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/*", async (context) => {
+    if (!auth) {
+      return context.json(
+        { error: "No identity provider is configured." },
+        503,
+      );
+    }
+    /*
+     * The same closed table classifies the SCIM verbs the GET/POST mount does
+     * not take: an unknown SCIM path is a 404 from the ingress, and the
+     * provisioning verbs the table defers to P12 keep the native contract
+     * (see ingress.ts's header).
+     */
+    const answer = nativeDirectoryIngress
+      ? await nativeDirectoryIngress.handle(context.req.raw)
+      : null;
+    return answer ?? auth.handler(context.req.raw);
+  });
 
   app.route(
     "/api/audio",
