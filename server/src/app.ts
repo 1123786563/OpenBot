@@ -66,7 +66,10 @@ import type { MarketplaceStore } from "./marketplace/store";
 import type { MastraContinuationInstall } from "./mastra/approvals";
 import type { MastraContinuationStore } from "./mastra/continuation-store";
 import type { MemoryIngestion } from "./memory/ingestion";
+import type { MemoryPauseControlAccess } from "./memory/routes";
 import type { MemoryStore } from "./memory/store";
+import type { HindsightMemoryRoutesDeps } from "./hindsight/routes";
+import type { HindsightRouteServices } from "./hindsight/ops-routes";
 import type { OpenMuseDeletionManifest } from "./openmuse-deletion/manifest";
 import type { OpenMuseFileBytePurgeReport } from "./openmuse-deletion/purge";
 import type { OpenMuseRelationalPurgeOutcome } from "./openmuse-deletion/purge-relational";
@@ -417,7 +420,37 @@ export function createApp(
       >;
       webhooks: Parameters<typeof createDeliveryWebhookRoutes>[0];
     };
-    memory?: { store: MemoryStore; ingestion: MemoryIngestion };
+    memory?: {
+      store: MemoryStore;
+      ingestion: MemoryIngestion;
+      /**
+       * Hindsight 14 (#392, F-G1-1): the person's own two pause switches behind the
+       * deployment's trusted scope. Present only where a deployment can resolve one;
+       * absent, `/api/memory/pause-controls` is not mounted (no face that guesses identity).
+       */
+      pauseControls?: MemoryPauseControlAccess;
+      /**
+       * FIX-F1 (#376, FR-1): the whole old face's company pin, behind the same trusted
+       * scope resolver. Present only where a deployment can resolve one; absent, the
+       * family keeps the single-user behaviour unchanged.
+       */
+      companyScope?: {
+        resolveScope: (request: Request) => Promise<PlatformScope>;
+      };
+      /**
+       * The Hindsight chain's person-scoped confirm/edit/forget/status operations
+       * (#384/#385). Present only where both the chain is wired and a trusted-scope
+       * resolver exists; absent mounts no such routes.
+       */
+      hindsight?: HindsightMemoryRoutesDeps;
+    };
+    /**
+     * The Hindsight memory surfaces (#387–#391): evidence, judgment review, revocation,
+     * cleanup progress and the operator restore/backup-registration routes. Present only
+     * where the assembly built the seams AND a trusted scope resolver exists; absent mounts
+     * nothing, the same "not configured, not broken" answer every optional neighbour gives.
+     */
+    hindsight?: HindsightRouteServices;
     proactive?: { store: ProactiveStore; engine: ProactiveEngine };
     responsibilities?: {
       store: ResponsibilityStore;

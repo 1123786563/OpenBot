@@ -440,12 +440,31 @@ import { startGatewayCatalogSyncScheduler } from "../gateway/catalog-sync";
 import { gatewayEndpointControls } from "../gateway/endpoint-config";
 import { createGatewayKeyStateSyncArm } from "../gateway/integration";
 import { assertGatewayReadyForBilling } from "../gateway/readiness";
+import { createAnswerEvidenceService } from "../hindsight/answer-evidence";
+import {
+  backupManifestDirFromEnv,
+  reconcileControlledBackups,
+} from "../hindsight/backup-registry";
+import { resolveHindsightBankScope } from "../hindsight/bank-scope";
+import { createDrizzleBudgetGate } from "../hindsight/budget-gate";
+import { createCleanupEvidenceService } from "../hindsight/cleanup-evidence";
+import { parseHindsightPrivacy } from "../hindsight/config";
 import {
   createDegradedRecallFacade,
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
 } from "../hindsight/degraded-recall";
-import { createDrizzlePauseControls } from "../hindsight/pause-controls";
+import {
+  createDerivedJudgmentService,
+  createDrizzleDerivedJudgmentRecords,
+} from "../hindsight/derived-judgments";
+import { createDerivedJudgmentReviewService } from "../hindsight/judgment-review";
+import type { HindsightRouteServices } from "../hindsight/ops-routes";
+import { hindsightAdminHealthSnapshotForRoute } from "../hindsight/ops-view";
+import {
+  createDrizzlePauseControls,
+  createUserPauseGate,
+} from "../hindsight/pause-controls";
 import {
   createPersonalMemoryContext,
   renderPersonalMemoryContext,
@@ -457,11 +476,14 @@ import {
 } from "../hindsight/preference-recall";
 import { createRestoreRecoveryService } from "../hindsight/restore-recovery";
 import { createRevocationService } from "../hindsight/revocation";
+import { createDrizzleRevocationLedger } from "../hindsight/revocation-ledger";
+import type { HindsightMemoryRoutesDeps } from "../hindsight/routes";
 import {
   createDrizzleSourceBoundAuthorizations,
   createDrizzleSourceBoundRecords,
   createSourceBoundRecallService,
 } from "../hindsight/scoped-recall";
+import { createHindsightSyncQueue } from "../hindsight/sync-queue";
 import {
   createHostAccessBroker,
   HostAccessRefusedError,
@@ -535,6 +557,7 @@ import type { MastraResumeLoop } from "../mastra/resume-driver";
 import { createMastraResumeDriver } from "../mastra/resume-driver";
 import { createTenantMastraStorage } from "../mastra/tenant-storage";
 import { createMastraTools } from "../mastra/tools";
+import { resolveMemoryCompany } from "../memory/company";
 import { createMemoryDefaults } from "../memory/defaults";
 import { createMemoryIngestion } from "../memory/ingestion";
 import { createMemoryStore } from "../memory/store";
@@ -2446,7 +2469,28 @@ const hostAccessBroker = createHostAccessBroker(Date.now, {
 // receives only opaque grant ids and relative paths.
 // Personal memory lives in OpenBot's own tables only — the Intelligence path exited (Hindsight 18 /
 // #395); indexed cross-session recall runs over the Hindsight chain. See memory/store.ts.
-const personalMemoryStore = createMemoryStore(database);
+/*
+ * Hindsight 14 (#392, FIX-W1): the person's two pause switches — ONE instance for the recall
+ * seams, the legacy gates below and the `/api/memory/pause-controls` entry, so the switch a
+ * person flips is the one every seam reads. The legacy surfaces carry a session actor rather
+ * than a request-resolved scope, so their gates go through the same-table user bridge; the
+ * switches themselves are keyless here — identity derivation stays server-side on both paths.
+ */
+const personalMemoryPauseControls = createDrizzlePauseControls(database);
+const personalMemoryUserPause = createUserPauseGate(database);
+const personalMemoryStore = createMemoryStore(database, {
+  learningPaused: (ownerUserId) =>
+    personalMemoryUserPause.learningPaused(ownerUserId),
+  // FIX-OCR3 (O3-H2): the proactive engine observes through this store with no company of
+  // its own; where the enterprise layer is wired, the observation resolves its attribution
+  // here and an unprovable one is refused rather than written invisible.
+  ...(enterpriseCapabilities
+    ? {
+        companyFor: (input: { ownerUserId: string; agentId: string }) =>
+          resolveMemoryCompany(database, input),
+      }
+    : {}),
+});
 const demonstrationStore = createDemonstrationStore(database);
 const demonstrationRecorder = createDemonstrationRecorder({
   store: demonstrationStore,
@@ -2464,6 +2508,20 @@ const memoryIngestion = createMemoryIngestion({
   canUseBot: async (owner, bot) =>
     (await pluginStore.agentOwner(bot)) === owner ||
     (await agentProfileStore.get(await actorFor(owner), bot)) !== null,
+  // Pause-usage (#392): the legacy injection and recall seams answer empty while the person's
+  // own switch is on — the same switch the chain seams and the settings entry read.
+  usagePaused: (ownerUserId) =>
+    personalMemoryUserPause.usagePaused(ownerUserId),
+  // FIX-F1 (#376, FR-1): the old face's company pin, present only where the enterprise layer
+  // is wired. The seams without a request of their own (the personal-memory injection, the
+  // background source sync) resolve their company through this; a deployment without the
+  // enterprise layer passes nothing and every seam answers as it always did.
+  ...(enterpriseCapabilities
+    ? {
+        companyFor: (input: { ownerUserId: string; agentId: string }) =>
+          resolveMemoryCompany(database, input),
+      }
+    : {}),
 });
 // Proactive research may only read; see proactive/restriction.ts. Read from the catalogue per call.
 const proactiveReadOnlyRefs = createReadOnlyClassifier(pluginStore);
@@ -2512,6 +2570,15 @@ const deliveryScopeFor: DeliveryScopeResolver = async (
 const memoryDefaults = createMemoryDefaults({
   database,
   ingestion: memoryIngestion,
+  // FIX-W13 (#376, FR2-2): a default source binds to the (person, Bot)'s own proven
+  // company, the same resolver the hand-made binding reads — wired only where the
+  // enterprise layer is, so a single-user deployment adopts exactly as it always did.
+  ...(enterpriseCapabilities
+    ? {
+        companyFor: (input: { ownerUserId: string; agentId: string }) =>
+          resolveMemoryCompany(database, input),
+      }
+    : {}),
   sources: config.memoryDefaults.sources,
   research: config.memoryDefaults.research,
   channelBots: async (ownerUserId, channelId) =>
@@ -2553,6 +2620,15 @@ const sweepStep = async (operation: string, fn: () => Promise<unknown>) => {
     );
   }
 };
+/**
+ * Hindsight 14 (#392, F-G1-5): the derived-judgment expiry the sweep runs. The chain — the only
+ * producer of such candidates — is assembled further down, gated on the Hindsight connection
+ * env, so this stays undefined where the chain is unwired and the sweep keeps the stages it
+ * always had. The callback fires at 60s intervals, long after this module's body has run.
+ */
+let hindsightJudgmentExpiry:
+  | (() => Promise<{ expired: number; cutoff: Date }>)
+  | undefined;
 const memorySweep = repeatAfterEach(async () => {
   await sweepStep("syncDue", () => memoryIngestion.syncDue());
   // Candidates nobody handled for 30 days are expired with the same tombstone forgetting uses.
@@ -2560,6 +2636,11 @@ const memorySweep = repeatAfterEach(async () => {
   await sweepStep("expireStaleCandidates", () =>
     personalMemoryStore.expireStaleCandidates(),
   );
+  // Derived-judgment candidates age out on the same sweep (#378 AC3 covers both candidate
+  // kinds): the expiry is idempotent and owns no scope, exactly like the one above.
+  await sweepStep("expireStaleDerivedJudgmentCandidates", async () => {
+    await hindsightJudgmentExpiry?.();
+  });
 }, 60_000);
 // Follow-ups a Bot schedules for itself, on the shared work queue. See agents/wake-up.ts.
 const wakeUpStore = createWakeUpStore(database, { auditStore: bootAuditStore });
@@ -2578,6 +2659,19 @@ const loadToolsForActor =
       ingestion: memoryIngestion,
       ownerUserId: actorId,
       agentId: botId,
+      // FIX-F1 (#376, FR-1): the recall/remember/observe/forget tools answer one
+      // company's rows — the Bot's ownership row's company, else the person's one
+      // provable membership (memory/company.ts). Only where the enterprise layer is
+      // wired; a single-user deployment's tools stay exactly as they were.
+      ...(enterpriseCapabilities
+        ? {
+            companyFor: () =>
+              resolveMemoryCompany(database, {
+                ownerUserId: actorId,
+                agentId: botId,
+              }),
+          }
+        : {}),
     }),
     ...(await grantedTools({
       store: pluginStore,
@@ -4010,14 +4104,39 @@ const governedWakeUpTurn =
  * authority rows directly through the same predicates, so an outage of the
  * Hindsight service cannot empty the block or resurrect anything — exactly
  * the #385/#395 discipline.
+ *
+ * G3-F2 / FIX-W2: the chain's WRITE face is wired here too. The durable sync
+ * queue (#384) is the recorder both confirm seams carry, the revocation ledger
+ * (#390) is the recorder both forget seams carry, and the person-scoped
+ * confirm/edit/forget/status routes (hindsight/routes.ts) are handed to the
+ * `/api/memory` family below — only where a trusted-scope resolver exists,
+ * because the seams refuse any scope the enterprise tenancy layer did not
+ * issue. The drain sweep runs on the memory sweep's cadence and is stopped
+ * with the other sweeps on the way out.
  */
+let hindsightMemoryRoutes: HindsightMemoryRoutesDeps | undefined;
+let hindsightSyncSweep: Repeating | undefined;
+/** One drain pass a minute — the memory sweep's cadence; the env override mirrors the BIFROST_* pattern. */
+const HINDSIGHT_SYNC_DRAIN_INTERVAL_MS = (() => {
+  const raw = Number(process.env.HINDSIGHT_SYNC_DRAIN_INTERVAL_MS ?? 60_000);
+  return Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+})();
+/*
+ * The #387–#391 seams' HTTP face, filled in below only when BOTH halves exist: the
+ * Hindsight chain (the block) and the trusted scope resolver (enterprise capabilities).
+ * Without the resolver no personal placement can be derived, so the routes stay
+ * unmounted rather than guessing an identity — the r1 audit's RG4-1/RG5-1 wiring gap,
+ * closed here.
+ */
+let hindsightRouteServices: HindsightRouteServices | undefined;
 if (
   process.env.HINDSIGHT_API_URL?.trim() &&
   process.env.HINDSIGHT_API_TOKEN?.trim() &&
   process.env.HINDSIGHT_BANK_ASSERTION_SECRET?.trim()
 ) {
   const hindsightServiceConfig = preferenceRecallConfigFromEnv(process.env);
-  const hindsightPause = createDrizzlePauseControls(database);
+  // The ONE switch instance (#392): the same object the legacy gates and the settings entry use.
+  const hindsightPause = personalMemoryPauseControls;
   const hindsightAuthorizations =
     createDrizzleSourceBoundAuthorizations(database);
   const hindsightPreferenceSearch =
@@ -4032,17 +4151,148 @@ if (
     database,
     hindsightRevocations,
   );
-  const hindsightPreferences = createPreferenceRecallService(
-    createDrizzlePreferenceRecords(database),
+  // The per-document ledger recorder the forget seams write (#390); the
+  // composite service above owns the authorization-revocation flow.
+  const hindsightRevocationLedger = createDrizzleRevocationLedger(database);
+  // The background-processing budget gate (FIX-W11 A-2, FIX-F23, #393): the platform-side
+  // control over whether its own background work runs. The durable sync queue (#384) drains
+  // through it — an exhausted cap defers the retain, the work stays pending and retries on
+  // the next drain — and every eager retain below (the judgment review's, the preference
+  // confirm/edit/correction's and the source-bound confirm/edit's) admits through the same
+  // gate. Authorized reads never consult it: exhaustion changes what runs, never what recalls.
+  const hindsightBudgetGate = createDrizzleBudgetGate(database);
+  // The durable sync queue (#384): what the confirm seams record into and the
+  // sweep below drains. Identity at task time is the work row's own
+  // attribution, re-read under its tenant pin.
+  const hindsightSyncQueue = createHindsightSyncQueue(
+    database,
     hindsightServiceConfig,
-    { pause: hindsightPause, recovery: hindsightRecovery.gate },
+    { authorizations: hindsightAuthorizations, budget: hindsightBudgetGate },
+  );
+  // The authority-table record stores the seams share: one construction each, reused by
+  // the recall services, the judgment chain and the evidence seam, so every read of a
+  // row goes through one store (never a second copy with its own predicate drift).
+  const hindsightPreferenceRecords = createDrizzlePreferenceRecords(database);
+  const hindsightSourceBoundRecords = createDrizzleSourceBoundRecords(database);
+  const hindsightJudgmentRecords =
+    createDrizzleDerivedJudgmentRecords(database);
+  const hindsightPreferences = createPreferenceRecallService(
+    hindsightPreferenceRecords,
+    hindsightServiceConfig,
+    {
+      pause: hindsightPause,
+      recovery: hindsightRecovery.gate,
+      work: hindsightSyncQueue,
+      revocations: hindsightRevocationLedger,
+      // FIX-F23 / FR-2: the confirm/edit/correction eager retains admit through the same
+      // budget gate the queue drains through — an exhausted cap defers the retain to the
+      // work row's drain instead of sending unmetered.
+      budget: hindsightBudgetGate,
+    },
   );
   const hindsightSourceBound = createSourceBoundRecallService(
-    createDrizzleSourceBoundRecords(database),
+    hindsightSourceBoundRecords,
     hindsightAuthorizations,
     hindsightServiceConfig,
-    { pause: hindsightPause, recovery: hindsightRecovery.gate },
+    {
+      pause: hindsightPause,
+      recovery: hindsightRecovery.gate,
+      work: hindsightSyncQueue,
+      revocations: hindsightRevocationLedger,
+      // FIX-F23 / FR-2: the same gate for the source-bound confirm/edit eager retains.
+      budget: hindsightBudgetGate,
+    },
   );
+  /*
+   * The judgment chain (#388 propose/list, #389 review and forget). The review seam gets
+   * the same pause and recovery gates, the same durable revocation ledger #390 attaches to
+   * every forget, and the same sync-queue `work` recorder the two recall seams above use:
+   * a confirm/edit's eager retain is still best-effort, but a failed one leaves its retry
+   * row for the drain sweep below (and `syncStatus` reports `failed`/`pending`, never `indexed`).
+   */
+  const hindsightJudgments = createDerivedJudgmentService(
+    hindsightPreferenceRecords,
+    hindsightSourceBoundRecords,
+    hindsightJudgmentRecords,
+    hindsightAuthorizations,
+    { pause: hindsightPause },
+  );
+  const hindsightJudgmentReview = createDerivedJudgmentReviewService(
+    hindsightPreferenceRecords,
+    hindsightSourceBoundRecords,
+    hindsightJudgmentRecords,
+    hindsightAuthorizations,
+    hindsightServiceConfig,
+    {
+      pause: hindsightPause,
+      recovery: hindsightRecovery.gate,
+      work: hindsightSyncQueue,
+      revocations: hindsightRevocationLedger,
+      // FIX-W11 A-2: the confirm/edit eager retain is the model-call path of a judgment's
+      // adoption — it admits through the budget gate, and an exhausted budget defers to the
+      // work row's drain instead of failing the person's decision.
+      budget: hindsightBudgetGate,
+    },
+  );
+  const hindsightEvidence = createAnswerEvidenceService(
+    hindsightPreferences,
+    hindsightSourceBound,
+    hindsightPreferenceRecords,
+    hindsightSourceBoundRecords,
+    hindsightAuthorizations,
+    hindsightJudgmentReview,
+  );
+  const hindsightCleanup = createCleanupEvidenceService(
+    database,
+    hindsightServiceConfig,
+  );
+  const hindsightBackupManifestDir = backupManifestDirFromEnv(process.env);
+  if (enterpriseCapabilities) {
+    hindsightRouteServices = {
+      scopes: enterpriseCapabilities.scopes,
+      evidence: hindsightEvidence,
+      judgments: hindsightJudgments,
+      review: hindsightJudgmentReview,
+      revocations: hindsightRevocations,
+      cleanup: hindsightCleanup,
+      recovery: hindsightRecovery,
+      // Where a sensitivity refusal on this face lands: the class, never the content
+      // (the F-G1-4 trail, same as the /api/memory face).
+      audit: auditSink(bootAuditStore),
+      // Read per request: a redeployed declaration is honored by the next status read,
+      // and an undeclared window reports the payload leg unevidenced, never measured.
+      // (parseHindsightPrivacy takes the declaration's narrow key shape, so the read
+      // projects process.env onto exactly the keys that module owns.)
+      operationRetentionDays: () =>
+        parseHindsightPrivacy({
+          HINDSIGHT_PRIVACY_OPERATION_RETENTION_DAYS:
+            process.env.HINDSIGHT_PRIVACY_OPERATION_RETENTION_DAYS,
+        }).operationRetentionDays,
+      // The backup job's manifests, when the deployment made its directory visible here.
+      reconcileBackups: hindsightBackupManifestDir
+        ? () =>
+            reconcileControlledBackups({
+              database,
+              manifestDirectory: hindsightBackupManifestDir,
+              registry: hindsightCleanup,
+            })
+        : null,
+      // FIX-W11 A-2 (#393): the company administrator's health view — service state, backlog
+      // counts and budget usage of the caller's own company (the trusted scope's tenant,
+      // never a request field); the shape guarantees no memory, candidate or basis text can
+      // ride along, and an undeclared health configuration answers "unknown" honestly.
+      opsHealth: {
+        snapshot: (scope: PlatformScope) => {
+          const identity = resolveHindsightBankScope(scope);
+          return hindsightAdminHealthSnapshotForRoute(
+            database,
+            hindsightBudgetGate,
+            identity.tenantId,
+          );
+        },
+      },
+    };
+  }
   const personalMemoryContext = createPersonalMemoryContext({
     recall: createDegradedRecallFacade(
       hindsightPreferences,
@@ -4054,6 +4304,9 @@ if (
     preferenceSearch: hindsightPreferenceSearch,
     sourceBoundSearch: hindsightSourceBoundSearch,
     authorizations: hindsightAuthorizations,
+    // FIX-W11 A-1: the judgment half — adopted judgments through the review seam's own
+    // query-less gates, so every entry below carries them with no new consumption face.
+    judgments: hindsightJudgmentReview,
     pause: hindsightPause,
     recovery: hindsightRecovery.gate,
   });
@@ -4070,6 +4323,35 @@ if (
       (await personalMemoryContext.personalMemoryContext(scope, botId))
         .memories,
     );
+  /*
+   * Hindsight 14 (#392, F-G1-5): the derived-judgment expiry, handed to the sweep above. The
+   * review service is the same production assembly the review entries read (authority rows,
+   * authorization store, the one pause instance and the restore gate); only its scope-less
+   * expiry stage is consumed here, and it is idempotent, so a repeated sweep expires nothing
+   * more.
+   */
+  hindsightJudgmentExpiry = () =>
+    hindsightJudgmentReview.expireStaleDerivedJudgmentCandidates();
+  if (enterpriseCapabilities) {
+    hindsightMemoryRoutes = {
+      preferences: hindsightPreferences,
+      sourceBound: hindsightSourceBound,
+      syncQueue: hindsightSyncQueue,
+      resolveScope: (request) => enterpriseCapabilities.scopes.resolve(request),
+      audit: auditSink(bootAuditStore),
+    };
+  }
+  // The background drains (#384's drain and #390's re-retry deletion), the same
+  // repeatAfterEach family the memory sweep belongs to: one pass at a time,
+  // each stage under the sweep's own logged swallow, and every pass idempotent
+  // — the queue's drain re-reads ownership and authorization at task time, so
+  // an interrupted pass simply retries.
+  hindsightSyncSweep = repeatAfterEach(async () => {
+    await sweepStep("hindsightSyncDrain", () => hindsightSyncQueue.drain());
+    await sweepStep("hindsightDeletionRetry", () =>
+      hindsightRevocations.retryOutstandingDeletions(),
+    );
+  }, HINDSIGHT_SYNC_DRAIN_INTERVAL_MS);
 }
 
 const mastraContinuationRouteDeps =
@@ -6612,6 +6894,23 @@ const craftSandboxConnection = () =>
   sandboxUrl && sandboxToken
     ? { baseUrl: sandboxUrl, token: sandboxToken }
     : null;
+/*
+ * #618: the deployment's execution ownership (MT050) — the third member of the
+ * same-facts family above. agent-sandbox's proxy refuses a token-only request,
+ * and craft's sandbox is ONE deployment Bot the proxy pins to ONE (company,
+ * team) on first bind, so the pair is deployment wiring (config's parsed
+ * OPENBOT_CRAFT_SANDBOX_EXECUTION_* pair), never a per-request user value. It
+ * is consumed by the two assemblies whose requests ride the gateway proxy —
+ * the craft routes deps (their gateway, plus the idle reaper and every manager
+ * call through it) and the HMR deps' own gateway (the file API its legacy-form
+ * judgment reads). It is deliberately NOT consumed by craftPreviewProxy / the
+ * preview HMR deps: those dial the sandbox host's reserved dev-server PORT
+ * directly (webappUpstreamHost extracts only the hostname; the dev server is
+ * not behind the gateway's token/path/ownership gate), so no ownership headers
+ * exist to send there — see #618's audit in the T1 report.
+ */
+const craftSandboxExecutionScope = () =>
+  craftEffectiveConfig.sandboxExecutionScope;
 
 /*
  * The preview origin's serving half (#362): a cookie-authenticated request on
@@ -6701,6 +7000,8 @@ const craftRoutes: CraftRoutesFactory | undefined =
             botIdFor: craftSandboxBotId,
             llmConfigFor: async () => craftLlmConfig(),
             sandboxConnectionFor: craftSandboxConnection,
+            // #618: same facts as the connection above — one const, every assembly.
+            executionScopeFor: craftSandboxExecutionScope,
             userNameFor: async (userId) =>
               (await peopleStore.find(userId))?.name ?? null,
             generateName: craftGenerateName,
@@ -6789,6 +7090,10 @@ const craftWebappHmrDeps =
               ? { botId, baseUrl: conn.baseUrl, token: conn.token }
               : null;
           },
+          // #618: the file API's requests state the deployment's ownership — the
+          // same const the craft routes assembly threads, so the surfaces cannot
+          // disagree about the scope they act in.
+          executionScopeFor: craftSandboxExecutionScope,
         }),
       }
     : undefined;
@@ -7726,6 +8031,17 @@ const app = createApp(
       ingestion: memoryIngestion,
       ownerUserId: actorId,
       agentId: botId,
+      // FIX-F1 (#376, FR-1): the dispatch face resolves the same company the
+      // catalogue face above does — one rule for every entry to the old store.
+      ...(enterpriseCapabilities
+        ? {
+            companyFor: () =>
+              resolveMemoryCompany(database, {
+                ownerUserId: actorId,
+                agentId: botId,
+              }),
+          }
+        : {}),
     }).find((candidate) => candidate.name === name);
     if (memory) {
       const text = await memory.execute(args);
@@ -7804,7 +8120,36 @@ const app = createApp(
         identity: slackCodeRedeemer(identityStore, bootAuditStore),
       },
     },
-    memory: { store: personalMemoryStore, ingestion: memoryIngestion },
+    memory: {
+      store: personalMemoryStore,
+      ingestion: memoryIngestion,
+      // The person's own pause switches (#392, F-G1-1), behind the deployment's trusted
+      // scope resolver — mounted only where enterprise capabilities proved the directory.
+      ...(enterpriseCapabilities
+        ? {
+            pauseControls: {
+              pause: personalMemoryPauseControls,
+              resolveScope: (request: Request) =>
+                enterpriseCapabilities.scopes.resolve(request),
+            },
+            // FIX-F1 (#376, FR-1): the whole old face's company pin, behind the SAME
+            // trusted scope resolver the pause switches read. Every /api/memory request
+            // resolves the caller's company; the rows it may list, review, write or
+            // forget are that company's alone. Unwired without the enterprise layer —
+            // a single-user deployment keeps today's behaviour unchanged.
+            companyScope: {
+              resolveScope: (request: Request) =>
+                enterpriseCapabilities.scopes.resolve(request),
+            },
+          }
+        : {}),
+      // The chain's operations surface (G3-F2): only where the chain AND a
+      // trusted-scope resolver both exist — never for a hand-shaped identity.
+      ...(hindsightMemoryRoutes ? { hindsight: hindsightMemoryRoutes } : {}),
+    },
+    // Hindsight's own surface family; undefined leaves /api/hindsight unmounted (see the
+    // assembly block that fills it — Hindsight chain AND trusted scopes, or nothing).
+    ...(hindsightRouteServices ? { hindsight: hindsightRouteServices } : {}),
     proactive: { store: proactiveStore, engine: proactiveEngine },
     responsibilities: {
       store: responsibilityStore,
@@ -8063,6 +8408,11 @@ if (opikExecutionWorker) {
 lifecycle.hold({ name: "openMuseTaskSweep", stop: () => openMuseTaskSweep.stop() });
 lifecycle.hold({ name: "openMuseTaskReaper", stop: () => openMuseTaskReaper.stop() });
 lifecycle.hold({ name: "memorySweep", stop: () => memorySweep.stop() });
+// The Hindsight sync/deletion drain (G3-F2): undefined where no chain is wired.
+lifecycle.hold({
+  name: "hindsightSyncSweep",
+  stop: () => hindsightSyncSweep?.stop(),
+});
 lifecycle.hold({ name: "proactiveSweep", stop: () => proactiveSweep.stop() });
 lifecycle.hold({ name: "approvalSweep", stop: () => approvalSweep.stop() });
 lifecycle.hold({ name: "personResponseSweep", stop: () => personResponseSweep.stop() });

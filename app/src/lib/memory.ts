@@ -49,11 +49,48 @@ export type MemorySourceTool = {
   description: string;
   inputSchema: Record<string, unknown>;
 };
+/** The person's two pause switches (#392): a set timestamp means paused, null means not. */
+export type MemoryPauseControls = {
+  learningPausedAt: string | null;
+  usagePausedAt: string | null;
+};
+/** The subject types the sync status surface answers for; the memory rows map onto these (#394). */
+export type MemorySyncSubjectType = "preference" | "source_bound";
+/**
+ * One memory's sync status as the status surface answers it (#384): `indexed` only when the
+ * retained digest equals the content, `pending`, `failed` with a retry coming, or
+ * `unknown-subject` when the chain holds no such subject.
+ */
+export type MemorySyncStatus =
+  | { state: "indexed"; syncedAt: string | null }
+  | { state: "pending"; attempts: number }
+  | {
+      state: "failed";
+      attempts: number;
+      lastError: string | null;
+      willRetry: true;
+    }
+  | { state: "unknown-subject" };
 export const memoryKeys = {
   all: ["memory"] as const,
   sources: ["memory", "sources"] as const,
   available: (id: string) => ["memory", "available", id] as const,
+  pauseControls: ["memory", "pause-controls"] as const,
+  /** One batched read for every badge a listing draws (#384, FIX-OCR1 / #376). */
+  syncStatuses: ["memory", "sync-statuses"] as const,
 };
+
+/** The subjects a batched status read names: the listing's rows, as the chain types them. */
+export type MemorySyncSubject = {
+  subjectType: MemorySyncSubjectType;
+  subjectId: string;
+};
+
+/** The key one subject's entry sits under in a batched answer: `${subjectType}:${subjectId}`. */
+export const memorySyncStatusKey = ({
+  subjectType,
+  subjectId,
+}: MemorySyncSubject) => `${subjectType}:${subjectId}`;
 
 // ---------------------------------------------------------------------------
 // The scoped half (MT089 / Issue #132): the memory pages read and write through here
@@ -179,6 +216,100 @@ export function scopedAvailableMemorySourcesQueryOptions(
             }),
   });
 }
+/**
+ * What the switches' read answers (#392): the state, or why the rows must grey out. A 404 is
+ * the deployment mounting no such face at all; a 400 is the resolver's own "no company or team
+ * selected" — the switches are keyed by the selection, so the personal context has none. Both
+ * are answers about availability rather than faults, so the screen explains instead of
+ * reporting an error.
+ */
+export type MemoryPauseControlsAnswer =
+  | { state: "mounted"; controls: MemoryPauseControls }
+  | { state: "unmounted" }
+  | { state: "no-company" };
+
+export function scopedPauseControlsQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) {
+  const open = scope.status === "open" ? scope : null;
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...memoryKeys.pauseControls]
+        : [...memoryKeys.pauseControls, ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<MemoryPauseControlsAnswer>(() => {})
+        : async ({ signal }): Promise<MemoryPauseControlsAnswer> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient("/api/memory/pause-controls", {
+                signal,
+                ...(open.selection ?? {}),
+              });
+              if (response.status === 404) return { state: "unmounted" };
+              // The GET has no body of its own, so a 400 here is the scope resolver's
+              // TENANT_REQUIRED or WORKSPACE_REQUIRED — the personal context, not a fault.
+              if (response.status === 400) return { state: "no-company" };
+              if (!response.ok) {
+                throw new Error("The pause switches could not be read.");
+              }
+              const body = (await response.json().catch(() => null)) as {
+                pauseControls?: MemoryPauseControls;
+              } | null;
+              if (body === null || body.pauseControls === undefined) {
+                throw new Error("The pause switches could not be read.");
+              }
+              return { state: "mounted", controls: body.pauseControls };
+            }),
+  });
+}
+/**
+ * The statuses a whole listing's badges draw from (#384, FIX-OCR1 / #376): the list hands its
+ * subjects over once and every row's badge takes its own entry from the shared answer — one
+ * request for the page, not one per memory. The status face exists only where the deployment
+ * wired the chain, and a subject the chain does not hold answers `unknown-subject`; both mean
+ * the same thing to a row, so any answer but 200 is `null` and the rows draw no badge rather
+ * than a made-up one — the badges decorate rows the list already drew honestly.
+ */
+export function scopedMemorySyncStatusesQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  subjects: readonly MemorySyncSubject[],
+) {
+  const open = scope.status === "open" ? scope : null;
+  const keys = subjects.map(memorySyncStatusKey);
+  return queryOptions({
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...memoryKeys.syncStatuses, keys]
+        : [...memoryKeys.syncStatuses, keys, ":scope-pending"],
+    enabled: open !== null && subjects.length > 0,
+    queryFn:
+      open === null || subjects.length === 0
+        ? () => new Promise<Record<string, MemorySyncStatus> | null>(() => {})
+        : async ({
+            signal,
+          }): Promise<Record<string, MemorySyncStatus> | null> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient(
+                "/api/memory/hindsight/status/batch",
+                {
+                  method: "POST",
+                  body: { subjects },
+                  signal,
+                  ...(open.selection ?? {}),
+                },
+              );
+              if (!response.ok) return null;
+              const body = (await response.json().catch(() => null)) as {
+                statuses?: Record<string, MemorySyncStatus>;
+              } | null;
+              return body?.statuses ?? null;
+            }),
+  });
+}
 export const memoriesQueryOptions = () =>
   queryOptions({
     queryKey: memoryKeys.all,
@@ -261,6 +392,17 @@ export const memorySourceAction = (
       ...(scope ?? {}),
     },
   );
+/** Turn one of the person's pause switches on or off (#392); the server echoes the new state. */
+export const setPauseControls = (
+  patch: { learningPaused?: boolean; usagePaused?: boolean },
+  scope?: ScopePair,
+) =>
+  client("/api/memory/pause-controls", {
+    method: "POST",
+    body: patch,
+    fallbackKey: "memory.changePause",
+    ...(scope ?? {}),
+  });
 
 const settleMemory = (queryClient: QueryClient, scope?: ScopedCache) => () =>
   Promise.all([
@@ -273,6 +415,22 @@ const settleMemory = (queryClient: QueryClient, scope?: ScopedCache) => () =>
         ]
       : []),
   ]);
+/**
+ * Re-read only the switches' own entry: a pause change is not the list's business, so the rows
+ * the person is reading stay as they are instead of flashing through a refetch.
+ */
+const settlePauseControls =
+  (queryClient: QueryClient, scope?: ScopedCache) => () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: memoryKeys.pauseControls }),
+      ...(scope !== undefined && scope.status === "open"
+        ? [
+            queryClient.invalidateQueries({
+              queryKey: [...scope.prefix, ...memoryKeys.pauseControls],
+            }),
+          ]
+        : []),
+    ]);
 
 export const createMemoryMutationOptions = (
   queryClient: QueryClient,
@@ -330,4 +488,15 @@ export const memorySourceActionMutationOptions = (
       name: "sync" | "remove" | "enable" | "disable";
     }) => memorySourceAction(sourceId, name, scopePair(scope)),
     onSuccess: settleMemory(queryClient, scope),
+  });
+
+/** Flip one of the person's two pause switches; the settle re-reads the server's own echo. */
+export const setPauseControlsMutationOptions = (
+  queryClient: QueryClient,
+  scope?: ScopedCache,
+) =>
+  mutationOptions({
+    mutationFn: (patch: { learningPaused?: boolean; usagePaused?: boolean }) =>
+      setPauseControls(patch, scopePair(scope)),
+    onSettled: settlePauseControls(queryClient, scope),
   });

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { join } from "node:path";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
@@ -18,18 +20,17 @@ import {
   enterpriseWorkspaceMemberships,
   enterpriseWorkspaces,
 } from "../src/db/schema/enterprise-tenancy";
+import {
+  hindsightMigrationMap,
+  hindsightMigrationQuarantine,
+} from "../src/db/schema/hindsight-legacy-migration";
 import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
-import { hindsightMigrationMap } from "../src/db/schema/hindsight-legacy-migration";
-import { hindsightMigrationQuarantine } from "../src/db/schema/hindsight-legacy-migration";
 import {
   hindsightMemoryGrants,
   sourceBoundMemories,
 } from "../src/db/schema/hindsight-source-bound";
 import { hindsightSyncWork } from "../src/db/schema/hindsight-sync";
-import {
-  memorySources,
-  personalMemories,
-} from "../src/db/schema/memory";
+import { memorySources, personalMemories } from "../src/db/schema/memory";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
@@ -74,11 +75,22 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * 4. Reconciliation and sample recall: the before/after counts balance, the migrated rows
  *    enqueue sync work the queue drains, and a migrated preference recalls through the real
  *    seam — indexed (scripted hit) and degraded (SQL fallback with the service stalled).
+ * 5. Permission shapes the new domain cannot reproduce (RG6-1): a Bot row that lost its agent
+ *    id, an import row without its source id, a formed_by value outside the mapped shapes, and
+ *    a Bot row whose source_ref narrowed recall to the forming Bot's still-held source app are
+ *    each quarantined with their own reason — never silently reclassified as a general
+ *    preference every authorized Bot of the person may read.
  */
 
 const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
 
 const run = randomUUID().slice(0, 8);
+/** FIX-OCR3 legs keep their own tenancy so the suite's balance reads stay untouched. */
+const TENANT_O3 = `tn_o3-${run}`;
+const PRINCIPAL_O3 = `prin_o3-${run}`;
+const USER_O3 = `user_o3-${run}`;
+const PRINCIPAL_O3B = `prin_o3b-${run}`;
+const USER_O3B = `user_o3b-${run}`;
 const TENANT_A = `tn_mig-a-${run}`;
 const TENANT_B = `tn_mig-b-${run}`;
 const WORKSPACE_A = `ws_mig-a-${run}`;
@@ -239,6 +251,7 @@ async function seedOld(
     formedBy?: "person" | "import" | "bot" | "intelligence";
     formedByAgentId?: string | null;
     sourceId?: string | null;
+    sourceRef?: string | null;
     enabled?: boolean;
     deletedAt?: Date | null;
   },
@@ -259,7 +272,7 @@ async function seedOld(
     formedBy: input.formedBy ?? "person",
     formedByAgentId: input.formedByAgentId ?? null,
     sourceApp: null,
-    sourceRef: null,
+    sourceRef: input.sourceRef ?? null,
     sourceLink: null,
     observedAt: null,
     intelligenceMemoryId: null,
@@ -278,15 +291,20 @@ beforeAll(async () => {
     { id: USER_BARE, email: `bare-${run}@example.invalid` },
   ]);
   await database.insert(agents).values([
-    { id: OLD_BOT, name: `Legacy Bot ${run}`, type: "built_in", configuration: {} },
+    {
+      id: OLD_BOT,
+      name: `Legacy Bot ${run}`,
+      type: "built_in",
+      configuration: {},
+    },
   ]);
   await database.insert(enterpriseTenants).values([
     { id: TENANT_A, name: `Mig A ${run}` },
     { id: TENANT_B, name: `Mig B ${run}` },
   ]);
-  await database.insert(enterpriseWorkspaces).values([
-    { tenantId: TENANT_A, id: WORKSPACE_A, name: `Mig WS ${run}` },
-  ]);
+  await database
+    .insert(enterpriseWorkspaces)
+    .values([{ tenantId: TENANT_A, id: WORKSPACE_A, name: `Mig WS ${run}` }]);
   await database.insert(enterprisePrincipals).values([
     { id: PRINCIPAL_A, userId: USER_A },
     { id: PRINCIPAL_MULTI, userId: USER_MULTI },
@@ -306,7 +324,11 @@ beforeAll(async () => {
     },
   ]);
   await database.insert(enterpriseWorkspaceMemberships).values([
-    { tenantId: TENANT_A, workspaceId: WORKSPACE_A, principalId: PRINCIPAL_A },
+    {
+      tenantId: TENANT_A,
+      workspaceId: WORKSPACE_A,
+      principalId: PRINCIPAL_A,
+    },
   ]);
   await database.insert(memorySources).values({
     id: OLD_SOURCE,
@@ -502,9 +524,7 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     expect(byOld.get(suspendedRow)?.reason).toBe("no-active-membership");
     expect(byOld.get(bareRow)?.reason).toBe("no-principal");
     for (const id of [multiRow, suspendedRow, bareRow]) {
-      expect(
-        Object.keys(byOld.get(id) ?? {}).sort(),
-      ).not.toContain("content");
+      expect(Object.keys(byOld.get(id) ?? {}).sort()).not.toContain("content");
     }
     const newRowsOfTheirs = await database
       .select()
@@ -617,9 +637,7 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     const indexed = await preferences.recallGenericPreferences(scope, {
       query: "mig sample",
     });
-    expect(indexed.map((memory) => memory.id)).toContain(
-      preferenceSample!.id,
-    );
+    expect(indexed.map((memory) => memory.id)).toContain(preferenceSample!.id);
     // And through the degraded path with the service unreachable: the SQL fallback answers
     // the same confirmed original.
     scripted.state.stallMs = STALL_MS;
@@ -627,8 +645,423 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
       query: "mig person fact",
     });
     expect(degraded.degraded).toBe(true);
-    expect(
-      degraded.memories.map((memory) => memory.content),
-    ).toContain(`mig-person-fact-${run}`);
+    expect(degraded.memories.map((memory) => memory.content)).toContain(
+      `mig-person-fact-${run}`,
+    );
+  });
+  test("RG6-1: out-of-shape and source-ref-narrowed rows quarantine instead of widening their audience", async () => {
+    // A dedicated owner so the run below sees this cohort alone.
+    const USER_SHAPE = `usr_shape-${run}`;
+    const PRINCIPAL_SHAPE = `prin_shape-${run}`;
+    const SOURCE_REF = `srv-proactive-${run}/messages/42`;
+    await database.insert(users).values({
+      id: USER_SHAPE,
+      email: `shape-${run}@example.invalid`,
+    });
+    await database.insert(enterprisePrincipals).values({
+      id: PRINCIPAL_SHAPE,
+      userId: USER_SHAPE,
+    });
+    await database.insert(enterpriseMemberships).values({
+      tenantId: TENANT_A,
+      principalId: PRINCIPAL_SHAPE,
+      role: "member",
+    });
+
+    // The two well-formed controls of the same cohort — they must still migrate.
+    const personControl = await seedOld(USER_SHAPE, {
+      content: `mig-shape-person-${run}`,
+    });
+    const botControl = await seedOld(USER_SHAPE, {
+      content: `mig-shape-bot-${run}`,
+      formedBy: "bot",
+      formedByAgentId: OLD_BOT,
+    });
+    // The shapes the new tables cannot reproduce.
+    const narrowedBot = await seedOld(USER_SHAPE, {
+      content: `mig-shape-narrowed-${run}`,
+      formedBy: "bot",
+      formedByAgentId: OLD_BOT,
+      // The old rule additionally required the forming Bot to still hold this source app
+      // (split_part(source_ref, '/', 1)); the new domain has no column to carry it.
+      sourceRef: SOURCE_REF,
+    });
+    const agentlessBot = await seedOld(USER_SHAPE, {
+      content: `mig-shape-agentless-${run}`,
+      formedBy: "bot",
+    });
+    const sourcelessImport = await seedOld(USER_SHAPE, {
+      content: `mig-shape-sourceless-${run}`,
+      formedBy: "import",
+    });
+    // formed_by has no CHECK in the old table: history may hold a value outside the three
+    // mapped shapes. Written the way history wrote it, past the typed insert.
+    const unknownShape = `old_${run}_unknown`;
+    await database.execute(sql`
+      insert into personal_memories
+        (id, owner_user_id, content, provenance, enabled, review_state, formed_by, created_at, updated_at)
+      values
+        (${unknownShape}, ${USER_SHAPE}, ${`mig-shape-unknown-${run}`}, ${`legacy-${run}`}, true, 'confirmed', 'intelligence', now(), now())
+    `);
+
+    const report = await migrator.run({ owners: [USER_SHAPE] });
+    expect(report.completed).toBe(true);
+    expect(report.migrated).toBe(2);
+    expect(report.quarantined).toBe(4);
+
+    // Each held-back row lands in the isolation list with its own reason.
+    const quarantinedIds = [
+      narrowedBot,
+      agentlessBot,
+      sourcelessImport,
+      unknownShape,
+    ];
+    const quarantine = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(inArray(hindsightMigrationQuarantine.oldRecordId, quarantinedIds));
+    const byOld = new Map(quarantine.map((row) => [row.oldRecordId, row]));
+    expect(byOld.get(narrowedBot)?.reason).toBe("source-ref-narrowing");
+    expect(byOld.get(agentlessBot)?.reason).toBe("unmappable-permission-shape");
+    expect(byOld.get(sourcelessImport)?.reason).toBe(
+      "unmappable-permission-shape",
+    );
+    expect(byOld.get(unknownShape)?.reason).toBe("unmappable-permission-shape");
+    for (const id of quarantinedIds) {
+      expect(Object.keys(byOld.get(id) ?? {})).not.toContain("content");
+    }
+
+    // None of them reached the new domain — no map row, no preference, no source-bound row —
+    // so the audience each old restriction named was never widened.
+    const mapped = await database
+      .select()
+      .from(hindsightMigrationMap)
+      .where(inArray(hindsightMigrationMap.oldRecordId, quarantinedIds));
+    expect(mapped).toEqual([]);
+    const preferencesOfTheirs = await database
+      .select()
+      .from(genericPersonalPreferences)
+      .where(
+        and(
+          eq(genericPersonalPreferences.tenantId, TENANT_A),
+          inArray(genericPersonalPreferences.id, quarantinedIds),
+        ),
+      );
+    expect(preferencesOfTheirs).toEqual([]);
+    const boundOfTheirs = await database
+      .select()
+      .from(sourceBoundMemories)
+      .where(
+        and(
+          eq(sourceBoundMemories.tenantId, TENANT_A),
+          inArray(sourceBoundMemories.id, quarantinedIds),
+        ),
+      );
+    expect(boundOfTheirs).toEqual([]);
+
+    // The source-ref row keeps its original reference where it always lived — the old table —
+    // and the isolation row points at it by old id, so nothing had to be copied to hold it.
+    const [narrowedOld] = await database
+      .select()
+      .from(personalMemories)
+      .where(eq(personalMemories.id, narrowedBot));
+    expect(narrowedOld.sourceRef).toBe(SOURCE_REF);
+    expect(narrowedOld.enabled).toBe(true);
+    expect(narrowedOld.reviewState).toBe("confirmed");
+
+    // The controls migrated: the person row is a general preference, the Bot row a Bot-bound
+    // source-bound memory — the same run, the same cohort, no shape smuggled into either.
+    const [personRow] = await database
+      .select()
+      .from(genericPersonalPreferences)
+      .where(
+        and(
+          eq(genericPersonalPreferences.tenantId, TENANT_A),
+          eq(genericPersonalPreferences.id, personControl),
+        ),
+      );
+    expect(personRow.content).toBe(`mig-shape-person-${run}`);
+    const [botRow] = await database
+      .select()
+      .from(sourceBoundMemories)
+      .where(
+        and(
+          eq(sourceBoundMemories.tenantId, TENANT_A),
+          eq(sourceBoundMemories.id, botControl),
+        ),
+      );
+    expect(botRow.restriction).toBe("bot");
+    expect(botRow.agentId).toBe(OLD_BOT);
+
+    // Reconciliation answers with the new reasons, and still balances: the six confirmed-alive
+    // rows of this cohort are two migrations and four quarantines, not fewer.
+    const reconciled = await migrator.reconcile({ owners: [USER_SHAPE] });
+    expect(reconciled.oldSide.confirmedAlive).toBe(6);
+    expect(reconciled.newSide.migrated).toBe(2);
+    expect(reconciled.quarantined.byReason["source-ref-narrowing"]).toBe(1);
+    expect(reconciled.quarantined.byReason["unmappable-permission-shape"]).toBe(
+      3,
+    );
+    expect(reconciled.balanced).toBe(true);
+  });
+
+  /*
+   * FIX-OCR1 (OCR low, #376): 0211's pre-written isolation rows and a #394 pass share the
+   * old_record_id space, and the flip — an owner isolated at deployment time later holding
+   * exactly one active membership — had no cleanup path: the record migrated while its
+   * isolation row stayed behind, reconcile's balanced check read the leftover as a
+   * breakpoint still to run, and the isolation list kept mis-reporting a migrated record. A
+   * successful migration now deletes the old id's isolation row, so the map is the one
+   * durable fact and a record is in the map or the quarantine, never both.
+   */
+  test("a quarantined record that later proves attribution migrates and takes its isolation row with it", async () => {
+    const USER_FLIP = `usr_flip-${run}`;
+    const PRINCIPAL_FLIP = `prin_flip-${run}`;
+    const TENANT_FLIP_B = `tn_flip-b-${run}`;
+    await database
+      .insert(enterpriseTenants)
+      .values([{ id: TENANT_FLIP_B, name: `Mig Flip B ${run}` }]);
+    await database
+      .insert(users)
+      .values({ id: USER_FLIP, email: `flip-${run}@example.invalid` });
+    await database
+      .insert(enterprisePrincipals)
+      .values({ id: PRINCIPAL_FLIP, userId: USER_FLIP });
+    await database.insert(enterpriseMemberships).values([
+      { tenantId: TENANT_A, principalId: PRINCIPAL_FLIP, role: "member" },
+      { tenantId: TENANT_FLIP_B, principalId: PRINCIPAL_FLIP, role: "member" },
+    ]);
+
+    // Pass one: two active memberships — attribution is ambiguous, the row is isolated.
+    const rowId = await seedOld(USER_FLIP, {
+      content: `mig-flip-fact-${run}`,
+    });
+    const first = await migrator.run({ owners: [USER_FLIP] });
+    expect(first.completed).toBe(true);
+    expect(first.quarantined).toBe(1);
+    const [isolated] = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, rowId));
+    expect(isolated.reason).toBe("ambiguous-company");
+
+    // The flip: the second membership lapses, so the owner's attribution becomes provable —
+    // exactly the shape a deployment-time isolation row could not see coming.
+    await database
+      .update(enterpriseMemberships)
+      .set({ status: "suspended" })
+      .where(
+        and(
+          eq(enterpriseMemberships.tenantId, TENANT_FLIP_B),
+          eq(enterpriseMemberships.principalId, PRINCIPAL_FLIP),
+        ),
+      );
+    const second = await migrator.run({ owners: [USER_FLIP] });
+    expect(second.completed).toBe(true);
+    expect(second.migrated).toBe(1);
+
+    const [mapped] = await database
+      .select()
+      .from(hindsightMigrationMap)
+      .where(eq(hindsightMigrationMap.oldRecordId, rowId));
+    expect(mapped.tenantId).toBe(TENANT_A);
+    expect(mapped.principalId).toBe(PRINCIPAL_FLIP);
+    // The isolation row did not survive the migration it stood against.
+    const leftover = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, rowId));
+    expect(leftover).toEqual([]);
+    // One confirmed-alive row, one migration, no quarantine — balanced reads true here,
+    // where the leftover row would have made it read false forever.
+    const reconciliation = await migrator.reconcile({ owners: [USER_FLIP] });
+    expect(reconciliation.oldSide.confirmedAlive).toBe(1);
+    expect(reconciliation.newSide.migrated).toBe(1);
+    expect(reconciliation.quarantined.total).toBe(0);
+    expect(reconciliation.balanced).toBe(true);
+  });
+
+  /*
+   * FIX-OCR2 (O2-M4): the mapped early-return owns the isolation-row cleanup too. The gap
+   * is reachable in the OTHER order from the flip test above: a record that already
+   * migrated can still pick up a stray isolation row afterwards — 0211's INSERT keys the
+   * same old ids and runs at deploy time, whenever its owner's attribution has since
+   * drifted. The early return used to leave the stray standing forever (reconcile read it
+   * as a breakpoint still to run, and the isolation list kept reporting a migrated record),
+   * so "in the map ⇒ not in the isolation list" now holds on both paths.
+   */
+  test("a mapped record's stray isolation row is cleared by the already-mapped early return", async () => {
+    const rowId = await seedOld(USER_A, {
+      content: `mig-stray-fact-${run}`,
+    });
+    // Pass one: the record migrates and its map row is the durable fact.
+    const first = await migrator.run({ owners: [USER_A] });
+    expect(first.completed).toBe(true);
+    expect(first.migrated).toBe(1);
+    // The stray isolation row: what 0211's deploy-time INSERT would pre-write for this old
+    // id under a drifted owner — after the record was already mapped.
+    await database.insert(hindsightMigrationQuarantine).values({
+      oldRecordId: rowId,
+      ownerUserId: USER_A,
+      reason: "ambiguous-company",
+      quarantinedAt: new Date(),
+      runId: "0211-personal-memories-company-attribution",
+    });
+    // The stray counts on the quarantine side of the balance: a breakpoint to run.
+    const before = await migrator.reconcile({ owners: [USER_A] });
+    expect(before.quarantined.total).toBe(1);
+    expect(before.balanced).toBe(false);
+    // The re-scan takes the mapped early-return path — and clears the stray.
+    const second = await migrator.run({ owners: [USER_A] });
+    expect(second.completed).toBe(true);
+    expect(second.migrated).toBe(0);
+    expect(second.alreadyMigrated).toBeGreaterThan(0);
+    const leftover = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, rowId));
+    expect(leftover).toEqual([]);
+    const after = await migrator.reconcile({ owners: [USER_A] });
+    expect(after.quarantined.total).toBe(0);
+    expect(after.balanced).toBe(true);
+  });
+});
+
+/*
+ * FIX-OCR3 (O3-M2): the 0211 deploy-time quarantine INSERT must not hold a record that is
+ * already in the map. A deployment that ran a #394 pass before this upgrade can hold a
+ * mapped record whose owner later drifted to unprovable — the INSERT's WHERE sees tenant_id
+ * NULL and confirmed-alive, and without the NOT EXISTS guard it would write that record onto
+ * the isolation list beside its own map row: reconcile's balanced check counts it on both
+ * sides forever. The statement executed here is the migration file's own, read from disk, so
+ * the guard is pinned against the SQL that actually ships (the hindsight-config precedent for
+ * cross-layer pinning).
+ */
+describe("FIX-OCR3 — 0211's isolation INSERT excludes records the map already owns", () => {
+  test("a drifted-but-mapped record is not quarantined by the deploy-time INSERT", async () => {
+    // One provable owner, one record: the pass maps it.
+    await database.insert(users).values([
+      { id: USER_O3, email: `o3-${run}@example.invalid` },
+      { id: USER_O3B, email: `o3b-${run}@example.invalid` },
+    ]);
+    await database
+      .insert(enterpriseTenants)
+      .values({ id: TENANT_O3, name: `Mig O3 ${run}` })
+      .onConflictDoNothing();
+    await database
+      .insert(enterprisePrincipals)
+      .values({ id: PRINCIPAL_O3, userId: USER_O3, status: "active" })
+      .onConflictDoNothing();
+    await database
+      .insert(enterpriseMemberships)
+      .values({
+        tenantId: TENANT_O3,
+        principalId: PRINCIPAL_O3,
+        role: "member",
+      })
+      .onConflictDoNothing();
+    await seedOld(USER_O3, {
+      content: `o3-mapped-then-drifted-${run}`,
+    });
+    const first = await migrator.run({ owners: [USER_O3] });
+    expect(first.migrated).toBe(1);
+
+    // The drift: the owner's one membership is suspended (the map row's own FK keeps the
+    // membership row itself), so the attribution is no longer provable — exactly the shape
+    // the deploy-time INSERT re-judges.
+    await database
+      .update(enterpriseMemberships)
+      .set({ status: "suspended" })
+      .where(eq(enterpriseMemberships.principalId, PRINCIPAL_O3));
+    // A second record of the same drifted owner: the honest isolation case, the INSERT's
+    // positive control.
+    const isolatedId = await seedOld(USER_O3, {
+      content: `o3-unprovable-fact-${run}`,
+    });
+
+    // The migration file's own quarantine statement, executed as the migrator would.
+    const file = await readFile(
+      join(
+        import.meta.dir,
+        "../drizzle/0214_personal_memories_company_attribution.sql",
+      ),
+      "utf8",
+    );
+    const statement = file
+      .split("--> statement-breakpoint")
+      .map((part) => part.trim())
+      .find((part) =>
+        part.startsWith('INSERT INTO "hindsight_migration_quarantine"'),
+      );
+    expect(statement).toBeDefined();
+    await database.execute(sql.raw(statement!));
+
+    const held = await database
+      .select({ oldRecordId: hindsightMigrationQuarantine.oldRecordId })
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.ownerUserId, USER_O3));
+    // The drifted-but-mapped record is NOT on the list; its sibling is.
+    expect(held.map((row) => row.oldRecordId)).toEqual([isolatedId]);
+  });
+});
+
+/*
+ * FIX-OCR3 (O3-M3): a later re-scan refreshes, never duplicates — the quarantine table's own
+ * column contract. Membership drift changes WHY a record is held, and the isolation list
+ * answers why it is held NOW: on BASE the first verdict stayed frozen, so reconcile's
+ * byReason read and the operator's isolation list kept naming a reason the directory no
+ * longer supports.
+ */
+describe("FIX-OCR3 — a re-scan refreshes the isolation reason", () => {
+  test("membership collapse re-judges an ambiguous record to no-active-membership", async () => {
+    // Two memberships: ambiguous, the record is held for exactly that.
+    await database
+      .insert(enterprisePrincipals)
+      .values({ id: PRINCIPAL_O3B, userId: USER_O3B, status: "active" })
+      .onConflictDoNothing();
+    await database
+      .insert(enterpriseMemberships)
+      .values([
+        { tenantId: TENANT_A, principalId: PRINCIPAL_O3B, role: "member" },
+        { tenantId: TENANT_B, principalId: PRINCIPAL_O3B, role: "member" },
+      ])
+      .onConflictDoNothing();
+    const heldId = await seedOld(USER_O3B, {
+      content: `o3-reason-refresh-${run}`,
+    });
+    const first = await migrator.run({
+      owners: [USER_O3B],
+      runId: `o3-run-a-${run}`,
+    });
+    expect(first.quarantined).toBe(1);
+    const [row] = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, heldId));
+    expect(row.reason).toBe("ambiguous-company");
+    expect(row.runId).toBe(`o3-run-a-${run}`);
+    const firstAt = row.quarantinedAt;
+
+    // The collapse: both memberships are suspended — the honest reason is now
+    // no-active-membership, and a fresh pass re-judges the same old id.
+    await database
+      .update(enterpriseMemberships)
+      .set({ status: "suspended" })
+      .where(eq(enterpriseMemberships.principalId, PRINCIPAL_O3B));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = await migrator.run({
+      owners: [USER_O3B],
+      runId: `o3-run-b-${run}`,
+    });
+    expect(second.quarantined).toBe(1);
+
+    const rows = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, heldId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].reason).toBe("no-active-membership");
+    expect(rows[0].runId).toBe(`o3-run-b-${run}`);
+    expect(rows[0].quarantinedAt.getTime()).toBeGreaterThan(firstAt.getTime());
   });
 });

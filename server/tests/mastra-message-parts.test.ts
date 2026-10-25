@@ -575,3 +575,104 @@ describe("mastra message parts", () => {
     ]);
   });
 });
+
+/*
+ * FIX-OCR3 (O3-H1): the basis stamp survives the store. The run's wrapper puts the pointer
+ * set on the assistant message's AG-UI metadata; the envelope below is what the fold
+ * persists and what a rebuilt history (refresh included) reads back. On BASE both halves
+ * dropped it — the fold kept {id, role, content, toolCalls} and the rebuild attached no
+ * metadata — so a refreshed transcript answered "no basis" for every answer.
+ */
+describe("answer basis survives the stored envelope (O3-H1)", () => {
+  const basisMessage = {
+    id: "engine-answer-1",
+    role: "assistant",
+    content: "The answer, with its memory behind it",
+    metadata: {
+      openbot: {
+        personalMemoryBasis: [
+          { id: "pref-1", kind: "general-preference" },
+          { id: "judg-2", kind: "derived-judgment" },
+        ],
+      },
+    },
+  } as Message;
+
+  test("an assistant message's basis rides the stored envelope", () => {
+    const { full } = fullMessageFromAgUi(basisMessage);
+    expect(full.answerBasis).toEqual([
+      { id: "pref-1", kind: "general-preference" },
+      { id: "judg-2", kind: "derived-judgment" },
+    ]);
+  });
+
+  test("a rebuilt assistant row re-attaches the same pointers as metadata", () => {
+    const { full } = fullMessageFromAgUi(basisMessage);
+    const row = {
+      id: "stored-row-1",
+      role: "assistant",
+      content: {
+        parts: [
+          { type: "text", text: "The answer, with its memory behind it" },
+        ],
+        metadata: { openbotParts: JSON.parse(JSON.stringify(full)) },
+      },
+    };
+    const { message } = agUiMessageFromStoredRow(row);
+    expect(message.id).toBe("engine-answer-1");
+    expect((message as { metadata?: unknown }).metadata).toEqual({
+      openbot: {
+        personalMemoryBasis: [
+          { id: "pref-1", kind: "general-preference" },
+          { id: "judg-2", kind: "derived-judgment" },
+        ],
+      },
+    });
+  });
+
+  test("foreign or absent metadata shapes persist without a basis", () => {
+    const foreign = fullMessageFromAgUi({
+      ...basisMessage,
+      metadata: { openbot: { someoneElses: "key" } },
+    } as Message);
+    expect(foreign.full.answerBasis).toBeUndefined();
+    const emptySet = fullMessageFromAgUi({
+      ...basisMessage,
+      metadata: { openbot: { personalMemoryBasis: [] } },
+    } as Message);
+    expect(emptySet.full.answerBasis).toBeUndefined();
+    const plain = fullMessageFromAgUi({
+      id: "engine-answer-2",
+      role: "assistant",
+      content: "no stamp on this one",
+    } as Message);
+    expect(plain.full.answerBasis).toBeUndefined();
+    const rebuilt = agUiMessageFromStoredRow({
+      id: "row-2",
+      role: "assistant",
+      content: {
+        parts: [{ type: "text", text: "no stamp on this one" }],
+        metadata: { openbotParts: JSON.parse(JSON.stringify(plain.full)) },
+      },
+    });
+    expect(
+      (rebuilt.message as { metadata?: unknown }).metadata,
+    ).toBeUndefined();
+  });
+
+  test("a stored basis the parser cannot prove is corrupt, never half-read", () => {
+    const { full } = fullMessageFromAgUi(basisMessage);
+    const stored = JSON.parse(JSON.stringify(full)) as Record<string, unknown>;
+    (stored.answerBasis as Record<string, unknown>[])[0] = {
+      id: "pref-1",
+      kind: "not-a-kind",
+    };
+    expect(() =>
+      agUiMessageFromStoredRow({
+        id: "row-3",
+        role: "assistant",
+        content: { parts: [], metadata: { openbotParts: stored } },
+      }),
+    ).toThrow("answerBasis");
+  });
+});

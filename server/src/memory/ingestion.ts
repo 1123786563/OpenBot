@@ -6,10 +6,12 @@ import { catalogueEntry } from "../plugins/catalogue";
 import { asksForArguments } from "../plugins/composio";
 import { type AccountAnswer, accountFor } from "../plugins/shared-accounts";
 import { PluginRefusedError, type PluginStore } from "../plugins/store";
+import type { MemoryCompany } from "./company";
 import { classifyMemorySensitivity } from "./sensitivity";
 import type { MemoryStore } from "./store";
 import {
   type ImportedMemory,
+  MemoryNotFoundError,
   MemoryRefusedError,
   type MemorySource,
   parseMemorySourceInput,
@@ -189,8 +191,50 @@ export function createMemoryIngestion(options: {
    * Bot qualifies.
    */
   canUseBot?: (ownerUserId: string, botId: string) => Promise<boolean>;
+  /**
+   * Hindsight 14 (#392): the person's pause-usage switch, read live at the two legacy recall
+   * entries below (`recall` and `contextFor`). Paused answers empty before any row is read —
+   * no error, no mention of the switch — because the model must not be able to tell a pause
+   * from an empty memory. Absent, the seams answer as they always did.
+   */
+  usagePaused?: (ownerUserId: string) => Promise<boolean>;
+  /**
+   * FIX-F1 (#376, FR-1): the company this deployment's memory work belongs to, resolved from
+   * durable server state for the (person, Bot) at hand (memory/company.ts). Present only in an
+   * enterprise deployment — absent, every seam below answers exactly as it always did, which is
+   * the single-user deployment's standing. A call that names no company of its own asks this
+   * resolver; an undefined answer (no provable company) fails closed: recall and the context
+   * injection answer nothing, a source refuses to bind, and an already-bound source nobody
+   * could attribute does not sync at all.
+   */
+  companyFor?: (input: {
+    ownerUserId: string;
+    agentId: string;
+  }) => Promise<MemoryCompany | undefined>;
 }) {
   const { store, plugins } = options;
+  /**
+   * The company a seam works for, as a tri-state the seams can read without re-deriving the
+   * rules: `company` is the pin to filter and stamp by; `isolated` is an enterprise deployment
+   * with NO provable company for this (person, Bot) — fail closed, answer nothing, write
+   * nothing visible; `unscoped` is a deployment without the enterprise layer, whose seams keep
+   * the global-owner behaviour they always had. The caller's own resolution (the request face's
+   * trusted scope, the tool face's) wins over this deployment's resolver.
+   */
+  const companyAnswer = async (
+    company: MemoryCompany | undefined,
+    ownerUserId: string,
+    agentId: string,
+  ): Promise<
+    | { company: MemoryCompany; isolated?: undefined; unscoped?: undefined }
+    | { isolated: true; company?: undefined; unscoped?: undefined }
+    | { unscoped: true; company?: undefined; isolated?: undefined }
+  > => {
+    if (company) return { company };
+    if (!options.companyFor) return { unscoped: true };
+    const resolved = await options.companyFor({ ownerUserId, agentId });
+    return resolved ? { company: resolved } : { isolated: true };
+  };
   const mayUse = async (ownerUserId: string, botId: string) =>
     options.canUseBot
       ? options.canUseBot(ownerUserId, botId)
@@ -264,10 +308,66 @@ export function createMemoryIngestion(options: {
     }
     return tool;
   }
-  async function sync(ownerUserId: string, id: string) {
-    await store.getSource(ownerUserId, id);
-    const source = await store.claimSync(ownerUserId, id);
-    if (!source)
+  async function sync(
+    ownerUserId: string,
+    id: string,
+    company?: MemoryCompany,
+  ) {
+    const source = await store.getSource(ownerUserId, id);
+    /*
+     * FIX-W13 (FR2-2): the source's OWN company — fixed at the binding below and persisted
+     * on the row — decides everything this sync stamps. The request's company, when one
+     * resolved, only authorizes: a source that is not provably this company's (another
+     * company's, or an isolated NULL nobody could attribute) is not this company's to read,
+     * and the answer is the same not-found the owner-keyed paths already give — never a
+     * restamp by the page's current selection, and never a connector call for it.
+     */
+    if (company && source.tenantId !== company.tenantId)
+      throw new MemoryNotFoundError();
+    /*
+     * The background loop (and a binding's first read) has no request of its own: it runs
+     * the source's own rule too, and the rule is REPROVED now, not just read back — the
+     * attribution fixed at binding can drift (the person left the company, a second
+     * membership turned it ambiguous), and a source nobody can re-prove is nobody's to read
+     * (FIX-OCR2 O2-M3): its credentials would keep serving a company its owner can no longer
+     * see, stop or delete it from, writing rows nobody could ever manage. In an enterprise
+     * deployment an unprovable source does not run at all — nothing is read, nothing
+     * stamped, the row untouched — rather than importing content no company could ever see.
+     * A deployment without the enterprise layer has no company to prove and keeps the
+     * behaviour it always had.
+     */
+    if (!company && options.companyFor) {
+      const attributed = await options.companyFor({
+        ownerUserId,
+        agentId: source.agentId,
+      });
+      if (attributed?.tenantId !== source.tenantId) {
+        const type =
+          source.tenantId === null
+            ? "memory-sync-isolated-skipped"
+            : "memory-sync-attribution-drift-skipped";
+        log.info(
+          {
+            type,
+            context: { sourceId: id },
+            timestamp: new Date().toISOString(),
+          },
+          type,
+        );
+        /*
+         * The row is untouched by design — but its due time is not. A source that never
+         * syncs in this deployment, and one that stayed due forever, would be re-read and
+         * re-logged by every sweep while crowding the bounded, unordered due set, starving the
+         * sources that would have run (FIX-OCR1 / #376; the drift half joins it). Defer it
+         * with the same backoff a failed sync takes: scheduling moves, no result is stamped,
+         * because nothing was read.
+         */
+        await store.deferSync(ownerUserId, id);
+        return { imported: 0, source };
+      }
+    }
+    const claimed = await store.claimSync(ownerUserId, id);
+    if (!claimed)
       throw new MemoryRefusedError(
         "This source is disabled or already syncing.",
       );
@@ -303,9 +403,13 @@ export function createMemoryIngestion(options: {
           },
           "memory-sync-sensitive-dropped",
         );
-      await store.completeSync(ownerUserId, id, kept);
+      // The stamp is the source's own persisted company (completeSync reads the row itself);
+      // in a deployment without the enterprise layer the row carries no company to stamp.
+      // FIX-OCR2 (O2-M2): the count the person sees is what landed, not what was read — a
+      // paused learner wrote 0 rows in there, and the badge must not say otherwise.
+      const imported = await store.completeSync(ownerUserId, id, kept);
       return {
-        imported: kept.length,
+        imported,
         source: await store.getSource(ownerUserId, id),
       };
     } catch (error) {
@@ -358,10 +462,30 @@ export function createMemoryIngestion(options: {
   }
   return {
     authorize,
-    async createSource(ownerUserId: string, input: unknown) {
+    async createSource(
+      ownerUserId: string,
+      input: unknown,
+      company?: MemoryCompany,
+    ) {
       const parsed = parseMemorySourceInput(input);
       await authorize({ ...parsed, ownerUserId });
-      const source = await store.createSource(ownerUserId, parsed);
+      /*
+       * FIX-W13 (FR2-2): the binding moment. The source's company is resolved once, from
+       * durable server state for the (person, Bot) — resolveMemoryCompany, the same rules
+       * migration 0212 backfilled — and PERSISTED on the row; every later sync stamps what
+       * the row says, never the page's current selection. A request company that cannot
+       * agree with the Bot's provable company (another company's Bot, or a personal Bot of
+       * a person whose company is ambiguous) refuses the binding outright: a cross-company
+       * source would be born invisible to the very scope that created it.
+       */
+      const attributed = options.companyFor
+        ? await options.companyFor({ ownerUserId, agentId: parsed.agentId })
+        : undefined;
+      if (company && attributed?.tenantId !== company.tenantId)
+        throw new MemoryRefusedError(
+          "Choose one of this company's Bots for this source.",
+        );
+      const source = await store.createSource(ownerUserId, parsed, attributed);
       return sync(ownerUserId, source.id);
     },
     sync,
@@ -382,21 +506,46 @@ export function createMemoryIngestion(options: {
         }
       }
     },
-    async recall(ownerUserId: string, botId: string, search = "") {
+    async recall(
+      ownerUserId: string,
+      botId: string,
+      search = "",
+      company?: MemoryCompany,
+    ) {
+      // Pause-usage (#392): the pause is the person's own choice, not an outage — the answer
+      // is empty, silently, and nothing is deleted.
+      if (options.usagePaused && (await options.usagePaused(ownerUserId)))
+        return [];
+      // FIX-F1 (FR-1): the company pin. Isolated (no provable company) answers empty the
+      // same way — no row is read, nothing of any company crosses.
+      const answer = await companyAnswer(company, ownerUserId, botId);
+      if (answer.isolated) return [];
       return store.retrieve(
         ownerUserId,
         await eligibleSources(ownerUserId, botId),
         search.slice(0, 200),
         await formedFor(botId),
+        answer.company,
       );
     },
-    async contextFor(ownerUserId: string, botId: string) {
+    async contextFor(
+      ownerUserId: string,
+      botId: string,
+      company?: MemoryCompany,
+    ) {
+      if (options.usagePaused && (await options.usagePaused(ownerUserId)))
+        return "";
+      // FIX-F1 (FR-1): same pin, same silent empty as a pause — the injected context
+      // carries no company's rows when the run's company cannot be proven.
+      const answer = await companyAnswer(company, ownerUserId, botId);
+      if (answer.isolated) return "";
       return quoteMemoryContext(
         await store.retrieve(
           ownerUserId,
           await eligibleSources(ownerUserId, botId),
           "",
           await formedFor(botId),
+          answer.company,
         ),
       );
     },

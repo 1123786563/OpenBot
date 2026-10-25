@@ -1485,6 +1485,34 @@
       "when": 1792857705000,
       "tag": "0211_openmuse_tenancy_scope_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1792857705001,
+      "tag": "0212_hindsight_migration_quarantine_reasons",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1792857705002,
+      "tag": "0213_hindsight_pause_controls_user_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1792857705003,
+      "tag": "0214_personal_memories_company_attribution",
+      "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1792857705004,
+      "tag": "0215_memory_sources_company_attribution",
+      "breakpoints": true
     }
   ]
 }

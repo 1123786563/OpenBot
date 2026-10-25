@@ -10,9 +10,11 @@
  *     deletion-confirmed AND verified absent — the verification is an independent probe
  *     (the document answers 404, and the memory units the document seeded answer empty), not
  *     the delete's own receipt. `verifyActiveDataCleanup` is the ops sweep that records
- *     those probes on the ledger rows; the status itself RE-PROBES when it composes the
+ *     those probes on the ledger rows; by default the status RE-PROBES when it composes the
  *     claim, because a stored `absent` is evidence of a past moment and an unmarked restore
- *     would leave it stale with nothing to contradict.
+ *     would leave it stale with nothing to contradict. The person's own status route asks for
+ *     the pure-read form instead (`reprobe: false`): it writes nothing and answers from the
+ *     recorded observations, with `observedAt` saying when they were made.
  *   - Finished task payloads (已结束任务载荷): the service is ASKED, now, whether any
  *     terminal operation (completed/failed/cancelled) older than the declared retention
  *     window still exists in the affected banks. None found = evidence; a declared number
@@ -22,7 +24,10 @@
  *     registered as they are taken) must show a purge for every copy taken before the
  *     deletion confirmation of content it could contain. An EMPTY registry is not "no
  *     backups" — the backup job runs outside OpenBot — it is no evidence, and the leg stays
- *     uncleared while anything stands deleted.
+ *     uncleared while anything stands deleted. Purge evidence is never a one-shot latch: a
+ *     reconcile pass that finds a purged copy's archive present again withdraws the record
+ *     (`withdrawControlledBackupPurged`), so the leg follows what the declared directory
+ *     shows now instead of a moment the deployment may have moved past.
  *
  * External model logs (外部模型日志) are carried as a SEPARATE, fixed note: they are not
  * controlled copies of this deployment, their retention is verified elsewhere, and nothing in
@@ -32,7 +37,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   hindsightBackupRestores,
@@ -83,6 +88,12 @@ export type ActiveDataCleanupEvidence = {
   unverified: number;
   /** Verified PRESENT: the document answered 200 after its deletion (a restore resurrects). */
   resurrected: number;
+  /**
+   * When the observation `cleared` stands on was recorded. On a re-probing call this is the
+   * moment of the probes; on a pure read it is the newest stored verification, so a surface
+   * cannot present an old verdict as a fresh look.
+   */
+  observedAt: Date | null;
   /** An open backup-restore gate: verification cannot be trusted until the replay lands. */
   blockedByOpenRestore: boolean;
 };
@@ -411,6 +422,14 @@ export function createCleanupEvidenceService(
     principalId?: string;
     /** The DECLARED operation retention window; used as the measurement, never as the proof. */
     operationRetentionDays: number | null;
+    /**
+     * Whether this call re-probes the confirmed documents and records what it finds. Default
+     * true — the claim must not stand on a stored `absent` alone, because an unmarked restore
+     * would leave it stale with nothing to contradict. `false` answers from the rows' LAST
+     * recorded observations and writes nothing: the pure read the person's status route
+     * serves (RA2-5), with the explicit verify action as the one that probes.
+     */
+    reprobe?: boolean;
   }): Promise<CleanupEvidenceStatus> {
     const rows = await database
       .select()
@@ -431,14 +450,32 @@ export function createCleanupEvidenceService(
     const outstandingRows = rows.filter(
       (row) => row.deletionState !== "confirmed",
     );
-    // The claim re-probes the confirmed rows itself: a stored `absent` is evidence of the
-    // moment it was recorded, and an unmarked restore would leave it stale with nothing to
+    // The claim usually re-probes the confirmed rows itself: a stored `absent` is evidence of
+    // the moment it was recorded, and an unmarked restore would leave it stale with nothing to
     // contradict. Each probe is recorded too, so the durable trail tracks what the status
-    // actually stood on. Unreachable probes count as unverified — never as cleared.
+    // actually stood on. A `reprobe: false` call (the person's status READ, RA2-5) writes
+    // nothing and answers from those recorded observations instead. Unreachable probes count
+    // as unverified — never as cleared.
     const freshOutcomes: DocumentVerifyOutcome[] = [];
-    for (const row of rows) {
-      if (row.deletionState === "confirmed") {
-        freshOutcomes.push(await probeAndRecord(row));
+    if (input.reprobe !== false) {
+      for (const row of rows) {
+        if (row.deletionState === "confirmed") {
+          freshOutcomes.push(await probeAndRecord(row));
+        }
+      }
+    } else {
+      for (const row of rows) {
+        if (row.deletionState !== "confirmed") continue;
+        freshOutcomes.push({
+          documentId: row.documentId,
+          state:
+            row.verifyState === "absent"
+              ? "absent"
+              : row.verifyState === "present"
+                ? "present"
+                : "unreachable",
+          error: null,
+        });
       }
     }
     const resurrected = freshOutcomes.filter(
@@ -447,6 +484,26 @@ export function createCleanupEvidenceService(
     const unverified = freshOutcomes.filter(
       (outcome) => outcome.state !== "absent",
     ).length;
+    // FIX-OCR3 (O3-M5): the observation a pure read may claim is the latest verification
+    // of a CLEARED row only — an outstanding row's verify time is not this claim's evidence,
+    // and letting it stand in would date "cleared" with a moment that proved nothing.
+    const lastVerifiedAt = rows.reduce<number | null>(
+      (latest, row) =>
+        row.deletionState === "confirmed" &&
+        row.verifiedAt &&
+        (latest === null || row.verifiedAt.getTime() > latest)
+          ? row.verifiedAt.getTime()
+          : latest,
+      null,
+    );
+    const observedAt =
+      input.reprobe === false
+        ? lastVerifiedAt === null
+          ? null
+          : new Date(lastVerifiedAt)
+        : rows.some((row) => row.deletionState === "confirmed")
+          ? now()
+          : null;
     const blockedByOpenRestore = openRestore !== undefined;
     const activeData: ActiveDataCleanupEvidence = {
       // A person with no revocations makes no claim: an empty ledger is nothing to have
@@ -461,6 +518,7 @@ export function createCleanupEvidenceService(
       outstanding: outstandingRows.length,
       unverified,
       resurrected,
+      observedAt,
       blockedByOpenRestore,
     };
 
@@ -498,6 +556,9 @@ export function createCleanupEvidenceService(
       .select()
       .from(hindsightControlledBackups)
       .orderBy(asc(hindsightControlledBackups.takenAt));
+    // `purgedAt` is the last reconcile pass's observation, not a tombstone: a pass that sees a
+    // purged archive come back clears the flag again (see withdrawControlledBackupPurged), so
+    // this read answers what the declared directory showed most recently.
     const unPurgedBeforeDeletion = anythingConfirmed
       ? backups.filter(
           (backup) =>
@@ -540,6 +601,7 @@ export function createCleanupEvidenceService(
     cleanupEvidenceStatus,
     recordControlledBackup,
     noteControlledBackupPurged,
+    withdrawControlledBackupPurged,
   };
 
   /** Register one controlled copy as taken; a repeated registration changes nothing. */
@@ -581,6 +643,30 @@ export function createCleanupEvidenceService(
       .where(eq(hindsightControlledBackups.backupId, input.backupId))
       .returning();
     return { noted: updated.length > 0 };
+  }
+
+  /**
+   * Withdraw a purge record whose copy was re-observed present in the declared directory.
+   * The registry's purge column is evidence of an observation, not a tombstone: an archive
+   * that is back (a partially mounted volume, a copy restored from cold storage) may hold the
+   * content the leg claims cleared, so the record returns to outstanding and the leg follows
+   * the current state. Both the instant and its evidence text go with it — a text describing
+   * a purge that no longer stands would be the next reader's false claim.
+   */
+  async function withdrawControlledBackupPurged(input: {
+    backupId: string;
+  }): Promise<{ withdrawn: boolean }> {
+    const updated = await database
+      .update(hindsightControlledBackups)
+      .set({ purgedAt: null, purgeEvidence: null, updatedAt: now() })
+      .where(
+        and(
+          eq(hindsightControlledBackups.backupId, input.backupId),
+          isNotNull(hindsightControlledBackups.purgedAt),
+        ),
+      )
+      .returning();
+    return { withdrawn: updated.length > 0 };
   }
 }
 
