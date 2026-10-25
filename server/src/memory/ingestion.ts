@@ -223,7 +223,9 @@ export function createMemoryIngestion(options: {
      * check keeps the behaviour it had" (upstream plugin-store/connections.ts). A source stays
      * configured while its credential is withdrawn; revocation's effect for memory lives one layer
      * down, where the sync's own `callTool` fails closed on the vault's revoked-credential refusal.
-     * Pinned by server/tests/revoked-connection-consumers.test.ts.
+     * Pinned behaviourally by server/tests/memory-defaults.integration.test.ts ("a revoked
+     * connection keeps upstream's row-existence semantics"); the adjudication is also recorded
+     * in server/tests/revoked-connection-consumers.test.ts, which pins the craft-side contrast.
      */
     if (
       access.credential === "person-oauth" &&
