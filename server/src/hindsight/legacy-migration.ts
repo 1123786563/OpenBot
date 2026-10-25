@@ -661,8 +661,18 @@ export function createLegacyMemoryMigrator(
     return { bucket: "migrated", migrated: true };
   }
 
-  /** Hold one old record back: the isolation list keeps the old id, owner and reason —
-   * content never, and the old row itself is left exactly as it was. */
+  /**
+   * Hold one old record back: the isolation list keeps the old id, owner and reason —
+   * content never, and the old row itself is left exactly as it was.
+   *
+   * FIX-OCR3 (O3-M3): a later re-scan refreshes, never duplicates — the column contract the
+   * schema comment states. The same old id can be re-judged after membership drift (a
+   * `no-principal` that became `ambiguous-company`, an attribution that narrowed), and the
+   * isolation list must answer WHY it is held NOW: `onConflictDoNothing` kept the first
+   * verdict forever, so the list and reconcile's byReason read stale long after the facts
+   * moved. The run moves with the verdict — the newest judgement owns the row, and reconcile
+   * counts live rows, never a snapshot.
+   */
   async function quarantineOne(
     old: typeof personalMemories.$inferSelect,
     reason: QuarantineReason,
@@ -677,7 +687,10 @@ export function createLegacyMemoryMigrator(
         quarantinedAt: now(),
         runId,
       })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: hindsightMigrationQuarantine.oldRecordId,
+        set: { reason, quarantinedAt: now(), runId },
+      });
   }
 
   /**

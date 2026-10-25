@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import { join } from "node:path";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   afterAll,
@@ -83,6 +85,12 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 const database: Database = createDatabase(testDatabaseUrl(), TEST_POOL);
 
 const run = randomUUID().slice(0, 8);
+/** FIX-OCR3 legs keep their own tenancy so the suite's balance reads stay untouched. */
+const TENANT_O3 = `tn_o3-${run}`;
+const PRINCIPAL_O3 = `prin_o3-${run}`;
+const USER_O3 = `user_o3-${run}`;
+const PRINCIPAL_O3B = `prin_o3b-${run}`;
+const USER_O3B = `user_o3b-${run}`;
 const TENANT_A = `tn_mig-a-${run}`;
 const TENANT_B = `tn_mig-b-${run}`;
 const WORKSPACE_A = `ws_mig-a-${run}`;
@@ -916,5 +924,144 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     const after = await migrator.reconcile({ owners: [USER_A] });
     expect(after.quarantined.total).toBe(0);
     expect(after.balanced).toBe(true);
+  });
+});
+
+/*
+ * FIX-OCR3 (O3-M2): the 0211 deploy-time quarantine INSERT must not hold a record that is
+ * already in the map. A deployment that ran a #394 pass before this upgrade can hold a
+ * mapped record whose owner later drifted to unprovable — the INSERT's WHERE sees tenant_id
+ * NULL and confirmed-alive, and without the NOT EXISTS guard it would write that record onto
+ * the isolation list beside its own map row: reconcile's balanced check counts it on both
+ * sides forever. The statement executed here is the migration file's own, read from disk, so
+ * the guard is pinned against the SQL that actually ships (the hindsight-config precedent for
+ * cross-layer pinning).
+ */
+describe("FIX-OCR3 — 0211's isolation INSERT excludes records the map already owns", () => {
+  test("a drifted-but-mapped record is not quarantined by the deploy-time INSERT", async () => {
+    // One provable owner, one record: the pass maps it.
+    await database.insert(users).values([
+      { id: USER_O3, email: `o3-${run}@example.invalid` },
+      { id: USER_O3B, email: `o3b-${run}@example.invalid` },
+    ]);
+    await database
+      .insert(enterpriseTenants)
+      .values({ id: TENANT_O3, name: `Mig O3 ${run}` })
+      .onConflictDoNothing();
+    await database
+      .insert(enterprisePrincipals)
+      .values({ id: PRINCIPAL_O3, userId: USER_O3, status: "active" })
+      .onConflictDoNothing();
+    await database
+      .insert(enterpriseMemberships)
+      .values({
+        tenantId: TENANT_O3,
+        principalId: PRINCIPAL_O3,
+        role: "member",
+      })
+      .onConflictDoNothing();
+    await seedOld(USER_O3, {
+      content: `o3-mapped-then-drifted-${run}`,
+    });
+    const first = await migrator.run({ owners: [USER_O3] });
+    expect(first.migrated).toBe(1);
+
+    // The drift: the owner's one membership is suspended (the map row's own FK keeps the
+    // membership row itself), so the attribution is no longer provable — exactly the shape
+    // the deploy-time INSERT re-judges.
+    await database
+      .update(enterpriseMemberships)
+      .set({ status: "suspended" })
+      .where(eq(enterpriseMemberships.principalId, PRINCIPAL_O3));
+    // A second record of the same drifted owner: the honest isolation case, the INSERT's
+    // positive control.
+    const isolatedId = await seedOld(USER_O3, {
+      content: `o3-unprovable-fact-${run}`,
+    });
+
+    // The migration file's own quarantine statement, executed as the migrator would.
+    const file = await readFile(
+      join(
+        import.meta.dir,
+        "../drizzle/0211_personal_memories_company_attribution.sql",
+      ),
+      "utf8",
+    );
+    const statement = file
+      .split("--> statement-breakpoint")
+      .map((part) => part.trim())
+      .find((part) =>
+        part.startsWith('INSERT INTO "hindsight_migration_quarantine"'),
+      );
+    expect(statement).toBeDefined();
+    await database.execute(sql.raw(statement!));
+
+    const held = await database
+      .select({ oldRecordId: hindsightMigrationQuarantine.oldRecordId })
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.ownerUserId, USER_O3));
+    // The drifted-but-mapped record is NOT on the list; its sibling is.
+    expect(held.map((row) => row.oldRecordId)).toEqual([isolatedId]);
+  });
+});
+
+/*
+ * FIX-OCR3 (O3-M3): a later re-scan refreshes, never duplicates — the quarantine table's own
+ * column contract. Membership drift changes WHY a record is held, and the isolation list
+ * answers why it is held NOW: on BASE the first verdict stayed frozen, so reconcile's
+ * byReason read and the operator's isolation list kept naming a reason the directory no
+ * longer supports.
+ */
+describe("FIX-OCR3 — a re-scan refreshes the isolation reason", () => {
+  test("membership collapse re-judges an ambiguous record to no-active-membership", async () => {
+    // Two memberships: ambiguous, the record is held for exactly that.
+    await database
+      .insert(enterprisePrincipals)
+      .values({ id: PRINCIPAL_O3B, userId: USER_O3B, status: "active" })
+      .onConflictDoNothing();
+    await database
+      .insert(enterpriseMemberships)
+      .values([
+        { tenantId: TENANT_A, principalId: PRINCIPAL_O3B, role: "member" },
+        { tenantId: TENANT_B, principalId: PRINCIPAL_O3B, role: "member" },
+      ])
+      .onConflictDoNothing();
+    const heldId = await seedOld(USER_O3B, {
+      content: `o3-reason-refresh-${run}`,
+    });
+    const first = await migrator.run({
+      owners: [USER_O3B],
+      runId: `o3-run-a-${run}`,
+    });
+    expect(first.quarantined).toBe(1);
+    const [row] = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, heldId));
+    expect(row.reason).toBe("ambiguous-company");
+    expect(row.runId).toBe(`o3-run-a-${run}`);
+    const firstAt = row.quarantinedAt;
+
+    // The collapse: both memberships are suspended — the honest reason is now
+    // no-active-membership, and a fresh pass re-judges the same old id.
+    await database
+      .update(enterpriseMemberships)
+      .set({ status: "suspended" })
+      .where(eq(enterpriseMemberships.principalId, PRINCIPAL_O3B));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = await migrator.run({
+      owners: [USER_O3B],
+      runId: `o3-run-b-${run}`,
+    });
+    expect(second.quarantined).toBe(1);
+
+    const rows = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, heldId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].reason).toBe("no-active-membership");
+    expect(rows[0].runId).toBe(`o3-run-b-${run}`);
+    expect(rows[0].quarantinedAt.getTime()).toBeGreaterThan(firstAt.getTime());
   });
 });
