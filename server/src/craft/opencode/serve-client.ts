@@ -1140,7 +1140,12 @@ export class OpencodeServeClient {
           this.config.opencodeServeConnectTimeoutSeconds * 1000,
         ),
       });
-      return response.status;
+      // The probe reads only the status — every status's body is unread, so
+      // release it before answering (#656 OCRfix): a probe that leaves its
+      // body behind pins a pool socket per poll.
+      const status = response.status;
+      await response.body?.cancel().catch(() => undefined);
+      return status;
     } catch (error) {
       // #618 (OCR#12): a missing scope is an admin-level permanent failure — rethrow
       // instead of folding into the "not listening" null, which the chip renders as
@@ -1174,7 +1179,12 @@ export class OpencodeServeClient {
         `/session/${encodeURIComponent(opencodeSessionId)}`,
         { idempotent: true, query },
       );
-      if (response.status === 200) return opencodeSessionId;
+      if (response.status === 200) {
+        // The session JSON is unread here — the id already validates. Release
+        // before the fast return (#656 OCRfix), same undici pin as every arm.
+        await response.body?.cancel().catch(() => undefined);
+        return opencodeSessionId;
+      }
       if (response.status !== 404) {
         throw new OpencodeHttpError(
           "session lookup",
@@ -1182,7 +1192,8 @@ export class OpencodeServeClient {
           await response.text().catch(() => ""),
         );
       }
-      // 404 → fall through and create.
+      // 404 → fall through and create; its body is as unread as the 200's.
+      await response.body?.cancel().catch(() => undefined);
     }
 
     // POST /session is NOT idempotent — opencode mints a new id per request;
@@ -1221,6 +1232,10 @@ export class OpencodeServeClient {
     } catch {
       return false;
     }
+    // Every settle status answers from the status alone — 200/404 own bodies
+    // nobody reads (204 is bodyless by wire law), so release before answering
+    // (#656 OCRfix).
+    await response.body?.cancel().catch(() => undefined);
     return [200, 204, 404].includes(response.status);
   }
 
@@ -1259,6 +1274,9 @@ export class OpencodeServeClient {
       }
       throw new OpencodeHttpError("instance dispose", response.status, body);
     }
+    // The 2xx success arm reads nothing either — release before returning
+    // (#656 OCRfix), the same pin the degrade and throw arms above release.
+    await response.body?.cancel().catch(() => undefined);
   }
 
   /**
@@ -1303,7 +1321,7 @@ export class OpencodeServeClient {
     options: { directory: string },
   ): Promise<void> {
     try {
-      await this.doFetch(
+      const response = await this.doFetch(
         `${this.base}/session/${encodeURIComponent(opencodeSessionId)}/abort?directory=${encodeURIComponent(options.directory)}`,
         {
           method: "POST",
@@ -1314,6 +1332,9 @@ export class OpencodeServeClient {
           ),
         },
       );
+      // Best-effort, not body-leaking: the answer (2xx or not) is unread, so
+      // release it before walking away (#656 OCRfix).
+      await response.body?.cancel().catch(() => undefined);
     } catch {
       // Best-effort by contract.
     }
@@ -1335,7 +1356,13 @@ export class OpencodeServeClient {
     } catch {
       return null;
     }
-    if (response.status !== 200) return null;
+    if (response.status !== 200) {
+      // Hydration is advisory, so any non-200 degrades to null — but its body
+      // is as unread as any other quick answer: release before returning
+      // (#656 OCRfix).
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
     const body = await response.json().catch(() => null);
     return body instanceof Object && body !== null ? (body as Json) : null;
   }
@@ -1394,6 +1421,9 @@ export class OpencodeServeClient {
           await response.text().catch(() => ""),
         );
       }
+      // The ack owns a body nobody reads — release before returning (#656
+      // OCRfix): every admitted turn would pin its socket until GC otherwise.
+      await response.body?.cancel().catch(() => undefined);
       return;
     }
 
@@ -1425,7 +1455,15 @@ export class OpencodeServeClient {
         (): AdmissionOutcome => ({ kind: "elapsed" }),
       ),
     ]);
-    if (firstAnswer.kind === "elapsed") return; // admitted; the turn now speaks through the bus
+    if (firstAnswer.kind === "elapsed") {
+      // The turn now speaks through the bus — but the POST's own answer will
+      // land someday on a promise nobody awaits, so attach the release now
+      // (#656 OCRfix): the settled response would pin its socket until GC.
+      pending
+        .then((response) => response.body?.cancel().catch(() => undefined))
+        .catch(() => undefined);
+      return; // admitted; the turn now speaks through the bus
+    }
     if (firstAnswer.kind === "failed") throw firstAnswer.error;
     if (!firstAnswer.response.ok) {
       throw new OpencodeHttpError(
@@ -1436,7 +1474,9 @@ export class OpencodeServeClient {
     }
     // A fast 200 means the turn finished within the window (a very short turn):
     // its events were buffered on the bus while we raced, and the consumer
-    // drains them next — no special-casing needed.
+    // drains them next — no special-casing needed. The HTTP answer itself is
+    // unread, so release it like every other quick settle (#656 OCRfix).
+    await firstAnswer.response.body?.cancel().catch(() => undefined);
   }
 
   /**
@@ -1993,7 +2033,12 @@ export class OpencodeServeClient {
           ),
         },
       );
-      if (response.ok) return { ok: true, permissionGone: false };
+      if (response.ok) {
+        // The 2xx answer owns a body nobody reads — release before answering
+        // (#656 OCRfix), the same undici pin every quick settle now pays.
+        await response.body?.cancel().catch(() => undefined);
+        return { ok: true, permissionGone: false };
+      }
       if (response.status === 404) {
         const body = await response.text().catch(() => "");
         return {
@@ -2001,6 +2046,8 @@ export class OpencodeServeClient {
           permissionGone: body.includes("PermissionNotFoundError"),
         };
       }
+      // Neither ok nor the 404-gone shape — still a body nobody reads.
+      await response.body?.cancel().catch(() => undefined);
       return { ok: false, permissionGone: false };
     } catch {
       return { ok: false, permissionGone: false };

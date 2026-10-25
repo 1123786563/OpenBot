@@ -248,19 +248,31 @@ export function createSandboxGateway(
             .filter((entry) => entry.length > 0);
         },
         async writeFile(path, content) {
-          await request(`/file?path=${encodeURIComponent(path)}`, {
-            method: "POST",
-            headers: { "content-type": "text/plain" },
-            body: content,
-          });
+          const response = await request(
+            `/file?path=${encodeURIComponent(path)}`,
+            {
+              method: "POST",
+              headers: { "content-type": "text/plain" },
+              body: content,
+            },
+          );
+          // The 201 answer owns a body ({path,size}) this write never reads —
+          // release it, the same undici pin the throw arms below already fix
+          // (#656 OCRfix): the normal path pins a socket per write otherwise.
+          await response.body?.cancel().catch(() => undefined);
         },
         async writeFileBytes(path, bytes) {
           // The raw-bytes twin of writeFile: the body rides as-is (no content-type text
           // coercion), so a binary attachment round-trips exactly.
-          await request(`/file?path=${encodeURIComponent(path)}`, {
-            method: "POST",
-            body: bytes as unknown as BodyInit,
-          });
+          const response = await request(
+            `/file?path=${encodeURIComponent(path)}`,
+            {
+              method: "POST",
+              body: bytes as unknown as BodyInit,
+            },
+          );
+          // Same unread 201 body as the text twin (#656 OCRfix).
+          await response.body?.cancel().catch(() => undefined);
         },
         async deletePath(path) {
           // 404 is the honest "absent" (and the gateway's answer for a directory too —
@@ -289,6 +301,9 @@ export function createSandboxGateway(
               `Sandbox DELETE /file answered ${response.status}.`,
             );
           }
+          // The success answer owns a body ({ok,path}) nobody reads — release
+          // before returning (#656 OCRfix), the same pin the arms above fix.
+          await response.body?.cancel().catch(() => undefined);
           return true;
         },
         async readFile(path) {
@@ -473,6 +488,10 @@ export function createSandboxGateway(
         await response.body?.cancel().catch(() => undefined);
         throw new SandboxHttpError(restorePath, response.status);
       }
+      // The success answer owns a body too ({"ok":true,...}) — release before
+      // returning, the same undici pin the 409/400 and throw arms above fix
+      // (#656 OCRfix): every successful restore would pin its socket until GC.
+      await response.body?.cancel().catch(() => undefined);
       return true;
     },
 
