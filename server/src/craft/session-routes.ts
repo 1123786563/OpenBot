@@ -23,6 +23,7 @@ import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
 import { generateSessionName } from "./naming";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { sandboxScopeRefusalOf } from "./scope-refusal";
 import { sessionRuntimeStale } from "./skills";
 import {
   deleteSnapshots,
@@ -136,9 +137,15 @@ export function createSessionRoutes(
    * exists) and CASed back to active before it answers a detail fetch. A missing snapshot is not
    * an error — the sandbox is warm here, so the workspace is still intact and the next turn's
    * reconcile rebuilds whatever is missing.
+   *
+   * #618 (FR-F1): the scope refusal is the one wake failure that is not best-effort — but only
+   * the restore entrance surfaces it (`surfaceScopeRefusal`), because the detail read must stay
+   * available in a scopeless deployment (the turn face carries the refusal when the person
+   * actually acts); silently degrading the WAKE itself into "no snapshot" was the mask T2 saw.
    */
   const wakeIfIdle = async (
     session: CraftSessionRow,
+    options: { surfaceScopeRefusal?: boolean } = {},
   ): Promise<CraftSessionRow> => {
     if (session.status !== "idle") return session;
     const botId = await deps.botIdFor(session.id);
@@ -146,7 +153,11 @@ export function createSessionRoutes(
       await restoreLatestSnapshot(snapshotCtx(), {
         botId,
         sessionId: session.id,
-      }).catch(() => false);
+      }).catch((error) => {
+        const refusal = sandboxScopeRefusalOf(error);
+        if (refusal && options.surfaceScopeRefusal) throw refusal;
+        return false;
+      });
     }
     const updated = await deps.store.updateSession(session.id, {
       status: "active",
@@ -191,6 +202,13 @@ export function createSessionRoutes(
         201,
       );
     } catch (error) {
+      // #618 (FR-F1): a scopeless deployment is an answerable, admin-fixable condition —
+      // the fixed sentence as 503, not the generic 500 T2 saw swallow it. Like the file
+      // face, no log line and no echoed value: the sentence IS the reason and names none.
+      const refusal = sandboxScopeRefusalOf(error);
+      if (refusal) {
+        return context.json({ error: refusal.message }, 503);
+      }
       logger.error(
         { error: error instanceof Error ? error.stack : String(error) },
         "[craft] session creation failed",
@@ -349,6 +367,12 @@ export function createSessionRoutes(
         201,
       );
     } catch (error) {
+      // #618 (FR-F1): same recognizer, same 503, before the generic 502 — the snapshot
+      // dial is an outbound request like any other and must not wear "Snapshot failed".
+      const refusal = sandboxScopeRefusalOf(error);
+      if (refusal) {
+        return context.json({ error: refusal.message }, 503);
+      }
       logger.error({ error }, "[craft] snapshot failed");
       return context.json({ error: "Snapshot failed" }, 502);
     }
@@ -364,12 +388,23 @@ export function createSessionRoutes(
     }
     // The real sleep/wake chain: an idle session replays its newest snapshot and returns
     // active; an already-active session is the warm fast path (nothing to restore).
-    const woken = await wakeIfIdle(session);
-    return context.json(
-      sessionResponse(woken, await skillsStaleFor(woken), {
-        session_loaded_in_sandbox: true,
-      }),
-    );
+    // #618 (FR-F1): the wake's scope refusal surfaces here — this IS the lifecycle
+    // entrance for waking, and "wake quietly degraded to a rebuild" is not an answer a
+    // person can act on. Everything else keeps the route's original no-catch shape.
+    try {
+      const woken = await wakeIfIdle(session, { surfaceScopeRefusal: true });
+      return context.json(
+        sessionResponse(woken, await skillsStaleFor(woken), {
+          session_loaded_in_sandbox: true,
+        }),
+      );
+    } catch (error) {
+      const refusal = sandboxScopeRefusalOf(error);
+      if (refusal) {
+        return context.json({ error: refusal.message }, 503);
+      }
+      throw error;
+    }
   });
 
   // ── POST /sessions/:sessionId/skills/reload — the explicit refresh ─────────
