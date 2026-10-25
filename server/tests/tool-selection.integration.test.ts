@@ -11,6 +11,7 @@ import {
   buildAgents,
   type RegisteredAgent,
   type RuntimeModel,
+  setRemoteRunBudgetGate,
 } from "../src/copilot";
 import type { Selection } from "../src/plugins/selection";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
@@ -135,6 +136,7 @@ type NativeMastraRequestBody = {
 };
 
 beforeAll(async () => {
+  setRemoteRunBudgetGate(async () => ({ finish: async () => undefined }));
   let llmUrl = "";
   recordLifecycleEvent("tool-selection-beforeAll:start");
   originalModelEnvironment = {
@@ -188,6 +190,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  setRemoteRunBudgetGate(undefined);
   let teardownFailure: unknown;
   try {
     recordLifecycleEvent("tool-selection-afterAll:stop-start");

@@ -21,7 +21,7 @@ import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import { PROVENANCE_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
 import { defaultModelFor } from "@openbot/shared/model-providers";
-import { currentTraceContext } from "@openbot/shared/trace";
+import { currentTraceContext, injectTraceHeaders } from "@openbot/shared/trace";
 import {
   BuiltInAgentWithSaneHistory,
   CloningRemoteAgent,
@@ -173,9 +173,12 @@ export function createCopilotSseRuntime(
  * composed.
  *
  * Package-declared built-in Bots run as CopilotKit `BuiltInAgent` instances. External Bots
- * (remote_ag_ui / remote_mastra) currently fail closed: until the durable Runner can verify a
- * third-party endpoint against a per-run budget, they resolve to UnavailableAgent
- * (REMOTE_RUN_BUDGET_UNVERIFIED) instead of being dialled over AG-UI.
+ * (remote_ag_ui / remote_mastra) dial through the per-run budget admission (F5E1-F2): a
+ * deployment whose wiring can verify a budget — the same credit machinery the built-in path
+ * admits through — dials them over AG-UI with the W3C chain propagated and the run's
+ * observation kept; a deployment that cannot keeps them fail-closed as UnavailableAgent
+ * (REMOTE_RUN_BUDGET_UNVERIFIED), because a dial nobody can budget is a dial nobody can
+ * account for.
  */
 
 /** Resolve the signed-in person for a request. Threads and memory are scoped to whoever this returns. */
@@ -1280,6 +1283,120 @@ export function setModelUsageGate(
     | undefined,
 ) {
   modelUsageGate = gate;
+}
+
+/**
+ * The per-run budget admission a remote Bot's dial passes through (F5E1-F2).
+ *
+ * A built-in Bot's spend is bounded at the model call: admission wraps `doStream`, so the
+ * gate refuses before the provider and the bounds are proven on the request. A remote Bot's
+ * model lives at somebody else's endpoint, so the one point this deployment controls is the
+ * DIAL — and the dial is what this gate owns. It is asked once per run, before the endpoint
+ * is contacted and before the standing-role middleware's narrowing model call, and it must
+ * answer with a hold over the run's worst case in the SAME credit machinery the built-in
+ * path uses: one writer, one ledger, no second book.
+ *
+ * Settlement is honest about what a remote endpoint can report: NOTHING. AG-UI carries no
+ * usage receipt, so `finish` records an outcome, never a token count, and the wiring behind
+ * it keeps the hold as an unknown-cost pending settlement rather than inventing a charge or
+ * a release. A gate that THROWS is a gate that refuses, fail-closed, and must leave no live
+ * hold behind — the same contract `modelUsageGate` keeps.
+ */
+export type RemoteRunAdmissionInput = Readonly<{
+  /** The stable per-run identity; the wiring derives its idempotency key from it. */
+  eventId: string;
+  occurredAt: Date;
+  botId: string;
+  runId: string;
+  threadId: string;
+  /** Who the run is for (09.1's consumption attribution), as the build knew them. */
+  attribution: { userId: string | null };
+}>;
+
+/** What the run's own event stream could honestly name at its end. */
+export type RemoteRunAdmissionOutcome =
+  | "succeeded"
+  | "failed"
+  | "interrupted"
+  /** The endpoint itself confirmed the cancellation — a named ending, not an absent one. */
+  | "canceled"
+  /** The consumer stopped watching or the stream was torn down: the run may still be executing. */
+  | "unknown";
+
+export type RemoteRunAdmission = Readonly<{
+  /**
+   * Settles the hold from the observed ending. Never a release: an endpoint's cost is
+   * unobservable.
+   */
+  finish: (input: {
+    outcome: RemoteRunAdmissionOutcome;
+  }) => Promise<void> | void;
+}>;
+
+let remoteRunBudgetGate:
+  | ((input: RemoteRunAdmissionInput) => Promise<RemoteRunAdmission>)
+  | undefined;
+
+export function setRemoteRunBudgetGate(
+  gate:
+    | ((input: RemoteRunAdmissionInput) => Promise<RemoteRunAdmission>)
+    | undefined,
+) {
+  remoteRunBudgetGate = gate;
+}
+
+/**
+ * What one remote run's event stream actually showed (F5E1-F2, T10's honesty rules).
+ *
+ * Structural on purpose, on the `BuiltinModelSpanFact` precedent: `copilot.ts` must not
+ * depend on the observability module a deployment may not have, so the fact carries the
+ * observed events in the run-lifecycle's own vocabulary and the wiring adapts them into the
+ * recorder. `http_first_frame` is recorded once, for the first event of any kind: on the
+ * remote path that first event is the evidence the endpoint spoke at all.
+ */
+export type RemoteRunEventFact =
+  | {
+      type:
+        | "http_first_frame"
+        | "run_started"
+        | "disconnected"
+        | "success"
+        | "error"
+        | "interrupted"
+        | "canceled";
+    }
+  | { type: "tool_proposed" | "tool_executed"; toolCallId: string };
+
+/** One mediated remote run, reported once when its observation window closed. */
+export type RemoteRunFact = {
+  botId: string;
+  threadId: string;
+  runId: string;
+  /**
+   * One middleware execution is one attempt: a retry arrives from the runtime as a new run,
+   * so the run id names the attempt and a replayed report is idempotent against the binding
+   * the recorder began for it.
+   */
+  attemptId: string;
+  /** The run's W3C chain, captured when the run started; null means nothing provable to join. */
+  traceId: string | null;
+  /** The trusted scope the threading minted for this run, when it minted one. */
+  scope: unknown;
+  events: readonly RemoteRunEventFact[];
+  endedAt: Date;
+};
+
+/**
+ * The remote run's observation exit, wired at assembly exactly like the model-span observer:
+ * absent means no basic record is kept — the dial still runs, the budget gate still governs,
+ * and nothing about the product path changes.
+ */
+let remoteRunObserver: ((fact: RemoteRunFact) => void) | undefined;
+
+export function setRemoteRunObserver(
+  observer: ((fact: RemoteRunFact) => void) | undefined,
+) {
+  remoteRunObserver = observer;
 }
 
 /**
@@ -3097,7 +3214,14 @@ export async function buildAgents(
           governedModel,
           attribution,
           gatewayModel,
-          observation && agent.type === "built_in"
+          // F5E1-F2: the threading serves the remote path too — the basic record a
+          // governed remote run keeps is scope-keyed exactly like a built-in run's
+          // spans, so both origins answer to the same authorization epoch. An
+          // `unavailable` Bot still gets none: it never runs.
+          observation &&
+            (agent.type === "built_in" ||
+              agent.type === "remote_ag_ui" ||
+              agent.type === "remote_mastra")
             ? {
                 actorId: observation.actorId,
                 botId: agent.id,
@@ -3367,17 +3491,17 @@ async function buildAgent(
   agent: RegisteredAgent,
   model: RuntimeModel,
   apiKey: string | null,
-  _stallGuard: StallGuard | undefined,
+  stallGuard: StallGuard | undefined,
   loadTools: LoadToolsForBot,
-  _signRun?: SignRun,
+  signRun?: SignRun,
   computerGuidance?: string,
   connectedVendors: readonly string[] = [],
   selection?: ToolSelection,
-  _agentFetch?: AgentFetch,
+  agentFetch?: AgentFetch,
   handoff?: HandoffForRun,
   /** Already resolved by {@link buildAgents}, so one roster costs one read. */
   standingInstructions: string | null = null,
-  _initiator?: AuditInitiator,
+  initiator?: AuditInitiator,
   /** How this run's attached files are inlined. See {@link buildAgents}. */
   loadAttachment?: LoadAttachment,
   /** How this run records that those files were sent. See {@link buildAgents}. */
@@ -3392,14 +3516,25 @@ async function buildAgent(
   /**
    * The run-scope threading for the builtin path (T-final M1), built per Bot
    * by {@link buildAgents} from the actor-level threading it was handed.
-   * Absent means facts stay scope-less — the recorders submit nothing.
+   * Absent means facts stay scope-less — the recorders submit nothing. The
+   * remote path asks the same threading (F5E1-F2): its basic record is
+   * scope-keyed like any other observed run.
    */
   observation?: BuiltinRunObservationThreading,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
   }
-  if (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") {
+  /*
+   * F5E1-F2: the remote dial exists only where the deployment can verify a budget. The
+   * check sits FIRST, before the tool read below, so a deployment that cannot verify
+   * budgets pays for nothing — no grants query, no roster fetch, no transport — and the
+   * refusal is the same one it has always been.
+   */
+  if (
+    (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") &&
+    remoteRunBudgetGate === undefined
+  ) {
     return new UnavailableAgent({
       id: agent.id,
       name: agent.name,
@@ -3454,6 +3589,56 @@ async function buildAgent(
     });
     return chosen.offered;
   };
+
+  /*
+   * The remote path (F5E1-F2), restored behind the budget admission.
+   *
+   * It narrows inside its own middleware rather than by being wrapped, for the reason the
+   * middleware's own docblock gives: `.use()` is applied by `runAgent`, not `run`, so an outer
+   * agent delegating to `remote.run(input)` would skip everything the wrapper adds.
+   *
+   * Coordination tools are resolved for this exact run by the same loader built-in Bots use.
+   * Their executable half stays in the signed deployment callback, where current grants, source
+   * ownership and handoff lease ownership are checked again.
+   *
+   * AND THE PERSON'S STANDING INSTRUCTIONS ARE NOT SENT HERE EITHER. `standingInstructions` is
+   * built-in only, deliberately: a remote Bot composes its own prompt at somebody else's endpoint,
+   * so this deployment would be sending one person's prose to a server it does not run, with no
+   * way to know whether it is read or how it ranks against the role. See
+   * `standingInstructionsGuidance`.
+   */
+  if (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") {
+    /*
+     * Re-read rather than captured at the top: the tool and skill reads above awaited, so a
+     * gate withdrawn mid-build must refuse here and not be carried into a Bot whose dial
+     * nothing would admit. In a running deployment the wiring is fixed at boot and the two
+     * reads answer the same seam.
+     */
+    const budgetGate = remoteRunBudgetGate;
+    if (budgetGate === undefined) {
+      return new UnavailableAgent({
+        id: agent.id,
+        name: agent.name,
+        reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+      });
+    }
+    return remoteAgentWithStandingRole(
+      agent,
+      await remoteTransport(agent, stallGuard, agentFetch, initiator),
+      granted,
+      signRun,
+      connectedVendors,
+      narrowing ? offeredFor : undefined,
+      loadAttachment,
+      markAttachmentsSent,
+      acquireLearnedSkills,
+      handoff,
+      initiator,
+      observation,
+      attribution,
+      budgetGate,
+    );
+  }
 
   /*
    * A built-in Bot takes its tools in its configuration, so narrowing means building it again once
@@ -3627,7 +3812,7 @@ type MastraClientForBridge = Parameters<
  * mapping from that protocol to AG-UI events belongs to the people who change both ends of it.
  * Imported dynamically so a deployment that registers no Mastra Bot never loads it.
  */
-async function _remoteTransport(
+async function remoteTransport(
   agent: RegisteredRemoteAgent,
   stallGuard: StallGuard | undefined,
   agentFetch?: AgentFetch,
@@ -3636,12 +3821,27 @@ async function _remoteTransport(
 ): Promise<AbstractAgent> {
   // The watch wraps whichever fetch is underneath, so a deployment gets both the stall timeout and
   // the redirect check rather than having to choose.
-  const dial = stallGuard
+  const watched = stallGuard
     ? stallGuard.watch(
         { id: agent.id, name: agent.name, ...(initiator ? { initiator } : {}) },
         agentFetch,
       )
     : agentFetch;
+  /*
+   * F5E1-F2: the run's W3C chain rides out with the dial.
+   *
+   * A cross-service chain only exists when the caller sends it: without `traceparent` on the
+   * request, the endpoint roots a trace of its own and the remote half of the run is a separate
+   * story upstream. The header is read from the ambient trace context AT FETCH TIME, so every
+   * request this run makes carries the same chain its container's span belongs to, and a
+   * deployment with no active span propagates nothing rather than inventing coordinates
+   * (`injectTraceHeaders` is a no-op with an empty context).
+   *
+   * Deliberately the OUTERMOST layer: the stall guard relays the response body, and the guard
+   * and the endpoint's own auth both want the request as the transport built it, with this
+   * deployment's chain added on top.
+   */
+  const dial = watched === undefined ? undefined : withTraceparent(watched);
 
   if (agent.type === "remote_ag_ui") {
     return new HttpAgent({
@@ -3697,6 +3897,27 @@ async function _remoteTransport(
 }
 
 /**
+ * A fetch that carries the active W3C trace to the endpoint it dials (F5E1-F2).
+ *
+ * The header is added to a COPY of whatever headers the transport built, so the endpoint's own
+ * credentials and content type are exactly what they were. The ambient context is read per
+ * request rather than captured once, because a fetch built at run start may serve a replayed
+ * run and the chain it should carry is the one active when it is actually called. An empty
+ * context injects nothing — no `traceparent` is ever synthesized.
+ */
+function withTraceparent(inner: AgentFetch): AgentFetch {
+  return async (url, requestInit) => {
+    const headers = injectTraceHeaders(
+      Object.fromEntries(new Headers(requestInit.headers).entries()),
+    );
+    return inner(url, {
+      ...requestInit,
+      headers: new Headers(headers),
+    });
+  };
+}
+
+/**
  * Which agent on a Mastra server a Bot means.
  *
  * Pure and separate from the dialling so it can be tested without a server, because the failure it
@@ -3729,7 +3950,234 @@ export function pickFromRoster(
   );
 }
 
-function _remoteAgentWithStandingRole(
+/**
+ * The governed remote run (F5E1-F2): the budget admission, the run's observation window and
+ * its basic record, in that order — before anything reaches the endpoint.
+ *
+ * THREE THINGS, ONE MIDDLEWARE, because they share exactly one moment: the start of the run,
+ * where this deployment still holds the request's authority, its trace, and the outcome of
+ * the admission. Split into separate passes they would each re-derive what the others know,
+ * and the derivation that matters — "was this run admitted?" — is the one a second pass could
+ * get wrong.
+ *
+ * THE DIAL IS BEHIND THE ADMISSION. `next.run(input)` is not subscribed until the gate has
+ * answered with a hold, so a refused run reaches no endpoint, sends no standing role, and
+ * spends nothing on narrowing. A gate that throws is a refusal and propagates as the run's
+ * error, the same way a built-in run surfaces a credit refusal.
+ *
+ * THE OBSERVATION IS THE EVENTS THE ENDPOINT ACTUALLY SENT. Nothing here reads a framework
+ * internal: the fact carries what passed through this middleware, and the recorder behind
+ * `remoteRunObserver` classifies it under T10's rules (a first frame or a vanished consumer
+ * is an observation; only a terminal event is an outcome). A teardown with no terminal event
+ * settles as `disconnected` and leaves the run's ending unknown, never invented.
+ *
+ * AND THE HOLD FOLLOWS THE SAME HONESTY. AG-UI carries no usage receipt, so every admitted
+ * run ends as an unknown cost — succeeded, failed, interrupted or torn down — and the wiring
+ * behind `finish` keeps the hold pending rather than charging a number nobody reported or
+ * releasing capacity for work that may have happened.
+ */
+function governedRemoteRun(
+  agent: RegisteredRemoteAgent,
+  /**
+   * The budget admission this Bot was built behind. A parameter rather than a module read,
+   * because it is the same fact `buildAgent` already required the dial on: reading the seam
+   * again at run time would let a withdrawn gate turn a Built Bot into a silently
+   * unbudgeted one, and would make two reads of one wiring disagree.
+   */
+  gate: (input: RemoteRunAdmissionInput) => Promise<RemoteRunAdmission>,
+  threading: BuiltinRunObservationThreading | undefined,
+  attribution: { userId: string | null } | undefined,
+  input: RunAgentInput,
+  next: AbstractAgent,
+): Observable<BaseEvent> {
+  const observer = remoteRunObserver;
+  return defer(() => {
+    const occurredAt = new Date();
+    const runId = input.runId;
+    // Captured here, not at settle: this is the run-start context the endpoint's dial and the
+    // basic record must agree on, and by teardown the ambient context is not guaranteed.
+    const traceId = currentTraceContext()?.traceId ?? null;
+    return from(
+      Promise.all([
+        gate({
+          /*
+           * Deterministic per run: a resubscribed observable replays this same hold instead of
+           * taking a second one, and the writer's idempotency answers the replay with the hold
+           * that already exists — the natural-key discipline the built-in path keeps per model
+           * call, held here per run.
+           */
+          eventId: `remote-run:${agent.id}:${runId}`,
+          occurredAt,
+          botId: agent.id,
+          runId,
+          threadId: input.threadId,
+          attribution: { userId: attribution?.userId ?? null },
+        }),
+        threading
+          ? resolveObservationScopeBounded(threading, agent.id)
+          : Promise.resolve(null),
+      ]),
+    ).pipe(
+      switchMap(([admission, scope]) => {
+        const events: RemoteRunEventFact[] = [];
+        let settled = false;
+        const settle = () => {
+          if (settled) return;
+          settled = true;
+          const terminal = [...events]
+            .reverse()
+            .find(
+              (event) =>
+                event.type === "success" ||
+                event.type === "error" ||
+                event.type === "interrupted" ||
+                event.type === "canceled",
+            );
+          if (terminal === undefined) {
+            // The window closed with nothing terminal: the consumer stopped watching, or the
+            // stream was torn down. An observation, never an outcome (T10) — the run may still
+            // be executing at the endpoint.
+            events.push({ type: "disconnected" });
+          }
+          const outcome: RemoteRunAdmissionOutcome =
+            terminal?.type === "success"
+              ? "succeeded"
+              : terminal?.type === "error"
+                ? "failed"
+                : terminal?.type === "interrupted"
+                  ? "interrupted"
+                  : terminal?.type === "canceled"
+                    ? "canceled"
+                    : "unknown";
+          /*
+           * Settlement is CONTAINED: the run's outcome is what the person receives, and a
+           * ledger that failed to record an unknown cost must not turn a delivered answer into
+           * an error. The hold stays reserved either way — it expires on its own clock, and
+           * reconciliation reads what this line logged.
+           */
+          try {
+            void Promise.resolve(admission.finish({ outcome })).catch(
+              (error) => {
+                log.error(
+                  {
+                    type: "remote-run-budget-settle-failed",
+                    botId: agent.id,
+                    runId,
+                    outcome,
+                    name: (error as Error | null | undefined)?.name,
+                  },
+                  "remote-run-budget-settle-failed",
+                );
+              },
+            );
+          } catch (error) {
+            log.error(
+              {
+                type: "remote-run-budget-settle-failed",
+                botId: agent.id,
+                runId,
+                outcome,
+                name: (error as Error | null | undefined)?.name,
+              },
+              "remote-run-budget-settle-failed",
+            );
+          }
+          if (observer !== undefined) {
+            try {
+              observer({
+                botId: agent.id,
+                threadId: input.threadId,
+                runId,
+                // One middleware execution is one attempt: a retry arrives as a new run.
+                attemptId: runId,
+                traceId,
+                scope,
+                events,
+                endedAt: new Date(),
+              });
+            } catch {
+              // Observation never takes the product path down.
+            }
+          }
+        };
+        const observe = (event: BaseEvent) => {
+          // The first event of any kind is the evidence the endpoint spoke at all.
+          if (events.length === 0) events.push({ type: "http_first_frame" });
+          switch (event.type) {
+            case "RUN_STARTED":
+              events.push({ type: "run_started" });
+              break;
+            case "RUN_FINISHED": {
+              /*
+               * The protocol's own three endings, each named rather than defaulted: a
+               * `cancelled` finish is a CONFIRMED cancellation, and classing it as success
+               * would record a run that stopped as one that answered.
+               */
+              const outcome = (event as { outcome?: { type?: unknown } })
+                .outcome?.type;
+              events.push({
+                type:
+                  outcome === "interrupt"
+                    ? "interrupted"
+                    : outcome === "cancelled"
+                      ? "canceled"
+                      : "success",
+              });
+              break;
+            }
+            case "RUN_ERROR":
+              events.push({ type: "error" });
+              break;
+            case "TOOL_CALL_START": {
+              const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
+              if (typeof toolCallId === "string" && toolCallId.trim() !== "") {
+                events.push({ type: "tool_proposed", toolCallId });
+              }
+              break;
+            }
+            case "TOOL_CALL_RESULT": {
+              // A receipt, which is the only evidence of an execution this path can observe.
+              const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
+              if (typeof toolCallId === "string" && toolCallId.trim() !== "") {
+                events.push({ type: "tool_executed", toolCallId });
+              }
+              break;
+            }
+            default:
+              break;
+          }
+        };
+        return next.run(input).pipe(
+          tap({
+            next: observe,
+            /*
+             * A stream that errored never delivered a terminal event this side could read: the
+             * transport failed, which the run's record must name as a failure rather than let
+             * `settle` file it as a consumer that merely stopped watching. The error itself
+             * propagates untouched — this is a side effect, not a handler.
+             */
+            error: () => {
+              if (
+                !events.some(
+                  (event) =>
+                    event.type === "success" ||
+                    event.type === "error" ||
+                    event.type === "interrupted" ||
+                    event.type === "canceled",
+                )
+              ) {
+                events.push({ type: "error" });
+              }
+            },
+          }),
+          finalize(settle),
+        );
+      }),
+    );
+  });
+}
+
+function remoteAgentWithStandingRole(
   agent: RegisteredRemoteAgent,
   /**
    * The dialled endpoint, already built. See {@link remoteTransport}.
@@ -3778,6 +4226,20 @@ function _remoteAgentWithStandingRole(
   acquireLearnedSkills?: AcquireLearnedSkills,
   coordination?: HandoffForRun,
   initiator?: AuditInitiator,
+  /**
+   * The run-scope threading (F5E1-F2), shared with the built-in path. Asked once per run,
+   * before the dial, so the basic record this run keeps is keyed to a scope this process
+   * issued for exactly this Bot. Absent means a scope-less run: the record is not kept, and
+   * the run itself is unaffected.
+   */
+  observation?: BuiltinRunObservationThreading,
+  /** Who this build's runs are for, so the budget admission names the person it bills. */
+  attribution?: { userId: string | null },
+  /**
+   * The per-run budget admission (F5E1-F2), required: `buildAgent` refuses to build this
+   * wrapper without one, so there is no unbudgeted remote Bot to construct.
+   */
+  budgetGate?: (input: RemoteRunAdmissionInput) => Promise<RemoteRunAdmission>,
 ) {
   /*
    * What this Bot holds, as a second standing message.
@@ -3969,6 +4431,28 @@ function _remoteAgentWithStandingRole(
    * begins, so nothing happens until somebody is listening and a retried run chooses again.
    */
   return new CloningRemoteAgent(remote, (target) => {
+    /*
+     * OUTERMOST, and that is the point of registering it first (registered order is applied
+     * outermost-first): the budget admission has to run before the middleware below, whose
+     * first act is the narrowing MODEL call — a billed request in its own right, but not the
+     * request a remote run's hold is for. A run that cannot be admitted must not reach the
+     * endpoint OR spend on choosing what to send it.
+     */
+    target.use((input, next) =>
+      budgetGate === undefined
+        ? // The belt to `buildAgent`'s brace, in its words: no Bot reaches this wrapper
+          // unbudgeted, and one constructed anyway (a future path, a wider signature)
+          // refuses rather than dials.
+          throwError(() => new Error("REMOTE_RUN_BUDGET_UNVERIFIED"))
+        : governedRemoteRun(
+            agent,
+            budgetGate,
+            observation,
+            attribution,
+            input,
+            next,
+          ),
+    );
     target.use((input, next) => {
       const stream = defer(() =>
         from(
@@ -4093,67 +4577,75 @@ export function builtinScopeResolutionTimeoutForTests(ms: number): void {
   builtinScopeResolutionTimeoutMs = ms;
 }
 
+/**
+ * The bounded scope resolution both run paths ask (F5E1-F2 lifted it out of the built-in
+ * wrapper unchanged, so the remote path cannot grow a second, different discipline).
+ *
+ * OCR R4-34: the resolver's contract — "null on any refusal, never throw" —
+ * was JSDoc only; a rejection or a synchronous throw used to error the whole
+ * observable and end the builtin run, an observation failure taking the
+ * product down. Contained here as structure (A10's discipline, which every
+ * other observer call in this file already keeps): a failed resolution is a
+ * scope-less run, logged with the actor and bot, never a failed one. The
+ * async wrapper is what turns a synchronous throw into the same handled
+ * rejection — the resolver's body never gets to unwind into the stream.
+ *
+ * OCR R5-42: rejection and null were contained, but a resolver whose promise
+ * NEVER settles still held the defer pending forever — switchMap never
+ * subscribed the inner and the run never started at all (the wiring's own
+ * resolver chains two unbounded DB round trips). A resolution that cannot
+ * answer in time is the same "failed resolution = a scope-less run" by
+ * structure: the race below bounds the wait, then proceeds bare, logged like
+ * every other resolution failure. The losing promise stays handled by the
+ * race (no unhandled rejection), and the timer is cleared the moment the
+ * race settles so a resolved scope never keeps the loop alive.
+ */
+async function resolveObservationScopeBounded(
+  threading: BuiltinRunObservationThreading,
+  botId: string,
+): Promise<unknown | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(threading.resolveScope(botId)),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => {
+          log.warn(
+            {
+              type: "builtin-run-scope-resolution-failed",
+              actorId: threading.actorId,
+              botId,
+              timedOut: true,
+            },
+            "builtin-run-scope-resolution-failed",
+          );
+          resolve(null);
+        }, builtinScopeResolutionTimeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    log.warn(
+      {
+        type: "builtin-run-scope-resolution-failed",
+        actorId: threading.actorId,
+        botId,
+        name: (error as Error | null | undefined)?.name,
+      },
+      "builtin-run-scope-resolution-failed",
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function builtinRunUnderObservationScope(
   threading: BuiltinRunObservationThreading | undefined,
   botId: string,
   inner: Observable<BaseEvent>,
 ): Observable<BaseEvent> {
   if (!threading) return inner;
-  /*
-   * OCR R4-34: the resolver's contract — "null on any refusal, never throw" —
-   * was JSDoc only; a rejection or a synchronous throw used to error the whole
-   * observable and end the builtin run, an observation failure taking the
-   * product down. Contained here as structure (A10's discipline, which every
-   * other observer call in this file already keeps): a failed resolution is a
-   * scope-less run, logged with the actor and bot, never a failed one. The
-   * async wrapper is what turns a synchronous throw into the same handled
-   * rejection — the resolver's body never gets to unwind into the stream.
-   *
-   * OCR R5-42: rejection and null were contained, but a resolver whose promise
-   * NEVER settles still held the defer pending forever — switchMap never
-   * subscribed the inner and the run never started at all (the wiring's own
-   * resolver chains two unbounded DB round trips). A resolution that cannot
-   * answer in time is the same "failed resolution = a scope-less run" by
-   * structure: the race below bounds the wait, then proceeds bare, logged like
-   * every other resolution failure. The losing promise stays handled by the
-   * race (no unhandled rejection), and the timer is cleared the moment the
-   * race settles so a resolved scope never keeps the loop alive.
-   */
-  return defer(async () => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        Promise.resolve(threading.resolveScope(botId)),
-        new Promise<null>((resolve) => {
-          timer = setTimeout(() => {
-            log.warn(
-              {
-                type: "builtin-run-scope-resolution-failed",
-                actorId: threading.actorId,
-                botId,
-                timedOut: true,
-              },
-              "builtin-run-scope-resolution-failed",
-            );
-            resolve(null);
-          }, builtinScopeResolutionTimeoutMs);
-        }),
-      ]);
-    } catch (error) {
-      log.warn(
-        {
-          type: "builtin-run-scope-resolution-failed",
-          actorId: threading.actorId,
-          botId,
-          name: (error as Error | null | undefined)?.name,
-        },
-        "builtin-run-scope-resolution-failed",
-      );
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
-  }).pipe(
+  return defer(() => resolveObservationScopeBounded(threading, botId)).pipe(
     switchMap((scope) =>
       scope === null || scope === undefined
         ? inner
