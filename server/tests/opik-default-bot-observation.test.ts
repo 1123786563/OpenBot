@@ -22,7 +22,7 @@
 // `canObserveAgent` answers exactly what `canManageAgent` answered for a user-owned Bot.
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { canObserveAgent } from "../src/agents/profile-policy";
 import type {
   AgentActor,
