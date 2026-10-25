@@ -13,6 +13,8 @@
 | 触发条件 | 读取规范 |
 | --- | --- |
 | 查询、创建、拆分或更新 Issue | [Issue tracker](.agents/rules/issue-tracker.md) |
+| 审计已关闭且带 ready-for-agent 的 Issue，或核对/添加 agent:ready-for-review 标签 | [已关闭 Issue 验证](.agents/rules/closed-issue-audit.md) |
+| 配置或运行已关闭 Issue 的每日审计与修复定时任务 | [每日审计与修复](.agents/rules/closed-issue-daily-run.md) |
 | 使用或修改领域术语、进入子模块 | [领域上下文](.agents/rules/domain.md) |
 | 设计、Spec、ADR、任务拆分或需求冲突 | [设计与事实源](.agents/rules/design.md) |
 | 新增 Module、调整 Interface、跨 Module 调用、迁移目录或更换 Adapter | [模块架构](.agents/rules/architecture.md) |
