@@ -48,6 +48,14 @@ export class MemoryRefusedError extends Error {
 export const LEARNING_PAUSED_REFUSAL =
   "Learning is paused for this person. They can turn it back on in their memory settings.";
 /**
+ * FIX-OCR3 (O3-H2): an enterprise deployment's answer to a Bot observation whose company
+ * cannot be proven right now. The proactive seam has no company of its own to carry, and the
+ * one honest alternative to this refusal was a tenant-less row invisible to every
+ * company-pinned face — unwritable is the fix, not unreadable.
+ */
+export const MEMORY_ATTRIBUTION_REFUSAL =
+  "This memory cannot be attributed to a company right now, so it was not kept.";
+/**
  * The person's own pause-switches patch (#392): booleans only. Strict, so a tenant, principal
  * or bank id supplied from the wire is refused as a bad request — identity never travels in a
  * body; the route derives it from the server-issued scope.
