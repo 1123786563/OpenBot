@@ -268,6 +268,8 @@
     "loadCandidates": "Could not load judgments",
     "loadEvidence": "Could not load the basis",
     "loadCleanup": "Could not load the cleanup status",
+    "loadAdopted": "Could not load your adopted judgments",
+    "loadMemories": "Could not load your memories",
     "confirm": "Could not confirm this judgment",
     "edit": "Could not save this judgment",
     "reject": "Could not reject this judgment",

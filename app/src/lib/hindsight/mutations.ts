@@ -13,6 +13,7 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
 import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import { memoryKeys } from "@/lib/memory";
 import {
   hindsightKeys,
   type MemoryRevocation,
@@ -35,6 +36,24 @@ const settle = (queryClient: QueryClient, scope: ScopedCache) => () =>
         queryKey: [...scope.prefix, ...hindsightKeys.all],
       })
     : undefined;
+
+/**
+ * The wider settlement a preference or source-bound basis write earns: those writes ride the
+ * memory family's own Hindsight face (`/api/memory/hindsight/*`), and the settings page shows
+ * the memory rows — whose sync badges this chain answers — beside the answer-basis listing.
+ * A row corrected or forgotten from an expansion must not survive as-is on that side of the
+ * page until a reload, so both subtrees settle under the scope the write rode.
+ */
+const settleBothFaces =
+  (queryClient: QueryClient, scope: ScopedCache) => () => {
+    if (scope.status !== "open") return;
+    queryClient.invalidateQueries({
+      queryKey: [...scope.prefix, ...hindsightKeys.all],
+    });
+    queryClient.invalidateQueries({
+      queryKey: [...scope.prefix, ...memoryKeys.all],
+    });
+  };
 
 /** Adopt a candidate (#389): the gates re-ran on the server; the answer is the adopted judgment. */
 export const confirmJudgmentMutationOptions = (
@@ -137,7 +156,7 @@ export const correctEvidenceMutationOptions = (
         fallbackKey: "hindsight.correct",
         ...scopePair(scope),
       }),
-    onSettled: settle(queryClient, scope),
+    onSettled: settleBothFaces(queryClient, scope),
   });
 
 /** Forget a preference basis (#387 AC2 / #390): same honest answer as a judgment forget. */
@@ -157,7 +176,7 @@ export const forgetPreferenceEvidenceMutationOptions = (
           },
         )
       ).json(),
-    onSettled: settle(queryClient, scope),
+    onSettled: settleBothFaces(queryClient, scope),
   });
 
 /** Forget a source-bound basis (#387 AC2 / #390), through the memory family's own face. */
@@ -177,7 +196,7 @@ export const forgetSourceBoundEvidenceMutationOptions = (
           },
         )
       ).json(),
-    onSettled: settle(queryClient, scope),
+    onSettled: settleBothFaces(queryClient, scope),
   });
 
 /**

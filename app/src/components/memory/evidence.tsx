@@ -78,21 +78,31 @@ export function EvidenceDialog({
   /** The instant the last forget took effect, so the screen says "stopped" and nothing wider. */
   const [stoppedAt, setStoppedAt] = useState<string | null>(null);
   const [corrected, setCorrected] = useState(false);
+  /**
+   * Why the last forget did not take effect, in the dialog itself: this is the one path that
+   * removes a memory, so a failure the screen swallowed would read as success — the entry
+   * stays, but the person believes it is forgotten. Shown until the next attempt starts.
+   */
+  const [forgetError, setForgetError] = useState<string | null>(null);
+  // The mutation a forget rides, by the entry's own kind: a preference basis forgets through
+  // the preferences seam, a source-bound one through the source-bound seam, a judgment through
+  // the judgment seam — and an entry that is not available offers nothing to forget.
+  const forgetRun = (entry: EvidenceInspection) => {
+    if (entry.state !== "available") return undefined;
+    if (entry.kind === "preference") return forgetPreference;
+    if (entry.kind === "source_bound") return forgetSourceBound;
+    return forgetJudgment;
+  };
   const forget = (entry: EvidenceInspection) => {
-    const run =
-      entry.state !== "available"
-        ? undefined
-        : entry.kind === "preference"
-          ? forgetPreference
-          : entry.kind === "source_bound"
-            ? forgetSourceBound
-            : forgetJudgment;
+    const run = forgetRun(entry);
     if (run === undefined) return;
+    setForgetError(null);
     run.mutate(entry.id, {
       onSuccess: (revocation) => {
         setStoppedAt(revocation.stoppedUsingAt);
         onForgotten?.(revocation.stoppedUsingAt);
       },
+      onError: (thrown: Error) => setForgetError(thrown.message),
     });
   };
   return (
@@ -138,6 +148,11 @@ export function EvidenceDialog({
                   {t("memory.evidence.stopped", {
                     when: formatDateTime(stoppedAt),
                   })}
+                </p>
+              ) : null}
+              {forgetError !== null ? (
+                <p role="alert" className="text-destructive text-sm">
+                  {forgetError}
                 </p>
               ) : null}
             </div>

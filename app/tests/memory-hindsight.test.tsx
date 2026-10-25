@@ -1,11 +1,18 @@
 import "./preload";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryAnswerBasisSection } from "@/components/memory/answer-basis";
 import { MemoryCleanupSection } from "@/components/memory/cleanup-progress";
+import { MemoryList } from "@/components/memory/memories";
 import { JudgmentReviewSections } from "@/components/memory/judgment-review";
 import { storeSelection } from "@/lib/enterprise/tenant/selection";
 import {
@@ -88,6 +95,10 @@ let memoryEntries: Record<string, unknown>[];
 let cleanupStatus: Record<string, unknown>;
 /** Every request the surface made, with the headers it rode — the selection pair's evidence. */
 let seen: { method: string; url: string; headers: Record<string, string> }[];
+/** The memory rows the /api/memory face holds, for the cross-face settle assertions. */
+let memoryRows: Record<string, unknown>[];
+/** A refusal the next basis forget gets, or none — the silent-failure regression (FIX-OCR1). */
+let refuseForgetNext = false;
 
 const notCleared = () => ({
   controlledCopiesCleared: false,
@@ -167,6 +178,8 @@ function serving() {
   candidates = [structuredClone(candidate)];
   adopted = [];
   memoryEntries = [];
+  memoryRows = [];
+  refuseForgetNext = false;
   cleanupStatus = notCleared();
   window.localStorage.clear();
   storeSelection("user-1", { tenantId: "t1", workspaceId: "w1" });
@@ -271,6 +284,10 @@ function serving() {
       return Response.json({ ok: true });
     }
     if (url === "/api/memory/hindsight/preferences/p1" && method === "DELETE") {
+      if (refuseForgetNext) {
+        refuseForgetNext = false;
+        return Response.json({ error: "Access denied." }, { status: 403 });
+      }
       evidence.p1 = { state: "unavailable", id: "p1" };
       return Response.json(revocation);
     }
@@ -281,6 +298,12 @@ function serving() {
     if (url === "/api/hindsight/cleanup") {
       return Response.json(cleanupStatus);
     }
+    // The memory face the settings page mounts beside the Hindsight surfaces: its rows and
+    // their badges' one batched status read.
+    if (url === "/api/memory") return Response.json({ memories: memoryRows });
+    if (url === "/api/memory/hindsight/status/batch")
+      return Response.json({ statuses: {} });
+    if (url.startsWith("/api/agents")) return Response.json({ agents: [] });
     if (url === "/api/hindsight/cleanup/verify") {
       cleanupStatus = cleared();
       return Response.json({ outcomes: [], backupRegistration: null });
@@ -565,6 +588,104 @@ test("forgetting a preference basis stops its use and the entry draws unavailabl
   await waitFor(() =>
     expect(view.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2),
   );
+});
+
+/*
+ * FIX-OCR1 (OCR-HIGH, #376): the basis forget is the one path that removes a memory, and its
+ * failure used to be swallowed whole — the button un-disabled, the entry stayed, nothing was
+ * said. The dialog now carries the refusal in an alert, and the stopped note it would have
+ * shown on success stays absent, so a silent failure can no longer read as success.
+ */
+test("a forget that fails says so in the dialog instead of staying silent", async () => {
+  serving();
+  refuseForgetNext = true;
+  const view = draw(<JudgmentReviewSections />);
+  fireEvent.click(await view.findByRole("button", { name: "Basis (2)" }));
+  fireEvent.click(await view.findByRole("button", { name: "Forget" }));
+  await waitFor(() =>
+    expect(writes).toContainEqual({
+      request: "DELETE /api/memory/hindsight/preferences/p1",
+      body: undefined,
+    }),
+  );
+  const alert = await view.findByRole("alert");
+  expect(alert.textContent).toBe("Access denied.");
+  expect(view.queryByText(/Stopped using this memory/)).toBeNull();
+});
+
+/*
+ * FIX-OCR1 (OCR-M2, #376): the preference/source-bound forgets and corrections ride the
+ * memory family's own Hindsight face, and the settings page mounts the memory rows beside the
+ * answer-basis listing. A forget from an expansion settles both subtrees, so the memory face
+ * re-reads what the same chain now answers instead of holding its cached rows until a reload.
+ */
+test("a forget from the expansion re-reads the memory rows mounted beside it", async () => {
+  serving();
+  memoryEntries = [
+    {
+      kind: "preference",
+      id: "p9",
+      content: "Prefers written summaries over calls.",
+      provenance: "You told a Bot",
+      markedGenericAt: "2026-10-20T10:00:00Z",
+      effectiveFrom: "2026-10-20T10:00:00Z",
+      effectiveUntil: null,
+    },
+  ];
+  evidence.p9 = {
+    state: "available",
+    kind: "preference",
+    id: "p9",
+    content: "Prefers written summaries over calls.",
+    provenance: "You told a Bot",
+    markedGenericAt: "2026-10-20T10:00:00Z",
+    effectiveFrom: "2026-10-20T10:00:00Z",
+    effectiveUntil: null,
+    supersededBy: null,
+    supersededTimeUnknown: false,
+    correctedAt: null,
+    actions: ["correct", "forget"],
+  };
+  memoryRows = [
+    {
+      id: "p9",
+      content: "Memory face row beside the listing.",
+      provenance: "You told a Bot",
+      sourceId: null,
+      enabled: true,
+      reviewState: "confirmed",
+      formedBy: "person",
+      formedByAgentId: null,
+      sourceApp: null,
+      sourceLink: null,
+      observedAt: null,
+      updatedAt: "2026-10-25T09:00:00Z",
+    },
+  ];
+  const view = draw(
+    <>
+      <MemoryList />
+      <MemoryAnswerBasisSection />
+    </>,
+  );
+  await view.findByText("Memory face row beside the listing.");
+  const readsOfMemory = () =>
+    seen.filter(
+      (read) => read.method === "GET" && read.url === "/api/memory",
+    ).length;
+  const before = readsOfMemory();
+  expect(before).toBeGreaterThan(0);
+  fireEvent.click(view.getByRole("button", { name: "Basis" }));
+  const dialog = await view.findByRole("dialog", { name: "Basis" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Forget" }));
+  await waitFor(() =>
+    expect(writes).toContainEqual({
+      request: "DELETE /api/memory/hindsight/preferences/p9",
+      body: undefined,
+    }),
+  );
+  // The memory face re-read: the forget's settlement crossed the family line.
+  await waitFor(() => expect(readsOfMemory()).toBeGreaterThan(before));
 });
 
 test("a partially evidenced cleanup states what is left, never the claim", async () => {
