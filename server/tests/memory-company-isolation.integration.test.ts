@@ -65,7 +65,8 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  *     company's list, not its to enable, disable or delete, and its sync is not-found with
  *     the connector never read; the same-company paths stamp the row's own company, the
  *     binding of another company's Bot is refused, and the background loop uses the same
- *     rule — attributed sources sync, isolated ones are skipped untouched.
+ *     rule — attributed sources sync, isolated ones are skipped (read nothing, stamped
+ *     nothing) but deferred out of the due set, so they cannot starve the sweep.
  *
  * The migration block at the bottom drives migration 0211's own SQL — read from the shipped
  * file — over a prepared pre-migration state and pins the backfill and isolation-list rules;
@@ -923,20 +924,45 @@ describe("FIX-W13 — a source's own company decides; the request only authorize
     expect(contentsA).not.toContain(`W13 company B record ${run}`);
   });
 
-  test("the background loop uses the source's own rule: attributed sources sync, isolated ones are skipped untouched", async () => {
+  test("the background loop uses the source's own rule: attributed sources sync, isolated ones are skipped and deferred out of the due set", async () => {
     vendorText = A_RECORD;
+    const [isoBefore] = await database
+      .select({ nextSyncAt: memorySources.nextSyncAt })
+      .from(memorySources)
+      .where(eq(memorySources.id, SRC_ISO));
     await ingestion.syncDue();
     expect(connectorReads).toContain(SRC_BG);
     const [stamped] = await importedOf(SRC_BG);
     expect(stamped.tenantId).toBe(TENANT_A);
-    // The isolated source sat in the same due set: not read, not claimed, not imported.
+    // The isolated source sat in the same due set: not read, not claimed, not imported,
+    // and no sync result stamped on it.
     expect(connectorReads).not.toContain(SRC_ISO);
     const [iso] = await database
-      .select({ syncStatus: memorySources.syncStatus })
+      .select({
+        syncStatus: memorySources.syncStatus,
+        nextSyncAt: memorySources.nextSyncAt,
+      })
       .from(memorySources)
       .where(eq(memorySources.id, SRC_ISO));
     expect(iso.syncStatus).toBe("idle");
     expect(await importedOf(SRC_ISO)).toEqual([]);
+    /*
+     * FIX-OCR1 (OCR-M4, #376) — the anti-starvation half: an isolated source never syncs in
+     * this deployment, and one that stayed due forever would be re-read and re-logged by
+     * every sweep while crowding the bounded, unordered due set away from the sources that
+     * would have run. The skip defers its next due time with the failed-sync backoff, so it
+     * leaves the due set until the deferral lapses — and the next sweep spends its window on
+     * sources that can run.
+     */
+    expect(iso.nextSyncAt.getTime()).toBeGreaterThan(Date.now());
+    expect(iso.nextSyncAt.getTime()).toBeGreaterThan(
+      isoBefore.nextSyncAt.getTime(),
+    );
+    expect(
+      (await store.dueSources()).map((row) => row.id),
+    ).not.toContain(SRC_ISO);
+    await ingestion.syncDue();
+    expect(connectorReads).not.toContain(SRC_ISO);
   });
 
   test("binding reaches only the current company's Bots; the row carries its company from birth", async () => {
