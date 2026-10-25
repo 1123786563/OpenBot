@@ -39,12 +39,10 @@ export function MemoryPauseControlsSection() {
   const controls =
     pauses.data?.state === "mounted" ? pauses.data.controls : undefined;
   const mounted = controls !== undefined;
-  const note =
-    pauses.data?.state === "unmounted"
-      ? t("memory.pause.unavailable")
-      : pauses.data?.state === "no-company"
-        ? t("memory.pause.noCompany")
-        : null;
+  let note: string | null = null;
+  if (pauses.data?.state === "unmounted") note = t("memory.pause.unavailable");
+  else if (pauses.data?.state === "no-company")
+    note = t("memory.pause.noCompany");
   return (
     <PageSection
       description={t("memory.pause.description")}

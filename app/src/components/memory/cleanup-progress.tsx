@@ -129,14 +129,22 @@ function ActiveDataRow({ status }: { status: CleanupStatus }) {
   const { activeData } = status;
   const inProgress =
     activeData.outstanding + activeData.unverified + activeData.resurrected;
-  const value =
-    activeData.documents === 0
-      ? t("memory.cleanup.nothingValue")
-      : activeData.blockedByOpenRestore
-        ? t("memory.cleanup.onHold")
-        : activeData.cleared
-          ? t("memory.cleanup.clearedValue")
-          : t("memory.cleanup.pendingValue", { n: inProgress });
+  let value: string;
+  if (activeData.documents === 0) value = t("memory.cleanup.nothingValue");
+  else if (activeData.blockedByOpenRestore)
+    value = t("memory.cleanup.onHold");
+  else if (activeData.cleared) value = t("memory.cleanup.clearedValue");
+  else value = t("memory.cleanup.pendingValue", { n: inProgress });
+  let note: string;
+  if (activeData.documents === 0) note = t("memory.cleanup.activeNothing");
+  else if (activeData.blockedByOpenRestore)
+    note = t("memory.cleanup.onHoldNote");
+  else if (activeData.cleared) note = t("memory.cleanup.activeCleared");
+  else
+    note = t("memory.cleanup.activePending", {
+      n: inProgress,
+      total: activeData.documents,
+    });
   return (
     <LegRow
       icon={<IconTrash />}
@@ -144,18 +152,7 @@ function ActiveDataRow({ status }: { status: CleanupStatus }) {
       value={value}
     >
       <ObservedNote at={activeData.observedAt} />
-      <ItemDescription className="line-clamp-none">
-        {activeData.documents === 0
-          ? t("memory.cleanup.activeNothing")
-          : activeData.blockedByOpenRestore
-            ? t("memory.cleanup.onHoldNote")
-            : activeData.cleared
-              ? t("memory.cleanup.activeCleared")
-              : t("memory.cleanup.activePending", {
-                  n: inProgress,
-                  total: activeData.documents,
-                })}
-      </ItemDescription>
+      <ItemDescription className="line-clamp-none">{note}</ItemDescription>
     </LegRow>
   );
 }
@@ -181,28 +178,27 @@ function ObservedNote({ at }: { at: string | null }) {
 function PayloadsRow({ status }: { status: CleanupStatus }) {
   const { t } = useTranslation("agents");
   const payloads = status.finishedTaskPayloads;
-  const value = !payloads.checked
-    ? t("memory.cleanup.uncheckedValue")
-    : payloads.cleared
-      ? t("memory.cleanup.clearedValue")
-      : t("memory.cleanup.pendingValue", { n: payloads.beyondWindow ?? 0 });
+  let value: string;
+  if (!payloads.checked) value = t("memory.cleanup.uncheckedValue");
+  else if (payloads.cleared) value = t("memory.cleanup.clearedValue");
+  else value = t("memory.cleanup.pendingValue", { n: payloads.beyondWindow ?? 0 });
+  let note: string;
+  if (!payloads.checked)
+    note = payloads.reason ?? t("memory.cleanup.payloadsUnchecked");
+  else if (payloads.cleared) note = t("memory.cleanup.payloadsCleared");
+  else if (payloads.retentionDays === null)
+    note = t("memory.cleanup.payloadsNoWindow");
+  else
+    note = t("memory.cleanup.payloadsPending", {
+      n: payloads.beyondWindow ?? 0,
+    });
   return (
     <LegRow
       icon={<IconClock />}
       title={t("memory.cleanup.payloads")}
       value={value}
     >
-      <ItemDescription className="line-clamp-none">
-        {!payloads.checked
-          ? (payloads.reason ?? t("memory.cleanup.payloadsUnchecked"))
-          : payloads.cleared
-            ? t("memory.cleanup.payloadsCleared")
-            : payloads.retentionDays === null
-              ? t("memory.cleanup.payloadsNoWindow")
-              : t("memory.cleanup.payloadsPending", {
-                  n: payloads.beyondWindow ?? 0,
-                })}
-      </ItemDescription>
+      <ItemDescription className="line-clamp-none">{note}</ItemDescription>
     </LegRow>
   );
 }
@@ -214,26 +210,26 @@ function PayloadsRow({ status }: { status: CleanupStatus }) {
 function BackupsRow({ status }: { status: CleanupStatus }) {
   const { t } = useTranslation("agents");
   const backups = status.controlledBackups;
-  const value = backups.cleared
-    ? t("memory.cleanup.clearedValue")
-    : backups.outstanding === null
-      ? t("memory.cleanup.noEvidenceValue")
-      : t("memory.cleanup.pendingValue", { n: backups.outstanding });
+  let value: string;
+  if (backups.cleared) value = t("memory.cleanup.clearedValue");
+  else if (backups.outstanding === null)
+    value = t("memory.cleanup.noEvidenceValue");
+  else value = t("memory.cleanup.pendingValue", { n: backups.outstanding });
+  let note: string;
+  if (backups.cleared) note = t("memory.cleanup.backupsCleared");
+  else if (backups.outstanding === null)
+    note = t("memory.cleanup.backupsNone");
+  else
+    note = t("memory.cleanup.backupsPending", {
+      n: backups.outstanding,
+    });
   return (
     <LegRow
       icon={<IconArchive />}
       title={t("memory.cleanup.backups")}
       value={value}
     >
-      <ItemDescription className="line-clamp-none">
-        {backups.cleared
-          ? t("memory.cleanup.backupsCleared")
-          : backups.outstanding === null
-            ? t("memory.cleanup.backupsNone")
-            : t("memory.cleanup.backupsPending", {
-                n: backups.outstanding,
-              })}
-      </ItemDescription>
+      <ItemDescription className="line-clamp-none">{note}</ItemDescription>
     </LegRow>
   );
 }

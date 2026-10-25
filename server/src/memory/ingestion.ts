@@ -340,6 +340,14 @@ export function createMemoryIngestion(options: {
         },
         "memory-sync-isolated-skipped",
       );
+      /*
+       * The row is untouched by design — but its due time is not. An isolated source never
+       * syncs in this deployment, and one that stayed due forever would be re-read and
+       * re-logged by every sweep while crowding the bounded, unordered due set, starving the
+       * sources that would have run (FIX-OCR1 / #376). Defer it with the same backoff a
+       * failed sync takes: scheduling moves, no result is stamped, because nothing was read.
+       */
+      await store.deferSync(ownerUserId, id);
       return { imported: 0, source };
     }
     const claimed = await store.claimSync(ownerUserId, id);

@@ -43,12 +43,6 @@ export const SENSITIVE_CONFIRMATION_REQUIRED =
   "Medical, financial and customer information is remembered only when you ask for it yourself and confirm a second time.";
 
 /**
- * The one input field that carries the second confirmation. A boolean, and only the literal
- * `true` counts: a truthy string or a 1 is a caller that did not mean it.
- */
-export const SENSITIVE_CONFIRMATION_FIELD = "confirmSensitive";
-
-/**
  * Refuse what the chain may not store. Called with the parsed content and the caller's
  * `confirmSensitive` value; throws `MemorySensitivityRefusedError` before anything is written.
  */

@@ -252,6 +252,56 @@ export function createHindsightMemoryRoutes(deps: HindsightMemoryRoutesDeps) {
     );
     return context.json({ status });
   });
+  /**
+   * The same statuses for a list of subjects, keyed `${subjectType}:${subjectId}`
+   * (FIX-OCR1 / #376): the settings page's memory rows each carry a sync badge, and a
+   * per-row read made the page one request per memory. One batched read answers the whole
+   * list from the same per-subject facts and the same self-scoping — another person's
+   * subject answers `unknown-subject` beside a missing one, never told apart. Bounded,
+   * because a badge list is a page, not an export.
+   */
+  routes.post("/status/batch", async (context) => {
+    const scope = await deps.resolveScope(context.req.raw);
+    const input = await body<{ subjects?: unknown }>(context.req.raw);
+    if (
+      !Array.isArray(input.subjects) ||
+      input.subjects.length === 0 ||
+      input.subjects.length > 200
+    )
+      throw new RequestRefused(
+        "A batched sync status read names 1..200 subjects.",
+      );
+    const subjects = input.subjects.map((subject) => {
+      const { subjectType, subjectId } = (subject ?? {}) as {
+        subjectType?: unknown;
+        subjectId?: unknown;
+      };
+      if (
+        typeof subjectType !== "string" ||
+        !SUBJECT_TYPES.includes(subjectType as SyncSubjectType) ||
+        typeof subjectId !== "string" ||
+        subjectId === ""
+      )
+        throw new RequestRefused(
+          "A sync status names a subject type of preference, source_bound or derived_judgment.",
+        );
+      return {
+        subjectType: subjectType as SyncSubjectType,
+        subjectId,
+      };
+    });
+    const statuses: Record<string, unknown> = {};
+    for (const subject of subjects) {
+      statuses[`${subject.subjectType}:${subject.subjectId}`] =
+        await deps.syncQueue.syncStatus(
+          scope.tenantId,
+          subject.subjectType,
+          subject.subjectId,
+          scope.principalId,
+        );
+    }
+    return context.json({ statuses });
+  });
   return routes;
 }
 

@@ -532,6 +532,28 @@ export function createMemoryStore(
         .returning();
       return row ?? null;
     },
+    /**
+     * Advance a source's due time without claiming a sync result (FIX-OCR1 / #376): an
+     * isolated source an enterprise sweep will never run still leaves the due set, so it
+     * cannot crowd every bounded, unordered sweep window and starve the sources behind it.
+     * Nothing else about the row moves — no status, no error, no last-sync stamp — because
+     * nothing was read.
+     */
+    async deferSync(ownerUserId: string, id: string, ms = 900_000) {
+      await database
+        .update(memorySources)
+        .set({
+          nextSyncAt: new Date(Date.now() + ms),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(memorySources.id, id),
+            eq(memorySources.ownerUserId, ownerUserId),
+            eq(memorySources.enabled, true),
+          ),
+        );
+    },
     async failSync(ownerUserId: string, id: string, error: string) {
       await database
         .update(memorySources)

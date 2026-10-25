@@ -6,8 +6,8 @@ import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "../hindsight/bank-scope";
 import type { HindsightPauseControlsService } from "../hindsight/pause-controls";
 import type { HindsightMemoryRoutes } from "../hindsight/routes";
-import type { MemoryCompany } from "./company";
 import { PluginRefusedError } from "../plugins/store";
+import type { MemoryCompany } from "./company";
 import type { MemoryIngestion } from "./ingestion";
 import type { MemoryStore } from "./store";
 import {
@@ -88,7 +88,14 @@ export function createMemoryRoutes(
     if (code === "AUTH_REQUIRED") return context.json({ error: code }, 401);
     if (code === "TENANT_REQUIRED" || code === "WORKSPACE_REQUIRED")
       return context.json({ error: code }, 400);
-    if (code === "TENANT_FORBIDDEN" || code === "UNVERIFIED_SCOPE")
+    if (
+      code === "TENANT_FORBIDDEN" ||
+      // The selected workspace's membership is gone or suspended — an authorization answer
+      // (the tenancy resolver's own code, the same family the hindsight face and the
+      // company-admin routes map to 403), never a server fault for the 503 branch to log.
+      code === "WORKSPACE_FORBIDDEN" ||
+      code === "UNVERIFIED_SCOPE"
+    )
       return context.json({ error: code }, 403);
     log.error(
       {

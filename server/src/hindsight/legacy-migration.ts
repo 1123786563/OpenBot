@@ -690,6 +690,17 @@ export function createLegacyMemoryMigrator(
         migratedAt: now(),
       })
       .onConflictDoNothing();
+    /*
+     * A row that migrates is no longer isolated, whatever an earlier pass decided: the
+     * quarantine rows 0211 pre-wrote and a #394 pass of its own both key the same old id, and
+     * one left behind here would keep the reconcile's balanced check reading "still a
+     * breakpoint to run" forever, and tell the isolation list a migrated record is still
+     * quarantined. The map row above is the durable fact; this deletes whatever the old
+     * attribution verdict left beside it.
+     */
+    await database
+      .delete(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, old.id));
   }
 }
 
