@@ -7826,6 +7826,7 @@ if (opikBootConfig.enabled) {
       runId: fact.runId,
       attemptId: fact.attemptId,
       traceId: fact.traceId,
+      dial: fact.dial,
       events: fact.events,
       endedAt: fact.endedAt,
     }),
