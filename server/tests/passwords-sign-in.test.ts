@@ -1231,6 +1231,54 @@ describe("a verification code the site asks for after the password", () => {
     expect(resolved).toEqual([]);
   });
 
+  /*
+   * A submission the computer carried through but this site never judged (#489 F20): fillSignInCode
+   * answers a code step that landed on another origin — a chained identity provider — with
+   * `submitted: true` and an `error` together, for the person to take over there. The code was
+   * handed to a page, and what that page did with it belongs to whoever finishes the sign-in
+   * there: as far as this request knows the code may have been accepted, so counting these as
+   * wrong codes would let the cap close with TOO_MANY — the site "shown too many incorrect
+   * verification codes" — a site that never judged a single one of them.
+   */
+  test("five takeover answers with a submitted code count nothing toward the cap", async () => {
+    const code: Partial<SignInCodeResult> = {
+      submitted: true,
+      error:
+        "The sign-in moved to https://id.example.org to ask for another verification code. Take over the browser to finish signing in there.",
+    };
+    const { service, request, store, resolved, computer } = await withCodeStep({
+      fill: { codeRequested: true },
+      code,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(
+        service.submitCode("owner", request.id, actor, { code: CODE }),
+      ).rejects.toThrow(
+        /moved to https:\/\/id\.example\.org to ask for another verification code/,
+      );
+    }
+    // Five submissions, zero verdicts from this site: none spent the cap, so the request stays
+    // open at the code step instead of closing on a sentence that would misname every one of
+    // them a wrong code.
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(0);
+    // A refusal this site really turned away still counts, spending the cap the takeovers never
+    // touched — the migration answers leave the person's full five of their own.
+    code.error = undefined;
+    code.codeFieldVisible = true;
+    await expect(
+      service.submitCode("owner", request.id, actor, { code: CODE }),
+    ).rejects.toThrow(/did not accept that code/);
+    expect((await store.request("owner", request.id))?.status).toBe(
+      "code_required",
+    );
+    expect(service.codeRefusalTally(request.id)).toBe(1);
+    expect(computer.codes).toHaveLength(6);
+    expect(resolved).toEqual([]);
+  });
+
   test("a site that goes back to its login page asks for the whole login again", async () => {
     const fill = { codeRequested: true };
     const code = { codeFieldVisible: false, passwordFieldVisible: true };

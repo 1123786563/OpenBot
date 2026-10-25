@@ -177,8 +177,14 @@ export function createSignInService(deps: SignInServiceDependencies) {
   /*
    * Refused verification codes per request, this process only. A durable tally would need a column
    * no row has and no migration may be added for it; a restart therefore counts a fresh five within
-   * the same request — the tally errs toward letting a person finish, never toward hiding a refusal
-   * already made, and every refusal is in the audit trail regardless.
+   * the same request — and so does a second process: this deployment is a cluster, not one server
+   * (handoff-runner's opening comment: any replica may take any hop), and one request's codes can
+   * land on any of them, so each replica counts its own five and the cap a request really meets is
+   * five per replica that serves it. The tally errs toward letting a person finish, never toward
+   * hiding a refusal already made, and every refusal is in the audit trail regardless — a cap
+   * derived from those rows (`computer.sign_in_failed`, step "code") would be the request's own
+   * count on every replica at once, but reading audit on the submit path is a later design, not a
+   * choice this tally silently makes.
    */
   const wrongCodes = new Map<string, number>();
 
@@ -467,13 +473,16 @@ export function createSignInService(deps: SignInServiceDependencies) {
       );
     }
     if (failure) {
-      // The cap is for guesses the site actually received, and only a submission the computer
-      // carried through is one: `submitted: true` is the site's page taking the code and turning
-      // it away. Every other failure counts nothing — an answer that completed no submission (the
-      // browser had left the origin, the page had lost its code field, the typing itself failed:
-      // the site never saw the code), and a delivery that provably never reached the computer
-      // (`failure` set by the catch above) is no submission either.
-      if (result?.submitted) {
+      // The cap is for guesses the site actually received and actually judged, and only a
+      // submission the computer carried through with no error of its own is one: the site's page
+      // taking the code and turning it away. Every other failure counts nothing — an answer that
+      // completed no submission (the browser had left the origin, the page had lost its code
+      // field, the typing itself failed: the site never saw the code), a submission that did
+      // happen but no site here judged (the takeover answers, `submitted` and `error` together:
+      // the sign-in moved to another origin, and the verdict on that code — refusal or
+      // acceptance — belongs to the person finishing it there), and a delivery that provably
+      // never reached the computer (`failure` set by the catch above) is no submission either.
+      if (result?.submitted && !result.error) {
         wrongCodes.set(id, (wrongCodes.get(id) ?? 0) + 1);
         if ((wrongCodes.get(id) ?? 0) >= MAX_CODE_ATTEMPTS) {
           /*
