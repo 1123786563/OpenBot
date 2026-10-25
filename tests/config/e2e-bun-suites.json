@@ -666,6 +666,7 @@
   {
    "name": "server/tests part 10",
    "files": [
+    "server/tests/copilot-observation-decoupling.test.ts",
     "server/tests/opik-judge-scoring.test.ts",
     "server/tests/opik-model-span.test.ts"
    ]
@@ -1382,6 +1383,7 @@
   "server/tests/conformance-evidence-extended.test.ts",
   "server/tests/conformance-evidence.test.ts",
   "server/tests/control-refusal-end-to-end.test.ts",
+  "server/tests/copilot-observation-decoupling.test.ts",
   "server/tests/craft-idle-reaper.test.ts",
   "server/tests/craft-mcp-relay.test.ts",
   "server/tests/craft-preview-origin-guard.test.ts",
