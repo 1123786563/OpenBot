@@ -1,14 +1,16 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { inflateRawSync } from "node:zlib";
 import type { MiddlewareHandler } from "hono";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AppVariables } from "../src/auth/guards";
 import { createArtifactRoutes } from "../src/craft/artifact-routes";
 import { loadCraftConfig } from "../src/craft/config";
+import { SandboxExecutionScopeUnavailableError } from "../src/craft/errors";
 import { createFileRoutes } from "../src/craft/file-routes";
 import type {
   AgentSandboxFileApi,
   SandboxGateway,
 } from "../src/craft/sandbox-gateway";
+import { createSandboxGateway } from "../src/craft/sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 import {
   collisionFreeName,
@@ -676,5 +678,101 @@ describe("artifact download reads the multi-segment path (wildcard regression)",
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("# the report");
     expect(response.headers.get("content-disposition")).toMatch(/report\.md/);
+  });
+});
+
+// ── #618 R1-F2: a scopeless deployment answers its own 503, not a mask ────────
+
+/**
+ * A REAL gateway on a deployment whose scope pair is missing (only the tenant half
+ * configured — a half scope is no scope), so every sandbox verb refuses with the
+ * displayable sentence before any request leaves. fetchImpl is a recorder: the
+ * fail-closed contract says it must stay untouched.
+ */
+const halfScopedConfig = loadCraftConfig({
+  OPENBOT_CRAFT_MAX_UPLOAD_FILE_SIZE_MB: "1",
+  OPENBOT_CRAFT_MAX_UPLOAD_FILES_PER_SESSION: "3",
+  OPENBOT_CRAFT_MAX_TOTAL_UPLOAD_SIZE_MB: "1",
+  OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID: "acme-co",
+});
+
+function unscopedGateway() {
+  const calls: { method: string; url: string }[] = [];
+  const fetchImpl = (async (input: unknown, init?: RequestInit) => {
+    const url = new URL(String(input));
+    calls.push({ method: init?.method ?? "GET", url: url.pathname });
+    return new Response(null, { status: 200 });
+  }) as typeof fetch;
+  return {
+    calls,
+    gateway: createSandboxGateway({
+      config: halfScopedConfig,
+      connectionFor: () => ({
+        botId: "craft",
+        baseUrl: "http://gw.test",
+        token: "sandbox-secret",
+      }),
+      fetchImpl,
+    }),
+  };
+}
+
+describe("#618 R1-F2: the fail-closed refusal answers as its own 503", () => {
+  const REFUSAL = new SandboxExecutionScopeUnavailableError().message;
+
+  test("upload surfaces the fixed sentence, not the generic 502, with zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await createFileRoutes(fakeRequireUser(), {
+      config: halfScopedConfig,
+      store: fakeStore(),
+      gateway,
+      botIdFor: async () => "craft",
+    }).request(`/sessions/${SESSION_ID}/upload`, {
+      method: "POST",
+      body: multipart("report.txt", new Uint8Array([1, 2, 3])),
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    // The configured half must never echo back into an answer people read.
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]); // fail-closed: no request ever left the process
+  });
+
+  test("download-directory surfaces the same 503 through the listing wrap, zero outbound calls", async () => {
+    // The walk folds the refused root listing into a WorkspaceListingError — the
+    // endpoint must not wear onyx's "Directory not found" 404 mask for it either.
+    const { gateway, calls } = unscopedGateway();
+    const response = await createFileRoutes(fakeRequireUser(), {
+      config: halfScopedConfig,
+      store: fakeStore(),
+      gateway,
+      botIdFor: async () => "craft",
+    }).request(`/sessions/${SESSION_ID}/download-directory/outputs`);
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
+
+  test("delete surfaces the same 503 (the r2-disclosed mask), zero outbound calls", async () => {
+    // r2 disclosed this catch as the same masking shape — the refusal used to wear
+    // the generic "could not be deleted" 502. deletePath meets the refusal directly
+    // (it is not listing-wrapped), so the recognizer's instanceof arm settles it.
+    const { gateway, calls } = unscopedGateway();
+    const response = await createFileRoutes(fakeRequireUser(), {
+      config: halfScopedConfig,
+      store: fakeStore(),
+      gateway,
+      botIdFor: async () => "craft",
+    }).request(`/sessions/${SESSION_ID}/files/attachments/report.txt`, {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
   });
 });

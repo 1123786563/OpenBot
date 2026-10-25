@@ -34,6 +34,10 @@ const config = loadCraftConfig({
   // /event as /events (family-filtered) and carries only the sync message verb.
   OPENBOT_CRAFT_OPENCODE_EVENT_PATH: "/events",
   OPENBOT_CRAFT_OPENCODE_PROMPT_ENDPOINT: "message",
+  // #618: the real gateway fails closed without the deployment's execution
+  // ownership (MT050), so the fixture configures the pair like a deployment.
+  OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID: "acme-co",
+  OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID: "team-1",
 });
 
 const OPENCODE_SESSION = "ses_live";

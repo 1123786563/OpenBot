@@ -13,7 +13,13 @@
  * it with the same token headers the codesandbox client uses.
  */
 
+import {
+  EXECUTION_TENANT_HEADER,
+  EXECUTION_WORKSPACE_HEADER,
+  type ExecutionScope,
+} from "../../../shared/execution-scope";
 import type { CraftConfig } from "./config";
+import { SandboxExecutionScopeUnavailableError } from "./errors";
 import { PodEventBus } from "./opencode/event-bus";
 import { OpencodeServeClient } from "./opencode/serve-client";
 import type { WorkspaceApi } from "./workspace";
@@ -51,6 +57,15 @@ export type SandboxGatewayOptions = {
   config: CraftConfig;
   /** Resolve the connection for a Bot's sandbox (baseUrl/token come from deployment wiring). */
   connectionFor: (botId: string) => SandboxConnection | null;
+  /**
+   * Resolve the execution ownership every outbound request states (MT050, #618): the
+   * deployment-level pair the boot file threads beside its connection lambda — same
+   * facts, every assembly point. Unset callers fall back to the config's parsed
+   * `sandboxExecutionScope`, which is the same single source. A null resolution makes
+   * every outbound group fail closed with the displayable error, never an
+   * unattributed request.
+   */
+  executionScopeFor?: () => ExecutionScope | null;
   fetchImpl?: typeof fetch;
 };
 
@@ -97,6 +112,27 @@ export function createSandboxGateway(
     return conn;
   };
 
+  /*
+   * #618: the execution ownership, resolved per use through the injected lambda (the
+   * boot file's one-const family) or the config's parsed pair — one source either way.
+   * Per use, not cached: the refusal must keep firing as long as the deployment has no
+   * scope, and a later fix (env reload aside, tests flipping the lambda) is honored.
+   */
+  const executionScope = (): ExecutionScope | null =>
+    options.executionScopeFor
+      ? options.executionScopeFor()
+      : config.sandboxExecutionScope;
+
+  /** The two ownership headers, or the fail-closed refusal — never unattributed headers. */
+  const scopeHeaders = (): Record<string, string> => {
+    const scope = executionScope();
+    if (scope === null) throw new SandboxExecutionScopeUnavailableError();
+    return {
+      [EXECUTION_TENANT_HEADER]: scope.tenantId,
+      [EXECUTION_WORKSPACE_HEADER]: scope.workspaceId,
+    };
+  };
+
   const busKey = (botId: string, directory: string) => `${botId}::${directory}`;
 
   return {
@@ -104,9 +140,15 @@ export function createSandboxGateway(
       const conn = connection(botId);
       if (!conn) return null;
       const base = gatewayUrl(conn).replace(/\/$/, "");
-      const headers: Record<string, string> = {};
-      if (conn.token) headers["x-sandbox-token"] = conn.token;
-      headers["x-openbot-bot-id"] = botId;
+      // Per request, not once: the ownership half is resolved (or refused) on every
+      // call, so a deployment without a scope can never have cached unattributed
+      // headers from a moment the scope did exist.
+      const headersFor = (): Record<string, string> => {
+        const headers: Record<string, string> = {};
+        if (conn.token) headers["x-sandbox-token"] = conn.token;
+        headers["x-openbot-bot-id"] = botId;
+        return { ...headers, ...scopeHeaders() };
+      };
       const doFetch = options.fetchImpl ?? fetch;
       const request = async (
         path: string,
@@ -115,7 +157,10 @@ export function createSandboxGateway(
       ) => {
         const response = await doFetch(`${base}${path}`, {
           ...init,
-          headers: { ...headers, ...(init.headers as Record<string, string>) },
+          headers: {
+            ...headersFor(),
+            ...(init.headers as Record<string, string>),
+          },
           signal: AbortSignal.timeout(timeoutMs),
         });
         if (!response.ok) {
@@ -160,7 +205,7 @@ export function createSandboxGateway(
             `${base}/file?path=${encodeURIComponent(path)}`,
             {
               method: "DELETE",
-              headers,
+              headers: headersFor(),
               signal: AbortSignal.timeout(
                 config.opencodeServeRequestTimeoutSeconds * 1000,
               ),
@@ -183,7 +228,7 @@ export function createSandboxGateway(
           const response = await doFetch(
             `${base}/file/content?path=${encodeURIComponent(path)}`,
             {
-              headers,
+              headers: headersFor(),
               signal: AbortSignal.timeout(
                 config.opencodeServeRequestTimeoutSeconds * 1000,
               ),
@@ -222,7 +267,7 @@ export function createSandboxGateway(
           const response = await doFetch(
             `${base}/file/content?path=${encodeURIComponent(path)}`,
             {
-              headers,
+              headers: headersFor(),
               signal: AbortSignal.timeout(
                 config.opencodeServeRequestTimeoutSeconds * 1000,
               ),
@@ -258,9 +303,12 @@ export function createSandboxGateway(
       // Bot workspace it lives in — the shared-workspace divergence the port documents.
       const conn = connection(botId);
       if (!conn) return null;
+      // #618: the ownership headers resolve (or refuse) before the dial — the archive
+      // read is an outbound request like any other, not a side door.
       const headers: Record<string, string> = {};
       if (conn.token) headers["x-sandbox-token"] = conn.token;
       headers["x-openbot-bot-id"] = botId;
+      Object.assign(headers, scopeHeaders());
       const doFetch = options.fetchImpl ?? fetch;
       const response = await doFetch(
         `${gatewayUrl(conn).replace(/\/$/, "")}/workspace/snapshot`,
@@ -278,10 +326,12 @@ export function createSandboxGateway(
     async restoreWorkspace(botId, archive) {
       const conn = connection(botId);
       if (!conn) return false;
+      // #618: same gate as the snapshot half — refuse before any bytes leave.
       const headers: Record<string, string> = {};
       if (conn.token) headers["x-sandbox-token"] = conn.token;
       headers["x-openbot-bot-id"] = botId;
       headers["content-type"] = "application/gzip";
+      Object.assign(headers, scopeHeaders());
       const doFetch = options.fetchImpl ?? fetch;
       const response = await doFetch(
         `${gatewayUrl(conn).replace(/\/$/, "")}/workspace/restore`,
@@ -312,6 +362,10 @@ export function createSandboxGateway(
         config,
         token: conn.token,
         botId: input.botId,
+        // #618: null (not undefined) when the deployment has no scope, so every verb
+        // of this client refuses at its own boundary. Resolved at construction like
+        // the connection above: the pair is deployment config, one value per process.
+        executionScope: executionScope(),
         eventBus: bus,
         fetchImpl: options.fetchImpl,
       });
@@ -336,6 +390,9 @@ export function createSandboxGateway(
         directory: input.directory,
         token: conn.token,
         botId: input.botId,
+        // #618: null (not undefined) when the deployment has no scope — subscribe()
+        // then refuses with the displayable error instead of dialing unattributed.
+        executionScope: executionScope(),
         fetchImpl: options.fetchImpl,
       });
       buses.set(key, bus);
@@ -350,6 +407,8 @@ export function createSandboxGateway(
         config,
         token: conn.token,
         botId,
+        // #618: the probe is an outbound request too — same ownership, same refusal.
+        executionScope: executionScope(),
         fetchImpl: options.fetchImpl,
       });
       return client.healthCheck();

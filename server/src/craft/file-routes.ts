@@ -21,6 +21,7 @@ import { appendAttachmentsSectionIfMissing } from "./agent-instructions";
 import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";
 import { packDirectoryZip, WorkspaceListingError } from "./directory-archive";
+import { SandboxExecutionScopeUnavailableError } from "./errors";
 import type { SandboxGateway } from "./sandbox-gateway";
 import type { CraftStore } from "./store";
 import {
@@ -57,6 +58,29 @@ function validateStrictPath(path: string): StrictPathVerdict {
   // Everything else must stay in the safe filename alphabet.
   if (!/^[a-zA-Z0-9_\-./]+$/.test(path.replace(/^\/+/, ""))) {
     return "characters";
+  }
+  return null;
+}
+
+/**
+ * #618 (R1-F2): a deployment without an execution scope is an answerable, admin-fixable
+ * condition — these endpoints surface the refusal's own fixed sentence as 503, not the
+ * generic 502 it used to wear. The archive path meets the refusal WRAPPED: the walk folds
+ * the refused root listing into a WorkspaceListingError whose message embeds the cause's
+ * sentence, so the wrap is recognized by that (constant, value-free) sentence. Neither
+ * shape carries an ownership value into the answer — the sentence names none.
+ */
+const SANDBOX_SCOPE_REFUSAL = new SandboxExecutionScopeUnavailableError();
+
+function sandboxScopeRefusalOf(
+  error: unknown,
+): SandboxExecutionScopeUnavailableError | null {
+  if (error instanceof SandboxExecutionScopeUnavailableError) return error;
+  if (
+    error instanceof WorkspaceListingError &&
+    error.message.includes(SANDBOX_SCOPE_REFUSAL.message)
+  ) {
+    return SANDBOX_SCOPE_REFUSAL;
   }
   return null;
 }
@@ -175,6 +199,13 @@ export function createFileRoutes(
     try {
       await fileApi.writeFileBytes(target, bytes);
     } catch (error) {
+      // #618: the scope refusal answers as its own 503 before the write failure's
+      // generic 502 can wear it (R1-F2); like the turn face, no log line — the fixed
+      // sentence IS the reason, and it names no value to leak.
+      const refusal = sandboxScopeRefusalOf(error);
+      if (refusal) {
+        return context.json({ error: refusal.message }, 503);
+      }
       const message = error instanceof Error ? error.message : String(error);
       if (/answered 413/.test(message)) {
         return context.json(
@@ -276,7 +307,15 @@ export function createFileRoutes(
     let deleted: boolean;
     try {
       deleted = await fileApi.deletePath(fullPath);
-    } catch {
+    } catch (error) {
+      // #618 (r3): r2 disclosed this face as the same masking shape R1-F2 fixed for
+      // upload and archive — the refusal must not wear this face's "could not be
+      // deleted" 502. Same no-log contract: the fixed sentence IS the reason, and
+      // it names no value to leak.
+      const refusal = sandboxScopeRefusalOf(error);
+      if (refusal) {
+        return context.json({ error: refusal.message }, 503);
+      }
       return context.json({ error: "The file could not be deleted." }, 502);
     }
     if (!deleted) {
@@ -336,6 +375,14 @@ export function createFileRoutes(
       try {
         archive = await packDirectoryZip(fileApi, fullPath);
       } catch (error) {
+        // #618: the refusal outranks BOTH masks below (R1-F2) — a fail-closed
+        // deployment must read as "finish the setup" (503), not as "could not be
+        // read" (502), and least of all as onyx's "does not exist" 404 the walk's
+        // listing wrap would otherwise answer for it.
+        const refusal = sandboxScopeRefusalOf(error);
+        if (refusal) {
+          return context.json({ error: refusal.message }, 503);
+        }
         // ONLY the root listing's failure is onyx's None → 404; anything past it
         // (the writer's ceiling, an unexpected walk failure) is a real error that
         // must not wear the "does not exist" mask — the 502 says the directory

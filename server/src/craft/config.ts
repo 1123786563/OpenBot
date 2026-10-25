@@ -10,6 +10,11 @@
  * subsystems are out of the first phase.
  */
 
+import {
+  type ExecutionScope,
+  isPlainScopeId,
+} from "../../../shared/execution-scope";
+
 /** What `loadCraftConfig` reads. `NodeJS.ProcessEnv` shaped so tests can build fakes. */
 export type CraftEnv = Record<string, string | undefined>;
 
@@ -191,6 +196,18 @@ export type CraftConfig = {
   readonly sandboxBotId: string;
 
   /**
+   * The execution ownership every sandbox request states (MT050, #618): agent-sandbox's
+   * proxy refuses a token-only request, and craft's sandbox is ONE deployment resource
+   * the proxy's first-bind registry pins to ONE (company, team) — so the pair is
+   * deployment wiring on the same trust plane as the gateway URL/token/Bot id above,
+   * never a per-request user value and never defaulted. Both ids must be plain scope
+   * ids (shared/execution-scope.ts — they become directory segments inside the
+   * sandbox); anything else, including one half missing, is null, and the gateway then
+   * fails every outbound call closed with a displayable error.
+   */
+  readonly sandboxExecutionScope: ExecutionScope | null;
+
+  /**
    * Operator override for the base url the per-user craft MCP set stamps into session
    * opencode.json entries (the relay's origin — the sandbox's opencode dials it and it
    * attaches credentials). Unset = derive from the deployment's public url at the
@@ -282,6 +299,28 @@ export type CraftConfig = {
   /** Shared fast-poll interval on the attach stream before the live stream opens. */
   readonly liveStreamRunnerRetrySeconds: number;
 };
+
+/**
+ * #618: parse the deployment-level execution ownership pair. Both ids must be plain
+ * scope ids — one missing or malformed leaves null, because a half scope is no scope
+ * (the proxy's refusal of a partial claim is the only answer that cannot later widen
+ * into a default) and a clamped guess would route one company's files somewhere else.
+ */
+function craftSandboxExecutionScope(env: CraftEnv): ExecutionScope | null {
+  const tenantId = stringEnv(
+    env,
+    "OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID",
+    "",
+  );
+  const workspaceId = stringEnv(
+    env,
+    "OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID",
+    "",
+  );
+  return isPlainScopeId(tenantId) && isPlainScopeId(workspaceId)
+    ? { tenantId, workspaceId }
+    : null;
+}
 
 export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
   // Roots first — derivations read the resolved roots, never the env twice.
@@ -479,6 +518,8 @@ export function loadCraftConfig(env: CraftEnv = process.env): CraftConfig {
     )
       ? stringEnv(env, "OPENBOT_CRAFT_SANDBOX_BOT_ID", "craft")
       : "craft",
+
+    sandboxExecutionScope: craftSandboxExecutionScope(env),
 
     mcpRelayBaseUrl: stringEnv(env, "OPENBOT_CRAFT_MCP_RELAY_BASE_URL", ""),
 
