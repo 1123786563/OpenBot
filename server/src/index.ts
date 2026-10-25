@@ -253,6 +253,7 @@ import {
   runtimeModelForEnvironment,
   setBuiltinExecutionEngine,
   setBuiltinModelSpanObserver,
+  setBuiltinRunLifecycleObserver,
   setBuiltinToolStepObserver,
   setMastraContinuations,
   setMastraConversationRuntime,
@@ -7944,24 +7945,45 @@ if (opikBootConfig.enabled) {
           }
         : {}),
     });
+    // R3-03: the tool-step window no longer settles the run. The fact face's
+    // window was the ONLY run-close signal the wiring had, so every terminal
+    // close landed as unknown — but a tool window is not a run's lifetime: a
+    // bare execute's stalled sweep, an approval teardown, any window close
+    // could end a binding whose run was still running or had a named outcome.
+    // The run's OWN lifecycle observation (the registration below) is the one
+    // settle authority now; this callback records steps and nothing else.
+  });
 
-    // FREV-02's finish half: the tool-step window is the one run-close signal
-    // the fact face observes (RUN_FINISHED/RUN_ERROR/stream end close every
-    // open cell with it). The gate maps the window onto the honest binding
-    // state — interrupted stays interrupted; a terminal close whose outcome
-    // the fact could not name is the explicitly-unlearned unknown — and
-    // settles once per chain. Runs whose facts never carried a window (no
-    // tool steps at all) settle the same way through the binding lease's
-    // expiry sweeper.
-    const observedScope = fact.scope as ObservationScope | undefined;
-    const observedChainId = observerChainId(fact.trace?.traceId);
-    if (observedScope !== undefined && observedChainId !== null) {
-      opikObserverBindings.settleObservedWindow(
-        observedScope,
-        { traceId: observedChainId },
-        fact.window,
+  /*
+   * The run's own lifecycle (R3-03): the common builtin event entry observes the
+   * run's real start and terminal — RUN_FINISHED success/cancel/interrupt and
+   * RUN_ERROR are distinguished at the event face and persisted here, instead of
+   * being dropped at the tool-step fact boundary. The start observation rides
+   * ahead of the first business fact, so the materialized trace and root carry
+   * the run's real start; the terminal settles the binding (first terminal
+   * wins, the lease sweeper still the net for a reporter that died mid-run) and
+   * closes the run root upstream with the observed window. A disconnected
+   * window — nothing terminal was seen — settles the honest unknown and nothing
+   * else ever does.
+   */
+  setBuiltinRunLifecycleObserver((fact) => {
+    const runScope = fact.scope as ObservationScope | undefined;
+    const runChainId = observerChainId(fact.trace?.traceId);
+    if (runScope === undefined || runChainId === null) return;
+    const chain = { traceId: runChainId };
+    if (fact.terminal === null) {
+      opikObserverBindings.noteObservedRunStart(
+        runScope,
+        chain,
+        fact.startedAt,
       );
+      return;
     }
+    opikObserverBindings.settleObservedRun(runScope, chain, {
+      startedAt: fact.startedAt,
+      ending: fact.terminal.ending,
+      endedAt: fact.terminal.endedAt,
+    });
   });
 }
 

@@ -108,7 +108,13 @@ export type RunsQueryServiceDeps = Readonly<{
      */
     Partial<
       Pick<RunBindingStore, "capabilitiesByOpikTraceIds" | "countUnreconciled">
-    >;
+    > &
+    /*
+     * R3-03's optional lifecycle join: the binding's terminal state per row, the
+     * list-side read of the authority detail already keeps. Optional for the same
+     * reason — a wiring without it keeps the upstream word, never a guess.
+     */
+    Partial<Pick<RunBindingStore, "statesByOpikTraceIds">>;
   config: () => OpikConfig;
   /** The verified port, or null when no verified contract backs this deployment. */
   port: OpikPort | null;
@@ -512,12 +518,31 @@ export function createRunsQueryService(
           rows.map((row) => row.id),
         )
       : null;
+    /*
+     * R3-03's lifecycle join: the binding's state for the rows this scope bound, applied
+     * under the SAME discipline detail keeps (R5-26) — the trace rows a real deployment
+     * answers carry no `status` word at all, so an unknown upstream is evidence absence,
+     * not an observation, and the local binding's state is the actual answer; a word the
+     * vocabulary table maps is an upstream observation and stands. An unbound trace keeps
+     * the upstream word, whatever it was.
+     */
+    const stateJoin = deps.bindings.statesByOpikTraceIds;
+    const localStates = stateJoin
+      ? await stateJoin(
+          scope,
+          rows.map((row) => row.id),
+        )
+      : null;
     const unreconciled = deps.bindings.countUnreconciled;
     const syncing = unreconciled ? (await unreconciled(scope)) > 0 : false;
     return {
-      runs: rows.map((row) =>
-        projectRow(row, joined?.get(row.id) ?? "unavailable"),
-      ),
+      runs: rows.map((row) => {
+        const summary = projectRow(row, joined?.get(row.id) ?? "unavailable");
+        const localState = localStates?.get(row.id);
+        return localState !== undefined && summary.state === "unknown"
+          ? { ...summary, state: localState }
+          : summary;
+      }),
       pagination: {
         total: current.total,
         window: current.rows.length,

@@ -11,9 +11,9 @@ import {
   createRunBindingStore,
   RunBindingError,
 } from "../src/ai-observability/bindings";
+import { ObservationScopeError } from "../src/ai-observability/contracts";
 import { runUpstreamIdentity } from "../src/ai-observability/opik-http";
 import type { OpikPort } from "../src/ai-observability/opik-port";
-import { ObservationScopeError } from "../src/ai-observability/contracts";
 import { reportBasicRun } from "../src/ai-observability/routes/basic-run";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { aiObservationBindings } from "../src/db/schema/ai-observability-bindings";
@@ -715,6 +715,159 @@ describe("the observer run-binding gate (FREV-02)", () => {
       `builtin:${interruptedChain}`,
     );
     expect(interruptedRow?.state).toBe("interrupted");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R3-03: the run's own observed ending settles the binding's real terminal
+// state, and the list's lifecycle join reads it back by upstream trace id.
+// ---------------------------------------------------------------------------
+
+describe("the observer gate settles the run's observed ending (R3-03)", () => {
+  const chain = () => randomUUID().replaceAll("-", "");
+
+  test("a named ending persists the binding's real state, first ending wins", async () => {
+    const gate = createObserverRunBindingGate(store);
+    const a = chain();
+    const b = chain();
+    const c = chain();
+    const d = chain();
+    await gate.ensure(scopeA, { traceId: a });
+    gate.settleObservedRun(
+      scopeA,
+      { traceId: a },
+      {
+        startedAt: new Date(),
+        ending: "success",
+        endedAt: new Date(),
+      },
+    );
+    // A straggler window close (or a second, divergent ending) changes nothing.
+    gate.settleObservedWindow(scopeA, { traceId: a }, "terminal");
+    gate.settleObservedRun(
+      scopeA,
+      { traceId: a },
+      {
+        startedAt: new Date(),
+        ending: "error",
+        endedAt: new Date(),
+      },
+    );
+    await gate.ensure(scopeA, { traceId: b });
+    gate.settleObservedRun(
+      scopeA,
+      { traceId: b },
+      {
+        startedAt: new Date(),
+        ending: "error",
+        endedAt: new Date(),
+      },
+    );
+    await gate.ensure(scopeA, { traceId: c });
+    gate.settleObservedRun(
+      scopeA,
+      { traceId: c },
+      {
+        startedAt: new Date(),
+        ending: "canceled",
+        endedAt: new Date(),
+      },
+    );
+    // A run nobody ever ensured still settles — the no-tool run's whole path.
+    gate.settleObservedRun(
+      scopeA,
+      { traceId: d },
+      {
+        startedAt: new Date(),
+        ending: "interrupted",
+        endedAt: new Date(),
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await store.latestAttempt(scopeA, `builtin:${a}`))?.state).toBe(
+      "completed",
+    );
+    expect((await store.latestAttempt(scopeA, `builtin:${b}`))?.state).toBe(
+      "failed",
+    );
+    expect((await store.latestAttempt(scopeA, `builtin:${c}`))?.state).toBe(
+      "canceled",
+    );
+    expect((await store.latestAttempt(scopeA, `builtin:${d}`))?.state).toBe(
+      "interrupted",
+    );
+  });
+
+  test("a disconnected window settles the honest unknown, only that", async () => {
+    const gate = createObserverRunBindingGate(store);
+    const a = chain();
+    await gate.ensure(scopeA, { traceId: a });
+    gate.settleObservedRun(
+      scopeA,
+      { traceId: a },
+      {
+        startedAt: new Date(),
+        ending: "disconnected",
+        endedAt: new Date(),
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await store.latestAttempt(scopeA, `builtin:${a}`))?.state).toBe(
+      "unknown",
+    );
+  });
+
+  test("statesByOpikTraceIds answers the settled states this scope bound", async () => {
+    const gate = createObserverRunBindingGate(store);
+    const a = chain();
+    const b = chain();
+    const foreign = chain();
+    // FREV-03: the scope key is the Bot's stable data identity, so "another
+    // scope" means another Bot (or epoch) — same-Bot admin scopes read the
+    // same rows by design.
+    const otherBot = resolveObservationScope({
+      actorId: "user-a",
+      botId: `agent-${randomUUID()}`,
+      ownership: "owner",
+      epoch: 1,
+    });
+    await gate.ensure(scopeA, { traceId: a });
+    await gate.ensure(scopeA, { traceId: b });
+    await gate.ensure(otherBot, { traceId: foreign });
+    gate.settleObservedRun(
+      scopeA,
+      { traceId: a },
+      {
+        startedAt: new Date(),
+        ending: "success",
+        endedAt: new Date(),
+      },
+    );
+    gate.settleObservedRun(
+      otherBot,
+      { traceId: foreign },
+      {
+        startedAt: new Date(),
+        ending: "success",
+        endedAt: new Date(),
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The upstream ids reconciliation would record, derived and recorded here.
+    const opikA = runUpstreamIdentity(a).opikTraceId;
+    const opikB = runUpstreamIdentity(b).opikTraceId;
+    await store.reconcile(scopeA, `builtin:${a}`, `builtin:${a}`, opikA);
+    await store.reconcile(scopeA, `builtin:${b}`, `builtin:${b}`, opikB);
+    const states = await store.statesByOpikTraceIds(scopeA, [opikA, opikB]);
+    expect(states.get(opikA)).toBe("completed");
+    // B never settled: the join answers its LIVE state too — running is the
+    // honest word for a run whose binding is still open.
+    expect(states.get(opikB)).toBe("running");
+    // The same trace id under another Bot's scope is simply not this scope's row.
+    const fromOther = await store.statesByOpikTraceIds(otherBot, [opikA]);
+    expect(fromOther.has(opikA)).toBe(false);
+    // Empty list answers empty, never a query.
+    expect(await store.statesByOpikTraceIds(scopeA, [])).toEqual(new Map());
   });
 });
 

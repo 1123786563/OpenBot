@@ -720,6 +720,58 @@ export function setBuiltinToolStepObserver(
 }
 
 /**
+ * The observed ending's own words — the event face never invents an outcome, it
+ * keeps the words the protocol itself used.
+ */
+export type BuiltinRunEnding =
+  | "success"
+  | "error"
+  | "canceled"
+  | "interrupted"
+  | "disconnected";
+
+/**
+ * The run's OWN lifecycle fact (R3-03): what the public event face observed about the run
+ * as a whole, as opposed to any step inside it. `startedAt` is the first event's arrival —
+ * the earliest moment this side can honestly call the run started, never the materialization
+ * clock. `terminal` is null on the start observation and names the observed ending on the
+ * close observation; `ending` keeps the event face's own words — a `RUN_FINISHED` outcome is
+ * `success`/`interrupted`/`canceled` by what the protocol actually carried (absent outcome
+ * IS success, the protocol's own rule), `RUN_ERROR` and a stream that errors are `error`,
+ * and a window that closed with NO terminal event is `disconnected` — the person stopped
+ * watching or the stream was torn down, which cannot be confirmed as any outcome and is
+ * never upgraded into one here. Structural, like the tool-step fact: `copilot.ts` must not
+ * depend on the observability module; `index.ts` adapts this fact into the binding gate.
+ */
+export type BuiltinRunLifecycleFact = {
+  /** The run's observation scope, captured at the first event inside the run's context. */
+  scope: unknown;
+  /** The run's W3C trace coordinates, captured beside `scope`; null when none was active. */
+  trace: { traceId: string; spanId: string } | null;
+  /** When the run's first event arrived. */
+  startedAt: Date;
+  /** The observed ending; null when this fact is only the start observation. */
+  terminal: {
+    ending: BuiltinRunEnding;
+    endedAt: Date;
+  } | null;
+};
+
+/**
+ * The run-lifecycle observer, wired beside the tool-step one: absent means no run
+ * observation happens at all, and the observable keeps its exact prior shape.
+ */
+let builtinRunLifecycleObserver:
+  | ((fact: BuiltinRunLifecycleFact) => void)
+  | undefined;
+
+export function setBuiltinRunLifecycleObserver(
+  observer: ((fact: BuiltinRunLifecycleFact) => void) | undefined,
+) {
+  builtinRunLifecycleObserver = observer;
+}
+
+/**
  * One open tool step, shared by the two observation points that can see it: the run's
  * event stream (the proposal, any receipt) and the execute wrapper (the real execution).
  * Correlated by toolCallId in a module-level registry because the wrapper is built once
@@ -1037,6 +1089,94 @@ function observeBuiltinToolSteps(
 }
 
 /**
+ * The run-lifecycle observation bypass (R3-03): the same public event semantics the
+ * tool-step tap reads, watched for the RUN as a whole. The first event captures the
+ * run's ambient scope and trace (the teardown paths run outside that context — the
+ * tool-step cell's own OCR R3-39 discipline, held here from the run's very start)
+ * and emits the start observation; RUN_FINISHED and RUN_ERROR name the ending the
+ * protocol itself named, and a window that closes with neither keeps `disconnected`,
+ * which no caller may read as an outcome. First observed ending wins — a straggler
+ * after the run already ended, including the teardown that follows a normal finish,
+ * changes nothing.
+ */
+function observeBuiltinRunLifecycle(
+  stream: Observable<BaseEvent>,
+): Observable<BaseEvent> {
+  const observer = builtinRunLifecycleObserver;
+  if (observer === undefined) return stream;
+  return new Observable<BaseEvent>((subscriber) => {
+    let startedAt: Date | null = null;
+    let scope: unknown;
+    let trace: { traceId: string; spanId: string } | null = null;
+    let ending: BuiltinRunEnding | null = null;
+    const observe = (): void => {
+      try {
+        observer({
+          scope,
+          trace,
+          startedAt: startedAt ?? new Date(),
+          terminal: ending === null ? null : { ending, endedAt: new Date() },
+        });
+      } catch {
+        // Observation never takes the product path down.
+      }
+    };
+    const settle = (observed: BuiltinRunEnding): void => {
+      if (ending !== null) return; // first observed ending wins
+      ending = observed;
+      observe();
+    };
+    return stream
+      .pipe(
+        tap({
+          next: (event) => {
+            if (startedAt === null) {
+              // The run's own context, captured at its first event — before any
+              // model or tool observation could have opened a cell under it.
+              startedAt = new Date();
+              scope = currentRunObservationScope();
+              trace = currentTraceContext() ?? null;
+              observe();
+            }
+            switch (event.type) {
+              case "RUN_FINISHED": {
+                const outcome = (event as { outcome?: { type?: unknown } })
+                  .outcome?.type;
+                settle(
+                  outcome === "interrupt"
+                    ? "interrupted"
+                    : outcome === "cancelled"
+                      ? "canceled"
+                      : "success",
+                );
+                break;
+              }
+              case "RUN_ERROR":
+                settle("error");
+                break;
+              default:
+                break;
+            }
+          },
+          /*
+           * A stream that errored never delivered a terminal event this side could
+           * read: the transport or the run itself failed, and the record names it
+           * as a failure rather than filing it under an unconfirmed ending — the
+           * remote middleware's own precedent (T10's error branch).
+           */
+          error: () => settle("error"),
+          // A window that closed with nothing terminal cannot confirm any ending.
+          complete: () => settle("disconnected"),
+        }),
+        // The teardown WITHOUT complete or error — the consumer stopped watching —
+        // is the same unconfirmable window; `finalize` is the one hook that sees it.
+        finalize(() => settle("disconnected")),
+      )
+      .subscribe(subscriber);
+  });
+}
+
+/**
  * The tool-step output capture ceiling (OCR R2-53): one bound, applied to BOTH
  * sides of the execution settlement — the success result and the failure
  * message — so a large answer cannot be pinned whole between capture and the
@@ -1143,6 +1283,11 @@ export const toolStepObservationForTests = {
   /** OCR R5-43 seam: runs the bare registry's stalled-cell sweep at a chosen time. */
   sweepStalledBareCellsForTests: (now: Date) =>
     sweepStalledCells(bareExecuteCells, now),
+};
+
+/** Test-only surface for the R3-03 run-lifecycle bypass, same pattern as above. */
+export const runLifecycleObservationForTests = {
+  observeStream: observeBuiltinRunLifecycle,
 };
 
 /**
@@ -3822,7 +3967,10 @@ async function buildAgent(
         gatewayModel,
       ),
       {
-        observe: (run) => observeModelConnection(observeBuiltinToolSteps(run)),
+        observe: (run) =>
+          observeModelConnection(
+            observeBuiltinRunLifecycle(observeBuiltinToolSteps(run)),
+          ),
         ...(loadAttachment
           ? {
               inline: (messages: AgentRunInput["messages"], threadId: string) =>

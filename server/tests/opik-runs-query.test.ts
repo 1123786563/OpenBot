@@ -20,9 +20,10 @@
 //      Bot's rows stay out of reach.
 //   5. an unavailable upstream answers with an explainable error code, never a
 //      disguised empty list.
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
+
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { AgentProfile } from "../src/agents/profile-types";
 import type { RunBinding } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
@@ -247,6 +248,11 @@ function appFor(
     capabilities?: ReadonlyMap<string, string>;
     /** Issue #18: unreconciled bindings this scope holds, for the list-level syncing flag. */
     unreconciled?: number;
+    /**
+     * R3-03: the row-level lifecycle join — the binding's state per upstream
+     * trace id, exactly the read the production store now provides.
+     */
+    lifecycleStates?: ReadonlyMap<string, RunBinding["state"]>;
   } = {},
 ) {
   const port = setup.port ?? fakePort();
@@ -272,6 +278,17 @@ function appFor(
             ),
           ),
         countUnreconciled: async () => setup.unreconciled ?? 0,
+        ...(setup.lifecycleStates !== undefined
+          ? {
+              statesByOpikTraceIds: async (
+                _scope: ObservationScope,
+                ids: readonly string[],
+              ) =>
+                new Map(
+                  [...setup.lifecycleStates].filter(([id]) => ids.includes(id)),
+                ),
+            }
+          : {}),
       },
       config: setup.config ?? (() => enabledConfig),
       port: port.port,
@@ -850,6 +867,57 @@ describe("runs query — Issue #18 list fields: time, capability, syncing, filte
       "unavailable",
       "unavailable",
     ]);
+  });
+
+  test("a statusless trace row keeps the bound run's lifecycle state (R3-03)", async () => {
+    // The trace rows a real deployment answers carry NO status word — the
+    // pre-fix list answered unknown for every builtin run no matter how it
+    // ended. The binding's state is the authority detail already reads; the
+    // list joins it under the same R5-26 rule: upstream unknown is evidence
+    // absence, so the local answer stands.
+    const rows = [
+      traceRow({ id: "t1" }), // completed run
+      traceRow({ id: "t2" }), // failed run
+      traceRow({ id: "t3" }), // still running
+      traceRow({ id: "t4" }), // unbound — unknown stays
+    ];
+    for (const row of rows) delete (row as Record<string, unknown>).status;
+    const { app } = appFor({
+      port: fakePort({ rows }),
+      lifecycleStates: new Map([
+        ["t1", "completed"],
+        ["t2", "failed"],
+        ["t3", "running"],
+      ]),
+    });
+    const body = await (await list(app, "?limit=4")).json();
+    expect(body.runs.map((run: { state: string }) => run.state)).toEqual([
+      "completed",
+      "failed",
+      "running",
+      "unknown",
+    ]);
+  });
+
+  test("an upstream word the vocabulary maps is an observation and stands (R3-03)", async () => {
+    // The join must not overwrite an upstream answer with the local one:
+    // COMPLETED is a word this build understands, so it wins over a binding
+    // row that (say) never settled past running.
+    const rows = [traceRow({ id: "t1", status: "COMPLETED" })];
+    const { app } = appFor({
+      port: fakePort({ rows }),
+      lifecycleStates: new Map([["t1", "running"]]),
+    });
+    const body = await (await list(app)).json();
+    expect(body.runs[0].state).toBe("completed");
+  });
+
+  test("a wiring without the lifecycle join keeps the upstream word, never a guess (R3-03)", async () => {
+    const rows = [traceRow({ id: "t1" })];
+    delete (rows[0] as Record<string, unknown>).status;
+    const { app } = appFor({ port: fakePort({ rows }) });
+    const body = await (await list(app)).json();
+    expect(body.runs[0].state).toBe("unknown");
   });
 
   test("a wiring without the join seam answers capability unavailable, never a guess", async () => {

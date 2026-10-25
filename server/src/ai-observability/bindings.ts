@@ -173,6 +173,17 @@ export type RunBindingStore = {
     scope: ObservationScope,
     opikTraceId: string,
   ): Promise<RunBinding | null>;
+  /**
+   * The lifecycle states for a page of upstream traces (R3-03), joined on this
+   * scope's own binding rows — the list-side read of the same authority detail
+   * reads. The (scope, opik trace) unique index answers at most one state per id;
+   * a trace this scope never bound answers nothing, which the caller keeps as
+   * the upstream word rather than guessing.
+   */
+  statesByOpikTraceIds(
+    scope: ObservationScope,
+    opikTraceIds: readonly string[],
+  ): Promise<ReadonlyMap<string, AiObservationBindingState>>;
 };
 
 const capabilities: readonly AiObservationBindingCapability[] = [
@@ -515,6 +526,35 @@ export function createRunBindingStore(db: Database): RunBindingStore {
         .limit(1);
       return rows[0] ?? null;
     },
+
+    async statesByOpikTraceIds(scope, opikTraceIds) {
+      assertObservationScope(scope);
+      // inArray with an empty list is not a query anyone can answer; it is no rows.
+      if (opikTraceIds.length === 0) return new Map();
+      const rows = await db
+        .select({
+          opikTraceId: aiObservationBindings.opikTraceId,
+          state: aiObservationBindings.state,
+        })
+        .from(aiObservationBindings)
+        .where(
+          and(
+            eq(aiObservationBindings.scopeKey, scope.key),
+            inArray(aiObservationBindings.opikTraceId, [
+              ...new Set(opikTraceIds),
+            ]),
+            // The M1a visibility rule, state-shaped: a run whose deletion is in
+            // flight is gone to readers, its lifecycle answer included — the
+            // same answer window every other join on this table keeps.
+            notPendingDeletion("run", aiObservationBindings.id),
+          ),
+        );
+      const states = new Map<string, AiObservationBindingState>();
+      for (const row of rows) {
+        if (row.opikTraceId !== null) states.set(row.opikTraceId, row.state);
+      }
+      return states;
+    },
   };
 }
 
@@ -532,6 +572,37 @@ export function createRunBindingStore(db: Database): RunBindingStore {
  */
 export function observerChainId(traceId: string | undefined): string | null {
   return traceId !== undefined && W3C_TRACE_ID.test(traceId) ? traceId : null;
+}
+
+/**
+ * The observed ending a run's own lifecycle fact carries — the event face's
+ * words, one explicit table (the R2-33 discipline): `disconnected` is the one
+ * word that means "the window closed and nothing terminal was seen", and it is
+ * the ONLY word that settles the binding's honest `unknown`.
+ */
+export type ObserverRunEnding =
+  | "success"
+  | "error"
+  | "canceled"
+  | "interrupted"
+  | "disconnected";
+
+/** The observed ending onto the binding's terminal vocabulary. */
+export function observerTerminalState(
+  ending: ObserverRunEnding,
+): Exclude<AiObservationBindingState, "running"> {
+  switch (ending) {
+    case "success":
+      return "completed";
+    case "error":
+      return "failed";
+    case "canceled":
+      return "canceled";
+    case "interrupted":
+      return "interrupted";
+    case "disconnected":
+      return "unknown";
+  }
 }
 
 /** The run a builtin observation binds as, keyed by what the fact face carries. */
@@ -565,14 +636,52 @@ export type ObserverRunBindingGate = Readonly<{
     chain: ObserverRunChain,
   ): Promise<OpikRunBindingRef>;
   /**
+   * Record the run's observed start (R3-03): the moment the fact face saw the
+   * run begin, stored BEFORE the first business fact can materialize the chain —
+   * so the upstream trace and run root carry the run's real start, never the
+   * materialization clock. First observation wins; a later one for the same
+   * chain is the same run and changes nothing.
+   */
+  noteObservedRunStart(
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+    startedAt: Date,
+  ): void;
+  /**
+   * Settle the chain's binding from the run's OWN observed ending (R3-03) — the
+   * one close signal that names the outcome, replacing the tool-step window as
+   * the run-close authority. `ending` carries the event face's own words
+   * (`success`/`error`/`canceled`/`interrupted`, and `disconnected` for a window
+   * that closed with nothing terminal); `observerTerminalState` maps them onto
+   * the binding vocabulary, and only a disconnected window settles the honest
+   * `unknown` — a named ending is never degraded into one. The settle persists
+   * the binding's terminal state FIRST (the local authority), then closes the
+   * run root upstream with the observed start and end (`span_state` carries the
+   * same word) — a root close that fails is logged and left, exactly like a
+   * reporter that died after the finish: the binding stands, the root stays open
+   * upstream, and the query face reports what it knows. First settle wins per
+   * chain, as ever.
+   */
+  settleObservedRun(
+    scope: ObservationScope,
+    chain: ObserverRunChain,
+    observed: Readonly<{
+      startedAt: Date;
+      ending: ObserverRunEnding;
+      endedAt: Date;
+    }>,
+  ): void;
+  /**
    * Settle the chain's binding from an observed run close — the tool-step
-   * window is the one run-close signal the fact face observes. An interrupted
-   * close settles `interrupted`; a terminal close without an outcome the fact
-   * could name settles the explicitly-unlearned `unknown` (RUN_ERROR and
-   * RUN_FINISHED both close terminal there, and the difference is not carried
-   * — claiming completed or failed would invent it). First settle wins per
-   * chain; a settle that fails leaves the row running and the lease sweeper's
-   * `unknown` is the net, exactly as for a reporter that died mid-run.
+   * window, the fact face's PRE-run-observation close signal. Kept for callers
+   * with nothing better: an interrupted close settles `interrupted`; a terminal
+   * close without an outcome the fact could name settles the explicitly-
+   * unlearned `unknown`. The production wiring no longer calls this — the run's
+   * own lifecycle observation settles real endings — so a window settle answers
+   * for the window, never instead of a named outcome (R3-03: a tool window is
+   * not a run's lifetime). First settle wins per chain; a settle that fails
+   * leaves the row running and the lease sweeper's `unknown` is the net, exactly
+   * as for a reporter that died mid-run.
    */
   settleObservedWindow(
     scope: ObservationScope,
@@ -619,6 +728,11 @@ const DEFAULT_MAX_SCOPES = 4096;
 type ScopeChains = {
   begun: Map<string, Promise<OpikRunBindingRef>>;
   settled: Set<string>;
+  /**
+   * The run's observed start per chain (R3-03), stored ahead of the first
+   * materialization so the upstream trace and root carry the run's real start.
+   */
+  starts: Map<string, Date>;
   /** Insertion order of `begun`, the FIFO the bound evicts by. */
   order: string[];
 };
@@ -666,6 +780,7 @@ export function createObserverRunBindingGate(
     scope: ObservationScope,
     ref: OpikRunBindingRef,
     traceId: string,
+    startedAt: Date,
   ): Promise<OpikRunBindingRef> => {
     const port = options.port?.() ?? null;
     if (port === null) return ref;
@@ -677,7 +792,6 @@ export function createObserverRunBindingGate(
       throw new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503);
     }
     const identity = runUpstreamIdentity(traceId);
-    const startedAt = now();
     const created = await port.createTrace(scope, {
       traceId: identity.opikTraceId,
       name: RUN_ROOT_SPAN_NAME,
@@ -693,7 +807,8 @@ export function createObserverRunBindingGate(
       name: RUN_ROOT_SPAN_NAME,
       startTimeUnixNano: nanos(startedAt) ?? nowNs(),
       // The root's close is not observed here — an end time would be a duration nobody
-      // measured, so the row stays open and the query face reports what it knows.
+      // measured, so the row stays open and the query face reports what it knows. The
+      // run's own lifecycle observation closes it later (see settleObservedRun).
       opik: {
         traceId: identity.opikTraceId,
         spanId: identity.rootOpikSpanId,
@@ -728,6 +843,7 @@ export function createObserverRunBindingGate(
     const fresh: ScopeChains = {
       begun: new Map(),
       settled: new Set(),
+      starts: new Map(),
       order: [],
     };
     scopes.set(scope.key, fresh);
@@ -777,8 +893,16 @@ export function createObserverRunBindingGate(
       }
       // F5E1-F3: the binding is established, so the run's upstream trace/root and its
       // authoritative mapping are established here too — before any business span of the
-      // chain may be exported under it.
-      return materialize(scope, observerBindingRef(binding), traceId);
+      // chain may be exported under it. R3-03: the run's observed start, when the fact
+      // face reported one ahead of the first business fact, is the start both the trace
+      // row and the root carry — the materialization clock is only the fallback for a
+      // chain nobody reported a start for.
+      return materialize(
+        scope,
+        observerBindingRef(binding),
+        traceId,
+        chains.starts.get(traceId) ?? now(),
+      );
     })();
     chains.begun.set(traceId, attempt);
     chains.order.push(traceId);
@@ -787,6 +911,7 @@ export function createObserverRunBindingGate(
       if (oldest !== undefined) {
         chains.begun.delete(oldest);
         chains.settled.delete(oldest);
+        chains.starts.delete(oldest);
       }
     }
     try {
@@ -809,8 +934,121 @@ export function createObserverRunBindingGate(
     }
   };
 
+  /*
+   * The run root's close (R3-03): the same deterministic identity the materialization
+   * wrote open, re-written with the observed window — the start the fact face reported,
+   * the end the terminal named, and the same binding-state word the local row settled
+   * onto. Writing the root again with the identical ids is the upsert the derived
+   * identity exists for (a retry asks for the very same objects); a close that fails is
+   * logged and left, because the binding's terminal state — already written — is the
+   * authority and a root that stays open upstream is the honest absence the query face
+   * already knows how to report.
+   */
+  const closeRunRoot = async (
+    scope: ObservationScope,
+    ref: OpikRunBindingRef,
+    traceId: string,
+    timing: Readonly<{ startedAt: Date; endedAt: Date; state: string }>,
+  ): Promise<void> => {
+    const port = options.port?.() ?? null;
+    if (port === null) return; // binding-only deployment: nothing upstream to close
+    if (ref.opikTraceId === null) {
+      // Materialization never established the upstream objects (or failed again
+      // inside this settle's ensure retry): there is no root to close, and the
+      // next chain fact retries the whole materialization — this close is simply
+      // gone, never faked onto a tree that does not exist.
+      log.warn(
+        { type: "opik-observer-run-root-close-unmaterialized" },
+        "opik-observer-run-root-close-unmaterialized",
+      );
+      return;
+    }
+    const identity = runUpstreamIdentity(traceId);
+    const startNs = nanos(timing.startedAt) ?? nanos(timing.endedAt) ?? nowNs();
+    const rootSpan: OpikOtlpSpan = {
+      traceId,
+      spanId: identity.rootSpanId,
+      name: RUN_ROOT_SPAN_NAME,
+      startTimeUnixNano: startNs,
+      endTimeUnixNano: nanos(timing.endedAt) ?? startNs,
+      // The terminal word rides as structured data in the step projection's own
+      // vocabulary (a fixed enumeration, nothing to redact): the root's row says
+      // upstream what the local binding settled.
+      attributes: {
+        span_state: { state: "projected", value: timing.state },
+      },
+      opik: {
+        traceId: identity.opikTraceId,
+        spanId: identity.rootOpikSpanId,
+      },
+    };
+    const closed = await port.writeSpans(scope, {
+      spans: [rootSpan],
+      binding: ref,
+    });
+    if (closed.outcome !== "ok") {
+      log.warn(
+        { type: "opik-observer-run-root-close-failed" },
+        "opik-observer-run-root-close-failed",
+      );
+    }
+  };
+
   return {
     ensure,
+    noteObservedRunStart(scope, chain, startedAt) {
+      const traceId = observerChainId(chain.traceId);
+      if (traceId === null) return; // nothing provable to start
+      if (!(startedAt instanceof Date) || Number.isNaN(startedAt.getTime())) {
+        return; // a time nobody measured is not the run's start
+      }
+      const chains = chainsOf(scope);
+      // First observation wins: one chain is one run, and its start is the first
+      // moment this side saw it begin.
+      if (!chains.starts.has(traceId)) chains.starts.set(traceId, startedAt);
+    },
+    settleObservedRun(scope, chain, observed) {
+      const traceId = observerChainId(chain.traceId);
+      if (traceId === null) return; // nothing provable to settle
+      const state = observerTerminalState(observed.ending);
+      const chains = chainsOf(scope);
+      // A terminal fact carries the start too: a settle that materializes the
+      // chain itself (a run with no business fact at all) still writes the run's
+      // real start, never the settle clock.
+      if (
+        observed.startedAt instanceof Date &&
+        !Number.isNaN(observed.startedAt.getTime()) &&
+        !chains.starts.has(traceId)
+      ) {
+        chains.starts.set(traceId, observed.startedAt);
+      }
+      if (chains.settled.has(traceId)) return; // first settle wins
+      chains.settled.add(traceId);
+      void ensure(scope, chain)
+        .then(async (binding) => {
+          // The local authority first: the binding's terminal state is what the
+          // query face and the retention discovery read, and it must land even
+          // when the upstream root cannot be closed behind it.
+          await store.finish(scope, binding.runId, binding.attemptId, state);
+          await closeRunRoot(scope, binding, traceId, {
+            startedAt: observed.startedAt,
+            endedAt: observed.endedAt,
+            state,
+          });
+        })
+        .catch((error) => {
+          // Undo the once-mark so a later observed close retries; until one
+          // lands, the row stays running and the lease sweeper is the net.
+          chains.settled.delete(traceId);
+          log.warn(
+            {
+              type: "opik-observer-binding-settle-failed",
+              reason: gateReason(error),
+            },
+            "opik-observer-binding-settle-failed",
+          );
+        });
+    },
     settleObservedWindow(scope, chain, window) {
       const traceId = observerChainId(chain.traceId);
       if (traceId === null) return; // nothing provable to settle
@@ -866,6 +1104,8 @@ export function observerBindingRefForTests(
 export function observerRunBindingGateForTests(): ObserverRunBindingGate {
   return {
     ensure: async (scope) => observerBindingRefForTests(scope),
+    noteObservedRunStart: () => {},
+    settleObservedRun: () => {},
     settleObservedWindow: () => {},
   };
 }
