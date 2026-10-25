@@ -586,15 +586,11 @@ type SpanRow = {
  * SDK resource's service.name as a span field, so provenance is read from the
  * two facts that DO survive: the tracer name Opik records as
  * metadata.integration, and the span-name grammar each side's tracers use.
- * REST-written spans (the bot projects) carry neither — their provenance is
- * the server's REST writer by construction, returned as such.
+ * (R1-F6, f7e-review-r1: the former constant "rest" mode is gone — a check
+ * built on it could not fail. REST-written spans in the bot-* projects are
+ * the server's REST writer by construction and are no longer classified.)
  */
-function spanService(span: SpanRow, mode: "rest" | "otlp" = "otlp"): string {
-  if (mode === "rest") {
-    // The REST writer's spans (the bot-* projects): written by the OpenBot
-    // server itself, no per-process marker survives the REST shape.
-    return "openbot-server(rest-writer)";
-  }
+function spanService(span: SpanRow): string {
   const meta = span.metadata as { integration?: string } | undefined;
   const integration = meta?.integration;
   // NOTE: "openbot.http" is the tracer name in shared/trace.ts, which BOTH
@@ -639,6 +635,7 @@ function spanService(span: SpanRow, mode: "rest" | "otlp" = "otlp"): string {
 async function collectBuiltin(
   api: ReturnType<typeof client>,
   opik: string,
+  sql: ReturnType<typeof Bun.SQL>,
   record: {
     agentId: string;
     loops: Array<{
@@ -695,6 +692,18 @@ async function collectBuiltin(
   });
 
   // 2. The local authoritative bindings (the run ids the query API keys on).
+  //    Measured straight from the table whatever the query face answered — a
+  //    refused face never replaces a measurement (the R1-F5 discipline). This
+  //    block was lost in the last edit of the r1 delivery and is what made
+  //    `bindings` below an undeclared reference (R1-F1, f7e-review-r1).
+  const bindings = await sql`
+    SELECT run_id, attempt_id, trace_id, opik_trace_id, state, capability, created_at, updated_at
+    FROM ai_observation_bindings
+    WHERE bot_id = ${record.agentId}
+    ORDER BY created_at DESC
+    LIMIT 20
+  `;
+  evidence.bindings = bindings;
   // 3. Multi-run locatability: distinct binding run ids, details answer their
   // own id, and every listed row maps to a binding (no cross-talk).
   const details: unknown[] = [];
@@ -903,16 +912,9 @@ async function collectBuiltin(
       ? `${toolIdMatches.length} span(s) carry the real thread tool_call_id(s) ${[...wanted].join(",")}`
       : `no span carries the real thread tool_call_id(s) ${[...wanted].join(",")}`,
   });
-  const services = new Set(anywhere.map((s) => spanService(s, "rest")));
-  evidence.opikServiceNames = [...services];
-  findings.push({
-    check: "opik.services",
-    verdict:
-      services.size >= 1 && ![...services].every((s) => s === "?")
-        ? "PASS"
-        : "GAP",
-    detail: `services observed in the Bot's own traces: ${[...services].join(", ")}`,
-  });
+  // R1-F6 (f7e-review-r1): the "opik.services" check that stood here classified
+  // every span in the bot projects with one constant label and so could never
+  // fail; removed rather than kept as a hollow PASS.
 
   evidence.findings = findings;
   return evidence;
@@ -985,8 +987,10 @@ async function collectLanggraph(
     ORDER BY created_at DESC
     LIMIT 20
   `;
-  if (evidence.runsFaceStatus === 404) evidence.bindings = [];
-  else evidence.bindings = bindings;
+  // R1-F5 (f7e-review-r1): the measured rows stand whatever the query face
+  // answered — a 404 face is itself the finding, not a reason to blank the
+  // measurement that says whether any binding exists at all.
+  evidence.bindings = bindings;
   if (evidence.runsFaceStatus === 404) {
     findings.push({
       check: "lg.capability-basic",
@@ -1171,16 +1175,34 @@ async function collectLanggraph(
     services: d.services,
   }));
   const joinedCount = dialTraces.filter((d) => d.joined).length;
+  /*
+   * R1-F2 (f7e-review-r1): this is the ACCEPTANCE row, and a partial join is
+   * not a pass. The verdict is PASS only when every dial in the window
+   * continued the host chain; anything less is a GAP whose detail names the
+   * split — driver-supplied run ids versus the runtime's derived ids — so the
+   * fraction cannot be read as "mostly works". (In the r1 evidence the split
+   * was perfectly systematic: 0/6 driver-supplied ids joined, 3/3 derived ids
+   * joined, and the joined ones were exactly the dials that carried the
+   * authoritative binding identity.)
+   */
+  const driverDials = dialTraces.filter((d) => driverRunIds.includes(d.runId));
+  const driverJoined = driverDials.filter((d) => d.joined).length;
   findings.push({
     check: "lg.w3c-cross-service-same-trace",
-    verdict: joinedCount > 0 ? "PASS" : "GAP",
-    detail: `${joinedCount}/${dialTraces.length} endpoint dial trace(s) carry BOTH service names in one W3C-continued trace (host POST /api/... → endpoint POST /ag-ui → ag-ui run → chain → model); the un-joined dials found no active span context at fetch time and the endpoint rooted its own trace — disclosed as a finding, not smoothed`,
+    verdict:
+      dialTraces.length > 0 && joinedCount === dialTraces.length
+        ? "PASS"
+        : "GAP",
+    detail:
+      dialTraces.length > 0 && joinedCount === dialTraces.length
+        ? `${joinedCount}/${dialTraces.length} endpoint dial trace(s) carry BOTH service names in one W3C-continued trace (host POST /api/... → endpoint POST /ag-ui → ag-ui run → chain → model)`
+        : `${joinedCount}/${dialTraces.length} endpoint dial trace(s) carry BOTH service names in one W3C-continued trace; only ${driverJoined}/${driverDials.length} driver-supplied run id(s) joined — the acceptance property (every person-initiated dial continues the host chain) does NOT hold for the rest; the un-joined dials found no active span context at fetch time and the endpoint rooted its own trace — F7E-F1`,
   });
   const crossParented = dialTraces.reduce((sum, d) => sum + d.crossEdges, 0);
   findings.push({
     check: "lg.cross-service-parent",
     verdict: crossParented > 0 ? "PASS" : "GAP",
-    detail: `${crossParented} span(s) whose parent lives on the OTHER service in the same trace (${joinedCount}/${dialTraces.length} dials joined)`,
+    detail: `${crossParented} span(s) whose parent lives on the OTHER service in the same trace (existence-only fact; the coverage verdict is the lg.w3c-cross-service-same-trace row)`,
   });
   const all = dialTraces.flatMap((d) => d.spans);
   const modelSpans = all.filter((s) =>
@@ -1352,7 +1374,7 @@ async function collect(a: Args): Promise<void> {
     const record = JSON.parse(
       readFileSync(join(state, "builtin-run.json"), "utf8"),
     );
-    output.builtin = await collectBuiltin(api, opik, record, "builtin");
+    output.builtin = await collectBuiltin(api, opik, sql, record, "builtin");
   }
   if (existsSync(join(state, "langgraph-run.json"))) {
     const record = JSON.parse(
