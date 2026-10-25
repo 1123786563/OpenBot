@@ -69,6 +69,10 @@ export class WorkspaceListingError extends Error {
       `The workspace listing for ${path} is unreachable: ${
         cause instanceof Error ? cause.message : String(cause)
       }`,
+      // Keep the original error as the structured cause (#618 OCR r2): the scope
+      // refusal the craft routes must recognize survives any rewrite of the text
+      // above only through this chain, never through the embedded sentence.
+      { cause },
     );
     this.name = "WorkspaceListingError";
   }

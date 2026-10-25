@@ -307,6 +307,12 @@ export type CraftConfig = {
  * (the proxy's refusal of a partial claim is the only answer that cannot later widen
  * into a default) and a clamped guess would route one company's files somewhere else.
  */
+// One warning per process, not one per parse (#618 OCR r2): the boot file loads this
+// config twice and tests drive fake envs through it — a mis-set pair would otherwise
+// print the same boot-time clue on every pass. The guard only paces the log line; the
+// parsed null (and the fail-closed behavior it drives) is answered on every call.
+let warnedInvalidScopePair = false;
+
 function craftSandboxExecutionScope(env: CraftEnv): ExecutionScope | null {
   const tenantId = stringEnv(
     env,
@@ -324,12 +330,15 @@ function craftSandboxExecutionScope(env: CraftEnv): ExecutionScope | null {
     // from "not set at all" — the 503 sentence says an admin has to finish the
     // setup, so give the admin the one boot-time clue that separates a mis-typed pair from an unset one.
     // Names only, never the values (the no-leak constraint).
-    getLogger("server").warn(
-      "OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID / " +
-        "OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID are set but did not resolve " +
-        "into a valid scope pair (plain lowercase ids, both halves) — every craft " +
-        "sandbox call will fail closed until the pair is fixed",
-    );
+    if (!warnedInvalidScopePair) {
+      warnedInvalidScopePair = true;
+      getLogger("server").warn(
+        "OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID / " +
+          "OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID are set but did not resolve " +
+          "into a valid scope pair (plain lowercase ids, both halves) — every craft " +
+          "sandbox call will fail closed until the pair is fixed",
+      );
+    }
   }
   return valid ? { tenantId, workspaceId } : null;
 }
