@@ -1053,12 +1053,14 @@ export class OpencodeServeClient {
   private buildHeaders(extra?: Record<string, string>): Record<string, string> {
     // #618 fail-closed chokepoint: every outbound fetch in this client builds its
     // headers here, so the refusal lives here and no verb can slip an unattributed
-    // request past it. The catch-bearing verbs that swallow the throw per their own
-    // best-effort contracts — the request still never leaves — are abort,
-    // answerPermission, deleteSession and disposeInstance; healthCheckStatus
-    // RETHROWS it (#618 OCR#12: a scopeless deployment is a permanent failure, not
-    // a cold start, so the probe's null must not mask it); every other verb
-    // propagates.
+    // request past it. The complete list of catch-bearing verbs that swallow the
+    // throw per their own best-effort contracts — the request still never leaves —
+    // is abort, answerPermission, deleteSession, disposeInstance and getMessage
+    // (advisory hydration: null is "no message"); healthCheckStatus RETHROWS it
+    // (#618 OCR#12: a scopeless deployment is a permanent failure, not a cold
+    // start, so the probe's null must not mask it); sendMessage wraps it into a
+    // transport error envelope (a visible exit, not a swallow) on its prompt leg;
+    // every other verb propagates.
     if (this.executionScope === null)
       throw new SandboxExecutionScopeUnavailableError();
     const headers: Record<string, string> = { ...extra };

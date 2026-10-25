@@ -148,6 +148,11 @@ export function createSessionRoutes(
    * nothing restored" was the same mask moved onto the detail face, and it stranded the restore
    * entrance's 503 behind the warm fast path. The row honestly stays idle (detail shows
    * sleeping), so POST restore — and the turn — keep their chance to surface the refusal.
+   *
+   * #618 (OCRFX-F4, info): non-refusal failures — the gateway's thrown restore 403 among
+   * them — still fold to false here (rebuild, CAS active), the pre-#618 route-face answer;
+   * OCR#5's honesty therefore lives at the gateway contract, not yet at the HTTP face.
+   * Whether the routes should carry that verdict too is a registered later ruling.
    */
   const wakeIfIdle = async (
     session: CraftSessionRow,
@@ -472,7 +477,10 @@ export function createSessionRoutes(
  *   "provisioning" — the closest onyx value, honest here because the gateway spawns a Bot's
  *   runtime lazily and reaps it idle, so "not answering yet" is a cold start, not a failure.
  *   A scopeless deployment's refusal is the one probe failure that is NOT a cold start (#618
- *   OCR#12): it answers "failed", the settled state the chip renders red.
+ *   OCR#12): it answers "failed", the settled state the chip renders red. Note the order:
+ *   an IDLE row answers "sleeping" before any probe, so with OCR#11's honest-idle CAS the
+ *   chip shows "failed" only on active rows — an idle session's fail-closed display waits
+ *   for the turn/restore entrance to surface the sentence (OCRFX-F5, info).
  *   A session whose Bot is not even configured has no sandbox to speak of: null (onyx's
  *   "no sandbox record" answer).
  *

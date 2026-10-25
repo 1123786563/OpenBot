@@ -90,16 +90,20 @@ export type SandboxGateway = {
   /** The workspace-write view of the file API. */
   workspaceApiFor(botId: string): WorkspaceApi | null;
   /**
-   * One packed snapshot of the Bot's whole workspace (application/gzip). Null ONLY on
-   * 404 ("nothing snapshotted yet") — any other failure, a scope mismatch included,
-   * throws (#618 FR-F2); a missing execution scope throws the displayable refusal.
+   * One packed snapshot of the Bot's whole workspace (application/gzip). Null when the
+   * gateway answers 404 ("nothing snapshotted yet") and when the Bot has no configured
+   * sandbox connection (nothing to ask — a different fact from the scope refusal); any
+   * other failure, a scope mismatch included, throws (#618 FR-F2), and a missing
+   * execution scope throws the displayable refusal.
    */
   snapshotArchiveFor(botId: string): Promise<Uint8Array | null>;
   /**
-   * Replay a snapshot archive into the Bot's workspace. False only when the gateway
-   * refused the payload (409 mid-turn, 400 non-snapshot); every other failure throws,
-   * and a missing execution scope throws the displayable refusal instead of answering
-   * false (#618 OCR#5) — false is "could not restore this instant", never a verdict.
+   * Replay a snapshot archive into the Bot's workspace. False on the gateway's own
+   * refusals — 409 mid-turn, 400 non-snapshot, the honest "could not restore this
+   * instant" — and when the Bot has no configured sandbox connection (nothing to
+   * replay onto — again not the scope refusal); every other failure throws, and a
+   * missing execution scope throws the displayable refusal instead of answering
+   * false (#618 OCR#5).
    */
   restoreWorkspace(botId: string, archive: Uint8Array): Promise<boolean>;
 };
