@@ -21,6 +21,7 @@
  * refuse.
  */
 
+import { createHash } from "node:crypto";
 import type { SafeText, SafeValue } from "../../../shared/ai-observability";
 import type { ObservationScope } from "./contracts";
 import {
@@ -95,6 +96,63 @@ const HEX16 = /^[0-9a-f]{16}$/;
 const UUIDV7 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NANOS = /^\d{1,19}$/;
+
+/*
+ * The explicit-id identity strategy's deterministic half (F5E1-F3).
+ *
+ * A run's upstream ids are DERIVED from its own W3C chain rather than minted per write: a
+ * retried materialization asks the backend for the very same trace, every span of the run
+ * attaches to the root row this side actually wrote, and a caller holding only the binding
+ * can name the upstream objects without a second lookup. Opik's derived path hashes the OTel
+ * id together with a timestamp (reference/opik-contract.md, ID mapping), so it is not
+ * reproducible — which is exactly why the explicit path, with a mapping this side can
+ * compute, is the only way a run stays locatable after export.
+ *
+ * Domain separation keeps the three ids of one chain distinct; the version/variant nibbles
+ * are forced onto the verified UUIDv7 shape the backend adopts verbatim.
+ */
+function upstreamUuid(domain: string, ...parts: readonly string[]): string {
+  const hex = createHash("sha256")
+    .update([domain, ...parts].join(":"))
+    .digest("hex");
+  const versioned = `${hex.slice(0, 12)}7${hex.slice(13, 16)}8${hex.slice(17, 32)}`;
+  return `${versioned.slice(0, 8)}-${versioned.slice(8, 12)}-${versioned.slice(12, 16)}-${versioned.slice(16, 20)}-${versioned.slice(20)}`;
+}
+
+/** The run's upstream identity: its trace, and the root span every business span hangs under. */
+export type RunUpstreamIdentity = Readonly<{
+  /** The upstream trace id a materialized run carries (hyphenated UUIDv7). */
+  opikTraceId: string;
+  /** The W3C span id the run root span is written under — the parent child spans name. */
+  rootSpanId: string;
+  /** The run root span's upstream id. */
+  rootOpikSpanId: string;
+}>;
+
+/**
+ * The one derivation of a run's upstream identity from its chain. Pure and total: the shape
+ * of the chain is the caller's business (a span write validates it), and returning an answer
+ * for any string keeps the derivation from disagreeing with itself across call sites.
+ */
+export function runUpstreamIdentity(traceId: string): RunUpstreamIdentity {
+  const root = createHash("sha256")
+    .update(`openbot.run.root:${traceId}`)
+    .digest("hex")
+    .slice(0, 16);
+  return {
+    opikTraceId: upstreamUuid("openbot.run.trace", traceId),
+    // An OTel span id is 16 hex chars and is never all zeros; a digest that came back
+    // all-zero is remapped to the smallest non-zero value rather than shipping an id the
+    // backend may refuse.
+    rootSpanId: /^0+$/.test(root) ? "0000000000000001" : root,
+    rootOpikSpanId: upstreamUuid("openbot.run.root", traceId),
+  };
+}
+
+/** One business span's upstream id: derived from its own chain and W3C span id. */
+export function spanUpstreamId(traceId: string, spanId: string): string {
+  return upstreamUuid("openbot.run.span", traceId, spanId);
+}
 
 type Failure = OpikPortResult<never>;
 
@@ -577,29 +635,103 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
   };
 
   /**
-   * The second half of a deletion (FREV-07): drive every read-back path to an
-   * observed 404 inside the bounded window before the caller may treat the delete
-   * as done. A hard read-back failure (an upstream error, drift, malformed)
-   * surfaces immediately — it is a fact about the verification, not a poll
-   * condition. What is still queryable when the window closes answers the port's
-   * timeout: retryable by the caller, never a disguised success.
+   * The span-level half of the same read-back (FREV-07): the trace-detail 404 proves the
+   * trace row is gone, while the query surface a reader uses reads SPANS. The verified span
+   * list answers `page/size/total/content`; absence is an empty envelope, and an envelope
+   * this side cannot read is not evidence of absence.
+   */
+  const readbackSpansAbsent = (
+    operation: OpikOperation,
+    projectId: string,
+    traceId: string,
+  ): Promise<OpikPortResult<{ absent: boolean }>> => {
+    const query = new URLSearchParams({
+      project_id: projectId,
+      trace_id: traceId,
+      size: "1",
+    });
+    return exchange(
+      operation,
+      `/v1/private/spans?${query.toString()}`,
+      { method: "GET" },
+      async (response) => {
+        if (response.status !== VERIFIED_STATUS.listSpans) {
+          return statusFailure(operation, response.status);
+        }
+        const parsed = await readJsonObject(operation, response);
+        if (parsed.outcome !== "ok") return parsed;
+        const total = parsed.value.total;
+        const content = parsed.value.content;
+        if (!Array.isArray(content))
+          return malformed(operation, "field:content");
+        if (
+          typeof total !== "number" ||
+          !Number.isInteger(total) ||
+          total < 0
+        ) {
+          return malformed(operation, "field:total");
+        }
+        return {
+          outcome: "ok" as const,
+          value: { absent: total === 0 && content.length === 0 },
+        };
+      },
+    );
+  };
+
+  /** One read-back probe: answers whether its object is observed absent. */
+  type AbsenceProbe = () => Promise<OpikPortResult<{ absent: boolean }>>;
+
+  /**
+   * The second half of a deletion (FREV-07): drive every read-back probe to an observed
+   * absence inside the bounded window before the caller may treat the delete as done. A hard
+   * read-back failure (an upstream error, drift, malformed) surfaces immediately — it is a
+   * fact about the verification, not a poll condition. What is still queryable when the
+   * window closes answers the port's timeout: retryable by the caller, never a disguised
+   * success. Probes rather than paths because a deletion is confirmed over more than one
+   * shape now (the trace row, and its spans when the manifest can query them).
    */
   const awaitAbsence = async (
     operation: OpikOperation,
-    paths: readonly string[],
+    probes: readonly AbsenceProbe[],
   ): Promise<Failure | null> => {
     const deadline = Date.now() + timeoutMs;
-    let remaining = [...new Set(paths)];
+    let remaining = [...probes];
     for (let attempt = 0; attempt < DELETE_ABSENCE_MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await sleep(DELETE_ABSENCE_POLL_MS);
-      const stillPresent: string[] = [];
-      for (const path of remaining) {
-        const read = await readbackAbsent(operation, path);
+      const stillPresent: AbsenceProbe[] = [];
+      for (const probe of remaining) {
+        const read = await probe();
         if (read.outcome !== "ok") return read;
-        if (!read.value.absent) stillPresent.push(path);
+        if (!read.value.absent) stillPresent.push(probe);
       }
       if (stillPresent.length === 0) return null;
       remaining = stillPresent;
+      if (Date.now() + DELETE_ABSENCE_POLL_MS > deadline) break;
+    }
+    return unavailable(operation, "OPIK_TIMEOUT");
+  };
+
+  /**
+   * The presence mirror of `awaitAbsence`: inside the same bounded window, every probe must
+   * observe its object before the caller may treat a materialization as done.
+   */
+  const awaitPresence = async (
+    operation: OpikOperation,
+    probes: readonly AbsenceProbe[],
+  ): Promise<Failure | null> => {
+    const deadline = Date.now() + timeoutMs;
+    let remaining = [...probes];
+    for (let attempt = 0; attempt < DELETE_ABSENCE_MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) await sleep(DELETE_ABSENCE_POLL_MS);
+      const stillAbsent: AbsenceProbe[] = [];
+      for (const probe of remaining) {
+        const read = await probe();
+        if (read.outcome !== "ok") return read;
+        if (read.value.absent) stillAbsent.push(probe);
+      }
+      if (stillAbsent.length === 0) return null;
+      remaining = stillAbsent;
       if (Date.now() + DELETE_ABSENCE_POLL_MS > deadline) break;
     }
     return unavailable(operation, "OPIK_TIMEOUT");
@@ -748,12 +880,41 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       );
       if (exchanged.outcome !== "ok") return exchanged;
       const response = exchanged.value;
-      if (response.status !== VERIFIED_STATUS.createTrace) {
-        return statusFailure("createTrace", response.status);
+      if (response.status === VERIFIED_STATUS.createTrace) {
+        // The contract does not state a response body for creation; nothing is read, so
+        // nothing unverified can be mistaken for an upstream-granted identity.
+        return { outcome: "ok", value: { traceId: input.traceId } };
       }
-      // The contract does not state a response body for creation; nothing is read, so
-      // nothing unverified can be mistaken for an upstream-granted identity.
-      return { outcome: "ok", value: { traceId: input.traceId } };
+      /*
+       * Replay-safe materialization (F5E1-F3): the ids this side creates are DERIVED from
+       * the run's chain, so a retry after a lost local acknowledgment asks for the very
+       * trace the backend already holds. The verified contract has no "already exists"
+       * status, so a client error is not by itself a failure — it is an ambiguity, and the
+       * answer is decided by observation: the creation succeeded exactly when the trace is
+       * observable upstream inside the bounded window. Anything else, including a project
+       * that is itself absent (nothing can corroborate it), stays the failure it was.
+       */
+      if (response.status >= 400 && response.status < 500) {
+        const resolved = await resolveProject(
+          "createTrace",
+          scope.key,
+          locator.project,
+        );
+        if (resolved.outcome !== "ok") return resolved;
+        const project = resolved.value;
+        if (project === null)
+          return statusFailure("createTrace", response.status);
+        const observed = await awaitPresence("createTrace", [
+          () =>
+            readbackAbsent(
+              "createTrace",
+              `/v1/private/traces/${encodeURIComponent(input.traceId)}?project_id=${encodeURIComponent(project.id)}`,
+            ),
+        ]);
+        if (observed !== null) return observed;
+        return { outcome: "ok", value: { traceId: input.traceId } };
+      }
+      return statusFailure("createTrace", response.status);
     },
 
     async writeSpans(scope, input) {
@@ -792,9 +953,49 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       ) {
         return drift("writeSpans", scope.key, "binding_mismatch");
       }
+      /*
+       * The mapping half of the explicit-id strategy (F5E1-F3). A recorder projects a span
+       * WITHOUT upstream overrides — its job is the observation, not the wire — so the port
+       * completes the identity from the authoritative binding: the run's trace, the span's
+       * own id and the run root it hangs under, all derived from the chain the span already
+       * carries. Without this, a run's spans land under an Opik-derived trace nobody can map
+       * back to the binding, which is exactly the "exported but unlocatable" defect.
+       *
+       * A span whose chain does not derive to the binding's recorded id belongs to another
+       * run than the binding names: drift, the same verdict the explicit-override guard
+       * above gives a second upstream trace for one run.
+       */
+      const completed: Array<OpikOtlpSpan | null> = input.spans.map((span) => {
+        if (span.opik !== undefined) return span;
+        // An unreconciled binding records no upstream trace: there is nothing to complete
+        // the span WITH, and the write keeps the caller's shape (the derived path) rather
+        // than inventing a trace the binding never claims.
+        if (recordedUpstream === null) return span;
+        const identity = runUpstreamIdentity(span.traceId);
+        if (identity.opikTraceId !== recordedUpstream) return null;
+        return {
+          ...span,
+          // Both id channels name the same parent: the run root this deployment wrote.
+          parentSpanId: identity.rootSpanId,
+          opik: {
+            traceId: identity.opikTraceId,
+            spanId: spanUpstreamId(span.traceId, span.spanId),
+            parentSpanId: identity.rootOpikSpanId,
+          },
+        };
+      });
+      if (completed.some((span) => span === null)) {
+        return drift("writeSpans", scope.key, "binding_mismatch");
+      }
       const payload = JSON.stringify({
         resourceSpans: [
-          { scopeSpans: [{ spans: input.spans.map(buildSpan) }] },
+          {
+            scopeSpans: [
+              {
+                spans: completed.map((span) => buildSpan(span as OpikOtlpSpan)),
+              },
+            ],
+          },
         ],
       });
       if (!withinVerifiedCap(payload)) {
@@ -913,8 +1114,15 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         if (resolved.outcome !== "ok") return resolved;
         const project = resolved.value;
         if (project === null) {
-          // Complete by absence, honestly reported as nothing-was-deleted.
-          return { outcome: "ok" as const, value: { deleted: false } };
+          /*
+           * FREV-07: a missing project is NOT evidence the traces are gone. The project
+           * delete path removes the project row while the trace/span rows survive it (the
+           * E2E deletion evidence recorded exactly that), and every verified trace cleanup
+           * and read-back addresses its `project_id`. Answering ok here would report a
+           * physical cleanup nobody performed — so the answer is the failure it is:
+           * retryable, with the caller's frozen locator kept for the retry.
+           */
+          return statusFailure("deleteTraces", 404);
         }
         const payload = JSON.stringify({
           ids: [...input.traceIds],
@@ -937,13 +1145,27 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         // verified absence of every requested trace — still-queryable ids leave
         // the operation retryable, so a caller's "done" can never outrun the
         // upstream's actual cleanup.
-        const absent = await awaitAbsence(
-          "deleteTraces",
-          input.traceIds.map(
-            (id) =>
+        const probes: AbsenceProbe[] = input.traceIds.map(
+          (id) => () =>
+            readbackAbsent(
+              "deleteTraces",
               `/v1/private/traces/${encodeURIComponent(id)}?project_id=${encodeURIComponent(project.id)}`,
-          ),
+            ),
         );
+        // Span-level absence (FREV-07): the trace-detail 404 proves the trace row is gone,
+        // while the query surface reads SPANS — and the analytics-side delete is
+        // asynchronous over both tables. When the manifest can query a trace's spans, every
+        // requested trace's span list must also come back empty before this operation calls
+        // itself done. A deployment whose contract lacks that capability verifies what its
+        // verified operations can prove, and the caller's own evidence boundary says so.
+        if (okCapabilities.has("parent-child-query-link")) {
+          for (const id of input.traceIds) {
+            probes.push(() =>
+              readbackSpansAbsent("deleteTraces", project.id, id),
+            );
+          }
+        }
+        const absent = await awaitAbsence("deleteTraces", probes);
         if (absent !== null) return absent;
         return { outcome: "ok" as const, value: { deleted: true } };
       })();
@@ -975,7 +1197,11 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         // on the dataset-detail GET the delete capability's evidence verified as
         // the not-found proof.
         const absent = await awaitAbsence("deleteDataset", [
-          `/v1/private/datasets/${encodeURIComponent(input.datasetId)}`,
+          () =>
+            readbackAbsent(
+              "deleteDataset",
+              `/v1/private/datasets/${encodeURIComponent(input.datasetId)}`,
+            ),
         ]);
         if (absent !== null) return absent;
         return { outcome: "ok" as const, value: { deleted: true } };

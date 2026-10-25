@@ -199,6 +199,12 @@ export type OpikPort = {
    * `projectName` header per the verified contract. Both id paths are supported: derived
    * (backend derives Opik ids; read them back afterwards) and explicit (`opik.*` overrides).
    */
+  /**
+   * F5E1-F3: a binding whose recorded `opikTraceId` is the chain's derived identity (the one
+   * the observer gate materialized) completes every span lacking explicit overrides onto it —
+   * trace, span id and the run-root parent, all derived from the span's own W3C coordinates —
+   * so a run's spans land in the trace the binding names instead of an unmappable derived one.
+   */
   writeSpans(
     scope: ObservationScope,
     input: {
@@ -231,9 +237,12 @@ export type OpikPort = {
   /**
    * Delete traces upstream by the locator's own project (Issue #41 / T35). The locator, not a
    * scope: retention freezes it at discovery and a deletion's upstream half must run against
-   * exactly that address even when no live scope can be presented anymore. A verified 404 on
-   * the project answers `ok` with `deleted: false` — the project being gone means the traces
-   * are — while any failure from the delete itself stays a retryable failure.
+   * exactly that address even when no live scope can be presented anymore. FREV-07: a 404 on
+   * the project is a FAILURE, never a disguised success — the project delete leaves trace and
+   * span rows behind (the E2E deletion evidence), and a completion that "verified nothing" is
+   * the acceptance-as-completion #41 refuses. Completion is the observed absence of every
+   * requested trace (and of its spans when the contract can query them), so a still-queryable
+   * row keeps the answer retryable with the locator preserved.
    */
   deleteTraces(
     locator: ObservationStorageLocator,

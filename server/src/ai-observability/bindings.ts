@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import type { SafeText } from "../../../shared/ai-observability";
 import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import {
@@ -8,10 +9,11 @@ import {
   aiObservationBindings,
 } from "../db/schema/ai-observability-bindings";
 import type { ObservationScope } from "./contracts";
-import type { OpikRunBindingRef } from "./opik-port";
+import { runUpstreamIdentity } from "./opik-http";
+import type { OpikOtlpSpan, OpikPort, OpikRunBindingRef } from "./opik-port";
 import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
-import { W3C_TRACE_ID } from "./span-support";
+import { nanos, nowNs, W3C_TRACE_ID } from "./span-support";
 
 /**
  * The trusted seam between T06's ObservationScope and the binding table.
@@ -44,12 +46,21 @@ export type RunBindingErrorCode =
    * than the one being exported. The first claim stands there too: the gate
    * refuses rather than exporting a run under a row that disagrees with it.
    */
-  | "BINDING_TRACE_CONFLICT";
+  | "BINDING_TRACE_CONFLICT"
+  /**
+   * F5E1-F3: the run's upstream objects could not be materialized (the create or the
+   * root-span write failed, or the verified read-back never observed the trace). A run
+   * without its upstream trace/root is a run whose spans would land where nobody could map
+   * them back to the binding, so the export fails closed instead — the write queue counts
+   * the failure, and the chain's next fact retries the whole materialization (the ids are
+   * derived, so the retry asks for the same objects).
+   */
+  | "BINDING_UPSTREAM_UNAVAILABLE";
 
 export class RunBindingError extends Error {
   constructor(
     public code: RunBindingErrorCode,
-    public status: 400 | 404 | 409,
+    public status: 400 | 404 | 409 | 503,
   ) {
     super(code);
   }
@@ -85,17 +96,15 @@ export type RunBindingStore = {
    * the first claim stands, this row stays unreconciled, and a retry hears the same answer —
    * never the driver's constraint violation surfacing as a 500.
    *
-   * RESERVED — NOT WIRED (OCR R4-25): no production caller exists (full-tree
-   * grep: only the test suites reach it; the run-report path stops at begin +
-   * finish, and finish never writes opikTraceId). This method is therefore the
-   * sole writer of ai_observation_bindings.opik_trace_id and every
-   * reconciliation-dependent read (unreconciled listings, countUnreconciled,
-   * the 409 conflict branch) answers its empty case until it is wired. Wiring
-   * precondition: a production call site on the run-report/acknowledgment path
-   * that can observe the upstream trace id after a lost local ack — do not
-   * fake one, and do not widen begin/finish to write the id (that would
-   * change begin/finish's recorded contract and the R2-51 pendingSync
-   * semantics) without re-approving the behavior through a Spec first.
+   * WIRED (F5E1-F3, closing OCR R4-25's reservation): the observer binding gate
+   * is the production caller — it materializes the run's upstream trace/root with
+   * the verified port and records the derived id here, so a run's spans only ever
+   * export under a binding that names the trace they attach to (the mapping is
+   * authoritative before, not after, the export). The lost-acknowledgment path
+   * the reservation described is the crash window between createTrace and this
+   * call; the deterministic id derivation is what makes its retry safe (the
+   * retry asks for the same objects). This remains the sole writer of
+   * ai_observation_bindings.opik_trace_id, and begin/finish still never write it.
    */
   reconcile(
     scope: ObservationScope,
@@ -545,6 +554,11 @@ export type ObserverRunBindingGate = Readonly<{
    * constraint failure rejects; the caller fails the write closed on it — the
    * span is not exported, and the drop is counted where the write queue
    * counts every failure, never silent, never a faked success.
+   *
+   * F5E1-F3: when the deployment has a verified port, this same call materializes
+   * the chain's upstream trace and run root and records the authoritative mapping
+   * (see `materialize`) — the ref it answers carries the upstream trace id, which is
+   * what the port completes the business spans with.
    */
   ensure(
     scope: ObservationScope,
@@ -593,6 +607,11 @@ function gateReason(error: unknown): string {
 const OBSERVER_CAPABILITY: AiObservationBindingCapability = "detailed";
 /** The same seven-day lease the HTTP report path writes (routes/basic-run.ts). */
 const DEFAULT_OBSERVER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * The run root span's name — the tree's own word for the run, never projected text (the
+ * port refuses a withheld name because the read-back locates spans by name).
+ */
+const RUN_ROOT_SPAN_NAME: SafeText = { state: "projected", text: "run" };
 /** Bounded memory: recent chains per scope, and scopes, before FIFO eviction. */
 const DEFAULT_MAX_CHAINS_PER_SCOPE = 2048;
 const DEFAULT_MAX_SCOPES = 4096;
@@ -605,12 +624,20 @@ type ScopeChains = {
 };
 
 export function createObserverRunBindingGate(
-  store: Pick<RunBindingStore, "begin" | "finish">,
+  store: Pick<RunBindingStore, "begin" | "finish"> &
+    Partial<Pick<RunBindingStore, "reconcile">>,
   options: Readonly<{
     now?: () => Date;
     ttlMs?: number;
     maxChainsPerScope?: number;
     maxScopes?: number;
+    /**
+     * F5E1-F3: the verified port behind this deployment, asked for at the moment a
+     * chain's upstream objects are materialized. Absent (or answering null — an
+     * Opik-disabled or unverified deployment) keeps the gate's earlier shape: bindings
+     * only, no upstream identity, the write completing without it (the tests' seam).
+     */
+    port?: () => OpikPort | null;
   }> = {},
 ): ObserverRunBindingGate {
   const log = getLogger("server");
@@ -619,6 +646,75 @@ export function createObserverRunBindingGate(
   const maxChains = options.maxChainsPerScope ?? DEFAULT_MAX_CHAINS_PER_SCOPE;
   const maxScopes = options.maxScopes ?? DEFAULT_MAX_SCOPES;
   const scopes = new Map<string, ScopeChains>();
+
+  /*
+   * F5E1-F3's first half: materialize the run's upstream objects at the one confirmed
+   * execution-lifecycle point this path has — the moment the chain's authoritative binding
+   * is established, which is before the run's first business span may be exported. The
+   * trace row is what makes the run listable upstream; the root span is the parent every
+   * business span of the chain names; the reconcile is what makes the mapping authoritative
+   * (and what the query face and retention read). A run whose upstream objects cannot be
+   * established exports nothing — the failure is closed, not degraded, because a span that
+   * lands where the binding cannot name it is exactly the unattributable write the port
+   * refuses elsewhere.
+   *
+   * Ordering on the crash path: create, root, THEN reconcile. A crash between the create
+   * and the reconcile leaves upstream objects the deterministic derivation finds again on
+   * the retry; a reconcile written first could claim a tree nobody wrote.
+   */
+  const materialize = async (
+    scope: ObservationScope,
+    ref: OpikRunBindingRef,
+    traceId: string,
+  ): Promise<OpikRunBindingRef> => {
+    const port = options.port?.() ?? null;
+    if (port === null) return ref;
+    if (ref.opikTraceId !== null) return ref; // already materialized by an earlier pass
+    const reconcile = store.reconcile;
+    if (reconcile === undefined) {
+      // A port without the authoritative store's mapping write is a wiring defect: fail
+      // loudly rather than export under an identity nobody records.
+      throw new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503);
+    }
+    const identity = runUpstreamIdentity(traceId);
+    const startedAt = now();
+    const created = await port.createTrace(scope, {
+      traceId: identity.opikTraceId,
+      name: RUN_ROOT_SPAN_NAME,
+      startTime: startedAt,
+      binding: ref,
+    });
+    if (created.outcome !== "ok") {
+      throw new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503);
+    }
+    const rootSpan: OpikOtlpSpan = {
+      traceId,
+      spanId: identity.rootSpanId,
+      name: RUN_ROOT_SPAN_NAME,
+      startTimeUnixNano: nanos(startedAt) ?? nowNs(),
+      // The root's close is not observed here — an end time would be a duration nobody
+      // measured, so the row stays open and the query face reports what it knows.
+      opik: {
+        traceId: identity.opikTraceId,
+        spanId: identity.rootOpikSpanId,
+      },
+    };
+    const rooted = await port.writeSpans(scope, {
+      spans: [rootSpan],
+      binding: { ...ref, opikTraceId: identity.opikTraceId },
+    });
+    if (rooted.outcome !== "ok") {
+      throw new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503);
+    }
+    // The authoritative mapping: the binding now names the trace its spans attach to.
+    const reconciled = await reconcile(
+      scope,
+      ref.runId,
+      ref.attemptId,
+      identity.opikTraceId,
+    );
+    return observerBindingRef(reconciled.binding);
+  };
 
   const chainsOf = (scope: ObservationScope): ScopeChains => {
     const existing = scopes.get(scope.key);
@@ -679,7 +775,10 @@ export function createObserverRunBindingGate(
         // export under a row that disagrees with them exports nothing.
         throw new RunBindingError("BINDING_TRACE_CONFLICT", 409);
       }
-      return observerBindingRef(binding);
+      // F5E1-F3: the binding is established, so the run's upstream trace/root and its
+      // authoritative mapping are established here too — before any business span of the
+      // chain may be exported under it.
+      return materialize(scope, observerBindingRef(binding), traceId);
     })();
     chains.begun.set(traceId, attempt);
     chains.order.push(traceId);

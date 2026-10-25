@@ -11,6 +11,8 @@ import {
   createRunBindingStore,
   RunBindingError,
 } from "../src/ai-observability/bindings";
+import { runUpstreamIdentity } from "../src/ai-observability/opik-http";
+import type { OpikPort } from "../src/ai-observability/opik-port";
 import { ObservationScopeError } from "../src/ai-observability/contracts";
 import { reportBasicRun } from "../src/ai-observability/routes/basic-run";
 import { resolveObservationScope } from "../src/ai-observability/scope";
@@ -713,5 +715,124 @@ describe("the observer run-binding gate (FREV-02)", () => {
       `builtin:${interruptedChain}`,
     );
     expect(interruptedRow?.state).toBe("interrupted");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F5E1-F3: the gate's materialization half against the real store — the
+// authoritative mapping is persisted by the gate's own reconcile, and the
+// query seams can answer from it.
+// ---------------------------------------------------------------------------
+
+describe("the observer gate materializes and reconciles upstream identity (F5E1-F3)", () => {
+  // A scope of its own: the reconcile counts below are scope-wide, so the rows
+  // other describes leave behind must not be part of the answer.
+  const scope = resolveObservationScope({
+    actorId: `f6b-owner-${randomUUID()}`,
+    botId: `f6b-bot-${randomUUID()}`,
+    ownership: "owner",
+    epoch: 1,
+  });
+  const chain = () => randomUUID().replaceAll("-", "");
+
+  afterEach(async () => {
+    await database
+      .delete(aiObservationBindings)
+      .where(eq(aiObservationBindings.scopeKey, scope.key));
+    await database
+      .delete(aiObservationRetentionDeletions)
+      .where(eq(aiObservationRetentionDeletions.scopeKey, scope.key));
+  });
+
+  const aPort = (
+    onCreate: (traceId: string) =>
+      | { outcome: "ok"; value: { traceId: string } }
+      | {
+          outcome: "unavailable";
+          operation: "createTrace";
+          code: "OPIK_TIMEOUT";
+        },
+  ) => {
+    const created: string[] = [];
+    const roots: string[] = [];
+    const port = {
+      healthCheck: async () => ({
+        outcome: "ok" as const,
+        value: { healthy: true as const },
+      }),
+      createTrace: async (_s: unknown, input: { traceId: string }) => {
+        const answer = onCreate(input.traceId);
+        if (answer.outcome === "ok") created.push(input.traceId);
+        return answer;
+      },
+      writeSpans: async (
+        _s: unknown,
+        input: { spans: Array<{ spanId: string }> },
+      ) => {
+        for (const span of input.spans) roots.push(span.spanId);
+        return { outcome: "ok" as const, value: { accepted: true as const } };
+      },
+    };
+    return { created, roots, port: port as unknown as OpikPort };
+  };
+
+  test("ensure persists the derived upstream id on the authoritative row", async () => {
+    const chainId = chain();
+    const identity = runUpstreamIdentity(chainId);
+    const { created, roots, port } = aPort((traceId) => ({
+      outcome: "ok",
+      value: { traceId },
+    }));
+    const gate = createObserverRunBindingGate(store, { port: () => port });
+
+    const ref = await gate.ensure(scope, { traceId: chainId });
+
+    expect(created).toEqual([identity.opikTraceId]);
+    expect(roots).toEqual([identity.rootSpanId]);
+    expect(ref.opikTraceId).toBe(identity.opikTraceId);
+    // The authoritative row itself: persisted, and readable by the reverse seam
+    // the query face's id mapping uses.
+    const row = await store.latestAttempt(scope, `builtin:${chainId}`);
+    expect(row?.opikTraceId).toBe(identity.opikTraceId);
+    expect(await store.byOpikTrace(scope, identity.opikTraceId)).toMatchObject({
+      runId: `builtin:${chainId}`,
+    });
+    expect(await store.countUnreconciled(scope)).toBe(0);
+
+    // A replay of the same chain does not materialize twice.
+    await gate.ensure(scope, { traceId: chainId });
+    expect(created).toHaveLength(1);
+    expect(roots).toHaveLength(1);
+  });
+
+  test("a materialization failure leaves the row unreconciled and the retry converges", async () => {
+    const chainId = chain();
+    let down = true;
+    const { created, port } = aPort((traceId) =>
+      down
+        ? {
+            outcome: "unavailable",
+            operation: "createTrace",
+            code: "OPIK_TIMEOUT",
+          }
+        : { outcome: "ok", value: { traceId } },
+    );
+    const gate = createObserverRunBindingGate(store, { port: () => port });
+
+    await expect(gate.ensure(scope, { traceId: chainId })).rejects.toThrow(
+      RunBindingError,
+    );
+    expect(
+      await store.latestAttempt(scope, `builtin:${chainId}`),
+    ).toMatchObject({ opikTraceId: null });
+    expect(await store.countUnreconciled(scope)).toBe(1);
+
+    // The upstream answers now; the same chain converges onto the SAME derived
+    // identity the failed attempt asked for — no second trace, ever.
+    down = false;
+    const ref = await gate.ensure(scope, { traceId: chainId });
+    expect(created).toEqual([runUpstreamIdentity(chainId).opikTraceId]);
+    expect(ref.opikTraceId).toBe(runUpstreamIdentity(chainId).opikTraceId);
+    expect(await store.countUnreconciled(scope)).toBe(0);
   });
 });

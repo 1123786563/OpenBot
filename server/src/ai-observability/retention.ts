@@ -198,6 +198,20 @@ const RETENTION_ERROR_CODES = [
   "OPIK_CLIENT_ERROR",
   "OPIK_MALFORMED_RESPONSE",
   "OPIK_OWNERSHIP_DRIFT",
+  /**
+   * FREV-07: the record's locator names a project the upstream no longer has, so no
+   * verified trace/span cleanup can even be addressed — the physical rows may well
+   * survive the project (the E2E deletion evidence). Completion by absence is exactly
+   * what #41 refuses; the record parks with its locator until the project is
+   * restorable or the target is resolved deliberately.
+   */
+  "OPIK_PROJECT_MISSING",
+  /**
+   * F5E1-F3: a run record froze "no upstream copy" while the authoritative binding now
+   * records one — the record's frozen null is stale, and deleting the local rows would
+   * strand the upstream copy with no locator at all. Parked, locator and target kept.
+   */
+  "OPIK_UPSTREAM_UNLOCATED",
 ] as const;
 
 export type RetentionErrorCode = (typeof RETENTION_ERROR_CODES)[number];
@@ -798,6 +812,29 @@ export function createObservationRetentionWorker(
         scopeKey: record.scopeKey,
         kind: record.kind,
       });
+      /*
+       * F5E1-F3: a run record with no upstream reference is honest only while the
+       * authoritative binding itself still records none. The record freezes its view at
+       * discovery; a binding that reconciled afterwards (materialization completing under
+       * an in-flight run) would strand a real upstream trace by a local-only deletion —
+       * the exact "null opik_trace_id skips the real upstream cleanup" the review refused.
+       * The binding row is re-read at execution time, and a row that moved parks the
+       * record with its locator instead of deleting underneath it.
+       */
+      if (record.kind === "run" && record.upstreamKind === null) {
+        const binding = await db
+          .select({ opikTraceId: aiObservationBindings.opikTraceId })
+          .from(aiObservationBindings)
+          .where(
+            and(
+              eq(aiObservationBindings.id, record.targetId),
+              eq(aiObservationBindings.scopeKey, record.scopeKey),
+            ),
+          );
+        if (binding[0] !== undefined && binding[0].opikTraceId !== null) {
+          throw new RetentionFailure("OPIK_UPSTREAM_UNLOCATED");
+        }
+      }
       if (record.upstreamKind !== null && record.state !== "upstream_done") {
         const port = gate();
         if (stopWork) {
@@ -819,7 +856,14 @@ export function createObservationRetentionWorker(
               });
         if (result.outcome !== "ok") {
           throw new RetentionFailure(
-            failureCode(result as OpikPortResult<never>),
+            // FREV-07: a missing locator project answers 404, and its traces may well be
+            // the rows the E2E evidence watched survive a project delete — named apart so
+            // the parked record says what it is waiting on, not a generic client error.
+            record.upstreamKind === "trace" &&
+              result.outcome === "upstream_error" &&
+              result.status === 404
+              ? "OPIK_PROJECT_MISSING"
+              : failureCode(result as OpikPortResult<never>),
           );
         }
         // The port's ok is observed-absent, not request-accepted (FREV-07): the

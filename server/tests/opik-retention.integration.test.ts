@@ -118,6 +118,13 @@ function fakePort(options: {
   gatedDelete?: boolean;
   failFirstTraceDelete?: boolean;
   failFirstDatasetDelete?: boolean;
+  /**
+   * FREV-07: the first N deleteTraces calls answer the port's missing-project
+   * failure (404) — the shape the locator's project being gone answers — while
+   * the rows stay in the fake, exactly as the E2E evidence watched them survive
+   * a project delete.
+   */
+  projectMissingDeletes?: number;
 }) {
   const rows = [...(options.rows ?? [])];
   const calls: {
@@ -161,6 +168,17 @@ function fakePort(options: {
       traceDeleteCalls += 1;
       if (options.gatedDelete) {
         await new Promise<void>((resolve) => waiting.push(resolve));
+      }
+      if (
+        options.projectMissingDeletes !== undefined &&
+        traceDeleteCalls <= options.projectMissingDeletes
+      ) {
+        return {
+          outcome: "upstream_error" as const,
+          operation: "deleteTraces" as const,
+          code: "OPIK_CLIENT_ERROR" as const,
+          status: 404,
+        };
       }
       if (options.failFirstTraceDelete && traceDeleteCalls === 1) {
         return {
@@ -886,6 +904,29 @@ test("an accepted delete is not completion: the record parks until the read-back
       return traceGone
         ? new Response("{}", { status: 404 })
         : new Response(JSON.stringify({ id: traceId }), { status: 200 });
+    }
+    // The span-level absence probe (FREV-07): the spans follow the trace row's
+    // cleanup — still listed while the trace is queryable, an empty envelope
+    // once the whole thing is gone.
+    if (
+      url.startsWith("http://opik.test/api/v1/private/spans?") &&
+      url.includes(`trace_id=${traceId}`)
+    ) {
+      readbacks += 1;
+      return traceGone
+        ? new Response(
+            JSON.stringify({ page: 1, size: 1, total: 0, content: [] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          )
+        : new Response(
+            JSON.stringify({
+              page: 1,
+              size: 1,
+              total: 1,
+              content: [{ id: "01a1405b-f832-70cf-b204-000000000001" }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
     }
     throw new Error(`unexpected upstream call: GET ${url}`);
   }) as typeof fetch;
@@ -1865,4 +1906,86 @@ test("a deletion in flight hides its dataset and experiment from the readers (M1
   const experimentStore = createObservationExperimentStore(database);
   expect(await experimentStore.getExperiment(scopeA, hiding)).toBeNull();
   expect(await experimentStore.getExperiment(scopeA, kept)).not.toBeNull();
+});
+
+test("a missing locator project parks the run deletion with its locator, then recovers once the project answers (FREV-07)", async () => {
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51387${randomUUID().slice(0, 4)}`;
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: traceId,
+    days: 8,
+  });
+  // The real counterexample, replayed at the port seam: the project is gone
+  // upstream while its trace/span rows survive it — so the delete answers the
+  // port's missing-project failure and nothing has been physically cleaned.
+  const upstream = fakePort({
+    rows: [{ id: traceId, status: "COMPLETED" }],
+    projectMissingDeletes: 1,
+  });
+  const worker = workerFor({ port: upstream.port });
+
+  await worker.sweep();
+
+  let records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  // Parked failed, named apart from a generic client error, never completed.
+  expect(records[0].state).toBe("failed");
+  expect(records[0].lastError).toBe("OPIK_PROJECT_MISSING");
+  // The locator and the upstream reference survive on the record — what a retry
+  // needs, which is #41's "keep the locator until the upstream half completes".
+  expect(records[0].upstreamKind).toBe("trace");
+  expect(records[0].upstreamId).toBe(traceId);
+  expect(records[0].locatorProject).toBe(resolveStorageLocator(scopeA).project);
+  expect(records[0].deletedAt).toBeNull();
+  // The local row stays; the upstream row stays; no success was reported.
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 1 }]);
+  expect(upstream.rows.map((row) => row.id)).toEqual([traceId]);
+  expect(await auditRows(binding.id)).toHaveLength(0);
+
+  // Fault recovery: the project answers again, and the SAME record completes the
+  // deletion it was parked on — upstream copy gone, local rows gone, audited once.
+  await worker.sweep();
+
+  records = await deletionsFor(scopeA);
+  expect(records[0].state).toBe("deleted");
+  expect(records[0].lastError).toBeNull();
+  expect(upstream.calls.deleteTraces).toHaveLength(2);
+  expect(upstream.rows).toEqual([]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a run record frozen upstream-less refuses local-only deletion once its binding reconciled (F5E1-F3)", async () => {
+  const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // The record froze "no upstream copy" — then the binding's materialization
+  // completed under it (a reconcile landing between discovery and the sweep).
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51387${randomUUID().slice(0, 4)}`;
+  await bindingStore.reconcile(
+    scopeA,
+    binding.runId,
+    binding.attemptId,
+    traceId,
+  );
+
+  await worker.sweep();
+
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("failed");
+  expect(records[0].lastError).toBe("OPIK_UPSTREAM_UNLOCATED");
+  // The binding row survives: deleting it would strand the upstream trace the
+  // row now names, with no locator left anywhere.
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 1 }]);
+  // And no upstream delete was attempted under the record's stale null: the
+  // guard parks before the upstream half, not after a guessed cleanup.
+  expect(upstream.calls.deleteTraces).toEqual([]);
 });
