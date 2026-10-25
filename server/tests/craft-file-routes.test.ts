@@ -755,4 +755,24 @@ describe("#618 R1-F2: the fail-closed refusal answers as its own 503", () => {
     expect(body.error).not.toContain("acme-co");
     expect(calls).toEqual([]);
   });
+
+  test("delete surfaces the same 503 (the r2-disclosed mask), zero outbound calls", async () => {
+    // r2 disclosed this catch as the same masking shape — the refusal used to wear
+    // the generic "could not be deleted" 502. deletePath meets the refusal directly
+    // (it is not listing-wrapped), so the recognizer's instanceof arm settles it.
+    const { gateway, calls } = unscopedGateway();
+    const response = await createFileRoutes(fakeRequireUser(), {
+      config: halfScopedConfig,
+      store: fakeStore(),
+      gateway,
+      botIdFor: async () => "craft",
+    }).request(`/sessions/${SESSION_ID}/files/attachments/report.txt`, {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
 });

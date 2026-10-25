@@ -307,7 +307,15 @@ export function createFileRoutes(
     let deleted: boolean;
     try {
       deleted = await fileApi.deletePath(fullPath);
-    } catch {
+    } catch (error) {
+      // #618 (r3): r2 disclosed this face as the same masking shape R1-F2 fixed for
+      // upload and archive — the refusal must not wear this face's "could not be
+      // deleted" 502. Same no-log contract: the fixed sentence IS the reason, and
+      // it names no value to leak.
+      const refusal = sandboxScopeRefusalOf(error);
+      if (refusal) {
+        return context.json({ error: refusal.message }, 503);
+      }
       return context.json({ error: "The file could not be deleted." }, 502);
     }
     if (!deleted) {
