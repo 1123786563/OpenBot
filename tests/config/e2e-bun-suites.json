@@ -704,6 +704,7 @@
   {
    "name": "server/tests part 11",
    "files": [
+    "server/tests/opik-business-tool-linkage.test.ts",
     "server/tests/opik-t-final-assembly.test.ts",
     "server/tests/opik-tool-steps.test.ts"
    ]
@@ -1637,6 +1638,7 @@
   "server/tests/opik-admin-summary.test.ts",
   "server/tests/opik-bindings.integration.test.ts",
   "server/tests/opik-bindings.test.ts",
+  "server/tests/opik-business-tool-linkage.test.ts",
   "server/tests/opik-case-review.integration.test.ts",
   "server/tests/opik-case-review.test.ts",
   "server/tests/opik-comparison.integration.test.ts",
