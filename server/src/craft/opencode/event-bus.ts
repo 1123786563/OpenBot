@@ -106,6 +106,20 @@ export type PodEventBusOptions = {
   fetchImpl?: typeof fetch;
 };
 
+/**
+ * #618 (FR-F2): the proxy's scope-mismatch verdict on the SSE dial (403). An
+ * authorization decision never changes by redialing, so the reader treats it as terminal
+ * instead of feeding the reconnect ladder — subscribers get the closed sentinel (what the
+ * turn layer translates into a transport error), never a silent retry loop and never a
+ * stream that quietly "works".
+ */
+class EventStreamForbiddenError extends Error {
+  constructor(status: number) {
+    super(`/event answered HTTP ${status}`);
+    this.name = "EventStreamForbiddenError";
+  }
+}
+
 const RECONNECT_BACKOFF_INITIAL_MS = 1000;
 const RECONNECT_BACKOFF_MAX_MS = 30_000;
 // Give up after this many consecutive failed reconnects — the sandbox is almost
@@ -238,7 +252,14 @@ export class PodEventBus {
       try {
         await this.readOneStream();
         hadSuccessfulRead = this.streamReady;
-      } catch {
+      } catch (error) {
+        if (error instanceof EventStreamForbiddenError) {
+          // #618 (FR-F2): terminal — stop the reader and signal closed now; the
+          // ladder below is for transient stream failures, not authorization.
+          this.stopped = true;
+          this.signalSubscribersClosed();
+          return;
+        }
         // Stream error — reconnect below (with backoff).
       } finally {
         this.streamReady = false;
@@ -294,6 +315,9 @@ export class PodEventBus {
       ),
     });
     if (!response.ok) {
+      if (response.status === 403) {
+        throw new EventStreamForbiddenError(response.status);
+      }
       throw new Error(`/event answered HTTP ${response.status}`);
     }
     if (!response.body) {

@@ -21,8 +21,8 @@ import { appendAttachmentsSectionIfMissing } from "./agent-instructions";
 import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";
 import { packDirectoryZip, WorkspaceListingError } from "./directory-archive";
-import { SandboxExecutionScopeUnavailableError } from "./errors";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { sandboxScopeRefusalOf } from "./scope-refusal";
 import type { CraftStore } from "./store";
 import {
   collisionFreeName,
@@ -58,29 +58,6 @@ function validateStrictPath(path: string): StrictPathVerdict {
   // Everything else must stay in the safe filename alphabet.
   if (!/^[a-zA-Z0-9_\-./]+$/.test(path.replace(/^\/+/, ""))) {
     return "characters";
-  }
-  return null;
-}
-
-/**
- * #618 (R1-F2): a deployment without an execution scope is an answerable, admin-fixable
- * condition — these endpoints surface the refusal's own fixed sentence as 503, not the
- * generic 502 it used to wear. The archive path meets the refusal WRAPPED: the walk folds
- * the refused root listing into a WorkspaceListingError whose message embeds the cause's
- * sentence, so the wrap is recognized by that (constant, value-free) sentence. Neither
- * shape carries an ownership value into the answer — the sentence names none.
- */
-const SANDBOX_SCOPE_REFUSAL = new SandboxExecutionScopeUnavailableError();
-
-function sandboxScopeRefusalOf(
-  error: unknown,
-): SandboxExecutionScopeUnavailableError | null {
-  if (error instanceof SandboxExecutionScopeUnavailableError) return error;
-  if (
-    error instanceof WorkspaceListingError &&
-    error.message.includes(SANDBOX_SCOPE_REFUSAL.message)
-  ) {
-    return SANDBOX_SCOPE_REFUSAL;
   }
   return null;
 }
