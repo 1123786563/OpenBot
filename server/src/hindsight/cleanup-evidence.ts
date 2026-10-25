@@ -484,9 +484,14 @@ export function createCleanupEvidenceService(
     const unverified = freshOutcomes.filter(
       (outcome) => outcome.state !== "absent",
     ).length;
+    // FIX-OCR3 (O3-M5): the observation a pure read may claim is the latest verification
+    // of a CLEARED row only — an outstanding row's verify time is not this claim's evidence,
+    // and letting it stand in would date "cleared" with a moment that proved nothing.
     const lastVerifiedAt = rows.reduce<number | null>(
       (latest, row) =>
-        row.verifiedAt && (latest === null || row.verifiedAt.getTime() > latest)
+        row.deletionState === "confirmed" &&
+        row.verifiedAt &&
+        (latest === null || row.verifiedAt.getTime() > latest)
           ? row.verifiedAt.getTime()
           : latest,
       null,

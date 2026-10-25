@@ -44,6 +44,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { enterpriseWorkspaceMemberships } from "../db/schema/enterprise-tenancy";
 import {
@@ -450,6 +451,7 @@ export function createSourceBoundRecallService(
     budget?: HindsightBudgetGate;
   } = {},
 ) {
+  const log = getLogger("server");
   const now = options.now ?? (() => new Date());
   const doFetch =
     config.fetch ?? ((input: string, init?: RequestInit) => fetch(input, init));
@@ -519,6 +521,11 @@ export function createSourceBoundRecallService(
    * drain re-admits it under its own work key once the budget recovers, so an exhausted
    * decision charges nothing here. The admission key is stable per row and confirmed
    * content, the judgment review's `admittedRetain` discipline.
+   *
+   * FIX-OCR3 (O3-M1): that discipline includes its bookkeeping guard, verbatim now — the
+   * admission and settle/release calls are local DB writes that run after the decision row
+   * and work row already landed, so their failure degrades, never fails the confirm (the
+   * judgment review's O2-M1 rule, which this seam had copied in name only).
    */
   async function admittedRetain(
     identity: { tenantId: string; principalId: string },
@@ -530,33 +537,66 @@ export function createSourceBoundRecallService(
         await retain(backgroundTaskBankScope(identity, bank), bank.id, row)
       ).synced;
     }
-    const admission = await options.budget.admitBackgroundWork({
-      tenantId: identity.tenantId,
-      principalId: identity.principalId,
-      workKey: `source-bound-eager:${row.id}:${digestOf(row.content)}`,
-      units: 1,
-    });
+    let admission: Awaited<
+      ReturnType<HindsightBudgetGate["admitBackgroundWork"]>
+    >;
+    try {
+      admission = await options.budget.admitBackgroundWork({
+        tenantId: identity.tenantId,
+        principalId: identity.principalId,
+        workKey: `source-bound-eager:${row.id}:${digestOf(row.content)}`,
+        units: 1,
+      });
+    } catch {
+      log.error(
+        {
+          type: "source-bound-eager-budget-admit-failed",
+          context: { rowId: row.id },
+          timestamp: new Date().toISOString(),
+        },
+        "source-bound-eager-budget-admit-failed",
+      );
+      return false;
+    }
     if (!admission.ok) return false;
     const outcome = await retain(
       backgroundTaskBankScope(identity, bank),
       bank.id,
       row,
     );
-    if (outcome.synced) {
-      await options.budget.settleBackgroundWork(admission.reservationId);
-      return true;
-    }
-    if (outcome.reached) {
-      // The service answered and refused: it did the work, the charge stands — the same
-      // split the sync queue's retains draw.
-      await options.budget.settleBackgroundWork(admission.reservationId);
-    } else {
-      await options.budget.releaseBackgroundWork(
-        admission.reservationId,
-        "eager retain could not reach the service",
+    try {
+      if (outcome.synced) {
+        await options.budget.settleBackgroundWork(admission.reservationId);
+        return true;
+      }
+      if (outcome.reached) {
+        // The service answered and refused: it did the work, the charge stands — the same
+        // split the sync queue's retains draw.
+        await options.budget.settleBackgroundWork(admission.reservationId);
+      } else {
+        await options.budget.releaseBackgroundWork(
+          admission.reservationId,
+          "eager retain could not reach the service",
+        );
+      }
+      return false;
+    } catch {
+      log.error(
+        {
+          type: "source-bound-eager-budget-bookkeeping-failed",
+          context: {
+            rowId: row.id,
+            reservationId: admission.reservationId,
+          },
+          timestamp: new Date().toISOString(),
+        },
+        "source-bound-eager-budget-bookkeeping-failed",
       );
+      // The retain itself already answered; only its ledger entry is unsound. The decision
+      // stands with the outcome the service gave, and the reservation the failed call left
+      // behind is the period's to age out.
+      return outcome.synced;
     }
-    return false;
   }
 
   /**

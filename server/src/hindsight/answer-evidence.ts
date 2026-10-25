@@ -425,11 +425,23 @@ export function createAnswerEvidenceService(
       return preferences.correctGenericPreference(scope, id, input);
     },
 
-    /** Edit a basis's confirmed original, on whichever authority table owns it. */
+    /**
+     * Edit a basis's confirmed original, on whichever authority table owns it.
+     *
+     * FIX-OCR3 (O3-M8): the second confirmation rides here exactly as it does on the
+     * correction next door — every owner seam's edit re-runs the same sensitivity gate, and
+     * an edit that arrived without this field would be unconfirmable sensitive material: the
+     * refusal has no second look to give. The whole input object is forwarded, so this is a
+     * declaration, not a new wire shape.
+     */
     async editEvidence(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown },
+      input: {
+        content: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ) {
       const owner = await resolveOwner(scope, id);
       if (owner === "preference") {

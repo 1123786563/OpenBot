@@ -91,6 +91,14 @@ export function createHindsightMemoryRoutes(deps: HindsightMemoryRoutesDeps) {
     const message = error instanceof Error ? error.message : "";
     if (message === "AUTH_REQUIRED")
       return context.json({ error: "Authentication required." }, 401);
+    // FIX-OCR3 (O3-M6): an unresolved company/workspace selection is the caller's state, not
+    // a server fault — the same 400 the host memory family and the ops face map it to, so
+    // this surface stops answering "unavailable, try again" to a request that cannot succeed.
+    if (message === "TENANT_REQUIRED" || message === "WORKSPACE_REQUIRED")
+      return context.json(
+        { error: "Select the company and workspace first." },
+        400,
+      );
     if (
       [
         "SCOPE_REVOKED",
