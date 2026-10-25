@@ -4,6 +4,7 @@ import {
   useRenderActivityMessage,
   useRenderToolCall,
 } from "@copilotkit/react-core/v2";
+import { readConnectPrompt } from "@openbot/shared/connect-prompt";
 import {
   IconAlertTriangle,
   IconBox,
@@ -56,15 +57,10 @@ import { readToolName } from "@/lib/plugins/tool-name";
 import {
   asText,
   forDisplay,
-  REFUSAL_MARKER,
   refusalBody,
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
 import { readTeamBotConsent } from "@/lib/team-bots";
-import {
-  readConnectPrompt,
-  refusalBody as markerRefusalBody,
-} from "@openbot/shared/connect-prompt";
 import { cn } from "@/lib/utils";
 import { VOICE_CHAT_ACTIVITY, type VoiceChatEntry } from "@/lib/voice/archive";
 import {
@@ -1401,7 +1397,7 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * any guess made here. See REFUSAL_MARKER in server/src/plugins/tools.ts.
    */
   const answer = result === undefined ? undefined : asText(result);
-  const refusal = markerRefusalBody(answer, REFUSAL_MARKER);
+  const refusal = refusalBody(result);
   const refused = refusal !== null;
   const failed = !refused && toolResultFailed(result);
   /*
@@ -1409,8 +1405,9 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * label and then "Refused." again in the first two words of the body, which is the same fact three
    * times over by the end of the sentence. Stripped here rather than on the server, because the
    * server's copy is what the model is told and "Refused." in front of a reason is right for it —
-   * and the strip is `markerRefusalBody`, the connect codec's; the fold and the card read the same
-   * envelope off through `refusalBody` in `tool-result`, which decodes before it matches.
+   * and the strip is `refusalBody` in `tool-result`, the one sequence that decodes before it
+   * matches, the same one the fold, the card, and `connectPromptOf` below all read; the connect
+   * codec's own copy answers only its marker wire now, and no two readers can drift apart.
    */
   const body = refusal ?? answer;
   // A Team Bot asking to use this person's own account draws its consent card, not the sentence.

@@ -3,7 +3,10 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import i18next from "i18next";
-import { connectAppRefusal } from "../../shared/connect-prompt";
+import {
+  connectAppRefusal,
+  refusalBody as markerRefusalBody,
+} from "../../shared/connect-prompt";
 import {
   afterAll,
   afterEach,
@@ -258,6 +261,100 @@ test("a frame never re-parses history it has already judged, however far past th
     JSON.parse = realParse;
   }
   expect(parses).toBe(0);
+});
+
+/*
+ * The FIFO bounds how many verdicts the cache holds, not how much text: a vendor's result reaches
+ * it merely by opening with `Refused.`, at any length. Results past the size cap are judged every
+ * frame and never stored — and a short refusal still buys its one parse and keeps it.
+ */
+test("a result past the verdict cache's size cap is judged every frame and never stored", () => {
+  // One character past the cap, JSON-encoded the way the runtime carries a refusal (the two
+  // quotes the encoding adds are why the repeat counts them in).
+  const oversized = JSON.stringify(
+    `Refused. ${"x".repeat(16_385 - "Refused. ".length - 2)}`,
+  );
+  expect(oversized.length).toBe(16_385);
+  const judged = search("judged", oversized);
+  // The verdict is still the right one: an ordinary refusal asks nobody, so it folds.
+  const after = search("after");
+  const grouped = groupToolSteps([judged, after]);
+  expect(grouped).toHaveLength(1);
+  expect(expectGroup(grouped[0]).steps).toEqual([judged, after]);
+  // Two frames over the same history: no cache entry can absorb the second one, so the result
+  // is re-judged on it — one decode-and-parse per frame, the price before the cache existed.
+  {
+    const realParse = JSON.parse;
+    let parses = 0;
+    JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+      parses += 1;
+      return realParse(...args);
+    }) as typeof JSON.parse;
+    try {
+      groupToolSteps([judged]);
+      groupToolSteps([judged]);
+    } finally {
+      JSON.parse = realParse;
+    }
+    expect(parses).toBe(2);
+  }
+  // A refusal short enough to be worth an entry still gets one, and the second frame reads it
+  // without parsing anything at all.
+  const short = search(
+    "short",
+    JSON.stringify("Refused. Short enough to be worth a cache entry."),
+  );
+  {
+    const realParse = JSON.parse;
+    let parses = 0;
+    JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+      parses += 1;
+      return realParse(...args);
+    }) as typeof JSON.parse;
+    try {
+      groupToolSteps([short]);
+      groupToolSteps([short]);
+    } finally {
+      JSON.parse = realParse;
+    }
+    expect(parses).toBe(1);
+  }
+});
+
+/*
+ * ServerToolLine used to strip its refusal through the connect codec's two-argument copy, over
+ * text it had decoded by hand; it now reads the one-sequence `refusalBody` from `tool-result`,
+ * like the fold and the card. The two strips agree only while decode-then-match keeps the same
+ * order in both, and this pin holds them to it over the shapes a result can arrive in.
+ */
+test("the transcript's refusal strip and the connect codec's agree on every shape a result arrives in", () => {
+  const refusal = JSON.stringify(
+    `Refused. ${connectAppRefusal({
+      serverId: "github",
+      title: "GitHub",
+      message: "Connect your GitHub account and ask again.",
+    })}`,
+  );
+  const results: (string | undefined)[] = [
+    undefined,
+    JSON.stringify("Refused. The policy does not allow that."),
+    "Refused. Bare text, carried without the runtime's encoding.",
+    `  ${refusal}`,
+    JSON.stringify("The answer was Refused. mid-sentence"),
+    '{"results":"a vendor envelope, not text"}',
+    '"Refused. unterminated',
+  ];
+  for (const result of results) {
+    expect(
+      markerRefusalBody(
+        result === undefined ? undefined : toolResult.asText(result),
+        toolResult.REFUSAL_MARKER,
+      ),
+    ).toBe(toolResult.refusalBody(result));
+  }
+  // The pin is not vacuous: the wire's own refusal yields its body, and look-alikes yield null.
+  expect(toolResult.refusalBody(refusal)).not.toBeNull();
+  expect(toolResult.refusalBody(results[4])).toBeNull();
 });
 
 test("grouping reads a real streamed conversation through the transcript projection", () => {

@@ -95,6 +95,20 @@ function foldable(item: ToolItem): boolean {
  * cap-evicted verdict is merely computed once more.
  */
 const ASK_VERDICTS_LIMIT = 512;
+
+/**
+ * The largest result worth a cache entry, in characters.
+ *
+ * The FIFO bounds how many verdicts are held, not how much text: the key is the result itself, and
+ * a result reaches the cache merely by opening with `Refused.` — which a vendor's or MCP result
+ * can do at any length, since only the refusals this server writes wear a body it has already
+ * bounded (the connect payload is capped at 8KiB in `connect-prompt`). 512 entries of unbounded
+ * text would sit in the page's memory for its lifetime, released by neither a channel nor a
+ * session switch. Past this size a verdict is still answered, just never stored — the result is
+ * re-judged each frame, exactly what every frame did before the cache existed.
+ */
+const ASK_VERDICTS_CACHEABLE_MAX = 16_384;
+
 const askVerdicts = new Map<string, boolean>();
 
 /**
@@ -132,6 +146,10 @@ function asksThePerson(result: string | undefined): boolean {
   const verdict =
     body !== null &&
     (readTeamBotConsent(body) !== null || readConnectPrompt(body) !== null);
+  // An oversized result is judged and answered in one motion: storing it would put unbounded
+  // vendor text in the page's memory for its lifetime, and what it saves — one parse per frame —
+  // is what every frame paid before the cache existed.
+  if (result.length > ASK_VERDICTS_CACHEABLE_MAX) return verdict;
   if (askVerdicts.size >= ASK_VERDICTS_LIMIT) {
     const oldest = askVerdicts.keys().next();
     if (!oldest.done) askVerdicts.delete(oldest.value);
