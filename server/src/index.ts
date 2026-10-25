@@ -7741,6 +7741,29 @@ if (opikBootConfig.enabled) {
 }
 
 /*
+ * F5E1-F1's assembly fact, said once at boot: the observation face above is NOT billing's,
+ * and this line names which reason installed the model wrapper. With the billing machinery
+ * composed, `copilot.ts` builds the metered wrapper it always did (admission, settlement and
+ * the observation bypass on one wrapper); without it — a legal stock deployment — the
+ * observation-only wrapper does, producing governed facts with no gate and no meter. A run
+ * shape that still cannot be wrapped (a runtime-resolved string model, a subscription harness
+ * model) is counted and warned by `copilot.ts`; this line names the wiring, that warn names
+ * the gap, and together they keep an enabled deployment from looking observed when it is not.
+ */
+if (opikBootConfig.enabled) {
+  log.info(
+    {
+      type: "opik-observation-wiring",
+      modelWrapper:
+        billing !== undefined && usageOutbox !== undefined
+          ? "metered"
+          : "observation_only",
+    },
+    "opik-observation-wiring",
+  );
+}
+
+/*
  * Tool- and retrieval-step recording (Issue #21 / T15), on the same footing as the
  * model spans above: the built-in path's step facts (proposal / real execute / receipt,
  * correlated by toolCallId) and the retriever's observations (query, kb list, fragments)

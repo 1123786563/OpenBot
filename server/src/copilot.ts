@@ -1571,11 +1571,21 @@ function spanInputOf(params: unknown): string | null {
  * Structural on purpose — the middleware types live in `@ai-sdk/provider`, which this workspace
  * does not depend on directly; the runtime carries them transitively, and pinning that into
  * `package.json` to record two field names is not the trade.
+ *
+ * TWO REASONS TO WRAP, ONE WRAPPER (F5E1-F1). The billing seam is one of them; the observation
+ * bypass below is the other, and it is not billing's business: a deployment may enable Opik and
+ * run no billing at all, and that legal stock shape used to produce zero observation facts for
+ * every successful run because the model was handed back untouched. `observationOnly` says which
+ * reason built this wrapper — no gate is consulted, no meter is called and no settlement is
+ * decided, because there is none to decide: the wrapper records the call and must never change
+ * what the person receives. The billing path is unchanged, branch for branch.
  */
 function meteredModel<T>(
   model: T,
   attribution?: { userId: string | null; botId: string | null },
+  options?: { observationOnly?: boolean },
 ): T {
+  const observationOnly = options?.observationOnly === true;
   const inner = model as {
     doStream: (params: unknown) => Promise<{
       stream: ReadableStream<Record<string, unknown>>;
@@ -1596,6 +1606,17 @@ function meteredModel<T>(
        * capture below runs at all.
        */
       const spanObserver = builtinModelSpanObserver;
+      /*
+       * F5E1-F1: an observation-only wrapper has no admission to consult. The MODE decides,
+       * never the current presence of a gate — a gate wired after this build must not turn a
+       * recording wrapper into an admitting one. `gate` is the only gate read below.
+       */
+      const gate = observationOnly ? undefined : modelUsageGate;
+      /*
+       * The meter is billing's sink exactly as the gate is: an observation-only wrapper must
+       * never hand a usage fact to it, even if one is wired later in the same process.
+       */
+      const meter = observationOnly ? undefined : usageMeter;
       let spanInput: string | null = null;
       /*
        * OCR R5-47: the observation side's own "verdict on record" flag, set
@@ -1663,9 +1684,9 @@ function meteredModel<T>(
        * refuses (throws CreditGateError) when the live balance is zero. A gate that THROWS for
        * another reason is also refused: fail-closed — an unreadable balance is not a free pass.
        */
-      if (modelUsageGate) {
+      if (gate) {
         try {
-          lifecycle = await modelUsageGate({
+          lifecycle = await gate({
             eventId,
             occurredAt,
             modelId: typeof inner.modelId === "string" ? inner.modelId : null,
@@ -1743,7 +1764,7 @@ function meteredModel<T>(
         throw new ModelUsageRefusalError(code);
       };
       let request = params;
-      if (modelUsageGate) {
+      if (gate) {
         if (!providerBounds) return refuse("model_bounds_missing");
         if (providerBounds.input.enforced === "unsupported")
           return refuse("input_bound_unsupported");
@@ -1853,7 +1874,7 @@ function meteredModel<T>(
           outputTokens: usage.outputTokens,
         });
         try {
-          await usageMeter?.({
+          await meter?.({
             eventId,
             occurredAt,
             inputTokens: usage.inputTokens,
@@ -2063,12 +2084,35 @@ function meteredModel<T>(
             const billedInput = reportedInput ?? 0;
             const billedOutput = reportedOutput ?? 0;
             if (!validInput || !validOutput) {
-              await failSettlement(
-                "billing-model-usage-invalid",
-                new ModelUsageSettlementError("usage_invalid"),
-                { inputTokens: billedInput, outputTokens: billedOutput },
-              );
-              return;
+              /*
+               * F5E1-F1: with no settlement there is nothing to fail. An observation-only
+               * wrapper RECORDS the call, so a malformed usage report is the honest unknown
+               * ending and the part still reaches the person — observation must never take
+               * the product path down on its own account. The billing path's settlement
+               * failure below is unchanged.
+               */
+              if (observationOnly) {
+                log.warn(
+                  {
+                    type: "observation-usage-invalid",
+                    eventId,
+                    inputTokens: billedInput,
+                    outputTokens: billedOutput,
+                  },
+                  "observation-usage-invalid",
+                );
+                await settleFail("usage_missing", {
+                  inputTokens: billedInput,
+                  outputTokens: billedOutput,
+                });
+              } else {
+                await failSettlement(
+                  "billing-model-usage-invalid",
+                  new ModelUsageSettlementError("usage_invalid"),
+                  { inputTokens: billedInput, outputTokens: billedOutput },
+                );
+                return;
+              }
             }
             const inputBound = providerBounds?.input;
             const outputBound = providerBounds?.output;
@@ -2538,18 +2582,25 @@ function mastraAgentConfiguration(input: {
 }
 
 /**
- * Wrap the model instance in the usage meter when one is wired and the model is an instance (the
- * string form is resolved by the runtime itself, where this file cannot reach). The build's
- * attribution rides along, so the gate's usage fact names the Bot that ran it and who for.
+ * Wrap the model instance when this deployment has something to attach to it — billing's meter
+ * or gate, or the observation bypass — and the model is an instance (the string form is resolved
+ * by the runtime itself, where this file cannot reach). The build's attribution rides along, so
+ * the gate's usage fact names the Bot that ran it and who for.
  */
 function withUsageMeter<T>(
   model: T,
   attribution?: { userId: string | null; botId: string | null },
 ): T {
-  // The gate rides the same wrapper as the meter: a deployment with neither wired (no billing)
-  // gets the model untouched, and a deployment with only the meter still meters — the two are
-  // independent injections on purpose.
-  if (usageMeter === undefined && modelUsageGate === undefined) return model;
+  /*
+   * F5E1-F1: the observation bypass is a reason to wrap IN ITS OWN RIGHT. Billing is optional
+   * and its absence is a legal deployment; an enabled observer is what a deployment without
+   * billing actually asked for, and it used to ride the billing wrapper — so "Opik on, billing
+   * off" ran every Bot unwrapped and the registered observer was never called, with no failure
+   * count anywhere saying so. The two reasons stay independent: either one being wired installs
+   * the wrapper, and only the billing one admits, meters or settles.
+   */
+  const billingWired = usageMeter !== undefined || modelUsageGate !== undefined;
+  if (!billingWired && builtinModelSpanObserver === undefined) return model;
   const candidate = model as
     | (Record<string, unknown> & { doStream?: unknown })
     | string;
@@ -2559,8 +2610,48 @@ function withUsageMeter<T>(
   ) {
     return model;
   }
-  return meteredModel(model, attribution);
+  return meteredModel(model, attribution, {
+    observationOnly: !billingWired,
+  });
 }
+
+/*
+ * F5E1-F1's visible half: a run build whose model wiring cannot carry the observation wrapper
+ * is COUNTED per reason and said out loud — a deployment that cannot observe says so instead of
+ * looking healthy. Two shapes remain, both structural:
+ *
+ * - `string_model`: the runtime resolves "provider/model" strings itself (the legacy dial,
+ *   reached when no gateway transport is wired), so this file never holds the instance the
+ *   wrapper would have to hand back.
+ * - `plan_model`: the subscription harness's model is a CLASS instance; the wrapper's `{...inner}`
+ *   copy drops prototype methods (`doGenerate`), so the plan path is left exactly as built
+ *   rather than half-wrapped.
+ *
+ * The map is process-local on purpose: an operator reads the warn lines, and each one carries
+ * the running count for its reason. Nothing on the product path reads it.
+ */
+const unobservableRunShapes = new Map<string, number>();
+
+function reportUnobservableRunShape(
+  reason: "string_model" | "plan_model",
+  botId: string,
+) {
+  const count = (unobservableRunShapes.get(reason) ?? 0) + 1;
+  unobservableRunShapes.set(reason, count);
+  log.warn(
+    { type: "builtin-observation-unavailable", reason, botId, count },
+    "builtin-observation-unavailable",
+  );
+}
+
+/** Test-only read of that counter, on the `meteredModelForTests` precedent. */
+export const builtinObservationGapForTests = {
+  counts: (): ReadonlyMap<string, number> => new Map(unobservableRunShapes),
+  reset: () => unobservableRunShapes.clear(),
+};
+
+/** Test-only surface for the wrapper's own decision (F5E1-F1). */
+export const withUsageMeterForTests = withUsageMeter;
 
 export function builtInAgentConfiguration(
   agent: RegisteredBuiltInAgent,
@@ -2753,6 +2844,18 @@ export function builtInAgentConfiguration(
       },
     };
   }
+  /*
+   * F5E1-F1: a string-form model with no admission to prove still runs — there is nothing to
+   * refuse — but the observation wrapper cannot reach what the runtime resolves internally, so
+   * this build is COUNTED and warned instead of quietly observing nothing.
+   */
+  if (
+    modelUsageGate === undefined &&
+    builtinModelSpanObserver !== undefined &&
+    typeof resolvedModel === "string"
+  ) {
+    reportUnobservableRunShape("string_model", agent.id);
+  }
 
   if (planModel) {
     // The marked path, per run (09.4): this run is billed by the subscription credential, so
@@ -2767,6 +2870,14 @@ export function builtInAgentConfiguration(
       botId: agent.id,
       userId: attribution?.userId ?? null,
     });
+    /*
+     * F5E1-F1: the plan path's model is handed over unwrapped (a class instance would lose its
+     * prototype methods in the wrapper's copy), so an observation-enabled deployment running on
+     * a subscription harness is COUNTED and warned, never left looking observed.
+     */
+    if (builtinModelSpanObserver !== undefined) {
+      reportUnobservableRunShape("plan_model", agent.id);
+    }
   }
 
   return {
