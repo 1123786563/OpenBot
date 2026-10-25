@@ -76,7 +76,7 @@
 
 **本轮新发现（findings）**
 
-- **F-T12-1（MEDIUM，A09 相关）**：`package-migration` driven 组对共享库既有全局 `skills.slug` 不稳健。r3（10:31，演示写入前）统一门禁绿；随后 live 演示的 legacy 专家安装写入全局 skills 行，同一门禁重跑红：`duplicate key … skills_slug_key`（`r3b-gate-package-migration.log`、`r3-driven-package-migration.log`）。生产迁移面对的就是存量 slug，需实现票确认 migrate-legacy 与"slug 全局唯一"的交互（幂等/冲突策略）。**恢复/复核条件**：在干净测试库重放 r3 顺序即绿；脏库行为需票级裁决。
+- **F-T12-1（MEDIUM，A09 相关）**：`package-migration` driven 组对共享库既有全局 `skills.slug` 不稳健。r3（10:31，演示写入前）统一门禁绿；随后 live 演示的 legacy 专家安装写入全局 skills 行，同一门禁重跑红：`duplicate key … skills_slug_key`（`r3b-gate-package-migration.log`、`r3-driven-package-migration.log`）。生产迁移面对的就是存量 slug，需实现票确认 migrate-legacy 与"slug 全局唯一"的交互（幂等/冲突策略）。**恢复/复核条件**：在干净测试库重放 r3 顺序即绿；脏库行为需票级裁决。（已修复，见 §8 fix1。）
 - **F-T12-2（MEDIUM，部署供给缺口）**：drizzle 全量迁移路径只覆盖部分企业表 RLS/GRANT。以全新库 `openbot_enterprise_t12live` 实测：46 张 `enterprise_%` 表中仅 28 张有策略；`enterprise_workspace_memberships` 等 18 张无 policy 且 `ob_ent_*` 无权限，导致 scope 解析 `permission denied`（`t12-verify`/`t12-scope` 探针）。**结论**：生产/部署侧尚无企业表 RLS/GRANT 的 provisioning 路径（MT 任务链=测试工具路径，与 2026-10-19 记录同类）。本轮 live 演示因此使用已 provision 的 Run 测试库并在此披露；该缺口需归属实现票（部署 provisioning）。
 - **F-T12-3（LOW，可观测性）**：`server/src/index.ts` 组装企业能力的 `catch (_error) { return null; }` 吞错且无日志，而启动拒绝文案称"the verification error is on the log above"（实际不在日志）；`plugin-packages/routes.ts` 的 `INTERNAL` 关闭映射同样丢弃原因。排障只能靠 standalone 探针（本轮如此定位 channel 角色错配）。
 - **F-T12-4（LOW，环境/配置）**：server 启动一次性打开 >100 连接（多个 npm-`postgres` LISTEN 池叠加），在默认 `max_connections=100` 的 Postgres 上 `sorry, too many clients already` 拒启；本轮把 Run 容器调到 300 并重启（记录于 §7）。部署 compose/文档应给出上限与引导。
@@ -95,3 +95,38 @@
 - 测试库：`openbot_enterprise_issue459` 供 driven + live；`openbot_enterprise_t12live` 为供给缺口实验库（保留，可删）。`openbot_t12_live`（前次中断会话创建、未迁移）已 DROP。
 - live 栈进程：server :3321 与 vite :3322 为本轮启动，验收结束后停止（见报告）。
 - 本轮新增文件：`verification/**`（证据 + 可重放脚本）、本工作区临时 BASE 对照树 `/tmp/t12-base2`（可删）。生产代码零改动。
+
+## 8. fix1 — F-T12-1 迁移存量 slug 稳健性修复（2026-10-25，分支 `1123786563/t12-pkg12-acceptance`）
+
+**结论先行**：F-T12-1 不是生产迁移缺陷，是驱动 fixture 的造数方式与真实安装路径不一致；修复后 `package-migration` 组在"已有 legacy 安装写入 skills"的共享库上稳定绿，生产代码零改动。
+
+**根因**（§三.1 finding 复核）：
+
+- live 演示经真实 legacy 专家安装路径（`marketplace/routes.ts` expert install → `plugins/store.ts` `installSkill`）写入全局 `skills` 行：`fullstack-engineer` 携带 `code-review`/`api-design` 两技能，行以 slug 为 id、目录内容、归属演示管理员。
+- 驱动套件 `beforeAll` 的 `seedSkillRow` 对 `code-review` 等 slug **盲插**（随机 uuid id，假设自己独占目录 slug），撞 `skills_slug_key` 全局唯一约束——即 r3b 红。
+- 真实安装路径本身对 held slug 稳健：路由先查 `skillOwner`，slug 被持有则不再写行（本人/部署行 → 只补 grant；他人私行 → 跳过），`installSkill` 的 upsert 只刷新 title/summary/instructions/icon/category/updated_at，不改持有者。
+
+**策略裁决**（依据 Spec §8/§12 逐条核对，非互斥）：
+
+- 生产迁移 apply（`migrate-legacy-apply.ts`）只写 `enterprise_package_installs/experts/grants`（resource link/provenance/grant），**从不写/改全局 slug**；同名 Skill 不抢全局 slug 已由实现满足（"迁移只建 legacy resource link"成立）。legacy 安装与迁移不互斥，无需互斥文档化；该口径已补入 `docs/plans/2026-10-24-issue-459/operations-notes.md` §1.3（迁移节）。
+- 私改/范围不可证不迁、connector 保持 legacy 等既有语义不动（下述断言全数保持绿）。
+
+**修复**（`server/tests/multitenancy/package-migration.test.ts`，测试面唯一改动）：
+
+- `seedSkillRow` 改为按真实路径造数：先查 slug 持有者；空闲 → 原插入（pkg11- id，重跑可清理）；被持有 → 该行保留持有者 id/owner，仅按 `installSkill` upsert 的同一字段集把内容收敛到本场景（pristine=目录内容 / edited=目录内容+私改标记）——drill 分类的是 slug 实际持有的那一行，与生产面对存量完全一致。
+- 新增 `seedHeldSkillRow`（F-T12-1 回归钉）：beforeAll 先按真实写形（id=slug、`on conflict (slug) do nothing`）布置 held 存量——`code-review` 部署行（owner null）+ `api-design` 他司成员私行。任何库（fresh 或脏）每次运行都演练"迁移面对 held slug"，不再依赖演示残迹存在。
+
+**验证**（Run 容器 `issue459-ent-pg` / 库 `openbot_enterprise_issue459`，即 r3b 转红的同一脏库；受限角色口令本轮重置，容器为本 Run 专用）：
+
+| 步骤 | 命令（摘要） | 结果 | 日志 |
+| --- | --- | --- | --- |
+| RED（修复前 HEAD 97013bf5f，同一脏库） | `cd server && bun --no-env-file test tests/multitenancy/package-migration.test.ts` | **1 fail**：`duplicate key skills_slug_key (code-review)`，与 r3b 同型 | `fix1-red-driven-package-migration.log` |
+| GREEN 直跑 ×2（第 2 次为紧接重跑，验自身残迹幂等） | 同上 | **9 pass / 0 fail** ×2（含 shadow 断言：matched/legacyOnly/不可见三组） | `fix1-green-package-migration.log`、`fix1-green-rerun2-package-migration.log`、`fix1-green-final-package-migration.log` |
+| 统一门禁 B2 | `E2E_BUN_ONLY="server/tests/multitenancy/package-migration" bunx e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts` | **1 passed**（内层 9/9） | `fix1-gate-package-migration.log` |
+| 统一门禁 B1 链组（12 套件） | `E2E_BUN_ONLY="server/tests/multitenancy/package chain" bunx e2e run …` | **1 passed**（迁移语义不回归） | `fix1-gate-package-chain.log` |
+| typecheck | `cd server && bunx tsc --noEmit` | 3 errors，全部 `scripts/bootstrap-local-gateway.ts` 既有，改动文件 0 新增 | — |
+| biome | `bunx biome check server/tests/multitenancy/package-migration.test.ts` | clean（import 排序已按 fix 应用） | — |
+
+**迁移语义保持证据**（GREEN 直跑内含断言全绿）：PRIVATE_EDIT（api-design 行/专家/grant）、SCOPE_UNPROVEN（无归属 Bot 的安装与 grant）、CAS SOURCE_CHANGED、MANIFEST_DIGEST_MISMATCH、apply 单一写入方不写 legacy 表、幂等重放 no-op、影子读取三组差异、gate 关 503/读撤照常。
+
+**库状态披露**：演练的私改场景现落在 slug 实际持有行上（本轮为演示管理员的 `api-design` 行携带"（私改过）"标记）——slug 全局唯一下这是唯一可造该场景的行，与生产存量形态一致；演示的 `code-review` 行保持目录内容。

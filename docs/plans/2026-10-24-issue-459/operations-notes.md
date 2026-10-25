@@ -26,6 +26,7 @@
    - 预演：`bun scripts/plugin-packages/migrate-legacy.ts dry-run --out /tmp/manifest.json`——只读，产出源 ID/内容哈希、映射建议、unresolved 报告（私人编辑=PRIVATE_EDIT、范围不可证=SCOPE_UNPROVEN、连接器=NO_DECLARING_PACKAGE 均**保持 legacy，不迁不覆盖**）。
    - 演练（测试库）：`apply --manifest /tmp/manifest.json --digest <manifestDigest> --tenant T --workspace W --actor <userId>`；写前 CAS 重验，源一变即整体拒绝（SOURCE_CHANGED）。同一 manifest 重放幂等。
    - 影子读取：`shadow-read --tenant T --workspace W`——同范围新旧可见集对比，只记录差异（matched/legacyOnly/packageOnly），零写入。
+   - 库里已有 legacy 安装写入的全局 `skills` 行（slug 全局唯一）时迁移照常安全：apply 只建 install/provenance/grant（legacy resource link），从不写或改全局 slug，同名 Skill 不抢 slug（Spec §8）；legacy 安装与迁移**不互斥**，先后或并行均可，存量行的持有者不变。`package-migration` 演练对 held slug 幂等（F-T12-1 修复，2026-10-25）。
    - 生产执行属运维授权外：本仓库只交付工具与测试库演练（#470 边界）。
 4. **范围解析**：pilot 名单里的 (tenantId, workspaceId) 必须真实存在且拟操作者为其 `tenant_admin`（apply 走生产 authorizer，非管理员即拒）。
 5. **连接与 Run 接线**：受管连接器按包声明走 `enterprise_plugin_installs`（MT031 权威）；包工具仅在受管 Run 内经 pin+逐次授权执行（PKG05/09/10 各自验收），本开关不改动这些链路。
