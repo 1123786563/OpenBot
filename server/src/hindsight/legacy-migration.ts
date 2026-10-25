@@ -454,7 +454,17 @@ export function createLegacyMemoryMigrator(
       .from(hindsightMigrationMap)
       .where(eq(hindsightMigrationMap.oldRecordId, old.id))
       .limit(1);
-    if (mapped) return { bucket: "already", migrated: false };
+    if (mapped) {
+      /*
+       * FIX-OCR2 (O2-M4): already mapped ⇒ not isolated, on THIS path too. The cleanup used
+       * to hang only off the fresh migration below, so an isolation row 0211 pre-wrote (or a
+       * #394 pass wrote before the attribution drifted and came back) survived this early
+       * return forever — reconcile's balanced check kept counting the record on both sides
+       * and the isolation list kept reporting a migrated record as quarantined.
+       */
+      await clearQuarantine(old.id);
+      return { bucket: "already", migrated: false };
+    }
     const attribution = await attributionOf(old.ownerUserId);
     if (!attribution.proven) {
       await quarantineOne(old, attribution.reason, runId);
@@ -670,6 +680,18 @@ export function createLegacyMemoryMigrator(
       .onConflictDoNothing();
   }
 
+  /**
+   * The map row is the durable fact; whatever an earlier isolation verdict left beside the
+   * same old id goes. Both paths that decide "this record is mapped" run it — the fresh
+   * migration in recordMap, and migrateOne's mapped early-return — so "in the map ⇒ not in
+   * the isolation list" holds no matter which pass a record arrived by (FIX-OCR2 O2-M4).
+   */
+  async function clearQuarantine(oldRecordId: string): Promise<void> {
+    await database
+      .delete(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, oldRecordId));
+  }
+
   async function recordMap(
     old: typeof personalMemories.$inferSelect,
     tenantId: string,
@@ -698,9 +720,7 @@ export function createLegacyMemoryMigrator(
      * quarantined. The map row above is the durable fact; this deletes whatever the old
      * attribution verdict left beside it.
      */
-    await database
-      .delete(hindsightMigrationQuarantine)
-      .where(eq(hindsightMigrationQuarantine.oldRecordId, old.id));
+    await clearQuarantine(old.id);
   }
 }
 
