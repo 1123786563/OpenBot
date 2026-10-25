@@ -325,7 +325,11 @@ import type { DeliveryScope } from "../delivery/types";
 import { DeliveryRefusedError } from "../delivery/types";
 import { createDemonstrationRecorder } from "../demonstrations/recording";
 import { createDemonstrationStore } from "../demonstrations/store";
-import type { PlatformScope, RunnerRequestLease } from "../enterprise/contracts";
+import type {
+  PlatformScope,
+  RunnerRequestLease,
+  RunService,
+} from "../enterprise/contracts";
 import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
 import { createMastraStorageArm } from "../enterprise/conversations/integration";
 import { createConversationPublic } from "../enterprise/conversations/public";
@@ -341,6 +345,7 @@ import { createRunContinuations } from "../enterprise/runs/continuations";
 import type { GovernedModelExecution } from "../enterprise/runs/governed-execution";
 import { createGovernedExecutionArm } from "../enterprise/runs/integration";
 import { isPositiveInt32TokenCount } from "../enterprise/runs/output-ceiling";
+import { createRunLifecyclePublic } from "../enterprise/runs/public";
 import {
   createProductionRunnerComposition,
   runWithBoundModelRoute,
@@ -3786,6 +3791,43 @@ const governedRoutineSurfaceFor = enterpriseRunner
  * (enterprise capabilities present), and the choice is made here, server
  * side, never by a client field or a queue payload.
  */
+/*
+ * MOD14（#634）：后台入口的统一 Run 消费面。六个受治理后台入口（ME09 例行、
+ * ME10 职责推进/投递/唤醒、ME12 OpenMuse Task、ME11 handoff hop；审批续跑的
+ * 恢复面已由 MOD13 的 runContinuations 组统一）全部经 governedHeadlessTurnFor
+ * 构造，其 Run 创建（start）与超时取消回退（cancel）自本票起改经 M05 公开门面
+ * （enterprise/runs/public.ts，MOD07 五能力）——与浏览器 admit（runner.ts 的
+ * `deps.runLifecycle ?? deps.runs`）同一出口、同一薄委托，worker、server 循环
+ * 与 CronJob 三形态因此消费同一持久 Run 用例。lease/续约/complete/fail/
+ * suspension 是内部 worker/engine 面（MOD07 冻结边界 + 模块目录 M05），留在
+ * 下面的内件展开里，不进门面。零新策略：start 的请求本地模型路由绑定仍由装配
+ * 在门面调用外层包住（与浏览器 admit 把门面跑在 boundModelRouteContext.run
+ * 之内同构），门面自身逐项透传、同参同结果。
+ */
+const governedHeadlessRunsFace = (
+  runs: RunService,
+): GovernedTurnRunnerDeps["runs"] => {
+  const lifecycle = createRunLifecyclePublic({ runs });
+  return {
+    ...runs,
+    start: (scope, admission) =>
+      runWithBoundModelRoute(
+        {
+          tenantId: scope.tenantId,
+          workspaceId: scope.workspaceId,
+          principalId: scope.principalId,
+          actorId: scope.actorId,
+          threadId: admission.input.threadId,
+          agentId: admission.agentId,
+          routeRef: admission.routeRef,
+          maximumTokens: admission.input.forwardedProps
+            .maxOutputTokens as number,
+        },
+        () => lifecycle.start(scope, admission),
+      ),
+    cancel: (scope, input) => lifecycle.cancel(scope, input),
+  };
+};
 const governedHeadlessTurnFor = (entry: {
   schedulingRecordFor: GovernedTurnRunnerDeps["schedulingRecordFor"];
   surfaceFor: GovernedTurnRunnerDeps["surfaceFor"];
@@ -3797,24 +3839,7 @@ const governedHeadlessTurnFor = (entry: {
         // The governed admission binds the SAME request-local model-route
         // facts the browser admission binds — resolved here, server-side,
         // for the duration of the `start` call only.
-        runs: {
-          ...enterpriseRunner.runs,
-          start: (scope, admission) =>
-            runWithBoundModelRoute(
-              {
-                tenantId: scope.tenantId,
-                workspaceId: scope.workspaceId,
-                principalId: scope.principalId,
-                actorId: scope.actorId,
-                threadId: admission.input.threadId,
-                agentId: admission.agentId,
-                routeRef: admission.routeRef,
-                maximumTokens: admission.input.forwardedProps
-                  .maxOutputTokens as number,
-              },
-              () => enterpriseRunner.runs.start(scope, admission),
-            ),
-        },
+        runs: governedHeadlessRunsFace(enterpriseRunner.runs),
         conversations: enterpriseCapabilities.conversations,
         events: enterpriseRunner.events,
         expertVersionFor: ({ scope, definition }) =>
