@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
@@ -10,7 +11,10 @@ import {
   createSandboxGateway,
   type SandboxGateway,
 } from "../src/craft/sandbox-gateway";
-import { sandboxScopeRefusalOf } from "../src/craft/scope-refusal";
+import {
+  assertNotScopeRefusal,
+  sandboxScopeRefusalOf,
+} from "../src/craft/scope-refusal";
 import { createSessionRoutes } from "../src/craft/session-routes";
 import type {
   CraftSessionRow,
@@ -479,5 +483,110 @@ describe("#618 OCR r4: the recognizer hands back the ORIGINAL refused instance",
     const wrap = new WorkspaceListingError("dir", refusal);
     expect(sandboxScopeRefusalOf(wrap)).toBe(refusal);
     expect(sandboxScopeRefusalOf(refusal)).toBe(refusal);
+  });
+});
+
+describe("#656 D2: the one guard shape answers the refusal's own 503", () => {
+  const REFUSAL = new SandboxExecutionScopeUnavailableError().message;
+
+  test("the guard throws the 503 itself — status and body verbatim", async () => {
+    // The seven call sites no longer build the response themselves: the guard's
+    // throw IS the answer (an HTTPException hono's error chain hands straight
+    // to the wire), which is what makes "the refusal precedes the masking
+    // branch" a property of the guard rather than of each catch's ordering.
+    let caught: unknown = null;
+    try {
+      assertNotScopeRefusal(new SandboxExecutionScopeUnavailableError());
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught instanceof HTTPException).toBe(true);
+    const refusal = caught as HTTPException;
+    expect(refusal.status).toBe(503);
+    const response = refusal.getResponse();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: REFUSAL });
+  });
+
+  test("a non-refusal passes the guard untouched — nothing throws, nothing masks", () => {
+    // The guard must be a no-op for every other error the catches see: their
+    // own masking branches (the 413 needle, the 502/404 faces) stay reachable.
+    let threw = false;
+    try {
+      assertNotScopeRefusal(new Error("Sandbox /file answered 413."));
+      assertNotScopeRefusal(
+        new WorkspaceListingError("dir", new Error("boom")),
+      );
+      assertNotScopeRefusal("not even an error");
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(false);
+  });
+});
+
+describe("#656 D3: the recognizer walks any wrap's cause chain", () => {
+  test("a plain Error wrapping a refusal is recognized — the healthCheck chain shape", () => {
+    // #618 OCR r3 #2 pinned this for the WorkspaceListingError wrap; the
+    // contract is the STRUCTURE (a refusal riding as cause), not that one
+    // class — a future wrap layer between healthCheck and its catch (bot
+    // context, an error enhancer) must not re-open the mask. The original
+    // instance comes back, exactly like the direct arm (#618 OCR r4).
+    const refusal = new SandboxExecutionScopeUnavailableError();
+    const wrap = new Error("probe context layer: upstream unreachable", {
+      cause: refusal,
+    });
+    expect(sandboxScopeRefusalOf(wrap)).toBe(refusal);
+  });
+
+  test("the walk answers at four hops and stops at five — the bound", () => {
+    // Bounded, not exhaustive: a refusal deeper than any real fold (the
+    // archive walk is one hop, a probe wrap two) is not ours to claim, and an
+    // unbounded walk would follow a crafted chain as far as it was given.
+    const deep = (hops: number): Error => {
+      let current = new SandboxExecutionScopeUnavailableError();
+      for (let i = 0; i < hops; i += 1) {
+        current = new Error(`layer ${i}`, { cause: current });
+      }
+      return current;
+    };
+    expect(sandboxScopeRefusalOf(deep(4))).toBeInstanceOf(
+      SandboxExecutionScopeUnavailableError,
+    );
+    expect(sandboxScopeRefusalOf(deep(5))).toBe(null);
+  });
+
+  test("a cyclic cause chain terminates at the bound — no infinite walk", () => {
+    // cause chains can loop (a wraps b wraps a); the depth bound is the
+    // cycle-proofing, so recognizing a cyclic non-refusal chain answers null
+    // instead of hanging the recognizer (and the route's catch with it).
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    (a as { cause?: unknown }).cause = b;
+    expect(sandboxScopeRefusalOf(a)).toBe(null);
+  });
+
+  test("sandbox-status recognizes a PLAIN wrap's refusal — the chip answers failed, not an eternal provisioning", async () => {
+    // The route face of the plain-wrap case above: a wrap the recognizer never
+    // saw coming (not a WorkspaceListingError) still must not turn the settled
+    // "failed" back into OCR#12's "provisioning" cold-start mask.
+    const refusal = new SandboxExecutionScopeUnavailableError();
+    const wrapped = new Error("bot context: probe layer failed", {
+      cause: refusal,
+    });
+    const { app } = scopeRoutes({
+      session: sessionRow({ status: "active" }),
+      gateway: {
+        healthCheck: async () => {
+          throw wrapped;
+        },
+      } as unknown as SandboxGateway,
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/sandbox-status`,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { status: string };
+    expect(body.status).toBe("failed");
   });
 });

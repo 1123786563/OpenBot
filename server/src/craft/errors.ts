@@ -42,3 +42,15 @@ export class SandboxExecutionScopeUnavailableError extends Error {
     this.name = "SandboxExecutionScopeUnavailableError";
   }
 }
+
+/**
+ * #656 (D1): the rejector every outbound header assembly hands to
+ * shared/execution-scope's applyExecutionScopeHeaders — a fresh refusal per
+ * throw (never a shared singleton: an enhancer rewriting one instance's message
+ * must not corrupt the recognizer's needle, #618 OCR r2), so the helper stays
+ * free of this server-side class while "null scope fails closed" stays a fact
+ * of the helper, not a habit of each dial site.
+ */
+export const refuseExecutionScope = (): never => {
+  throw new SandboxExecutionScopeUnavailableError();
+};

@@ -14,8 +14,7 @@
  */
 
 import {
-  EXECUTION_TENANT_HEADER,
-  EXECUTION_WORKSPACE_HEADER,
+  applyExecutionScopeHeaders,
   type ExecutionScope,
 } from "../../../../shared/execution-scope";
 import { getLogger } from "../../../../shared/logger";
@@ -27,7 +26,10 @@ import {
   parseConnectAppAsk,
   stashAndAnnounce,
 } from "../connect-app";
-import { SandboxExecutionScopeUnavailableError } from "../errors";
+import {
+  refuseExecutionScope,
+  SandboxExecutionScopeUnavailableError,
+} from "../errors";
 import {
   type ApprovalRequestedPacket,
   approvalRequestedPacket,
@@ -1006,13 +1008,13 @@ export type OpencodeServeClientOptions = {
   /**
    * The execution ownership every request states beside the token (MT050, #618) — the
    * two headers agent-sandbox's proxy demands, mirroring
-   * SandboxClientOptions.executionScope in codesandbox/client.ts: a resolved scope
-   * rides on every request; null means the caller (the craft gateway) knows the
-   * deployment has NO scope, and every outbound verb then refuses with the
-   * displayable fail-closed error instead of sending an unattributed request;
-   * undefined is the unmanaged shape (standalone constructions) — requests go out
-   * unattributed and the proxy's own 403 is the honest answer, exactly the contract
-   * the codesandbox client documents.
+   * SandboxClientOptions.executionScope in codesandbox/client.ts. The triple
+   * semantics of object / null / undefined live in shared/execution-scope's
+   * applyExecutionScopeHeaders — the one source (#656 D1), consumed by this
+   * client's buildHeaders chokepoint; here it only matters that the craft
+   * gateway constructs the client with the pair it resolved (null, never
+   * undefined, when the deployment has none), while standalone constructions
+   * may leave it unset.
    */
   executionScope?: ExecutionScope | null;
   eventBus?: PodEventBus | null;
@@ -1053,8 +1055,12 @@ export class OpencodeServeClient {
 
   private buildHeaders(extra?: Record<string, string>): Record<string, string> {
     // #618 fail-closed chokepoint: every outbound fetch in this client builds its
-    // headers here, so the refusal lives here and no verb can slip an unattributed
-    // request past it. The complete list of catch-bearing verbs that swallow the
+    // headers here, so the refusal lives here and no verb can slip an
+    // unattributed request past it. The scope's triple semantics — object
+    // injects LAST, null refuses through the shared rejector, undefined skips —
+    // live in shared/execution-scope's helper, the one source (#656 D1); this
+    // chokepoint adds the token and bot id and hands the pair over.
+    // The complete list of catch-bearing verbs that swallow the
     // throw per their own best-effort contracts — the request still never leaves —
     // is abort, answerPermission, deleteSession, disposeInstance and getMessage
     // (advisory hydration: null is "no message"); healthCheckStatus RETHROWS it
@@ -1064,16 +1070,14 @@ export class OpencodeServeClient {
     // deployment's scope value — the subscribe gate fires first); only a bus/client
     // scope mismatch, which the gateway never constructs, would reach the prompt
     // leg's transport-error envelope; every other verb propagates.
-    if (this.executionScope === null)
-      throw new SandboxExecutionScopeUnavailableError();
     const headers: Record<string, string> = { ...extra };
     if (this.token) headers["x-sandbox-token"] = this.token;
     if (this.botId) headers["x-openbot-bot-id"] = this.botId;
-    if (this.executionScope) {
-      headers[EXECUTION_TENANT_HEADER] = this.executionScope.tenantId;
-      headers[EXECUTION_WORKSPACE_HEADER] = this.executionScope.workspaceId;
-    }
-    return headers;
+    return applyExecutionScopeHeaders(
+      headers,
+      this.executionScope,
+      refuseExecutionScope,
+    );
   }
 
   /**
