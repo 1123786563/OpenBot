@@ -12,13 +12,15 @@
  */
 
 import {
-  EXECUTION_TENANT_HEADER,
-  EXECUTION_WORKSPACE_HEADER,
+  applyExecutionScopeHeaders,
   type ExecutionScope,
 } from "../../../../shared/execution-scope";
 import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
-import { SandboxExecutionScopeUnavailableError } from "../errors";
+import {
+  refuseExecutionScope,
+  SandboxExecutionScopeUnavailableError,
+} from "../errors";
 
 type Json = Record<string, unknown>;
 
@@ -96,11 +98,13 @@ export type PodEventBusOptions = {
   token?: string | null;
   botId?: string | null;
   /**
-   * The execution ownership the SSE dial states beside the token (MT050, #618) — same
-   * triple semantics as OpencodeServeClientOptions.executionScope: a resolved scope
-   * rides on the dial; null means the deployment has NO scope and subscribe() refuses
-   * with the displayable fail-closed error rather than letting the reconnect ladder
-   * retry an unattributed dial in silence; undefined is the unmanaged standalone shape.
+   * The execution ownership the SSE dial states beside the token (MT050, #618) —
+   * the triple semantics of object / null / undefined live in
+   * shared/execution-scope's applyExecutionScopeHeaders, the one source (#656
+   * D1); what this module adds is WHERE null refuses: subscribe() throws
+   * before any fetch (a null-scope bus must not spend its reconnect ladder
+   * redialing a dial the proxy refuses anyway), and the reader repeats the
+   * gate as its belt.
    */
   executionScope?: ExecutionScope | null;
   fetchImpl?: typeof fetch;
@@ -298,19 +302,20 @@ export class PodEventBus {
       : `/${this.config.opencodeEventPath}`;
     const url = new URL(`${this.base}${path}`);
     if (this.directory) url.searchParams.set("directory", this.directory);
-    // Belt to subscribe()'s gate: the reader only starts through subscribe, but the
-    // refusal is repeated here so no future entrypoint can dial without it.
-    if (this.executionScope === null)
-      throw new SandboxExecutionScopeUnavailableError();
+    // Belt to subscribe()'s gate: the reader only starts through subscribe, but
+    // the refusal is repeated here so no future entrypoint can dial without it
+    // — through the shared helper now (#656 D1), the same triple semantics
+    // every dial family reads from the one source.
     const headers: Record<string, string> = {
       accept: "text/event-stream",
     };
     if (this.token) headers["x-sandbox-token"] = this.token;
     if (this.botId) headers["x-openbot-bot-id"] = this.botId;
-    if (this.executionScope) {
-      headers[EXECUTION_TENANT_HEADER] = this.executionScope.tenantId;
-      headers[EXECUTION_WORKSPACE_HEADER] = this.executionScope.workspaceId;
-    }
+    applyExecutionScopeHeaders(
+      headers,
+      this.executionScope,
+      refuseExecutionScope,
+    );
 
     const response = await this.doFetch(url.toString(), {
       headers,

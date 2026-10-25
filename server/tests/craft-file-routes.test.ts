@@ -822,3 +822,33 @@ describe("#618 R1-F2: the fail-closed refusal answers as its own 503", () => {
     expect(body.error).toBe(REFUSAL);
   });
 });
+
+describe("#656 D2: the guard shape keeps the 503 body fixed on the direct arm too", () => {
+  test("a directly-thrown refusal with a rewritten message still answers the fixed sentence", async () => {
+    // OCRFX5-F2's pin, landed: the recognizer hands the ORIGINAL instance back
+    // (OCR r4) and an enhancer may have rewritten that instance's message on
+    // the way — the r2 wrap case is pinned, but no face pinned the DIRECT
+    // throw of a rewritten instance. The guard answers the fixed sentence by
+    // construction, so this pins exactly that: delete meets the refusal
+    // directly (no listing wrap), the message is lost, the 503 body is not.
+    const rewritten = new SandboxExecutionScopeUnavailableError();
+    rewritten.message = "rewritten by an error-reporting layer";
+    const { api } = memoryFileApi();
+    const refusingDelete: AgentSandboxFileApi = {
+      ...api,
+      async deletePath() {
+        throw rewritten;
+      },
+    };
+    const response = await routes(refusingDelete).request(
+      `/sessions/${SESSION_ID}/files/attachments/report.txt`,
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(
+      new SandboxExecutionScopeUnavailableError().message,
+    );
+    expect(body.error).not.toContain("rewritten");
+  });
+});
