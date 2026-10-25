@@ -45,6 +45,7 @@ import {
   type EvaluationModelCall,
   type EvaluationModelCallObserver,
 } from "./execution-runner";
+import { createPublicExecutionSeamModelCall } from "./execution-seam";
 import {
   createObservationExecutionWorker,
   type EvaluationToolClassifier,
@@ -307,7 +308,11 @@ export type ExperimentExecutionBootDeps = Readonly<{
   env: EnvSource;
   /** The evaluation call's model-span channel; absent means unobserved calls. */
   observe?: EvaluationModelCallObserver;
-  /** Override for tests; production dials the deployment gateway resolved from env. */
+  /**
+   * Override for tests; production runs each case through the public execution seam
+   * (`execution-seam.ts`, FREV-04) — the builtin assembly and engine production serves
+   * Bots through, with the case's own isolation and admission.
+   */
   callModel?: EvaluationModelCall;
   /**
    * Override for tests; production reads the deployment's own `mcp_tools` rows
@@ -340,7 +345,11 @@ export function createExperimentExecutionWorkerBoot(
   deps: ExperimentExecutionBootDeps,
 ) {
   const { entrances, approvedVersions } = judgeAdmissionFromEnv(deps.env);
-  const callModel = deps.callModel ?? createGatewayModelCall();
+  // FREV-04: the evaluation CASE runs through the Bot's own public execution entry —
+  // the production builtin assembly + engine, isolated per case (execution-seam.ts).
+  // The judge below keeps its own controlled entrance dispatch (T27's contract); its
+  // legacy fallback is the retained gateway dial, unchanged.
+  const callModel = deps.callModel ?? createPublicExecutionSeamModelCall();
   const billedRunner = createBilledEvaluationCaseRunner({
     callModel,
     ...(deps.observe === undefined ? {} : { observe: deps.observe }),

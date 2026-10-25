@@ -639,6 +639,7 @@
    "files": [
     "server/tests/opik-execution-boot.test.ts",
     "server/tests/opik-execution-runner.test.ts",
+    "server/tests/opik-execution-seam.test.ts",
     "server/tests/opik-execution-wiring.test.ts",
     "server/tests/opik-executions.integration.test.ts",
     "server/tests/opik-executions.test.ts",
@@ -1651,6 +1652,7 @@
   "server/tests/opik-execution-boot.integration.test.ts",
   "server/tests/opik-execution-boot.test.ts",
   "server/tests/opik-execution-runner.test.ts",
+  "server/tests/opik-execution-seam.test.ts",
   "server/tests/opik-execution-wiring.test.ts",
   "server/tests/opik-executions.integration.test.ts",
   "server/tests/opik-executions.test.ts",

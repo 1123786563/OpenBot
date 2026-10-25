@@ -1,16 +1,23 @@
 /**
  * The production evaluation case runner (Issue #30 / DAG T24, FREV-04).
  *
- * One case is one ADMITTED, ISOLATED, TOOL-CAPABLE model execution on the engine shape
- * production runs: the frozen prompt as the system message, the frozen case input as
- * the user message, and — when the experiment froze any — the tool surface (exactly
- * the whitelisted names, nothing else) declared to the model in a bounded multi-step
- * loop (`EVALUATION_TOOL_LOOP_MAX_STEPS`, the same 8 the
- * built-in path has run since it gained tools). The loop's conversation is the case's
- * own: system, input and whatever the engine appended for tool results, held for the
- * case and thrown away with it. There is no thread store, no session and no memory
- * handle on this path — the isolation is that the thread exists nowhere else, not
- * that a production conversation was borrowed and hoped to stay empty.
+ * One case is one ADMITTED, ISOLATED model execution. WHERE that execution runs is
+ * the seam's business, not this file's: production runs it through the Bot's own
+ * public execution entry — the builtin assembly and engine in `execution-seam.ts`
+ * (FREV-04) — while the case runner here owns everything around the dial: the frozen
+ * facts (the projection refusals, the projection-checked prompt and input), the
+ * per-call admission, the step budget, the cancellation classification and the
+ * observation. The `EvaluationModelCall` contract is the seam between the two.
+ *
+ * The execution itself — the thing an evaluated answer comes out of — is the public
+ * one: the frozen case input as the user message on a thread that exists nowhere
+ * else, the frozen prompt composed by the production assembly, and — when the
+ * experiment froze any — exactly the whitelisted tool surface, declared to the model
+ * and run through a bounded multi-step loop whose ceiling is production's own (the
+ * same 8 the built-in path has run since it gained tools). There is no thread store,
+ * no session and no memory handle on this path — the isolation is that the thread
+ * exists nowhere else, not that a production conversation was borrowed and hoped to
+ * stay empty.
  *
  * Every tool call the loop makes lands in `context.callTool` — the gate (executions.ts),
  * the one interception point the isolation doctrine always named, now on the real
@@ -55,11 +62,13 @@ import type { EvaluationCaseRunner, EvaluationToolSurface } from "./executions";
 import type { ModelSpanObservation } from "./model-span";
 
 /**
- * The model tool-loop cap for one evaluation case: the SAME 8 the built-in path has
- * run since it gained tools (`TOOL_STEPS` in copilot.ts; `TOOL_LOOP_MAX_STEPS` on the
- * Mastra path). An evaluation case is one bounded execution of the same shape, so its
- * loop is held to the same ceiling — a cut at the cap is a real outcome the case
- * reports honestly, never a loop allowed to run until the clock runs out.
+ * The model tool-loop cap of the retained controlled dial (`createGatewayModelCall`):
+ * the SAME 8 the built-in path has run since it gained tools (`TOOL_STEPS` in
+ * copilot.ts). The evaluation CASE's own loop no longer names a ceiling of its own —
+ * it runs on the public execution seam, whose ceiling is the production assembly's
+ * (`execution-seam.ts`, FREV-04). This constant is what the judge's fallback entrance
+ * and the runner-level contracts still run with: a cut at the cap is a real outcome
+ * the case reports honestly, never a loop allowed to run until the clock runs out.
  */
 export const EVALUATION_TOOL_LOOP_MAX_STEPS = 8;
 
@@ -477,15 +486,19 @@ export function createProductionEvaluationCaseRunner(
 export const GATEWAY_CALL_TIMEOUT_MS = 60_000;
 
 /**
- * The production model call: one chat-completions round trip on the OpenAI-compatible
- * gateway, the same deployment shape the runtime's built-in path dials (a named
- * `OPENAI_BASE_URL`) — the same engine, with the same tool-loop ceiling, when the
- * case declares a tool surface (FREV-04). Time-bounded so a hung gateway cannot hold
- * a worker's lease slot; the bound covers the WHOLE tool loop, not each step, so a
- * case still costs at most one gateway budget and the worker lease's arithmetic
- * (execution-boot.ts) keeps its meaning. The parameters are the frozen
- * configuration's, with the handful of settings the gateway understands mapped and
- * everything else ignored rather than guessed at.
+ * The retained controlled gateway dial — a single chat-completions round trip (or the
+ * bounded tool loop, `EVALUATION_TOOL_LOOP_MAX_STEPS`) on the OpenAI-compatible
+ * gateway, time-bounded so a hung gateway cannot hold a worker's lease slot.
+ *
+ * It is no longer the evaluation CASE's execution (FREV-04): a case runs through the
+ * Bot's own public execution entry — the builtin assembly and engine in
+ * `execution-seam.ts` — so what is executed is production's, not a second semantics
+ * written beside it. This dial remains for the judge's fallback entrance
+ * (`createJudgeEntranceCall`) and for the runner-level contracts and their tests,
+ * where a frozen prompt + input are all the call carries.
+ *
+ * The parameters are the frozen configuration's, with the handful of settings the
+ * gateway understands mapped and everything else ignored rather than guessed at.
  */
 export function createGatewayModelCall(
   options: Readonly<{
@@ -689,8 +702,12 @@ function undeclaredToolCalls(
   return [...names].sort();
 }
 
-/** Numbers the gateway settings vocabulary accepts; everything else is not forwarded. */
-function gatewaySettings(parameters: Record<string, unknown>) {
+/**
+ * Numbers the gateway settings vocabulary accepts; everything else is not forwarded.
+ * The one vocabulary both dialing paths share: the seam maps it onto the classic
+ * configuration's own fields, the retained gateway call writes it onto the wire.
+ */
+export function gatewaySettings(parameters: Record<string, unknown>) {
   // The frozen configuration projects every leaf through `projectSafeFixture`, so a
   // parameter arrives as a `{state:"projected", value:n}` envelope (R4-26): unwrap
   // one projected layer before the numeric gate. Anything else — an omitted or
