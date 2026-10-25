@@ -123,6 +123,7 @@ import {
 import { createApp, createDeploymentRequireUser } from "../app";
 import { createApprovedActionExecutor } from "../approvals/execute";
 import { resumePersonQuestion } from "../approvals/question-resume";
+import { createApprovalsAccess } from "../approvals/public";
 import {
   type PersonQuestion,
   personQuestionSchema,
@@ -336,6 +337,7 @@ import {
   createUnavailablePluginPackageRoutes,
 } from "../enterprise/plugin-packages/routes";
 import { createPackageReadStore } from "../enterprise/plugin-packages/store";
+import { createRunContinuations } from "../enterprise/runs/continuations";
 import type { GovernedModelExecution } from "../enterprise/runs/governed-execution";
 import { createGovernedExecutionArm } from "../enterprise/runs/integration";
 import { isPositiveInt32TokenCount } from "../enterprise/runs/output-ceiling";
@@ -2199,8 +2201,21 @@ const pluginStore = createPluginStore({
  * MOD12（#632）：M08 的 ToolAccess 公开门面。受管执行（approvals executor 的
  * callTool 接线）、供给面与本文件的企业租户秘密读都经 `plugins/public.ts` 这
  * 一个出口；grant→policy→audit→撤销阻断仍全部发生在 store 内，门面零第二实现。
+ *
+ * MOD13（#633）：门面同时承载审批决定与 receipt 能力组（approvals/public.ts
+ * 构造、恒等持有）。本文件的审批决定/receipt 读写（governed drive 的 receipt
+ * 读回与 surface 收尾、legacy sweep 的 continue 回读）经 approvalsAccess 这
+ * 个组（= toolAccess.approvals 的同一对象）这一个出口；四个判定全部留在
+ * approvals service/store 内件里。
  */
-const toolAccess = createToolAccess({ store: pluginStore });
+const approvalsAccess = createApprovalsAccess({
+  service: approvalService,
+  store: approvalService.store,
+});
+const toolAccess = createToolAccess({
+  store: pluginStore,
+  approvals: approvalsAccess,
+});
 
 /*
  * Personal ⇄ Shared for a brokered app. Built here because it needs the plugin store, the shared-use
@@ -3476,6 +3491,21 @@ if (mastraContinuationStore && enterpriseCapabilities && enterpriseRunner) {
   });
   setMastraContinuations(mastraContinuationInstall);
 }
+/*
+ * MOD13（#633）：M05 的等待/恢复能力组（enterprise/runs/continuations.ts）。
+ * governed 审批续跑的等待列表读与六门恢复入口经这一个出口；CAS claim、
+ * receipt 证据与六门全部留在 mastra continuation-store/approvals 内件里，
+ * 组对内件零第二实现。存在条件与 install 相同（store+install 同在）；governed
+ * 续跑 drive 的守卫据此改判 `runContinuations`（const，闭包内收窄成立），drive
+ * 对 store/install 的两处直调全部经组。
+ */
+const runContinuations =
+  mastraContinuationInstall && mastraContinuationStore
+    ? createRunContinuations({
+        store: mastraContinuationStore,
+        resume: mastraContinuationInstall.resume,
+      })
+    : undefined;
 
 /*
  * ME16 (#488): THE CHAT ENTRY'S ENGINE. The browser run's agent build consults
@@ -4668,9 +4698,9 @@ const approvalContinuationRunner = createTurnRunner({
  * resume, which stays the path for parkings the legacy engine made.
  */
 const governedApprovalContinuationDrive =
-  mastraContinuationInstall && mastraContinuationStore && enterpriseRunner
+  runContinuations && enterpriseRunner
     ? async (ownerUserId: string, approvalId: string): Promise<boolean> => {
-        const request = await approvalService.store.get(
+        const request = await approvalsAccess.receiptOf(
           ownerUserId,
           approvalId,
         );
@@ -4708,13 +4738,13 @@ const governedApprovalContinuationDrive =
           // Only the process that saves the answer continues (the store's
           // single-winner rule): a lost save means another replica is
           // surfacing the same decision.
-          const saved = await approvalService.store.saveResult(
+          const saved = await approvalsAccess.saveReceipt(
             ownerUserId,
             approvalId,
             error ? { content: text, error } : { content: text },
           );
           if (!saved) return;
-          await approvalService.store.finish(ownerUserId, approvalId);
+          await approvalsAccess.complete(ownerUserId, approvalId);
           if (!text) return;
           const source = await sourceFor();
           if (source) {
@@ -4758,7 +4788,7 @@ const governedApprovalContinuationDrive =
         // AC5: THE EXACT continuation — the waiting row this run parked on,
         // named by the engine call id the ask was raised under. No scan, no
         // guess, never a new chat.
-        const rows = await mastraContinuationStore.listContinuations(scope);
+        const rows = await runContinuations.waitingContinuations(scope);
         const record = rows.find(
           (candidate) =>
             candidate.payload.kind === "approval" &&
@@ -4805,7 +4835,7 @@ const governedApprovalContinuationDrive =
                 // store's argument gate binds the drive to it.
                 argsDigest: record.payload.argsDigest,
               };
-        const result = await mastraContinuationInstall.resume({
+        const result = await runContinuations.resumeContinuation({
           scope,
           ref: record.ref,
           decision,
@@ -4969,7 +4999,7 @@ const approvalSweep = repeatAfterEach(async () => {
             );
             return;
           }
-          const request = await approvalService.store.get(
+          const request = await approvalsAccess.receiptOf(
             input.ownerUserId,
             approvalId,
           );

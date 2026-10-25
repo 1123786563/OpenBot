@@ -23,6 +23,13 @@
 // Adapter，验收④零新增 provider/动作——测试源级钉）；类型经组内签名提取
 // （Pick<PluginStore,…> 与 Parameters<…>），不另拟第二套形状。
 
+// MOD13（#633，追加）：门面承载「审批决定与副作用 receipt」能力组——`approvals`
+// 槽。注入的组由 `approvals/public.ts` 构造（M08 组内新出口，类型从
+// ApprovalService/ApprovalStore 提取），本文件不 import approvals/*：MOD12 冻结
+// 钉（tool-access-public.test.ts D5）把本文件的 import 冻结为恰四条组内文件，
+// 泛型槽在零新增 import 的前提下让 ToolAccess 消费该组（toolAccess.approvals
+// 即注入对象本身），决定/receipt 的四个判定全部留在组内件里，这里没有第二份。
+
 import {
   type CredentialSecretReader,
   decryptCredentialForUse,
@@ -102,8 +109,16 @@ export interface PreparedAction {
   };
 }
 
-/** ToolAccess 公开门面。见文件头。 */
-export interface ToolAccess {
+/**
+ * ToolAccess 公开门面。见文件头。
+ *
+ * MOD13（#633）：泛型 `TApprovals` 是审批决定与 receipt 能力组的类型
+ * （`approvals/public.ts` 的 ApprovalsAccess）。缺省 `undefined`＝未注入
+ * （构造方没给就没有这个能力，门面不造一个假的）；注入后
+ * `toolAccess.approvals` 与注入对象是同一引用——委托等价由「恒等持有」
+ * 直接成立，无转发层可绕。
+ */
+export interface ToolAccess<TApprovals = undefined> {
   /** 三态连接表达（验收①）：三个独立判定，见 {@link ConnectionExpression}。 */
   connectionStateOf(input: {
     actorId: string;
@@ -121,6 +136,13 @@ export interface ToolAccess {
    * 撤销阻断全部发生在 store 内，这一层没有第二份实现可绕。
    */
   callTool(input: ToolAccessCall): Promise<ToolAccessAnswer>;
+  /**
+   * 审批决定与 receipt 能力组（MOD13/#633，验收①③）：`approvals/public.ts`
+   * 构造的 ApprovalsAccess——decide（重复批准不产生第二个决定）、receiptOf
+   * （重启重读原 receipt）、saveReceipt（单写者持久化，布尔门控不重发）、
+   * complete（终态）。恒等持有：本门面对它零包装、零转发，注入什么就是什么。
+   */
+  readonly approvals?: TApprovals;
 }
 
 /**
@@ -167,8 +189,10 @@ export async function readSecretForUse(
  * 建 ToolAccess 门面。纯对象创建，零缓存：每次判定都是当次 store 读，grant 或
  * 连接的增减下一次调用即可见（`grantedTools` 同一理由的读时求值）。
  */
-export function createToolAccess(deps: { store: ToolAccessStore }): ToolAccess {
-  const { store } = deps;
+export function createToolAccess<TApprovals = undefined>(
+  deps: { store: ToolAccessStore; approvals?: TApprovals },
+): ToolAccess<TApprovals> {
+  const { store, approvals } = deps;
 
   const connectionFold = async (
     actorId: string,
@@ -228,6 +252,7 @@ export function createToolAccess(deps: { store: ToolAccessStore }): ToolAccess {
     },
 
     callTool: (input) => store.callTool(input),
+    approvals,
   };
 }
 
