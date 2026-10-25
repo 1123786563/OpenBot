@@ -581,7 +581,10 @@ export function createObservationExportStore(
 
 /**
  * Fold upstream pages under a row cap. Pure: the caller supplies the page
- * fetcher, this supplies the honesty.
+ * fetcher, this supplies the honesty. Page numbers are the upstream's 1-based
+ * numbering — the first page asked is 1 (F8D-2: real Opik answers 400 on
+ * page=0), and the last-page verdict reads only the envelope's total, never
+ * the starting offset.
  *
  *  - `total` above the cap fails EXPORT_ROW_LIMIT_EXCEEDED before any further
  *    fetch — an export that cannot be whole does not ship half and call itself
@@ -597,7 +600,11 @@ export async function foldExportPages<T>(
     page: number,
   ) => Promise<{ total: number; content: readonly T[] }>,
 ): Promise<readonly T[]> {
-  const first = await fetchPage(0);
+  // F8D-2: upstream pages are 1-based. Real Opik 2.2.100 answers 400 on
+  // page=0 (the a11-export evidence), so a fold that opened there failed
+  // every real-deployment export job as OPIK_CLIENT_ERROR before it read a
+  // single row — the first page asked is 1, and page=0 is never requested.
+  const first = await fetchPage(1);
   if (first.total > cap) {
     throw new ExportRowLimitExceeded();
   }
@@ -608,7 +615,7 @@ export async function foldExportPages<T>(
   if (rows.length > cap) {
     throw new ExportRowLimitExceeded();
   }
-  let page = 0;
+  let page = 1;
   while (rows.length < first.total) {
     page += 1;
     const next = await fetchPage(page);
