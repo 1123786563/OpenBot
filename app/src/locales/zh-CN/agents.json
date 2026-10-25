@@ -425,7 +425,9 @@
       "title": "回答依据",
       "description": "Bot 回答所用的记忆。展开一条可查看来源、更正或遗忘。",
       "empty": "还没有内容。Bot 确认的记忆会连同依据出现在这里。",
-      "basis": "依据"
+      "basis": "依据",
+      "answerUsed": "此回答所用的记忆",
+      "show": "查看依据"
     },
     "cleanup": {
       "title": "清理",

@@ -425,7 +425,9 @@
       "title": "Answer basis",
       "description": "The memories your Bots answer from. Expand one to see its source, correct it, or forget it.",
       "empty": "Nothing here yet. Memories your Bots confirm appear with their basis.",
-      "basis": "Basis"
+      "basis": "Basis",
+      "answerUsed": "Memories this answer used",
+      "show": "Show basis"
     },
     "cleanup": {
       "title": "Cleanup",

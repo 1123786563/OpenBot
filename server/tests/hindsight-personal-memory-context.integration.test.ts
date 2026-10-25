@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import { eq, inArray } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
@@ -6,9 +9,6 @@ import {
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { randomUUID } from "node:crypto";
-import { createServer, type Server } from "node:http";
-import { inArray, eq } from "drizzle-orm";
 import { createDatabase, type Database } from "../src/db/client";
 import { agents, users } from "../src/db/schema/core";
 import {
@@ -18,12 +18,12 @@ import {
   enterpriseWorkspaceMemberships,
   enterpriseWorkspaces,
 } from "../src/db/schema/enterprise-tenancy";
-import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
 import {
   derivedJudgmentCandidates,
   derivedJudgmentEvidence,
 } from "../src/db/schema/hindsight-judgments";
 import { hindsightPauseControls } from "../src/db/schema/hindsight-pause";
+import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
 import {
   hindsightMemoryGrants,
   sourceBoundMemories,
@@ -46,6 +46,7 @@ import { createDerivedJudgmentReviewService } from "../src/hindsight/judgment-re
 import { createDrizzlePauseControls } from "../src/hindsight/pause-controls";
 import {
   createPersonalMemoryContext,
+  parsePersonalMemoryBasis,
   renderPersonalMemoryContext,
 } from "../src/hindsight/personal-memory-context";
 import {
@@ -568,9 +569,10 @@ describe("Hindsight 18 (#395) — Bot consumption over the single authority", ()
     expect(judgment?.content).toBe(`ctx-jdg-risk-first-${run}`);
     const rendered = renderPersonalMemoryContext(block.memories);
     expect(rendered).toContain(`ctx-jdg-risk-first-${run}`);
-    const records = JSON.parse(
-      rendered.split("\n")[1] as string,
-    ) as Record<string, unknown>[];
+    const records = JSON.parse(rendered.split("\n")[1] as string) as Record<
+      string,
+      unknown
+    >[];
     const renderedJudgment = records.find(
       (record) => record.kind === "derived-judgment",
     );
@@ -586,9 +588,9 @@ describe("Hindsight 18 (#395) — Bot consumption over the single authority", ()
     expect(await context.personalMemoryContext(scope, ASKING_BOT)).toEqual({
       memories: [],
     });
-    expect(await judgmentReview.derivedJudgmentContext(scope, ASKING_BOT)).toEqual(
-      [],
-    );
+    expect(
+      await judgmentReview.derivedJudgmentContext(scope, ASKING_BOT),
+    ).toEqual([]);
     await pause.setUsagePaused(TENANT, PRINCIPAL, ACTOR, false);
     const unpaused = await context.personalMemoryContext(scope, ASKING_BOT);
     expect(
@@ -608,9 +610,9 @@ describe("Hindsight 18 (#395) — Bot consumption over the single authority", ()
         (memory) => memory.kind === "derived-judgment",
       ),
     ).toEqual([]);
-    expect(
-      renderPersonalMemoryContext(afterBasisDeath.memories),
-    ).not.toContain(`ctx-jdg-risk-first-${run}`);
+    expect(renderPersonalMemoryContext(afterBasisDeath.memories)).not.toContain(
+      `ctx-jdg-risk-first-${run}`,
+    );
   });
 
   test("the rendered block quotes memories as untrusted attributed data", () => {
@@ -629,6 +631,107 @@ describe("Hindsight 18 (#395) — Bot consumption over the single authority", ()
     expect(rendered).toContain("untrusted data");
     expect(rendered).toContain("Prefers bullet points");
     expect(renderPersonalMemoryContext([])).toBe("");
+  });
+
+  // FIX-W14: the basis read-back is tolerant — a block that is not the
+  // renderer's format, or a record without a well-formed {id, kind}, must
+  // cost the answer its basis stamp, never the answer itself.
+  test("the basis read-back tolerates what it cannot parse, at no basis", () => {
+    expect(parsePersonalMemoryBasis("")).toEqual([]);
+    expect(parsePersonalMemoryBasis("no record line at all")).toEqual([]);
+    expect(parsePersonalMemoryBasis("preamble\nnot json")).toEqual([]);
+    expect(parsePersonalMemoryBasis('preamble\n{"not":"an array"}')).toEqual(
+      [],
+    );
+    // Records without a usable pointer are dropped, not guessed at; the
+    // well-formed ones beside them still carry.
+    expect(
+      parsePersonalMemoryBasis(
+        "preamble\n" +
+          JSON.stringify([
+            null,
+            { id: "", kind: "general-preference" },
+            { id: "x", kind: "not-a-kind" },
+            { id: "ok", kind: "source-bound", extra: true },
+          ]),
+      ),
+    ).toEqual([{ id: "ok", kind: "source-bound" }]);
+  });
+
+  /*
+   * FIX-W14 (FR3-1, #387): the block is not only injected into the prompt —
+   * its OWN {id, kind} pointers are the id set the run's answers carry as
+   * their basis (parsePersonalMemoryBasis, read back out by the renderer's
+   * module). This pins the two halves together over real authority rows: the
+   * pointer set a chat answer will cite is exactly what the block carried,
+   * all three halves, in order — and the NEXT answer after a basis dies
+   * cites a set that no longer includes it.
+   */
+  test("the block's parseable id set is exactly what the answer cites, across all three halves", async () => {
+    const preference = await preferences.confirmGenericPreference(scope, {
+      content: `ctx-basis-pref-${run}`,
+    });
+    const bound = await sourceBound.confirmSourceBoundMemory(scope, {
+      content: `ctx-basis-bound-${run}`,
+      restriction: { kind: "team", workspaceId: WORKSPACE },
+    });
+    const judgmentBasis = await preferences.confirmGenericPreference(scope, {
+      content: `ctx-basis-jdg-leg-${run}`,
+    });
+    const judgmentBasisTwo = await preferences.confirmGenericPreference(scope, {
+      content: `ctx-basis-jdg-leg-two-${run}`,
+    });
+    const candidate = await judgmentProposals.proposeDerivedJudgmentCandidate(
+      scope,
+      {
+        judgment: `ctx-basis-jdg-${run}`,
+        evidence: [
+          preferenceDocumentIdFor(TENANT, judgmentBasis.record.id),
+          preferenceDocumentIdFor(TENANT, judgmentBasisTwo.record.id),
+        ],
+      },
+    );
+    await judgmentReview.confirmDerivedJudgment(scope, candidate.id, {});
+
+    const block = await context.personalMemoryContext(scope, ASKING_BOT);
+    const rendered = renderPersonalMemoryContext(block.memories);
+    const expected = block.memories.map((memory) => ({
+      id: memory.id,
+      kind: memory.kind,
+    }));
+    // This suite's tenant accumulates rows from its earlier cases; what
+    // matters here is that all three halves are represented and that THIS
+    // case's own rows are in the carried set.
+    expect(new Set(expected.map(({ kind }) => kind))).toEqual(
+      new Set(["general-preference", "source-bound", "derived-judgment"]),
+    );
+    // The pointers a chat answer carries: the block's own, verbatim.
+    expect(parsePersonalMemoryBasis(rendered)).toEqual(expected);
+    // Every id the set names is a real record id of this principal — the
+    // judgment's own basis leg included, as a top-level pointer of its own.
+    expect(parsePersonalMemoryBasis(rendered).map(({ id }) => id)).toEqual(
+      expect.arrayContaining([
+        preference.record.id,
+        bound.record.id,
+        candidate.id,
+      ]),
+    );
+
+    // The judgment's basis dies: the next block (and so the next answer's
+    // carried set) drops the judgment with it — nothing cites a dead basis.
+    await preferences.forgetGenericPreference(scope, judgmentBasis.record.id);
+    const after = await context.personalMemoryContext(scope, ASKING_BOT);
+    const afterPointers = parsePersonalMemoryBasis(
+      renderPersonalMemoryContext(after.memories),
+    );
+    expect(afterPointers.map(({ id }) => id)).not.toContain(candidate.id);
+
+    // The empty block (paused, restored-closed, or nothing confirmed) carries
+    // no pointer at all — an answer with no memory behind it cites nothing.
+    expect(parsePersonalMemoryBasis(renderPersonalMemoryContext([]))).toEqual(
+      [],
+    );
+    expect(preference.record.id).not.toBe(bound.record.id);
   });
 });
 

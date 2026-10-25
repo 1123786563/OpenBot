@@ -1,5 +1,9 @@
 import type { ActivityMessage, Message, ToolCall } from "@ag-ui/core";
 import { classifyAttachment } from "@/lib/channels/attachments";
+import {
+  type AnswerMemoryBasisPointer,
+  answerMemoryBasisOf,
+} from "@/lib/hindsight/answer-basis";
 
 /**
  * Transcript projection that pairs assistant tool calls with later tool-result messages.
@@ -39,6 +43,21 @@ export type VisibleChatItem =
       kind: "attachments";
       id: string;
       attachments: readonly SentAttachment[];
+    }
+  /**
+   * The basis an answer actually used (FIX-W14, #387 AC1): the {id, kind} pointers of the
+   * memory block that was injected into THIS run's prompt, carried by the answer's own
+   * metadata. A row of its own rather than riding inside the text item, so the expansion is
+   * one control under the answer and the prose item keeps the shape every other answer has.
+   *
+   * One row per TURN, not per message: the block is injected once per run, so every assistant
+   * text message of a multi-round turn carries the same set — the projection keeps only the
+   * turn's last one (see `keepLastBasisPerTurn`), under the final answer.
+   */
+  | {
+      kind: "answer-basis";
+      id: string;
+      basis: readonly AnswerMemoryBasisPointer[];
     };
 
 /** One file on a sent turn. `id` is unique across the transcript, so it is also the render key. */
@@ -374,192 +393,242 @@ export function toVisibleChatItems(
     if (isToolResult(message)) results.set(message.toolCallId, message.content);
   }
 
-  return messages.flatMap((message): VisibleChatItem[] => {
-    if (!isReadableMessage(message)) return [];
-    // Every row built below is keyed on `message.id`, including the one that keys on it by string
-    // interpolation. See `isDrawableMessage` for why an unkeyable row is dropped rather than given
-    // an id of our own.
-    if (!isDrawableMessage(message)) return [];
+  return keepLastBasisPerTurn(
+    messages.flatMap((message): VisibleChatItem[] => {
+      if (!isReadableMessage(message)) return [];
+      // Every row built below is keyed on `message.id`, including the one that keys on it by string
+      // interpolation. See `isDrawableMessage` for why an unkeyable row is dropped rather than given
+      // an id of our own.
+      if (!isDrawableMessage(message)) return [];
 
-    if (message.role === "assistant") {
+      if (message.role === "assistant") {
+        const items: VisibleChatItem[] = [];
+        /*
+         * `typeof`, NOT TRUTHINESS, and for the same reason the user branch below checks its own
+         * content: a live turn is whatever the run produced, not whatever the type says. `[]` and
+         * `{}` are both truthy, so both used to be pushed on as the `text` of a text item and handed
+         * to the markdown renderer, which reads a string and throws on anything else — one flatMap
+         * away from the throw the user branch was already defended against, and with the same cost:
+         * the transcript renders this, so the exception unmounts the channel.
+         */
+        if (typeof message.content === "string" && message.content) {
+          items.push({
+            kind: "text",
+            id: message.id,
+            role: "assistant",
+            text: message.content,
+          });
+        }
+        // A `toolCalls` that is not a list is not iterable, and `for...of` reports that by throwing.
+        for (const toolCall of Array.isArray(message.toolCalls)
+          ? message.toolCalls
+          : []) {
+          // Read three fields deep off something nothing has validated: a hole in the array, or a
+          // call with no `function`, threw before a single row could be drawn.
+          if (!isReadableToolCall(toolCall)) continue;
+          /*
+           * The call that draws an interface is not a row of its own; the interface is.
+           *
+           * Its renderer shows the waiting message and then returns nothing, so once the interface has
+           * arrived this leaves an empty item behind — invisible in itself, but still a child of a
+           * `gap-6` column, so every generated interface gained a stray gap under it. The activity
+           * beside it already shows its own progress while it is being written.
+           */
+          if (toolCall.function.name === GENERATE_SANDBOXED_UI) continue;
+          items.push({
+            kind: "tool",
+            // One assistant message can carry multiple tool calls.
+            id: toolCall.id,
+            toolCall,
+            ...(results.has(toolCall.id)
+              ? { result: results.get(toolCall.id) }
+              : {}),
+          });
+        }
+        // FIX-W14 (FR3-1, #387): the answer's own basis, when the run carried one. Rides after
+        // the message's prose and calls so it reads as the answer's footnote; a message with no
+        // basis metadata (nothing confirmed, or a sender that is not this engine) draws none.
+        const basis = answerMemoryBasisOf(message);
+        if (basis !== null) {
+          items.push({
+            kind: "answer-basis",
+            id: `${message.id}:basis`,
+            basis,
+          });
+        }
+        return items;
+      }
+
+      /*
+       * Activities are their own messages, in order, beside the prose.
+       *
+       * Kept rather than dropped, which is what this projection used to do with every role it did not
+       * name. A Bot that draws its own interface says nothing in `content` and calls no tool the
+       * transcript can pair a result with — the whole answer is the activity. Falling through to the
+       * bail below meant the turn rendered as silence.
+       */
+      if (message.role === "activity") {
+        return [{ kind: "activity", id: message.id, message }];
+      }
+
+      if (message.role !== "user") return [];
+
+      if (
+        typeof message.content !== "string" &&
+        !Array.isArray(message.content)
+      ) {
+        return [];
+      }
+
+      if (typeof message.content === "string") {
+        const text = message.content;
+        return text
+          ? [{ kind: "text", id: message.id, role: "user", text }]
+          : [];
+      }
+
+      const text = message.content
+        .map((part) => (isReadablePart(part) ? readText(part) : null))
+        .filter((part) => part !== null)
+        .join("\n");
+
+      /*
+       * ATTACHMENTS FIRST, THEN THE CAPTION, which is the order they are read in and the order every
+       * chat that carries files puts them in: the picture is what the sentence is about, so a
+       * question that arrives above its own screenshot asks about something the reader has not seen
+       * yet. This is the reverse of the parts' order inside the message — a composer sends the text
+       * part first — and deliberately so; nothing downstream depends on matching the wire order, and
+       * `anchorRowIds` picks whichever of these comes first, so a turn with a picture now anchors on
+       * the picture.
+       */
       const items: VisibleChatItem[] = [];
+
       /*
-       * `typeof`, NOT TRUTHINESS, and for the same reason the user branch below checks its own
-       * content: a live turn is whatever the run produced, not whatever the type says. `[]` and
-       * `{}` are both truthy, so both used to be pushed on as the `text` of a text item and handed
-       * to the markdown renderer, which reads a string and throws on anything else — one flatMap
-       * away from the throw the user branch was already defended against, and with the same cost:
-       * the transcript renders this, so the exception unmounts the channel.
+       * One row for all of them, with the caption appended after it (and absent rather than empty
+       * when there is none). Only a `url` source ever reaches the browser this way —
+       * `copilot.ts` swaps in the `data` source later, building the run — but a part is skipped
+       * rather than thrown on if one ever did arrive here, and so is a part that is not a part at
+       * all: see `isReadablePart`, and the whole-message caution above it that it extends.
        */
-      if (typeof message.content === "string" && message.content) {
-        items.push({
-          kind: "text",
-          id: message.id,
-          role: "assistant",
-          text: message.content,
-        });
-      }
-      // A `toolCalls` that is not a list is not iterable, and `for...of` reports that by throwing.
-      for (const toolCall of Array.isArray(message.toolCalls)
-        ? message.toolCalls
-        : []) {
-        // Read three fields deep off something nothing has validated: a hole in the array, or a
-        // call with no `function`, threw before a single row could be drawn.
-        if (!isReadableToolCall(toolCall)) continue;
+      const attachments: SentAttachment[] = [];
+      message.content.forEach((part, index) => {
+        if (!isReadablePart(part)) return;
         /*
-         * The call that draws an interface is not a row of its own; the interface is.
+         * THE SOURCE IS THE GATE AND `part.type` IS NOT, WHICH IS THE RULE THE SERVER ALREADY
+         * APPLIES TO THE SAME PART.
          *
-         * Its renderer shows the waiting message and then returns nothing, so once the interface has
-         * arrived this leaves an empty item behind — invisible in itself, but still a child of a
-         * `gap-6` column, so every generated interface gained a stray gap under it. The activity
-         * beside it already shows its own progress while it is being written.
+         * This used to require `part.type` to be `image` or `document`, and
+         * `attachmentIdFor` in `server/src/channels/attachment-parts.ts` deliberately does the
+         * opposite — its comment names gating on those two as "the alternative and is worse". AG-UI's
+         * part union is `text | image | audio | video | document | binary`, and a client writing its
+         * own message content can send any of the six naming one of our urls. The server therefore
+         * RESOLVES such a part: it inlines the bytes into the run and stamps `attachedAt`, so the
+         * sweeper spares the row. This file dropped it. The file went to the model, stayed on the
+         * shelf for ever, and was drawn to the person who sent it nowhere at all — the one shape of
+         * bug where the two sides disagreeing is invisible from either side alone.
+         *
+         * `readUrlSource` below is now the whole gate, and it is the same question the server asks:
+         * is there a `url` source with something in it. A `text` part is unaffected, and that is not
+         * luck — a well-formed one carries no `source` key, including all three the server
+         * substitutes for an attachment it could not send (`unavailableNote`, `notIncludedNote` and
+         * `unreadableNote` each write `{ type: "text", text }` and nothing else), so they all still
+         * fall to `readText` and become the caption.
+         *
+         * WHAT THE PART TYPE IS STILL GOOD FOR IS THE MODALITY, AND ONLY AS A FALLBACK. It is handed
+         * to `attachmentModality` below, which prefers the type the SERVER sniffed off the bytes
+         * whenever the part carries one. So an `audio` part gets the file card rather than an `<img>`
+         * that cannot decode — the honest tile for a kind this app has no viewer for — and a declared
+         * type is never given the chance to claim a picture the bytes do not support.
          */
-        if (toolCall.function.name === GENERATE_SANDBOXED_UI) continue;
+        const source = readUrlSource(part);
+        if (source === null) return;
+        const { url } = source;
+
+        const metadata = readAttachmentMetadata(part);
+        const attachmentId = metadata.attachmentId ?? attachmentIdFromUrl(url);
+
+        attachments.push({
+          // The PART's index, not the attachment's, so the id survives a caption being added or
+          // removed above it and stays unique when one turn carries the same file twice. Counted
+          // over the whole array, malformed parts included: skipping them in the count would
+          // renumber every file after one and change the render key of a row already on screen.
+          id: `${message.id}:${index}`,
+          attachmentId,
+          url,
+          // Already narrowed to a non-empty string, or absent: see `readAttachmentMetadata`.
+          ...(metadata.filename ? { filename: metadata.filename } : {}),
+          /*
+           * `source.mimeType` IS ALWAYS ABSENT HERE, AND THAT IS NO LONGER THE PROBLEM IT WAS.
+           *
+           * A sent message's part is built by `toAttachmentPart` in `channel-chat.tsx`, which writes
+           * `source: { type: "url", value }` and carries no `mimeType` — so this call always falls
+           * through to `part.type`. What changed is what `part.type` MEANS: that function now derives
+           * it with this same `attachmentModality`, off the `mimeType` the server sniffed from the
+           * bytes, instead of casting the browser's claim. The stored `type` is the corroborated
+           * answer, so falling back to it is right rather than merely tolerable.
+           *
+           * The call keeps both arguments anyway. It costs nothing, it is the same rule the parked
+           * tiles apply, and if a stored part ever does carry a `mimeType` — see the paragraph below,
+           * which is the obvious way to fix history — this reads it without another change here.
+           *
+           * WHAT IS STILL WRONG IS HISTORY, AND ONLY HISTORY. A thread stored before that change kept
+           * whatever the browser claimed, and no amount of client work will correct a row that is
+           * already written. Putting it right means whoever serves a stored thread to the browser
+           * supplying the type the attachment row already holds — a server change, written down here
+           * rather than quietly half-done.
+           */
+          modality: attachmentModality(part.type, source.mimeType),
+        });
+      });
+
+      if (attachments.length > 0) {
         items.push({
-          kind: "tool",
-          // One assistant message can carry multiple tool calls.
-          id: toolCall.id,
-          toolCall,
-          ...(results.has(toolCall.id)
-            ? { result: results.get(toolCall.id) }
-            : {}),
+          kind: "attachments",
+          // `turnOf` reads the message id back off this by cutting at the last colon, which is why
+          // the suffix is a word rather than something that could be mistaken for one.
+          id: `${message.id}:attachments`,
+          attachments,
         });
       }
+
+      if (text)
+        items.push({ kind: "text", id: message.id, role: "user", text });
+
       return items;
+    }),
+  );
+}
+
+/**
+ * One basis row per turn, under the turn's final answer (FIX-W14, #387 AC1).
+ *
+ * The engine injects the memory block once per run, and stamps every assistant text message of
+ * that run with the same pointer set — live and replayed views must agree, and a message cannot
+ * know whether it is the run's last while it streams. A turn with tool rounds therefore carries
+ * the set several times; drawn as-is that is one repeated row per round. The person's question
+ * is about THE answer, so only the last row before the next thing the person said is kept — the
+ * one under the final answer. A turn with a single reply is untouched: it has exactly one row.
+ */
+function keepLastBasisPerTurn(
+  items: readonly VisibleChatItem[],
+): VisibleChatItem[] {
+  // For each turn (a run of items between two things the person sent), the last basis row.
+  const kept = new Set<VisibleChatItem>();
+  let lastInTurn: VisibleChatItem | null = null;
+  const flush = () => {
+    if (lastInTurn !== null) kept.add(lastInTurn);
+    lastInTurn = null;
+  };
+  for (const item of items) {
+    if (item.kind === "answer-basis") {
+      lastInTurn = item;
+      continue;
     }
-
-    /*
-     * Activities are their own messages, in order, beside the prose.
-     *
-     * Kept rather than dropped, which is what this projection used to do with every role it did not
-     * name. A Bot that draws its own interface says nothing in `content` and calls no tool the
-     * transcript can pair a result with — the whole answer is the activity. Falling through to the
-     * bail below meant the turn rendered as silence.
-     */
-    if (message.role === "activity") {
-      return [{ kind: "activity", id: message.id, message }];
-    }
-
-    if (message.role !== "user") return [];
-
-    if (
-      typeof message.content !== "string" &&
-      !Array.isArray(message.content)
-    ) {
-      return [];
-    }
-
-    if (typeof message.content === "string") {
-      const text = message.content;
-      return text ? [{ kind: "text", id: message.id, role: "user", text }] : [];
-    }
-
-    const text = message.content
-      .map((part) => (isReadablePart(part) ? readText(part) : null))
-      .filter((part) => part !== null)
-      .join("\n");
-
-    /*
-     * ATTACHMENTS FIRST, THEN THE CAPTION, which is the order they are read in and the order every
-     * chat that carries files puts them in: the picture is what the sentence is about, so a
-     * question that arrives above its own screenshot asks about something the reader has not seen
-     * yet. This is the reverse of the parts' order inside the message — a composer sends the text
-     * part first — and deliberately so; nothing downstream depends on matching the wire order, and
-     * `anchorRowIds` picks whichever of these comes first, so a turn with a picture now anchors on
-     * the picture.
-     */
-    const items: VisibleChatItem[] = [];
-
-    /*
-     * One row for all of them, with the caption appended after it (and absent rather than empty
-     * when there is none). Only a `url` source ever reaches the browser this way —
-     * `copilot.ts` swaps in the `data` source later, building the run — but a part is skipped
-     * rather than thrown on if one ever did arrive here, and so is a part that is not a part at
-     * all: see `isReadablePart`, and the whole-message caution above it that it extends.
-     */
-    const attachments: SentAttachment[] = [];
-    message.content.forEach((part, index) => {
-      if (!isReadablePart(part)) return;
-      /*
-       * THE SOURCE IS THE GATE AND `part.type` IS NOT, WHICH IS THE RULE THE SERVER ALREADY
-       * APPLIES TO THE SAME PART.
-       *
-       * This used to require `part.type` to be `image` or `document`, and
-       * `attachmentIdFor` in `server/src/channels/attachment-parts.ts` deliberately does the
-       * opposite — its comment names gating on those two as "the alternative and is worse". AG-UI's
-       * part union is `text | image | audio | video | document | binary`, and a client writing its
-       * own message content can send any of the six naming one of our urls. The server therefore
-       * RESOLVES such a part: it inlines the bytes into the run and stamps `attachedAt`, so the
-       * sweeper spares the row. This file dropped it. The file went to the model, stayed on the
-       * shelf for ever, and was drawn to the person who sent it nowhere at all — the one shape of
-       * bug where the two sides disagreeing is invisible from either side alone.
-       *
-       * `readUrlSource` below is now the whole gate, and it is the same question the server asks:
-       * is there a `url` source with something in it. A `text` part is unaffected, and that is not
-       * luck — a well-formed one carries no `source` key, including all three the server
-       * substitutes for an attachment it could not send (`unavailableNote`, `notIncludedNote` and
-       * `unreadableNote` each write `{ type: "text", text }` and nothing else), so they all still
-       * fall to `readText` and become the caption.
-       *
-       * WHAT THE PART TYPE IS STILL GOOD FOR IS THE MODALITY, AND ONLY AS A FALLBACK. It is handed
-       * to `attachmentModality` below, which prefers the type the SERVER sniffed off the bytes
-       * whenever the part carries one. So an `audio` part gets the file card rather than an `<img>`
-       * that cannot decode — the honest tile for a kind this app has no viewer for — and a declared
-       * type is never given the chance to claim a picture the bytes do not support.
-       */
-      const source = readUrlSource(part);
-      if (source === null) return;
-      const { url } = source;
-
-      const metadata = readAttachmentMetadata(part);
-      const attachmentId = metadata.attachmentId ?? attachmentIdFromUrl(url);
-
-      attachments.push({
-        // The PART's index, not the attachment's, so the id survives a caption being added or
-        // removed above it and stays unique when one turn carries the same file twice. Counted
-        // over the whole array, malformed parts included: skipping them in the count would
-        // renumber every file after one and change the render key of a row already on screen.
-        id: `${message.id}:${index}`,
-        attachmentId,
-        url,
-        // Already narrowed to a non-empty string, or absent: see `readAttachmentMetadata`.
-        ...(metadata.filename ? { filename: metadata.filename } : {}),
-        /*
-         * `source.mimeType` IS ALWAYS ABSENT HERE, AND THAT IS NO LONGER THE PROBLEM IT WAS.
-         *
-         * A sent message's part is built by `toAttachmentPart` in `channel-chat.tsx`, which writes
-         * `source: { type: "url", value }` and carries no `mimeType` — so this call always falls
-         * through to `part.type`. What changed is what `part.type` MEANS: that function now derives
-         * it with this same `attachmentModality`, off the `mimeType` the server sniffed from the
-         * bytes, instead of casting the browser's claim. The stored `type` is the corroborated
-         * answer, so falling back to it is right rather than merely tolerable.
-         *
-         * The call keeps both arguments anyway. It costs nothing, it is the same rule the parked
-         * tiles apply, and if a stored part ever does carry a `mimeType` — see the paragraph below,
-         * which is the obvious way to fix history — this reads it without another change here.
-         *
-         * WHAT IS STILL WRONG IS HISTORY, AND ONLY HISTORY. A thread stored before that change kept
-         * whatever the browser claimed, and no amount of client work will correct a row that is
-         * already written. Putting it right means whoever serves a stored thread to the browser
-         * supplying the type the attachment row already holds — a server change, written down here
-         * rather than quietly half-done.
-         */
-        modality: attachmentModality(part.type, source.mimeType),
-      });
-    });
-
-    if (attachments.length > 0) {
-      items.push({
-        kind: "attachments",
-        // `turnOf` reads the message id back off this by cutting at the last colon, which is why
-        // the suffix is a word rather than something that could be mistaken for one.
-        id: `${message.id}:attachments`,
-        attachments,
-      });
-    }
-
-    if (text) items.push({ kind: "text", id: message.id, role: "user", text });
-
-    return items;
-  });
+    const personSpoke =
+      item.kind === "attachments" ||
+      (item.kind === "text" && item.role === "user");
+    if (personSpoke) flush();
+  }
+  flush();
+  return items.filter((item) => item.kind !== "answer-basis" || kept.has(item));
 }
