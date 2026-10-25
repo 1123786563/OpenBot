@@ -707,6 +707,23 @@ export type BuiltinToolStepFact = {
    * pinned whole.
    */
   output: string | null;
+  /**
+   * R4-03: which path observed the step. `builtin` (the default, and the only
+   * value the built-in stream facts carry) saw the run's own event stream;
+   * `remote-agui` saw the endpoint's stream THROUGH this server — a run whose
+   * tools executed somewhere else entirely, so the fact's `executionObserved`
+   * is always false there and the receipt is its own fact. The recorder names
+   * the span's origin with it; absent reads as `builtin`.
+   */
+  origin?: "builtin" | "remote-agui";
+  /**
+   * R4-03: the run identity the fact's chain belongs to, when the observing
+   * path knows it (the remote middleware always does — its run id IS the
+   * binding's run id). Carried so the recorder's binding gate reuses the run's
+   * authoritative binding instead of minting a second one for the same chain;
+   * absent on the built-in path, whose binding is the chain itself.
+   */
+  runRef?: Readonly<{ runId: string; attemptId: string }> | null;
 };
 
 /**
@@ -1004,11 +1021,27 @@ function settleBuiltinToolStep(
 }
 
 /**
+ * The two state tools the CopilotKit engine installs on EVERY classic run (it declares
+ * `AGUISendStateSnapshot`/`AGUISendStateDelta` unconditionally and executes them in-engine as
+ * inert echoes). They are the protocol's own plumbing, not business steps: R4-03 — recording
+ * them as tool spans put state machinery in the business record while the real business call
+ * vanished from governance. Both observation paths (built-in stream and remote middleware)
+ * skip them by name. The same names live in `execution-seam.ts`'s own copy; this module cannot
+ * import that one (it imports this module), and a shared home would drag the observability
+ * module into a path that must not depend on it.
+ */
+const ENGINE_STATE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "AGUISendStateSnapshot",
+  "AGUISendStateDelta",
+]);
+
+/**
  * The tool-step observation bypass on the built-in run's event stream: reads ONLY the
  * public event semantics (type + payload fields), never a framework internal. A proposal
  * opens a cell; a TOOL_CALL_RESULT marks the receipt without ever impersonating an
  * execution; the run's terminal event closes whatever is still open — an interrupt leaves
- * steps proposed, every other ending leaves them unobserved.
+ * steps proposed, every other ending leaves them unobserved. The engine's own state tools
+ * are skipped (`ENGINE_STATE_TOOL_NAMES`): a business record they are not.
  */
 function observeBuiltinToolSteps(
   stream: Observable<BaseEvent>,
@@ -1038,12 +1071,21 @@ function observeBuiltinToolSteps(
             next: (event) => {
               switch (event.type) {
                 case "TOOL_CALL_START": {
+                  const name =
+                    typeof event.toolCallName === "string"
+                      ? event.toolCallName
+                      : null;
+                  // R4-03: the engine's two state tools are protocol plumbing,
+                  // not business steps — a state-delta call recorded as a tool
+                  // span is a state tool masquerading as the run's business
+                  // record, exactly the shape the finding rejected (the only
+                  // tool spans on the real chain were AGUISendStateDelta while
+                  // the real business call vanished). No cell, no fact, no span.
+                  if (name !== null && ENGINE_STATE_TOOL_NAMES.has(name)) break;
                   const cell = builtinToolStepCell(
                     registry,
                     String(event.toolCallId),
-                    typeof event.toolCallName === "string"
-                      ? event.toolCallName
-                      : null,
+                    name,
                   );
                   if (!cell.proposalObserved) {
                     cell.proposalObserved = true;
@@ -3995,7 +4037,7 @@ async function buildAgent(
             }
           : {}),
       },
-    );
+    ).use(builtinRunChainMiddleware(agent.id));
 
   const whole = withTools(granted);
   if (!narrowing && !handoff && !model.plan && !acquireLearnedSkills)
@@ -4468,6 +4510,99 @@ function subscribeWithin<T>(
   );
 }
 
+/*
+ * R4-03, the built-in half. The F7E stock evidence: two real `report_environment` call ids in
+ * the thread, no governance span carrying either — while the only tool spans on the chain were
+ * the engine's state tools. The mechanism (R4-01's diagnosis, on this side of the wire): the
+ * Intelligence runner executes a person's run from the Phoenix channel-join callback, where the
+ * HTTP request's AsyncLocalStorage store does not survive, so every fact capture that reads the
+ * ambient W3C context — the tool-step cell at open, the model span at doStream entry, the
+ * run-lifecycle observer at the first event — read nothing, and FREV-02's honest chain check
+ * refused the export. The runs that DID record were the lucky inline half (thread-name
+ * generations). The remote dial got its determinism in R4-01; the built-in run gets the same
+ * three-state discipline here, decided at the one seam that sees BOTH the run's own identity
+ * and the whole subscription: an agent middleware, outside the hooks chain, where `input.runId`
+ * is known before any event flows.
+ */
+export function derivedBuiltinRunTraceId(botId: string, runId: string): string {
+  const hex = createHash("sha256")
+    .update(`openbot.builtin.run:${botId}:${runId}`)
+    .digest("hex");
+  return /^0+$/.test(hex.slice(0, 32))
+    ? `${"0".repeat(31)}1`
+    : hex.slice(0, 32);
+}
+
+/** The builtin run-chain decisions by origin — the visible half of the degradation contract. */
+export type BuiltinRunChainOrigin = "ambient" | "derived" | "unavailable";
+
+const builtinRunChainTally: Record<BuiltinRunChainOrigin, number> = {
+  ambient: 0,
+  derived: 0,
+  unavailable: 0,
+};
+
+/** Read the run-chain counts (a copy: readers cannot reset what production counted). */
+export function builtinRunChainCounts(): Readonly<
+  Record<BuiltinRunChainOrigin, number>
+> {
+  return { ...builtinRunChainTally };
+}
+
+/**
+ * The middleware itself. `ambient` keeps the run exactly as it was — an inline run continues
+ * its parent chain and nothing is invented. `derived` names the chain from the run's own
+ * identity (idempotent: a re-driven run re-derives the same trace), and the context it binds
+ * is a NON-RECORDING stand-in for the run root the binding store derives for that trace
+ * (`runUpstreamIdentity`, the same parent discipline the derived remote dial holds) — the
+ * facts downstream read it as their trace, and the port completes every span's parent from
+ * the authoritative binding, so no phantom span is exported and no parent is fabricated.
+ * `unavailable` (no ambient, no run identity) runs bare and says so: counted, warned, and
+ * honest — never a synthesized context the chain cannot prove.
+ */
+export function builtinRunChainMiddleware(
+  botId: string,
+): (input: RunAgentInput, next: AbstractAgent) => Observable<BaseEvent> {
+  return (input, next) => {
+    if (currentTraceContext() !== undefined) {
+      builtinRunChainTally.ambient += 1;
+      return next.run(input);
+    }
+    const runId = typeof input.runId === "string" ? input.runId.trim() : "";
+    if (runId === "") {
+      builtinRunChainTally.unavailable += 1;
+      log.warn(
+        { type: "builtin-run-chain-unavailable", botId },
+        "builtin-run-chain-unavailable: no active span and no run identity; the run's facts stay chain-less and submit nothing upstream",
+      );
+      return next.run(input);
+    }
+    builtinRunChainTally.derived += 1;
+    const traceId = derivedBuiltinRunTraceId(botId, runId);
+    log.info(
+      {
+        type: "builtin-run-chain",
+        botId,
+        runId,
+        origin: "derived",
+        traceId,
+      },
+      "builtin-run-chain",
+    );
+    const ctx = trace.setSpan(
+      context.active(),
+      trace.wrapSpanContext({
+        traceId,
+        spanId: runUpstreamIdentity(traceId).rootSpanId,
+        traceFlags: TraceFlags.SAMPLED,
+        isRemote: false,
+        traceState: undefined,
+      }),
+    );
+    return subscribeWithin(ctx, next.run(input));
+  };
+}
+
 /**
  * Which agent on a Mastra server a Bot means.
  *
@@ -4521,6 +4656,13 @@ export function pickFromRoster(
  * `remoteRunObserver` classifies it under T10's rules (a first frame or a vanished consumer
  * is an observation; only a terminal event is an outcome). A teardown with no terminal event
  * settles as `disconnected` and leaves the run's ending unknown, never invented.
+ *
+ * R4-03: the SAME stream feeds the tool-step fact face. The endpoint's business tool calls —
+ * proposal (call id, name, streamed arguments) and, when the surface answered, the receipt —
+ * become governance steps through the tool-step observer (origin `remote-agui`), with the
+ * execution marked unobserved forever: this process never ran the tool, so nothing here may
+ * claim it executed (#21's separation, held on the mediated path too). The engine's state
+ * tools are not business steps and open no cell.
  *
  * AND THE HOLD FOLLOWS THE SAME HONESTY. AG-UI carries no usage receipt, so every admitted
  * run ends as an unknown cost — succeeded, failed, interrupted or torn down — and the wiring
@@ -4607,6 +4749,92 @@ function governedRemoteRun(
           RemoteBudgetReceiptCheck,
           { state: "verified" }
         > | null = null;
+        /*
+         * R4-03, the remote half: the endpoint's business tool calls as governance steps.
+         * The endpoint's stream carries the PROPOSAL (name, id, streamed arguments) and, for a
+         * call the surface answered, the RECEIPT — and never an execution this process ran.
+         * The cell vocabulary mirrors the built-in tap's capture ceilings (OCR R3-37/R2-53):
+         * arguments stop at the input cap with the cut declared in-band, the receipt's content
+         * keeps the output cap. The engine's own state tools open no cell — protocol plumbing
+         * is not a business step, the same rule the built-in tap holds.
+         */
+        const toolCells = new Map<
+          string,
+          {
+            toolCallId: string;
+            toolName: string | null;
+            proposedAt: Date;
+            args: string[];
+            argsLength: number;
+            argsTruncated: boolean;
+            receiptObserved: boolean;
+            output: string | null;
+          }
+        >();
+        /** A defensive ceiling: an endpoint spamming proposals bounds this run's capture. */
+        const REMOTE_TOOL_CELL_CAP = 128;
+        let toolCellCapped = false;
+        const appendRemoteToolArg = (
+          cell: { args: string[]; argsLength: number; argsTruncated: boolean },
+          delta: string,
+        ): void => {
+          const capacity = TOOL_STEP_INPUT_CAPTURE_CHARS - cell.argsLength;
+          if (capacity <= 0) {
+            cell.argsTruncated = true;
+            return;
+          }
+          if (delta.length > capacity) {
+            cell.args.push(delta.slice(0, capacity));
+            cell.argsLength = TOOL_STEP_INPUT_CAPTURE_CHARS;
+            cell.argsTruncated = true;
+            return;
+          }
+          cell.args.push(delta);
+          cell.argsLength += delta.length;
+        };
+        const emitRemoteToolSteps = (): void => {
+          const stepObserver = builtinToolStepObserver;
+          if (stepObserver === undefined) return;
+          if (scope === null || scope === undefined) return;
+          if (traceId === null) return;
+          const parentSpanId =
+            chain.parentSpanId ?? runUpstreamIdentity(traceId).rootSpanId;
+          for (const cell of toolCells.values()) {
+            try {
+              stepObserver({
+                toolCallId: cell.toolCallId,
+                toolName: cell.toolName,
+                proposedAt: cell.proposedAt,
+                endedAt: new Date(),
+                proposalObserved: true,
+                // Never: this path cannot observe an execution, only a proposal and a
+                // receipt. An executed step here would be exactly the fabrication
+                // the finding refuses.
+                executionObserved: false,
+                receiptObserved: cell.receiptObserved,
+                execution: null,
+                window: "terminal",
+                trace: { traceId, spanId: parentSpanId },
+                scope,
+                input:
+                  cell.args.length > 0
+                    ? cell.args.join("") +
+                      (cell.argsTruncated
+                        ? TOOL_STEP_INPUT_TRUNCATION_MARK
+                        : "")
+                    : null,
+                output: cell.output,
+                origin: "remote-agui",
+                // The run's own binding identity: the recorder's gate must reuse the
+                // binding this run's basic record began, never mint a second row for
+                // the same chain.
+                runRef: { runId, attemptId: runId },
+              });
+            } catch {
+              // Observation never takes the product path down.
+            }
+          }
+        };
         /*
          * A broken contract ends the run HERE, before the event that broke it is delivered:
          * the person gets an error rather than an answer whose spending nobody bounded, and
@@ -4695,6 +4923,10 @@ function governedRemoteRun(
               // Observation never takes the product path down.
             }
           }
+          // R4-03: the run's business tool calls as governance steps — proposals
+          // with their call ids, receipts as their own facts, executions never
+          // claimed on a path that cannot observe one.
+          emitRemoteToolSteps();
         };
         const observe = (event: BaseEvent) => {
           /*
@@ -4770,6 +5002,48 @@ function governedRemoteRun(
               const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
               if (typeof toolCallId === "string" && toolCallId.trim() !== "") {
                 events.push({ type: "tool_proposed", toolCallId });
+                // R4-03: the proposal as its own observable fact — see the cells above.
+                const name = (event as { toolCallName?: unknown }).toolCallName;
+                const toolName =
+                  typeof name === "string" && name.trim() !== "" ? name : null;
+                if (
+                  toolName === null ||
+                  !ENGINE_STATE_TOOL_NAMES.has(toolName)
+                ) {
+                  if (
+                    toolCells.size >= REMOTE_TOOL_CELL_CAP &&
+                    !toolCells.has(toolCallId)
+                  ) {
+                    if (!toolCellCapped) {
+                      toolCellCapped = true;
+                      log.warn(
+                        { type: "remote-tool-cells-capped", botId: agent.id, runId },
+                        "remote-tool-cells-capped: the endpoint's proposals exceeded the capture ceiling; further calls are counted as events only",
+                      );
+                    }
+                  } else {
+                    toolCells.set(toolCallId, {
+                      toolCallId,
+                      toolName,
+                      proposedAt: new Date(),
+                      args: [],
+                      argsLength: 0,
+                      argsTruncated: false,
+                      receiptObserved: false,
+                      output: null,
+                    });
+                  }
+                }
+              }
+              break;
+            }
+            case "TOOL_CALL_ARGS": {
+              const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
+              const cell =
+                typeof toolCallId === "string" ? toolCells.get(toolCallId) : undefined;
+              const delta = (event as { delta?: unknown }).delta;
+              if (cell && typeof delta === "string") {
+                appendRemoteToolArg(cell, delta);
               }
               break;
             }
@@ -4778,6 +5052,28 @@ function governedRemoteRun(
               const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
               if (typeof toolCallId === "string" && toolCallId.trim() !== "") {
                 events.push({ type: "tool_executed", toolCallId });
+                const cell = toolCells.get(toolCallId);
+                if (cell !== undefined) {
+                  cell.receiptObserved = true;
+                  const content = (event as { content?: unknown }).content;
+                  if (cell.output === null) {
+                    if (typeof content === "string") {
+                      cell.output = content.slice(
+                        0,
+                        TOOL_STEP_OUTPUT_CAPTURE_CHARS,
+                      );
+                    } else if (content !== undefined && content !== null) {
+                      try {
+                        cell.output = JSON.stringify(content)?.slice(
+                          0,
+                          TOOL_STEP_OUTPUT_CAPTURE_CHARS,
+                        ) ?? null;
+                      } catch {
+                        // A receipt that cannot serialize carries no observation payload.
+                      }
+                    }
+                  }
+                }
               }
               break;
             }

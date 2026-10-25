@@ -373,6 +373,13 @@ function projectStep(row: OpikSpanRow): RunStep | null {
         : null;
   const retrieval =
     kind === "retrieval" ? stepRetrieval(attributes) : undefined;
+  // R4-03: the call id the protocol named the call by, when the recorded step
+  // carried one — the correspondence between a real business call and its
+  // governance step, fail closed to absent when the row says nothing.
+  const toolCallId =
+    kind === "tool" && typeof attributes.tool_call_id === "string"
+      ? attributes.tool_call_id
+      : undefined;
   return {
     kind,
     spanId: row.id,
@@ -383,6 +390,7 @@ function projectStep(row: OpikSpanRow): RunStep | null {
     startedAt: row.start_time,
     endedAt: row.end_time,
     ...(executionState !== undefined ? { executionState } : {}),
+    ...(toolCallId !== undefined ? { toolCallId } : {}),
     ...(input !== null ? { input } : {}),
     ...(output !== null ? { output } : {}),
     ...(retrieval !== undefined ? { retrieval } : {}),
