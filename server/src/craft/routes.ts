@@ -8,6 +8,7 @@
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
+import type { ExecutionScope } from "../../../shared/execution-scope";
 import type { ApprovalStore } from "../approvals/types";
 import { createAuditStore, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
@@ -73,6 +74,13 @@ export type CraftRoutesDeps = {
   sandboxConnectionFor: (
     botId: string,
   ) => { baseUrl: string; token: string | null } | null;
+  /**
+   * The deployment's execution ownership every sandbox request states (#618, MT050):
+   * the boot file threads the SAME lambda every craft gateway assembly consumes
+   * (same-facts discipline); unset callers fall back to the config's parsed pair
+   * inside the gateway — one source either way, never a per-request user value.
+   */
+  executionScopeFor?: () => ExecutionScope | null;
   /** The user's display name (AGENTS.md personalization). */
   userNameFor: (userId: string) => Promise<string | null>;
   /** Organization-level craft instructions; null when unset. */
@@ -196,6 +204,9 @@ export function createCraftRoutes(input: {
       const conn = deps.sandboxConnectionFor(botId);
       return conn ? { botId, baseUrl: conn.baseUrl, token: conn.token } : null;
     },
+    // #618: the boot file's scope lambda when it wired one (same facts as every other
+    // craft gateway assembly); otherwise the gateway reads the config's parsed pair.
+    executionScopeFor: deps.executionScopeFor,
   });
   // The approval rendezvous signals (announce + wake), Redis-backed when the
   // deployment runs multi-replica, in-process otherwise — turn-state's shape.

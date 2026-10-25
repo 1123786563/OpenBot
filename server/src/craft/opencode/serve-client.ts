@@ -13,6 +13,11 @@
  * on the default instance (the subtlest bug in the original; every request here passes it).
  */
 
+import {
+  EXECUTION_TENANT_HEADER,
+  EXECUTION_WORKSPACE_HEADER,
+  type ExecutionScope,
+} from "../../../../shared/execution-scope";
 import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
 import {
@@ -22,6 +27,7 @@ import {
   parseConnectAppAsk,
   stashAndAnnounce,
 } from "../connect-app";
+import { SandboxExecutionScopeUnavailableError } from "../errors";
 import {
   type ApprovalRequestedPacket,
   approvalRequestedPacket,
@@ -997,6 +1003,18 @@ export type OpencodeServeClientOptions = {
   token?: string | null;
   /** Which Bot's sandbox every request targets (x-openbot-bot-id shape). */
   botId?: string | null;
+  /**
+   * The execution ownership every request states beside the token (MT050, #618) — the
+   * two headers agent-sandbox's proxy demands, mirroring
+   * SandboxClientOptions.executionScope in codesandbox/client.ts: a resolved scope
+   * rides on every request; null means the caller (the craft gateway) knows the
+   * deployment has NO scope, and every outbound verb then refuses with the
+   * displayable fail-closed error instead of sending an unattributed request;
+   * undefined is the unmanaged shape (standalone constructions) — requests go out
+   * unattributed and the proxy's own 403 is the honest answer, exactly the contract
+   * the codesandbox client documents.
+   */
+  executionScope?: ExecutionScope | null;
   eventBus?: PodEventBus | null;
   fetchImpl?: typeof fetch;
 };
@@ -1019,6 +1037,7 @@ export class OpencodeServeClient {
   private readonly config: CraftConfig;
   private readonly token: string | null;
   private readonly botId: string | null;
+  private readonly executionScope: ExecutionScope | null | undefined;
   private readonly bus: PodEventBus | null;
   private readonly doFetch: typeof fetch;
 
@@ -1027,14 +1046,33 @@ export class OpencodeServeClient {
     this.config = options.config;
     this.token = options.token ?? null;
     this.botId = options.botId ?? null;
+    this.executionScope = options.executionScope;
     this.bus = options.eventBus ?? null;
     this.doFetch = options.fetchImpl ?? fetch;
   }
 
   private buildHeaders(extra?: Record<string, string>): Record<string, string> {
+    // #618 fail-closed chokepoint: every outbound fetch in this client builds its
+    // headers here, so the refusal lives here and no verb can slip an unattributed
+    // request past it. The complete list of catch-bearing verbs that swallow the
+    // throw per their own best-effort contracts — the request still never leaves —
+    // is abort, answerPermission, deleteSession, disposeInstance and getMessage
+    // (advisory hydration: null is "no message"); healthCheckStatus RETHROWS it
+    // (#618 OCR#12: a scopeless deployment is a permanent failure, not a cold
+    // start, so the probe's null must not mask it); sendMessage surfaces it as the
+    // RAW throw from bus.subscribe() before its try (bus and client always share the
+    // deployment's scope value — the subscribe gate fires first); only a bus/client
+    // scope mismatch, which the gateway never constructs, would reach the prompt
+    // leg's transport-error envelope; every other verb propagates.
+    if (this.executionScope === null)
+      throw new SandboxExecutionScopeUnavailableError();
     const headers: Record<string, string> = { ...extra };
     if (this.token) headers["x-sandbox-token"] = this.token;
     if (this.botId) headers["x-openbot-bot-id"] = this.botId;
+    if (this.executionScope) {
+      headers[EXECUTION_TENANT_HEADER] = this.executionScope.tenantId;
+      headers[EXECUTION_WORKSPACE_HEADER] = this.executionScope.workspaceId;
+    }
     return headers;
   }
 
@@ -1099,7 +1137,11 @@ export class OpencodeServeClient {
         ),
       });
       return response.status;
-    } catch {
+    } catch (error) {
+      // #618 (OCR#12): a missing scope is an admin-level permanent failure — rethrow
+      // instead of folding into the "not listening" null, which the chip renders as
+      // an eternally-pulsing "provisioning" that can never clear.
+      if (error instanceof SandboxExecutionScopeUnavailableError) throw error;
       return null;
     }
   }
@@ -1878,7 +1920,7 @@ export class OpencodeServeClient {
             } else {
               await deny("no connect-app rendezvous for this turn");
             }
-          } else if (gate !== null && gate.isGated(info)) {
+          } else if (gate?.isGated(info)) {
             try {
               const approvalId = await gate.open(info);
               pendingPermissions.set(info.permissionId, {

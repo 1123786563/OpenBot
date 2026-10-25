@@ -22,6 +22,7 @@ import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";
 import { packDirectoryZip, WorkspaceListingError } from "./directory-archive";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { scopeRefusalResponse } from "./scope-refusal";
 import type { CraftStore } from "./store";
 import {
   collisionFreeName,
@@ -175,6 +176,11 @@ export function createFileRoutes(
     try {
       await fileApi.writeFileBytes(target, bytes);
     } catch (error) {
+      // #618: the scope refusal answers as its own 503 before the write failure's
+      // generic 502 can wear it (R1-F2); like the turn face, no log line — the fixed
+      // sentence IS the reason, and it names no value to leak.
+      const refusalResponse = scopeRefusalResponse(context, error);
+      if (refusalResponse) return refusalResponse;
       const message = error instanceof Error ? error.message : String(error);
       if (/answered 413/.test(message)) {
         return context.json(
@@ -276,7 +282,13 @@ export function createFileRoutes(
     let deleted: boolean;
     try {
       deleted = await fileApi.deletePath(fullPath);
-    } catch {
+    } catch (error) {
+      // #618 (r3): r2 disclosed this face as the same masking shape R1-F2 fixed for
+      // upload and archive — the refusal must not wear this face's "could not be
+      // deleted" 502. Same no-log contract: the fixed sentence IS the reason, and
+      // it names no value to leak.
+      const refusalResponse = scopeRefusalResponse(context, error);
+      if (refusalResponse) return refusalResponse;
       return context.json({ error: "The file could not be deleted." }, 502);
     }
     if (!deleted) {
@@ -336,6 +348,12 @@ export function createFileRoutes(
       try {
         archive = await packDirectoryZip(fileApi, fullPath);
       } catch (error) {
+        // #618: the refusal outranks BOTH masks below (R1-F2) — a fail-closed
+        // deployment must read as "finish the setup" (503), not as "could not be
+        // read" (502), and least of all as onyx's "does not exist" 404 the walk's
+        // listing wrap would otherwise answer for it.
+        const refusalResponse = scopeRefusalResponse(context, error);
+        if (refusalResponse) return refusalResponse;
         // ONLY the root listing's failure is onyx's None → 404; anything past it
         // (the writer's ceiling, an unexpected walk failure) is a real error that
         // must not wear the "does not exist" mask — the 502 says the directory

@@ -7197,6 +7197,23 @@ const craftSandboxConnection = () =>
   sandboxUrl && sandboxToken
     ? { baseUrl: sandboxUrl, token: sandboxToken }
     : null;
+/*
+ * #618: the deployment's execution ownership (MT050) — the third member of the
+ * same-facts family above. agent-sandbox's proxy refuses a token-only request,
+ * and craft's sandbox is ONE deployment Bot the proxy pins to ONE (company,
+ * team) on first bind, so the pair is deployment wiring (config's parsed
+ * OPENBOT_CRAFT_SANDBOX_EXECUTION_* pair), never a per-request user value. It
+ * is consumed by the two assemblies whose requests ride the gateway proxy —
+ * the craft routes deps (their gateway, plus the idle reaper and every manager
+ * call through it) and the HMR deps' own gateway (the file API its legacy-form
+ * judgment reads). It is deliberately NOT consumed by craftPreviewProxy / the
+ * preview HMR deps: those dial the sandbox host's reserved dev-server PORT
+ * directly (webappUpstreamHost extracts only the hostname; the dev server is
+ * not behind the gateway's token/path/ownership gate), so no ownership headers
+ * exist to send there — see #618's audit in the T1 report.
+ */
+const craftSandboxExecutionScope = () =>
+  craftEffectiveConfig.sandboxExecutionScope;
 
 /*
  * The preview origin's serving half (#362): a cookie-authenticated request on
@@ -7286,6 +7303,8 @@ const craftRoutes: CraftRoutesFactory | undefined =
             botIdFor: craftSandboxBotId,
             llmConfigFor: async () => craftLlmConfig(),
             sandboxConnectionFor: craftSandboxConnection,
+            // #618: same facts as the connection above — one const, every assembly.
+            executionScopeFor: craftSandboxExecutionScope,
             userNameFor: async (userId) =>
               (await peopleStore.find(userId))?.name ?? null,
             generateName: craftGenerateName,
@@ -7374,6 +7393,10 @@ const craftWebappHmrDeps =
               ? { botId, baseUrl: conn.baseUrl, token: conn.token }
               : null;
           },
+          // #618: the file API's requests state the deployment's ownership — the
+          // same const the craft routes assembly threads, so the surfaces cannot
+          // disagree about the scope they act in.
+          executionScopeFor: craftSandboxExecutionScope,
         }),
       }
     : undefined;
