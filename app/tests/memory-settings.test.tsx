@@ -57,8 +57,15 @@ let pauseControls: {
 let pauseMounted = true;
 /** Whether the read answers the resolver's "no company selected" (400) instead (#392). */
 let pauseNoCompany = false;
-/** One subject's sync status, keyed `${subjectType}/${subjectId}`; absent answers 404 (#384). */
+/**
+ * One subject's sync status, keyed `${subjectType}/${subjectId}`; a subject the batched read
+ * does not answer draws no badge (#384). The list reads them all through one batched request.
+ */
 let syncStates: Record<string, Record<string, unknown>> = {};
+/** Every status-face request the surface made, for the batching assertions (FIX-OCR1 / #376). */
+let statusReads: { method: string; url: string }[] = [];
+/** A refusal the status face gives the next batched read, or none (the 越权 regression). */
+let refuseStatusRead = false;
 function serving() {
   writes.length = 0;
   refuseWrite = null;
@@ -66,6 +73,8 @@ function serving() {
   pauseMounted = true;
   pauseNoCompany = false;
   syncStates = {};
+  statusReads = [];
+  refuseStatusRead = false;
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     // The scoped memory read (MT089) waits for the scope source before it asks anything.
@@ -76,6 +85,27 @@ function serving() {
         request: `${method} ${url}`,
         body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
       });
+      // The list's one batched badge read (FIX-OCR1 / #376): a POST, so it lands here. A
+      // refused read (a selection the server's membership no longer backs) is the 越权
+      // case: the badges answer nothing rather than drawing a made-up state.
+      if (url === "/api/memory/hindsight/status/batch") {
+        statusReads.push({ method, url });
+        if (refuseStatusRead)
+          return Response.json({ error: "Access denied." }, { status: 403 });
+        const body =
+          typeof init?.body === "string"
+            ? (JSON.parse(init.body) as {
+                subjects: { subjectType: string; subjectId: string }[];
+              })
+            : { subjects: [] };
+        const statuses: Record<string, unknown> = {};
+        for (const { subjectType, subjectId } of body.subjects) {
+          const status = syncStates[`${subjectType}/${subjectId}`];
+          if (status !== undefined)
+            statuses[`${subjectType}:${subjectId}`] = status;
+        }
+        return Response.json({ statuses });
+      }
       // A pause write lands, so the settle's re-read carries the new state back (#392).
       if (url === "/api/memory/pause-controls") {
         if (refuseWrite) {
@@ -125,11 +155,8 @@ function serving() {
         : Response.json({ error: "Not found" }, { status: 404 });
     }
     if (url.startsWith("/api/memory/hindsight/status/")) {
-      const subject = url.slice("/api/memory/hindsight/status/".length);
-      const status = syncStates[subject];
-      return status === undefined
-        ? Response.json({ error: "Not found" }, { status: 404 })
-        : Response.json({ status });
+      statusReads.push({ method, url });
+      return Response.json({ error: "Not found" }, { status: 404 });
     }
     if (url.startsWith("/api/agents")) {
       return Response.json({
@@ -323,8 +350,9 @@ test("the personal context greys the switches out and says what it needs", async
 });
 
 /*
- * The sync badge (#384): each row asks the status surface and draws only the answer it gets, so
- * a subject the chain does not hold draws nothing rather than a made-up "Synced".
+ * The sync badge (#384): the whole list asks the status surface ONCE and each row draws only
+ * its own entry from the shared answer, so a subject the chain does not hold draws nothing
+ * rather than a made-up "Synced" — and the page makes no request per memory (FIX-OCR1 / #376).
  */
 
 test("a memory's sync badge maps the surface's answer", async () => {
@@ -373,4 +401,31 @@ test("a failed sync explains on click that the retry comes on its own", async ()
       "This memory hasn't synced yet. OpenBot will retry it for you.",
     ),
   ).toBeTruthy();
+});
+
+test("the whole list's badges ride one batched read, not a request per memory", async () => {
+  serving();
+  syncStates = { "preference/m1": { state: "indexed", syncedAt: null } };
+  const view = draw(<MemoryList />);
+  await view.findByText(/Synced/);
+  // Two memories on the list, one status-face request in total: the batched read carried
+  // both rows' subjects, and no per-subject read went out beside it.
+  expect(statusReads).toHaveLength(1);
+  expect(statusReads[0]).toEqual({
+    method: "POST",
+    url: "/api/memory/hindsight/status/batch",
+  });
+});
+
+test("a refused batched read draws no badges and reports no fault", async () => {
+  serving();
+  refuseStatusRead = true;
+  const view = draw(<MemoryList />);
+  // The rows still draw; the badges simply have no answer to show — a 403 from a
+  // membership the server no longer backs is not the list's error to raise.
+  expect(await view.findByText(/Formed by Expenses/)).toBeTruthy();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(view.queryByText(/Synced/)).toBeNull();
+  expect(view.queryByText("Sync failed")).toBeNull();
+  expect(view.queryByRole("alert")).toBeNull();
 });

@@ -898,4 +898,78 @@ describe("FIX-W2 status surface: self-scoped, never over-claiming", () => {
     expect(unknown.status).toBe(400);
     await queue.drain();
   });
+
+  /*
+   * FIX-OCR1 (OCR-M5, #376): the settings page's memory badges read their statuses as one
+   * batched request for the whole list, keyed `${subjectType}:${subjectId}` — same facts,
+   * same self-scoping, same refusal vocabulary as the single read beside it.
+   */
+  test("a batched read answers the whole list once, self-scoped the same way", async () => {
+    const confirm = await postPreferences({ content: `批量状态偏好 ${run}` });
+    const { preference } = (await confirm.json()) as {
+      preference: { id: string };
+    };
+
+    const batched = await api.request("/api/memory/hindsight/status/batch", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        subjects: [
+          { subjectType: "preference", subjectId: preference.id },
+          { subjectType: "preference", subjectId: `missing-${run}` },
+        ],
+      }),
+    });
+    expect(batched.status).toBe(200);
+    expect(await batched.json()).toEqual({
+      statuses: {
+        [`preference:${preference.id}`]: {
+          state: "indexed",
+          syncedAt: expect.any(String),
+        },
+        [`preference:missing-${run}`]: { state: "unknown-subject" },
+      },
+    });
+
+    // Another principal's batch answers unknown-subject across the board — a foreign
+    // subject is never told apart from one that never existed.
+    currentPrincipal = PRINCIPAL_OTHER;
+    const foreign = await api.request("/api/memory/hindsight/status/batch", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        subjects: [{ subjectType: "preference", subjectId: preference.id }],
+      }),
+    });
+    expect(foreign.status).toBe(200);
+    expect(await foreign.json()).toEqual({
+      statuses: {
+        [`preference:${preference.id}`]: { state: "unknown-subject" },
+      },
+    });
+    currentPrincipal = PRINCIPAL;
+
+    // The read's bounds and vocabulary: an oversized batch, and a subject of a type the
+    // surface does not name, are refusals — never a partial or guessed answer.
+    const oversized = await api.request("/api/memory/hindsight/status/batch", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        subjects: Array.from({ length: 201 }, () => ({
+          subjectType: "preference",
+          subjectId: preference.id,
+        })),
+      }),
+    });
+    expect(oversized.status).toBe(400);
+    const shapeless = await api.request("/api/memory/hindsight/status/batch", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        subjects: [{ subjectType: "not_a_subject", subjectId: "x" }],
+      }),
+    });
+    expect(shapeless.status).toBe(400);
+    await queue.drain();
+  });
 });
