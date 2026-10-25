@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AppVariables } from "../src/auth/guards";
@@ -506,6 +506,32 @@ describe("#656 D2: the one guard shape answers the refusal's own 503", () => {
     const response = refusal.getResponse();
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: REFUSAL });
+  });
+
+  test("the 503's content-type header is byte-for-byte what hono's context.json answers", async () => {
+    // OCRfix regression nail: the surrounding tests read only status and the
+    // PARSED body (response.json()), so a header-level drift sailed past every
+    // assertion — that shape of miss is exactly what this nail exists for.
+    // Pinned both ways: the exact bytes ("application/json" — hono 4.13.5's
+    // json() adds no charset; that suffix belongs to text()/html()), and the
+    // living comparison against a same-process context.json 503, so a hono
+    // upgrade that changes the wire format turns this red instead of a route.
+    let caught: unknown = null;
+    try {
+      assertNotScopeRefusal(new SandboxExecutionScopeUnavailableError());
+    } catch (error) {
+      caught = error;
+    }
+    const guardHeader = (caught as HTTPException)
+      .getResponse()
+      .headers.get("content-type");
+    expect(guardHeader).toBe("application/json");
+    const app = new Hono();
+    app.get("/json", (c) => c.json({ error: REFUSAL }, 503));
+    const honoHeader = (
+      await app.fetch(new Request("http://t/json"))
+    ).headers.get("content-type");
+    expect(guardHeader).toBe(honoHeader);
   });
 
   test("a non-refusal passes the guard untouched — nothing throws, nothing masks", () => {
