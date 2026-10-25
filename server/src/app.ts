@@ -58,6 +58,8 @@ import {
   createDirectoryReadGate,
   createPlatformReadGate,
 } from "./auth/directory/read-gate";
+import { createBaSelectionScopeMount } from "./enterprise/tenancy/workspace-scope-routes";
+import { createBaScopeSelectionService } from "./enterprise/tenancy/workspace-admin";
 import {
   type AppVariables,
   type AuthService,
@@ -1036,6 +1038,12 @@ export function createApp(
     }),
   );
 
+  const companyAssurance = createClosedCompanyAssurance({
+    policy: coworker?.directory?.proofPolicy ?? {
+      requiresProof: async () => false,
+    },
+  });
+
   if (coworker?.enterpriseConversations) {
     app.route(
       "/api/enterprise/conversations",
@@ -1048,13 +1056,41 @@ export function createApp(
   if (coworker?.enterpriseStreamEntry) {
     app.route("/api/enterprise/streams", coworker.enterpriseStreamEntry);
   }
-  // MT006 (issue #49): scope listing is the login-time discovery surface; the
-  // admin half inside answers 503 itself when the operator channel is unwired.
+  // MT006 (issue #49) + T03.02 (#539): the existing scope app remains the
+  // legacy/admin surface; when this process has both its authenticated session
+  // source and database, wrap it with the authority-aware ba-v1 listing and
+  // selection validation. The wrapper delegates every other route unchanged,
+  // and legacy/paused GETs preserve the base DTO byte-for-byte. Missing auth or
+  // database keeps the pre-T03.02 mount exactly as it was — no half-built BA
+  // route and no guessed authority.
   if (coworker?.enterpriseWorkspaceScope) {
-    app.route(
-      "/api/enterprise/workspace-scope",
-      coworker.enterpriseWorkspaceScope,
-    );
+    const workspaceScope =
+      auth && attachmentDatabase
+        ? createBaSelectionScopeMount(coworker.enterpriseWorkspaceScope, {
+            authenticate: async (request) => {
+              const session = await auth.api
+                .getSession({
+                  headers: request.headers,
+                  query: { disableCookieCache: true },
+                })
+                .catch(() => null);
+              return session?.user.id
+                ? { actorId: session.user.id, entrypoint: "web" }
+                : null;
+            },
+            selection: createBaScopeSelectionService(attachmentDatabase, {
+              // This application-owned database is the same verified target
+              // every store behind the prebuilt enterprise scope app uses. The
+              // service itself still reads clocks through the controlled
+              // auth_read_eligibility_clocks function and authority in its own
+              // short transaction; callers never receive a database handle.
+              data: attachmentDatabase,
+              authority: createDirectoryAuthority(),
+              assurance: companyAssurance,
+            }),
+          })
+        : coworker.enterpriseWorkspaceScope;
+    app.route("/api/enterprise/workspace-scope", workspaceScope);
   }
   if (coworker?.pluginPackages) {
     app.route("/api/enterprise/plugin-packages", coworker.pluginPackages);
@@ -1093,11 +1129,7 @@ export function createApp(
           auth: auth as unknown as NativeAuthPort,
           readGate: createDirectoryReadGate({
             authority: createDirectoryAuthority(),
-            assurance: createClosedCompanyAssurance({
-              policy: coworker?.directory?.proofPolicy ?? {
-                requiresProof: async () => false,
-              },
-            }),
+            assurance: companyAssurance,
           }),
           platformReadGate: createPlatformReadGate(),
           ...(coworker?.directory?.directory
