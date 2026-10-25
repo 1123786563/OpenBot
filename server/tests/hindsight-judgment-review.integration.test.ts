@@ -30,6 +30,7 @@ import {
   EvidenceRefusedError,
 } from "../src/hindsight/answer-evidence";
 import { teamBankFor, userBankFor } from "../src/hindsight/bank-scope";
+import type { HindsightBudgetGate } from "../src/hindsight/budget-gate";
 import {
   createDerivedJudgmentService,
   createDrizzleDerivedJudgmentRecords,
@@ -1325,5 +1326,182 @@ describe("FIX-W12 adopted listing (FR2-3): the cross-session control, re-verifie
     await expect(
       review.listAdoptedJudgments(scope, { limit: 101 }),
     ).rejects.toBeInstanceOf(DerivedJudgmentRefusedError);
+  });
+
+  /*
+   * FIX-OCR2 (O2-HIGH, #387/#389): a bot-scope judgment is confirmable on this surface, so
+   * it must also stay visible, expandable and forgettable on it. The management snapshot
+   * carries no asking agent — nothing is asking, the person is reading their own adopted
+   * list — and the old scope check demanded base.agentId === row.agentId against it, so
+   * bot-scope rows answered false forever: the confirmation's own judgment vanished from
+   * the list it was confirmed into, and with it the cross-session verify/forget control
+   * FR2-3 promises. The management rule now judges the row's OWN scope — a bot judgment by
+   * its own Bot's live grant, the same rule Gate 4 and listPersonalMemories apply — and the
+   * asking-agent match stays where it belongs, in recall and the context half.
+   */
+  test("a bot-scope judgment confirmed here stays listed, expandable and forgettable here", async () => {
+    const scope = await employeeScope();
+    const first = await confirmBound(scope, `管理面bot依据一 ${run}`, {
+      kind: "bot",
+      agentId: BOT_ONE,
+    });
+    const second = await confirmBound(scope, `管理面bot依据二 ${run}`, {
+      kind: "bot",
+      agentId: BOT_ONE,
+    });
+    const candidate = await proposals.proposeDerivedJudgmentCandidate(scope, {
+      judgment: `管理面bot判断 ${run}`,
+      evidence: [first, second],
+    });
+    const confirmed = await review.confirmDerivedJudgment(scope, candidate.id);
+    expect(confirmed.judgment.scope).toEqual({
+      kind: "bot",
+      agentId: BOT_ONE,
+    });
+    await syncQueue.drain();
+
+    // Listed from a fresh person-scope: no Bot is asking, and none is needed.
+    const listed = await review.listAdoptedJudgments(await employeeScope());
+    const found = listed.find((row) => row.id === candidate.id);
+    expect(found).toBeDefined();
+    expect(found?.scope).toEqual({ kind: "bot", agentId: BOT_ONE });
+    expect(found?.evidence).toHaveLength(2);
+
+    // The expansion seam decides availability by the same management rule.
+    const inspection = await review.inspectJudgmentEvidence(
+      await employeeScope(),
+      candidate.id,
+    );
+    expect(inspection.state).toBe("available");
+    if (inspection.state === "available") {
+      expect(inspection.actions).toEqual(["edit", "forget"]);
+      expect(inspection.evidence).toHaveLength(2);
+    }
+
+    // The row's own Bot's grant is the authority: revoke it and the judgment is withheld
+    // from this management face too — as withholding, never a refusal — and it returns by
+    // itself when the authority returns.
+    await setGrant(BOT_ONE, false);
+    try {
+      const withheld = await review.listAdoptedJudgments(await employeeScope());
+      expect(withheld.map((row) => row.id)).not.toContain(candidate.id);
+      const gone = await review.inspectJudgmentEvidence(
+        await employeeScope(),
+        candidate.id,
+      );
+      expect(gone.state).toBe("unavailable");
+    } finally {
+      await setGrant(BOT_ONE, true);
+    }
+    const returned = await review.listAdoptedJudgments(await employeeScope());
+    expect(returned.map((row) => row.id)).toContain(candidate.id);
+
+    // Forgetting works from the person's own surface — the control the listing held.
+    await review.forgetDerivedJudgment(scope, candidate.id);
+    const after = await review.listAdoptedJudgments(await employeeScope());
+    expect(after.map((row) => row.id)).not.toContain(candidate.id);
+  });
+});
+
+/*
+ * FIX-OCR2 (O2-M1): the confirm's budget bookkeeping is a local DB write that runs after a
+ * durable decision — the judgment row and the work row both landed before admittedRetain —
+ * so its failure must degrade, never fail the confirmation the person already made. On BASE
+ * a throwing settle released the error into the confirm's answer: the person was told their
+ * confirmation failed when it had already succeeded, and their retry hit "already
+ * confirmed"; a throwing release left the reservation counting against the period for the
+ * same price. The three legs below pin each bookkeeping failure to its degraded answer.
+ */
+describe("FIX-OCR2 — budget bookkeeping never fails the review decision", () => {
+  const failures = { admit: false, settle: false, release: false };
+  const throwingBudget: HindsightBudgetGate = {
+    async admitBackgroundWork() {
+      if (failures.admit) throw new Error("admission ledger exploded");
+      return { ok: true, reservationId: `res-throw-${run}` };
+    },
+    async settleBackgroundWork() {
+      if (failures.settle) throw new Error("settle ledger exploded");
+    },
+    async releaseBackgroundWork() {
+      if (failures.release) throw new Error("release ledger exploded");
+    },
+    async currentUsage() {
+      return { companyUnits: 0, personalUnits: [], period: "2026-10" };
+    },
+  };
+  /** A review service over the same records as the suite's, with the failing budget wired. */
+  const budgetedReview = (config: typeof serviceConfig) =>
+    createDerivedJudgmentReviewService(
+      createDrizzlePreferenceRecords(database),
+      createDrizzleSourceBoundRecords(database),
+      createDrizzleDerivedJudgmentRecords(database),
+      createDrizzleSourceBoundAuthorizations(database),
+      config,
+      { work: syncQueue, budget: throwingBudget },
+    );
+
+  test("a settle that throws after a successful retain keeps the confirm standing and synced", async () => {
+    failures.admit = false;
+    failures.settle = true;
+    failures.release = false;
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `簿记失败结算判断 ${run}`,
+    );
+    const confirmed = await budgetedReview(
+      serviceConfig,
+    ).confirmDerivedJudgment(scope, id);
+    expect(confirmed.remoteSynced).toBe(true);
+    expect((await judgmentRow(id))?.reviewState).toBe("confirmed");
+    failures.settle = false;
+  });
+
+  test("an admission that throws skips the retain: the decision stands, the work row retries", async () => {
+    failures.admit = true;
+    failures.settle = false;
+    failures.release = false;
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `簿记失败准入判断 ${run}`,
+    );
+    const callsBefore = scripted.calls.filter(
+      (call) => call.method === "POST" && call.path.endsWith("/memories"),
+    ).length;
+    const confirmed = await budgetedReview(
+      serviceConfig,
+    ).confirmDerivedJudgment(scope, id);
+    // No retain ran, and the confirm still answered: the work row owns the retry.
+    expect(confirmed.remoteSynced).toBe(false);
+    expect((await judgmentRow(id))?.reviewState).toBe("confirmed");
+    const callsAfter = scripted.calls.filter(
+      (call) => call.method === "POST" && call.path.endsWith("/memories"),
+    ).length;
+    expect(callsAfter).toBe(callsBefore);
+    failures.admit = false;
+  });
+
+  test("an unreachable service with a throwing release still confirms, unsynced", async () => {
+    failures.admit = false;
+    failures.settle = false;
+    failures.release = true;
+    const deadService = {
+      ...serviceConfig,
+      apiUrl: "http://127.0.0.1:1/",
+      requestTimeoutMs: 250,
+    };
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `簿记失败释放判断 ${run}`,
+    );
+    const confirmed = await budgetedReview(deadService).confirmDerivedJudgment(
+      scope,
+      id,
+    );
+    expect(confirmed.remoteSynced).toBe(false);
+    expect((await judgmentRow(id))?.reviewState).toBe("confirmed");
+    failures.release = false;
   });
 });

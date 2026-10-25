@@ -18,18 +18,17 @@ import {
   enterpriseWorkspaceMemberships,
   enterpriseWorkspaces,
 } from "../src/db/schema/enterprise-tenancy";
+import {
+  hindsightMigrationMap,
+  hindsightMigrationQuarantine,
+} from "../src/db/schema/hindsight-legacy-migration";
 import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
-import { hindsightMigrationMap } from "../src/db/schema/hindsight-legacy-migration";
-import { hindsightMigrationQuarantine } from "../src/db/schema/hindsight-legacy-migration";
 import {
   hindsightMemoryGrants,
   sourceBoundMemories,
 } from "../src/db/schema/hindsight-source-bound";
 import { hindsightSyncWork } from "../src/db/schema/hindsight-sync";
-import {
-  memorySources,
-  personalMemories,
-} from "../src/db/schema/memory";
+import { memorySources, personalMemories } from "../src/db/schema/memory";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
@@ -284,15 +283,20 @@ beforeAll(async () => {
     { id: USER_BARE, email: `bare-${run}@example.invalid` },
   ]);
   await database.insert(agents).values([
-    { id: OLD_BOT, name: `Legacy Bot ${run}`, type: "built_in", configuration: {} },
+    {
+      id: OLD_BOT,
+      name: `Legacy Bot ${run}`,
+      type: "built_in",
+      configuration: {},
+    },
   ]);
   await database.insert(enterpriseTenants).values([
     { id: TENANT_A, name: `Mig A ${run}` },
     { id: TENANT_B, name: `Mig B ${run}` },
   ]);
-  await database.insert(enterpriseWorkspaces).values([
-    { tenantId: TENANT_A, id: WORKSPACE_A, name: `Mig WS ${run}` },
-  ]);
+  await database
+    .insert(enterpriseWorkspaces)
+    .values([{ tenantId: TENANT_A, id: WORKSPACE_A, name: `Mig WS ${run}` }]);
   await database.insert(enterprisePrincipals).values([
     { id: PRINCIPAL_A, userId: USER_A },
     { id: PRINCIPAL_MULTI, userId: USER_MULTI },
@@ -312,7 +316,11 @@ beforeAll(async () => {
     },
   ]);
   await database.insert(enterpriseWorkspaceMemberships).values([
-    { tenantId: TENANT_A, workspaceId: WORKSPACE_A, principalId: PRINCIPAL_A },
+    {
+      tenantId: TENANT_A,
+      workspaceId: WORKSPACE_A,
+      principalId: PRINCIPAL_A,
+    },
   ]);
   await database.insert(memorySources).values({
     id: OLD_SOURCE,
@@ -508,9 +516,7 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     expect(byOld.get(suspendedRow)?.reason).toBe("no-active-membership");
     expect(byOld.get(bareRow)?.reason).toBe("no-principal");
     for (const id of [multiRow, suspendedRow, bareRow]) {
-      expect(
-        Object.keys(byOld.get(id) ?? {}).sort(),
-      ).not.toContain("content");
+      expect(Object.keys(byOld.get(id) ?? {}).sort()).not.toContain("content");
     }
     const newRowsOfTheirs = await database
       .select()
@@ -623,9 +629,7 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     const indexed = await preferences.recallGenericPreferences(scope, {
       query: "mig sample",
     });
-    expect(indexed.map((memory) => memory.id)).toContain(
-      preferenceSample!.id,
-    );
+    expect(indexed.map((memory) => memory.id)).toContain(preferenceSample!.id);
     // And through the degraded path with the service unreachable: the SQL fallback answers
     // the same confirmed original.
     scripted.state.stallMs = STALL_MS;
@@ -633,9 +637,9 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
       query: "mig person fact",
     });
     expect(degraded.degraded).toBe(true);
-    expect(
-      degraded.memories.map((memory) => memory.content),
-    ).toContain(`mig-person-fact-${run}`);
+    expect(degraded.memories.map((memory) => memory.content)).toContain(
+      `mig-person-fact-${run}`,
+    );
   });
   test("RG6-1: out-of-shape and source-ref-narrowed rows quarantine instead of widening their audience", async () => {
     // A dedicated owner so the run below sees this cohort alone.
@@ -707,18 +711,14 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     const quarantine = await database
       .select()
       .from(hindsightMigrationQuarantine)
-      .where(
-        inArray(hindsightMigrationQuarantine.oldRecordId, quarantinedIds),
-      );
+      .where(inArray(hindsightMigrationQuarantine.oldRecordId, quarantinedIds));
     const byOld = new Map(quarantine.map((row) => [row.oldRecordId, row]));
     expect(byOld.get(narrowedBot)?.reason).toBe("source-ref-narrowing");
     expect(byOld.get(agentlessBot)?.reason).toBe("unmappable-permission-shape");
     expect(byOld.get(sourcelessImport)?.reason).toBe(
       "unmappable-permission-shape",
     );
-    expect(byOld.get(unknownShape)?.reason).toBe(
-      "unmappable-permission-shape",
-    );
+    expect(byOld.get(unknownShape)?.reason).toBe("unmappable-permission-shape");
     for (const id of quarantinedIds) {
       expect(Object.keys(byOld.get(id) ?? {})).not.toContain("content");
     }
@@ -791,9 +791,9 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     expect(reconciled.oldSide.confirmedAlive).toBe(6);
     expect(reconciled.newSide.migrated).toBe(2);
     expect(reconciled.quarantined.byReason["source-ref-narrowing"]).toBe(1);
-    expect(
-      reconciled.quarantined.byReason["unmappable-permission-shape"],
-    ).toBe(3);
+    expect(reconciled.quarantined.byReason["unmappable-permission-shape"]).toBe(
+      3,
+    );
     expect(reconciled.balanced).toBe(true);
   });
 
@@ -810,9 +810,9 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     const USER_FLIP = `usr_flip-${run}`;
     const PRINCIPAL_FLIP = `prin_flip-${run}`;
     const TENANT_FLIP_B = `tn_flip-b-${run}`;
-    await database.insert(enterpriseTenants).values([
-      { id: TENANT_FLIP_B, name: `Mig Flip B ${run}` },
-    ]);
+    await database
+      .insert(enterpriseTenants)
+      .values([{ id: TENANT_FLIP_B, name: `Mig Flip B ${run}` }]);
     await database
       .insert(users)
       .values({ id: USER_FLIP, email: `flip-${run}@example.invalid` });
@@ -871,5 +871,50 @@ describe("Hindsight 16 (#394) — legacy confirmed-memory migration", () => {
     expect(reconciliation.newSide.migrated).toBe(1);
     expect(reconciliation.quarantined.total).toBe(0);
     expect(reconciliation.balanced).toBe(true);
+  });
+
+  /*
+   * FIX-OCR2 (O2-M4): the mapped early-return owns the isolation-row cleanup too. The gap
+   * is reachable in the OTHER order from the flip test above: a record that already
+   * migrated can still pick up a stray isolation row afterwards — 0211's INSERT keys the
+   * same old ids and runs at deploy time, whenever its owner's attribution has since
+   * drifted. The early return used to leave the stray standing forever (reconcile read it
+   * as a breakpoint still to run, and the isolation list kept reporting a migrated record),
+   * so "in the map ⇒ not in the isolation list" now holds on both paths.
+   */
+  test("a mapped record's stray isolation row is cleared by the already-mapped early return", async () => {
+    const rowId = await seedOld(USER_A, {
+      content: `mig-stray-fact-${run}`,
+    });
+    // Pass one: the record migrates and its map row is the durable fact.
+    const first = await migrator.run({ owners: [USER_A] });
+    expect(first.completed).toBe(true);
+    expect(first.migrated).toBe(1);
+    // The stray isolation row: what 0211's deploy-time INSERT would pre-write for this old
+    // id under a drifted owner — after the record was already mapped.
+    await database.insert(hindsightMigrationQuarantine).values({
+      oldRecordId: rowId,
+      ownerUserId: USER_A,
+      reason: "ambiguous-company",
+      quarantinedAt: new Date(),
+      runId: "0211-personal-memories-company-attribution",
+    });
+    // The stray counts on the quarantine side of the balance: a breakpoint to run.
+    const before = await migrator.reconcile({ owners: [USER_A] });
+    expect(before.quarantined.total).toBe(1);
+    expect(before.balanced).toBe(false);
+    // The re-scan takes the mapped early-return path — and clears the stray.
+    const second = await migrator.run({ owners: [USER_A] });
+    expect(second.completed).toBe(true);
+    expect(second.migrated).toBe(0);
+    expect(second.alreadyMigrated).toBeGreaterThan(0);
+    const leftover = await database
+      .select()
+      .from(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, rowId));
+    expect(leftover).toEqual([]);
+    const after = await migrator.reconcile({ owners: [USER_A] });
+    expect(after.quarantined.total).toBe(0);
+    expect(after.balanced).toBe(true);
   });
 });

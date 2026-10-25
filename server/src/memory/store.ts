@@ -570,11 +570,17 @@ export function createMemoryStore(
           ),
         );
     },
+    /**
+     * FIX-OCR2 (O2-M2): answers the number of rows this sync actually WROTE — 0 while the
+     * person's learning switch is on, fewer than `records` when the sensitivity gate dropped
+     * some or an unchanged digest upserted nothing — so the count the person sees says what
+     * was kept, the #392 discipline, never what the connector happened to hand over.
+     */
     async completeSync(
       ownerUserId: string,
       sourceId: string,
       records: ImportedMemory[],
-    ) {
+    ): Promise<number> {
       // Pause-learning (#392): read before the transaction, so the gate never asks for a
       // second connection while the row lock is held. Paused means the import produces no
       // candidate — the sync still completes (the connector was read, and the source's health
@@ -582,6 +588,7 @@ export function createMemoryStore(
       const learningPaused = options.learningPaused
         ? await options.learningPaused(ownerUserId)
         : false;
+      let written = 0;
       await database.transaction(async (transaction) => {
         const [source] = await transaction
           .select()
@@ -610,7 +617,7 @@ export function createMemoryStore(
             droppedSensitiveInner += 1;
             continue;
           }
-          await transaction
+          const inserted = await transaction
             .insert(personalMemories)
             .values({
               id: randomUUID(),
@@ -641,7 +648,12 @@ export function createMemoryStore(
                 updatedAt: new Date(),
               },
               setWhere: sql`${personalMemories.importDigest} IS DISTINCT FROM ${record.digest}`,
-            });
+            })
+            // FIX-OCR2 (O2-M2): RETURNING answers only the rows the statement actually
+            // touched — the insert, and the update whose digest really changed; an
+            // unchanged row (the setWhere said no) writes nothing and returns nothing.
+            .returning({ id: personalMemories.id });
+          written += inserted.length;
         }
         if (droppedSensitiveInner > 0)
           log.error(
@@ -672,6 +684,7 @@ export function createMemoryStore(
           })
           .where(eq(memorySources.id, sourceId));
       });
+      return written;
     },
     async retrieve(
       ownerUserId: string,

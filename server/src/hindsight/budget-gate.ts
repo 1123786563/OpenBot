@@ -124,30 +124,7 @@ export function createDrizzleBudgetGate(
             .limit(1);
           if (existing) {
             if (existing.state === "released") {
-              const verdict = await capsVerdict(
-                tx,
-                input.tenantId,
-                input.principalId,
-                period,
-                units,
-              );
-              if (!verdict.ok) return verdict;
-              await tx
-                .update(hindsightBudgetReservations)
-                .set({
-                  state: "reserved",
-                  period,
-                  units,
-                  releasedAt: null,
-                  releaseReason: null,
-                  updatedAt: now(),
-                })
-                .where(
-                  and(
-                    eq(hindsightBudgetReservations.id, existing.id),
-                    eq(hindsightBudgetReservations.state, "released"),
-                  ),
-                );
+              return await readmitReleased(tx, existing, input, period, units);
             }
             return { ok: true as const, reservationId: existing.id };
           }
@@ -158,7 +135,8 @@ export function createDrizzleBudgetGate(
             period,
             units,
           );
-          if (!verdict.ok) return { ok: false as const, reason: verdict.reason };
+          if (!verdict.ok)
+            return { ok: false as const, reason: verdict.reason };
           const id = randomUUID();
           await tx.insert(hindsightBudgetReservations).values({
             id,
@@ -190,6 +168,20 @@ export function createDrizzleBudgetGate(
             )
             .limit(1);
           if (existing) {
+            /*
+             * FIX-OCR2 (O2-M5): the fold dispatches on state, the way the in-transaction
+             * path above does. A released row in the loser's hands is the same crash-window
+             * shape the dedup read handles — it never counted, so folding into it without
+             * the caps re-check would let an admission slip past a cap tightened since the
+             * winner's release, and its later settle would be a no-op against a released
+             * row (one unit of silent escape). Reserved and settled rows fold as before:
+             * one charge, shared reservation id.
+             */
+            if (existing.state === "released") {
+              return await database.transaction((tx) =>
+                readmitReleased(tx, existing, input, period, units),
+              );
+            }
             return { ok: true as const, reservationId: existing.id };
           }
         }
@@ -329,6 +321,49 @@ export function createDrizzleBudgetGate(
       return { ok: false, reason: "personal-cap" };
     }
     return { ok: true };
+  }
+
+  /**
+   * Flip one RELEASED reservation back to reserved — the re-admission both paths to an
+   * existing row share: the dedup read inside the admission transaction, and the unique-race
+   * fold in its own transaction below (FIX-OCR2 O2-M5). The caps re-check runs INSIDE the
+   * same transaction's caps-row lock as the flip, so a released row cannot stand in as a
+   * bypass around a cap tightened since its release; a `released`-only WHERE on the update
+   * keeps two re-admissions of the same key from fighting — the loser of that race folds
+   * into the winner's reservation exactly as the insert race itself does.
+   */
+  async function readmitReleased(
+    tx: Pick<Database, "select" | "update">,
+    existing: typeof hindsightBudgetReservations.$inferSelect,
+    input: { tenantId: string; principalId: string },
+    period: string,
+    units: number,
+  ): Promise<BackgroundWorkAdmission> {
+    const verdict = await capsVerdict(
+      tx,
+      input.tenantId,
+      input.principalId,
+      period,
+      units,
+    );
+    if (!verdict.ok) return verdict;
+    await tx
+      .update(hindsightBudgetReservations)
+      .set({
+        state: "reserved",
+        period,
+        units,
+        releasedAt: null,
+        releaseReason: null,
+        updatedAt: now(),
+      })
+      .where(
+        and(
+          eq(hindsightBudgetReservations.id, existing.id),
+          eq(hindsightBudgetReservations.state, "released"),
+        ),
+      );
+    return { ok: true as const, reservationId: existing.id };
   }
 
   /** Company total and one principal's usage for a period, in one read each. */

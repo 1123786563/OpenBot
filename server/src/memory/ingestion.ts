@@ -326,29 +326,45 @@ export function createMemoryIngestion(options: {
       throw new MemoryNotFoundError();
     /*
      * The background loop (and a binding's first read) has no request of its own: it runs
-     * the source's own rule too. In an enterprise deployment an isolated source does not
-     * run at all — nothing is read, nothing stamped, the row untouched — rather than
-     * importing content no company could ever see. A deployment without the enterprise
-     * layer has no company to prove and keeps the behaviour it always had.
+     * the source's own rule too, and the rule is REPROVED now, not just read back — the
+     * attribution fixed at binding can drift (the person left the company, a second
+     * membership turned it ambiguous), and a source nobody can re-prove is nobody's to read
+     * (FIX-OCR2 O2-M3): its credentials would keep serving a company its owner can no longer
+     * see, stop or delete it from, writing rows nobody could ever manage. In an enterprise
+     * deployment an unprovable source does not run at all — nothing is read, nothing
+     * stamped, the row untouched — rather than importing content no company could ever see.
+     * A deployment without the enterprise layer has no company to prove and keeps the
+     * behaviour it always had.
      */
-    if (!company && options.companyFor && source.tenantId === null) {
-      log.info(
-        {
-          type: "memory-sync-isolated-skipped",
-          context: { sourceId: id },
-          timestamp: new Date().toISOString(),
-        },
-        "memory-sync-isolated-skipped",
-      );
-      /*
-       * The row is untouched by design — but its due time is not. An isolated source never
-       * syncs in this deployment, and one that stayed due forever would be re-read and
-       * re-logged by every sweep while crowding the bounded, unordered due set, starving the
-       * sources that would have run (FIX-OCR1 / #376). Defer it with the same backoff a
-       * failed sync takes: scheduling moves, no result is stamped, because nothing was read.
-       */
-      await store.deferSync(ownerUserId, id);
-      return { imported: 0, source };
+    if (!company && options.companyFor) {
+      const attributed = await options.companyFor({
+        ownerUserId,
+        agentId: source.agentId,
+      });
+      if (attributed?.tenantId !== source.tenantId) {
+        const type =
+          source.tenantId === null
+            ? "memory-sync-isolated-skipped"
+            : "memory-sync-attribution-drift-skipped";
+        log.info(
+          {
+            type,
+            context: { sourceId: id },
+            timestamp: new Date().toISOString(),
+          },
+          type,
+        );
+        /*
+         * The row is untouched by design — but its due time is not. A source that never
+         * syncs in this deployment, and one that stayed due forever, would be re-read and
+         * re-logged by every sweep while crowding the bounded, unordered due set, starving the
+         * sources that would have run (FIX-OCR1 / #376; the drift half joins it). Defer it
+         * with the same backoff a failed sync takes: scheduling moves, no result is stamped,
+         * because nothing was read.
+         */
+        await store.deferSync(ownerUserId, id);
+        return { imported: 0, source };
+      }
     }
     const claimed = await store.claimSync(ownerUserId, id);
     if (!claimed)
@@ -389,9 +405,11 @@ export function createMemoryIngestion(options: {
         );
       // The stamp is the source's own persisted company (completeSync reads the row itself);
       // in a deployment without the enterprise layer the row carries no company to stamp.
-      await store.completeSync(ownerUserId, id, kept);
+      // FIX-OCR2 (O2-M2): the count the person sees is what landed, not what was read — a
+      // paused learner wrote 0 rows in there, and the badge must not say otherwise.
+      const imported = await store.completeSync(ownerUserId, id, kept);
       return {
-        imported: kept.length,
+        imported,
         source: await store.getSource(ownerUserId, id),
       };
     } catch (error) {

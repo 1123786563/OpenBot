@@ -12,8 +12,8 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryAnswerBasisSection } from "@/components/memory/answer-basis";
 import { MemoryCleanupSection } from "@/components/memory/cleanup-progress";
-import { MemoryList } from "@/components/memory/memories";
 import { JudgmentReviewSections } from "@/components/memory/judgment-review";
+import { MemoryList } from "@/components/memory/memories";
 import { storeSelection } from "@/lib/enterprise/tenant/selection";
 import {
   afterAll,
@@ -670,9 +670,8 @@ test("a forget from the expansion re-reads the memory rows mounted beside it", a
   );
   await view.findByText("Memory face row beside the listing.");
   const readsOfMemory = () =>
-    seen.filter(
-      (read) => read.method === "GET" && read.url === "/api/memory",
-    ).length;
+    seen.filter((read) => read.method === "GET" && read.url === "/api/memory")
+      .length;
   const before = readsOfMemory();
   expect(before).toBeGreaterThan(0);
   fireEvent.click(view.getByRole("button", { name: "Basis" }));
@@ -702,6 +701,33 @@ test("a partially evidenced cleanup states what is left, never the claim", async
       /Logs kept by model providers outside OpenBot aren't controlled copies/,
     ),
   ).toBeTruthy();
+});
+
+/*
+ * FIX-OCR2 (O2-M8): the payloads leg's value column must agree with its note. With a
+ * checked-but-not-cleared leg and NO declared retention window, the note said "nothing to
+ * measure against" while the value fell through to "0 to clear" — a glance at the column
+ * alone read a leg that could not be measured as one that was cleared. The column now says
+ * "No evidence", the same answer the backups leg gives an unregistered registry.
+ */
+test("an undeclared retention window reads as no evidence in the value column, not zero to clear", async () => {
+  serving();
+  cleanupStatus = {
+    ...notCleared(),
+    finishedTaskPayloads: {
+      ...notCleared().finishedTaskPayloads,
+      retentionDays: null,
+      beyondWindow: null,
+    },
+  };
+  const view = draw(<MemoryCleanupSection />);
+  expect(await view.findByText("Not everything is cleared yet.")).toBeTruthy();
+  expect(view.getByText(/No retention window is set/)).toBeTruthy();
+  // The payloads leg's column agrees with its note...
+  expect(view.getAllByText("No evidence")).toHaveLength(1);
+  // ...and does not read as cleared-in-progress: "0 to clear" is the claim the old
+  // fall-through made about a leg nobody could measure.
+  expect(view.queryByText("0 to clear")).toBeNull();
 });
 
 test("a fully evidenced cleanup shows the claim", async () => {

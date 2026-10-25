@@ -131,8 +131,7 @@ function ActiveDataRow({ status }: { status: CleanupStatus }) {
     activeData.outstanding + activeData.unverified + activeData.resurrected;
   let value: string;
   if (activeData.documents === 0) value = t("memory.cleanup.nothingValue");
-  else if (activeData.blockedByOpenRestore)
-    value = t("memory.cleanup.onHold");
+  else if (activeData.blockedByOpenRestore) value = t("memory.cleanup.onHold");
   else if (activeData.cleared) value = t("memory.cleanup.clearedValue");
   else value = t("memory.cleanup.pendingValue", { n: inProgress });
   let note: string;
@@ -181,7 +180,13 @@ function PayloadsRow({ status }: { status: CleanupStatus }) {
   let value: string;
   if (!payloads.checked) value = t("memory.cleanup.uncheckedValue");
   else if (payloads.cleared) value = t("memory.cleanup.clearedValue");
-  else value = t("memory.cleanup.pendingValue", { n: payloads.beyondWindow ?? 0 });
+  // FIX-OCR2 (O2-M8): an undeclared retention window is not evidence, so the value column
+  // must say so too — it used to fall through to "0 to clear" while the note beside it said
+  // there was nothing to measure against, and a glance at the column alone read "cleared".
+  else if (payloads.retentionDays === null)
+    value = t("memory.cleanup.noEvidenceValue");
+  else
+    value = t("memory.cleanup.pendingValue", { n: payloads.beyondWindow ?? 0 });
   let note: string;
   if (!payloads.checked)
     note = payloads.reason ?? t("memory.cleanup.payloadsUnchecked");
@@ -217,8 +222,7 @@ function BackupsRow({ status }: { status: CleanupStatus }) {
   else value = t("memory.cleanup.pendingValue", { n: backups.outstanding });
   let note: string;
   if (backups.cleared) note = t("memory.cleanup.backupsCleared");
-  else if (backups.outstanding === null)
-    note = t("memory.cleanup.backupsNone");
+  else if (backups.outstanding === null) note = t("memory.cleanup.backupsNone");
   else
     note = t("memory.cleanup.backupsPending", {
       n: backups.outstanding,

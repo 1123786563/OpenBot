@@ -150,8 +150,19 @@ async function archivePresent(
   try {
     await access(join(directory, backupId));
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    /*
+     * FIX-OCR2 (O2-M6): only a name that is provably absent may read as "the copy is gone" —
+     * this answer is what the purge evidence stands on. EACCES, EIO, ESTALE and friends say
+     * the check could not see, not that the archive is not there; a false here would write a
+     * controlled-copy purge this module never witnessed, the exact guess it refuses to make,
+     * and the leg would answer cleared for a copy that is still on the volume. The error
+     * goes up instead: /cleanup/verify isolates it, /ops/backups/reconcile shows the
+     * operator, and the copy stays outstanding either way.
+     */
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code === "ENOENT") return false;
+    throw error;
   }
 }
 
