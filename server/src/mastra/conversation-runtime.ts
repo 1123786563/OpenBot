@@ -1,6 +1,6 @@
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
-import { attachmentUrl } from "../../../shared/attachments";
 import { sanitizeSeededHistory } from "@openbot/toolkit/history-sanitize";
+import { attachmentUrl } from "../../../shared/attachments";
 import type {
   ConversationService,
   EngineMessageAppendInput,
@@ -64,6 +64,11 @@ export interface MastraConversationRuntimeDeps {
     turn: { actorId: string; threadId: string },
     attachmentId: string,
   ) => Promise<boolean>;
+}
+
+/** A plain object check for the wire-shape reads the collector makes. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Hard ceiling on the history one model context may carry. */
@@ -511,6 +516,10 @@ export async function persistExecutionMessages(
       parts: full.parts,
       engineMessageId,
       ...(full.toolCallId !== undefined ? { toolCallId: full.toolCallId } : {}),
+      // O3-H1: the basis stamp the run put on this assistant message survives the store.
+      ...(full.answerBasis !== undefined
+        ? { answerBasis: full.answerBasis }
+        : {}),
     });
   }
 }
@@ -540,6 +549,13 @@ export function createProducedMessageCollector(): {
         type: "function";
         function: { name: string; arguments: string };
       }[];
+      /**
+       * O3-H1: the START frame's protocol metadata, kept so the persistence fold
+       * below can carry the run's basis stamp into the stored envelope — the fold is
+       * "exactly what a client reconstructing state from the same event stream would
+       * show", and a live client shows the metadata TEXT_MESSAGE_START carried.
+       */
+      metadata?: Record<string, unknown>;
     };
   }
   const produced = new Map<string, Produced>();
@@ -592,7 +608,9 @@ export function createProducedMessageCollector(): {
       switch (shape.type) {
         case "TEXT_MESSAGE_START": {
           if (typeof shape.messageId === "string") {
-            assistantFor(shape.messageId);
+            const produced = assistantFor(shape.messageId);
+            if (isRecord(shape.metadata))
+              produced.message.metadata = shape.metadata;
             // Fresh text re-anchors the host: the next call belongs to this
             // new turn, not to whatever came before the last result.
             lastResultLanded = false;

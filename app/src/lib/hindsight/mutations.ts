@@ -55,18 +55,32 @@ const settleBothFaces =
     });
   };
 
-/** Adopt a candidate (#389): the gates re-ran on the server; the answer is the adopted judgment. */
+/**
+ * Adopt a candidate (#389): the gates re-ran on the server; the answer is the adopted
+ * judgment. `confirmSensitive` is the F-G1-4 second look: the server refuses
+ * medical/financial/customer text without it, and the retry that carries it is the one the
+ * judgment review's refusal notice offers (O3-M4).
+ */
 export const confirmJudgmentMutationOptions = (
   queryClient: QueryClient,
   scope: ScopedCache,
 ) =>
   mutationOptions({
-    mutationFn: (id: string): Promise<ReviewedJudgment> =>
+    mutationFn: ({
+      id,
+      confirmSensitive,
+    }: {
+      id: string;
+      confirmSensitive?: boolean;
+    }): Promise<ReviewedJudgment> =>
       client(
         `/api/hindsight/judgments/${encodeURIComponent(id)}/confirm`,
         "judgment",
         {
           method: "POST",
+          ...(confirmSensitive === undefined
+            ? {}
+            : { body: { confirmSensitive } }),
           fallbackKey: "hindsight.confirm",
           ...scopePair(scope),
         },
@@ -88,7 +102,8 @@ export const editJudgmentMutationOptions = (
       input,
     }: {
       id: string;
-      input: { content: string };
+      /** The re-asserted text; `confirmSensitive` is the F-G1-4 second look (O3-M4). */
+      input: { content: string; confirmSensitive?: boolean };
     }): Promise<ReviewedJudgment> =>
       client(`/api/hindsight/judgments/${encodeURIComponent(id)}`, "judgment", {
         method: "PATCH",
@@ -149,13 +164,24 @@ export const correctEvidenceMutationOptions = (
   scope: ScopedCache,
 ) =>
   mutationOptions({
-    mutationFn: ({ id, input }: { id: string; input: { content: string } }) =>
-      client(`/api/hindsight/evidence/${encodeURIComponent(id)}/correction`, {
-        method: "POST",
-        body: input,
-        fallbackKey: "hindsight.correct",
-        ...scopePair(scope),
-      }),
+    mutationFn: async ({
+      id,
+      input,
+    }: {
+      id: string;
+      /** The corrected text; `confirmSensitive` is the F-G1-4 second look (O3-M4). */
+      input: { content: string; confirmSensitive?: boolean };
+    }): Promise<void> => {
+      await client(
+        `/api/hindsight/evidence/${encodeURIComponent(id)}/correction`,
+        {
+          method: "POST",
+          body: input,
+          fallbackKey: "hindsight.correct",
+          ...scopePair(scope),
+        },
+      );
+    },
     onSettled: settleBothFaces(queryClient, scope),
   });
 

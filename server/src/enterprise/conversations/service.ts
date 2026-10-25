@@ -1272,6 +1272,8 @@ export function createConversationService({
         throw new Error("INVALID_MESSAGE");
       if (!Array.isArray(input.parts) || input.parts.length === 0)
         throw new Error("INVALID_MESSAGE");
+      if (input.answerBasis !== undefined && input.role !== "assistant")
+        throw new Error("INVALID_MESSAGE");
       const full: OpenBotFullMessage = {
         schemaVersion: 1,
         role: input.role,
@@ -1279,6 +1281,11 @@ export function createConversationService({
         engineMessageId: input.engineMessageId,
         ...(input.toolCallId !== undefined
           ? { toolCallId: input.toolCallId }
+          : {}),
+        // O3-H1: the basis rides the envelope the digest proves, so the
+        // idempotency comparison below covers it too.
+        ...(input.answerBasis !== undefined
+          ? { answerBasis: [...input.answerBasis] }
           : {}),
       };
       // Only envelopes that parse back exactly are provable: compare the

@@ -396,7 +396,8 @@
       "adopted": {
         "confirmed": "确认于 {{when}}",
         "edited": "编辑于 {{when}}"
-      }
+      },
+      "confirmSensitive": "确认保留"
     },
     "evidence": {
       "title": "依据",
@@ -419,7 +420,8 @@
       "cancel": "取消",
       "corrected": "已保存。Bot 的下一次回答会使用新事实。",
       "forget": "遗忘",
-      "stopped": "已于 {{when}} 停止使用这条记忆。OpenBot 之外的副本另行清理。"
+      "stopped": "已于 {{when}} 停止使用这条记忆。OpenBot 之外的副本另行清理。",
+      "confirmSensitive": "确认保留此更正"
     },
     "answerBasis": {
       "title": "回答依据",

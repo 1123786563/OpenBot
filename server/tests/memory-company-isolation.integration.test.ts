@@ -967,9 +967,9 @@ describe("FIX-W13 — a source's own company decides; the request only authorize
     expect(iso.nextSyncAt.getTime()).toBeGreaterThan(
       isoBefore.nextSyncAt.getTime(),
     );
-    expect(
-      (await store.dueSources()).map((row) => row.id),
-    ).not.toContain(SRC_ISO);
+    expect((await store.dueSources()).map((row) => row.id)).not.toContain(
+      SRC_ISO,
+    );
     await ingestion.syncDue();
     expect(connectorReads).not.toContain(SRC_ISO);
   });
@@ -1410,5 +1410,86 @@ describe("FIX-W13 — migration 0212 backfills proven source attribution and iso
     await database
       .delete(enterpriseTenants)
       .where(eq(enterpriseTenants.id, TENANT_C));
+  });
+});
+
+/*
+ * FIX-OCR3 (O3-H2): the proactive engine's form_memory observes through a bare store call —
+ * no company argument, because the engine has none. Where the enterprise layer is wired, the
+ * store resolves the attribution itself (the production companyFor, resolveMemoryCompany) and
+ * REFUSES what it cannot prove: the alternative was a tenant-less row no company-pinned face
+ * could ever show, confirm or delete, whose per-person dedup would then suppress the same
+ * fact's next company-scoped observation. The store here carries the production resolver.
+ */
+describe("FIX-OCR3 — a proactive observation attributes itself or is refused", () => {
+  const enterpriseStore = createMemoryStore(database, {
+    companyFor: (input) => resolveMemoryCompany(database, input),
+  });
+
+  beforeAll(async () => {
+    // The observation row's formed_by_agent_id FK needs the observing Bots to exist.
+    await database.insert(agents).values([
+      {
+        id: BOT_A,
+        name: `O3 Bot A ${run}`,
+        type: "built_in",
+        configuration: {},
+      },
+      {
+        id: PERSONAL_BOT,
+        name: `O3 Personal Bot ${run}`,
+        type: "built_in",
+        configuration: {},
+      },
+    ]);
+  });
+
+  test("a resolvable run's observation lands stamped with the Bot's company", async () => {
+    // The proactive call shape: an owner, an observing Bot, and no company argument.
+    const formed = await enterpriseStore.formMemory(USER, {
+      agentId: BOT_A,
+      content: `o3 proactive attributed fact ${run}`,
+      sourceApp: "notes",
+    });
+    expect(formed.duplicate).toBe(false);
+    const [row] = await database
+      .select()
+      .from(personalMemories)
+      .where(eq(personalMemories.id, formed.id));
+    expect(row.tenantId).toBe(TENANT_A);
+  });
+
+  test("an unprovable attribution is refused and nothing is written", async () => {
+    // A personal Bot with no ownership row, observed for a person whose two active
+    // memberships cannot name one company: resolveMemoryCompany answers nothing, and the
+    // store refuses rather than writing the invisible tenant-less row.
+    await expect(
+      enterpriseStore.formMemory(USER, {
+        agentId: PERSONAL_BOT,
+        content: `o3 proactive unprovable fact ${run}`,
+        sourceApp: "notes",
+      }),
+    ).rejects.toThrow("cannot be attributed to a company");
+    const rows = await database
+      .select({ id: personalMemories.id })
+      .from(personalMemories)
+      .where(
+        eq(personalMemories.content, `o3 proactive unprovable fact ${run}`),
+      );
+    expect(rows).toEqual([]);
+  });
+
+  test("a store without the enterprise layer keeps writing exactly what it always wrote", async () => {
+    const bare = createMemoryStore(database);
+    const formed = await bare.formMemory(SOLO, {
+      agentId: PERSONAL_BOT,
+      content: `o3 bare-store unprovable fact ${run}`,
+      sourceApp: "notes",
+    });
+    const [row] = await database
+      .select()
+      .from(personalMemories)
+      .where(eq(personalMemories.id, formed.id));
+    expect(row.tenantId).toBeNull();
   });
 });

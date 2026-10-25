@@ -396,7 +396,8 @@
       "adopted": {
         "confirmed": "Confirmed {{when}}",
         "edited": "Edited {{when}}"
-      }
+      },
+      "confirmSensitive": "Keep it anyway"
     },
     "evidence": {
       "title": "Basis",
@@ -419,7 +420,8 @@
       "cancel": "Cancel",
       "corrected": "Saved. Your Bots will use the new fact from their next answer.",
       "forget": "Forget",
-      "stopped": "Stopped using this memory {{when}}. Cleanup of copies outside OpenBot is tracked separately."
+      "stopped": "Stopped using this memory {{when}}. Cleanup of copies outside OpenBot is tracked separately.",
+      "confirmSensitive": "Keep the correction anyway"
     },
     "answerBasis": {
       "title": "Answer basis",

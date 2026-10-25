@@ -67,6 +67,15 @@ SELECT "memory"."id",
        '0211-personal-memories-company-attribution'
 FROM "personal_memories" "memory"
 WHERE "memory"."tenant_id" IS NULL
+  AND NOT EXISTS (
+    -- FIX-OCR3 (O3-M2): a record already in the map is migrated, never isolated. A #394
+    -- pass that ran before this upgrade may have mapped a record whose owner has since
+    -- drifted to unprovable; without this guard the INSERT would hold that same record on
+    -- the isolation list too — reconcile's balanced check counts it on both sides forever
+    -- and the isolation list keeps reporting a migrated record as quarantined.
+    SELECT 1 FROM "hindsight_migration_map" "mm"
+    WHERE "mm"."old_record_id" = "memory"."id"
+  )
   AND "memory"."review_state" IN ('confirmed','edited')
   AND "memory"."enabled" = true
   AND "memory"."deleted_at" IS NULL

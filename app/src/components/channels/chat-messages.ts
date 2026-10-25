@@ -604,7 +604,8 @@ export function toVisibleChatItems(
  * One basis row per turn, under the turn's final answer (FIX-W14, #387 AC1).
  *
  * The engine injects the memory block once per run, and stamps every assistant text message of
- * that run with the same pointer set — live and replayed views must agree, and a message cannot
+ * that run with the same pointer set — live and replayed views must agree (the restore path
+ * re-attaches the same pointers on refresh, O3-H1), and a message cannot
  * know whether it is the run's last while it streams. A turn with tool rounds therefore carries
  * the set several times; drawn as-is that is one repeated row per round. The person's question
  * is about THE answer, so only the last row before the next thing the person said is kept — the

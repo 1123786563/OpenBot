@@ -15,6 +15,7 @@ import {
   formedMemorySchema,
   type ImportedMemory,
   LEARNING_PAUSED_REFUSAL,
+  MEMORY_ATTRIBUTION_REFUSAL,
   MemoryNotFoundError,
   type MemoryRecord,
   MemoryRefusedError,
@@ -54,6 +55,20 @@ export function createMemoryStore(
      * (`create`) is not this switch's business.
      */
     learningPaused?: (ownerUserId: string) => Promise<boolean>;
+    /**
+     * FIX-OCR3 (O3-H2, FIX-F1's missed seam): the attribution fallback for the callers that
+     * carry no company of their own — the proactive engine's `form_memory`, assembled with a
+     * bare store. Present exactly where the enterprise layer is wired (the production option
+     * is `resolveMemoryCompany`, the same rule the ingestion seams resolve through); a
+     * deployment without the enterprise layer passes nothing and every seam answers as it
+     * always did. With the option present, an observation that resolves to NO provable
+     * company is refused outright — an enterprise deployment never writes the invisible
+     * tenant-less row that no company-pinned face could ever show, confirm or delete.
+     */
+    companyFor?: (input: {
+      ownerUserId: string;
+      agentId: string;
+    }) => Promise<MemoryCompany | undefined>;
   } = {},
 ) {
   const getSource = async (ownerUserId: string, id: string) => {
@@ -220,6 +235,25 @@ export function createMemoryStore(
             ? CREDENTIAL_REFUSAL
             : SENSITIVE_OBSERVATION_REFUSAL,
         );
+      /*
+       * FIX-OCR3 (O3-H2): a caller with no company of its own (the proactive engine) gets its
+       * attribution the same way the request-carrying seams do — resolved here from the run's
+       * own (owner, agent) pair. Fail-closed where the enterprise layer is wired and nothing
+       * is provable: the alternative was a tenant-less row no company-pinned face could ever
+       * see, whose per-person dedup would then quietly suppress the same fact's next
+       * company-scoped observation. A deployment without the enterprise layer has no
+       * companyFor and writes exactly what it always wrote.
+       */
+      const attributed = company
+        ? company
+        : options.companyFor
+          ? await options.companyFor({
+              ownerUserId,
+              agentId: input.agentId,
+            })
+          : undefined;
+      if (!company && options.companyFor && !attributed)
+        throw new MemoryRefusedError(MEMORY_ATTRIBUTION_REFUSAL);
       const digest = createHash("sha256")
         .update(parsed.data.content.toLocaleLowerCase())
         .digest("hex");
@@ -249,11 +283,12 @@ export function createMemoryStore(
         .values({
           id: randomUUID(),
           ownerUserId,
-          // FIX-F1 (FR-1): the company the observing Bot's run belongs to. The
-          // per-person content dedup above and the unique index below stay
-          // per-person by design — a forgotten fact stays forgotten for the whole
-          // person — so a company's observation never resurrects another's.
-          tenantId: company?.tenantId ?? null,
+          // FIX-F1 (FR-1): the company the observing Bot's run belongs to — the caller's
+          // own, or the one the attribution above resolved for a caller that carried none
+          // (O3-H2). The per-person content dedup above and the unique index below stay
+          // per-person by design — a forgotten fact stays forgotten for the whole person —
+          // so a company's observation never resurrects another's.
+          tenantId: attributed?.tenantId ?? null,
           content: parsed.data.content,
           provenance:
             `${parsed.data.sourceApp}${parsed.data.sourceLink ? ` (${parsed.data.sourceLink})` : ""}, observed ${observedAt.toISOString()}`.slice(

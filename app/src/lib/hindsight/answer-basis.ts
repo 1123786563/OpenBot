@@ -6,10 +6,13 @@ import type { Message } from "@ag-ui/core";
  * The server composes a run's answer and its basis from ONE read of the person's confirmed
  * memory: the {id, kind} pointers of the block injected into the run's prompt ride the run's
  * assistant messages in the AG-UI event metadata, which is the channel the client already
- * rebuilds messages from — live and on reconnect alike. This module is the one reader of that
- * shape on the browser side; the ids it hands on are expanded by the evidence seam, which
- * re-decides current authorization per id at expansion time (a basis the person can no longer
- * see answers unavailable, never content).
+ * rebuilds messages from — live and on reconnect alike. A page refresh rebuilds the
+ * transcript from history whose DTO carries no per-message metadata, so the restore path
+ * re-attaches the same pointers from the server's own re-export (thread-messages.ts, O3-H1)
+ * before they reach a transcript. This module is the one reader of that shape on the browser
+ * side; the ids it hands on are expanded by the evidence seam, which re-decides current
+ * authorization per id at expansion time (a basis the person can no longer see answers
+ * unavailable, never content).
  */
 
 /** Which half of the person's memory an answer drew on. The server's own vocabulary. */
@@ -52,7 +55,20 @@ export function answerMemoryBasisOf(
   if (typeof metadata !== "object" || metadata === null) return null;
   const openbot = (metadata as Record<string, unknown>)[OPENBOT_METADATA_KEY];
   if (typeof openbot !== "object" || openbot === null) return null;
-  const raw = (openbot as Record<string, unknown>)[BASIS_METADATA_KEY];
+  return answerMemoryBasisFromUnknown(
+    (openbot as Record<string, unknown>)[BASIS_METADATA_KEY],
+  );
+}
+
+/**
+ * The same checked read over a raw value the restore path hands in (FIX-OCR3 / O3-H1): the
+ * answer-basis re-export a refresh merges into a restored transcript is foreign data on the
+ * wire, and it passes the same proof a live message's metadata passes before anything draws
+ * a basis row from it. Null, never a partial set.
+ */
+export function answerMemoryBasisFromUnknown(
+  raw: unknown,
+): readonly AnswerMemoryBasisPointer[] | null {
   if (!Array.isArray(raw)) return null;
   const pointers: AnswerMemoryBasisPointer[] = [];
   for (const entry of raw) {

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
+import { eq } from "drizzle-orm";
 import {
   afterAll,
   beforeAll,
@@ -7,7 +8,6 @@ import {
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { eq } from "drizzle-orm";
 import { createDatabase, type Database } from "../src/db/client";
 import { users } from "../src/db/schema/core";
 import {
@@ -25,6 +25,7 @@ import {
   userBankFor,
   verifyBankScopeAssertion,
 } from "../src/hindsight/bank-scope";
+import type { HindsightBudgetGate } from "../src/hindsight/budget-gate";
 import {
   createDrizzlePreferenceRecords,
   createPreferenceRecallService,
@@ -133,10 +134,7 @@ async function bootScriptedHindsight() {
       ) {
         status = state.recall.status;
         payload = state.recall.body;
-      } else if (
-        request.method === "DELETE" &&
-        path.includes("/documents/")
-      ) {
+      } else if (request.method === "DELETE" && path.includes("/documents/")) {
         status = state.deleteStatus;
         payload = { deleted: true };
       }
@@ -360,7 +358,9 @@ describe("confirm syncs a stable document identity (#382 AC1)", () => {
         items?: { document_id?: string; update_mode?: string }[];
       }
     )?.items?.[0];
-    expect(item?.document_id).toBe(preferenceDocumentIdFor(TENANT_A, record.id));
+    expect(item?.document_id).toBe(
+      preferenceDocumentIdFor(TENANT_A, record.id),
+    );
     expect(item?.update_mode).toBe("replace");
 
     const [row] = await database
@@ -377,11 +377,9 @@ describe("confirm syncs a stable document identity (#382 AC1)", () => {
     const first = await service.confirmGenericPreference(scope, {
       content: "周报用段落",
     });
-    const edited = await service.editGenericPreference(
-      scope,
-      first.record.id,
-      { content: "周报用简短要点" },
-    );
+    const edited = await service.editGenericPreference(scope, first.record.id, {
+      content: "周报用简短要点",
+    });
     expect(edited.record.content).toBe("周报用简短要点");
     expect(edited.remoteSynced).toBe(true);
 
@@ -572,7 +570,10 @@ describe("remote results without a current confirmed row are dropped (#382 AC3)"
           { document_id: `hgp_unreviewed-${run}` },
           { document_id: `hgp_disabled-${run}` },
           { document_id: `hgp_forgotten-${run}` },
-          { document_id: liveDoc, text: "the extracted shape, not the original" },
+          {
+            document_id: liveDoc,
+            text: "the extracted shape, not the original",
+          },
           { document_id: liveDoc },
           { text: "a hit with no document id at all" },
         ],
@@ -646,5 +647,94 @@ describe("remote results without a current confirmed row are dropped (#382 AC3)"
       askingAgentId: "b",
     });
     expect(empty).toEqual([]);
+  });
+});
+
+/*
+ * FIX-OCR3 (O3-M1): the preference seam's admittedRetain claimed the judgment review's
+ * discipline "verbatim" while missing its O2-M1 bookkeeping guard. The row and the work row
+ * land before admittedRetain runs, so a throwing admission or settle must degrade — the
+ * confirm stands with the retain's own outcome, never fails into a retry that would hit the
+ * same content as a duplicate.
+ */
+describe("FIX-OCR3 — budget bookkeeping never fails the preference confirm", () => {
+  const failures = { admit: false, settle: false, release: false };
+  const throwingBudget: HindsightBudgetGate = {
+    async admitBackgroundWork() {
+      if (failures.admit) throw new Error("admission ledger exploded");
+      return { ok: true, reservationId: `res-o3p-${run}` };
+    },
+    async settleBackgroundWork() {
+      if (failures.settle) throw new Error("settle ledger exploded");
+    },
+    async releaseBackgroundWork() {
+      if (failures.release) throw new Error("release ledger exploded");
+    },
+    async currentUsage() {
+      return { companyUnits: 0, personalUnits: [], period: "2026-10" };
+    },
+  };
+  const budgetedService = (config: {
+    apiUrl: string;
+    serviceApiKey: string;
+    assertionSecret: string;
+    requestTimeoutMs: number;
+  }) =>
+    createPreferenceRecallService(
+      createDrizzlePreferenceRecords(database),
+      config,
+      { budget: throwingBudget },
+    );
+  // The scripted service only exists after beforeAll, so the config is read per leg.
+  const liveConfig = () => ({
+    apiUrl: scripted.url,
+    serviceApiKey: SERVICE_KEY,
+    assertionSecret: SECRET,
+    requestTimeoutMs: 2000,
+  });
+
+  test("a settle that throws after a successful retain keeps the confirm standing and synced", async () => {
+    failures.admit = false;
+    failures.settle = true;
+    failures.release = false;
+    const scope = await makeTrustedScope(TENANT_A, PRINCIPAL_A);
+    const { record, remoteSynced } = await budgetedService(
+      liveConfig(),
+    ).confirmGenericPreference(scope, {
+      content: `簿记失败结算偏好 ${run}`,
+    });
+    expect(remoteSynced).toBe(true);
+    const [row] = await database
+      .select()
+      .from(genericPersonalPreferences)
+      .where(eq(genericPersonalPreferences.id, record.id));
+    expect(row.reviewState).toBe("confirmed");
+    failures.settle = false;
+  });
+
+  test("an admission that throws skips the retain: the decision stands, unsynced", async () => {
+    failures.admit = true;
+    failures.settle = false;
+    failures.release = false;
+    const scope = await makeTrustedScope(TENANT_A, PRINCIPAL_A);
+    const retainsBefore = scripted.calls.filter(
+      (call) => call.method === "POST" && call.path.endsWith("/memories"),
+    ).length;
+    const { record, remoteSynced } = await budgetedService(
+      liveConfig(),
+    ).confirmGenericPreference(scope, {
+      content: `簿记失败准入偏好 ${run}`,
+    });
+    expect(remoteSynced).toBe(false);
+    const [row] = await database
+      .select()
+      .from(genericPersonalPreferences)
+      .where(eq(genericPersonalPreferences.id, record.id));
+    expect(row.reviewState).toBe("confirmed");
+    const retainsAfter = scripted.calls.filter(
+      (call) => call.method === "POST" && call.path.endsWith("/memories"),
+    ).length;
+    expect(retainsAfter).toBe(retainsBefore);
+    failures.admit = false;
   });
 });
