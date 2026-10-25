@@ -24,6 +24,24 @@ import { PodEventBus } from "./opencode/event-bus";
 import { OpencodeServeClient } from "./opencode/serve-client";
 import type { WorkspaceApi } from "./workspace";
 
+/**
+ * #618 OCR r4: the gateway's HTTP failures, structured — the refused path and
+ * status ride as fields, not as prose, so the deferred 403-propagation face
+ * (OCRFX-F4) can dispatch by code instead of matching the message text. The
+ * message keeps the `Sandbox <path> answered <status>.` convention the file
+ * routes' `/answered 413/` needle already matches, so both dispatch styles
+ * keep working against the same text.
+ */
+export class SandboxHttpError extends Error {
+  constructor(
+    public readonly path: string,
+    public readonly status: number,
+  ) {
+    super(`Sandbox ${path} answered ${status}.`);
+    this.name = "SandboxHttpError";
+  }
+}
+
 /** The sandbox-side file surface craft needs (backed by the gateway's file endpoints). */
 export type AgentSandboxFileApi = {
   /** List a directory; throws when unreachable/missing. */
@@ -182,7 +200,14 @@ export function createSandboxGateway(
       const doFetch = options.fetchImpl ?? fetch;
       const request = async (
         path: string,
-        init: RequestInit = {},
+        // (#618 OCR r4) headers narrowed to the plain record the spread below
+        // understands: RequestInit also admits Headers and [key, value][] —
+        // shapes an object spread flattens to nothing, silently dropping the
+        // caller's headers. The type now makes the spread total; the `as`
+        // assertion that used to paper over it is gone.
+        init: Omit<RequestInit, "headers"> & {
+          headers?: Record<string, string>;
+        } = {},
         timeoutMs = config.opencodeServeRequestTimeoutSeconds * 1000,
       ) => {
         const response = await doFetch(`${base}${path}`, {
@@ -193,12 +218,17 @@ export function createSandboxGateway(
             // a future verb that forwards caller headers into init.headers can
             // never override ownership or strip the credentials. headersFor()
             // states no content-type, so writeFile's own survives untouched.
-            ...(init.headers as Record<string, string>),
+            ...init.headers,
             ...headersFor(),
           },
           signal: AbortSignal.timeout(timeoutMs),
         });
         if (!response.ok) {
+          // Release the body before throwing (#618 OCR r4): an unconsumed body
+          // pins its pool socket in undici until GC — the leak the event-bus
+          // dial fixed for /event (OCR r2), same shape on every file verb: a
+          // 403 answered per call would strand one socket per call.
+          await response.body?.cancel().catch(() => undefined);
           throw new Error(`Sandbox ${path} answered ${response.status}.`);
         }
         return response;
@@ -248,6 +278,8 @@ export function createSandboxGateway(
           );
           if (response.status === 404) return false;
           if (!response.ok) {
+            // Release before throwing — same undici socket pin as request() (#618 OCR r4).
+            await response.body?.cancel().catch(() => undefined);
             throw new Error(
               `Sandbox DELETE /file answered ${response.status}.`,
             );
@@ -271,6 +303,8 @@ export function createSandboxGateway(
           );
           if (response.status === 404) return null;
           if (!response.ok) {
+            // Release before throwing — same undici socket pin as request() (#618 OCR r4).
+            await response.body?.cancel().catch(() => undefined);
             throw new Error(
               `Sandbox /file/content answered ${response.status}.`,
             );
@@ -310,6 +344,8 @@ export function createSandboxGateway(
           );
           if (response.status === 404) return null;
           if (!response.ok) {
+            // Release before throwing — same undici socket pin as request() (#618 OCR r4).
+            await response.body?.cancel().catch(() => undefined);
             throw new Error(
               `Sandbox /file/content answered ${response.status}.`,
             );
@@ -359,9 +395,12 @@ export function createSandboxGateway(
       // mismatch verdict must travel out as the error it is.
       if (response.status === 404) return null;
       if (!response.ok) {
-        throw new Error(
-          `Sandbox /workspace/snapshot answered ${response.status}.`,
-        );
+        // Release the body before throwing (#618 OCR r4): the verdict this
+        // usually is — a scope-mismatch 403 — arrives with a body nobody reads,
+        // and an unconsumed body pins its pool socket until GC: one stranded
+        // socket per snapshot call in a deployment failing like this every turn.
+        await response.body?.cancel().catch(() => undefined);
+        throw new SandboxHttpError("/workspace/snapshot", response.status);
       }
       return new Uint8Array(await response.arrayBuffer());
     },
@@ -394,9 +433,11 @@ export function createSandboxGateway(
       // "nothing to restore" and the wake silently rebuilt the workspace over the mismatch.
       if (response.status === 409 || response.status === 400) return false;
       if (!response.ok) {
-        throw new Error(
-          `Sandbox /workspace/restore answered ${response.status}.`,
-        );
+        // Same release as the snapshot half (#618 OCR r4); the verdict leaves
+        // structured — SandboxHttpError carries the path and status the deferred
+        // 403 propagation (OCRFX-F4) will dispatch on, message text unchanged.
+        await response.body?.cancel().catch(() => undefined);
+        throw new SandboxHttpError("/workspace/restore", response.status);
       }
       return true;
     },

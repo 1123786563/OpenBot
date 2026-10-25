@@ -14,8 +14,11 @@ import { SandboxExecutionScopeUnavailableError } from "./errors";
 /**
  * The fixed sentence, matched on and rebuilt from — never carried by a shared Error
  * instance (#618 OCR r2): a matched refusal is rethrown into request chains, and one
- * error-enhancing layer rewriting a shared singleton's message would corrupt both the
- * 503 body every face answers with and the needle this recognizer matches on, silently.
+ * error-enhancing layer rewriting a shared singleton's message would corrupt the
+ * needle this recognizer matches on, silently. Since OCR r4 the structural arm hands
+ * back the ORIGINAL refused instance (its stack is the debug trace) — an enhancer may
+ * have rewritten that instance's message on the way — so the 503 body is answered from
+ * this immutable string, never from `refusal.message` (#618 OCR r4).
  */
 const REFUSAL_MESSAGE = new SandboxExecutionScopeUnavailableError().message;
 
@@ -28,7 +31,13 @@ export function sandboxScopeRefusalOf(
     // refusal survives any rewrite of the wrap's text — a template change, a long-
     // cause truncation, an error enhancer touching the embedded sentence.
     if (error.cause instanceof SandboxExecutionScopeUnavailableError) {
-      return new SandboxExecutionScopeUnavailableError();
+      // The original instance, not a rebuild (#618 OCR r4): the refusal keeps no
+      // log line, so the first throw's stack — minted inside scopeHeaders(),
+      // before the archive walk folded it — is the only trace an operator gets,
+      // and a rebuild discards it. Not the shared singleton OCR r2 barred: each
+      // throw site mints its own, so handing one back cannot let an enhancer
+      // corrupt the needle the two arms share.
+      return error.cause;
     }
     // Fallback: wraps that carry no cause chain still answer by the fixed sentence
     // embedded in the text — the only shape every pre-chain wrap could produce.
@@ -52,5 +61,11 @@ export function scopeRefusalResponse(
   error: unknown,
 ): Response | null {
   const refusal = sandboxScopeRefusalOf(error);
-  return refusal ? context.json({ error: refusal.message }, 503) : null;
+  // The body is the canonical sentence BY CONSTRUCTION (#618 OCR r4): the
+  // recognizer hands back the original instance — the stack an operator needs —
+  // and an enhancing layer may have rewritten that instance's message on the
+  // way here. Answering REFUSAL_MESSAGE (never refusal.message) keeps the 503
+  // body fixed through any rewrite, which is the r2 contract the fresh-instance
+  // rebuild used to provide.
+  return refusal ? context.json({ error: REFUSAL_MESSAGE }, 503) : null;
 }

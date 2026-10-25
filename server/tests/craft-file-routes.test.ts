@@ -317,6 +317,30 @@ describe("upload endpoint", () => {
     );
   });
 
+  test("a sandbox 413 on the write answers the transfer-ceiling 413 — the message needle (OCR r4 pin)", async () => {
+    // The upload catch dispatches on the gateway's message convention
+    // (/answered 413/), not an error class — the exact contract SandboxHttpError
+    // was shaped to keep. This pin holds both sides to the text the real
+    // request() throw produces, query string included.
+    const { api } = memoryFileApi();
+    api.writeFileBytes = async (path: string) => {
+      throw new Error(
+        `Sandbox /file?path=${encodeURIComponent(path)} answered 413.`,
+      );
+    };
+    const response = await routes(api).request(
+      `/sessions/${SESSION_ID}/upload`,
+      {
+        method: "POST",
+        body: multipart("big.bin", new Uint8Array([1, 2, 3])),
+      },
+    );
+    expect(response.status).toBe(413);
+    expect(((await response.json()) as { error: string }).error).toBe(
+      "The file exceeds the sandbox's transfer ceiling (SANDBOX_MAX_UPLOAD_BYTES).",
+    );
+  });
+
   test("nested descendants of attachments/ don't count toward the file limit (onyx maxdepth 1)", async () => {
     // The REAL listing is one level: attachments/ answers [keep.txt, sub] — the two
     // NESTED files never appear (onyx's `find -maxdepth 1 -type f` never saw them
