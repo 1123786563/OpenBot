@@ -67,3 +67,11 @@ R13（r13-adjudication.md）3 有效 medium：
 **T33（F17-1，doc-only）**：`server/src/memory/ingestion.ts:226` "Pinned by server/tests/revoked-connection-consumers.test.ts" 改指真实行为 pin=`server/tests/memory-defaults.integration.test.ts` 的 describe「a revoked connection keeps upstream's row-existence semantics (#489 F01-01)」（finding 建议形）。零代码改动。门：tsc 恰 3 BASE、biome 净、enterprise 108/108。owned=ingestion.ts（恰 1 M 注释）。
 
 流程：T33→R1→集成→R18 全量→f01-r12→V03/C01。
+
+## 附录七：F19 波 T34/T35（R18 终裁追加，2026-10-25）
+
+**T34（app 侧四项）**：①asksThePerson 快速通道与 refusalBody 的 marker 匹配共享一份前缀常量（F18-1，消除双真相）；②stepDetails 的 refusalBody 旧调用换单参版并一次解码复用（F18-2+F18-6 合并修复：同一 result 只解码一次）；③fence markdown 分支避免已渲染 body 在 fallback 围栏中重复展示（F18-3：trim 时剔除已单独渲染的 markdown 键或等价措施）。RED→GREEN 各 ≥1 用例。owned=tool-activity.tsx/chat-transcript.tsx/tool-result.tsx 中实际涉及者+测试（报告列清单）。
+
+**T35（server 侧）**：①`createMastraTools` 判重按 `name.replace(/\./g,"_")` 归一化（F18-5）——管理面点/下划线孪生挂载期命名拒绝（沿 MASTRA_TOOL_NAME_COLLISION 词表）；②frontend-tools 构建碰撞集时把授予名归一化下划线拼写加入（F18-4）——客户端下划线拼写声明与点号授予的线上坍缩在挂载期拦截。两处共用 wireName 归一化 helper（tools.ts 导出）。RED→GREEN：授予 foo.bar+foo_bar 挂载期拒绝、客户端 foo_bar+授予 foo.bar 挂载期拦截、正常名零回退。owned=tools.ts/frontend-tools.ts+测试。门沿 T32（两套件+seam 51/51+adapter+enterprise+tsc 3+biome）。
+
+流程：并行→R1→串行集成→F19 收官门→R19 全量→f01-r12→V03/C01。
