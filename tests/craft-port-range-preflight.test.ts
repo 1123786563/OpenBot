@@ -766,6 +766,72 @@ test("checkRangeCovered rejects an inverted range instead of vacuously passing",
   expect(coverage.ok).toBe(false);
 });
 
+/*
+ * ── OCR r1 整改新增（OCR-L1）───────────────────────────────────────────────
+ */
+
+/**
+ * OCR-L1：单端倒置分支里另一端「设置了但非法」时不再说「未设置按默认」—— 非法值已被
+ * readKey 报过错，倒置文案再说「未设置」是 R2-F6 矛盾形态在 errors 非空场景的残留；
+ * 两方向各一例（START 合法+END 非法 / END 合法+START 非法），合成段照样倒置拒绝。
+ */
+test("START-only inversion with an invalid END names the invalid value, not an unset default", () => {
+  const outcome = runPreflightCli(
+    {
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "4011",
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "abc",
+    },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(outcome.code).toBe(2);
+  const output = text(outcome);
+  expect(output).toContain("生效段 4011-3100");
+  expect(output).toContain("END 设置了但非法（见上方错误）");
+  expect(output).toContain('"abc"');
+  expect(output).not.toContain("未设置按默认");
+});
+
+test("END-only inversion with an invalid START names the invalid value, not an unset default", () => {
+  const outcome = runPreflightCli(
+    {
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "x9",
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3000",
+    },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(outcome.code).toBe(2);
+  const output = text(outcome);
+  expect(output).toContain("生效段 3010-3000");
+  expect(output).toContain("START 设置了但非法（见上方错误）");
+  expect(output).not.toContain("未设置按默认");
+});
+
+/**
+ * OCR-L1：修正示例算术钳制到 1–65535 —— START=65530 的示例 END 是 65535 而不是越界的
+ * 65539，END=5 的示例 START 是 1 而不是负数；错误文案不得自己给出非法端口。
+ */
+test("inversion fix examples are clamped into the legal port range", () => {
+  const highStart = runPreflightCli(
+    { OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "65530" },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(highStart.code).toBe(2);
+  const highOutput = text(highStart);
+  expect(highOutput).toContain("OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END=65535");
+  expect(highOutput).not.toContain("65539");
+
+  const lowEnd = runPreflightCli(
+    { OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "5" },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(lowEnd.code).toBe(2);
+  expect(text(lowEnd)).toContain("OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START=1");
+});
+
 /**
  * C-F2 主形态：.env 双键非空 + shell 双键显式空 → 合并后按 compose `:-` 语义落默认
  * 3010-3100（实证 P2：docker compose config 同环境展开同为 3010-3100）。修前的合并

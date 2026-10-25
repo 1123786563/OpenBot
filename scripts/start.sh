@@ -232,9 +232,21 @@ info "1/4  Docker services"
 # family from the working directory — including `.env.local` variants compose never reads —
 # into the environment, and the preflight's highest-priority source is that environment.
 # Without the flag, a stray `.env.local` makes the preflight judge a range compose will not use.
+#
+# A failing preflight warns here but does not abort (OCR-H1): agent-sandbox is not in SERVICES
+# below and nothing depends on it, so this script's own `docker compose up` never publishes the
+# range — aborting would block the core stack (postgres/server/app) on a publish this run does
+# not make. With the key-less default range (which contains APP_PORT's 3010) a hard gate here
+# made every rerun die on the app this very script started the time before, against the
+# "Safe to rerun" promise above. The conflict only becomes real when the range's publisher runs
+# (`docker compose up -d agent-sandbox`); the hard gates stay in the preflight CLI's own exit
+# code and in acceptance step 0b.
 if ! bun --no-env-file scripts/craft-port-range-preflight.ts; then
-  red "  agent-sandbox port range preflight failed; see the steps it printed."
-  exit 1
+  red "  agent-sandbox port range preflight did not pass; see what it printed above."
+  red "  Continuing anyway: this script's compose up never publishes that range (agent-sandbox"
+  red "  is not in its services). The conflict only becomes real when the range's publisher"
+  red "  runs: docker compose up -d agent-sandbox. The hard gates are the preflight CLI itself"
+  red "  and acceptance step 0b."
 fi
 SERVICES=(postgres)
 if [ "$ONE_COMPUTER_EACH" = "true" ]; then
