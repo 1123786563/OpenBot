@@ -295,7 +295,6 @@ import {
 import {
   createCredentialAdminService,
   createCredentialStore,
-  decryptCredentialForUse,
   decryptSecret,
   encryptSecret,
   resolveModelApiKey,
@@ -670,16 +669,17 @@ import { redirectUriFor } from "../plugins/oauth";
 import { useOpenConnectorClient } from "../plugins/openconnector";
 import { createOpenConnectorClient } from "../plugins/openconnector-adapter";
 import {
+  createToolAccess,
+  grantedSkills,
+  grantedTools,
+  readSecretForUse,
+} from "../plugins/public";
+import {
   createSharedUseGate,
   createSharedUseStore,
 } from "../plugins/shared-use-store";
 import { createPluginStore } from "../plugins/store";
-import {
-  grantedSkills,
-  grantedTools,
-  REFUSAL_MARKER,
-  vendorAnswer,
-} from "../plugins/tools";
+import { REFUSAL_MARKER, vendorAnswer } from "../plugins/tools";
 import { createProactiveEngine } from "../proactive/engine";
 import {
   createPrivateShareCheck,
@@ -1112,10 +1112,14 @@ const enterpriseCapabilities = await (async () => {
       },
       get: async (reference) => {
         try {
-          return await decryptCredentialForUse(
-            config.keyEncryptionKey,
-            credentialStore,
-            reference,
+          // MOD12：秘密读取绑定用途+来源（验收②），经 M08 公开门面。
+          return await readSecretForUse(
+            { encryptionKey: config.keyEncryptionKey, reader: credentialStore },
+            {
+              credentialId: reference,
+              purpose: "tenant-provisioning",
+              origin: "assembly/runtime.ts enterprise tenant registry",
+            },
           );
         } catch (error) {
           // Only a genuinely missing/revoked credential is "absent";
@@ -2190,6 +2194,13 @@ const pluginStore = createPluginStore({
    */
   openConnector: openConnector ?? undefined,
 });
+
+/*
+ * MOD12（#632）：M08 的 ToolAccess 公开门面。受管执行（approvals executor 的
+ * callTool 接线）、供给面与本文件的企业租户秘密读都经 `plugins/public.ts` 这
+ * 一个出口；grant→policy→audit→撤销阻断仍全部发生在 store 内，门面零第二实现。
+ */
+const toolAccess = createToolAccess({ store: pluginStore });
 
 /*
  * Personal ⇄ Shared for a brokered app. Built here because it needs the plugin store, the shared-use
@@ -4620,7 +4631,7 @@ const executeApprovedAction = createApprovedActionExecutor({
       initiator,
       auditStore: bootAuditStore,
     }),
-  callTool: (input) => pluginStore.callTool(input),
+  callTool: (input) => toolAccess.callTool(input),
   credentialActorFor: (actorId, botId, ref) =>
     teamBots.credentialActorFor(actorId, botId)(ref),
   coordinationCall: (input) => coordination.call(input),

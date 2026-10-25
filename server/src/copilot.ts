@@ -130,13 +130,13 @@ import {
   currentRunObservationScope,
   withRunObservationScope,
 } from "./observation-run-scope";
-import type { SelectableSkill, Selection } from "./plugins/selection";
+import type { SelectableSkill, Selection } from "./plugins/public";
 import {
+  grantedToolGuidance,
   latestUserText,
   SELECTION_FLOOR,
   selectTools,
-} from "./plugins/selection";
-import { grantedToolGuidance } from "./plugins/tools";
+} from "./plugins/public";
 import { UNTRUSTED_GUIDANCE } from "./untrusted-content";
 import { currentUsageOrigin, type UsageOrigin } from "./usage-origin";
 

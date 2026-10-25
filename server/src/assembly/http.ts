@@ -223,6 +223,7 @@ import type { OnboardingStore } from "../people/onboarding";
 import { MAX_PAGE, type PeopleStore } from "../people/store";
 import type { AccountModeSwitch } from "../plugins/account-mode";
 import type { ComposioBroker, ConnectedAppBroker } from "../plugins/broker";
+import { createToolAccess } from "../plugins/public";
 import { createPluginRoutes } from "../plugins/routes";
 import { createSharedUseRoutes } from "../plugins/shared-use-routes";
 import type { SharedUseStore } from "../plugins/shared-use-store";
@@ -3091,7 +3092,9 @@ export function assembleHttpApp(
           });
         }
 
-        const result = await pluginStore.callTool({
+        // MOD12（#632）：受管执行经 M08 公开门面（store.callTool 恒等委托）。
+        const toolAccess = createToolAccess({ store: pluginStore });
+        const result = await toolAccess.callTool({
           ref: parsedCall.value.ref,
           args: parsedCall.value.args,
           botId: verdict.botId,
