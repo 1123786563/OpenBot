@@ -91,6 +91,8 @@ const surfaceFor = (
 function contextFor(input: {
   config: ReturnType<typeof freezeExperimentConfig>;
   caseFixtures?: Record<string, unknown>;
+  /** The frozen case input this context carries (R3-01's oversized-input shape). */
+  caseInput?: string;
   surface?: (name: string) => EvaluationToolSurface | undefined;
   callTool?: EvaluationCaseContext["callTool"];
   signal?: AbortSignal;
@@ -99,11 +101,18 @@ function contextFor(input: {
     input.config,
     (name) => input.surface?.(name)?.effect ?? "write",
   );
-  const fixtures =
-    input.caseFixtures === undefined
+  const withInput: FrozenDatasetCase =
+    input.caseInput === undefined
       ? frozenCase
       : {
           ...frozenCase,
+          safeInput: { state: "projected", text: input.caseInput },
+        };
+  const fixtures =
+    input.caseFixtures === undefined
+      ? withInput
+      : {
+          ...withInput,
           toolFixtures: freezeExperimentConfig({
             ...baseConfig(),
             toolFixtures: input.caseFixtures,
@@ -201,6 +210,35 @@ const textRound =
     sseResponse([
       chunk({ role: "assistant", content: text }, null),
       chunk({}, "stop", usage),
+    ]);
+
+/**
+ * One round that answers with a call to the engine's OWN AG-UI state tool — the tool
+ * a blank business whitelist still carries (R3-01's counterexample): the engine
+ * executes it in-engine and dials the model a second time.
+ */
+const stateToolRound =
+  (usage = USAGE_5_3): (() => Response) =>
+  () =>
+    sseResponse([
+      chunk(
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_state",
+              type: "function",
+              function: {
+                name: "AGUISendStateSnapshot",
+                arguments: '{"snapshot":{"region":"eu"}}',
+              },
+            },
+          ],
+        },
+        null,
+      ),
+      chunk({}, "tool_calls", usage),
     ]);
 
 /** One round that answers with text but reports no usage (the unknown-cost shape). */
@@ -715,6 +753,162 @@ describe("the case's admission and cancellation survive the public seam (F6A / F
       expect(observations[0]?.ending).toEqual({
         kind: "failed",
         code: "provider_error",
+      });
+    } finally {
+      stop();
+    }
+  });
+});
+
+describe("the budget covers the blank tool surface too (R3-01)", () => {
+  test("a blank whitelist is budgeted anyway — its request is admitted, capped and recorded, the engine's own state tools riding the wire", async () => {
+    const { port, bodies, stop } = scriptedGateway([
+      stateToolRound({ input: 5, output: 3 }),
+      textRound("a summary after the state round", { input: 6, output: 4 }),
+    ]);
+    try {
+      const verdicts: number[] = [];
+      const records: EvaluationStepUsage[] = [];
+      const budget: EvaluationStepBudget = {
+        admit: async (stepIndex) => {
+          verdicts.push(stepIndex);
+          return { allowed: true, maxOutputTokens: 1000 };
+        },
+        record: (usage) => {
+          records.push(usage);
+        },
+      };
+      const runner = createProductionEvaluationCaseRunner({
+        callModel: seamAt(port),
+        stepBudget: budget,
+      });
+
+      const outcome = await runner(
+        contextFor({ config: freezeExperimentConfig({ ...baseConfig() }) }),
+      );
+
+      // The R3-01 core: no business tool is declared, and the engine still declares
+      // its two AG-UI state tools on the wire — so whether the case's requests are
+      // budgeted is NOT a business-whitelist fact. The wrapper is installed for the
+      // blank surface too: the request the engine does make is admitted BEFORE the
+      // dial, its output narrowed to the admitted ceiling, its usage recorded.
+      // (Today's assembly grants a toolless run no step loop — one provider request,
+      // the state tool round itself — but that is the assembly's decision, not this
+      // seam's: any second dial the engine ever makes goes through the budget.)
+      expect(verdicts).toEqual([0]);
+      expect(records).toEqual([{ index: 0, inputTokens: 5, outputTokens: 3 }]);
+      expect(bodies.length).toBe(1);
+      expect(wireToolNames(bodies[0])).toEqual([
+        "AGUISendStateDelta",
+        "AGUISendStateSnapshot",
+      ]);
+      // The admitted ceiling — the policy's output bound, not only the frozen
+      // configuration's optional cap — rides the toolless request too (R3-01).
+      expect(bodies[0]).toMatchObject({ max_tokens: 1000 });
+      expect(outcome.status).toBe("completed");
+    } finally {
+      stop();
+    }
+  });
+
+  test("a replayed fixture that would overflow the next request is refused before that dial", async () => {
+    const { port, bodies, stop } = scriptedGateway([
+      toolCallRound("search", '{"q":"outage"}'),
+      textRound("never reached"),
+    ]);
+    try {
+      const verdicts: number[] = [];
+      const records: EvaluationStepUsage[] = [];
+      const budget: EvaluationStepBudget = {
+        // Measured: the production prompt plus the tool's own schemas count ~2,490
+        // conservative tokens — step 0 fits under 2,700, and step 1 (the 4,000-byte
+        // fixture replayed into history) cannot.
+        inputCeiling: 2_700,
+        admit: async (stepIndex) => {
+          verdicts.push(stepIndex);
+          return { allowed: true, maxOutputTokens: 1000 };
+        },
+        record: (usage) => {
+          records.push(usage);
+        },
+      };
+      const observations: ModelSpanObservation[] = [];
+      const runner = createProductionEvaluationCaseRunner({
+        callModel: seamAt(port),
+        observe: (fact) => observations.push(fact),
+        stepBudget: budget,
+      });
+
+      const outcome = await runner(
+        contextFor({
+          config: freezeExperimentConfig({
+            ...baseConfig(),
+            readOnlyTools: ["search"],
+            toolFixtures: { search: { summary: "f".repeat(4_000) } },
+          }),
+          surface: (name) => (name === "search" ? surfaceFor(name) : undefined),
+        }),
+      );
+
+      // The R3-01 counterexample 1: the fixture the first step replayed is composed
+      // into the NEXT request, and that request's own conservative count refuses it
+      // before it is admitted or dialed — the provider never consumes the oversized
+      // input, and no hold is reserved for it.
+      expect(bodies.length).toBe(1);
+      expect(verdicts).toEqual([0]);
+      expect(outcome).toEqual({
+        status: "failed",
+        reason: "input_over_limit",
+      });
+      expect(observations[0]?.ending).toEqual({
+        kind: "refused",
+        code: "input_over_limit",
+      });
+      expect(records).toEqual([{ index: 0, inputTokens: 5, outputTokens: 3 }]);
+    } finally {
+      stop();
+    }
+  });
+
+  test("an input over the step's enforced ceiling is refused before the dial — never an estimate sent anyway", async () => {
+    const { port, bodies, stop } = scriptedGateway([textRound("never reached")]);
+    try {
+      const verdicts: number[] = [];
+      const budget: EvaluationStepBudget = {
+        inputCeiling: 400,
+        admit: async (stepIndex) => {
+          verdicts.push(stepIndex);
+          return { allowed: true, maxOutputTokens: 1000 };
+        },
+        record: () => {},
+      };
+      const observations: ModelSpanObservation[] = [];
+      const runner = createProductionEvaluationCaseRunner({
+        callModel: seamAt(port),
+        observe: (fact) => observations.push(fact),
+        stepBudget: budget,
+      });
+
+      const outcome = await runner(
+        contextFor({
+          config: freezeExperimentConfig({ ...baseConfig() }),
+          // 4,000 ASCII bytes count as at least 2,500 tokens by the approved
+          // conservative counter (ADR-0001's floor) — far over the 400-token ceiling.
+          caseInput: "x".repeat(4_000),
+        }),
+      );
+
+      // The adversarial core: the oversized request never reached the provider, and
+      // the count refused it before the step was even admitted (nothing reserved).
+      expect(bodies.length).toBe(0);
+      expect(verdicts).toEqual([]);
+      expect(outcome).toEqual({
+        status: "failed",
+        reason: "input_over_limit",
+      });
+      expect(observations[0]?.ending).toEqual({
+        kind: "refused",
+        code: "input_over_limit",
       });
     } finally {
       stop();

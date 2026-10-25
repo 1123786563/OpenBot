@@ -52,7 +52,12 @@
  * recorded against the hold that admitted it, the admitted output ceiling narrows
  * the request on the wire, and the task's cancellation reaches the engine's own
  * abort (`abortRun()`), so the runner's existing classification (cancelled vs
- * provider_error) is the same one it always applied.
+ * provider_error) is the same one it always applied. R3-01 closes the two gaps that
+ * left: the wrapper is installed for a BLANK tool surface too — the engine's own
+ * state tools ride every request, so no business whitelist decides whether a dial is
+ * budgeted — and the input the engine actually composed is counted with the approved
+ * conservative bound (ADR-0001) BEFORE the dial, refused outright when it cannot fit
+ * the policy's input ceiling instead of being sent for the provider to reject.
  *
  * OWNERSHIP. The module belongs to ai-observability (the evaluation assembly's own
  * surface) and references copilot/toolkit read-only — nothing in the production chat
@@ -73,9 +78,11 @@ import {
   type RuntimeModel,
   type WorkbenchGatewayModelDial,
 } from "../copilot";
+import { countChatInputTokens } from "../billing/input-bound";
 import {
   type EvaluationCallableTool,
   type EvaluationModelCall,
+  EVALUATION_INPUT_OVER_LIMIT,
   type EvaluationStepBudget,
   GATEWAY_CALL_TIMEOUT_MS,
   gatewaySettings,
@@ -213,37 +220,62 @@ type ModelStreamPart = Readonly<Record<string, unknown>> & {
 /**
  * The step-budget enforcement point, the same one production uses for its own
  * admission (the metered model wrapper): BEFORE every provider request the engine
- * dials, the step is admitted and a refusal throws without the inner model ever being
- * reached; the admitted ceiling narrows `maxOutputTokens` on the request; each finished
- * response's own usage is recorded against the hold that admitted it. The stream
- * itself is re-emitted untouched — settlement is the billed layer's, never this
- * wrapper's.
+ * dials, the request's own input is counted against the step's enforced ceiling and
+ * a count that cannot fit is refused without the inner model ever being reached
+ * (R3-01 — never an estimate that is sent anyway); the step is then admitted, and a
+ * refusal fails the same way; the admitted ceiling narrows `maxOutputTokens` on the
+ * request; each finished response's own usage is recorded against the hold that
+ * admitted it. The stream itself is re-emitted untouched — settlement is the billed
+ * layer's, never this wrapper's.
  */
 function stepBudgetedModel(
   inner: StreamingModel,
   budget: EvaluationStepBudget,
+  hooks: Readonly<{
+    /** Filled just before the wrapper throws, so the seam answers a refusal as one. */
+    onRefusal: (refusal: Readonly<{ step: number; reason?: string }>) => void;
+  }>,
 ): StreamingModel {
   let step = 0;
+  const refused = (index: number, reason?: string) => {
+    hooks.onRefusal({
+      step: index,
+      ...(reason === undefined ? {} : { reason }),
+    });
+    // The refused step is never dialed — but the refusal is a stream that fails on
+    // first read, not a rejected model promise: the engine's pipeline converts the
+    // former into its own error part (the same path a cut provider stream takes),
+    // while a thrown rejection is reported unhandled by the runtime before the
+    // pipeline's catch reaches it. The seam answers the error part as a refusal.
+    const refusal = new SeamBudgetRefusal(index);
+    return {
+      stream: new ReadableStream<ModelStreamPart>({
+        start(controller) {
+          controller.error(refusal);
+        },
+      }),
+    };
+  };
   return {
     ...inner,
     async doStream(params: ModelStreamRequest) {
       const index = step;
       step += 1;
+      // R3-01: the request the engine actually composed — prompt, history, tool
+      // results and the engine's own state-tool schemas — is counted with the
+      // approved conservative counter (ADR-0001) and refused outright when it
+      // cannot fit the policy's input ceiling, BEFORE the step is admitted
+      // (nothing is reserved for a request that will never be sent) and before
+      // the inner model is reached.
+      if (
+        budget.inputCeiling !== undefined &&
+        countChatInputTokens(params) > budget.inputCeiling
+      ) {
+        return refused(index, EVALUATION_INPUT_OVER_LIMIT);
+      }
       const verdict = await budget.admit(index);
       if (!verdict.allowed) {
-        // The refused step is never dialed — but the refusal is a stream that fails on
-        // first read, not a rejected model promise: the engine's pipeline converts the
-        // former into its own error part (the same path a cut provider stream takes),
-        // while a thrown rejection is reported unhandled by the runtime before the
-        // pipeline's catch reaches it. The seam answers the error part as a refusal.
-        const refusal = new SeamBudgetRefusal(index);
-        return {
-          stream: new ReadableStream<ModelStreamPart>({
-            start(controller) {
-              controller.error(refusal);
-            },
-          }),
-        };
+        return refused(index, verdict.reason);
       }
       const requested =
         typeof params.maxOutputTokens === "number"
@@ -428,32 +460,26 @@ export function createPublicExecutionSeamModelCall(
 
     // The admission-carrying model on the same deployment dial production builds the
     // Bot's transport model from. Budget enforcement rides the wrapper (production's
-    // own point), and only a case that can multi-step carries one. Filled by the
-    // wrapper just before it throws, so a step refusal is answered as a refusal even if
-    // the engine wraps the error on its way out.
+    // own point) for EVERY case the billed layer lends a budget to — the blank tool
+    // surface included (R3-01): whether a case can multi-step is not a
+    // business-whitelist fact, because the engine declares its two AG-UI state tools
+    // on every request, and every doStream the engine ever dials must be admitted,
+    // input-bounded and output-capped. Filled by the wrapper just before it throws,
+    // so a step refusal is answered as a refusal even if the engine wraps the error
+    // on its way out.
     let refusal: Readonly<{ step: number; reason?: string }> | undefined;
     const gatewayModel = createOpenAI({
       apiKey: apiKey ?? undefined,
       baseURL: baseURL ?? undefined,
     }).chat(modelName) as unknown as StreamingModel;
     const admitted =
-      declared.length > 0 && stepBudget !== undefined
-        ? stepBudgetedModel(gatewayModel, {
-            admit: async (stepIndex) => {
-              const verdict = await stepBudget.admit(stepIndex);
-              if (!verdict.allowed) {
-                refusal = {
-                  step: stepIndex,
-                  ...(verdict.reason === undefined
-                    ? {}
-                    : { reason: verdict.reason }),
-                };
-              }
-              return verdict;
+      stepBudget === undefined
+        ? gatewayModel
+        : stepBudgetedModel(gatewayModel, stepBudget, {
+            onRefusal: (refused) => {
+              refusal = refused;
             },
-            record: (usage) => stepBudget.record(usage),
-          })
-        : gatewayModel;
+          });
 
     // The frozen parameter vocabulary, in the classic configuration's own fields —
     // the same numbers the pre-seam dial wrote onto the wire.

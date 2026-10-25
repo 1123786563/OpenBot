@@ -44,12 +44,15 @@
  *    never happened) observed as a `refused` span. It is asked ONCE, before the
  *    loop: it admits the case's FIRST provider request.
  *  - `stepBudget` is the loop's per-step budget (FREV-R2-01): the same admission
- *    seam applied to every request after the first, asked before each step is dialed
+ *    seam applied to every provider request, asked before each step is dialed
  *    and told each step's own usage after it finishes. A case with a tool surface
  *    can cost several calls, and one hold priced for one call cannot bound that
  *    spend; the budget is how the billed layer keeps every step inside its own
- *    admission instead of discovering the overrun at settlement. Absent on
- *    single-shot callers, where the one admission covers the one call.
+ *    admission instead of discovering the overrun at settlement. Since R3-01 the
+ *    budget is not a business-whitelist fact: the public engine declares its own
+ *    state tools on every request, so a lent budget rides the toolless single
+ *    call too; it is absent only on callers with their own single-call admission
+ *    (the judge) and on the pre-FREV-R2-01 contract.
  *  - `observe` carries each call through the T14/T15 model-span channel: the
  *    same recorder the built-in path uses, so evaluation calls are observable in
  *    exactly the place production calls are. The observation bypass rules hold —
@@ -58,6 +61,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, jsonSchema, stepCountIs } from "ai";
 import type { SafeText, SafeValue } from "../../../shared/ai-observability";
+import { countChatInputTokens } from "../billing/input-bound";
 import type { EvaluationCaseRunner, EvaluationToolSurface } from "./executions";
 import type { ModelSpanObservation } from "./model-span";
 
@@ -71,6 +75,13 @@ import type { ModelSpanObservation } from "./model-span";
  * the case reports honestly, never a loop allowed to run until the clock runs out.
  */
 export const EVALUATION_TOOL_LOOP_MAX_STEPS = 8;
+
+/**
+ * The budget's own word for a request whose conservative input count cannot fit the
+ * step's enforced input ceiling (R3-01) — the same refusal word the built-in input
+ * bound uses (ADR-0001), so one vocabulary names the same doctrine everywhere.
+ */
+export const EVALUATION_INPUT_OVER_LIMIT = "input_over_limit";
 
 /**
  * One tool the evaluation model may call, already wired to the gate: `execute` is the
@@ -114,13 +125,15 @@ export type EvaluationModelCall = (input: {
    */
   signal?: AbortSignal;
   /**
-   * The per-step budget the billed layer lends a tool loop (FREV-R2-01). Asked
-   * before EVERY provider request the loop makes and told each finished step's own
-   * usage, so a case never spends several calls under one admission: a step the
-   * budget refuses is never dialed, and every step that was dialed is settled
-   * against the hold that admitted it. Absent on single-call callers (the judge,
-   * a case with no tool surface) and on the pre-FREV-R2-01 contract, where one
-   * admission covers the one call.
+   * The per-step budget the billed layer lends an evaluation call (FREV-R2-01).
+   * Asked before EVERY provider request the call makes and told each finished
+   * step's own usage, so a case never spends several calls under one admission:
+   * a step the budget refuses is never dialed, and every step that was dialed is
+   * settled against the hold that admitted it. Not a business-whitelist fact
+   * (R3-01): the public engine declares its own state tools unconditionally, so
+   * a lent budget rides the toolless single call too. Absent on callers with
+   * their own single-call admission (the judge) and on the pre-FREV-R2-01
+   * contract, where one admission covers the one call.
    */
   stepBudget?: EvaluationStepBudget;
 }) => Promise<{
@@ -165,6 +178,18 @@ export type EvaluationStepUsage = Readonly<{
  * admitted (a fresh hold, a case-level allowance) belongs to the implementation.
  */
 export type EvaluationStepBudget = Readonly<{
+  /**
+   * The input ceiling every step's request is counted against before it is dialed
+   * (R3-01): the policy's own input maximum, enforced with the approved
+   * conservative counter (ADR-0001's counted bound) over the request the engine
+   * actually composed — prompt, history, tool results and tool schemas included.
+   * A request whose count cannot fit is refused outright, never an estimate that
+   * is sent anyway; a provider tokenizer that still disagrees with the calibration
+   * surfaces at settlement as `usage_over_token_max`, the after-the-fact floor the
+   * counted bound allows. The count is taken BEFORE `admit`, so a request that
+   * cannot be sent reserves nothing.
+   */
+  inputCeiling?: number;
   /**
    * May this step be spent? `maxOutputTokens`, when given, is the ceiling the step's
    * request must carry — the remaining output the step's admission covers — so the
@@ -536,13 +561,14 @@ export function createGatewayModelCall(
       options.timeoutMs ?? GATEWAY_CALL_TIMEOUT_MS,
     );
     const declared = tools !== undefined && tools.length > 0 ? tools : null;
-    // FREV-R2-01: a tool loop is up to EVALUATION_TOOL_LOOP_MAX_STEPS provider
-    // calls, and a case-level admission priced for one call cannot bound that
-    // spend. The budget the billed layer lends is asked BEFORE every step's request
-    // — refusal there means the step is never sent — and told every finished step's
-    // own usage. Without a budget the loop keeps the pre-FREV-R2-01 shape: one
-    // admission, the case's total usage settled in one fact.
-    const budget = declared === null ? undefined : stepBudget;
+    // FREV-R2-01/R3-01: a case can spend several provider calls — up to
+    // EVALUATION_TOOL_LOOP_MAX_STEPS here, and on the public seam even a blank tool
+    // surface carries the engine's own state tools — so the budget the billed layer
+    // lends is asked BEFORE EVERY request the dial makes, the toolless single call
+    // included, and never gated on the business whitelist. Without a budget the
+    // call keeps the pre-FREV-R2-01 shape: one admission, the case's total usage
+    // settled in one fact.
+    const budget = stepBudget;
     const { maxOutputTokens: configuredTokens, ...rest } = settings;
     // What already happened when a later step was refused: their usage is recorded
     // against their own admissions, and their invented tool names still go through
@@ -581,55 +607,86 @@ export function createGatewayModelCall(
               ]),
             ),
             stopWhen: stepCountIs(EVALUATION_TOOL_LOOP_MAX_STEPS),
-            ...(budget === undefined
-              ? {}
-              : {
-                  // Asked before each step's provider request, awaited by the engine:
-                  // the refused step is never dialed, and the throw is turned into
-                  // the budgetRefusal answer below rather than a provider failure.
-                  prepareStep: async ({
-                    stepNumber,
-                  }: {
-                    stepNumber: number;
-                  }) => {
-                    const verdict = await budget.admit(stepNumber);
-                    if (!verdict.allowed) {
-                      refusal = {
-                        step: stepNumber,
-                        ...(verdict.reason === undefined
-                          ? {}
-                          : { reason: verdict.reason }),
-                      };
-                      throw new StepBudgetRefusal();
-                    }
-                    return outputCeiling(verdict.maxOutputTokens);
-                  },
-                  onStepFinish: (step: {
-                    readonly stepNumber: number;
-                    readonly text: string;
-                    readonly toolCalls: readonly {
-                      readonly toolName: string;
-                    }[];
-                    readonly usage: {
-                      readonly inputTokens?: number;
-                      readonly outputTokens?: number;
-                    };
-                  }) => {
-                    budget.record({
-                      index: step.stepNumber,
-                      inputTokens: step.usage.inputTokens,
-                      outputTokens: step.usage.outputTokens,
-                    });
-                    finished.push({
-                      text: step.text,
-                      toolCalls: step.toolCalls,
-                    });
-                  },
-                }),
           }),
-      // With a budget the output ceiling is a per-step decision (what that step's
-      // admission covers); without one it is the frozen configuration's, exactly as
-      // before, so the single-call wire stays byte-identical.
+      ...(budget === undefined
+        ? {}
+        : {
+            // Asked before each step's provider request, awaited by the engine:
+            // the refused step is never dialed, and the throw is turned into
+            // the budgetRefusal answer below rather than a provider failure.
+            // R3-01: the request's own input is counted FIRST, with the approved
+            // conservative counter (ADR-0001) over exactly what this step will
+            // send — the system, the messages the engine composed (history and
+            // tool results included) and the declared tool schemas — and a count
+            // that cannot fit the step's ceiling refuses BEFORE the step is
+            // admitted or dialed: never an estimate that is sent anyway.
+            prepareStep: async ({
+              stepNumber,
+              messages,
+            }: {
+              stepNumber: number;
+              messages: readonly unknown[];
+            }) => {
+              if (
+                budget.inputCeiling !== undefined &&
+                countChatInputTokens({
+                  system,
+                  prompt: messages,
+                  ...(declared === null
+                    ? {}
+                    : {
+                        tools: declared.map((one) => ({
+                          name: one.name,
+                          description: one.description,
+                          parameters: one.parameters,
+                        })),
+                      }),
+                }) > budget.inputCeiling
+              ) {
+                refusal = {
+                  step: stepNumber,
+                  reason: EVALUATION_INPUT_OVER_LIMIT,
+                };
+                throw new StepBudgetRefusal();
+              }
+              const verdict = await budget.admit(stepNumber);
+              if (!verdict.allowed) {
+                refusal = {
+                  step: stepNumber,
+                  ...(verdict.reason === undefined
+                    ? {}
+                    : { reason: verdict.reason }),
+                };
+                throw new StepBudgetRefusal();
+              }
+              return outputCeiling(verdict.maxOutputTokens);
+            },
+            onStepFinish: (step: {
+              readonly stepNumber: number;
+              readonly text: string;
+              readonly toolCalls: readonly {
+                readonly toolName: string;
+              }[];
+              readonly usage: {
+                readonly inputTokens?: number;
+                readonly outputTokens?: number;
+              };
+            }) => {
+              budget.record({
+                index: step.stepNumber,
+                inputTokens: step.usage.inputTokens,
+                outputTokens: step.usage.outputTokens,
+              });
+              finished.push({
+                text: step.text,
+                toolCalls: step.toolCalls,
+              });
+            },
+          }),
+      // With a budget the output ceiling is a per-step decision — what that step's
+      // admission covers, the policy's own ceiling when the frozen configuration
+      // names none (R3-01); without one it is the frozen configuration's, exactly
+      // as before, so the unbudgeted wire stays byte-identical.
       ...(budget === undefined
         ? settings
         : { ...rest, ...outputCeiling(undefined) }),

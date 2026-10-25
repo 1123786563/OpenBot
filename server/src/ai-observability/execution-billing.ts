@@ -13,7 +13,12 @@
  *    refined to the single call). For a tool loop the admission is asked BEFORE EVERY
  *    step (FREV-R2-01): step 0 rides the case's hold, each later step reserves its
  *    own, and a step whose ceiling is not spendable is never dialed — an overrun is
- *    refused at the step, not discovered by the pricing after the spend.
+ *    refused at the step, not discovered by the pricing after the spend. R3-01 adds
+ *    the input bound the same pre-dial doctrine owes: every request is counted
+ *    against the policy's input maximum with the approved conservative counter and
+ *    refused outright when it cannot fit — and the budget is lent to every priced
+ *    case, the blank tool surface included, because the engine's own state tools
+ *    make the business whitelist no answer to "can this case multi-step?".
  *  - Settlement: the gateway's own usage becomes one immutable usage-outbox fact with
  *    the reservation identity and the exact rational charge; the existing delivery
  *    sweep settles the hold downstream, exactly as the built-in path's calls do. A
@@ -49,6 +54,7 @@ import {
 } from "../workshop/metering";
 import {
   createProductionEvaluationCaseRunner,
+  EVALUATION_INPUT_OVER_LIMIT,
   type EvaluationModelCall,
   type EvaluationModelCallObserver,
   type EvaluationStepBudget,
@@ -102,6 +108,25 @@ function stepOutputCeiling(
   policy: BillingModelCreditPolicyEntry,
 ): number | undefined {
   const maximum = policy.output.maximumTokens;
+  if (maximum <= 0n) return undefined;
+  return Number(
+    maximum > BigInt(Number.MAX_SAFE_INTEGER)
+      ? BigInt(Number.MAX_SAFE_INTEGER)
+      : maximum,
+  );
+}
+
+/**
+ * The input ceiling one step's request is counted against before it is dialed
+ * (R3-01). The policy's input token maximum is the approved conservative bound a
+ * request must fit — the counted input bound of ADR-0001, reused as-is rather than
+ * a second measure — so a request the counter cannot fit is refused outright, not
+ * sent for the provider's own tokenizer to reject after the spend.
+ */
+function stepInputCeiling(
+  policy: BillingModelCreditPolicyEntry,
+): number | undefined {
+  const maximum = policy.input.maximumTokens;
   if (maximum <= 0n) return undefined;
   return Number(
     maximum > BigInt(Number.MAX_SAFE_INTEGER)
@@ -262,6 +287,13 @@ export function createBilledEvaluationCaseRunner(
     // configuration names no cap at all.
     const outputCeiling =
       modelPolicy === undefined ? undefined : stepOutputCeiling(modelPolicy);
+    // The step's enforced input ceiling (R3-01): the policy's own input maximum. The
+    // request the caller composed — prompt, history, tool results, tool schemas — is
+    // counted against it with the approved conservative counter BEFORE every dial
+    // and refused outright when it cannot fit; it is never sent for the provider's
+    // tokenizer to reject after the spend.
+    const inputCeiling =
+      modelPolicy === undefined ? undefined : stepInputCeiling(modelPolicy);
 
     const holdAdmission = async (
       idempotencyKey: string,
@@ -313,6 +345,7 @@ export function createBilledEvaluationCaseRunner(
       modelPolicy === undefined
         ? undefined
         : {
+            ...(inputCeiling === undefined ? {} : { inputCeiling }),
             admit: async (stepIndex) => {
               if (stepIndex === 0) {
                 // This step IS the case's first provider request: the case-level
@@ -543,13 +576,20 @@ export function createBilledEvaluationCaseRunner(
     }
 
     // A failed case is an unknown outcome, not a confirmed no-cost — see the module
-    // head. Evidence row, hold retained; the runner's own failed detail stands.
+    // head. Evidence row, hold retained; the runner's own failed detail stands. The
+    // one failure this layer CAN name exactly is the budget's pre-dial input refusal
+    // (R3-01): no provider saw the request, so the row says `input_over_limit`
+    // instead of mislabelling it a provider error.
     await evidence({
       ...fact,
       inputTokens: 0,
       outputTokens: 0,
       reason:
-        outcome.status === "failed" ? "provider_error" : "outcome_unknown",
+        outcome.status === "failed"
+          ? outcome.reason === EVALUATION_INPUT_OVER_LIMIT
+            ? EVALUATION_INPUT_OVER_LIMIT
+            : "provider_error"
+          : "outcome_unknown",
     });
     return outcome;
   };

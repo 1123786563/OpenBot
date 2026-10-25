@@ -10,6 +10,8 @@ import {
   createProductionEvaluationCaseRunner,
   type EvaluationModelCall,
   type EvaluationModelCallObserver,
+  type EvaluationStepBudget,
+  type EvaluationStepUsage,
 } from "../src/ai-observability/execution-runner";
 import type {
   EvaluationCaseContext,
@@ -938,5 +940,80 @@ describe("the evaluation runs the frozen tool surface through the gate (FREV-04)
     } finally {
       server.stop(true);
     }
+  });
+});
+
+/*
+ * R3-01: the budget is not a business-whitelist fact. Every actual provider request
+ * a dialed model makes is admitted and input-bounded — the toolless single call
+ * included, and the count that refuses it happens BEFORE the wire.
+ */
+describe("the gateway dial carries the step budget on every request (R3-01)", () => {
+  const callModel = createGatewayModelCall({
+    apiKey: "test-key",
+    baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+  });
+
+  const request = (user: string) => ({
+    modelName: "gateway-model",
+    modelParameters: { temperature: 0 },
+    system: "Answer the support question.",
+    user,
+  });
+
+  test("a call with no tool surface still asks the budget before its one request — and carries the admitted ceiling", async () => {
+    const verdicts: number[] = [];
+    const records: EvaluationStepUsage[] = [];
+    const budget: EvaluationStepBudget = {
+      admit: async (stepIndex) => {
+        verdicts.push(stepIndex);
+        return { allowed: true, maxOutputTokens: 700 };
+      },
+      record: (usage) => {
+        records.push(usage);
+      },
+    };
+
+    const answer = await callModel({
+      ...request("Summarize the outage."),
+      stepBudget: budget,
+    });
+
+    expect(answer.output).toBe("gateway answer");
+    // The budget is asked for the single provider request too — whether a case can
+    // multi-step is not decided by the declared tool surface (R3-01).
+    expect(verdicts).toEqual([0]);
+    expect(records).toEqual([{ index: 0, inputTokens: 7, outputTokens: 11 }]);
+    // The admitted ceiling lands on the wire even though the frozen configuration
+    // names no cap of its own.
+    expect(seenRequests.at(-1)).toMatchObject({ max_tokens: 700 });
+  });
+
+  test("an input the conservative count places over the step's input ceiling is refused before the dial", async () => {
+    const verdicts: number[] = [];
+    const before = seenRequests.length;
+    const budget: EvaluationStepBudget = {
+      inputCeiling: 300,
+      admit: async (stepIndex) => {
+        verdicts.push(stepIndex);
+        return { allowed: true };
+      },
+      record: () => {},
+    };
+
+    const answer = await callModel({
+      ...request("y".repeat(2_000)),
+      stepBudget: budget,
+    });
+
+    // 2,000 ASCII bytes count as at least 1,250 tokens by the approved conservative
+    // counter — the request never reaches the wire, and nothing is admitted for it.
+    expect(seenRequests.length).toBe(before);
+    expect(verdicts).toEqual([]);
+    expect(answer.budgetRefusal).toEqual({
+      step: 0,
+      reason: "input_over_limit",
+    });
+    expect(answer.output).toBe("");
   });
 });

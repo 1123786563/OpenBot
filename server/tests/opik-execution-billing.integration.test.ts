@@ -12,6 +12,7 @@ import {
   createGatewayModelCall,
   type EvaluationModelCall,
 } from "../src/ai-observability/execution-runner";
+import { createPublicExecutionSeamModelCall } from "../src/ai-observability/execution-seam";
 import {
   createEvaluationToolGate,
   createExperimentExecutionService,
@@ -923,6 +924,302 @@ test("a loop cancelled between steps charges what ran and keeps the interrupted 
       outputTokens: 0,
     });
     expect((await reservationOf(interruptedEventId))?.status).toBe("reserved");
+  } finally {
+    gateway.stop();
+  }
+});
+
+/*
+ * R3-01: the budget covers the BLANK tool surface too, on the production seam. These
+ * tests drive the same public execution seam (`createPublicExecutionSeamModelCall`)
+ * through the real billed runner, credit writer and outbox, with a case that declares
+ * NO business tools — the engine's own AG-UI state tools still make it a two-request
+ * run — plus the policy's own input bound, refused before the wire.
+ */
+
+/** One round in the wire shape the public seam's streaming dial speaks (SSE). */
+function seamSseRound(chunks: readonly Record<string, unknown>[]): Response {
+  const body =
+    chunks.map((one) => `data: ${JSON.stringify(one)}\n\n`).join("") +
+    "data: [DONE]\n\n";
+  return new Response(body, {
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+function seamChunk(
+  delta: Record<string, unknown>,
+  finish: string | null,
+  usage?: { input: number; output: number },
+): Record<string, unknown> {
+  return {
+    id: "chatcmpl-f7a",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "gateway-model",
+    choices: [{ index: 0, delta, finish_reason: finish }],
+    ...(usage === undefined ? {} : { usage: roundUsage(usage) }),
+  };
+}
+
+/** One round that calls the engine's own state tool — no business whitelist gates it. */
+const seamStateToolRound =
+  (usage: { input: number; output: number }) => (): Response =>
+    seamSseRound([
+      seamChunk(
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_state",
+              type: "function",
+              function: {
+                name: "AGUISendStateSnapshot",
+                arguments: '{"snapshot":{"region":"eu"}}',
+              },
+            },
+          ],
+        },
+        null,
+      ),
+      seamChunk({}, "tool_calls", usage),
+    ]);
+
+/** One round that calls a declared business tool, in the seam's streaming shape. */
+const seamToolCallRound =
+  (name: string, usage: { input: number; output: number }) => (): Response =>
+    seamSseRound([
+      seamChunk(
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_1",
+              type: "function",
+              function: { name, arguments: '{"q":"outage"}' },
+            },
+          ],
+        },
+        null,
+      ),
+      seamChunk({}, "tool_calls", usage),
+    ]);
+
+/** One round that answers with plain text. */
+const seamAnswerRound =
+  (text: string, usage: { input: number; output: number }) => (): Response =>
+    seamSseRound([
+      seamChunk({ role: "assistant", content: text }, null),
+      seamChunk({}, "stop", usage),
+    ]);
+
+/**
+ * The seam fixture policy: the same rates and step economics as the loop tests, with
+ * the input ceiling raised to the production assembly's own prompt scale — the seam
+ * sends the composed builtin prompt and the state tools' schemas, which the
+ * conservative counter prices far above a bare case — and the hold covering both
+ * maxima, as the invariant requires. The input bound's REFUSAL is exercised below on
+ * the existing 1000-token policy, where the oversized case input cannot fit.
+ */
+const seamPolicy: BillingModelCreditPolicyEntry = {
+  input: {
+    rate: { numerator: 1n, denominator: 1n },
+    maximumTokens: 200_000n,
+    maximumCostUnits: 200_000n,
+  },
+  output: {
+    rate: { numerator: 2n, denominator: 1n },
+    maximumTokens: 1000n,
+    maximumCostUnits: 2000n,
+  },
+  maximumReservationUnits: 202_000n,
+};
+const seamPolicies = new Map([["gateway-model", seamPolicy]]);
+
+/** A billed runner over the PRODUCTION public seam, pointed at the script. */
+function seamRunner(input: {
+  customer: string;
+  baseURL: string;
+  observations?: ModelSpanObservation[];
+  policy?: ReadonlyMap<string, BillingModelCreditPolicyEntry>;
+}) {
+  return createBilledEvaluationCaseRunner({
+    callModel: createPublicExecutionSeamModelCall({
+      apiKey: "test-key",
+      baseURL: input.baseURL,
+    }),
+    ...(input.observations === undefined
+      ? {}
+      : {
+          observe: (fact: ModelSpanObservation) =>
+            input.observations?.push(fact),
+        }),
+    billing: {
+      creditWriter: writer,
+      outbox,
+      policy: input.policy ?? seamPolicies,
+      externalCustomerId: input.customer,
+    },
+  });
+}
+
+test("the public seam's second loop step is refused before the wire and each step settles against its own hold (R3-01)", async () => {
+  const customer = `${prefix}-seam-loop-refused`;
+  // Exactly ONE call's worst-case hold: the case may start; the loop's second
+  // provider request may not. The same-production-seam ledger evidence R3-01 asks
+  // for — the pre-existing runner-dial suite proved this shape on
+  // `createGatewayModelCall`; here the SAME economics run through the seam.
+  await grant(customer, 202_000);
+  const gateway = scriptedGateway([
+    seamToolCallRound("search", { input: 100, output: 600 }),
+    seamAnswerRound("the outage reached three regions", {
+      input: 150,
+      output: 300,
+    }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-seam-loop-refused`;
+    const observations: ModelSpanObservation[] = [];
+    const runner = seamRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      observations,
+    });
+
+    const outcome = await runner(toolContextFor(executionId));
+
+    // The adversarial core: the second provider request never reached the wire, and
+    // the case says why instead of discovering it at settlement.
+    expect(gateway.bodies.length).toBe(1);
+    expect(outcome).toEqual({ status: "failed", reason: "credits_exhausted" });
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "credits_exhausted",
+    });
+
+    // The step that DID run settles exactly against the hold that admitted it.
+    const eventId = eventIdOf(executionId, 0);
+    const row = await outboxRow(eventId);
+    expect(row).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+      actualCostDenominator: "1",
+    });
+    expect(row?.reservationId).toBe((await reservationOf(eventId))?.id);
+    const refusedStepEvent = evaluationCaseStepUsageId(executionId, 0, 1);
+    expect(await outboxRow(refusedStepEvent)).toBeUndefined();
+    expect(await reservationOf(refusedStepEvent)).toBeUndefined();
+
+    // The step's request carried the policy's own output ceiling — applied on the
+    // wire before the provider can exceed it, even though the frozen configuration
+    // names no cap of its own.
+    expect(gateway.bodies[0]).toMatchObject({ max_tokens: 1000 });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("a blank-whitelist case on the public seam is budgeted, capped and settled — its state-tool request and no other (R3-01)", async () => {
+  const customer = `${prefix}-seam-blank`;
+  await grant(customer, 202_000);
+  const gateway = scriptedGateway([
+    seamStateToolRound({ input: 100, output: 600 }),
+    seamAnswerRound("never reached", { input: 150, output: 300 }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-seam-blank`;
+    const runner = seamRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+    });
+
+    const outcome = await runner(contextFor(executionId));
+
+    // No business tool is declared, and the engine's own AG-UI state tools still
+    // ride the wire (the runtime installs them unconditionally). Today's assembly
+    // grants a toolless run no step loop — one provider request — but the budget no
+    // longer asks the business whitelist whether the case may multi-step (R3-01):
+    // the one request there is is admitted, capped by the policy and settled.
+    expect(gateway.bodies.length).toBe(1);
+    const wireTools = (
+      (gateway.bodies[0]?.tools ?? []) as {
+        function?: { name?: string };
+      }[]
+    )
+      .map((one) => one.function?.name)
+      .filter((name): name is string => typeof name === "string")
+      .sort();
+    expect(wireTools).toEqual(["AGUISendStateDelta", "AGUISendStateSnapshot"]);
+    // The policy's own output ceiling rides the toolless request — not only the
+    // frozen configuration's optional cap.
+    expect(gateway.bodies[0]).toMatchObject({ max_tokens: 1000 });
+    expect(outcome.status).toBe("completed");
+
+    // The single request's exact charge settles against the case's own hold.
+    const eventId = eventIdOf(executionId, 0);
+    expect(await outboxRow(eventId)).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+      actualCostDenominator: "1",
+    });
+    expect(await reservationOf(eventId)).toBeDefined();
+    const noSecondStep = evaluationCaseStepUsageId(executionId, 0, 1);
+    expect(await outboxRow(noSecondStep)).toBeUndefined();
+    expect(await reservationOf(noSecondStep)).toBeUndefined();
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("an input the conservative count places over the policy's input ceiling is refused before the provider is dialed (R3-01)", async () => {
+  const customer = `${prefix}-seam-oversize`;
+  await grant(customer, 10_000);
+  const gateway = scriptedGateway([
+    seamAnswerRound("never reached", { input: 5, output: 3 }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-seam-oversize`;
+    const observations: ModelSpanObservation[] = [];
+    const runner = seamRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      observations,
+      // The 1000-token input ceiling: 20,000 ASCII bytes of case input count as at
+      // least 12,500 tokens by the approved conservative counter — it cannot fit.
+      policy: stepPolicies,
+    });
+
+    const outcome = await runner({
+      ...contextFor(executionId),
+      frozenCase: {
+        ...frozenCase,
+        safeInput: { state: "projected", text: "z".repeat(20_000) },
+      },
+    });
+
+    // Never dialed: the count refused the request outright, at step 0.
+    expect(gateway.bodies.length).toBe(0);
+    expect(outcome).toEqual({ status: "failed", reason: "input_over_limit" });
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "input_over_limit",
+    });
+
+    // The ledger says what actually happened: the case hold stays retained on the
+    // unknown-cost doctrine's evidence row, named with the budget's own word for the
+    // refusal — never a provider error for a request no provider saw.
+    const eventId = eventIdOf(executionId, 0);
+    expect(await outboxRow(eventId)).toMatchObject({
+      status: "input_over_limit",
+      reservationId: null,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect((await reservationOf(eventId))?.status).toBe("reserved");
   } finally {
     gateway.stop();
   }
