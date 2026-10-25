@@ -2,10 +2,14 @@ import type { MiddlewareHandler } from "hono";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AppVariables } from "../src/auth/guards";
 import { loadCraftConfig } from "../src/craft/config";
+import { WorkspaceListingError } from "../src/craft/directory-archive";
 import { SandboxExecutionScopeUnavailableError } from "../src/craft/errors";
 import { CraftSessionManager } from "../src/craft/manager";
 import type { CraftLLMProviderConfig } from "../src/craft/opencode-config";
-import { createSandboxGateway } from "../src/craft/sandbox-gateway";
+import {
+  createSandboxGateway,
+  type SandboxGateway,
+} from "../src/craft/sandbox-gateway";
 import { createSessionRoutes } from "../src/craft/session-routes";
 import type {
   CraftSessionRow,
@@ -31,6 +35,12 @@ const SESSION_ID = "cs-sess";
 
 const halfScopedConfig = loadCraftConfig({
   OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID: "acme-co",
+});
+
+/** The OCR r3 #4 counterpart: the pair fully present — the assert passes, the wake proceeds. */
+const fullyScopedConfig = loadCraftConfig({
+  OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID: "acme-co",
+  OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID: "acme-ws",
 });
 
 const llm: CraftLLMProviderConfig = {
@@ -81,29 +91,36 @@ const snapshotRow = (): CraftSnapshotRow => ({
  * A REAL gateway on the half-scoped deployment plus a recording fetchImpl — the
  * fail-closed contract says the recorder must stay empty (the refusal precedes fetch).
  */
-function unscopedScopeRoutes(input?: {
+function scopeRoutes(input?: {
   session?: CraftSessionRow;
   withSnapshot?: boolean;
+  /** "half" (default): a half scope is no scope, the refusal fires. "full": the pair resolves. */
+  scope?: "half" | "full";
+  /** Override the gateway outright (stubbed probes); default is the REAL gateway on the chosen scope. */
+  gateway?: SandboxGateway;
   /** Live managed-content fingerprints — make a runtime stale so reload reaches its first write. */
   managedContentHashesFor?: (
     session: CraftSessionRow,
   ) => Promise<{ skillsHash: string | null; mcpConfigHash: string | null }>;
 }) {
+  const config = input?.scope === "full" ? fullyScopedConfig : halfScopedConfig;
   const calls: { method: string; url: string }[] = [];
   const fetchImpl = (async (input_: unknown, init?: RequestInit) => {
     const url = new URL(String(input_));
     calls.push({ method: init?.method ?? "GET", url: url.pathname });
     return new Response(null, { status: 200 });
   }) as typeof fetch;
-  const gateway = createSandboxGateway({
-    config: halfScopedConfig,
-    connectionFor: () => ({
-      botId: "craft",
-      baseUrl: "http://gw.test",
-      token: "sandbox-secret",
-    }),
-    fetchImpl,
-  });
+  const gateway =
+    input?.gateway ??
+    createSandboxGateway({
+      config,
+      connectionFor: () => ({
+        botId: "craft",
+        baseUrl: "http://gw.test",
+        token: "sandbox-secret",
+      }),
+      fetchImpl,
+    });
 
   const rows = new Map<string, CraftSessionRow>();
   if (input?.session) rows.set(input.session.id, { ...input.session });
@@ -173,7 +190,7 @@ function unscopedScopeRoutes(input?: {
   };
 
   const manager = new CraftSessionManager({
-    config: halfScopedConfig,
+    config,
     store,
     gateway,
     llmConfigFor: async () => llm,
@@ -183,7 +200,7 @@ function unscopedScopeRoutes(input?: {
 
   const app = createSessionRoutes(fakeRequireUser(), {
     db: {} as never,
-    config: halfScopedConfig,
+    config,
     store,
     manager,
     // The lock only serializes creators; the route's answer under test is the
@@ -203,14 +220,14 @@ function unscopedScopeRoutes(input?: {
     } as never,
     managedContentHashesFor: input?.managedContentHashesFor,
   } as never);
-  return { app, calls };
+  return { app, calls, rows };
 }
 
 describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entrances", () => {
   const REFUSAL = new SandboxExecutionScopeUnavailableError().message;
 
   test("create answers 503 with the fixed sentence, zero outbound calls", async () => {
-    const { app, calls } = unscopedScopeRoutes();
+    const { app, calls } = scopeRoutes();
     const response = await app.request("/sessions", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -225,7 +242,7 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
   });
 
   test("snapshot answers 503 with the fixed sentence, zero outbound calls", async () => {
-    const { app, calls } = unscopedScopeRoutes({
+    const { app, calls } = scopeRoutes({
       session: sessionRow({ status: "active" }),
     });
     const response = await app.request(`/sessions/${SESSION_ID}/snapshot`, {
@@ -242,7 +259,7 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
     // The wake replays the newest snapshot, so the refusal is met at the restore
     // dial — it must not degrade into "no snapshot" (the false that silently
     // skips the wake) nor surface as a bare 200 with an unwoken session.
-    const { app, calls } = unscopedScopeRoutes({
+    const { app, calls } = scopeRoutes({
       session: sessionRow({ status: "idle" }),
       withSnapshot: true,
     });
@@ -263,15 +280,22 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
     // CASed active behind a wake that never ran — that mask (200 + "active" +
     // nothing restored) is exactly what stranded the restore entrance's 503
     // behind a warm path. The honest answer is 200 + still sleeping (OCR#11).
-    const { app, calls } = unscopedScopeRoutes({
+    const { app, calls } = scopeRoutes({
       session: sessionRow({ status: "idle" }),
       withSnapshot: true,
     });
     const response = await app.request(`/sessions/${SESSION_ID}`);
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { id: string; status: string };
+    const body = (await response.json()) as {
+      id: string;
+      status: string;
+      session_loaded_in_sandbox: boolean;
+    };
     expect(body.id).toBe(SESSION_ID);
     expect(body.status).toBe("idle"); // not woken: the refusal keeps the row honest
+    // OCR r3 #1: a refused wake loaded nothing into any sandbox — the flag must
+    // not still hardcode true against the row's own "sleeping" (idle) status.
+    expect(body.session_loaded_in_sandbox).toBe(false);
     expect(calls).toEqual([]);
   });
 
@@ -280,7 +304,7 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
     // refusal-not-CAS discipline above keeps THIS entrance reachable — a row
     // already flipped active would take the warm fast path and answer 200
     // forever, leaving the person to discover the refusal on their first turn.
-    const { app, calls } = unscopedScopeRoutes({
+    const { app, calls } = scopeRoutes({
       session: sessionRow({ status: "idle" }),
       withSnapshot: true,
     });
@@ -300,7 +324,7 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
     // gateway's file verbs (the opencode.json rewrite) — a scopeless deployment
     // answers the fixed sentence here too, not the misleading "Failed to reload
     // session." 502 its catch used to wear.
-    const { app, calls } = unscopedScopeRoutes({
+    const { app, calls } = scopeRoutes({
       session: sessionRow({
         status: "active",
         opencodeSessionId: "ses_scope",
@@ -328,7 +352,7 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
     // OCR#12: a missing scope is an admin-level permanent failure — the chip
     // must wear the settled red "failed", never a "provisioning" that can
     // never clear (the cold-start mask the null probe used to fold into).
-    const { app, calls } = unscopedScopeRoutes({
+    const { app, calls } = scopeRoutes({
       session: sessionRow({ status: "active" }),
     });
     const response = await app.request(
@@ -341,13 +365,104 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
   });
 
   test("restore of an active session is the warm fast path — no gateway touch", async () => {
-    const { app, calls } = unscopedScopeRoutes({
+    const { app, calls } = scopeRoutes({
       session: sessionRow({ status: "active" }),
     });
     const response = await app.request(`/sessions/${SESSION_ID}/restore`, {
       method: "POST",
     });
     expect(response.status).toBe(200);
+    expect(calls).toEqual([]);
+  });
+  test("a successful wake still answers session_loaded_in_sandbox: true (OCR r3 #1, the derivation's true side)", async () => {
+    // Scoped pair, idle row, newest snapshot present: the wake really dials the
+    // restore, the row CASes active, and the DERIVED flag (woken.status !==
+    // "idle") still answers true — the derivation narrows only the refused
+    // case, never the honest warm wake.
+    const { app, calls } = scopeRoutes({
+      scope: "full",
+      session: sessionRow({ status: "idle" }),
+      withSnapshot: true,
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      status: string;
+      session_loaded_in_sandbox: boolean;
+    };
+    expect(body.status).toBe("active");
+    expect(body.session_loaded_in_sandbox).toBe(true);
+    // exactly the one restore dial — the wake itself, nothing else
+    expect(calls).toEqual([{ method: "POST", url: "/workspace/restore" }]);
+  });
+
+  test("sandbox-status recognizes a WRAPPED refusal by its cause — the chip answers failed, not an eternal provisioning (OCR r3 #2)", async () => {
+    // A future wrap between gateway.healthCheck and this catch (bot context, an
+    // error enhancer) must not silently turn the settled "failed" back into the
+    // "provisioning" cold-start mask OCR#12 closed: the recognizer rides the
+    // structural cause chain, exactly like every entrance's catch. The wrap's
+    // TEXT deliberately lost the fixed sentence — only the cause carries it.
+    const wrapped = new WorkspaceListingError(
+      "/doc",
+      new SandboxExecutionScopeUnavailableError(),
+    );
+    wrapped.message = "rewritten by a future healthCheck wrap layer";
+    const { app } = scopeRoutes({
+      session: sessionRow({ status: "active" }),
+      gateway: {
+        healthCheck: async () => {
+          throw wrapped;
+        },
+      } as unknown as SandboxGateway,
+    });
+    const response = await app.request(
+      `/sessions/${SESSION_ID}/sandbox-status`,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { status: string };
+    expect(body.status).toBe("failed");
+  });
+
+  test("restore without a snapshot row, scopeless deployment: 503, and the row is NOT CASed active (OCR r3 #4)", async () => {
+    // No snapshot row (or an evicted blob) means restoreLatestSnapshot never
+    // dials — the refusal had no chance to throw, and the entrance used to CAS
+    // active behind a wake that ran nothing: FR-F1's "wake quietly degraded to
+    // a rebuild" with the 503 unreachable until the next turn. The pre-CAS
+    // scope assert closes it — the 503 no longer depends on a snapshot
+    // existing — and the assert itself resolves without any dial.
+    const { app, calls, rows } = scopeRoutes({
+      session: sessionRow({ status: "idle" }),
+      // no withSnapshot: nothing to restore, so the gateway is never dialed
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/restore`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(rows.get(SESSION_ID)?.status).toBe("idle"); // never CASed behind a wake that ran nothing
+    expect(calls).toEqual([]); // the scope assert resolves, it does not dial
+  });
+
+  test("restore without a snapshot row, scoped deployment: 200 — the rebuild semantics unchanged (OCR r3 #4)", async () => {
+    // The assert must not narrow the honest degrade-to-rebuild: scope present +
+    // nothing to restore still wakes — CAS active, 200, zero dials — and the
+    // next turn's reconcile rebuilds the workspace, as ever.
+    const { app, calls, rows } = scopeRoutes({
+      scope: "full",
+      session: sessionRow({ status: "idle" }),
+    });
+    const response = await app.request(`/sessions/${SESSION_ID}/restore`, {
+      method: "POST",
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      status: string;
+      session_loaded_in_sandbox: boolean;
+    };
+    expect(body.status).toBe("active");
+    expect(body.session_loaded_in_sandbox).toBe(true);
+    expect(rows.get(SESSION_ID)?.status).toBe("active");
     expect(calls).toEqual([]);
   });
 });

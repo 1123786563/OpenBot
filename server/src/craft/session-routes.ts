@@ -19,7 +19,6 @@ import type { Database } from "../db/client";
 const logger = getLogger("server");
 
 import type { CraftConfig } from "./config";
-import { SandboxExecutionScopeUnavailableError } from "./errors";
 import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
 import { generateSessionName } from "./naming";
@@ -162,7 +161,7 @@ export function createSessionRoutes(
     const botId = await deps.botIdFor(session.id);
     if (botId) {
       let scopeRefused = false;
-      await restoreLatestSnapshot(snapshotCtx(), {
+      const restored = await restoreLatestSnapshot(snapshotCtx(), {
         botId,
         sessionId: session.id,
       }).catch((error) => {
@@ -172,6 +171,14 @@ export function createSessionRoutes(
         return false;
       });
       if (scopeRefused) return session; // not woken: keep idle, keep the entrances reachable
+      // #618 (OCR r3 #4): a missing snapshot row (or an evicted blob) means
+      // restoreLatestSnapshot never dialed — the refusal had no chance to throw,
+      // and the surface entrance would CAS active behind a wake that ran nothing.
+      // Assert the scope with ZERO dials before the CAS, so the restore entrance's
+      // 503 does not depend on a snapshot existing.
+      if (options.surfaceScopeRefusal && !restored) {
+        deps.gateway.assertExecutionScope();
+      }
     }
     const updated = await deps.store.updateSession(session.id, {
       status: "active",
@@ -242,7 +249,12 @@ export function createSessionRoutes(
     const woken = await wakeIfIdle(session);
     return context.json(
       sessionResponse(woken, await skillsStaleFor(woken), {
-        session_loaded_in_sandbox: true,
+        // #618 (OCR r3 #1): derive from the wake result — a refused wake kept the
+        // row idle and loaded nothing into any sandbox, so a hardcoded true would
+        // contradict the status: "sleeping" right beside it. (No app/src consumer
+        // reads the flag today; create answers true after a real build, restore
+        // only answers after a wake that ran.)
+        session_loaded_in_sandbox: woken.status !== "idle",
       }),
     );
   });
@@ -503,7 +515,11 @@ async function sandboxStatusFor(
     // #618 (OCR#12): a missing scope is an admin-level permanent failure, not a cold
     // start — the probe rethrows the displayable refusal, and the chip wears the
     // settled red "failed" instead of a "provisioning" that can never clear.
-    if (error instanceof SandboxExecutionScopeUnavailableError) return "failed";
+    // OCR r3 #2: recognize it the way every entrance's catch does — the bare
+    // instanceof only matched while healthCheck's chain propagated bare errors;
+    // any future wrap (bot context, an error enhancer) would silently fold back
+    // into the eternal "provisioning" this branch exists to kill.
+    if (sandboxScopeRefusalOf(error)) return "failed";
     return "provisioning"; // a probe outage stays a cold start, the pre-#618 answer
   }
 }

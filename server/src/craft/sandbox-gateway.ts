@@ -85,6 +85,15 @@ export type SandboxGateway = {
    * configuration failure callers answer as unavailable, not as a cold start.
    */
   healthCheck(botId: string): Promise<boolean>;
+  /**
+   * Resolve the execution ownership ONLY — throw the displayable refusal when the
+   * deployment has none, without dialing anything (#618 OCR r3 #4). The seam for
+   * callers that must answer the refusal before they can know an outbound call
+   * really ran: the restore entrance wakes through restoreLatestSnapshot, which
+   * answers false (no dial) when no snapshot row or blob exists, so its 503 must
+   * not depend on the dial happening — assert here, zero requests, zero caching.
+   */
+  assertExecutionScope(): void;
   /** Close every cached bus (shutdown hook). */
   close(): void;
   /** The workspace-write view of the file API. */
@@ -454,6 +463,14 @@ export function createSandboxGateway(
         fetchImpl: options.fetchImpl,
       });
       return client.healthCheck();
+    },
+
+    assertExecutionScope() {
+      // The headers resolver IS the assertion — resolving the pair or refusing is
+      // its whole contract. Nothing is dialed and nothing is cached; the caller
+      // learns only "this deployment can state ownership" or the displayable
+      // refusal every outbound group would have thrown.
+      scopeHeaders();
     },
 
     close() {
