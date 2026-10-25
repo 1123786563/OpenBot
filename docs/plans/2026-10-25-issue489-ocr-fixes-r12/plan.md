@@ -61,3 +61,9 @@ R13（r13-adjudication.md）3 有效 medium：
 **T32（F16-2）**：`mastra/tools.ts` 新增 `VALID_BRIDGE_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/`；`frontend-tools.ts` 客户端声明名改用严格集（挂载即丢弃+结构化诊断=改动前 fail-soft 行为；brokered/granted 维持 VALID_TOOL_NAME 点号放行+F11-1 守卫）；注释记录两 charset 的分工。测试：客户端带点名声明→丢弃+诊断+聊天继续（RED：现树挂载/直连形态守卫 400 形）；合法名声明挂载不变；brokered 点分名行为不变（seam 51/51 零回退）。owned=tools.ts+frontend-tools.ts+相关测试。
 
 流程：并行→R1→串行集成→F17 收官门→R17 全量→f01-r12→V03/C01。
+
+## 附录六：F18 波 T33（R17 终裁追加，2026-10-25）
+
+**T33（F17-1，doc-only）**：`server/src/memory/ingestion.ts:226` "Pinned by server/tests/revoked-connection-consumers.test.ts" 改指真实行为 pin=`server/tests/memory-defaults.integration.test.ts` 的 describe「a revoked connection keeps upstream's row-existence semantics (#489 F01-01)」（finding 建议形）。零代码改动。门：tsc 恰 3 BASE、biome 净、enterprise 108/108。owned=ingestion.ts（恰 1 M 注释）。
+
+流程：T33→R1→集成→R18 全量→f01-r12→V03/C01。
