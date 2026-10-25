@@ -24,6 +24,7 @@ import {
   createEnterpriseGatewayNegotiationStore,
   createGatewayCapabilityNegotiationService,
   CREDIT_ADMISSION_EXTENSION_NAME,
+  GATEWAY_EXTENSIONS_MANAGEMENT_PATH,
 } from "../src/gateway/capability-negotiation";
 import {
   gatewayAdminRoutes,
@@ -157,6 +158,18 @@ async function cleanSlate() {
     .where(eq(credentials.kind, "gateway_admin"));
 }
 
+/**
+ * The gateway's `/api/extensions` answer in the shape the Go side really sends:
+ * `plugins` PLUS the `count` metadata the manifest carries — the stub once omitted
+ * `count`, which no assertion caught because the parser only reads `plugins` (R5-F1).
+ * Building `count` off the array keeps the two from drifting apart again.
+ */
+function extensionsManifestBody(
+  plugins: { name: string; version: string }[],
+): string {
+  return JSON.stringify({ plugins, count: plugins.length });
+}
+
 async function establishReady() {
   const gateway = await startFakeGateway(
     {
@@ -165,15 +178,13 @@ async function establishReady() {
       body: '{"authConfig":{"admin":{"exists":true}}}',
     },
     {
-      "/api/plugins": {
+      [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 200,
-        body: JSON.stringify({
-          plugins: [
-            { name: "bifrost-anthropic", version: "1.2.3" },
-            { name: CREDIT_ADMISSION_EXTENSION_NAME, version: "1.0.0" },
-          ],
-        }),
+        body: extensionsManifestBody([
+          { name: "bifrost-anthropic", version: "1.2.3" },
+          { name: CREDIT_ADMISSION_EXTENSION_NAME, version: "1.0.0" },
+        ]),
       },
     },
   );
@@ -382,12 +393,12 @@ test("the probe action classifies, persists, and on success negotiates", async (
 
   // The extension vanished upstream: the probe still succeeds, the negotiation
   // verdict honestly turns "absent", and the status read carries it.
-  gateway.routes["/api/plugins"] = {
+  gateway.routes[GATEWAY_EXTENSIONS_MANAGEMENT_PATH] = {
     kind: "response",
     status: 200,
-    body: JSON.stringify({
-      plugins: [{ name: "bifrost-anthropic", version: "1.2.3" }],
-    }),
+    body: extensionsManifestBody([
+      { name: "bifrost-anthropic", version: "1.2.3" },
+    ]),
   };
   const absent = await adminApp.request("/probe", { method: "POST" });
   expect(absent.status).toBe(200);

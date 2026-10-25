@@ -684,11 +684,13 @@ test("an account with no activity answers enabled with true zeros and an empty l
     unknown: 0,
     reservations: [],
   });
-  // The top-level contract keys stay exactly as 02.6 fixed them.
+  // The top-level contract keys stay as 02.6 fixed them, plus BP07/#375's `account` — the
+  // account-level capability status every personal view now answers with.
   const response = await app(world.actor).request(
     "/api/billing/credits/summary",
   );
   expect(Object.keys((await response.json()) as object).sort()).toEqual([
+    "account",
     "accountType",
     "available",
     "consumed",

@@ -308,7 +308,7 @@ export const MODEL_ENTRYPOINTS: readonly ModelEntrypoint[] = [
     surface:
       "GET /v1/realtime (+ OpenAI integration WS paths) — the main session upgrade",
     sourceAnchor:
-      "bifrost/transports/bifrost-http/handlers/wsrealtime.go:66 (r.GET /v1/realtime + OpenAIRealtimePaths, in RegisterRoutes at :64); realtimeauthgate.go:12-14 (refuseUnauthenticatedRealtime — the admission gate for every realtime transport)",
+      "bifrost/transports/bifrost-http/handlers/wsrealtime.go:67 (r.GET /v1/realtime + OpenAIRealtimePaths, in RegisterRoutes at :65); realtimeauthgate.go:15-37 (refuseUnauthenticatedRealtime — the admission gate for every realtime transport)",
     admissionSeam: {
       module: "server/src/billing/realtime-session.ts",
       door: "createRealtimeSessionService",

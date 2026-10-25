@@ -69,15 +69,22 @@ const adminId = `gateway-negotiation-admin-${runId}`;
 const admin = { userId: adminId, email: `admin-${runId}@openbot.test` };
 const ADMIN_KEY = `negotiation-integration-admin-key-${runId}`;
 
-const COMPATIBLE_MANIFEST = JSON.stringify({
-  plugins: [
-    { name: "bifrost-anthropic", version: "1.2.3" },
-    { name: CREDIT_ADMISSION_EXTENSION_NAME, version: "1.4.2" },
-  ],
-});
-const MANIFEST_WITHOUT_EXTENSION = JSON.stringify({
-  plugins: [{ name: "bifrost-anthropic", version: "1.2.3" }],
-});
+/**
+ * The gateway's `/api/extensions` answer in the shape the Go side really sends: `plugins`
+ * plus the `count` metadata the manifest carries (R5-F1/R9-F1). Deriving count from the
+ * array keeps the two from drifting apart.
+ */
+function manifestBody(plugins: { name: string; version: string }[]): string {
+  return JSON.stringify({ plugins, count: plugins.length });
+}
+
+const COMPATIBLE_MANIFEST = manifestBody([
+  { name: "bifrost-anthropic", version: "1.2.3" },
+  { name: CREDIT_ADMISSION_EXTENSION_NAME, version: "1.4.2" },
+]);
+const MANIFEST_WITHOUT_EXTENSION = manifestBody([
+  { name: "bifrost-anthropic", version: "1.2.3" },
+]);
 
 function negotiationService() {
   const endpoint = createGatewayEndpointService({ store: enterpriseStore });
