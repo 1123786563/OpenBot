@@ -357,6 +357,31 @@ test("the transcript's refusal strip and the connect codec's agree on every shap
   expect(toolResult.refusalBody(results[4])).toBeNull();
 });
 
+/*
+ * A completed step's result used to be read twice over — once for the refusal verdict, once again
+ * for the body that verdict left behind — on every frame of every fold while a reply streams.
+ * `refusalAndAnswer` reads the envelope once and answers both questions; this pin counts what
+ * classifying a single completed step costs: its arguments, its answer, and its failure check,
+ * one parse each and no more.
+ */
+test("a completed step's result is decoded once for its verdict and its body, not once each", () => {
+  const realParse = JSON.parse;
+  let parses = 0;
+  JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+    parses += 1;
+    return realParse(...args);
+  }) as typeof JSON.parse;
+  try {
+    const done = stepDetails(search("done", JSON.stringify("vendor answer")));
+    expect(done.refused).toBe(false);
+    expect(done.output).toBe("vendor answer");
+  } finally {
+    JSON.parse = realParse;
+  }
+  // The arguments, the answer, and the failure check — one decode each.
+  expect(parses).toBe(3);
+});
+
 test("grouping reads a real streamed conversation through the transcript projection", () => {
   const messages = [
     { id: "u1", role: "user", content: "Catch up on my notes." },

@@ -5,9 +5,9 @@ import { PendingApprovals } from "@/components/approvals/inline-approval";
 import { markdownComponents } from "@/lib/markdown";
 import { type ResearchLabelKey, readToolName } from "@/lib/plugins/tool-name";
 import {
-  asText,
   forDisplay,
-  REFUSAL_MARKER,
+  mayBeRefusal,
+  refusalAndAnswer,
   refusalBody,
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
@@ -125,21 +125,13 @@ function asksThePerson(result: string | undefined): boolean {
   if (result === undefined) return false;
   /*
    * A refusal can only wear two shapes, and each is recognisable from the result's first
-   * characters. `refusalBody` decodes through `asText`, which rewrites a result only when it starts
-   * with a quote, and answers a body only for text that starts with the marker — so a verdict of
-   * true needs the result to open with the marker itself, or with the quote right in front of the
-   * marker that its JSON encoding opens with (the envelope is the runtime's own encoding, which
-   * escapes nothing in the marker's letters). Anything else is false before the cache or a parse is
-   * ever consulted — which is what keeps a long research session, more distinct results than the
-   * FIFO holds so every frame re-judges history it has already judged, from re-parsing all of it.
+   * characters — `mayBeRefusal` in `tool-result`, kept beside the `refusalBody` strip it fronts
+   * for, so the gate and the strip answer from one declaration and cannot drift apart. Anything
+   * else is false before the cache or a parse is ever consulted — which is what keeps a long
+   * research session, more distinct results than the FIFO holds so every frame re-judges history
+   * it has already judged, from re-parsing all of it.
    */
-  const lead = result.trimStart();
-  if (
-    !lead.startsWith(REFUSAL_MARKER) &&
-    !lead.startsWith(`"${REFUSAL_MARKER}`)
-  ) {
-    return false;
-  }
+  if (!mayBeRefusal(result)) return false;
   const cached = askVerdicts.get(result);
   if (cached !== undefined) return cached;
   const body = refusalBody(result);
@@ -277,16 +269,16 @@ export function stepDetails(step: ToolItem): StepDetails {
   const name = step.toolCall.function.name;
   const { label, detail, labelKey } = readToolName(name);
   /*
-   * The same reading `ServerToolLine` does: the result arrives JSON-encoded, a refusal carries the
-   * server's marker rather than a guessed wording, and everything else is the vendor's answer —
-   * which the group shows through `forDisplay` when it is drawn, untrusted envelope and all. The
-   * marker strip is `refusalBody`, the one sequence every reader shares; the decoded answer is
-   * asked for only when no refusal is carrying the text.
+   * The same reading `ServerToolLine` does, from one decode of the envelope: `refusalAndAnswer`
+   * strips the marker when the result is a refusal and hands back the decoded answer either way,
+   * so a completed step's result is read once however many frames the fold re-renders it. The
+   * result arrives JSON-encoded, a refusal carries the server's marker rather than a guessed
+   * wording, and everything else is the vendor's answer — which the group shows through
+   * `forDisplay` when it is drawn, untrusted envelope and all.
    */
-  const refusal = refusalBody(step.result);
+  const { refusal, answer } = refusalAndAnswer(step.result);
   const refused = refusal !== null;
-  const body =
-    refusal ?? (step.result === undefined ? undefined : asText(step.result));
+  const body = refusal ?? answer;
   const [, server = ""] = name.split("__");
   /*
    * A research step is its role first: the label is the role's, the detail is what it acted on,

@@ -55,8 +55,8 @@ import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { readToolName } from "@/lib/plugins/tool-name";
 import {
-  asText,
   forDisplay,
+  refusalAndAnswer,
   refusalBody,
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
@@ -1396,8 +1396,7 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * wording is a policy message an administrator can rewrite and the first rephrasing would break
    * any guess made here. See REFUSAL_MARKER in server/src/plugins/tools.ts.
    */
-  const answer = result === undefined ? undefined : asText(result);
-  const refusal = refusalBody(result);
+  const { refusal, answer } = refusalAndAnswer(result);
   const refused = refusal !== null;
   const failed = !refused && toolResultFailed(result);
   /*
@@ -1405,9 +1404,10 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * label and then "Refused." again in the first two words of the body, which is the same fact three
    * times over by the end of the sentence. Stripped here rather than on the server, because the
    * server's copy is what the model is told and "Refused." in front of a reason is right for it —
-   * and the strip is `refusalBody` in `tool-result`, the one sequence that decodes before it
-   * matches, the same one the fold, the card, and `connectPromptOf` below all read; the connect
-   * codec's own copy answers only its marker wire now, and no two readers can drift apart.
+   * and the strip is the one sequence in `tool-result` (`refusalBody`, read through
+   * `refusalAndAnswer` here so the envelope decodes once), the same one the fold, the card, and
+   * `connectPromptOf` below all read; the connect codec's own copy answers only its marker wire
+   * now, and no two readers can drift apart.
    */
   const body = refusal ?? answer;
   // A Team Bot asking to use this person's own account draws its consent card, not the sentence.

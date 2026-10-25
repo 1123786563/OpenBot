@@ -1,9 +1,13 @@
 import "./preload";
+import { connectAppRefusal } from "../../shared/connect-prompt";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { HANDED_OVER, PUT_TO } from "../src/lib/copilot/markers";
 import {
   asText,
   forDisplay,
+  mayBeRefusal,
+  refusalAndAnswer,
+  refusalBody,
   saidItWentAhead,
   toolResultFailed,
 } from "../src/lib/plugins/tool-result";
@@ -161,15 +165,150 @@ describe("JSON that parses but is too deep to redraw", () => {
     expect(drawn).toBe(`\`\`\`json\n${deep}\n\`\`\``);
   });
 
-  test("a markdown envelope whose rest is too deep to redraw keeps the whole envelope", () => {
+  test("a markdown envelope whose rest is too deep to redraw draws the envelope once, not the body twice", () => {
     const deep = `${"[".repeat(100000)}0${"]".repeat(100000)}`;
     const envelope = `{"results":"# Found\\n\\nBody","meta":${deep}}`;
     let drawn: string | undefined;
     expect(() => {
       drawn = forDisplay(envelope);
     }).not.toThrow();
-    // The answer's body stays in front; the fence that cannot be redrawn holds the whole
-    // envelope as it arrived, markdown field included.
-    expect(drawn).toBe(`# Found\n\nBody\n\n\`\`\`json\n${envelope}\n\`\`\``);
+    if (drawn === undefined) throw new Error("forDisplay drew nothing");
+    // The fence that cannot be redrawn holds the whole envelope as it arrived, drawn exactly
+    // once. Standing the rendered body in front of it would show the same words twice — once as
+    // the markdown, once more inside the envelope — so the envelope stands alone.
+    expect(drawn).toBe(`\`\`\`json\n${envelope}\n\`\`\``);
+    expect(drawn.split("# Found").length - 1).toBe(1);
+  });
+});
+
+/**
+ * The shapes a refusal arrives in, recognised cheaply — the check the fold's fast path reads.
+ *
+ * The fold asks whether a result could be asking the person something before its cache or a parse
+ * is ever consulted, and the check lives in `tool-result`, beside the `refusalBody` strip it
+ * fronts for, so the gate and the strip answer from one declaration instead of the call site
+ * restating the rule and the two drifting apart. The pin that matters is the direction: the cheap
+ * check may let through what the strip then answers null for, and never the other way round — a
+ * question the full reading draws must never be folded away by a cheap look at first characters.
+ */
+describe("the fold's cheap refusal shape-check", () => {
+  test("recognises the two shapes a refusal arrives in, padding and all", () => {
+    expect(mayBeRefusal("Refused. The policy does not allow that.")).toBe(true);
+    expect(
+      mayBeRefusal(JSON.stringify("Refused. The policy does not allow that.")),
+    ).toBe(true);
+    expect(mayBeRefusal("  Refused. Padded by a vendor's formatting.")).toBe(
+      true,
+    );
+  });
+
+  test("an ordinary result never opens like one", () => {
+    expect(mayBeRefusal("Found 12 results.")).toBe(false);
+    expect(mayBeRefusal(JSON.stringify("vendor answer"))).toBe(false);
+    expect(mayBeRefusal('{"results":"a vendor envelope"}')).toBe(false);
+    expect(mayBeRefusal("The answer was Refused. mid-sentence")).toBe(false);
+  });
+
+  test("lets through everything the full strip draws a refusal from, and only that way round", () => {
+    const wire = JSON.stringify(
+      `Refused. ${connectAppRefusal({
+        serverId: "github",
+        title: "GitHub",
+        message: "Connect your GitHub account and ask again.",
+      })}`,
+    );
+    const results = [
+      "Refused. The policy does not allow that.",
+      JSON.stringify("Refused. The policy does not allow that."),
+      `  ${wire}`,
+      JSON.stringify("The answer was Refused. mid-sentence"),
+      '{"results":"a vendor envelope, not text"}',
+      wire,
+    ];
+    for (const result of results) {
+      if (refusalBody(result) !== null) {
+        expect(mayBeRefusal(result)).toBe(true);
+      }
+    }
+    // The pin is not vacuous: the wire's own refusal and a padded one both strip, look-alikes
+    // never do, and the superset direction is real — an unterminated encoding passes the cheap
+    // check while the strip still answers null.
+    expect(refusalBody(wire)).not.toBeNull();
+    expect(refusalBody(`  ${wire}`)).not.toBeNull();
+    expect(refusalBody(results[3])).toBeNull();
+    expect(mayBeRefusal('"Refused. unterminated')).toBe(true);
+    expect(refusalBody('"Refused. unterminated')).toBeNull();
+  });
+});
+
+/**
+ * Both questions a completed result gets asked, answered from one read of its envelope.
+ *
+ * `stepDetails` and `ServerToolLine` each want to know whether a result is a refusal and what
+ * text it carries, and asking through two calls read the envelope twice — the strip decoded it
+ * once to answer null, and the caller decoded it again for the body that verdict left behind.
+ */
+describe("a result's refusal and answer from one decode", () => {
+  test("a refusal yields its body; the answer is the whole decoded text", () => {
+    const read = refusalAndAnswer(
+      JSON.stringify("Refused. The workspace policy does not allow that."),
+    );
+    expect(read.refusal).toBe("The workspace policy does not allow that.");
+    expect(read.answer).toBe(
+      "Refused. The workspace policy does not allow that.",
+    );
+  });
+
+  test("an ordinary result yields no refusal and its answer from the same read", () => {
+    const read = refusalAndAnswer(JSON.stringify("vendor answer"));
+    expect(read.refusal).toBeNull();
+    expect(read.answer).toBe("vendor answer");
+  });
+
+  test("a result that has not arrived yet answers nothing, both ways", () => {
+    expect(refusalAndAnswer(undefined)).toEqual({
+      refusal: null,
+      answer: undefined,
+    });
+  });
+
+  test("agrees with the two calls it replaces, on every shape a result arrives in", () => {
+    const results: (string | undefined)[] = [
+      undefined,
+      JSON.stringify("Refused. The policy does not allow that."),
+      "Refused. Bare text, carried without the runtime's encoding.",
+      `  ${JSON.stringify("Refused. The policy does not allow that.")}`,
+      JSON.stringify("The answer was Refused. mid-sentence"),
+      '{"results":"a vendor envelope, not text"}',
+      '"Refused. unterminated',
+    ];
+    for (const result of results) {
+      const read = refusalAndAnswer(result);
+      expect(read.refusal).toBe(refusalBody(result));
+      expect(read.answer).toBe(
+        result === undefined ? undefined : asText(result),
+      );
+    }
+  });
+
+  test("costs one parse per read, whichever way the verdict goes", () => {
+    const realParse = JSON.parse;
+    let parses = 0;
+    JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+      parses += 1;
+      return realParse(...args);
+    }) as typeof JSON.parse;
+    try {
+      expect(
+        refusalAndAnswer(JSON.stringify("vendor answer")).refusal,
+      ).toBeNull();
+      expect(
+        refusalAndAnswer(JSON.stringify("Refused. No, and here is why."))
+          .refusal,
+      ).toBe("No, and here is why.");
+    } finally {
+      JSON.parse = realParse;
+    }
+    expect(parses).toBe(2);
   });
 });
