@@ -41,3 +41,15 @@
 | F6D remote 预算拨号 | F5E1-F2 (high) | 恢复经可信预算校验的 remote 拨号（不关安全防护）；或经批准范围变更（默认走前者） | copilot.ts、index.ts remote 面、budget 校验相关 | 3（后） |
 
 门禁不变：RED→GREEN + 独立审核 0 阻塞 + 集成组合验证 → 再 FREV(R3) + OCR。
+
+## FREV R3（2026-10-25）终裁 FAIL：5 阻塞 → 波五
+
+报告 `reviews/final-review-codex-r3.md`。R2 六项：4 关闭（04/07/F1/F3 窄），2 部分（R2-01→R3-01、F2→R3-02）。R1 七项：6 关闭，FREV-06→R3-04。仍走实现路线。
+
+| 任务 | finding | 关闭条件（R3 §5） | 流 |
+| --- | --- | --- | --- |
+| F7A 全量逐步预算 | R3-01 high | 每个实际 doStream 都逐步预算（不按业务白名单）；输入按批准保守口径强制或显式拒绝；输出默认受 policy 约束；空白名单+state 工具 scripted SSE 反例（第二步余额不足不拨号） | 1 |
+| F7B 物化意图持久 | R3-05 medium | 确定性上游身份/物化意图持久化并在删除时验证；null 不得推断 local-only；未知 pending/failed；补 create/root 成功+reconcile 失败无后续 fact→过期清理回归 | 2（前） |
+| F7C builtin 终态接线 | R3-03 medium | 公共 builtin 事件入口记录真实 start/terminal（success/error 区分）；工具 fact 不提前终结 run；首终态优先；断连才 unknown；补无工具成功/工具后成败/取消/断连/重试的 list/detail/根时间回归 | 2（后） |
+| F7D remote 可强制合同 | R3-02 high | 受支持端点接可强制的预算/能力合同（本仓 agent-langgraph 可实现端点侧执行），无法校验仍拒绝；不借 generic policy 配置；补经 OpenBot 默认 LangGraph 真实执行 | 3 |
+| F7E 冻结树全链证据 | R3-04 medium | 修复后冻结组合树补完整环境真实证据（stock builtin + 经 OpenBot LangGraph、工具 ID 对应、跨服务父子、多次 run 定位）；缺失保留 GAP 不相加局部 PASS | 4（终） |
