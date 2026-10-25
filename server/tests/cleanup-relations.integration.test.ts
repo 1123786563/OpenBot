@@ -11,6 +11,7 @@ import {
 } from "../src/billing/cleanup-relations";
 import { createDatabase } from "../src/db/client";
 import {
+  billingAccountResolutions,
   billingCustomers,
   billingSubscriptions,
   billingWebhookEvents,
@@ -20,6 +21,7 @@ import {
   creditChargeRemainders,
   creditReservationAllocations,
   creditReservations,
+  creditSettlementDetails,
 } from "../src/db/schema/credit-reservations";
 import { creditGrants, creditLedger } from "../src/db/schema/credits";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
@@ -73,7 +75,8 @@ const companyKey = `b347-co-${run}`;
 const flightKey = `b347-leg1-${run}`;
 const activeSubKey = `b347-leg2-${run}`;
 const cleanKey = `b347-leg3-${run}`;
-const fixtureKeys = [companyKey, flightKey, activeSubKey, cleanKey];
+const resolutionKey = `b347-leg4-${run}`;
+const fixtureKeys = [companyKey, flightKey, activeSubKey, cleanKey, resolutionKey];
 
 const companyMappingId = `b347-pa-co-${run}`;
 const flightMappingId = `b347-pa-m1-${run}`;
@@ -118,16 +121,27 @@ const cleanOrderId = `b347-po3-${run}`;
 const cleanEventId = `b347-pe3-${run}`;
 const cleanWebhookId = `b347-we3-${run}`;
 const cleanOutboxId = `b347-uo3-${run}`;
+
+/** K4: clean legacy key whose customer cascade would take a 0176 resolution row, and
+ * whose settled hold stands behind a 0179 NO ACTION settlement detail row. */
+const resolutionPayerId = `b347-deploy4-${run}`;
+const resolutionMappingId = `b347-pa-m4-${run}`;
+const resolutionOrderId = `b347-po4-${run}`;
+const resolutionRowId = `b347-bar4-${run}`;
+const resolutionGrantId = `b347-g5-${run}`;
+const resolutionLedgerId = `b347-l4-${run}`;
+const resolutionSettledId = `b347-rs4-${run}`;
+const resolutionAllocationId = `b347-as4-${run}`;
 /** A pending order needs a deployment purchase slot of its own: one pending per scope. */
 const cleanOrderScope = `b347-scope-${run}`;
 
 /** The operator-vouched test-evidence registries: the three legacy orders, nothing else. */
 const evidenceInput = {
-  testOrderIds: [flightOrderId, activeSubOrderId, cleanOrderId],
+  testOrderIds: [flightOrderId, activeSubOrderId, cleanOrderId, resolutionOrderId],
   testUserIds: [],
 };
 
-/** The thirteen FK edges the drizzle schema declares among the legacy tables. */
+/** The twenty-nine FK edges the drizzle schema declares around the legacy tables. */
 const DECLARED_EDGES: {
   childTable: string;
   childColumn: string;
@@ -149,6 +163,25 @@ const DECLARED_EDGES: {
   { childTable: "credit_reservation_attribution", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
   // 0147 (#276): 08.1's recovery item, the same one-hop shape as the attribution row above.
   { childTable: "credit_recovery_items", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
+  // 0176 (BP06 #374): the resolution registry's account key, the one-hop shape again.
+  { childTable: "billing_account_resolutions", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
+  // 0163 (#436) restored the rest of the upstream children around the estate.
+  { childTable: "billing_credit_accounts", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
+  { childTable: "billing_customer_mappings", childColumn: "external_customer_id", parentTable: "billing_customers", parentColumn: "external_id", onDelete: "cascade" },
+  { childTable: "billing_call_attributions", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "cascade" },
+  // The settlement and job family: NO ACTION children, plus the dimension breakdown.
+  { childTable: "async_jobs", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "batch_jobs", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "credit_settlement_details", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "credit_settlement_details", childColumn: "ledger_id", parentTable: "credit_ledger", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "credit_async_settlement_details", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "credit_async_settlement_details", childColumn: "ledger_id", parentTable: "credit_ledger", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "credit_speech_settlement_details", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "credit_speech_settlement_details", childColumn: "ledger_id", parentTable: "credit_ledger", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "credit_batch_settlement_details", childColumn: "ledger_id", parentTable: "credit_ledger", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "realtime_units", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "tool_call_charges", childColumn: "reservation_id", parentTable: "credit_reservations", parentColumn: "id", onDelete: "no_action" },
+  { childTable: "credit_settlement_dimension_breakdown", childColumn: "ledger_id", parentTable: "credit_ledger", parentColumn: "id", onDelete: "cascade" },
 ];
 
 let classification: CleanupClassification;
@@ -175,12 +208,18 @@ afterAll(async () => {
       ]),
     );
   await database
+    .delete(creditSettlementDetails)
+    .where(
+      inArray(creditSettlementDetails.reservationId, [resolutionSettledId]),
+    );
+  await database
     .delete(creditReservationAllocations)
     .where(
       inArray(creditReservationAllocations.reservationId, [
         flightReservedId,
         flightSettledId,
         cleanSettledId,
+        resolutionSettledId,
       ]),
     );
   await database
@@ -190,12 +229,18 @@ afterAll(async () => {
         flightReservedId,
         flightSettledId,
         cleanSettledId,
+        resolutionSettledId,
       ]),
     );
   await database
     .delete(creditLedger)
     .where(
-      inArray(creditLedger.id, [flightLedgerId, flightLedger2Id, cleanLedgerId]),
+      inArray(creditLedger.id, [
+        flightLedgerId,
+        flightLedger2Id,
+        cleanLedgerId,
+        resolutionLedgerId,
+      ]),
     );
   await database
     .delete(creditGrants)
@@ -205,6 +250,7 @@ afterAll(async () => {
         flightSpareGrantId,
         activeSubGrantId,
         cleanGrantId,
+        resolutionGrantId,
       ]),
     );
   await database
@@ -214,6 +260,9 @@ afterAll(async () => {
     .delete(billingSubscriptions)
     .where(inArray(billingSubscriptions.externalCustomerId, fixtureKeys));
   await database
+    .delete(billingAccountResolutions)
+    .where(inArray(billingAccountResolutions.id, [resolutionRowId]));
+  await database
     .delete(payerAccounts)
     .where(
       inArray(payerAccounts.id, [
@@ -221,6 +270,7 @@ afterAll(async () => {
         flightMappingId,
         activeSubMappingId,
         cleanMappingId,
+        resolutionMappingId,
       ]),
     );
   await database
@@ -260,6 +310,12 @@ beforeAll(async () => {
       kind: "legacy_deployment",
       payerId: cleanPayerId,
       externalCustomerId: cleanKey,
+    },
+    {
+      id: resolutionMappingId,
+      kind: "legacy_deployment",
+      payerId: resolutionPayerId,
+      externalCustomerId: resolutionKey,
     },
   ]);
 
@@ -552,6 +608,87 @@ beforeAll(async () => {
     },
   ]);
 
+  // K4's paid, evidenced order — the test-evidence anchor that makes its key cleanable.
+  await database.insert(paymentOrders).values({
+    id: resolutionOrderId,
+    deploymentScope: cleanOrderScope,
+    planCode: "legacy-test",
+    provider: "alipay",
+    amountCents: 4_000,
+    status: "paid",
+    activationState: "applied",
+    ownerPayerKind: "legacy_deployment",
+    ownerPayerId: resolutionPayerId,
+    expiresAt: new Date("2026-01-01T00:00:00Z"),
+    paidAt: new Date("2026-01-01T00:30:00Z"),
+    terminalAt: new Date("2026-01-01T00:30:00Z"),
+  });
+
+  // The 0176 registry row that key already carries: an operator's authorized disposal
+  // decision, the shape billing/account-resolution.ts is the only writer of.
+  await database.insert(billingAccountResolutions).values({
+    id: resolutionRowId,
+    externalCustomerId: resolutionKey,
+    action: "refund",
+    reasonCode: "paid_not_delivered",
+    evidenceKind: "payment_event",
+    evidenceReference: `b347-evidence-${run}`,
+    operatorId: `b347-op-${run}`,
+    idempotencyKey: `b347-idem-${run}`,
+    amountCents: 100,
+    detail: `b347 fixture resolution ${run}`,
+  });
+
+  // K4's settled hold — cleanable on its own — with its 0179 settlement detail row: the
+  // NO ACTION child that makes the hold's deletion the database's to refuse.
+  await database.insert(creditGrants).values({
+    id: resolutionGrantId,
+    externalCustomerId: resolutionKey,
+    source: "promo",
+    total: 5_000,
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    idempotencyKey: `b347-promo3-${run}`,
+  });
+  await database.insert(creditLedger).values({
+    id: resolutionLedgerId,
+    externalCustomerId: resolutionKey,
+    grantId: resolutionGrantId,
+    title: `b347 blocked settlement ${run}`,
+    idempotencyKey: `b347-ledger4-${run}`,
+    credits: 100,
+    applied: 100,
+  });
+  await database.insert(creditReservations).values({
+    id: resolutionSettledId,
+    externalCustomerId: resolutionKey,
+    idempotencyKey: `b347-blocked-settled-${run}`,
+    maximum: 1_000,
+    status: "settled",
+    expiresAt: new Date("2026-01-01T00:00:00Z"),
+    terminalAt: new Date("2026-01-01T01:00:00Z"),
+    actualNumerator: "10000",
+    actualDenominator: "100",
+    charged: 100,
+    applied: 100,
+    released: 900,
+    ledgerId: resolutionLedgerId,
+  });
+  await database.insert(creditReservationAllocations).values({
+    id: resolutionAllocationId,
+    reservationId: resolutionSettledId,
+    grantId: resolutionGrantId,
+    amount: 1_000,
+    consumed: 100,
+  });
+  await database.insert(creditSettlementDetails).values({
+    reservationId: resolutionSettledId,
+    ledgerId: resolutionLedgerId,
+    capability: "image",
+    requestedCount: 1,
+    generatedCount: 1,
+    unitPriceUsd: "0.01",
+  });
+
   await database.insert(paymentEvents).values([
     {
       id: flightEventId,
@@ -697,6 +834,75 @@ describe("the legacy billing relations evaluation maps associations from live da
     expect(ledgerImpact).toBeDefined();
     expect(ledgerImpact!.effect).toBe("set_null_mutate");
   });
+  test("the 0176 resolution registry is retained: a customer cascade into it is pulled", () => {
+    // K4 is mapped and evidenced like the other legacy keys — without the resolution row,
+    // every row of it would be safe. The one 0176 registry row its customer cascade would
+    // delete is an operator's authorized disposal decision (the replay answer and the
+    // refund ceiling's prior history — AC18's financial history), so the customer is
+    // pulled by cascade impact with the row named, not silently cleaned around.
+    const customer = evaluationOf("billing_customers", resolutionKey);
+    expect(customer.removed).toBe(true);
+    expect(customer.removalReason).toBe("cascade_impact_on_retained");
+    expect(customer.evidence).toContain("billing_account_resolutions");
+    const impact = customer.retainedImpact.find(
+      (entry) =>
+        entry.table === "billing_account_resolutions" &&
+        entry.recordId === resolutionRowId,
+    );
+    expect(impact).toBeDefined();
+    expect(impact!.effect).toBe("cascade_delete");
+    expect(impact!.protection).toBe("retained");
+    expect(impact!.class).toBe("unclassified");
+    // The registry row rides the customer's cascade scope — probed, so the pull has data
+    // behind it, and never itself a candidate the cleanup set could name.
+    expect(
+      customer.cascadeDeletionScope.some(
+        (row) =>
+          row.table === "billing_account_resolutions" &&
+          row.recordId === resolutionRowId,
+      ),
+    ).toBe(true);
+    // The pull is the resolution's alone: the key's mapping and order stay safe.
+    expect(isSafe("payer_accounts", resolutionMappingId)).toBe(true);
+    expect(isSafe("payment_orders", resolutionOrderId)).toBe(true);
+    expect(
+      manifest.safeCandidates.some(
+        (entry) => entry.table === "billing_account_resolutions",
+      ),
+    ).toBe(false);
+  });
+
+  test("a NO ACTION settlement child pulls the hold: out-of-estate blockers are never executable", () => {
+    // K4's settled hold is evidenced and terminal — cleanable on every 21.2 rule — but it
+    // stands behind a 0179 settlement detail row whose FK is NO ACTION: the database
+    // refuses the hold's deletion while the detail stands, and the executor deletes only
+    // estate rows children-first. The hold is pulled here, with the blocker named, instead
+    // of failing as an FK error mid-execution.
+    const hold = evaluationOf("credit_reservations", resolutionSettledId);
+    expect(hold.removed).toBe(true);
+    expect(hold.removalReason).toBe("cascade_impact_on_retained");
+    expect(hold.evidence).toContain("delete_blocked");
+    expect(hold.evidence).toContain("credit_settlement_details");
+    const impact = hold.retainedImpact.find(
+      (entry) =>
+        entry.table === "credit_settlement_details" &&
+        entry.recordId === resolutionSettledId,
+    );
+    expect(impact).toBeDefined();
+    expect(impact!.effect).toBe("delete_blocked");
+    expect(impact!.protection).toBe("retained");
+    expect(impact!.class).toBe("unclassified");
+    expect(
+      hold.blockedBy.some((row) => row.table === "credit_settlement_details"),
+    ).toBe(true);
+    // The blocker reaches up the key's chain too: the ledger line behind the same detail
+    // is pulled by its own ledger_id NO ACTION reference.
+    const ledger = evaluationOf("credit_ledger", resolutionLedgerId);
+    expect(ledger.removed).toBe(true);
+    expect(ledger.removalReason).toBe("cascade_impact_on_retained");
+    expect(ledger.evidence).toContain("credit_settlement_details");
+  });
+
 
   test("cascade-removed candidates leave their safe siblings cleanable", () => {
     // Pulled: the K1 root and evidence rows the in-flight state protects.

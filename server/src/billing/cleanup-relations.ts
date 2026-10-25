@@ -251,6 +251,12 @@ const TABLE_ORDER = [
 type TableSpec = {
   /** The column the classification's recordId names. */
   idColumn: string;
+  /**
+   * A composite primary key, when the table's identity is one: the probe renders the
+   * recordId by joining these in order. Absent for every single-column key, where
+   * `idColumn` already names the identity.
+   */
+  idColumns?: string[];
   /** The columns a probe of this table must return for traversal and live-state reads. */
   columns: string[];
 };
@@ -316,6 +322,76 @@ const TABLE_SPECS: Record<string, TableSpec> = {
   credit_recovery_items: {
     idColumn: "id",
     columns: ["id", "reservation_id", "state"],
+  },
+  // Added by migration 0176 (BP06 #374): the account-level resolution registry — one
+  // append-only row per authorized disposal command an operator made on a payer account,
+  // written by billing/account-resolution.ts and deleted by nothing (it is the idempotency
+  // answer a replayed command reads and the refund ceiling's prior history). Not a legacy
+  // billing table — the classification never names it, and 21.5's estate wall keeps
+  // refusing it as a deletion target — but its CASCADE edge into billing_customers is an
+  // edge a customer candidate's deletion travels, so the probe universe knows the child
+  // like the 0145/0147 one-hop entries above.
+  billing_account_resolutions: {
+    idColumn: "id",
+    columns: ["id", "external_customer_id"],
+  },
+  // The rest of the upstream children 0163 (#436) restored around the estate, same rule:
+  // the catalog's edges out of the estate are edges a candidate's deletion travels, so the
+  // probe universe knows each child. The account's own state and tenant mapping ride the
+  // customer's CASCADE like payer_accounts itself does; the per-call attribution rides its
+  // hold's CASCADE exactly like the 0145 attribution row.
+  billing_credit_accounts: {
+    idColumn: "id",
+    columns: ["id", "external_customer_id"],
+  },
+  billing_customer_mappings: {
+    idColumn: "tenant_id",
+    columns: ["tenant_id", "external_customer_id"],
+  },
+  billing_call_attributions: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id"],
+  },
+  // The settlement and job family the later migrations added: NO ACTION children of the
+  // holds and their ledger lines (0179/0181/0188/0189/0194/0195/0197-0199, 0204-0207) —
+  // probed for the blockedBy pass, protected by table in protectionOf — plus the
+  // dimension breakdown (0189), a CASCADE child of a ledger line that rides its deletion.
+  async_jobs: {
+    idColumn: "job_id",
+    columns: ["job_id", "reservation_id"],
+  },
+  batch_jobs: {
+    idColumn: "batch_id",
+    columns: ["batch_id", "reservation_id"],
+  },
+  credit_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_async_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_speech_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_batch_settlement_details: {
+    idColumn: "item_id",
+    columns: ["item_id", "ledger_id"],
+  },
+  realtime_units: {
+    idColumn: "unit_id",
+    columns: ["unit_id", "reservation_id"],
+  },
+  tool_call_charges: {
+    idColumn: "charge_id",
+    columns: ["charge_id", "reservation_id"],
+  },
+  credit_settlement_dimension_breakdown: {
+    idColumn: "ledger_id",
+    idColumns: ["ledger_id", "dimension"],
+    columns: ["ledger_id", "dimension"],
   },
 };
 
@@ -419,6 +495,127 @@ const DECLARED_EDGES: {
     parentColumn: "id",
     onDelete: "cascade",
   },
+  // 0176 (BP06 #374): the resolution registry's account key, the one-hop shape again —
+  // with the difference that its rows are operator decision records, not the deleted
+  // account's own test data: protectionOf keeps them off every candidate's cascade.
+  {
+    childTable: "billing_account_resolutions",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  // 0163 (#436) restored the rest of the upstream children around the estate: the account
+  // state, the tenant mapping and the per-call attribution ride CASCADE edges like the
+  // estate's own children do.
+  {
+    childTable: "billing_credit_accounts",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_customer_mappings",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_call_attributions",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  // The settlement and job family (0179/0181/0188/0189/0194/0195/0197-0199): NO ACTION
+  // children — the database refuses the parent's deletion while they stand, which is the
+  // blockedBy pass's own subject — plus the dimension breakdown's CASCADE.
+  {
+    childTable: "async_jobs",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "batch_jobs",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_async_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_async_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_speech_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_speech_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_batch_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "realtime_units",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "tool_call_charges",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_dimension_breakdown",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
 ];
 
 const ON_DELETE_BY_CODE: Record<string, RelationFkEdge["onDelete"]> = {
@@ -433,6 +630,40 @@ const KEEP_CLASSES: ReadonlySet<RowClass> = new Set<RowClass>([
   "company_history",
   "personal_records",
   "unknown_owner",
+]);
+
+/**
+ * Out-of-estate children a candidate's deletion can reach but must never take with it —
+ * protected by table, because the classification cannot name rows in tables it does not
+ * cover (its verdicts are the legacy estate's four, nothing else):
+ *
+ * - `billing_account_resolutions` (0176, BP06 #374): the append-only registry of every
+ *   authorized disposal command an operator made on a payer account — the idempotency
+ *   answer a replayed command reads and the refund ceiling's prior history. Each row is
+ *   AC18's "financial history", not the deleted account's own test data, and nothing in
+ *   the system ever deletes one: no candidate's cascade may either.
+ * - the settlement and job family (`async_jobs`, `batch_jobs`, `credit_settlement_details`,
+ *   `credit_async_settlement_details`, `credit_speech_settlement_details`,
+ *   `credit_batch_settlement_details`, `realtime_units`, `tool_call_charges`): NO ACTION
+ *   children of the holds and their ledger lines. The database itself refuses the parent's
+ *   deletion while they stand, and the executor deletes only estate rows children-first —
+ *   so a candidate blocked behind out-of-estate rows is pulled here, in the manifest, with
+ *   the blocking rows named, instead of being discovered as an FK error mid-execution.
+ *
+ * The other upstream children (the account state, the tenant mapping, the call attribution,
+ * the dimension breakdown) are the deleted records' own data: they ride the cascade,
+ * enumerated in the scope, like the estate's own children.
+ */
+const PROTECTED_OUTSIDE_ESTATE: ReadonlySet<string> = new Set([
+  "billing_account_resolutions",
+  "async_jobs",
+  "batch_jobs",
+  "credit_settlement_details",
+  "credit_async_settlement_details",
+  "credit_speech_settlement_details",
+  "credit_batch_settlement_details",
+  "realtime_units",
+  "tool_call_charges",
 ]);
 
 /** A probed legacy row: its identity and the columns traversal needs. */
@@ -463,7 +694,9 @@ async function probeRows(
   );
   return rows.map((row) => ({
     table,
-    recordId: String(row[spec.idColumn]),
+    recordId: (spec.idColumns ?? [spec.idColumn])
+      .map((column) => String(row[column]))
+      .join("/"),
     cols: Object.fromEntries(
       spec.columns.map((column) => [
         column,
@@ -867,6 +1100,7 @@ export async function evaluateCleanupRelations(
           : "external_payment_order_open";
       }
       if (mappingKeptIds.has(key)) return "attribution_kept";
+      if (PROTECTED_OUTSIDE_ESTATE.has(row.table)) return "retained";
       if (KEEP_CLASSES.has(classOf(row)) || isLiveInFlight(row))
         return "retained";
       return null;
