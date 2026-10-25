@@ -137,15 +137,32 @@ function directDottedToolName(
   // https://API.ANTHROPIC.COM dials the same public API. A base URL that
   // cannot even parse is not the public API — pass it through and let the
   // dial fail on it as it does today, rather than answer a URL question
-  // with a tool-name refusal.
-  let dialed: string;
+  // with a tool-name refusal. One alias of these hosts survives even that
+  // normalization: a single trailing dot is the legal FQDN terminator, and
+  // https://api.openai.com./v1 dials the public API as surely as the
+  // dotless host (F01-R12-M1) — strip exactly that one dot from the parsed
+  // hostname and judge the URL rebuilt from its parsed parts, so a second
+  // dot, any other hostname, credentials, an explicit port, and the path
+  // all keep the verdicts they had before.
+  let dialed: URL;
   try {
-    dialed = new Request(url).url;
+    dialed = new URL(new Request(url).url);
   } catch {
     return undefined;
   }
+  const normalized = (
+    `${dialed.protocol}//` +
+    (dialed.username || dialed.password
+      ? `${dialed.username}:${dialed.password}@`
+      : "") +
+    dialed.hostname.replace(/\.$/, "") +
+    (dialed.port ? `:${dialed.port}` : "") +
+    dialed.pathname +
+    dialed.search +
+    dialed.hash
+  ).toLowerCase();
   if (
-    dialed.toLowerCase() !==
+    normalized !==
     (anthropic
       ? DIRECT_ANTHROPIC_MESSAGES_URL
       : DIRECT_OPENAI_CHAT_COMPLETIONS_URL)
