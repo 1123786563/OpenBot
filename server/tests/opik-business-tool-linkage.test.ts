@@ -40,7 +40,7 @@ import { context, trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { firstValueFrom, Observable, toArray } from "rxjs";
-import { describe, expect, test } from "../../tests/support/e2e-compat";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
 import { runUpstreamIdentity } from "../src/ai-observability/opik-http";
