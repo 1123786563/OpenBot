@@ -30,11 +30,13 @@
  *
  * What this module does NOT own: the DirectoryReadGate (T02.11 / read-gate.ts,
  * interfaces §3.3), the executor's finalizer (T02.08) and any route or
- * configuration wiring. It also performs no DML — advancing the row is the M4
- * switch's transaction (T08/P22), not a side effect of a read.
+ * configuration wiring. The runtime gates also perform no DML — advancing the
+ * row is never a side effect of a read. The one write this module owns is the
+ * migration seam's M2 pause CAS (T02.14, below); the M4 switch remains T08/
+ * P22's transaction, not something this module can perform.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { authAuthorityStates } from "../../db/schema";
 import type { DirectoryTx, Version } from "./contracts";
 
@@ -102,6 +104,114 @@ export interface MultiTenantReleaseGate {
 
 export type VerifiedDirectoryAuthority = DirectoryAuthority &
   MultiTenantReleaseGate;
+
+/**
+ * The offline migration tool's authority seam (T02.14 / #536, the M2 slice of
+ * the original P25 tooling; interfaces §3.3, design §13.2 "M2 停写与回填").
+ *
+ * The runtime gates above only ever READ the state; this seam is the one
+ * writer this slice owns: the M2 stop-write CAS. It advances the singleton row
+ * from (M1, legacy, v) to (M2, paused, v+1) inside the migration tool's own
+ * transaction, comparing the caller's expected version exactly like
+ * `requireWrite` does — a stale plan never pauses, an already-paused or
+ * post-switch state is never re-paused, and the transition never touches the
+ * release flag (the pause and the release stay independent even here). The M4
+ * switch remains T08/P22's transaction; nothing in this seam can perform it.
+ */
+export interface DirectoryMigrationAuthority {
+  /**
+   * The M2 stop-write transition: (M1, legacy, expectedVersion) →
+   * (M2, paused, expectedVersion + 1), returned as the new state. Any other
+   * persisted state refuses with AUTHORITY_TRANSITION_REFUSED; a version
+   * mismatch refuses with AUTHORITY_VERSION_CONFLICT — never a re-plan.
+   */
+  pauseForBackfill(
+    tx: DirectoryTx,
+    expectedVersion: Version,
+  ): Promise<AuthorityState>;
+}
+
+/** The persisted state is not the M1/legacy origin the pause transition requires. */
+export const AUTHORITY_TRANSITION_REFUSED = "AUTHORITY_TRANSITION_REFUSED";
+
+/**
+ * The migration tool's pause seam. The factory is separate from
+ * `createDirectoryAuthority` on purpose: the runtime authority the app mounts
+ * never grows a pause capability, and the offline tool never gets the runtime
+ * gates' job.
+ */
+export function createDirectoryMigrationAuthority(): DirectoryMigrationAuthority {
+  return Object.freeze({
+    pauseForBackfill,
+  });
+}
+
+/**
+ * The M2 stop-write CAS (T02.14, design §13.2 "M2 停写与回填"). The transition
+ * is closed: only a persisted (M1, legacy) row at exactly the caller's
+ * expected version advances to (M2, paused, version+1). The UPDATE re-checks
+ * the origin in its WHERE clause, so a state that moved between the read and
+ * the write refuses as a CAS conflict instead of overwriting the other
+ * writer's transition. The release flag is never touched: pausing directory
+ * writes and releasing multi-tenancy are independent even inside the one
+ * transaction that performs the pause.
+ */
+async function pauseForBackfill(
+  tx: DirectoryTx,
+  expectedVersion: Version,
+): Promise<AuthorityState> {
+  requireVersion(expectedVersion, "expectedVersion");
+  if (expectedVersion >= 9007199254740991) {
+    throw refuse(
+      AUTHORITY_VERSION_UNSAFE,
+      `the pause would advance authority version ${expectedVersion} past the safe-integer Version domain; refusing rather than wrapping`,
+    );
+  }
+  assertDirectoryTransaction(tx);
+  const state = await read(tx);
+  if (state.phase !== "M1" || state.directoryAuthority !== "legacy") {
+    throw refuse(
+      AUTHORITY_TRANSITION_REFUSED,
+      `the M2 stop-write transition starts from (M1, legacy), but the transaction reads (phase ${state.phase}, directory authority ${state.directoryAuthority}) at version ${state.authorityVersion}; the pause never re-plans against a state it does not own`,
+    );
+  }
+  if (state.authorityVersion !== expectedVersion) {
+    throw refuse(
+      AUTHORITY_VERSION_CONFLICT,
+      `the pause was planned against authority version ${expectedVersion}, but the transaction reads ${state.authorityVersion}; refusing the transition instead of re-planning against a state the caller did not authorize`,
+    );
+  }
+  const updated = await tx
+    .update(authAuthorityStates)
+    .set({
+      phase: "M2",
+      directoryAuthority: "paused",
+      authorityVersion: expectedVersion + 1,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(authAuthorityStates.id, AUTHORITY_ROW_ID),
+        eq(authAuthorityStates.authorityVersion, expectedVersion),
+        eq(authAuthorityStates.phase, "M1"),
+        eq(authAuthorityStates.directoryAuthority, "legacy"),
+      ),
+    )
+    .returning({
+      authorityVersion: authAuthorityStates.authorityVersion,
+      phase: authAuthorityStates.phase,
+      directoryAuthority: authAuthorityStates.directoryAuthority,
+      multiTenantReleased: authAuthorityStates.multiTenantReleased,
+    });
+  const row = updated[0];
+  if (!row) {
+    throw refuse(
+      AUTHORITY_VERSION_CONFLICT,
+      `the pause raced with another writer: the (M1, legacy, version ${expectedVersion}) origin the transition planned against is no longer the persisted state; refusing instead of overwriting the other writer's transition`,
+    );
+  }
+  return parseState(row);
+}
 
 /*
  * Stable refusal codes. Every one of them is a 503 in the HTTP projection of
