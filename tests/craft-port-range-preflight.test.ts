@@ -6,12 +6,14 @@ import {
   expectedComposeProject,
   type LsofSnapshot,
   lsofSnapshotFromSpawn,
+  mergeProcessEnvOverDotEnv,
   type ProcessListen,
   parseDockerPortLines,
   parseDockerPortsField,
   parseDotEnv,
   parseLsofFOutput,
   publishedSpanSummary,
+  resolvePortRange,
   runPreflightCli,
 } from "../scripts/craft-port-range-preflight";
 import { expect, test } from "./support/e2e-compat";
@@ -698,4 +700,129 @@ test("invalid value suppresses the unset-default note for the same key", () => {
   );
   expect(endBad.code).toBe(2);
   expect(text(endBad)).not.toContain("未设置");
+});
+
+/*
+ * ── 终审整改新增（C-F1/C-F2）──────────────────────────────────────────────
+ */
+
+/**
+ * C-F1：只设 START 且高于默认 END → 默认合成的最终段倒置（4011-3100），配置错误路径：
+ * 退出 2、报出实际生效两端与修正示例。健康空快照下也不得出现任何占用背书 —— 倒置段
+ * 连占用探测都不该进（修前 4011-3100 空循环零次即「均无占用」假绿）。
+ */
+test("START-only above the default END is rejected naming the effective endpoints", () => {
+  const outcome = runPreflightCli(
+    { OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "4011" },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(outcome.code).toBe(2);
+  const output = text(outcome);
+  expect(output).toContain("生效段 4011-3100");
+  expect(output).toContain("倒置");
+  expect(output).toContain("OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END=4020");
+  expect(output).not.toContain("均无占用");
+});
+
+/** C-F1 反向：只设 END 且低于默认 START → 合成段 3010-3000 倒置，同样拒绝。 */
+test("END-only below the default START is rejected naming the effective endpoints", () => {
+  const outcome = runPreflightCli(
+    { OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3000" },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(outcome.code).toBe(2);
+  const output = text(outcome);
+  expect(output).toContain("生效段 3010-3000");
+  expect(output).toContain("倒置");
+  expect(output).not.toContain("均无占用");
+});
+
+/**
+ * C-F1 边界保留：合法单端回退仍通过并提示（END=3098 → 3010-3098，与既定「单端合成 +
+ * 提示」决定一致），倒置拒绝只针对合成后 START>END 的形态。
+ */
+test("END-only inside the default START keeps the synthesized pass with a note", () => {
+  const outcome = runPreflightCli(
+    { OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "3098" },
+    { docker: () => dockerOk(), lsof: () => lsofOk() },
+    "openbot",
+  );
+  expect(outcome.code).toBe(0);
+  const output = text(outcome);
+  expect(output).toContain("3010-3098");
+  expect(output).toContain("按默认 3010");
+  expect(output).toContain("成对设置");
+});
+
+/**
+ * C-F1 验收复用路径：倒置范围进 checkRangeCovered 必须拒绝 —— 空循环会零次通过，把
+ * 非法范围读成「全覆盖」（craft-preview-acceptance 的 0b 步正常先经 resolvePortRange
+ * 拦截，这里守住比较函数自身不接这个形态）。
+ */
+test("checkRangeCovered rejects an inverted range instead of vacuously passing", () => {
+  const coverage = checkRangeCovered({ start: 3100, end: 3011 }, [3011, 3012]);
+  expect(coverage.ok).toBe(false);
+});
+
+/**
+ * C-F2 主形态：.env 双键非空 + shell 双键显式空 → 合并后按 compose `:-` 语义落默认
+ * 3010-3100（实证 P2：docker compose config 同环境展开同为 3010-3100）。修前的合并
+ * 丢弃空串、退回 .env 的 4011-4040 —— 预检查的段与 compose 发布的段不同源。
+ */
+test("empty shell values override .env so the compose defaults apply", () => {
+  const merged = mergeProcessEnvOverDotEnv(
+    {
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "4011",
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "4040",
+    },
+    {
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "",
+      OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "",
+    },
+  );
+  const resolution = resolvePortRange(merged);
+  expect(resolution.errors).toEqual([]);
+  expect(resolution.range).toEqual({ start: 3010, end: 3100 });
+});
+
+/**
+ * C-F2 单键空：START 空落默认 3010，END 仍取 .env 的 4040（实证 P3：compose 展开同为
+ * 3010-4040）；对照键保持 undefined 时 .env 值原样透传（P1：4011-4040）。
+ */
+test("single empty shell key overrides only that key", () => {
+  const dotEnv = {
+    OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "4011",
+    OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END: "4040",
+  };
+  const singleEmpty = mergeProcessEnvOverDotEnv(dotEnv, {
+    OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START: "",
+  });
+  expect(resolvePortRange(singleEmpty).range).toEqual({
+    start: 3010,
+    end: 4040,
+  });
+
+  const untouched = mergeProcessEnvOverDotEnv(dotEnv, {});
+  expect(resolvePortRange(untouched).range).toEqual({ start: 4011, end: 4040 });
+});
+
+/**
+ * C-F2：COMPOSE_PROJECT_NAME 空值按实证对拍（P4/P5，Compose v5.5.0）—— shell 空串同样
+ * 覆盖 .env 值，覆盖后的空值由 expectedComposeProject 回退目录派生，与 compose 实际
+ * project 一致；非空照旧优先（P1）。
+ */
+test("COMPOSE_PROJECT_NAME empty shell override falls back to the directory", () => {
+  const overridden = mergeProcessEnvOverDotEnv(
+    { COMPOSE_PROJECT_NAME: "dot-env-project" },
+    { COMPOSE_PROJECT_NAME: "" },
+  );
+  expect(expectedComposeProject(overridden, "OpenBot")).toBe("openbot");
+
+  const kept = mergeProcessEnvOverDotEnv(
+    { COMPOSE_PROJECT_NAME: "dot-env-project" },
+    {},
+  );
+  expect(expectedComposeProject(kept, "OpenBot")).toBe("dot-env-project");
 });

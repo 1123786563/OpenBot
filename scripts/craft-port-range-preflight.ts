@@ -6,9 +6,10 @@
  * 占用者，几十个端口的段没人想手工二分。本脚本在 up 之前把「段内每个端口 × 两族」的
  * 占用者找出来，连同两条可复跑的解决步骤一起给出（改段 / 停占用）。
  *
- * 解析来源与 compose 插值同序：进程环境优先，其次仓库根 `.env`（docker compose 的 .env
- * 发现位置），缺省回退 3010/3100 —— 与 docker-compose.yml 的 `${...:-3010}-${...:-3100}`
- * 及 server/src/craft/config.ts 的服务端默认三方同一事实源，无 env 时发布段 = 分配段。
+ * 解析来源与 compose 插值同序：进程环境优先（已定义即覆盖，空串也算已设置，实证 Compose
+ * v5.5.0 对拍见 Run verification/F1/1），其次仓库根 `.env`（docker compose 的 .env 发现
+ * 位置），缺省回退 3010/3100 —— 与 docker-compose.yml 的 `${...:-3010}-${...:-3100}` 及
+ * server/src/craft/config.ts 的服务端默认三方同一事实源，无 env 时发布段 = 分配段。
  *
  * 「自己人」判定：占用容器须同时满足 compose label `com.docker.compose.service=
  * agent-sandbox` 与 `com.docker.compose.project` == 本栈预期 project（COMPOSE_PROJECT_
@@ -153,6 +154,27 @@ export function parseDotEnv(text: string): Record<string, string> {
   return parsed;
 }
 
+/**
+ * 进程环境覆盖仓库根 `.env` 的合并（C-F2，实证对拍 Compose v5.5.0，Run verification/F1/1）：
+ * 键已定义（含空串）即覆盖，只有 undefined 才落 `.env` —— compose 的优先级里空值同样是
+ * 「已设置」。覆盖后的空串由下游各自展开成 compose 同款结果：端口两键按 `:-` 语义落默认
+ * （resolvePortRange 的 readKey 把空串当未设置 → 3010/3100），COMPOSE_PROJECT_NAME 落目录
+ * 派生（expectedComposeProject 对空值回退，实证 P4：shell 空 + .env=dot-env-project 时
+ * compose 实际 project 即目录名）。修前的 `value !== ""` 合并让「.env=4011/4040 + shell 双键
+ * 空」退回 .env 段，compose 却发布默认段 —— 预检背书了没检查的段（终审 C-F2）。
+ */
+export function mergeProcessEnvOverDotEnv(
+  dotEnv: Record<string, string>,
+  processEnv: Record<string, string | undefined>,
+): Record<string, string> {
+  const merged: Record<string, string> = { ...dotEnv };
+  for (const key of [PORT_START_KEY, PORT_END_KEY, "COMPOSE_PROJECT_NAME"]) {
+    const value = processEnv[key];
+    if (value !== undefined) merged[key] = value;
+  }
+  return merged;
+}
+
 export interface RangeResolution {
   /** errors 非空时为 null：非法配置下不存在「生效段」。 */
   range: PortRange | null;
@@ -162,8 +184,9 @@ export interface RangeResolution {
 
 /**
  * 段解析与校验（纯函数，预检 CLI 与 craft-preview-acceptance 共用）。只设一端不算错：
- * 用另一端默认并提示合并后的段；倒置 / 非整数 / 越界才是错，错误文案点名键与值并给
- * 修正示例 —— AC2 的「可定位」从配置错误就开始，不等到撞上端口。
+ * 用另一端默认并提示合并后的段；倒置（作用于默认合成后的最终两端 —— 只设一端合出的段
+ * 同样可能倒置，终审 C-F1）/ 非整数 / 越界才是错，错误文案点名键与值并给修正示例 ——
+ * AC2 的「可定位」从配置错误就开始，不等到撞上端口。
  */
 export function resolvePortRange(
   env: Record<string, string | undefined>,
@@ -197,7 +220,26 @@ export function resolvePortRange(
   const end = readKey(PORT_END_KEY, env[PORT_END_KEY]);
   const startFinal = start.port ?? DEFAULT_PORT_START;
   const endFinal = end.port ?? DEFAULT_PORT_END;
-  // 只在「真的只设置了一端且无任何错误」时提示；同一键已报错就不再说「未设置」（R2-F6）。
+  // 倒置校验作用于「默认合成后的最终两端」（C-F1）：只在原始双显式值上校验会让
+  // START=4011 单端 → 4011-3100 以空循环「零个端口均无占用」假绿。合成段倒置同样是
+  // 配置错误：range 为 null，CLI 走 code 2，不进入占用探测。
+  if (startFinal > endFinal) {
+    if (start.port !== null && end.port !== null) {
+      errors.push(
+        `端口段倒置：${PORT_START_KEY}=${start.port} > ${PORT_END_KEY}=${end.port}；修正示例：${PORT_START_KEY}=${end.port}、${PORT_END_KEY}=${start.port}`,
+      );
+    } else if (start.port !== null) {
+      errors.push(
+        `端口段倒置：${PORT_START_KEY}=${start.port}，${PORT_END_KEY} 未设置按默认 ${DEFAULT_PORT_END}，生效段 ${startFinal}-${endFinal} 倒置；修正示例：${PORT_START_KEY}=${start.port}、${PORT_END_KEY}=${start.port + 9}`,
+      );
+    } else if (end.port !== null) {
+      errors.push(
+        `端口段倒置：${PORT_END_KEY}=${end.port}，${PORT_START_KEY} 未设置按默认 ${DEFAULT_PORT_START}，生效段 ${startFinal}-${endFinal} 倒置；修正示例：${PORT_START_KEY}=${end.port - 9}、${PORT_END_KEY}=${end.port}`,
+      );
+    }
+  }
+  // 只在「真的只设置了一端且无任何错误」时提示；同一键已报错就不再说「未设置」（R2-F6），
+  // 合成段倒置时也不输出「按默认使用」note —— 那是对非法配置的背书（C-F1）。
   if (errors.length === 0 && start.present && !end.present) {
     notes.push(
       `只设置了 ${PORT_START_KEY}=${start.port}；${PORT_END_KEY} 未设置，按默认 ${DEFAULT_PORT_END} 使用，生效段 ${startFinal}-${endFinal}（建议在 .env 成对设置两键）`,
@@ -206,11 +248,6 @@ export function resolvePortRange(
   if (errors.length === 0 && end.present && !start.present) {
     notes.push(
       `只设置了 ${PORT_END_KEY}=${end.port}；${PORT_START_KEY} 未设置，按默认 ${DEFAULT_PORT_START} 使用，生效段 ${startFinal}-${endFinal}（建议在 .env 成对设置两键）`,
-    );
-  }
-  if (start.port !== null && end.port !== null && start.port > end.port) {
-    errors.push(
-      `端口段倒置：${PORT_START_KEY}=${start.port} > ${PORT_END_KEY}=${end.port}；修正示例：${PORT_START_KEY}=${end.port}、${PORT_END_KEY}=${start.port}`,
     );
   }
   if (errors.length === 0 && endFinal - startFinal + 1 > RANGE_SIZE_WARNING) {
@@ -229,11 +266,14 @@ export function resolvePortRange(
  * AC3 一致性核验的纯比对：配置段每个端口都在运行中容器的发布集合里才算一致。
  * 严格 ⊆ 而非 ==：容器多发布几个端口（别的 compose project、更宽的旧段）不阻塞验收，
  * 配置里有端口没发布才是「栈与配置不一致」—— 正是 AC3 要明确报错的形态。
+ * 倒置段按拒绝兜底（C-F1）：正常调用方在 resolvePortRange 之后不会送倒置段进来，但
+ * 空循环会零次通过，把非法范围读成「全覆盖」—— 比较函数自己不接这个形态。
  */
 export function checkRangeCovered(
   range: PortRange,
   published: Iterable<number>,
 ): { ok: boolean; missing: number[] } {
+  if (range.start > range.end) return { ok: false, missing: [] };
   const set = new Set(published);
   const missing: number[] = [];
   for (let port = range.start; port <= range.end; port++) {
@@ -711,19 +751,17 @@ export function dockerPortPublishedPorts(
 
 if (import.meta.main) {
   // 进程环境优先（compose 插值同序），其次仓库根 .env（与 compose 的发现位置一致），
-  // 两键缺省回退 3010/3100。只透传三键（段两键 + COMPOSE_PROJECT_NAME）：整个
+  // 两键缺省回退 3010/3100。合并经 mergeProcessEnvOverDotEnv：undefined 才落 .env，
+  // 空串也算已设置（C-F2 对拍结论）。只透传三键（段两键 + COMPOSE_PROJECT_NAME）：整个
   // process.env 不是 .env 语义。⚠ 调用方必须用 `bun --no-env-file`：Bun 默认会把
   // cwd 的 .env/.env.local/.env.<NODE_ENV> 预载进 process.env，其中 .local 变体是
   // compose 不认的事实源 —— 预载后 CLI 会拿「compose 不会用的值」当最高优先级来源
   // （R2-F1）。start.sh 与文档命令都已带 --no-env-file。
   const envPath = join(dirname(fileURLToPath(import.meta.url)), "..", ".env");
-  const env: Record<string, string> = existsSync(envPath)
+  const dotEnv = existsSync(envPath)
     ? parseDotEnv(readFileSync(envPath, "utf8"))
     : {};
-  for (const key of [PORT_START_KEY, PORT_END_KEY, "COMPOSE_PROJECT_NAME"]) {
-    const value = process.env[key];
-    if (value !== undefined && value !== "") env[key] = value;
-  }
+  const env = mergeProcessEnvOverDotEnv(dotEnv, process.env);
   const repoRootDirName = basename(dirname(envPath));
   const outcome = runPreflightCli(
     env,
