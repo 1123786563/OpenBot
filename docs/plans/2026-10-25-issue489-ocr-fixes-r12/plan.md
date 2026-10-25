@@ -53,3 +53,11 @@ R13（r13-adjudication.md）3 有效 medium：
 **T30（F15-3，test-only）**：新增 `server/tests/scrub-command.test.ts`（或并入既有套件，按 runner 归属）常驻钉住 scrub 对抗边界：ReDoS 探针（`""`×30、`-fa`×30、粗粒度 <2s 断言+输出恒等）、`-p;whoami` 保留 whoami、未闭合引号不吞第二行、`pa\;ss` 整词、o'brien 回退、成对引号段整词、`fixture-pass-` 整词、SSHPASS 首元素放行 `-`。owned=该测试文件（恰 1 M 新增或含 scrub.ts 零改动）。门：新套件全绿、enterprise 108/108、otel 4/4、tsc 3 BASE、biome。
 
 流程：并行→R1→串行集成→F16 收官门→R16 全量→f01-r12→V03/C01。
+
+## 附录五：F17 波 T31/T32（R16 终裁追加，2026-10-25）
+
+**T31（F16-1 部分接受，doc-only）**：scrub.ts QUOTE_ARMS 注释段改写为真话：删除不成立的 shell 论断（"a quote that spans lines is a quote the shell itself would not keep to one command"），如实记录残留窗口（闭合于后续行的引号密钥只脱敏到行界、余段留存；跨行配对与 F10-2 反吞并存在无解张力、该取舍为有意选择；PEM/令牌有 TOKEN_SHAPES 兜底）。零代码行改动。owned=scrub.ts（注释）。
+
+**T32（F16-2）**：`mastra/tools.ts` 新增 `VALID_BRIDGE_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/`；`frontend-tools.ts` 客户端声明名改用严格集（挂载即丢弃+结构化诊断=改动前 fail-soft 行为；brokered/granted 维持 VALID_TOOL_NAME 点号放行+F11-1 守卫）；注释记录两 charset 的分工。测试：客户端带点名声明→丢弃+诊断+聊天继续（RED：现树挂载/直连形态守卫 400 形）；合法名声明挂载不变；brokered 点分名行为不变（seam 51/51 零回退）。owned=tools.ts+frontend-tools.ts+相关测试。
+
+流程：并行→R1→串行集成→F17 收官门→R17 全量→f01-r12→V03/C01。
