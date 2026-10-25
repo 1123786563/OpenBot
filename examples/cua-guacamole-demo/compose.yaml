@@ -1,0 +1,35 @@
+services:
+  desktop:
+    platform: linux/amd64
+    build: ./desktop
+    environment:
+      DISPLAY: :0
+      XDG_RUNTIME_DIR: /tmp/runtime-demo
+    expose:
+      - "5900"
+    networks:
+      - desktop
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    networks:
+      - desktop
+
+  guacamole:
+    image: guacamole/guacamole:1.6.0
+    depends_on:
+      - guacd
+      - desktop
+    environment:
+      GUACD_HOSTNAME: guacd
+      WEBAPP_CONTEXT: ROOT
+      GUACAMOLE_HOME: /etc/guacamole
+    volumes:
+      - ./guacamole/user-mapping.xml:/etc/guacamole/user-mapping.xml:ro
+    ports:
+      - "127.0.0.1:18081:8080"
+    networks:
+      - desktop
+
+networks:
+  desktop:

@@ -43,8 +43,10 @@ const PROBE_OK_BODY = '{"authConfig":{"admin":{"exists":true}}}';
 /** A manifest entry that is not ours, so the list is never trivially empty. */
 const OTHER_PLUGIN = { name: "bifrost-anthropic", version: "1.2.3" };
 
+// `count` alongside `plugins` is the real manifest's shape (R5-F1/R9-F1); the parser reads
+// only `plugins`, so the stubs once omitted it without any test noticing.
 function manifestBody(entries: Array<{ name: string; version: string }>) {
-  return JSON.stringify({ plugins: entries });
+  return JSON.stringify({ plugins: entries, count: entries.length });
 }
 
 function extensionEntry(version: string) {
