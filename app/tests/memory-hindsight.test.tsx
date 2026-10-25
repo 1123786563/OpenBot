@@ -273,6 +273,19 @@ function serving() {
       });
     }
     if (url === "/api/hindsight/judgments/j1" && method === "PATCH") {
+      // FIX-OCR3 r1 (R1-F1): the gate refuses sensitive EDIT text without its second look.
+      if (
+        String(body?.content).includes("salary") &&
+        body?.confirmSensitive !== true
+      ) {
+        return Response.json(
+          {
+            error:
+              "Medical, financial and customer information is remembered only when you ask for it yourself and confirm a second time.",
+          },
+          { status: 400 },
+        );
+      }
       candidates = [];
       adopted = [
         adoptedJudgment("j1", body.content as string, "edited"),
@@ -804,4 +817,52 @@ test("a sensitive confirm refuses once and the explicit second look adopts it", 
   expect(
     await view.findByText("No judgments are waiting for review."),
   ).toBeTruthy();
+});
+
+/*
+ * FIX-OCR3 r1 (R1-F1): the EDIT path's second look. The dialog's button was wired but both
+ * call sites dropped the confirmSensitive argument, so the retry re-sent the same body and
+ * the refusal looped — the exact dead end O3-M4 exists to close, one path over. The retry
+ * must carry {content, confirmSensitive: true} on the PATCH, exactly as the correct path
+ * does on its POST.
+ */
+test("a sensitive judgment edit refuses once and the second look completes the edit", async () => {
+  serving();
+  const view = draw(<JudgmentReviewSections />);
+  fireEvent.click(await view.findByRole("button", { name: "Edit" }));
+  const user = userEvent.setup({ document });
+  const field = (await view.findByRole("textbox", {
+    name: "Judgment",
+  })) as HTMLTextAreaElement;
+  await user.type(field, " salary history.");
+  fireEvent.click(view.getByRole("button", { name: "Save" }));
+  // The first refusal lands inside the dialog, with the gate's sentence.
+  const retry = await view.findByRole("button", { name: "Keep it anyway" });
+  expect(await view.findByText(/confirm a second time/)).toBeTruthy();
+  // And the first PATCH went out WITHOUT the second confirmation.
+  expect(
+    writes.some(
+      (write) =>
+        write.request === "PATCH /api/hindsight/judgments/j1" &&
+        (write.body as { confirmSensitive?: unknown } | undefined)
+          ?.confirmSensitive === undefined,
+    ),
+  ).toBe(true);
+  fireEvent.click(retry);
+  // The retry carries the person's explicit second confirmation — no loop.
+  await waitFor(() =>
+    expect(writes).toContainEqual({
+      request: "PATCH /api/hindsight/judgments/j1",
+      body: {
+        content: "Prefers written summaries over calls. salary history.",
+        confirmSensitive: true,
+      },
+    }),
+  );
+  expect(
+    await view.findByText(
+      "Prefers written summaries over calls. salary history.",
+    ),
+  ).toBeTruthy();
+  expect(view.getByText(/Edited /)).toBeTruthy();
 });

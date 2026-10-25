@@ -248,9 +248,15 @@ function CandidateRow({
           content={candidate.content}
           error={edit.error?.message ?? null}
           onClose={() => setEditing(false)}
-          onSave={(content) =>
+          onSave={(content, confirmSensitive) =>
             edit.mutate(
-              { id: candidate.id, input: { content } },
+              {
+                id: candidate.id,
+                input: {
+                  content,
+                  ...(confirmSensitive === true ? { confirmSensitive } : {}),
+                },
+              },
               {
                 onSuccess: () => setEditing(false),
               },
@@ -357,9 +363,15 @@ function AdoptedRow({
           content={judgment.content}
           error={edit.error?.message ?? null}
           onClose={() => setEditing(false)}
-          onSave={(content) =>
+          onSave={(content, confirmSensitive) =>
             edit.mutate(
-              { id: judgment.id, input: { content } },
+              {
+                id: judgment.id,
+                input: {
+                  content,
+                  ...(confirmSensitive === true ? { confirmSensitive } : {}),
+                },
+              },
               {
                 onSuccess: () => setEditing(false),
               },
