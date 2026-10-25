@@ -1,0 +1,54 @@
+{
+  "status": 200,
+  "body": {
+    "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+    "packageKey": "openbot/demo-skill",
+    "version": "1.0.0",
+    "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+    "revision": 3,
+    "generation": 1,
+    "status": "enabled",
+    "readiness": "ready",
+    "blockers": [],
+    "allowedActions": [
+      "plan",
+      "apply",
+      "grant",
+      "createExpert",
+      "disable",
+      "uninstall"
+    ],
+    "resources": [
+      {
+        "id": "summarize",
+        "kind": "skill",
+        "available": true
+      }
+    ],
+    "grants": [
+      {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "botId": "pkg-expert-cb5be50b-ddfd-4936-9598-375b8027e7c6",
+        "revision": 1,
+        "resources": [
+          {
+            "resourceId": "summarize",
+            "kind": "skill"
+          }
+        ]
+      }
+    ],
+    "latestPublishedVersion": "1.1.0",
+    "availableVersions": [
+      {
+        "version": "1.1.0",
+        "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4"
+      },
+      {
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e"
+      }
+    ],
+    "unknownDispatches": 0
+  }
+}

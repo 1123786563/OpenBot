@@ -1,0 +1,21 @@
+{
+  "status": 200,
+  "body": {
+    "planId": "888f6fd2-c5f3-4c92-98ce-7f0b691ccefa",
+    "operation": "install",
+    "packageKey": "openbot/demo-skill",
+    "version": "1.0.0",
+    "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+    "expectedRevision": null,
+    "expiresAt": "2026-10-25T03:04:20.929Z",
+    "resources": [
+      {
+        "id": "summarize",
+        "kind": "skill"
+      }
+    ],
+    "addedTools": [],
+    "removedTools": [],
+    "blockers": []
+  }
+}

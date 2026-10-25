@@ -1,0 +1,5 @@
+legacyCatalogue: {"status":200,"experts":9,"skills":11}
+legacyExpertInstall: {"status":201,"body":{"agentId":"agent_0d13fc63-43a1-4017-b45e-95e49838d69f","installed":true}}
+legacyExpertReinstall: {"status":200,"body":{"agentId":"agent_0d13fc63-43a1-4017-b45e-95e49838d69f","installed":true}}
+packageReadClosedGate: {"status":200,"body":{"items":[{"packageKey":"openbot/demo-skill","version":"1.1.0","displayName":"Demo Skill","summary":"Summarize a long note into a short, ordered brief.","category":"productivity","install":null,"installable":true,"blockers":[]},{"packageKey":"openbot/legacy-catalogue","version":"1.0.0","displayName":"OpenBot 内置目录","summary":"由旧市场目录导出的内置专家与技能（PKG11 迁移基线）。","category":"builtin","install":null,"installable":true,"blockers":[]}],"nextCursor":null}}
+packagePlanClosedGate: {"status":503,"body":{"error":{"code":"MARKETPLACE_ENTRY_DISABLED","message":"The package marketplace entry is disabled for this team."}}}
