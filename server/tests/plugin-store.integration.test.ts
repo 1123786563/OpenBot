@@ -8351,7 +8351,8 @@ describe("a vault read that fails on a query of this deployment's own", () => {
 /**
  * Research providers on the call path, at the only door a vendor has.
  *
- * R01 put the keyed Exa/Firecrawl entries in the catalogue and `tokenHeaderFor` beside it; R02 is
+ * R01 put the keyed Exa/Firecrawl entries in the catalogue and the header decision beside them —
+ * store.ts `deploymentTokenHeader`, the function the call path below actually consults. R02 is
  * where a deployment token actually leaves the building with the header the entry names. The wire
  * truth about header VALUES lives in `plugin-mcp-authorization.test.ts` against a bare local
  * server; what this file adds is the rest of the journey — catalogue entry, credential vault,

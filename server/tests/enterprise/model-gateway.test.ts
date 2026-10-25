@@ -2483,3 +2483,515 @@ test("Anthropic message_delta cannot finish while a content block remains open",
   expect(confirmed).toBe(0);
   expect(unknown).toBe(1);
 });
+
+test("a dotted tool name is refused before dispatch when the effective base URL is direct OpenAI", async () => {
+  // F11-1 (#489): the three direct forms — the unset default, the explicit
+  // `/v1`, and a trailing slash — all resolve to the same public chat URL,
+  // and each must refuse the mounted dotted name BEFORE any upstream dial:
+  // OpenAI's function-name charset rejects it with a whole-request 400.
+  for (const environment of [
+    {},
+    { OPENAI_BASE_URL: "https://api.openai.com/v1" },
+    { OPENAI_BASE_URL: "https://api.openai.com/" },
+  ]) {
+    let dialed = 0;
+    const gateway = createModelGateway(
+      deps({
+        environment,
+        fetch: (async () => {
+          dialed++;
+          return Response.json({
+            id: "x",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "answer" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+          });
+        }) as typeof fetch,
+      }) as never,
+    );
+    const response = await gateway.handle(
+      req({
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "github.get_current_user",
+              parameters: { type: "object" },
+            },
+          },
+        ],
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      error: { code: string; message?: string };
+    };
+    expect(body.error.code).toBe("MASTRA_TOOL_NAME_INVALID");
+    expect(body.error.message).toBe(
+      "github.get_current_user cannot be mounted on a direct-OpenAI provider (its function-name charset admits no dot)",
+    );
+    expect(dialed).toBe(0);
+  }
+});
+
+test("a dotted tool name is refused when the base URL spells the default port", async () => {
+  // F01-R11-M1 (#489): the dial normalizes its URL before connecting, and
+  // the HTTPS default port falls out there — `https://api.openai.com:443/…`
+  // connects as `https://api.openai.com/…`. The guard must reach its
+  // verdict in the dial's own terms; the resolver string verbatim let this
+  // form slip past into the whole-request 400 the guard exists to refuse.
+  let dialed = 0;
+  const gateway = createModelGateway(
+    deps({
+      environment: { OPENAI_BASE_URL: "https://api.openai.com:443/v1" },
+      fetch: (async () => {
+        dialed++;
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(400);
+  const body = (await response.json()) as { error: { code: string } };
+  expect(body.error.code).toBe("MASTRA_TOOL_NAME_INVALID");
+  expect(dialed).toBe(0);
+});
+
+test("a dotted tool name still rides a gateway base URL untouched", async () => {
+  // The variable's entire purpose: a gateway or OpenAI-compatible endpoint
+  // forwards minted names as-is, so the same mount that direct OpenAI
+  // refuses must dispatch unchanged behind a gateway base URL.
+  let dialedUrl = "";
+  let dialedTools: unknown;
+  const gateway = createModelGateway(
+    deps({
+      fetch: (async (url, init) => {
+        dialedUrl = String(url);
+        dialedTools = (JSON.parse(String(init?.body)) as { tools?: unknown })
+          .tools;
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(dialedUrl).toBe("https://gateway.example/v1/chat/completions");
+  expect(dialedTools).toEqual([
+    {
+      type: "function",
+      function: {
+        name: "github.get_current_user",
+        parameters: { type: "object" },
+      },
+    },
+  ]);
+});
+
+test("a dotted tool name still rides a gateway that spells an explicit port", async () => {
+  // A non-default port is a real part of the address — the dial's URL
+  // normalization keeps it — so an explicit-port gateway is no more direct
+  // OpenAI than the plain gateway above, and the guard must not fold it
+  // into the direct constant.
+  let dialedUrl = "";
+  let dialedTools: unknown;
+  const gateway = createModelGateway(
+    deps({
+      environment: { OPENAI_BASE_URL: "https://gateway.example:8443/v1" },
+      fetch: (async (url, init) => {
+        dialedUrl = String(url);
+        dialedTools = (JSON.parse(String(init?.body)) as { tools?: unknown })
+          .tools;
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(dialedUrl).toBe("https://gateway.example:8443/v1/chat/completions");
+  expect(dialedTools).toEqual([
+    {
+      type: "function",
+      function: {
+        name: "github.get_current_user",
+        parameters: { type: "object" },
+      },
+    },
+  ]);
+});
+
+test("a legal tool name still dials direct OpenAI untouched", async () => {
+  let dialedUrl = "";
+  const gateway = createModelGateway(
+    deps({
+      environment: {},
+      fetch: (async (url) => {
+        dialedUrl = String(url);
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: { name: "lookup_user", parameters: { type: "object" } },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(dialedUrl).toBe("https://api.openai.com/v1/chat/completions");
+});
+
+test("a dotted tool name is refused before dispatch when the effective base URL is direct Anthropic", async () => {
+  // T26 (#489, R13 F13-1): the F11-1 guard used to exempt the anthropic
+  // dial outright, but Anthropic's Messages tool-name charset
+  // (^a-zA-Z0-9_- up to 128) admits no dot either — the same four direct
+  // forms (unset default, explicit /v1, trailing slash, spelled-out
+  // default port) must each refuse the mounted dotted name BEFORE any
+  // upstream dial, not lose the whole request to the upstream charset.
+  for (const environment of [
+    {},
+    { ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1" },
+    { ANTHROPIC_BASE_URL: "https://api.anthropic.com/" },
+    { ANTHROPIC_BASE_URL: "https://api.anthropic.com:443/v1" },
+  ]) {
+    let dialed = 0;
+    const gateway = createModelGateway(
+      deps({
+        environment,
+        selectModel: async () => ({
+          model: { provider: "anthropic", defaultModel: "claude-fixed" },
+          credentialSecretRef: "credential-1",
+        }),
+        fetch: (async () => {
+          dialed++;
+          return Response.json({
+            id: "m",
+            content: [{ type: "text", text: "ok" }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          });
+        }) as typeof fetch,
+      }) as never,
+    );
+    const response = await gateway.handle(
+      req({
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "github.get_current_user",
+              parameters: { type: "object" },
+            },
+          },
+        ],
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      error: { code: string; message?: string };
+    };
+    expect(body.error.code).toBe("MASTRA_TOOL_NAME_INVALID");
+    expect(body.error.message).toBe(
+      "github.get_current_user cannot be mounted on a direct-Anthropic provider (its tool-name charset admits no dot)",
+    );
+    expect(dialed).toBe(0);
+  }
+});
+
+test("a dotted tool name still rides an Anthropic gateway base URL untouched", async () => {
+  // The anthropic arm judges only the public endpoint, exactly as the
+  // openai arm does: an ANTHROPIC_BASE_URL gateway forwards minted names
+  // as-is, so the same mount that direct Anthropic refuses must dispatch
+  // unchanged behind a gateway base URL.
+  let dialedUrl = "";
+  let dialedTools: unknown;
+  const gateway = createModelGateway(
+    deps({
+      environment: { ANTHROPIC_BASE_URL: "https://gateway.example/v1" },
+      selectModel: async () => ({
+        model: { provider: "anthropic", defaultModel: "claude-fixed" },
+        credentialSecretRef: "credential-1",
+      }),
+      fetch: (async (url, init) => {
+        dialedUrl = String(url);
+        dialedTools = (JSON.parse(String(init?.body)) as { tools?: unknown })
+          .tools;
+        return Response.json({
+          id: "m",
+          content: [{ type: "text", text: "ok" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(dialedUrl).toBe("https://gateway.example/v1/messages");
+  expect(dialedTools).toEqual([
+    { name: "github.get_current_user", input_schema: { type: "object" } },
+  ]);
+});
+
+test("a dotted tool name is refused when the base URL terminates the OpenAI host in a DNS trailing dot", async () => {
+  // T38 (#489, R12 F01-R12-M1): a single final dot is the legal FQDN
+  // terminator, and neither the resolver nor new Request(url).url drops it —
+  // yet https://api.openai.com./v1 dials the same public API as the dotless
+  // host (the equivalence class OBS-T22R1-1 saw coming, later curl-proved
+  // reachable), so the dotted mount gets the same named refusal before any
+  // dial instead of the whole-request 400 the guard exists to preempt.
+  let dialed = 0;
+  const gateway = createModelGateway(
+    deps({
+      environment: { OPENAI_BASE_URL: "https://api.openai.com./v1" },
+      fetch: (async () => {
+        dialed++;
+        return Response.json({
+          id: "x",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "answer" },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(400);
+  const body = (await response.json()) as {
+    error: { code: string; message?: string };
+  };
+  expect(body.error.code).toBe("MASTRA_TOOL_NAME_INVALID");
+  expect(body.error.message).toBe(
+    "github.get_current_user cannot be mounted on a direct-OpenAI provider (its function-name charset admits no dot)",
+  );
+  expect(dialed).toBe(0);
+});
+
+test("a dotted tool name is refused when the base URL terminates the Anthropic host in a DNS trailing dot", async () => {
+  // T38 (#489, R12 F01-R12-M1), anthropic arm: the trailing dot is the
+  // FQDN terminator for the other public host too —
+  // https://api.anthropic.com./v1 dials api.anthropic.com — so the
+  // anthropic dial refuses the dotted mount under the same normalization,
+  // exactly as the openai arm above does.
+  let dialed = 0;
+  const gateway = createModelGateway(
+    deps({
+      environment: { ANTHROPIC_BASE_URL: "https://api.anthropic.com./v1" },
+      selectModel: async () => ({
+        model: { provider: "anthropic", defaultModel: "claude-fixed" },
+        credentialSecretRef: "credential-1",
+      }),
+      fetch: (async () => {
+        dialed++;
+        return Response.json({
+          id: "m",
+          content: [{ type: "text", text: "ok" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        });
+      }) as typeof fetch,
+    }) as never,
+  );
+  const response = await gateway.handle(
+    req({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "github.get_current_user",
+            parameters: { type: "object" },
+          },
+        },
+      ],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  );
+  expect(response.status).toBe(400);
+  const body = (await response.json()) as {
+    error: { code: string; message?: string };
+  };
+  expect(body.error.code).toBe("MASTRA_TOOL_NAME_INVALID");
+  expect(body.error.message).toBe(
+    "github.get_current_user cannot be mounted on a direct-Anthropic provider (its tool-name charset admits no dot)",
+  );
+  expect(dialed).toBe(0);
+});
+
+test("a dotted tool name still rides a base URL whose host ends in a trailing dot but is no public API", async () => {
+  // The terminator is exactly one dot. Strip it and a custom gateway host
+  // (https://gw.internal./v1 — its own trailing dot and all) still misses
+  // the public constants, and a host that ends in two dots is not the
+  // dotless public spelling either — both keep forwarding minted names
+  // as-is, so only the two public hosts' own trailing-dot spellings refuse.
+  for (const environment of [
+    { OPENAI_BASE_URL: "https://gw.internal./v1" },
+    { OPENAI_BASE_URL: "https://api.openai.com../v1" },
+  ]) {
+    let dialedUrl = "";
+    let dialedTools: unknown;
+    const gateway = createModelGateway(
+      deps({
+        environment,
+        fetch: (async (url, init) => {
+          dialedUrl = String(url);
+          dialedTools = (JSON.parse(String(init?.body)) as { tools?: unknown })
+            .tools;
+          return Response.json({
+            id: "x",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "answer" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+          });
+        }) as typeof fetch,
+      }) as never,
+    );
+    const response = await gateway.handle(
+      req({
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "github.get_current_user",
+              parameters: { type: "object" },
+            },
+          },
+        ],
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(dialedUrl).toBe(`${environment.OPENAI_BASE_URL}/chat/completions`);
+    expect(dialedTools).toEqual([
+      {
+        type: "function",
+        function: {
+          name: "github.get_current_user",
+          parameters: { type: "object" },
+        },
+      },
+    ]);
+  }
+});

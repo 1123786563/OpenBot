@@ -594,7 +594,8 @@
       "files": [
         "server/tests/model-discovery-api.test.ts",
         "server/tests/model-preference.integration.test.ts",
-        "server/tests/model-providers.test.ts"
+        "server/tests/model-providers.test.ts",
+        "server/tests/scrub-command.test.ts"
       ]
     },
     {
@@ -1783,6 +1784,7 @@
     "server/tests/sandbox-state.test.ts",
     "server/tests/sandboxed-components.integration.test.ts",
     "server/tests/sandboxed-publication.integration.test.ts",
+    "server/tests/scrub-command.test.ts",
     "server/tests/server-side-tools.integration.test.ts",
     "server/tests/settle-conflict-grant-expiry.integration.test.ts",
     "server/tests/settle-idempotency.integration.test.ts",
@@ -1977,6 +1979,7 @@
     "server/tests/hindsight-ops-routes.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-W2b /api/hindsight 路由族集成套件（bun 驱动，TEST_DATABASE_URL + 脚本化 Hindsight 服务；FIX-INTG RINTG-4 收口改名，原登记名 hindsight-routes.integration.test.ts）",
     "server/tests/memory-company-isolation.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-F1 旧记忆面公司隔离越权套件（bun 驱动，TEST_DATABASE_URL；FR-1）",
     "app/tests/memory-hindsight.test.tsx": "runner named it: 2026-10-24-hindsight-376 FIX-W15 补执行组（FR3-2：RF4-1 只入 files 未入 group，统一入口漏跑）——bun-test-compat happy-dom Hindsight 设置面 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-hindsight（app/tests part 3 在 BASE 即存量红：web-bot-detail/web-bot-publish 单独重跑仍红，与本套件无关，独立成组保住逐组可观测读数）",
-    "app/tests/memory-answer-basis.test.tsx": "runner named it: 2026-10-25-hindsight-376 FR4-1/FR5-1 补执行组（FR4-1 只入 files 未入 group/causes，统一入口漏跑）——bun-test-compat happy-dom 回答依据 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-answer-basis（与 memory-hindsight 同模式）。"
+    "app/tests/memory-answer-basis.test.tsx": "runner named it: 2026-10-25-hindsight-376 FR4-1/FR5-1 补执行组（FR4-1 只入 files 未入 group/causes，统一入口漏跑）——bun-test-compat happy-dom 回答依据 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-answer-basis（与 memory-hindsight 同模式）。",
+    "server/tests/scrub-command.test.ts": "runner named it: T30 (#489 F16) scrubCommand 对抗钉子套件，与 otel-export-scrubbing.test.ts 同置 Bun 层（bun test 直跑；brief t30-scrubtests）"
   }
 }

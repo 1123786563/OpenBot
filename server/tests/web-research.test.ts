@@ -19,10 +19,10 @@ import {
   researchRoleFor,
   resolveServerUrl,
   serverCredentialKind,
-  tokenHeaderFor,
 } from "../src/plugins/catalogue";
 import { listTools } from "../src/plugins/mcp";
 import { selectTools } from "../src/plugins/selection";
+import { deploymentTokenHeader } from "../src/plugins/store";
 import { grantedToolGuidance } from "../src/plugins/tools";
 
 const tool = (server: string, name: string): GrantedTool => ({
@@ -114,16 +114,18 @@ describe("research providers in the catalogue", () => {
       "firecrawl-authenticated",
     ])
       expect(serverCredentialKind(catalogueEntry(key)!)).toBe("mcp");
-    expect(tokenHeaderFor(catalogueEntry("exa-authenticated"))).toBe(
+    expect(deploymentTokenHeader(catalogueEntry("exa-authenticated"))).toBe(
       "x-api-key",
     );
     // Everything else sends its deployment token in `Authorization`: Firecrawl names no header of
-    // its own, a keyless server sends none, and an entry-less server has no header to name.
-    expect(tokenHeaderFor(catalogueEntry("firecrawl-authenticated"))).toBe(
-      "Authorization",
-    );
-    expect(tokenHeaderFor(catalogueEntry("parallel"))).toBe("Authorization");
-    expect(tokenHeaderFor(null)).toBe("Authorization");
+    // its own, a keyless server sends none, and an entry-less server has no header to name. The
+    // live decision answers `undefined` for each — the shape that leaves a token riding
+    // `Authorization` wherever one rides at all (wire-pinned in plugin-store.integration.test.ts).
+    expect(
+      deploymentTokenHeader(catalogueEntry("firecrawl-authenticated")),
+    ).toBeUndefined();
+    expect(deploymentTokenHeader(catalogueEntry("parallel"))).toBeUndefined();
+    expect(deploymentTokenHeader(null)).toBeUndefined();
   });
 });
 

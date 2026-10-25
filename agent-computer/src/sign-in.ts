@@ -155,9 +155,15 @@ function markLoginFields(attribute: string) {
 /**
  * Find a one-time-code field. Runs in the page.
  *
- * The site's own `autocomplete="one-time-code"` first; otherwise a visible text-like field whose name,
- * id or label reads as a verification code. Any earlier mark is cleared, so a field that has gone
- * away is never typed into.
+ * The site's own `autocomplete="one-time-code"` first; otherwise a visible text-like field whose
+ * name, id or label reads as a verification code. Any earlier mark is cleared, so a field that has
+ * gone away is never typed into.
+ *
+ * The name fallback reads only fields whose subject is the code itself. A country, postal, promo
+ * or voucher code is the site's own business datum, and a login page full of those must not read
+ * as a code step; the exclusion therefore covers the business word directly followed by the code
+ * word in the joined name/id/label, in any of the spellings sites use. It narrows only that
+ * fallback: the site's own autocomplete stays authoritative whatever the field is called.
  */
 function markCodeField(attribute: string) {
   for (const node of document.querySelectorAll(`[${attribute}="code"]`))
@@ -177,15 +183,18 @@ function markCodeField(attribute: string) {
       ["text", "tel", "number", "password", ""].includes(input.type)
     );
   });
+  const businessCode =
+    /(?:country|postal|post|promo|zip|area|dial|referral|voucher|coupon|discount)[\s_-]*code/i;
   const code =
     inputs.find((input) => /one-time-code/.test(input.autocomplete)) ??
-    inputs.find(
-      (input) =>
-        input.type !== "password" &&
-        /code|otp|totp|2fa|mfa|verif|passcode/i.test(
-          `${input.name} ${input.id} ${input.getAttribute("aria-label") ?? ""}`,
-        ),
-    );
+    inputs.find((input) => {
+      if (input.type === "password") return false;
+      const described = `${input.name} ${input.id} ${input.getAttribute("aria-label") ?? ""}`;
+      return (
+        /code|otp|totp|2fa|mfa|verif|passcode/i.test(described) &&
+        !businessCode.test(described)
+      );
+    });
   if (code) code.setAttribute(attribute, "code");
   return Boolean(code);
 }
@@ -198,6 +207,11 @@ function markSubmit(
   field: Element,
   attribute: string,
 ): "button" | "form" | "key" {
+  // An earlier step's submit mark goes first: a site that kept the login form in the document when
+  // it moved on to a code step (an SPA hiding it, not navigating away) would otherwise leave two
+  // marked buttons, and the click below would not know which one it was asked to press.
+  for (const node of document.querySelectorAll(`[${attribute}="submit"]`))
+    node.removeAttribute(attribute);
   const form = (field as HTMLInputElement).form;
   if (!form) return "key";
   const button = form.querySelector(
@@ -315,9 +329,23 @@ export async function fillSignIn(
         `The sign-in moved to ${originOfUrl(page.url()) || "another page"} to ask for a verification code. Take over the browser to finish signing in there.`,
         true,
       );
+    // A password field on another origin is that page's, not this login's refusal — an identity
+    // provider asking for the password again, say. The person takes over there, the same way they
+    // do for a code step that moved: the server is never told this login was refused.
+    if (refused && originOfUrl(page.url()) !== input.origin)
+      return answer(
+        `The sign-in moved to ${originOfUrl(page.url()) || "another page"}. Take over the browser to finish signing in there.`,
+        true,
+      );
+    // On this origin, a password field still showing is the refusal, however code-like the page
+    // also looks: the login's own form never went away, so the site has not moved on to a code
+    // step — not even when it draws a real one-time-code field beside the unchanged login form.
+    // Read after the origin checks above, so a page that moved elsewhere keeps its take-over
+    // answer rather than this origin's reading of the login form.
+    if (refused) codeRequested = false;
     return {
       submitted: true,
-      passwordFieldVisible: codeRequested ? false : refused,
+      passwordFieldVisible: refused,
       codeRequested,
       url: page.url(),
     };
@@ -354,13 +382,46 @@ export async function fillSignInCode(
     await typeSecret(codeField, input.code);
     await submitFrom(page, codeField);
     await settle(page);
+    let codeVisible = await page.evaluate(markCodeField, LOGIN_ATTRIBUTE);
+    let backToLogin = await passwordVisible(page);
+    if (
+      (codeVisible && originOfUrl(page.url()) === input.origin) ||
+      !backToLogin
+    ) {
+      // A slow site may not have rendered its verdict yet — whether that verdict is the code page
+      // going away or the login page coming back — so give it the same grace fillSignIn gives a
+      // transition state, and take both readings again once it has. A success pays the wait too:
+      // the same 2 seconds fillSignIn spends on every ordinary signed-in landing.
+      await page.waitForTimeout(2_000);
+      codeVisible = await page.evaluate(markCodeField, LOGIN_ATTRIBUTE);
+      backToLogin = await passwordVisible(page);
+    }
+    // A password field on another origin is that page's, not this login back at its beginning — an
+    // identity provider asking for the password again, say. The person takes over there, the same
+    // way they do when the sign-in first moved: the server is never told the password is wanted
+    // again, which would reopen a request the retry could not follow.
+    if (backToLogin && originOfUrl(page.url()) !== input.origin)
+      return answer(
+        `The sign-in moved to ${originOfUrl(page.url()) || "another page"}. Take over the browser to finish signing in there.`,
+        true,
+      );
+    // A code field on another origin is that page's, not this login waiting to hear its code was
+    // right — a chained identity provider asking for another verification code, say. The person
+    // takes over there, like the password above: the server is never told the code step is over,
+    // which the empty verdict would otherwise have it read as the sign-in having gone through.
+    if (codeVisible && originOfUrl(page.url()) !== input.origin)
+      return answer(
+        `The sign-in moved to ${originOfUrl(page.url()) || "another page"} to ask for another verification code. Take over the browser to finish signing in there.`,
+        true,
+      );
+    // Only this origin's own code field is reported as the login still asking: what a page that
+    // moved elsewhere draws is its own, and has been handed back above.
     const codeFieldVisible =
-      originOfUrl(page.url()) === input.origin &&
-      (await page.evaluate(markCodeField, LOGIN_ATTRIBUTE));
+      codeVisible && originOfUrl(page.url()) === input.origin;
     return {
       submitted: true,
       codeFieldVisible,
-      passwordFieldVisible: await passwordVisible(page),
+      passwordFieldVisible: backToLogin,
       url: page.url(),
     };
   } catch {
