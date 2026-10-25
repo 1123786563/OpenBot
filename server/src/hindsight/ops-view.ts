@@ -20,7 +20,8 @@ import type { Database } from "../db/client";
 import { hindsightRevocations } from "../db/schema/hindsight-revocations";
 import { hindsightSyncWork } from "../db/schema/hindsight-sync";
 import type { HindsightBudgetGateService } from "./budget-gate";
-import type { HindsightHealthState } from "./health";
+import { loadHindsightConfig } from "./config";
+import { checkHindsightHealth, type HindsightHealthState } from "./health";
 
 /** The admin-visible backlog: counts and ages, nothing else. */
 export type HindsightOpsBacklog = {
@@ -125,4 +126,38 @@ export async function hindsightAdminHealthSnapshot(
     budgets,
     checkedAt: now().toISOString(),
   };
+}
+
+/**
+ * The production snapshot the admin route serves (FIX-W11 A-2, #393): the health probe runs
+ * when the deployment's health configuration is declared, and a missing or malformed
+ * declaration answers "unknown" — the honest state for a probe nobody wired — while the
+ * backlog and budget blocks read the same database either way. Never throws: an unreachable
+ * service is a `service_down` verdict, not an error on the operator's route.
+ */
+export async function hindsightAdminHealthSnapshotForRoute(
+  database: Database,
+  budgetGate: HindsightBudgetGateService,
+  tenantId: string,
+  options: {
+    env?: Record<string, string | undefined>;
+    fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+    now?: () => Date;
+  } = {},
+): Promise<HindsightAdminHealthSnapshot> {
+  let serviceState: HindsightHealthState | undefined;
+  try {
+    serviceState = (
+      await checkHindsightHealth(
+        loadHindsightConfig(options.env ?? process.env),
+        { fetch: options.fetch, now: options.now },
+      )
+    ).state;
+  } catch {
+    serviceState = undefined;
+  }
+  return hindsightAdminHealthSnapshot(database, budgetGate, tenantId, {
+    ...(serviceState === undefined ? {} : { serviceState }),
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
 }

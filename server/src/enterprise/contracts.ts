@@ -291,6 +291,18 @@ export interface MessageDTO {
   readonly content: string;
   readonly attachments: readonly string[];
   readonly createdAt: string;
+  /**
+   * FIX-OCR3 (O3-H1): present only on engine-written rows that carry an answer basis. The
+   * `engineMessageId` is the id the platform's thread history also answers by, so a client
+   * restoring a transcript can match rows by the ids it already holds; `basis` is the
+   * server-composed pointer set the answer carried live. Display-compatible additive
+   * fields — absent on every row that predates or lacks the stamp.
+   */
+  readonly engineMessageId?: string;
+  readonly basis?: readonly {
+    id: string;
+    kind: "general-preference" | "source-bound" | "derived-judgment";
+  }[];
 }
 export interface MessagePage {
   readonly items: readonly MessageDTO[];
@@ -316,6 +328,12 @@ export interface EngineMessageAppendInput {
   /** Engine message id recorded into the stored identity mapping. */
   readonly engineMessageId: string;
   readonly toolCallId?: string;
+  /**
+   * FIX-OCR3 (O3-H1): the answer-basis pointers the persisted envelope carries for an
+   * assistant message (server-composed, from the run's own stamp). Absent on rows whose run
+   * carried no basis — which is every pre-existing row and every tool row.
+   */
+  readonly answerBasis?: readonly import("../mastra/message-parts").OpenBotAnswerBasisPointer[];
 }
 
 export interface StartRunInput {

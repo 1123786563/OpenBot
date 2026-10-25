@@ -1,6 +1,7 @@
 import type { Message } from "@ag-ui/core";
 import { MessageSchema } from "@ag-ui/core/schemas";
 import { tryClient } from "@/lib/client";
+import { answerMemoryBasisFromUnknown } from "@/lib/hindsight/answer-basis";
 
 /**
  * The messages a thread already holds, for restoring a conversation somebody comes back to.
@@ -176,6 +177,52 @@ function argumentsOf(args: unknown): string {
   }
 }
 
+/**
+ * Re-attach the answer basis a refresh lost (O3-H1). The re-export is keyed by engine
+ * message id and validated per entry with the same proof a live message passes; only a
+ * message that already parses AND holds a proven pointer set gains metadata, and messages
+ * the map does not name are returned untouched.
+ */
+async function withAnswerBasis(
+  threadId: string,
+  messages: Message[],
+): Promise<Message[]> {
+  let map: Record<string, unknown> | undefined;
+  try {
+    const response = await tryClient(
+      `/api/enterprise/conversations/${encodeURIComponent(threadId)}/answer-basis`,
+    );
+    if (!response.ok) return messages;
+    const body: unknown = await response.json();
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      typeof (body as { basis?: unknown }).basis === "object" &&
+      (body as { basis: unknown }).basis !== null
+    )
+      map = (body as { basis: Record<string, unknown> }).basis;
+  } catch {
+    return messages;
+  }
+  const basisById = map;
+  if (basisById === undefined) return messages;
+  let changed = false;
+  const merged = messages.map((message) => {
+    const pointers = answerMemoryBasisFromUnknown(basisById[message.id]);
+    if (pointers === null) return message;
+    changed = true;
+    const prior = (message as { metadata?: Record<string, unknown> }).metadata;
+    return {
+      ...message,
+      metadata: {
+        ...prior,
+        openbot: { personalMemoryBasis: pointers },
+      },
+    } as Message;
+  });
+  return changed ? merged : messages;
+}
+
 export async function readThreadMessages(
   threadId: string,
   agentId: string,
@@ -197,7 +244,20 @@ export async function readThreadMessages(
         typeof body === "object" && body !== null && "messages" in body
           ? body.messages
           : null;
-      return Array.isArray(stored) ? readableTurns(stored) : UNAVAILABLE_THREAD;
+      if (!Array.isArray(stored)) return UNAVAILABLE_THREAD;
+      /*
+       * FIX-OCR3 (O3-H1): the platform's history carries no per-message metadata, so the
+       * basis rows a live answer stamped would be lost exactly here. The server's own
+       * re-export answers the same pointers keyed by engine message id; merging them back
+       * makes the restored transcript agree with the live one. Best-effort by design: a
+       * failed, slow or malformed re-export leaves the transcript exactly as it read — no
+       * basis is drawn, nothing else changes — and the deadline race still governs both.
+       */
+      const turns = readableTurns(stored);
+      return {
+        ...turns,
+        messages: await withAnswerBasis(threadId, turns.messages),
+      };
     };
 
     const deadline = new Promise<StoredThread>((resolve) => {

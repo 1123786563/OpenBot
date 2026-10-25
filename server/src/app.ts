@@ -150,6 +150,14 @@ import {
   createGatewayReadinessService,
   installGatewayReadinessService,
 } from "./gateway/readiness";
+import {
+  createHindsightMemoryRoutes,
+  type HindsightMemoryRoutesDeps,
+} from "./hindsight/routes";
+import {
+  createHindsightRoutes,
+  type HindsightRouteServices,
+} from "./hindsight/ops-routes";
 import type { HostAccessBroker } from "./host-access/broker";
 import { createHostAccessRoutes } from "./host-access/routes";
 import { identityRoutes } from "./identity/routes";
@@ -165,7 +173,10 @@ import type { MastraContinuationInstall } from "./mastra/approvals";
 import { createMastraContinuationRoutes } from "./mastra/continuation-routes";
 import type { MastraContinuationStore } from "./mastra/continuation-store";
 import type { MemoryIngestion } from "./memory/ingestion";
-import { createMemoryRoutes } from "./memory/routes";
+import {
+  createMemoryRoutes,
+  type MemoryPauseControlAccess,
+} from "./memory/routes";
 import type { MemoryStore } from "./memory/store";
 import { createMobileBffActivity } from "./mobile-bff/activity";
 import {
@@ -563,7 +574,37 @@ export function createApp(
       >;
       webhooks: Parameters<typeof createDeliveryWebhookRoutes>[0];
     };
-    memory?: { store: MemoryStore; ingestion: MemoryIngestion };
+    memory?: {
+      store: MemoryStore;
+      ingestion: MemoryIngestion;
+      /**
+       * Hindsight 14 (#392, F-G1-1): the person's own two pause switches behind the
+       * deployment's trusted scope. Present only where a deployment can resolve one;
+       * absent, `/api/memory/pause-controls` is not mounted (no face that guesses identity).
+       */
+      pauseControls?: MemoryPauseControlAccess;
+      /**
+       * FIX-F1 (#376, FR-1): the whole old face's company pin, behind the same trusted
+       * scope resolver. Present only where a deployment can resolve one; absent, the
+       * family keeps the single-user behaviour unchanged.
+       */
+      companyScope?: {
+        resolveScope: (request: Request) => Promise<PlatformScope>;
+      };
+      /**
+       * The Hindsight chain's person-scoped confirm/edit/forget/status operations
+       * (#384/#385). Present only where both the chain is wired and a trusted-scope
+       * resolver exists; absent mounts no such routes.
+       */
+      hindsight?: HindsightMemoryRoutesDeps;
+    };
+    /**
+     * The Hindsight memory surfaces (#387–#391): evidence, judgment review, revocation,
+     * cleanup progress and the operator restore/backup-registration routes. Present only
+     * where the assembly built the seams AND a trusted scope resolver exists; absent mounts
+     * nothing, the same "not configured, not broken" answer every optional neighbour gives.
+     */
+    hindsight?: HindsightRouteServices;
     proactive?: { store: ProactiveStore; engine: ProactiveEngine };
     responsibilities?: {
       store: ResponsibilityStore;
@@ -2787,7 +2828,37 @@ export function createApp(
         coworker.memory.store,
         coworker.memory.ingestion,
         requireUser,
+        {
+          ...(coworker.memory.pauseControls
+            ? { pauseControls: coworker.memory.pauseControls }
+            : {}),
+          ...(coworker.memory.companyScope
+            ? { companyScope: coworker.memory.companyScope }
+            : {}),
+          // Built here, where the family's middleware lives: the chain's operations ride the
+          // same `requireUser` + body limit as the rest of `/api/memory`.
+          ...(coworker.memory.hindsight
+            ? {
+                hindsight: createHindsightMemoryRoutes(
+                  coworker.memory.hindsight,
+                ),
+              }
+            : {}),
+        },
       ),
+    );
+  /*
+   * Hindsight's own family (#387–#391): the seams' identities arrive only as server-issued
+   * scopes from the deployment's resolver, which is why `requireUser` is added HERE (the
+   * middleware belongs to this assembly) and the operator routes re-check the administrator
+   * role themselves. Separate from `/api/memory`, whose connector-facing surface is a
+   * different audience; a deployment without the trusted tenancy connection mounts neither
+   * the routes nor a stand-in that guesses a scope.
+   */
+  if (coworker?.hindsight)
+    app.route(
+      "/api/hindsight",
+      createHindsightRoutes({ ...coworker.hindsight, requireUser }),
     );
   if (coworker?.responsibilities) {
     const { store, engine, bindings } = coworker.responsibilities;

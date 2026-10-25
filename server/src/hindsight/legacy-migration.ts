@@ -25,6 +25,11 @@
  *     so the restriction has an authorization to check; import rows (`sourceId` set) become
  *     source-restricted rows, and the old source's `enabled` flag seeds the person's source
  *     grant the same way. Both seedings are revocable later through #390's revocation.
+ *     A shape the new tables cannot reproduce is never silently reclassified into a wider
+ *     audience: a Bot row without its agent id, an import row without its source id, a
+ *     formed_by value outside the three mapped shapes, and a Bot row whose source_ref
+ *     narrowed recall to the forming Bot's still-held source app are each quarantined with
+ *     their own reason — the row stays in the old table, reference intact, unmigrated.
  *   - HOW it resumes: the run row's cursor advances with every processed old record, so a
  *     failed run resumes strictly after it; the new record id IS the old id (globally unique
  *     in the old table, tenant-pinned in the new one), so re-processing an already-migrated
@@ -59,11 +64,17 @@ import { preferenceDocumentIdFor } from "./preference-recall";
 import { sourceBoundDocumentIdFor } from "./scoped-recall";
 import type { HindsightSyncWorkRecorder, SyncSubjectType } from "./sync-queue";
 
-/** Why one old record could not be proven to belong to a company. */
+/**
+ * Why one old record could not be placed in the new domain: its company attribution could not
+ * be proven, or its permission shape is one the new tables cannot reproduce without widening
+ * who may see it.
+ */
 export type QuarantineReason =
   | "no-principal"
   | "no-active-membership"
-  | "ambiguous-company";
+  | "ambiguous-company"
+  | "unmappable-permission-shape"
+  | "source-ref-narrowing";
 
 /** What one run pass did; the counters mirror the run row's durable columns. */
 export type MigrationRunReport = {
@@ -443,23 +454,62 @@ export function createLegacyMemoryMigrator(
       .from(hindsightMigrationMap)
       .where(eq(hindsightMigrationMap.oldRecordId, old.id))
       .limit(1);
-    if (mapped) return { bucket: "already", migrated: false };
+    if (mapped) {
+      /*
+       * FIX-OCR2 (O2-M4): already mapped ⇒ not isolated, on THIS path too. The cleanup used
+       * to hang only off the fresh migration below, so an isolation row 0211 pre-wrote (or a
+       * #394 pass wrote before the attribution drifted and came back) survived this early
+       * return forever — reconcile's balanced check kept counting the record on both sides
+       * and the isolation list kept reporting a migrated record as quarantined.
+       */
+      await clearQuarantine(old.id);
+      return { bucket: "already", migrated: false };
+    }
     const attribution = await attributionOf(old.ownerUserId);
     if (!attribution.proven) {
-      await database
-        .insert(hindsightMigrationQuarantine)
-        .values({
-          oldRecordId: old.id,
-          ownerUserId: old.ownerUserId,
-          reason: attribution.reason,
-          quarantinedAt: now(),
-          runId,
-        })
-        .onConflictDoNothing();
+      await quarantineOne(old, attribution.reason, runId);
       return { bucket: "quarantined", migrated: false };
     }
     const { tenantId, principalId } = attribution;
     const reviewedState = old.reviewState === "edited" ? "edited" : "confirmed";
+
+    // The permission shape, decided BEFORE any mapping: a record whose old-side restriction
+    // the new tables cannot reproduce is quarantined, never reclassified. The fallback this
+    // replaces let anything that missed the two restricted shapes silently become a general
+    // preference — widening a Bot-restricted or source-restricted row to every authorized
+    // Bot of the person. Historical rows cannot be trusted to hold the shape the branches
+    // below name (the old table has no CHECK on formed_by, and a 'bot' row may lack its
+    // agent id), so each branch is earned explicitly:
+    //   - a Bot row needs its agent id (the restriction has no target without it);
+    //   - a Bot row must carry no source_ref: the old rule additionally narrowed recall to
+    //     "only while the forming Bot still holds the source app"
+    //     (split_part(source_ref, '/', 1) ∈ the Bot's held server ids), and the new domain
+    //     has no column to carry that clause — the row stays in the old table, reference
+    //     intact, rather than migrate into a wider audience;
+    //   - an import row needs its source id (its restriction IS the source);
+    //   - only a person-formed row reaches the general preference the mapping names.
+    if (old.formedBy === "bot" && !old.formedByAgentId) {
+      await quarantineOne(old, "unmappable-permission-shape", runId);
+      return { bucket: "quarantined", migrated: false };
+    }
+    if (old.formedBy === "bot" && old.sourceRef !== null) {
+      await quarantineOne(old, "source-ref-narrowing", runId);
+      return { bucket: "quarantined", migrated: false };
+    }
+    if (old.formedBy === "import" && !old.sourceId) {
+      await quarantineOne(old, "unmappable-permission-shape", runId);
+      return { bucket: "quarantined", migrated: false };
+    }
+    if (
+      old.formedBy !== "person" &&
+      old.formedBy !== "bot" &&
+      old.formedBy !== "import"
+    ) {
+      // formed_by has no CHECK in the old table; a historical row may hold a value this
+      // migration has no mapping for. Not mapping it is the only honest answer.
+      await quarantineOne(old, "unmappable-permission-shape", runId);
+      return { bucket: "quarantined", migrated: false };
+    }
 
     if (old.formedBy === "bot" && old.formedByAgentId) {
       // The old rule: a Bot-formed fact is the forming Bot's alone — exactly the Bot bank's
@@ -611,6 +661,50 @@ export function createLegacyMemoryMigrator(
     return { bucket: "migrated", migrated: true };
   }
 
+  /**
+   * Hold one old record back: the isolation list keeps the old id, owner and reason —
+   * content never, and the old row itself is left exactly as it was.
+   *
+   * FIX-OCR3 (O3-M3): a later re-scan refreshes, never duplicates — the column contract the
+   * schema comment states. The same old id can be re-judged after membership drift (a
+   * `no-principal` that became `ambiguous-company`, an attribution that narrowed), and the
+   * isolation list must answer WHY it is held NOW: `onConflictDoNothing` kept the first
+   * verdict forever, so the list and reconcile's byReason read stale long after the facts
+   * moved. The run moves with the verdict — the newest judgement owns the row, and reconcile
+   * counts live rows, never a snapshot.
+   */
+  async function quarantineOne(
+    old: typeof personalMemories.$inferSelect,
+    reason: QuarantineReason,
+    runId: string,
+  ): Promise<void> {
+    await database
+      .insert(hindsightMigrationQuarantine)
+      .values({
+        oldRecordId: old.id,
+        ownerUserId: old.ownerUserId,
+        reason,
+        quarantinedAt: now(),
+        runId,
+      })
+      .onConflictDoUpdate({
+        target: hindsightMigrationQuarantine.oldRecordId,
+        set: { reason, quarantinedAt: now(), runId },
+      });
+  }
+
+  /**
+   * The map row is the durable fact; whatever an earlier isolation verdict left beside the
+   * same old id goes. Both paths that decide "this record is mapped" run it — the fresh
+   * migration in recordMap, and migrateOne's mapped early-return — so "in the map ⇒ not in
+   * the isolation list" holds no matter which pass a record arrived by (FIX-OCR2 O2-M4).
+   */
+  async function clearQuarantine(oldRecordId: string): Promise<void> {
+    await database
+      .delete(hindsightMigrationQuarantine)
+      .where(eq(hindsightMigrationQuarantine.oldRecordId, oldRecordId));
+  }
+
   async function recordMap(
     old: typeof personalMemories.$inferSelect,
     tenantId: string,
@@ -631,6 +725,15 @@ export function createLegacyMemoryMigrator(
         migratedAt: now(),
       })
       .onConflictDoNothing();
+    /*
+     * A row that migrates is no longer isolated, whatever an earlier pass decided: the
+     * quarantine rows 0211 pre-wrote and a #394 pass of its own both key the same old id, and
+     * one left behind here would keep the reconcile's balanced check reading "still a
+     * breakpoint to run" forever, and tell the isolation list a migrated record is still
+     * quarantined. The map row above is the durable fact; this deletes whatever the old
+     * attribution verdict left beside it.
+     */
+    await clearQuarantine(old.id);
   }
 }
 

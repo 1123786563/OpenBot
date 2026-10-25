@@ -771,3 +771,30 @@ describe("Hindsight 10 (#387): missing or unmapped bases are clearly unavailable
     ).rejects.toThrow("Evidence ids must be strings");
   });
 });
+
+/*
+ * FIX-OCR3 (O3-M8): the edit entry's second confirmation. Every owner seam behind
+ * editEvidence re-runs the sensitivity gate, so the dispatcher's input must carry the
+ * person's explicit confirmSensitive exactly as the correction next door does — without the
+ * declaration, an edit of medical/financial/customer text was an unconditional refusal with
+ * no second look to give. The declaration is the fix; the legs pin that the gate runs on
+ * this path and that the confirmation opens it.
+ */
+describe("FIX-OCR3 — editEvidence carries the sensitive second confirmation", () => {
+  test("a sensitive edit refuses once and succeeds on the explicit confirmation", async () => {
+    const scope = await makeTrustedScope(PRINCIPAL_EMP, WORKSPACE_A);
+    const { record } = await preferences.confirmGenericPreference(scope, {
+      content: `待修订的偏好 ${run}`,
+    });
+    await expect(
+      evidence.editEvidence(scope, record.id, {
+        content: `薪酬 salary 修订 ${run}`,
+      }),
+    ).rejects.toThrow("confirm a second time");
+    const edited = await evidence.editEvidence(scope, record.id, {
+      content: `薪酬 salary 修订 ${run}`,
+      confirmSensitive: true,
+    });
+    expect(edited.record.content).toBe(`薪酬 salary 修订 ${run}`);
+  });
+});

@@ -68,6 +68,38 @@ export const DIRECTORY_ISLANDS = [
 ];
 
 /*
+ * Suites that do not live in one directory island but need the same dedicated
+ * enterprise database environment. PKG02's install suites are split across
+ * `server/tests` and `server/tests/multitenancy`; naming the group with the
+ * `server/tests/multitenancy` prefix is what makes `bunEnv()` in
+ * tests/bun-suites.test.ts (which matches on the group name) hand it the
+ * `MT_TEST_*` overrides. The list is explicit so regeneration keeps the group
+ * instead of folding the files back into their directory groups.
+ *
+ * Restored by FIX-W15 (Run 2026-10-24-hindsight-376, FR3-2): merge 059124069 took this
+ * file from a branch that predated the definition, and merge ae8f9c374 brought the two
+ * `groupsOf` references back without it — every `groupsOf`/`writeManifest` caller
+ * (`e2e-add-driven.mjs`, `e2e-bun-manifest.mjs`, `e2e-driven-file-equality.mjs`) died with
+ * `ReferenceError: EXPLICIT_GROUPS is not defined`, which is why suite registration had to
+ * be hand-edited into the JSON and could land in `files` without a group.
+ */
+export const EXPLICIT_GROUPS = Object.freeze({
+  "server/tests/multitenancy pkg02": [
+    "server/tests/multitenancy/package-storage.test.ts",
+    "server/tests/package-install.integration.test.ts",
+  ],
+  "server/tests/multitenancy pkg03": [
+    "server/tests/multitenancy/package-grants.test.ts",
+  ],
+  "server/tests/multitenancy pkg03b": [
+    "server/tests/multitenancy/package-runtime.test.ts",
+  ],
+  "server/tests/multitenancy pkg04": [
+    "server/tests/multitenancy/package-expert.test.ts",
+  ],
+});
+
+/*
  * Suites that only mean something against a running deployment, so `e2e.unit.config.ts` keeps them out
  * of the default corpus and `bun run test:api` runs them on demand. The list lives here because the
  * audit has to know they are *named exclusions with their own entry point*: while it read only the

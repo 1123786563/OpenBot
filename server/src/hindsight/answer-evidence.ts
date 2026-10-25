@@ -32,6 +32,7 @@
 
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "./bank-scope";
+import type { JudgmentEvidenceView } from "./derived-judgments";
 import type {
   DerivedJudgmentInspection,
   DerivedJudgmentReviewService,
@@ -110,6 +111,11 @@ export type PersonalMemoryEvidence =
 /** One inspect may expand at most this many bases; an answer's basis list is small. */
 const EVIDENCE_IDS_MAX = 50;
 const EVIDENCE_ID_MAX = 256;
+/** The memory listing's page discipline, kept beside the other surface ceilings. */
+const MEMORIES_LIST_DEFAULT = 50;
+const MEMORIES_LIST_MAX = 100;
+/** How many living rows one listing scans past withheld rows to fill its page. */
+const MEMORIES_LIST_SCAN_MAX = 200;
 
 export class EvidenceRefusedError extends Error {
   constructor(message: string) {
@@ -199,6 +205,94 @@ export function createAnswerEvidenceService(
   }
 
   return {
+    /**
+     * The person's own Hindsight memory entries (FIX-W12 FR2-3, #387 AC1): the confirmed
+     * preferences and source-bound facts a Bot's answers read, newest change first — the
+     * listing the answer-basis surface expands FROM, so the person can verify, correct or
+     * forget an entry without waiting for a judgment to cite it. The entries answer in the
+     * same view the judgment basis uses, and availability is re-decided per row exactly as
+     * `inspectEvidence` decides it: living, eligible, and (for a source-bound fact) still
+     * inside its CURRENT authorization. A row that fails is withheld, never shown stale.
+     */
+    async listPersonalMemories(
+      scope: PlatformScope,
+      input: { limit?: unknown } = {},
+    ): Promise<JudgmentEvidenceView[]> {
+      let limit = MEMORIES_LIST_DEFAULT;
+      if (input.limit !== undefined) {
+        if (
+          typeof input.limit !== "number" ||
+          !Number.isInteger(input.limit) ||
+          input.limit < 1 ||
+          input.limit > MEMORIES_LIST_MAX
+        ) {
+          throw new EvidenceRefusedError(
+            `A memory listing needs a limit of 1..${MEMORIES_LIST_MAX}.`,
+          );
+        }
+        limit = input.limit;
+      }
+      const identity = resolveHindsightBankScope(scope);
+      const base = await readScopedAuthorization(
+        authorizations,
+        identity.tenantId,
+        identity.principalId,
+        scope.workspaceId,
+        undefined,
+      );
+      const [preferenceRows, boundRows] = await Promise.all([
+        preferenceRecords.listLiving(
+          identity.tenantId,
+          identity.principalId,
+          MEMORIES_LIST_SCAN_MAX,
+        ),
+        sourceBoundRecords.listLiving(
+          identity.tenantId,
+          identity.principalId,
+          MEMORIES_LIST_SCAN_MAX,
+        ),
+      ]);
+      const candidates: { at: Date; view: JudgmentEvidenceView }[] = [];
+      for (const row of preferenceRows) {
+        if (!preferenceRecallEligible(row)) continue;
+        candidates.push({
+          at: row.updatedAt,
+          view: {
+            kind: "preference",
+            id: row.id,
+            content: row.content,
+            provenance: row.provenance,
+            markedGenericAt: row.markedGenericAt,
+            effectiveFrom: row.effectiveFrom,
+            effectiveUntil: row.effectiveUntil,
+          },
+        });
+      }
+      for (const row of boundRows) {
+        if (!sourceBoundRecallEligible(row)) continue;
+        if (!(await sourceBoundAuthorizedNow(authorizations, row, base)))
+          continue;
+        candidates.push({
+          at: row.updatedAt,
+          view: {
+            kind: "source_bound",
+            id: row.id,
+            content: row.content,
+            provenance: row.provenance,
+            restriction:
+              row.restriction === "team"
+                ? { kind: "team", workspaceId: row.workspaceId ?? "" }
+                : row.restriction === "source"
+                  ? { kind: "source", sourceId: row.sourceId ?? "" }
+                  : { kind: "bot", agentId: row.agentId ?? "" },
+            formedAt: row.formedAt,
+          },
+        });
+      }
+      candidates.sort((left, right) => right.at.getTime() - left.at.getTime());
+      return candidates.slice(0, limit).map((entry) => entry.view);
+    },
+
     /**
      * Expand the record ids an answer used into their evidence, one entry per id in input
      * order. Availability is re-decided per row at inspect time — the answer's citation is a
@@ -300,14 +394,21 @@ export function createAnswerEvidenceService(
 
     /**
      * Correct a basis from the evidence entry. For a preference this is #386's time-windowed
-     * correction; a source-bound fact has no correction chain — its correction is an edit of
-     * the confirmed original (editEvidence), and saying so is a refusal, not a silent
-     * downgrade.
+     * correction — the ONLY basis kind whose evidence entry offers `correct` — and the
+     * sensitivity gate of that seam applies to the corrected text. The other two kinds have
+     * no correction chain, and saying so is a refusal, never a silent downgrade: a
+     * source-bound fact is corrected by editing its original, and since #389 a judgment's
+     * text is re-asserted through its own edit (whose evidence gates re-run).
      */
     async correctEvidence(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown; effectiveFrom?: unknown },
+      input: {
+        content: unknown;
+        effectiveFrom?: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ) {
       const owner = await resolveOwner(scope, id);
       if (owner === "source_bound") {
@@ -315,15 +416,32 @@ export function createAnswerEvidenceService(
           "A source-bound fact is corrected by editing its original; time-windowed corrections apply to general preferences only.",
         );
       }
+      if (owner === "derived_judgment") {
+        throw new EvidenceRefusedError(
+          "A judgment is corrected by editing its text; time-windowed corrections apply to general preferences only.",
+        );
+      }
       if (owner === "none") throw new EvidenceNotFoundError();
       return preferences.correctGenericPreference(scope, id, input);
     },
 
-    /** Edit a basis's confirmed original, on whichever authority table owns it. */
+    /**
+     * Edit a basis's confirmed original, on whichever authority table owns it.
+     *
+     * FIX-OCR3 (O3-M8): the second confirmation rides here exactly as it does on the
+     * correction next door — every owner seam's edit re-runs the same sensitivity gate, and
+     * an edit that arrived without this field would be unconfirmable sensitive material: the
+     * refusal has no second look to give. The whole input object is forwarded, so this is a
+     * declaration, not a new wire shape.
+     */
     async editEvidence(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown },
+      input: {
+        content: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ) {
       const owner = await resolveOwner(scope, id);
       if (owner === "preference") {
