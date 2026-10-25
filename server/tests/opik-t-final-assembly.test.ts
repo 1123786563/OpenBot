@@ -544,7 +544,7 @@ describe("T-final M1: the boot assembly reads the ambient scope", () => {
     expect(firstTopLevelAwait).toBeGreaterThan(0);
     for (const declaration of [
       "const opikBootConfig = opikConfigFromEnv(process.env);",
-      "const aiObservabilityCanManageBot: BotManagementCheck = async (",
+      "const aiObservabilityCanObserveBot: BotManagementCheck = async (",
       "const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);",
       "const aiObservabilityRunScope = createBuiltinRunScopeResolver({",
     ]) {
