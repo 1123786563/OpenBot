@@ -133,8 +133,31 @@ export interface MastraToolGuard {
  * Exported so the grant write (plugins/store.ts, where `toolNameFor` mints
  * the name) enforces the SAME rule at configuration time; this mount-time
  * check stays as defense in depth for grants written before that gate.
+ *
+ * The stricter charset below is a DELIBERATE second rule, and the split is
+ * the record (F16-2): this constant governs brokered/granted names — admin
+ * configuration, where a dotted name a provider cannot take is a
+ * configuration mistake the F11-1 guard answers once, loudly, for the whole
+ * chat. VALID_BRIDGE_TOOL_NAME governs CLIENT declarations — the AG-UI tool
+ * list is third-party input controllable per request, so a name outside the
+ * wire-safe charset must degrade that ONE tool (dropped at mount,
+ * structured diagnostic, chat continues) instead of costing the whole run.
+ * The observed fail-hard shape is the pinned engine's, not the dial's:
+ * `@mastra/core` 1.64.0 `formatTools` rewrites invalid characters to `_`
+ * before the wire, so a declared `computer.navigate` beside the legal
+ * `computer_navigate` becomes one name and throws
+ * AGENT_TOOL_NAME_COLLISION before any provider request. Do not reuse
+ * VALID_TOOL_NAME for a client-supplied name.
  */
 export const VALID_TOOL_NAME = /^[A-Za-z0-9._-]{1,64}$/;
+
+/**
+ * Client-declared (AG-UI) bridge names stay on the wire-safe charset: a
+ * declaration outside it is DROPPED at mount — fail-soft, one structured
+ * diagnostic, the chat continues (see VALID_TOOL_NAME above for the division
+ * of labour and the engine rewrite that makes a dotted client name fatal).
+ */
+export const VALID_BRIDGE_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function isReservedToolName(name: string): boolean {
   // The runtime's own system tools: the learned-skill pair (ME08 mounts them

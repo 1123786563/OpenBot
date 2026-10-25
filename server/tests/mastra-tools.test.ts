@@ -7,6 +7,7 @@ import {
   createMastraTools,
   type MastraToolOperation,
   MastraToolRefusal,
+  VALID_BRIDGE_TOOL_NAME,
   VALID_TOOL_NAME,
 } from "../src/mastra/tools";
 import { createPluginStore } from "../src/plugins/store";
@@ -345,5 +346,17 @@ describe("createMastraTools wrapping", () => {
     ).rejects.toThrow(/gate must refuse before any grant write/);
     // The mount-time check and the grant-time gate enforce the SAME rule.
     expect(VALID_TOOL_NAME.source).toBe("^[A-Za-z0-9._-]{1,64}$");
+    // F16-2: the CLIENT-declared bridge charset is a deliberate SECOND rule.
+    // The AG-UI tool list is per-request third-party input, so a name outside
+    // the wire-safe charset is dropped at mount there (fail-soft) instead of
+    // being mounted and colliding with a legal sibling after the engine's
+    // formatTools rewrite (AGENT_TOOL_NAME_COLLISION kills the whole run).
+    // This pins the split in both directions: what the bridge refuses on the
+    // wire is what the brokered / granted configuration path above still
+    // admits.
+    expect(VALID_BRIDGE_TOOL_NAME.source).toBe("^[A-Za-z0-9_-]{1,64}$");
+    expect(VALID_BRIDGE_TOOL_NAME.test("github.get_current_user")).toBe(false);
+    expect(VALID_BRIDGE_TOOL_NAME.test("mcp__server__echo_tool")).toBe(true);
+    expect(VALID_TOOL_NAME.test("github.get_current_user")).toBe(true);
   });
 });

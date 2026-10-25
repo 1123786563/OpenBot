@@ -1,7 +1,7 @@
 import { toStandardSchema } from "@mastra/core/schema";
 import { createTool, type Tool } from "@mastra/core/tools";
 import type { FrontendToolDefinition } from "./execution-contracts";
-import { isReservedToolName, VALID_TOOL_NAME } from "./tools";
+import { isReservedToolName, VALID_BRIDGE_TOOL_NAME } from "./tools";
 
 /*
  * ME06 (#478): the frontend (client-participation) tool bridge.
@@ -60,11 +60,19 @@ export interface CreateFrontendBridgeToolsOptions {
 
 /**
  * Mount the client-declared tools as inert bridges. Names are validated with
- * the SAME model-name rule the granted wrapper enforces (an invalid or
- * reserved client declaration is dropped, not mounted — each drop emits one
- * structured diagnostic naming the tool and the reason, never the args); a
- * repeated client name keeps its FIRST declaration (the AG-UI tool list is a
- * set — a duplicate is a wire artifact, not a second tool).
+ * the client-facing charset (VALID_BRIDGE_TOOL_NAME — `[A-Za-z0-9_-]`, no
+ * dot): the AG-UI tool list is third-party input the client controls per
+ * request, so a name outside the wire-safe charset degrades THAT tool —
+ * dropped at mount with one structured diagnostic, the chat continues —
+ * rather than being mounted and costing the whole run. The fail-hard shape
+ * is the pinned engine's own: `@mastra/core` 1.64.0 `formatTools` rewrites
+ * every invalid character to `_`, so a declared `computer.navigate` beside
+ * the legal `computer_navigate` reaches the model as the same name and
+ * throws AGENT_TOOL_NAME_COLLISION before any provider dial. Brokered /
+ * granted names keep the looser VALID_TOOL_NAME (dot admitted) in tools.ts;
+ * the division is recorded there. A repeated client name keeps its FIRST
+ * declaration (the AG-UI tool list is a set — a duplicate is a wire artifact,
+ * not a second tool).
  */
 export function createFrontendBridgeTools(
   definitions: readonly FrontendToolDefinition[],
@@ -78,7 +86,7 @@ export function createFrontendBridgeTools(
     const dropReason =
       !definition || typeof name !== "string"
         ? "invalid declaration (no string name)"
-        : !VALID_TOOL_NAME.test(name)
+        : !VALID_BRIDGE_TOOL_NAME.test(name)
           ? "invalid tool name"
           : isReservedToolName(name)
             ? "reserved tool name"

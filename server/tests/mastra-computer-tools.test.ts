@@ -5,7 +5,12 @@ import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { z } from "zod";
-import { describe, expect, it } from "../../tests/support/bun-test-compat";
+import {
+  describe,
+  expect,
+  it,
+  spyOn,
+} from "../../tests/support/bun-test-compat";
 import {
   createMastraComputerTools,
   scopedComputerEnvironmentKey,
@@ -292,6 +297,119 @@ describe("ME06 frontend bridge tools", () => {
     });
     expect(Object.keys(bridges)).toHaveLength(0);
     void granted;
+  });
+});
+
+/*
+ * F16-2 / T32: the client-declared bridge charset is the STRICT one. The
+ * AG-UI tool list is third-party input the client controls every request, so
+ * a dotted declaration — which VALID_TOOL_NAME still admits for brokered and
+ * granted configuration — must degrade that ONE tool (dropped at mount, one
+ * structured diagnostic, chat continues).
+ *
+ * Measured on the pinned engine: `@mastra/core` 1.64.0 `formatTools` rewrites
+ * every invalid character to `_` before the wire, so a mounted
+ * `computer.navigate` and the legal `computer_navigate` collapse to one name
+ * and the whole run dies with AGENT_TOOL_NAME_COLLISION — a whole-chat
+ * failure from a single per-request declaration, before any provider dial.
+ * Dropping at mount is what makes that unreachable.
+ */
+const DOTTED_DEFINITION: FrontendToolDefinition = {
+  name: "computer.navigate",
+  description: "A dotted client declaration the wire-safe charset refuses.",
+  parameters: { type: "object", properties: { url: { type: "string" } } },
+};
+
+/** Run with console.warn captured; returns each dropped-declaration payload. */
+function dropDiagnostics(run: () => void): Record<string, unknown>[] {
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    run();
+    // Read the calls BEFORE restoring: `mockRestore` also resets the spy's
+    // recorded calls, so a read after the finally would always see none.
+    return warn.mock.calls
+      .map((call: unknown[]) => call[0] as Record<string, unknown>)
+      .filter(
+        (payload) =>
+          payload?.event === "mastra_frontend_tool_declaration_dropped",
+      );
+  } finally {
+    warn.mockRestore();
+  }
+}
+
+describe("ME06 frontend bridge tool name charset (F16-2)", () => {
+  it("a_dotted_client_declaration_is_dropped_with_one_structured_diagnostic", () => {
+    let bridges: Record<string, unknown> = {};
+    const diagnostics = dropDiagnostics(() => {
+      bridges = createFrontendBridgeTools([
+        DOTTED_DEFINITION,
+        NAVIGATE_DEFINITION,
+      ]);
+    });
+    // The dotted name is not mounted; the legal sibling still is.
+    expect(Object.keys(bridges)).toEqual([NAVIGATE_DEFINITION.name]);
+    expect(diagnostics).toEqual([
+      {
+        event: "mastra_frontend_tool_declaration_dropped",
+        toolName: DOTTED_DEFINITION.name,
+        reason: "invalid tool name",
+      },
+    ]);
+  });
+
+  it("a_dotted_client_declaration_leaves_the_run_and_the_wire_intact", async () => {
+    // With the dotted name mounted (the pre-fix tree) the engine's formatTools
+    // rewrite collides it with the legal sibling and the run fails whole. After
+    // the drop exactly one declaration rides the request and the run reaches
+    // the participation pause — the chat continues.
+    await withProvider(async (provider) => {
+      const warn = spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const { agent } = frontendAgent({
+          providerUrl: provider.url,
+          definitions: [DOTTED_DEFINITION, NAVIGATE_DEFINITION],
+        });
+        const stream = await agent.stream(
+          [{ role: "user", content: "open example.com" }] as never,
+          { runId: "f16-2-dotted-wire-probe", maxSteps: 8 } as never,
+        );
+        const reader = stream.fullStream.getReader();
+        for (;;) {
+          const next = await reader.read();
+          if (next.done) break;
+        }
+        expect(await stream.finishReason).toBe("suspended");
+        const offered = (provider.requests[0]?.tools ?? []).map(
+          (tool) => tool.function?.name,
+        );
+        expect(offered).toEqual([NAVIGATE_DEFINITION.name]);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
+
+  it("legal_client_declarations_still_mount_at_the_charset_edges", () => {
+    const longest = "a".repeat(64);
+    const overlong = "a".repeat(65);
+    let bridges: Record<string, unknown> = {};
+    const diagnostics = dropDiagnostics(() => {
+      bridges = createFrontendBridgeTools([
+        NAVIGATE_DEFINITION,
+        { name: longest, description: "", parameters: { type: "object" } },
+        { name: overlong, description: "", parameters: { type: "object" } },
+      ]);
+    });
+    // Underscore/hyphen/64 stay in; 65 characters is still out.
+    expect(Object.keys(bridges)).toEqual([NAVIGATE_DEFINITION.name, longest]);
+    expect(diagnostics).toEqual([
+      {
+        event: "mastra_frontend_tool_declaration_dropped",
+        toolName: overlong,
+        reason: "invalid tool name",
+      },
+    ]);
   });
 });
 
