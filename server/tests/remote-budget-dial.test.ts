@@ -1,29 +1,24 @@
-// F5E1-F2 — the remote dial exists behind a verifiable budget (run f6d).
+// F5E1-F2 / R3-02 — the remote dial exists behind an enforceable budget CONTRACT (run f7d).
 //
-// The finding: `buildAgent` resolved every remote_ag_ui / remote_mastra Bot to
-// UnavailableAgent(REMOTE_RUN_BUDGET_UNVERIFIED), so the approved Spec's
-// "through OpenBot" LangGraph/remote AG-UI path was structurally unreachable —
-// while the safety property behind the refusal (no dial without a budget this
-// deployment can verify) is one the fix must KEEP, not remove.
+// The F6D finding accepted here: a per-run hold is not a contract. It bounds what is CHARGED,
+// never what a remote endpoint SPENDS, and the F6D tests proved the dial reached a scripted
+// endpoint through a STAND-IN gate — nothing about the real seams. This suite is rewritten
+// around the real ones:
 //
-// These cases pin the restored dial from all three sides the Brief names:
+//   * `createRemoteBudgetContractResolver` decides which endpoints may dial at all, from the
+//     operator's endpoint list, the deployment token both ends hold, and the policy's token
+//     ceiling — so "unsupported" is a build-time refusal before any fetch;
+//   * `createRemoteRunBudgetGate` holds the run's worst case in credits in the same ledger the
+//     built-in path uses, and marks it unknown at the end (never a release);
+//   * the dial carries `forwardedProps.openbotBudget`, and the run is only delivered if the
+//     endpoint's SIGNED receipt checks out against it — a receipt over its caps, a forged one,
+//     or a terminal event without one tears the run down before the ending reaches the person.
 //
-//   a. budget verifiable → the dial happens against a scripted endpoint, the
-//      run's W3C chain rides out on `traceparent`, the admission reserves
-//      before the endpoint is contacted, and the run leaves a governed basic
-//      record — binding begun with the `basic` capability (T10: this path sees
-//      events, never endpoint internals), the F5E1-F3 materialization and
-//      reconcile landing upstream, and the observed outcome settling the
-//      binding;
-//   b. budget unverifiable → the refusal is exactly what it was: no gate, no
-//      dial, REMOTE_RUN_BUDGET_UNVERIFIED — and a gate that refuses keeps the
-//      endpoint uncontacted with the credit refusal surfacing as the run's
-//      error, the same way a built-in run surfaces one;
-//   c. a torn-down run (F5C1's cancel semantics) settles nothing it did not
-//      observe: no terminal event arrived, so the budget holds as an unknown
-//      cost and the binding stays running — never a fabricated no-cost release,
-//      never an invented ending.
+// The four original cases survive in their new form (dial, refusal, teardown, confirmed
+// cancellation); the contract violations are new. The endpoint itself is scripted here — the
+// real agent-langgraph process is driven in `remote-budget-contract.test.ts`.
 
+import { createHmac } from "node:crypto";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { EventType, HttpAgent } from "@ag-ui/client";
 import { context, trace } from "@opentelemetry/api";
@@ -39,14 +34,22 @@ import type {
   OpikPort,
   OpikRunBindingRef,
 } from "../src/ai-observability/opik-port";
-import { createRemoteRunRecorder } from "../src/ai-observability/remote-run";
+import {
+  canonicalRemoteEndpoint,
+  createRemoteBudgetContractResolver,
+  createRemoteRunBudgetGate,
+  createRemoteRunRecorder,
+  remoteBudgetCaps,
+} from "../src/ai-observability/remote-run";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import {
   type AgentFetch,
   buildAgents,
-  type RemoteRunAdmission,
-  type RemoteRunAdmissionInput,
+  REMOTE_BUDGET_RECEIPT_EVENT,
+  type RemoteBudgetContract,
+  type RemoteBudgetContractCaps,
   type RemoteRunFact,
+  setRemoteBudgetContractResolver,
   setRemoteRunBudgetGate,
   setRemoteRunObserver,
   standingRoleMessage,
@@ -54,6 +57,17 @@ import {
 
 /** Let the fire-and-forget settlement and recorder work land before assertions read it. */
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 25));
+
+/** The deployment token both ends hold: the endpoint's MAC key and this server's check. */
+const SECRET = "synthetic-managed-token";
+/** The policy's approved per-run token ceiling; the hold and the caps both derive from it. */
+const POLICY_TOKENS = 1_000_000n;
+const MAX_MODEL_STEPS = 8;
+const ENDPOINT = "https://risk.test/ag-ui";
+const CAPS = remoteBudgetCaps(
+  POLICY_TOKENS,
+  MAX_MODEL_STEPS,
+) as RemoteBudgetContractCaps;
 
 const riskRow = {
   id: "risk",
@@ -67,7 +81,8 @@ const remoteAgent = () => ({
   id: "risk",
   name: "Risk",
   type: "remote_ag_ui" as const,
-  endpoint: "https://risk.test/ag-ui",
+  endpoint: ENDPOINT,
+  headers: { "x-openbot-agent-token": SECRET },
   standingMessage: standingRoleMessage(riskRow),
 });
 
@@ -135,35 +150,222 @@ function scriptedEndpoint(
   return { fetch, dials };
 }
 
+/**
+ * The receipt's MAC, re-derived here from the literal signing input.
+ *
+ * Deliberately hand-written rather than imported from either side: this is the pin. The
+ * endpoint signs with its own copy (`agent-langgraph/src/budget.ts`), the server verifies with
+ * a third (`remote-run.ts`), and this test only passes if all three agree byte for byte.
+ */
+function signReceipt(body: {
+  runId: string;
+  caps: RemoteBudgetContractCaps;
+  usage: {
+    modelSteps: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+  status: "ok" | "budget_exceeded";
+}): string {
+  return createHmac("sha256", SECRET)
+    .update(
+      [
+        "openbot-budget-receipt",
+        "v=1",
+        `runId=${body.runId}`,
+        `caps=${body.caps.modelSteps}|${body.caps.inputTokens}|${body.caps.outputTokens}|${body.caps.totalTokens}`,
+        `usage=${body.usage.modelSteps}|${body.usage.inputTokens}|${body.usage.outputTokens}|${body.usage.totalTokens}`,
+        `status=${body.status}`,
+      ].join("\n"),
+    )
+    .digest("hex");
+}
+
+/** One endpoint receipt, as the protocol's CUSTOM extension carries it. */
+function receiptEvent(
+  runId: string,
+  overrides: Partial<{
+    caps: RemoteBudgetContractCaps;
+    usage: {
+      modelSteps: number;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    };
+    status: "ok" | "budget_exceeded";
+    mac: string;
+  }> = {},
+): BaseEvent {
+  const body = {
+    kind: REMOTE_BUDGET_RECEIPT_EVENT,
+    v: 1,
+    runId,
+    caps: overrides.caps ?? CAPS,
+    usage: overrides.usage ?? {
+      modelSteps: 1,
+      inputTokens: 400,
+      outputTokens: 40,
+      totalTokens: 440,
+    },
+    status: overrides.status ?? ("ok" as const),
+  };
+  return {
+    type: "CUSTOM",
+    name: REMOTE_BUDGET_RECEIPT_EVENT,
+    value: { ...body, mac: overrides.mac ?? signReceipt(body) },
+  } as unknown as BaseEvent;
+}
+
+/** A run that ends normally, with its receipt in the contract's required order. */
 const runEvents = (body: RunAgentInput): BaseEvent[] => [
   {
     type: EventType.RUN_STARTED,
     threadId: body.threadId,
     runId: body.runId,
   } as BaseEvent,
+  receiptEvent(body.runId),
   {
     type: EventType.RUN_FINISHED,
     threadId: body.threadId,
     runId: body.runId,
-    result: "governed",
   } as BaseEvent,
 ];
 
-/** The budget gate as a recording stand-in: what the wiring would answer, captured. */
-function recordingGate() {
-  const admissions: RemoteRunAdmissionInput[] = [];
-  const settled: { outcome: string }[] = [];
-  const gate = async (
-    input: RemoteRunAdmissionInput,
-  ): Promise<RemoteRunAdmission> => {
-    admissions.push(input);
-    return {
-      finish: async ({ outcome }) => {
-        settled.push({ outcome });
-      },
-    };
+/**
+ * The real budget seams, with the billing writer as a recording stand-in.
+ *
+ * The two factories are the production ones — that is the point of this rewrite: the resolver's
+ * endpoint/token/ceiling logic and the gate's reserve/settle logic are what F6D's stand-ins
+ * replaced. Only the ledger is fake, because a database is not what these cases are about.
+ */
+function budgetHarness(
+  options: {
+    reserve?: "ok" | "insufficient" | "throw";
+    endpoints?: string[];
+    sharedSecret?: string;
+    contract?: boolean;
+  } = {},
+) {
+  const reservations: {
+    externalCustomerId: string;
+    idempotencyKey: string;
+    maximumCents: number;
+    expiresAt: Date;
+  }[] = [];
+  const marks: { reservationId: string; reason: string }[] = [];
+  const errors: { context: Record<string, unknown>; message: string }[] = [];
+  const warnings: { context: Record<string, unknown>; message: string }[] = [];
+  const mode = options.reserve ?? "ok";
+  const creditWriter = {
+    async reserveCredits(input: {
+      externalCustomerId: string;
+      idempotencyKey: string;
+      maximumCents: number;
+      expiresAt: Date;
+    }) {
+      reservations.push(input);
+      if (mode === "throw") throw new Error("ledger unavailable");
+      if (mode === "insufficient") {
+        return { reserved: false as const, availableCents: 120 };
+      }
+      return { reserved: true as const, reservationId: "reservation-1" };
+    },
+    async markReservationUnknown(reservationId: string, reason: string) {
+      marks.push({ reservationId, reason });
+    },
   };
-  return { gate, admissions, settled };
+  const gate = createRemoteRunBudgetGate({
+    creditWriter,
+    resolvePayer: () => ({
+      externalCustomerId: "customer-1",
+      payer: { kind: "personal" as const },
+    }),
+    maximumCents: 5_000,
+    reservationWindowMs: 15 * 60_000,
+    idempotencyPrefix: "usage:",
+    log: {
+      error: (context, message) => errors.push({ context, message }),
+      warn: (context, message) => warnings.push({ context, message }),
+    },
+    refusals: {
+      gateFailure: () => {
+        const error = new Error("credit_gate_unavailable");
+        error.name = "CreditGateFailureError";
+        return error;
+      },
+      insufficient: (input) =>
+        new Error(
+          `credits_exhausted: ${input.payerKind} has ${input.availableCents}`,
+        ),
+    },
+  });
+  const resolver =
+    options.contract === false
+      ? undefined
+      : createRemoteBudgetContractResolver({
+          endpoints: new Set(
+            (options.endpoints ?? [ENDPOINT]).map(
+              (endpoint) => canonicalRemoteEndpoint(endpoint) as string,
+            ),
+          ),
+          sharedSecret: options.sharedSecret ?? SECRET,
+          maximumTokens: POLICY_TOKENS,
+          maxModelSteps: MAX_MODEL_STEPS,
+        });
+  return { gate, resolver, reservations, marks, errors, warnings };
+}
+
+async function buildRemoteBot(
+  wiring: {
+    gate: Parameters<typeof setRemoteRunBudgetGate>[0];
+    resolver:
+      | ((request: {
+          type: "remote_ag_ui" | "remote_mastra";
+          endpoint: string;
+          agentToken: string | undefined;
+        }) => RemoteBudgetContract | undefined)
+      | undefined;
+  },
+  fetch: AgentFetch,
+  threadingScope?: ObservationScope,
+) {
+  setRemoteRunBudgetGate(wiring.gate);
+  setRemoteBudgetContractResolver(wiring.resolver);
+  try {
+    return await buildAgents(
+      [remoteAgent()],
+      { provider: "openai", defaultModel: "test" },
+      null,
+      undefined,
+      async () => [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fetch,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { userId: "person-1" },
+      undefined,
+      threadingScope
+        ? {
+            actorId: threadingScope.actorId,
+            botId: "risk",
+            resolveScope: () => Promise.resolve(threadingScope),
+          }
+        : undefined,
+    );
+  } finally {
+    setRemoteRunBudgetGate(undefined);
+    setRemoteBudgetContractResolver(undefined);
+  }
 }
 
 /** The binding store as an in-memory stand-in, keyed the way the real one is. */
@@ -250,50 +452,9 @@ function fakePort() {
   return { createdTraces, writtenSpans, port: port as unknown as OpikPort };
 }
 
-async function buildRemoteBot(
-  gate: Parameters<typeof setRemoteRunBudgetGate>[0],
-  fetch: AgentFetch,
-  threadingScope?: ObservationScope,
-) {
-  setRemoteRunBudgetGate(gate);
-  try {
-    return await buildAgents(
-      [remoteAgent()],
-      { provider: "openai", defaultModel: "test" },
-      null,
-      undefined,
-      async () => [],
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      fetch,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { userId: "person-1" },
-      undefined,
-      threadingScope
-        ? {
-            actorId: threadingScope.actorId,
-            botId: "risk",
-            resolveScope: () => Promise.resolve(threadingScope),
-          }
-        : undefined,
-    );
-  } finally {
-    setRemoteRunBudgetGate(undefined);
-  }
-}
-
-test("a verifiable budget dials the endpoint, propagates the chain, and records a governed basic run", async () => {
+test("a supported endpoint dials under its contract, and only a checked receipt lets the run through", async () => {
   const { fetch, dials } = scriptedEndpoint(runEvents);
-  const { gate, admissions, settled } = recordingGate();
+  const harness = budgetHarness();
   const scope = resolveObservationScope({
     actorId: "person-1",
     botId: "risk",
@@ -320,13 +481,21 @@ test("a verifiable budget dials the endpoint, propagates the chain, and records 
     recorder.record(fact);
   });
   try {
-    const agents = await buildRemoteBot(gate, fetch, scope);
+    const agents = await buildRemoteBot(
+      { gate: harness.gate, resolver: harness.resolver },
+      fetch,
+      scope,
+    );
     const agent = agents.risk;
     if (!agent) throw new Error("buildAgents returned no remote agent");
     agent.threadId = "dial-thread";
 
+    const delivered: BaseEvent[] = [];
     await context.with(trace.setSpan(context.active(), runSpan), () =>
-      agent.runAgent({ runId: "dial-run" }),
+      agent.runAgent(
+        { runId: "dial-run" },
+        { onEvent: ({ event }) => delivered.push(event) },
+      ),
     );
     await flush();
 
@@ -336,15 +505,26 @@ test("a verifiable budget dials the endpoint, propagates the chain, and records 
       `00-${chain.traceId}-${chain.spanId}-01`,
     );
 
-    // The admission ran BEFORE the endpoint was contacted, over the run's identity.
-    expect(admissions).toHaveLength(1);
-    expect(admissions[0]).toMatchObject({
-      botId: "risk",
-      runId: "dial-run",
-      threadId: "dial-thread",
-      attribution: { userId: "person-1" },
+    // The contract rode out with it: this run's identity and the policy-derived caps.
+    expect(
+      (dials[0].body.forwardedProps as { openbotBudget?: unknown })
+        .openbotBudget,
+    ).toEqual({ v: 1, runId: "dial-run", caps: CAPS });
+    // And a caller-supplied budget in the surface's props cannot replace it.
+    expect(CAPS.totalTokens).toBe(Number(POLICY_TOKENS));
+
+    // The receipt is control-plane: checked here, never delivered to the surface.
+    expect(delivered.map((event) => event.type)).not.toContain("CUSTOM");
+    expect(delivered.map((event) => event.type)).toContain("RUN_FINISHED");
+
+    // The admission ran BEFORE the endpoint was contacted, over the run's identity, and held
+    // the policy's worst case in the same ledger every other paid path uses.
+    expect(harness.reservations).toHaveLength(1);
+    expect(harness.reservations[0]).toMatchObject({
+      externalCustomerId: "customer-1",
+      idempotencyKey: "usage:remote-run:risk:dial-run",
+      maximumCents: 5_000,
     });
-    expect(admissions[0].eventId).toBe("remote-run:risk:dial-run");
 
     // One fact, on the chain the dial propagated, with what the endpoint actually sent.
     expect(facts).toHaveLength(1);
@@ -373,8 +553,14 @@ test("a verifiable budget dials the endpoint, propagates the chain, and records 
     expect(store.reconciled[0]).toMatchObject({ runId: "dial-run" });
     expect(store.finished).toEqual([{ runId: "dial-run", state: "completed" }]);
 
-    // The budget settled from the observed outcome — unknown cost, never a release.
-    expect(settled).toEqual([{ outcome: "succeeded" }]);
+    // The hold settles as an unknown cost — the receipt bounded what was SPENT, it did not
+    // price it, so nothing here invents a charge or releases capacity.
+    expect(harness.marks).toEqual([
+      {
+        reservationId: "reservation-1",
+        reason: "remote_usage_unreported:succeeded",
+      },
+    ]);
   } finally {
     setRemoteRunObserver(undefined);
     runSpan.end();
@@ -383,32 +569,77 @@ test("a verifiable budget dials the endpoint, propagates the chain, and records 
   }
 });
 
-test("an unverifiable budget keeps the dial closed with the same refusal", async () => {
+test("an unsupported endpoint keeps the dial closed with the same refusal", async () => {
   const { fetch, dials } = scriptedEndpoint(runEvents);
   const spy = spyOn(HttpAgent.prototype, "run");
   try {
-    // No gate wired: the build itself refuses, before tools, transport, or dial.
-    const agents = await buildRemoteBot(undefined, fetch);
-    expect(agents.risk).toMatchObject({
+    // No gate wired: the build refuses, before tools, transport, or dial.
+    const withoutGate = await buildRemoteBot(
+      { gate: undefined, resolver: budgetHarness().resolver },
+      fetch,
+    );
+    expect(withoutGate.risk).toMatchObject({
       reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
     });
-    agents.risk.threadId = "closed-thread";
-    await expect(agents.risk.runAgent({ runId: "closed-run" })).rejects.toThrow(
-      "REMOTE_RUN_BUDGET_UNVERIFIED",
-    );
+    withoutGate.risk.threadId = "closed-thread";
+    await expect(
+      withoutGate.risk.runAgent({ runId: "closed-run" }),
+    ).rejects.toThrow("REMOTE_RUN_BUDGET_UNVERIFIED");
 
-    // A gate that refuses: the endpoint stays uncontacted and the credit refusal is
-    // the run's error, the same surface a built-in run surfaces one on.
-    const refusing = async () => {
-      throw new Error(
-        "credits_exhausted: the bound account cannot cover one remote run",
-      );
-    };
-    const built = await buildRemoteBot(refusing, fetch);
-    built.risk.threadId = "refused-thread";
-    await expect(built.risk.runAgent({ runId: "refused-run" })).rejects.toThrow(
-      "credits_exhausted",
+    // A gate but no contract resolver: still refused — a hold alone is what the finding says
+    // is NOT a contract.
+    const withoutContract = await buildRemoteBot(
+      { gate: budgetHarness().gate, resolver: undefined },
+      fetch,
     );
+    expect(withoutContract.risk).toMatchObject({
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
+
+    // A resolver that does not support THIS endpoint: an endpoint this deployment does not
+    // run, or one it has not declared contract-capable.
+    const otherEndpoint = await buildRemoteBot(
+      {
+        gate: budgetHarness().gate,
+        resolver: budgetHarness({ endpoints: ["https://elsewhere.test/ag-ui"] })
+          .resolver,
+      },
+      fetch,
+    );
+    expect(otherEndpoint.risk).toMatchObject({
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
+
+    // The deployment's own token is the proof it runs the endpoint; a Bot dialled with
+    // anything else is not one whose receipts this side could verify.
+    const wrongToken = await buildRemoteBot(
+      {
+        gate: budgetHarness().gate,
+        resolver: budgetHarness({ sharedSecret: "some-other-secret" }).resolver,
+      },
+      fetch,
+    );
+    expect(wrongToken.risk).toMatchObject({
+      reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+    });
+
+    // The credit admission still refuses through the same surface it always did, and the
+    // endpoint stays uncontacted.
+    for (const reserve of ["insufficient", "throw"] as const) {
+      const harness = budgetHarness({ reserve });
+      const built = await buildRemoteBot(
+        { gate: harness.gate, resolver: harness.resolver },
+        fetch,
+      );
+      built.risk.threadId = `${reserve}-thread`;
+      await expect(
+        built.risk.runAgent({ runId: `${reserve}-run` }),
+      ).rejects.toThrow(
+        reserve === "insufficient"
+          ? "credits_exhausted"
+          : "credit_gate_unavailable",
+      );
+    }
 
     expect(dials).toHaveLength(0);
     expect(spy).not.toHaveBeenCalled();
@@ -417,9 +648,121 @@ test("an unverifiable budget keeps the dial closed with the same refusal", async
   }
 });
 
+const violationCase = (
+  name: string,
+  script: (body: RunAgentInput) => BaseEvent[],
+) =>
+  test(name, async () => {
+    const { fetch, dials } = scriptedEndpoint(script);
+    const harness = budgetHarness();
+    const facts: RemoteRunFact[] = [];
+    setRemoteRunObserver((fact) => facts.push(fact));
+    try {
+      const agents = await buildRemoteBot(
+        { gate: harness.gate, resolver: harness.resolver },
+        fetch,
+      );
+      agents.risk.threadId = "violation-thread";
+      await expect(
+        agents.risk.runAgent({ runId: "violation-run" }),
+      ).rejects.toThrow("REMOTE_RUN_BUDGET_CONTRACT_VIOLATION");
+      await flush();
+
+      // The dial happened once; the run is not delivered, and the hold still settles as an
+      // unknown cost rather than being released on a contract this side could not prove.
+      expect(dials).toHaveLength(1);
+      expect(harness.marks).toEqual([
+        {
+          reservationId: "reservation-1",
+          reason: "remote_usage_unreported:failed",
+        },
+      ]);
+      // The observation records the failure it actually saw.
+      expect(facts).toHaveLength(1);
+      expect(facts[0].events.at(-1)?.type).toBe("error");
+    } finally {
+      setRemoteRunObserver(undefined);
+    }
+  });
+
+violationCase(
+  "a receipt over its caps while claiming success tears the run down",
+  (body) => [
+    {
+      type: EventType.RUN_STARTED,
+      threadId: body.threadId,
+      runId: body.runId,
+    } as BaseEvent,
+    receiptEvent(body.runId, {
+      status: "ok",
+      usage: {
+        modelSteps: 2,
+        inputTokens: CAPS.inputTokens + 1,
+        outputTokens: 10,
+        totalTokens: CAPS.inputTokens + 11,
+      },
+    }),
+    {
+      type: EventType.RUN_FINISHED,
+      threadId: body.threadId,
+      runId: body.runId,
+    } as BaseEvent,
+  ],
+);
+
+violationCase(
+  "a receipt signed with the wrong key tears the run down",
+  (body) => [
+    {
+      type: EventType.RUN_STARTED,
+      threadId: body.threadId,
+      runId: body.runId,
+    } as BaseEvent,
+    receiptEvent(body.runId, { mac: "0".repeat(64) }),
+    {
+      type: EventType.RUN_FINISHED,
+      threadId: body.threadId,
+      runId: body.runId,
+    } as BaseEvent,
+  ],
+);
+
+violationCase(
+  "a receipt for another run's contract tears the run down",
+  (body) => [
+    {
+      type: EventType.RUN_STARTED,
+      threadId: body.threadId,
+      runId: body.runId,
+    } as BaseEvent,
+    receiptEvent("some-other-run"),
+    {
+      type: EventType.RUN_FINISHED,
+      threadId: body.threadId,
+      runId: body.runId,
+    } as BaseEvent,
+  ],
+);
+
+violationCase(
+  "a terminal event with no receipt in front of it tears the run down",
+  (body) => [
+    {
+      type: EventType.RUN_STARTED,
+      threadId: body.threadId,
+      runId: body.runId,
+    } as BaseEvent,
+    {
+      type: EventType.RUN_FINISHED,
+      threadId: body.threadId,
+      runId: body.runId,
+    } as BaseEvent,
+  ],
+);
+
 test("a torn-down run settles as an unknown cost and leaves the binding running", async () => {
   const { fetch, dials } = scriptedEndpoint(() => "hold-open");
-  const { gate, settled } = recordingGate();
+  const harness = budgetHarness();
   const scope = resolveObservationScope({
     actorId: "person-1",
     botId: "risk",
@@ -440,7 +783,11 @@ test("a torn-down run settles as an unknown cost and leaves the binding running"
   });
   let agents: Awaited<ReturnType<typeof buildRemoteBot>> | undefined;
   try {
-    agents = await buildRemoteBot(gate, fetch, scope);
+    agents = await buildRemoteBot(
+      { gate: harness.gate, resolver: harness.resolver },
+      fetch,
+      scope,
+    );
     const agent = agents.risk;
     agent.threadId = "cancel-thread";
     const finishing = agent.runAgent({ runId: "cancel-run" });
@@ -453,7 +800,14 @@ test("a torn-down run settles as an unknown cost and leaves the binding running"
     await flush();
 
     expect(dials).toHaveLength(1);
-    expect(settled).toEqual([{ outcome: "unknown" }]);
+    // A teardown is not a contract violation — there was no terminal event claiming an
+    // ending — so the run simply has no outcome, and the hold stays unknown.
+    expect(harness.marks).toEqual([
+      {
+        reservationId: "reservation-1",
+        reason: "remote_usage_unreported:unknown",
+      },
+    ]);
     expect(facts).toHaveLength(1);
     expect(facts[0].events.map((event) => event.type)).toEqual([
       "http_first_frame",
@@ -476,6 +830,8 @@ test("an endpoint-confirmed cancellation settles by its name and still holds as 
       threadId: body.threadId,
       runId: body.runId,
     } as BaseEvent,
+    // The contract's order holds even here: what the run spent, then the ending.
+    receiptEvent(body.runId, { status: "budget_exceeded" }),
     {
       // The protocol's own confirmed-cancellation ending, not this side's teardown.
       type: EventType.RUN_FINISHED,
@@ -484,11 +840,14 @@ test("an endpoint-confirmed cancellation settles by its name and still holds as 
       outcome: { type: "cancelled" },
     } as unknown as BaseEvent,
   ]);
-  const { gate, settled } = recordingGate();
+  const harness = budgetHarness();
   const facts: RemoteRunFact[] = [];
   setRemoteRunObserver((fact) => facts.push(fact));
   try {
-    const agents = await buildRemoteBot(gate, fetch);
+    const agents = await buildRemoteBot(
+      { gate: harness.gate, resolver: harness.resolver },
+      fetch,
+    );
     agents.risk.threadId = "cancelled-thread";
     await agents.risk.runAgent({ runId: "cancelled-run" });
     await flush();
@@ -502,8 +861,13 @@ test("an endpoint-confirmed cancellation settles by its name and still holds as 
     ]);
     // The budget settles by the confirmed name and STILL does not release: the endpoint
     // may have produced work before it stopped, the same doctrine a built-in run's
-    // `cancelled` keeps (F5C1).
-    expect(settled).toEqual([{ outcome: "canceled" }]);
+    // `cancelled` keeps (F5C1). A budget-stopped run is honest about having spent.
+    expect(harness.marks).toEqual([
+      {
+        reservationId: "reservation-1",
+        reason: "remote_usage_unreported:canceled",
+      },
+    ]);
   } finally {
     setRemoteRunObserver(undefined);
   }

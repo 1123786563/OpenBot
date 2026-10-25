@@ -87,7 +87,11 @@ import { createOpikHealthService } from "./ai-observability/health";
 import { createIdLinkStore } from "./ai-observability/id-links";
 import { createModelSpanRecorder } from "./ai-observability/model-span";
 import { createRunsQueryService } from "./ai-observability/queries/runs";
-import { createRemoteRunRecorder } from "./ai-observability/remote-run";
+import {
+  createRemoteBudgetContractResolver,
+  createRemoteRunBudgetGate,
+  createRemoteRunRecorder,
+} from "./ai-observability/remote-run";
 import {
   createObservationRetentionWorker,
   RETENTION_WORK_KIND,
@@ -255,6 +259,7 @@ import {
   setMastraPersonalMemoryContext,
   setModelBillingAudit,
   setModelUsageGate,
+  setRemoteBudgetContractResolver,
   setRemoteRunBudgetGate,
   setRemoteRunObserver,
   setWorkbenchGatewayModel,
@@ -6240,110 +6245,84 @@ if (billing !== undefined && usageOutbox !== undefined) {
   });
 
   /*
-   * The remote dial's budget admission (F5E1-F2). The gate exists exactly when the
-   * deployment can verify a budget: billing composed AND the credit policy configured —
-   * a deployment without either keeps its remote Bots fail-closed
-   * (REMOTE_RUN_BUDGET_UNVERIFIED), because a dial nobody can budget is a dial nobody can
-   * account for. This IS the deploy-level budget authorization: the policy's `codeRun`
-   * class is the per-run ceiling a remote run is held to, since the endpoint's own model
-   * is not this deployment's to price.
+   * The remote dial's budget seam (F5E1-F2, closed by R3-02). TWO things have to exist before a
+   * remote Bot dials, and the finding is precisely that only the first one did:
    *
-   * Settlement is the unknown-cost doctrine, not an invented charge: AG-UI carries no
-   * usage receipt, so an admitted run's hold is MARKED UNKNOWN (06.8 — it outlives its own
-   * expiry for reconciliation) with the observed outcome as its reason. Nothing releases,
-   * because nothing this side can observe ever confirms a remote run was free. The usage
-   * outbox's closed source vocabulary ("llm" | "code_run") has no remote member yet, so
-   * the evidence row waits on that contract change rather than mislabeling a fact — the
-   * hold plus this log line is what reconciliation reads today.
+   * 1. THE ADMISSION holds the run's worst case in credits — one writer, one ledger, the same
+   *    reservation machinery the built-in path uses, over the policy's `codeRun` ceiling. It
+   *    exists exactly when billing is composed AND the credit policy is configured, and it is
+   *    what makes the charge bounded. A hold bounds what is CHARGED.
+   *
+   * 2. THE CONTRACT bounds what the ENDPOINT SPENDS: caps derived from that same policy ceiling
+   *    ride out with the dial, the endpoint enforces them at its own model call, and its signed
+   *    receipt is checked against them before the run's ending is delivered. It exists only
+   *    where the operator has named the endpoint in `REMOTE_BUDGET_CONTRACT_ENDPOINTS` and the
+   *    endpoint presents this deployment's own token — see `createRemoteBudgetContractResolver`.
+   *
+   * A deployment with either missing keeps its remote Bots fail-closed (REMOTE_RUN_BUDGET_
+   * UNVERIFIED) at build time, before tools, roster or transport are touched. That is the
+   * deliberate tightening: the presence of a price list is not authorization for a third party
+   * to spend without limit, which is what the F6D hold alone amounted to.
+   *
+   * Settlement stays the unknown-cost doctrine the hold has always kept: AG-UI carries no
+   * usage receipt in credit units, so an admitted run's hold is MARKED UNKNOWN (06.8 — it
+   * outlives its own expiry for reconciliation) with the observed outcome as its reason, and
+   * nothing releases. The contract's receipt bounds what was spent; it does not price it, and
+   * pricing it here would be a second book beside the ledger.
    */
   const remoteRunCreditPolicy =
     creditPolicy?.configured === true ? creditPolicy : undefined;
   if (remoteRunCreditPolicy !== undefined) {
-    setRemoteRunBudgetGate(async (input) => {
-      // The request's one payer (B5-219), resolved once, exactly as the model gate does:
-      // the request's own binding when the surface bound one, else the deployment's.
-      const payerBinding = resolveConsumptionPayerBinding({
-        requestBinding: currentPayerBinding(),
-        deploymentBinding: billing.deploymentPayerBinding,
-      });
-      let reservation: Awaited<
-        ReturnType<typeof billing.creditWriter.reserveCredits>
-      >;
-      try {
-        reservation = await billing.creditWriter.reserveCredits({
-          externalCustomerId: payerBinding.externalCustomerId,
-          idempotencyKey: `${USAGE_IDEMPOTENCY_KEY_PREFIX}${input.eventId}`,
-          maximumCents: Number(
-            remoteRunCreditPolicy.codeRun.maximumReservationUnits,
-          ),
-          expiresAt: new Date(
-            input.occurredAt.getTime() + MODEL_RESERVATION_WINDOW_MS,
-          ),
-        });
-      } catch (error) {
-        // The ledger read/write failed: refused, never free (fail-closed, the same sentence
-        // the model gate keeps). The name alone is logged.
-        log.error(
-          {
-            type: "remote-run-credit-gate-failed",
-            eventId: input.eventId,
-            botId: input.botId,
-            name: (error as Error | null | undefined)?.name,
-          },
-          "remote-run-credit-gate-failed",
-        );
-        throw new CreditGateFailureError();
-      }
-      if (!reservation.reserved) {
-        // The hold is the run-class worst case, so the log keeps the two causes
-        // distinguishable: an empty balance and one smaller than one remote run's ceiling.
-        log.warn(
-          {
-            type: "remote-run-credit-reservation-refused",
-            eventId: input.eventId,
-            botId: input.botId,
-            payerKind: payerBinding.payer.kind,
-            available: reservation.availableCents,
-          },
-          "remote-run-credit-reservation-refused",
-        );
-        // The same displayable refusal the built-in path answers with (B5-219 / AC13): the
-        // bound account's kind and its own available amount, no other account's data, no
-        // second resolution, no switch.
-        throw new CreditInsufficientError({
-          payerKind: payerBinding.payer.kind,
-          availableCents: reservation.availableCents,
-        });
-      }
-      return {
-        finish: async ({ outcome }) => {
-          try {
-            await billing.creditWriter.markReservationUnknown(
-              reservation.reservationId,
-              `remote_usage_unreported:${outcome}`,
-            );
-          } catch (error) {
-            // The settlement mark failed: the hold stays plain-reserved and expires on its
-            // own clock — visible to reconciliation, logged here, never the run's failure
-            // (the answer was already delivered).
-            log.error(
-              {
-                type: "remote-run-credit-settle-failed",
-                eventId: input.eventId,
-                botId: input.botId,
-                outcome,
-                name: (error as Error | null | undefined)?.name,
-              },
-              "remote-run-credit-settle-failed",
-            );
-          }
+    setRemoteRunBudgetGate(
+      createRemoteRunBudgetGate({
+        creditWriter: billing.creditWriter,
+        // The request's one payer (B5-219), resolved once, exactly as the model gate does:
+        // the request's own binding when the surface bound one, else the deployment's.
+        resolvePayer: () =>
+          resolveConsumptionPayerBinding({
+            requestBinding: currentPayerBinding(),
+            deploymentBinding: billing.deploymentPayerBinding,
+          }),
+        maximumCents: Number(
+          remoteRunCreditPolicy.codeRun.maximumReservationUnits,
+        ),
+        reservationWindowMs: MODEL_RESERVATION_WINDOW_MS,
+        idempotencyPrefix: USAGE_IDEMPOTENCY_KEY_PREFIX,
+        log,
+        refusals: {
+          gateFailure: () => new CreditGateFailureError(),
+          insufficient: (input) => new CreditInsufficientError(input),
         },
-      };
-    });
+      }),
+    );
+
+    /*
+     * The contract, wired from three explicit facts and nothing inferred: the operator's list
+     * of contract-capable endpoints, the deployment token both ends hold, and the policy's own
+     * token ceiling. Absent either of the first two, no endpoint resolves and every remote Bot
+     * refuses — the same safe direction a deployment with no billing takes.
+     */
+    const sessionContract = config.remoteBudgetContract;
+    setRemoteBudgetContractResolver(
+      sessionContract === undefined
+        ? undefined
+        : createRemoteBudgetContractResolver({
+            endpoints: sessionContract.endpoints,
+            sharedSecret: config.managedAgent?.token,
+            maximumTokens: remoteRunCreditPolicy.codeRun.maximumTokens,
+            maxModelSteps: sessionContract.maxModelSteps,
+          }),
+    );
+  } else {
+    // No policy means no hold, and no hold means no dial: the contract alone would bound
+    // spending but nothing would bound the charge, so both seams go away together.
+    setRemoteRunBudgetGate(undefined);
+    setRemoteBudgetContractResolver(undefined);
   }
 } else {
   setModelUsageGate(undefined);
   setRemoteRunBudgetGate(undefined);
+  setRemoteBudgetContractResolver(undefined);
   setWorkbenchGatewayModel(undefined);
   setModelBillingAudit(undefined);
 }
