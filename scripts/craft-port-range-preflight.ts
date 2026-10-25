@@ -85,12 +85,15 @@ export type LsofSnapshot =
 
 /** 探测面（可注入）：一次调用返回全量快照，而不是逐端口 × N 次子进程。 */
 /**
- * compose 对「未显式命名的 project」的默认取法：目录名转小写并去掉既非小写字母数字也非
- * 连字符的字符（OpenBot → openbot，My.Repo → myrepo）。docker-compose.yml 自身没有
- * `name:` 字段（本仓事实），所以主栈 project 恒走这条规则或显式 COMPOSE_PROJECT_NAME。
+ * compose 对「未显式命名的 project」的默认取法：目录名转小写并去掉既非小写字母数字、
+ * 下划线也非连字符的字符（OpenBot → openbot，My.Repo → myrepo；`_` 保留 —— R2R-F1
+ * 真机对拍：目录 UP_Period.Underscore-Name 派生 up_periodunderscore-name）。注意
+ * `_` 若是首字符会被 compose 自身拒绝（project 名须 [a-z0-9] 开头），与这里无关。
+ * docker-compose.yml 自身没有 `name:` 字段（本仓事实），所以主栈 project 恒走这条
+ * 规则或显式 COMPOSE_PROJECT_NAME。
  */
 export function composeProjectFromDirectory(dir: string): string {
-  return dir.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  return dir.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
 
 /**

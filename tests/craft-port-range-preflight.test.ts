@@ -457,8 +457,8 @@ test("foreign-project agent-sandbox is a conflict naming container and project",
 
 /**
  * R2-F2：compose 对未命名 project 的默认取法 —— 目录名转小写并剔除非
- * [小写字母数字-] 字符。OpenBot → openbot 正是主 checkout 的栈名来源（docker-compose.yml
- * 无 `name:` 字段，project 恒由此派生）。
+ * [小写字母数字_-] 字符（`_` 保留，R2R-F1 真机对拍修正）。OpenBot → openbot 正是主
+ * checkout 的栈名来源（docker-compose.yml 无 `name:` 字段，project 恒由此派生）。
  */
 test("composeProjectFromDirectory lowercases and strips invalid characters", () => {
   expect(composeProjectFromDirectory("OpenBot")).toBe("openbot");
@@ -466,7 +466,11 @@ test("composeProjectFromDirectory lowercases and strips invalid characters", () 
     "i619-t2-port-preflight",
   );
   expect(composeProjectFromDirectory("My.Repo")).toBe("myrepo");
-  expect(composeProjectFromDirectory("Repo_Name")).toBe("reponame");
+  expect(composeProjectFromDirectory("Repo_Name")).toBe("repo_name");
+  // R2R-F1 真机对拍样本（Docker 29.8.2 / Compose v5.5.0）：`_` 保留、`.` 剔除。
+  expect(composeProjectFromDirectory("UP_Period.Underscore-Name")).toBe(
+    "up_periodunderscore-name",
+  );
 });
 
 /** R2-F2：COMPOSE_PROJECT_NAME（进程环境或 .env）优先于目录派生，与 compose 同序。 */
