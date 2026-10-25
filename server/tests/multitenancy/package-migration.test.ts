@@ -42,6 +42,7 @@ import { createPluginPackageRoutes } from "../../src/enterprise/plugin-packages/
 import {
   CATALOGUE_EXPERTS,
   CATALOGUE_SKILLS,
+  type CatalogueSkill,
 } from "../../src/marketplace/catalogue";
 import {
   BUILTIN_PACKAGE_KEY,
@@ -159,6 +160,36 @@ async function seedOwnership(agentId: string): Promise<void> {
   });
 }
 
+/**
+ * F-T12-1: the slug-held stock a LIVE legacy install leaves in a shared
+ * library — the acceptance demo's expert install wrote exactly these rows.
+ * Same write shape the plugin store's installSkill uses (the slug is the row
+ * id) and the marketplace's own rule that a slug somebody already holds is
+ * never re-grabbed: on conflict nothing is written, so whichever holder came
+ * first — the demo, or this staging on an earlier run — keeps the slug.
+ */
+async function seedHeldSkillRow(
+  entry: CatalogueSkill,
+  ownerUserId: string | null,
+): Promise<void> {
+  await setup.$client.unsafe(
+    `insert into skills (id, owner_user_id, slug, title, summary, instructions, origin, icon, category, installed_by)
+     values ($1, $2, $3, $4, $5, $6, 'catalogue', $7, $8, $9)
+     on conflict (slug) do nothing`,
+    [
+      entry.slug,
+      ownerUserId,
+      entry.slug,
+      entry.title,
+      entry.summary,
+      entry.instructions,
+      entry.icon,
+      entry.category,
+      ownerUserId ?? "deployment",
+    ],
+  );
+}
+
 async function seedSkillRow(
   slug: string,
   ownerUserId: string | null,
@@ -166,6 +197,35 @@ async function seedSkillRow(
 ): Promise<void> {
   const entry = CATALOGUE_SKILLS.find((s) => s.slug === slug);
   if (!entry) throw new Error(`unknown skill slug ${slug}`);
+  const instructions = edited
+    ? `${entry.instructions}\n（私改过）`
+    : entry.instructions;
+  // F-T12-1: stage the way the real install path writes, never by blind
+  // insert. The marketplace route reads the slug's holder first and a held
+  // slug is never re-grabbed (Spec §8); a free slug gets this suite's own
+  // row (pkg11- id, removed on rerun), while a held slug keeps its id and
+  // owner and only its content converges to this scenario — the same field
+  // set installSkill's upsert refreshes — so the drill classifies the one
+  // row the slug actually has, whoever holds it.
+  const held = (await setup.$client.unsafe(
+    `select id from skills where slug = $1`,
+    [entry.slug],
+  )) as Array<{ id: string }>;
+  if (held.length > 0) {
+    await setup.$client.unsafe(
+      `update skills set title = $2, summary = $3, instructions = $4, icon = $5, category = $6, updated_at = now()
+       where slug = $1`,
+      [
+        entry.slug,
+        entry.title,
+        entry.summary,
+        instructions,
+        entry.icon,
+        entry.category,
+      ],
+    );
+    return;
+  }
   await setup.$client.unsafe(
     `insert into skills (id, owner_user_id, slug, title, summary, instructions, origin, icon, category, installed_by)
      values ($1, $2, $3, $4, $5, $6, 'catalogue', $7, $8, $9)`,
@@ -175,7 +235,7 @@ async function seedSkillRow(
       entry.slug,
       entry.title,
       entry.summary,
-      edited ? `${entry.instructions}\n（私改过）` : entry.instructions,
+      instructions,
       entry.icon,
       entry.category,
       ownerUserId,
@@ -280,6 +340,17 @@ beforeAll(async () => {
   await seedOwnership(pristineAgentId);
   await seedOwnership(editedAgentId);
   // unownedAgentId deliberately gets NO ownership row.
+  // Slug-held stock from before PKG11 (F-T12-1): a deployment-wide row on
+  // the pristine skill and another company member's private row on the
+  // edited one — the two holder shapes the live legacy install path leaves.
+  // Every run now drills over held slugs, the state a shared library
+  // actually presents to a production migration.
+  await seedHeldSkillRow(PRISTINE_SKILL!, null);
+  await seedHeldSkillRow(
+    EDITED_SKILL!,
+    (fixture.base.isolation.identities["b1-member"] as { userId?: string })
+      .userId!,
+  );
   await seedSkillRow(PRISTINE_SKILL!.slug, legacyUserId, false);
   await seedSkillRow(EDITED_SKILL!.slug, legacyUserId, true);
   await seedSkillRow("chart-reading", legacyUserId, false);

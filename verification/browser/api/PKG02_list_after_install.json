@@ -1,0 +1,50 @@
+{
+  "status": 200,
+  "body": {
+    "items": [
+      {
+        "packageKey": "openbot/demo-skill",
+        "version": "1.1.0",
+        "displayName": "Demo Skill",
+        "summary": "Summarize a long note into a short, ordered brief.",
+        "category": "productivity",
+        "install": {
+          "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+          "packageKey": "openbot/demo-skill",
+          "version": "1.0.0",
+          "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+          "revision": 1,
+          "generation": 1,
+          "status": "enabled",
+          "readiness": "needs_grant",
+          "blockers": [
+            {
+              "code": "NEEDS_GRANT"
+            }
+          ],
+          "allowedActions": [
+            "plan",
+            "apply",
+            "grant",
+            "createExpert",
+            "disable",
+            "uninstall"
+          ]
+        },
+        "installable": true,
+        "blockers": []
+      },
+      {
+        "packageKey": "openbot/legacy-catalogue",
+        "version": "1.0.0",
+        "displayName": "OpenBot 内置目录",
+        "summary": "由旧市场目录导出的内置专家与技能（PKG11 迁移基线）。",
+        "category": "builtin",
+        "install": null,
+        "installable": true,
+        "blockers": []
+      }
+    ],
+    "nextCursor": null
+  }
+}

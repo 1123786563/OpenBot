@@ -1,0 +1,49 @@
+Demo Skill
+Summarize a long note into a short, ordered brief.
+openbot
+发布者
+demo-skill
+包名
+1.1.0
+版本
+摘要
+be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4
+已安装
+v1.0.0
+r5
+已卸载
+不可用
+生命周期
+已卸载
+重新安装
+工具调用
+
+Bot 通过这个包发起的工具调用。效果未确认的调用不会自动重发。
+
+效果未确认
+openbot/demo-skill:summarize@1.0.0
+2026/10/25 10:55:11
+
+这条调用的效果还无法确认。供应商没有提供查询方式，OpenBot 也不会重发它。
+
+暂时不能继续：RUN_LEASE_INVALID。按提示恢复条件后，才能发起下一条调用。
+
+同一次会话的已有回执
+
+这次会话还没有确定的回执。
+
+这条调用绑定的信息
+原账号
+无账号（使用部署自带连接）
+参数摘要
+abababab
+连接代次
+1
+资源
+技能
+summarize
+可用
+专家模板
+note-assistant
+可用
+Close

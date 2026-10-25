@@ -1,0 +1,26 @@
+{
+  "status": 200,
+  "body": {
+    "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+    "packageKey": "openbot/demo-skill",
+    "version": "1.1.0",
+    "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4",
+    "revision": 2,
+    "generation": 1,
+    "status": "enabled",
+    "readiness": "needs_grant",
+    "blockers": [
+      {
+        "code": "NEEDS_GRANT"
+      }
+    ],
+    "allowedActions": [
+      "plan",
+      "apply",
+      "grant",
+      "createExpert",
+      "disable",
+      "uninstall"
+    ]
+  }
+}
