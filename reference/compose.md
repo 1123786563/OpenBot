@@ -10,7 +10,6 @@ file, and the 2026-10-14 move of the optional stacks under `docker/compose/`.
 | File | Services | When you need it |
 | --- | --- | --- |
 | `docker-compose.yml` (repo root) | `postgres`, `migrate`, `agent-computer`, `agent-sandbox`, `openbot-redis`, `spire-init` / `spire-server` / `spire-agent`, `supervisor`, `agent-bot`, `agent-harness` (profile `harness`), `agent-langgraph`, `agent-trpc`, `go-runtime` (profile `go-runtime`) | Always, first. `scripts/start.sh` drives this file. |
-| `docker-compose.override.yml` (repo root) | A port override for `agent-sandbox` only | Never invoked by hand: Compose's default discovery loads it beside the file above. |
 | `docker/compose/services.yml` | `casdoor`, `open-connector` | When `CASDOOR_OAUTH_*` is configured, or the self-hosted OpenConnector broker should run. |
 | `docker/compose/lago.yml` | `lago-redis`, `lago-pdf`, `lago-migrate`, `lago-api`, `lago-front`, `lago-worker`, `lago-clock` | When billing talks to Lago (`LAGO_API_URL`). |
 | `docker/compose/observability.yml` | `loki`, `tempo`, `prometheus`, `alloy`, `grafana`, `glitchtip` (+ its own postgres and redis) | When local telemetry is wanted — [observability.md](observability.md) is the guide. |
@@ -52,11 +51,11 @@ stack that ran under the old single file keeps its data (`qdrant-data`, `lago-re
 ## Ports
 
 Every published port binds loopback only (`127.0.0.1` and `[::1]`), and every one has a `*_PORT`
-override named in `.env.example`.
+override named in `.env.example` (the craft dev range is the `OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_[START|END]` pair).
 
 | Stack | Loopback ports |
 | --- | --- |
-| main | postgres 5432, agent-computer 4100, supervisor 4500→4300, agent-bot 4200, agent-langgraph 4201, agent-harness 4202 (picked), agent-trpc 4204, go-runtime 4203, agent-sandbox 4300 + 3011-3098, openbot-redis 6379 |
+| main | postgres 5432, agent-computer 4100, supervisor 4500→4300, agent-bot 4200, agent-langgraph 4201, agent-harness 4202 (picked), agent-trpc 4204, go-runtime 4203, agent-sandbox 4300 + craft dev range 3011-3098, openbot-redis 6379 |
 | services | casdoor 8000, open-connector 3100 |
 | lago | lago-api 48889, lago-front 48890 |
 | observability | grafana 3003, loki 3102, tempo 3200 (+ OTLP 4318/4317), prometheus 9090, alloy 12345, glitchtip 8001 |
@@ -172,9 +171,21 @@ is long gone), `lago-redis` and `glitchtip-redis` (each owned by the stack that 
 `agent-sandbox` publishes `SANDBOX_PORT` and the Craft webapp dev range. Craft's per-session dev
 servers bind `OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_[START|END]` inside the container, and the API
 server on the host probes/previews them through the gateway base, so the range publishes to
-loopback exactly like the gateway port. `docker-compose.override.yml` narrows the range from
-3010-3100 to 3011-3098 because 3010 collides with the vite dev server. Keep the override, the
-`.env` start/end values and this note in step.
+loopback exactly like the gateway port.
+
+The range has one source: the two `.env` keys. `docker-compose.yml` publishes `START-END` on
+the host and the container side from the same interpolation — defaults 3010/3100, matching the
+server's own defaults in `server/src/craft/config.ts` — so even with no `.env` at all the
+published range equals the range the server allocates from. `.env.example` ships 3011/3098
+instead, because 3010 collides with the vite dev server and a fresh checkout copies the example.
+To change the range, edit the two keys in `.env` and run `docker compose up -d agent-sandbox`
+again (the container is recreated with the new publish; restart a host-run API too — it reads
+the keys at startup). A port already taken makes the publish fail —
+`lsof -nP -iTCP:<port> -sTCP:LISTEN` and `docker ps --filter publish=<port>` name the holder;
+free it or move the range.
+
+Production never publishes this range to a host: the orchestrator assigns sandbox ports there,
+and the loopback publish is a dev-stack concern only.
 
 ### Casdoor and OpenConnector
 
@@ -214,6 +225,6 @@ forced because Django signs sessions with it; everything keeps seven days.
 
 ```sh
 bunx e2e run --config e2e.unit.config.ts tests/compose.test.ts
-docker compose config --quiet                                              # main (+ override)
+docker compose config --quiet                                              # main
 docker compose --project-directory . -f docker/compose/services.yml config --quiet  # and the other three
 ```
