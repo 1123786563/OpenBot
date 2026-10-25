@@ -1,7 +1,11 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
 import { ChatAnthropic } from "@langchain/anthropic";
-import { type AIMessage, ToolMessage } from "@langchain/core/messages";
+import {
+  type AIMessage,
+  type BaseMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import {
   END,
@@ -27,6 +31,13 @@ import {
   injectTraceHeaders,
   withTraceFetch,
 } from "../../shared/trace";
+import {
+  type BudgetContract,
+  BudgetContractInvalidError,
+  budgetReceiptEvent,
+  RunBudgetLedger,
+  readBudgetContract,
+} from "./budget";
 import {
   GovernedCallbackHandler,
   governedRunSpan,
@@ -63,8 +74,10 @@ if (!resolvedPort.ok) {
   process.exit(1);
 }
 const PORT = resolvedPort.port;
-const MANAGED_AGENT_TOKEN = process.env.MANAGED_AGENT_TOKEN?.trim();
-if (!MANAGED_AGENT_TOKEN) {
+// Coalesced to "" rather than left optional: the guard below refuses to start without it, and a
+// plain `string` keeps that fact usable from closures (narrowing does not cross a function body).
+const MANAGED_AGENT_TOKEN = process.env.MANAGED_AGENT_TOKEN?.trim() ?? "";
+if (MANAGED_AGENT_TOKEN === "") {
   console.error(
     "MANAGED_AGENT_TOKEN is not set. This process holds a model credential and will not start without a token for OpenBot's server.",
   );
@@ -205,14 +218,21 @@ function toBoundTools(input: RunAgentInput) {
  *
  * Every one of these binds tools the same way and streams the same way, which is exactly why the
  * rest of this file does not know which one it got.
+ *
+ * `maxOutputTokens` is the run's remaining output budget (R3-02), handed to the provider so the
+ * cap is enforced on ITS side of the call rather than only accounted after it: each provider's
+ * own knob for "stop after this many completion tokens" (`maxTokens` on OpenAI and Anthropic,
+ * `maxOutputTokens` on Google). Absent means an unbudgeted run — a caller that sent no contract —
+ * and the provider's own default applies, exactly as before the contract existed.
  */
-function buildModel() {
+function buildModel(maxOutputTokens?: number) {
   if (PROVIDER === "anthropic") {
     return new ChatAnthropic({
       model: MODEL,
       apiKey: apiKeyOrPlaceholder(API_KEY),
       streaming: true,
       ...(BASE_URL ? { anthropicApiUrl: BASE_URL } : {}),
+      ...(maxOutputTokens === undefined ? {} : { maxTokens: maxOutputTokens }),
     });
   }
   if (PROVIDER === "google") {
@@ -221,6 +241,7 @@ function buildModel() {
       apiKey: apiKeyOrPlaceholder(API_KEY),
       streaming: true,
       ...(BASE_URL ? { baseUrl: BASE_URL } : {}),
+      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
     });
   }
   return new ChatOpenAI({
@@ -229,6 +250,7 @@ function buildModel() {
     streaming: true,
     ...(BASE_URL ? { configuration: { baseURL: BASE_URL } } : {}),
     ...(USE_RESPONSES_API ? { useResponsesApi: true } : {}),
+    ...(maxOutputTokens === undefined ? {} : { maxTokens: maxOutputTokens }),
     /*
      * `reasoning.effort`, not the `reasoningEffort` convenience field: the integration deprecated
      * the latter in favour of merging it into this object, and one of them is the one that survives.
@@ -345,18 +367,30 @@ function callsTheSurface(
  * Now it answers, calls what it needs, reads the results and answers again, which is what a harness
  * is for. `recursionLimit` bounds a model that would otherwise call tools in a circle.
  */
-function buildGraph(input: RunAgentInput) {
-  const model = buildModel();
+function buildGraph(input: RunAgentInput, budget: RunBudgetLedger | null) {
   const run = runAssertionOf(input);
 
   const tools = toBoundTools(input);
-  const bound = tools.length > 0 ? model.bindTools(tools) : model;
   const ours = deploymentToolsOf(input);
 
+  /*
+   * THE MODEL NODE IS WHERE THE BUDGET IS ENFORCED (R3-02), because it is the only seat in this
+   * process where the loop can still decide not to spend: the cap is checked before the call,
+   * the call is sized by what remains, and the provider's own reported usage is accounted
+   * immediately afterwards — the three halves the ledger's docblock promises. The model is built
+   * per step so its output cap is THIS step's remaining budget rather than the run's opening one.
+   */
+  const answer = async (state: { messages: BaseMessage[] }) => {
+    const cap = budget?.beginModelStep(state.messages);
+    const model = buildModel(cap);
+    const bound = tools.length > 0 ? model.bindTools(tools) : model;
+    const message = (await bound.invoke(state.messages)) as AIMessage;
+    budget?.recordModelCall(message);
+    return { messages: [message] };
+  };
+
   return new StateGraph(MessagesAnnotation)
-    .addNode("answer", async (state) => ({
-      messages: [await bound.invoke(state.messages)],
-    }))
+    .addNode("answer", answer)
     .addNode("tools", async (state) => {
       const last = state.messages.at(-1) as AIMessage;
       const results = await Promise.all(
@@ -414,6 +448,25 @@ function buildGraph(input: RunAgentInput) {
 async function runAgent(input: RunAgentInput): Promise<Response> {
   const encoder = new EventEncoder();
   /*
+   * The run's budget contract (R3-02), read before anything else: a caller that sent caps this
+   * process cannot read gets no run at all, because the alternative is running it unbounded while
+   * its caller believes otherwise. A contract that is absent is a caller that did not ask — see
+   * `readBudgetContract`.
+   */
+  let contract: BudgetContract | null = null;
+  let contractProblem: string | null = null;
+  try {
+    contract = readBudgetContract(input);
+  } catch (error) {
+    contractProblem =
+      error instanceof BudgetContractInvalidError
+        ? error.message
+        : "The budget contract could not be read.";
+  }
+  const budget = contract === null ? null : new RunBudgetLedger(contract);
+  const receipt = () =>
+    budget === null ? null : budgetReceiptEvent(budget, MANAGED_AGENT_TOKEN);
+  /*
    * The run's governed span tree, opened before the stream so the framework's model, tool and
    * retrieval spans hang from it through the ambient context. One handler per run: its run-id →
    * span map must never outlive the run that built it. The span's capability attribute is
@@ -439,19 +492,38 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
       // `streamRun`'s verdict — the actual outcome, not the moment bytes started leaving.
       let outcome: "completed" | "failed";
       try {
-        outcome = await context.with(
-          trace.setSpan(context.active(), governedRun.span),
-          () =>
-            streamRun(
-              async () =>
-                buildGraph(input).streamEvents(
-                  { messages: toLangChainMessages(input, PROVIDER) },
-                  { version: "v2", callbacks: [callbacks] },
-                ),
-              input,
-              send,
-            ),
-        );
+        if (contractProblem !== null) {
+          // A refused contract still speaks the protocol: the run fails by name, so its caller
+          // sees WHY rather than a stream that simply stops.
+          send({
+            type: "RUN_ERROR",
+            message: `budget_contract_invalid: ${contractProblem}`,
+          } as BaseEvent);
+          outcome = "failed";
+        } else {
+          outcome = await context.with(
+            trace.setSpan(context.active(), governedRun.span),
+            () =>
+              streamRun(
+                async () =>
+                  buildGraph(input, budget).streamEvents(
+                    { messages: toLangChainMessages(input, PROVIDER) },
+                    {
+                      version: "v2",
+                      callbacks: [callbacks],
+                      // Sized from the contract so the budget's own stop fires before this
+                      // framework ceiling would; an unbudgeted run keeps LangGraph's default.
+                      ...(budget
+                        ? { recursionLimit: budget.recursionLimit() }
+                        : {}),
+                    },
+                  ),
+                input,
+                send,
+                receipt,
+              ),
+          );
+        }
       } catch (error) {
         governedRun.finish("failed");
         throw error;

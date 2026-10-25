@@ -41,6 +41,7 @@ import { executeNativeApprovalTool } from "@openbot/toolkit/native-approval";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
 import {
   defer,
+  filter,
   finalize,
   from,
   Observable,
@@ -1343,6 +1344,130 @@ export function setRemoteRunBudgetGate(
     | undefined,
 ) {
   remoteRunBudgetGate = gate;
+}
+
+/**
+ * The enforceable budget contract a supported remote endpoint runs under (R3-02).
+ *
+ * THE FINDING THIS ANSWERS: a per-run hold is not a contract. F5E1-F2 restored the dial behind
+ * a reservation whose ceiling the ENDPOINT was never told about, so any remote could spend past
+ * the hold while this deployment marked the difference unknown. A hold bounds what is CHARGED;
+ * something has to bound what is SPENT, and for a remote Bot the only place that can happen is
+ * inside the run at the endpoint. So the dial carries caps, the endpoint enforces them at its
+ * model call and reports what was spent, and this side checks the report against the contract
+ * before the run's own ending is allowed through.
+ *
+ * WHAT "SUPPORTED" MEANS, and it is deliberately narrow: an endpoint this deployment runs — it
+ * holds the deployment token — AND that an operator has explicitly declared speaks this contract
+ * (see `createRemoteBudgetContractResolver`). Everything else keeps the refusal it has always
+ * had, REMOTE_RUN_BUDGET_UNVERIFIED, before any request is made: a third-party AG-UI server that
+ * cannot enforce caps must not be handed a run on the promise that it might.
+ *
+ * The verification is a real check, not a formality, and its limits are stated rather than
+ * implied: the receipt is signed with the token both ends hold, so a receipt from anything that
+ * does not hold it is not accepted, and the caps, run id and usage inside it are checked against
+ * what this run was dialled with. That proves the ENFORCING PARTY is the one this deployment
+ * provisioned for this run and that its arithmetic is inside the contract. It cannot prove a
+ * first-party process told the truth, and nothing here pretends otherwise — the enforcement that
+ * matters happens in code this repository owns, on the other side of this seam.
+ */
+export type RemoteBudgetContractCaps = Readonly<{
+  modelSteps: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}>;
+
+/** What one run spent, as its receipt reported it. */
+export type RemoteBudgetUsage = Readonly<{
+  modelSteps: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}>;
+
+/**
+ * What checking one receipt concluded.
+ *
+ * `overrun` and `invalid` are both refusals — the run is torn down rather than delivered — and
+ * they are kept apart because they are different incidents: a receipt that proves its usage
+ * past the caps is an enforcement failure at the endpoint, one that fails the signature or the
+ * echo is not a receipt from this contract at all.
+ */
+export type RemoteBudgetReceiptCheck =
+  | {
+      state: "verified";
+      status: "ok" | "budget_exceeded";
+      usage: RemoteBudgetUsage;
+    }
+  | { state: "overrun"; reason: string }
+  | { state: "invalid"; reason: string };
+
+/** The contract one supported endpoint runs under, as the wiring composed it. */
+export type RemoteBudgetContract = Readonly<{
+  caps: RemoteBudgetContractCaps;
+  /**
+   * Checks one receipt against THIS run's contract; see {@link RemoteBudgetReceiptCheck}.
+   *
+   * The run id is an argument rather than a closure because the contract is composed at BUILD
+   * time (one Bot, one endpoint, one policy) while a run's identity only exists at RUN time —
+   * and a receipt is only meaningful bound to the run it claims to be about.
+   */
+  verifyReceipt: (
+    value: unknown,
+    expected: { runId: string },
+  ) => RemoteBudgetReceiptCheck;
+}>;
+
+/** What the resolver is asked about one Bot's endpoint. */
+export type RemoteBudgetContractRequest = Readonly<{
+  type: "remote_ag_ui" | "remote_mastra";
+  endpoint: string;
+  /** The deployment token this Bot's endpoint is dialled with, when it carries one. */
+  agentToken: string | undefined;
+}>;
+
+/**
+ * Which remote endpoints this deployment can actually bound (R3-02).
+ *
+ * A seam rather than a module read, exactly like the gate: the wiring owns the deployment's
+ * policy (which endpoints it runs, what its token is, what the per-run token ceiling is), and
+ * this module owns the dial it must accompany. Absent, or answering `undefined` for an endpoint,
+ * means that endpoint is not supported — and the Bot is refused with the same
+ * REMOTE_RUN_BUDGET_UNVERIFIED it would get with no gate at all.
+ */
+let remoteBudgetContractResolver:
+  | ((request: RemoteBudgetContractRequest) => RemoteBudgetContract | undefined)
+  | undefined;
+
+export function setRemoteBudgetContractResolver(
+  resolver:
+    | ((
+        request: RemoteBudgetContractRequest,
+      ) => RemoteBudgetContract | undefined)
+    | undefined,
+) {
+  remoteBudgetContractResolver = resolver;
+}
+
+/**
+ * The protocol event the endpoint's receipt travels in, and the version both ends speak.
+ *
+ * CUSTOM is the protocol's own extension point — a `{ type: "CUSTOM", name, value }` event, any
+ * JSON value — so the receipt needs no second channel and no framework-specific field. The
+ * named constants live here because the wiring that signs and the middleware that checks are
+ * on this side of the wire; the endpoint's own copy is `agent-langgraph/src/budget.ts`.
+ */
+export const REMOTE_BUDGET_RECEIPT_EVENT = "openbot-budget-receipt";
+export const REMOTE_BUDGET_CONTRACT_VERSION = 1;
+
+/** A receipt event, recognised by its protocol kind and its name. */
+function isRemoteBudgetReceipt(event: BaseEvent): boolean {
+  const candidate = event as { type?: unknown; name?: unknown };
+  return (
+    candidate.type === "CUSTOM" &&
+    candidate.name === REMOTE_BUDGET_RECEIPT_EVENT
+  );
 }
 
 /**
@@ -3526,14 +3651,16 @@ async function buildAgent(
     return new UnavailableAgent(agent);
   }
   /*
-   * F5E1-F2: the remote dial exists only where the deployment can verify a budget. The
-   * check sits FIRST, before the tool read below, so a deployment that cannot verify
-   * budgets pays for nothing — no grants query, no roster fetch, no transport — and the
+   * F5E1-F2 / R3-02: the remote dial exists only where the deployment can verify a budget
+   * AND hand that budget to the endpoint as a contract it can enforce. The check sits
+   * FIRST, before the tool read below, so a deployment (or an endpoint) that cannot be
+   * verified pays for nothing — no grants query, no roster fetch, no transport — and the
    * refusal is the same one it has always been.
    */
   if (
     (agent.type === "remote_ag_ui" || agent.type === "remote_mastra") &&
-    remoteRunBudgetGate === undefined
+    (remoteRunBudgetGate === undefined ||
+      remoteBudgetContractResolver === undefined)
   ) {
     return new UnavailableAgent({
       id: agent.id,
@@ -3615,7 +3742,26 @@ async function buildAgent(
      * reads answer the same seam.
      */
     const budgetGate = remoteRunBudgetGate;
-    if (budgetGate === undefined) {
+    const resolveContract = remoteBudgetContractResolver;
+    if (budgetGate === undefined || resolveContract === undefined) {
+      return new UnavailableAgent({
+        id: agent.id,
+        name: agent.name,
+        reason: "REMOTE_RUN_BUDGET_UNVERIFIED",
+      });
+    }
+    /*
+     * The endpoint's own question, asked before anything is fetched for it: is this an
+     * endpoint this deployment runs AND has declared able to enforce the budget contract?
+     * Anything else is refused here, as the finding requires — a third-party server cannot
+     * be handed a run on the promise that it might bound itself.
+     */
+    const contract = resolveContract({
+      type: agent.type,
+      endpoint: agent.endpoint,
+      agentToken: agent.headers?.["x-openbot-agent-token"],
+    });
+    if (contract === undefined) {
       return new UnavailableAgent({
         id: agent.id,
         name: agent.name,
@@ -3637,6 +3783,7 @@ async function buildAgent(
       observation,
       attribution,
       budgetGate,
+      contract,
     );
   }
 
@@ -3975,6 +4122,22 @@ export function pickFromRoster(
  * run ends as an unknown cost — succeeded, failed, interrupted or torn down — and the wiring
  * behind `finish` keeps the hold pending rather than charging a number nobody reported or
  * releasing capacity for work that may have happened.
+ *
+ * THE RECEIPT IS THE ENFORCEMENT HALF (R3-02), and this middleware is where it is checked.
+ * The contract's caps rode out with the dial; the endpoint enforces them at its own model
+ * call and signs one CUSTOM receipt — what it was allowed, what it spent — sent as the LAST
+ * event before its terminal. Three rules follow, and all three tear the run down:
+ *
+ * 1. A receipt that fails the check (wrong signature, caps or run id that are not this run's)
+ *    is not a receipt from this contract, and the run it belongs to has no proven bound.
+ * 2. A receipt whose usage is past its caps while claiming `ok` is an enforcement failure at
+ *    the endpoint — the one thing the contract exists to prevent.
+ * 3. A terminal event with no receipt in front of it breaks the ordering the contract
+ *    requires, so the endpoint either did not enforce or did not report, and this deployment
+ *    is not allowed to treat that run as one it could bound.
+ *
+ * The receipt itself never travels further: it is this deployment's control-plane fact, not
+ * something for the person's surface to render, so it is filtered out of the stream here.
  */
 function governedRemoteRun(
   agent: RegisteredRemoteAgent,
@@ -3985,6 +4148,11 @@ function governedRemoteRun(
    * unbudgeted one, and would make two reads of one wiring disagree.
    */
   gate: (input: RemoteRunAdmissionInput) => Promise<RemoteRunAdmission>,
+  /**
+   * The contract this Bot's endpoint is held to, from the same build. See the docblock above
+   * for what the run's receipt is checked against and what happens when it fails.
+   */
+  contract: RemoteBudgetContract,
   threading: BuiltinRunObservationThreading | undefined,
   attribution: { userId: string | null } | undefined,
   input: RunAgentInput,
@@ -4021,6 +4189,25 @@ function governedRemoteRun(
       switchMap(([admission, scope]) => {
         const events: RemoteRunEventFact[] = [];
         let settled = false;
+        /**
+         * The run's verified receipt, once one has arrived. Null at settle means the contract
+         * was never proven for this run — which a terminal event is not allowed to happen in
+         * front of (see the docblock's third rule).
+         */
+        let receipt: Extract<
+          RemoteBudgetReceiptCheck,
+          { state: "verified" }
+        > | null = null;
+        /*
+         * A broken contract ends the run HERE, before the event that broke it is delivered:
+         * the person gets an error rather than an answer whose spending nobody bounded, and
+         * the settlement below already has the unknown-cost answer this path owes. Thrown from
+         * the observer's own `next`, so rxjs tears the upstream down and `finalize` settles.
+         */
+        const refuseContract = (reason: string): never => {
+          events.push({ type: "error" });
+          throw new Error(`REMOTE_RUN_BUDGET_CONTRACT_VIOLATION: ${reason}`);
+        };
         const settle = () => {
           if (settled) return;
           settled = true;
@@ -4101,6 +4288,38 @@ function governedRemoteRun(
           }
         };
         const observe = (event: BaseEvent) => {
+          /*
+           * The receipt is checked, then swallowed: it is the contract's own fact, not an
+           * observation of the run, and the surface downstream has nothing to do with it.
+           */
+          if (isRemoteBudgetReceipt(event)) {
+            const check = contract.verifyReceipt(
+              (event as { value?: unknown }).value,
+              { runId },
+            );
+            if (check.state !== "verified") {
+              log.error(
+                {
+                  type: "remote-run-budget-receipt-refused",
+                  botId: agent.id,
+                  runId,
+                  state: check.state,
+                  reason: check.reason,
+                },
+                "remote-run-budget-receipt-refused",
+              );
+              return refuseContract(`${check.state}: ${check.reason}`);
+            }
+            if (receipt !== null) {
+              /*
+               * One contract, one receipt. A second one is a second claim about the same
+               * run, and this side has no way to know which enforcement to believe.
+               */
+              return refuseContract("the endpoint sent more than one receipt");
+            }
+            receipt = check;
+            return;
+          }
           // The first event of any kind is the evidence the endpoint spoke at all.
           if (events.length === 0) events.push({ type: "http_first_frame" });
           switch (event.type) {
@@ -4108,6 +4327,11 @@ function governedRemoteRun(
               events.push({ type: "run_started" });
               break;
             case "RUN_FINISHED": {
+              if (receipt === null) {
+                return refuseContract(
+                  "the endpoint ended the run without a budget receipt",
+                );
+              }
               /*
                * The protocol's own three endings, each named rather than defaulted: a
                * `cancelled` finish is a CONFIRMED cancellation, and classing it as success
@@ -4126,6 +4350,11 @@ function governedRemoteRun(
               break;
             }
             case "RUN_ERROR":
+              if (receipt === null) {
+                return refuseContract(
+                  "the endpoint reported an error with no budget receipt",
+                );
+              }
               events.push({ type: "error" });
               break;
             case "TOOL_CALL_START": {
@@ -4170,6 +4399,9 @@ function governedRemoteRun(
               }
             },
           }),
+          // The receipt was checked in `observe` above; it is control-plane, so it stops here
+          // rather than being relayed to the person's surface as an unknown event.
+          filter((event) => !isRemoteBudgetReceipt(event)),
           finalize(settle),
         );
       }),
@@ -4240,6 +4472,14 @@ function remoteAgentWithStandingRole(
    * wrapper without one, so there is no unbudgeted remote Bot to construct.
    */
   budgetGate?: (input: RemoteRunAdmissionInput) => Promise<RemoteRunAdmission>,
+  /**
+   * The enforceable contract this endpoint runs under (R3-02), required for the same reason
+   * `budgetGate` is: the dial carries its caps and the run's ending is checked against its
+   * receipt, so a Bot built without one would be a Bot whose spending nothing bounded. Typed
+   * optional only because of where it sits in this signature; the middleware refuses to run
+   * without both, exactly as it does a missing gate.
+   */
+  contract?: RemoteBudgetContract,
 ) {
   /*
    * What this Bot holds, as a second standing message.
@@ -4306,6 +4546,29 @@ function remoteAgentWithStandingRole(
        * in front of them. Only this side knows which is which, so only this side can say.
        */
       openbotDeploymentTools: deploymentTools,
+      /*
+       * The budget contract (R3-02), carried where the endpoint already reads this
+       * deployment's run facts.
+       *
+       * LAST of the deployment's own keys and taking no input from the caller: the spread
+       * above is whatever the surface sent, so a crafted `openbotBudget` in it is overwritten
+       * here rather than trusted. The caps are the deployment policy's, and the run id is the
+       * one this run is actually taking — the receipt that comes back is checked against both.
+       */
+      /*
+       * Unreachable without a contract — the middleware below refuses first — but written as a
+       * spread because the type says the parameter may be absent, and a silent `undefined.caps`
+       * is exactly the failure this contract exists to prevent.
+       */
+      ...(contract === undefined
+        ? {}
+        : {
+            openbotBudget: {
+              v: REMOTE_BUDGET_CONTRACT_VERSION,
+              runId: input.runId,
+              caps: contract.caps,
+            },
+          }),
       /*
        * This deployment's own statement of what this run is.
        *
@@ -4439,14 +4702,15 @@ function remoteAgentWithStandingRole(
      * endpoint OR spend on choosing what to send it.
      */
     target.use((input, next) =>
-      budgetGate === undefined
+      budgetGate === undefined || contract === undefined
         ? // The belt to `buildAgent`'s brace, in its words: no Bot reaches this wrapper
-          // unbudgeted, and one constructed anyway (a future path, a wider signature)
-          // refuses rather than dials.
+          // unbudgeted or uncontracted, and one constructed anyway (a future path, a wider
+          // signature) refuses rather than dials.
           throwError(() => new Error("REMOTE_RUN_BUDGET_UNVERIFIED"))
         : governedRemoteRun(
             agent,
             budgetGate,
+            contract,
             observation,
             attribution,
             input,
