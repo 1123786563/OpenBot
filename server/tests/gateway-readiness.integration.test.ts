@@ -101,6 +101,18 @@ const adminId = `gateway-readiness-admin-${runId}`;
 const admin = { userId: adminId, email: `admin-${runId}@openbot.test` };
 const ADMIN_KEY = `readiness-integration-admin-key-${runId}`;
 
+/**
+ * The gateway's `/api/extensions` answer in the shape the Go side really sends:
+ * `plugins` PLUS the `count` metadata the manifest carries — the stub once omitted
+ * `count`, which no assertion caught because the parser only reads `plugins` (R5-F1).
+ * Building `count` off the array keeps the two from drifting apart again.
+ */
+function extensionsManifestBody(
+  plugins: { name: string; version: string }[],
+): string {
+  return JSON.stringify({ plugins, count: plugins.length });
+}
+
 /** A fake gateway whose probe path answers ok and whose manifest has the extension. */
 async function healthyFakeGateway() {
   return startFakeGateway(
@@ -113,12 +125,10 @@ async function healthyFakeGateway() {
       [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 200,
-        body: JSON.stringify({
-          plugins: [
-            { name: "bifrost-anthropic", version: "1.2.3" },
-            { name: CREDIT_ADMISSION_EXTENSION_NAME, version: "1.0.0" },
-          ],
-        }),
+        body: extensionsManifestBody([
+          { name: "bifrost-anthropic", version: "1.2.3" },
+          { name: CREDIT_ADMISSION_EXTENSION_NAME, version: "1.0.0" },
+        ]),
       },
     },
   );
@@ -345,9 +355,9 @@ test("an extension that disappears re-opens the gate", async () => {
       [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 200,
-        body: JSON.stringify({
-          plugins: [{ name: "bifrost-anthropic", version: "1.2.3" }],
-        }),
+        body: extensionsManifestBody([
+          { name: "bifrost-anthropic", version: "1.2.3" },
+        ]),
       },
     },
   );
@@ -377,11 +387,9 @@ test("an extension shipping an incompatible version re-opens the gate", async ()
       [GATEWAY_EXTENSIONS_MANAGEMENT_PATH]: {
         kind: "response",
         status: 200,
-        body: JSON.stringify({
-          plugins: [
-            { name: CREDIT_ADMISSION_EXTENSION_NAME, version: "2.5.0" },
-          ],
-        }),
+        body: extensionsManifestBody([
+          { name: CREDIT_ADMISSION_EXTENSION_NAME, version: "2.5.0" },
+        ]),
       },
     },
   );

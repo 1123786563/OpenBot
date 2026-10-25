@@ -12,7 +12,9 @@ import { createPayerAccount, payerKey } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
 import {
   GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  PRICE_DIMENSIONS,
   createEnterpriseGatewayPriceSnapshotStore,
+  type PriceDimension,
 } from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
 import {
@@ -59,7 +61,7 @@ const reserveService = createCreditReserveService({
   catalogFreshnessWindowMs: 15 * 60 * 1000,
 });
 
-const A_AMOUNTS = {
+const A_AMOUNTS: Record<PriceDimension, string> = {
   input: "0.000001",
   output: "0.000002",
   reasoning: "0.000003",
@@ -78,7 +80,32 @@ const A_AMOUNTS = {
 };
 const B_AMOUNTS = { ...A_AMOUNTS, video: "0.02", cache_read: "0.0000002" };
 
+/**
+ * The price literals above are hand-written copies of the FULL dimension vocabulary
+ * (`A_AMOUNTS`; `B_AMOUNTS` is its spread): a complete basis prices every dimension, wire or
+ * not. Check the copy against `PRICE_DIMENSIONS` in both directions — missing and unexpected
+ * named — so a vocabulary expansion cannot leave this suite's constants behind (R2-F1),
+ * silently turning a complete basis into an incomplete one.
+ */
+function assertFullVocabularyCoverage(
+  covered: readonly string[],
+  label: string,
+): void {
+  const coveredSet = new Set<string>(covered);
+  const expected = new Set<string>(PRICE_DIMENSIONS);
+  const missing = [...expected].filter((dim) => !coveredSet.has(dim)).sort();
+  const unexpected = [...coveredSet].filter((dim) => !expected.has(dim)).sort();
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `${label} drifted from price-snapshot.ts's PRICE_DIMENSIONS: ` +
+        `missing [${missing.join(", ")}], ` +
+        `unexpected [${unexpected.join(", ")}]`,
+    );
+  }
+}
+
 function dimsOf(amounts: Record<string, string>) {
+  assertFullVocabularyCoverage(Object.keys(amounts), "batch fixture amounts");
   const dims: Record<string, { status: "known"; amount: string }> = {};
   for (const [dimension, amount] of Object.entries(amounts)) {
     dims[dimension] = { status: "known", amount };
