@@ -15,6 +15,8 @@ import { ObservationScopeError } from "../src/ai-observability/contracts";
 import {
   createOpikHttpPort,
   type OpikHttpPortDeps,
+  runUpstreamIdentity,
+  spanUpstreamId,
 } from "../src/ai-observability/opik-http";
 import {
   OpikPortError,
@@ -1297,5 +1299,214 @@ describe("the port trusts scopes only from T06's issuing process", () => {
       p.writeSpans(forged, { spans: [derivedSpan] }),
     ).rejects.toThrow(new ObservationScopeError("OWNERSHIP_REQUIRED", 403));
     expect(calls.length).toBe(0);
+  });
+});
+
+describe("the explicit-id identity strategy (F5E1-F3)", () => {
+  const chain = "8ac709aae94a39a5032699e02e9475f7";
+  const identity = runUpstreamIdentity(chain);
+  const reconciledBinding = {
+    ...ownBinding,
+    opikTraceId: identity.opikTraceId,
+  };
+
+  test("the derivation is deterministic, UUIDv7-shaped, and internally distinct", () => {
+    expect(runUpstreamIdentity(chain)).toEqual(identity);
+    expect(identity.opikTraceId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(identity.rootOpikSpanId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(identity.rootSpanId).toMatch(/^[0-9a-f]{16}$/);
+    // One chain, three distinct ids: the trace, the root span's upstream id, and
+    // the root's own W3C id (which must never equal the trace id, 32 vs 16 hex).
+    expect(
+      new Set([
+        identity.opikTraceId,
+        identity.rootOpikSpanId,
+        identity.rootSpanId,
+      ]).size,
+    ).toBe(3);
+    // Another chain derives another identity: the mapping never collides runs.
+    expect(runUpstreamIdentity("0123456789abcdef0123456789abcdef")).not.toEqual(
+      identity,
+    );
+  });
+
+  test("a reconciled binding completes an override-less span onto its trace and root", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 200 }),
+    );
+    const result = await port({ fetch: transport }).writeSpans(trusted, {
+      binding: reconciledBinding,
+      spans: [derivedSpan],
+    });
+    expect(result).toEqual({ outcome: "ok", value: { accepted: true } });
+    const body = JSON.parse(String(calls[0].init.body));
+    const span = body.resourceSpans[0].scopeSpans[0].spans[0];
+    expect(span.traceId).toBe(chain);
+    expect(span.spanId).toBe(derivedSpan.spanId);
+    // Both parent channels name the run root this deployment wrote.
+    expect(span.parentSpanId).toBe(identity.rootSpanId);
+    const overrides = Object.fromEntries(
+      span.attributes
+        .filter((attribute: { key: string }) =>
+          attribute.key.startsWith("opik."),
+        )
+        .map((attribute: { key: string; value: { stringValue: string } }) => [
+          attribute.key,
+          attribute.value.stringValue,
+        ]),
+    );
+    expect(overrides).toEqual({
+      "opik.trace_id": identity.opikTraceId,
+      "opik.span_id": spanUpstreamId(chain, derivedSpan.spanId),
+      "opik.parent_span_id": identity.rootOpikSpanId,
+    });
+  });
+
+  test("the completed ids are stable: a retried write asks for the same upstream row", async () => {
+    // Pure derivation both ways: same inputs, same id — a retried write lands on the
+    // same upstream span, never a duplicate; a different span id never collides.
+    expect(spanUpstreamId(chain, derivedSpan.spanId)).toBe(
+      spanUpstreamId(chain, derivedSpan.spanId),
+    );
+    expect(spanUpstreamId(chain, derivedSpan.spanId)).not.toBe(
+      spanUpstreamId(chain, "0000000000000001"),
+    );
+    expect(spanUpstreamId(chain, derivedSpan.spanId)).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  test("a span of another chain under a reconciled binding is drift, not a silent second trace", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 200 }),
+    );
+    const p = port({ fetch: transport });
+    const foreign = {
+      ...derivedSpan,
+      traceId: "ffffffffffffffffffffffffffffffff",
+    };
+    const result = await p.writeSpans(trusted, {
+      binding: reconciledBinding,
+      spans: [foreign],
+    });
+    expect(driftOf(result).reason).toBe("binding_mismatch");
+    expect(calls.length).toBe(0);
+    // Drift suspends the scope — per adapter instance, like every drift verdict
+    // here: a later write for the same scope answers without touching the
+    // transport.
+    const second = await p.writeSpans(trusted, {
+      binding: reconciledBinding,
+      spans: [derivedSpan],
+    });
+    expect(second.outcome).toBe("ownership_drift");
+    expect(calls.length).toBe(0);
+  });
+
+  test("a caller-supplied explicit id stays authoritative and untouched", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 200 }),
+    );
+    await port({ fetch: transport }).writeSpans(trusted, {
+      binding: reconciledBinding,
+      spans: [
+        {
+          ...derivedSpan,
+          opik: {
+            traceId: identity.opikTraceId,
+            spanId: "01a1405b-f832-70cf-b204-f4dd51387044",
+          },
+        },
+      ],
+    });
+    const span = JSON.parse(String(calls[0].init.body)).resourceSpans[0]
+      .scopeSpans[0].spans[0];
+    const overrides = Object.fromEntries(
+      span.attributes
+        .filter((attribute: { key: string }) =>
+          attribute.key.startsWith("opik."),
+        )
+        .map((attribute: { key: string; value: { stringValue: string } }) => [
+          attribute.key,
+          attribute.value.stringValue,
+        ]),
+    );
+    expect(overrides).toEqual({
+      "opik.trace_id": identity.opikTraceId,
+      "opik.span_id": "01a1405b-f832-70cf-b204-f4dd51387044",
+    });
+    // And the OTel parent is the caller's own, not rewritten.
+    expect(span.parentSpanId).toBeUndefined();
+  });
+
+  test("creation replay against a trace the backend already holds is observed, not failed (F5E1-F3)", async () => {
+    const { calls, transport } = recorder((call) =>
+      call === 1
+        ? json(409, "{}") // the create's ambiguity: "already exists" is one 4xx among others
+        : call === 2
+          ? json(200, JSON.stringify({ id: "proj-1", name: locator.project }))
+          : json(200, JSON.stringify({ id: identity.opikTraceId })),
+    );
+    const result = await port({ fetch: transport }).createTrace(trusted, {
+      traceId: identity.opikTraceId,
+      name: okText("run"),
+      startTime: new Date("2026-10-15T03:57:39.074Z"),
+      binding: ownBinding,
+    });
+    // The read-back observed the very trace the retry asked for: the
+    // materialization succeeded, by observation rather than by a guessed status.
+    expect(result).toEqual({
+      outcome: "ok",
+      value: { traceId: identity.opikTraceId },
+    });
+    expect(calls[2].url).toBe(
+      `http://opik.test/api/v1/private/traces/${identity.opikTraceId}?project_id=proj-1`,
+    );
+  });
+
+  test("an ambiguous create whose trace never reads back is a timeout, never a success", async () => {
+    const { transport } = recorder((call) =>
+      call === 1
+        ? json(400, "{}")
+        : call === 2
+          ? json(200, JSON.stringify({ id: "proj-1", name: locator.project }))
+          : json(404, "{}"),
+    );
+    const result = await port({
+      fetch: transport,
+      timeoutMs: 100,
+    }).createTrace(trusted, {
+      traceId: identity.opikTraceId,
+      name: okText("run"),
+      startTime: new Date("2026-10-15T03:57:39.074Z"),
+      binding: ownBinding,
+    });
+    expect(result).toEqual({
+      outcome: "unavailable",
+      operation: "createTrace",
+      code: "OPIK_TIMEOUT",
+    });
+  });
+
+  test("an ambiguous create with the project itself absent is the client error it was", async () => {
+    const { calls, transport } = recorder(() => json(404, "{}"));
+    const result = await port({ fetch: transport }).createTrace(trusted, {
+      traceId: identity.opikTraceId,
+      name: okText("run"),
+      startTime: new Date("2026-10-15T03:57:39.074Z"),
+      binding: ownBinding,
+    });
+    // Nothing can corroborate the trace: the project the create was routed to is
+    // gone, so the creation failure stands as itself.
+    expect(result).toEqual({
+      outcome: "upstream_error",
+      operation: "createTrace",
+      code: "OPIK_CLIENT_ERROR",
+      status: 404,
+    });
+    expect(calls).toHaveLength(2);
   });
 });

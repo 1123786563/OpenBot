@@ -7697,6 +7697,12 @@ const opikTicketReaper = repeatAfterEach(
  */
 const opikObserverBindings = createObserverRunBindingGate(
   aiObservabilityBindings,
+  // F5E1-F3: with the verified port behind the gate, establishing a chain's binding also
+  // materializes the run's upstream trace/root and records the authoritative mapping, so a
+  // run is listable and its cleanup locatable from the moment its first span exports. A
+  // disabled or unverified deployment answers null and the gate keeps its binding-only
+  // shape — the port accessor is read at materialization time, never boot-time frozen.
+  { port: () => opikObservationPort },
 );
 const opikModelSpans = createModelSpanRecorder({
   healthService: opikHealthService,
