@@ -280,7 +280,7 @@ import {
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "../craft/routes";
-import { createSandboxGateway } from "../craft/sandbox-gateway";
+import { createCraftSandboxPublic } from "../craft/public";
 import { createCraftStore } from "../craft/store";
 import {
   createPreviewProxy,
@@ -6913,6 +6913,24 @@ const craftSandboxExecutionScope = () =>
   craftEffectiveConfig.sandboxExecutionScope;
 
 /*
+ * MOD11 (#631): the public door for craft's sandbox capability handles — the
+ * HMR deps' gateway below acquires through this binding (the pair's scope and
+ * environment generation are the cache-addressing key) instead of composing
+ * the gateway itself. Same connection and scope facts as every craft surface,
+ * one door; the deployment serves a single generation, so the binding states
+ * the boot-parsed scope and the default generation.
+ */
+const craftSandboxPublic = createCraftSandboxPublic({
+  config: craftEffectiveConfig,
+  connectionFor: (botId: string) => {
+    const conn = craftSandboxConnection();
+    return conn
+      ? { botId, baseUrl: conn.baseUrl, token: conn.token }
+      : null;
+  },
+});
+
+/*
  * The preview origin's serving half (#362): a cookie-authenticated request on
  * a preview host proxies to the session's sandbox dev server — the same facts
  * the main-site webapp proxy resolves (the deployment's sandbox Bot, its
@@ -7081,19 +7099,12 @@ const craftWebappHmrDeps =
         // A gateway of its own (the routes assembly builds its own too): the
         // file API is a stateless HTTP wrapper over craftSandboxConnection —
         // the same connection lambda, so the surfaces cannot disagree about
-        // the upstream.
-        gateway: createSandboxGateway({
-          config: craftEffectiveConfig,
-          connectionFor: (botId: string) => {
-            const conn = craftSandboxConnection();
-            return conn
-              ? { botId, baseUrl: conn.baseUrl, token: conn.token }
-              : null;
-          },
-          // #618: the file API's requests state the deployment's ownership — the
-          // same const the craft routes assembly threads, so the surfaces cannot
-          // disagree about the scope they act in.
-          executionScopeFor: craftSandboxExecutionScope,
+        // the upstream. MOD11 (#631): the gateway is acquired through the
+        // public binding — same connection and scope facts (the #618 const
+        // above resolves them once for every craft surface), plus the
+        // environment generation in the handle cache's addressing key.
+        gateway: craftSandboxPublic.handlesFor({
+          scope: craftSandboxExecutionScope(),
         }),
       }
     : undefined;
