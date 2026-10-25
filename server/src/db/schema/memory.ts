@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { MemoryRecord, MemorySource } from "../../memory/types";
 import { agents, users } from "./core";
+import { enterpriseTenants } from "./enterprise-tenancy";
 import { jsonb } from "./json";
 
 export const memorySources = pgTable(
@@ -18,6 +19,16 @@ export const memorySources = pgTable(
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /*
+     * FIX-W13 (#376, FR2-2): the company this source belongs to, fixed at binding — the
+     * (person, Bot)'s own proven company (memory/company.ts), never the page's current
+     * selection. NULL is an ISOLATED source (migration 0212 backfilled what it could prove
+     * and left the rest NULL, 0211's discipline): no company's scope lists it, operates it
+     * or syncs it in an enterprise deployment. A single-user deployment without the
+     * enterprise layer never filters by this column, so NULL there is the standing it
+     * always had.
+     */
+    tenantId: text("tenant_id").references(() => enterpriseTenants.id),
     agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
@@ -44,6 +55,7 @@ export const memorySources = pgTable(
   (table) => [
     index("memory_sources_owner_idx").on(table.ownerUserId),
     index("memory_sources_due_idx").on(table.enabled, table.nextSyncAt),
+    index("memory_sources_tenant_idx").on(table.ownerUserId, table.tenantId),
   ],
 );
 export const personalMemories = pgTable(
@@ -53,6 +65,15 @@ export const personalMemories = pgTable(
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /*
+     * FIX-F1 (#376, FR-1): the company a memory belongs to. Nullable on purpose — a NULL
+     * tenant is an ISOLATED row, not a global one: in an enterprise deployment every read
+     * and write of this table is pinned to one proven company, so a row nobody could
+     * attribute (migration 0211 quarantined it) answers nothing, and a global user id
+     * never names a company by itself. A single-user deployment without the enterprise
+     * layer never filters by this column and stays exactly as it was.
+     */
+    tenantId: text("tenant_id").references(() => enterpriseTenants.id),
     sourceId: text("source_id").references(() => memorySources.id, {
       onDelete: "cascade",
     }),
@@ -91,6 +112,7 @@ export const personalMemories = pgTable(
   },
   (table) => [
     index("personal_memories_owner_idx").on(table.ownerUserId, table.enabled),
+    index("personal_memories_tenant_idx").on(table.ownerUserId, table.tenantId),
     index("personal_memories_formed_idx").on(
       table.ownerUserId,
       table.formedByAgentId,

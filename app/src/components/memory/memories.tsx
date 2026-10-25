@@ -31,14 +31,18 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   createMemoryMutationOptions,
   deleteMemoryMutationOptions,
   type MemoryRecord,
+  type MemorySyncStatus,
+  type MemorySyncSubject,
+  memorySyncStatusKey,
   scopedMemoriesQueryOptions,
+  scopedMemorySyncStatusesQueryOptions,
   updateMemoryMutationOptions,
 } from "@/lib/memory";
-import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * A fact the person tells their Bots directly. It reaches every one of them.
@@ -55,9 +59,7 @@ export function RememberFact() {
   // scope in force, and the settle refreshes this scope's own subtree.
   const queryClient = useQueryClient();
   const scope = useScopedCache();
-  const remember = useMutation(
-    createMemoryMutationOptions(queryClient, scope),
-  );
+  const remember = useMutation(createMemoryMutationOptions(queryClient, scope));
   return (
     <>
       <Button
@@ -142,6 +144,13 @@ export function MemoryList() {
   const queryClient = useQueryClient();
   const scope = useScopedCache();
   const memories = useQuery(scopedMemoriesQueryOptions(queryClient, scope));
+  // The chain holds person-formed memories as preferences and the rest as source-bound rows
+  // (#394's mapping), which is the subject type each row's badge asks about. The whole list
+  // asks once: one batched read answers every badge, not a request per memory.
+  const subjects = (memories.data ?? []).map(syncSubjectOf);
+  const syncStatuses = useQuery(
+    scopedMemorySyncStatusesQueryOptions(queryClient, scope, subjects),
+  );
   const agents = useQuery(agentListQueryOptions());
   const botName = (id: string | null) =>
     agents.data?.find((agent) => agent.id === id)?.name ?? t("memory.yourBot");
@@ -159,6 +168,11 @@ export function MemoryList() {
               <MemoryRow
                 botName={botName(memory.formedByAgentId)}
                 memory={memory}
+                syncStatus={
+                  syncStatuses.data?.[
+                    memorySyncStatusKey(syncSubjectOf(memory))
+                  ]
+                }
               />
             </Fragment>
           ))}
@@ -170,6 +184,14 @@ export function MemoryList() {
   );
 }
 
+/** The subject a memory's badge asks the status surface about, by how the row was formed. */
+function syncSubjectOf(memory: MemoryRecord): MemorySyncSubject {
+  return {
+    subjectType: memory.formedBy === "person" ? "preference" : "source_bound",
+    subjectId: memory.id,
+  };
+}
+
 /**
  * One memory: the fact itself, then where it came from. Whether Bots use it is a switch; editing
  * its words opens a dialog, and confirming or forgetting it are the buttons beneath.
@@ -177,9 +199,11 @@ export function MemoryList() {
 function MemoryRow({
   memory,
   botName,
+  syncStatus,
 }: {
   memory: MemoryRecord;
   botName: string;
+  syncStatus: MemorySyncStatus | undefined;
 }) {
   const { t } = useTranslation("agents");
   const [editing, setEditing] = useState(false);
@@ -192,16 +216,17 @@ function MemoryRow({
     enabled?: boolean;
     reviewState?: "confirmed";
   }) => save.mutate({ id: memory.id, input });
-  const status = !memory.enabled
-    ? t("memory.card.disabled")
-    : memory.formedBy === "bot"
-      ? t("memory.card.formedBy", { name: botName }) +
-        (memory.reviewState === "unreviewed"
-          ? t("memory.card.awaitingReview")
-          : "")
-      : memory.reviewState === "unreviewed"
-        ? t("memory.card.importedAwaiting")
-        : t("memory.card.reviewed");
+  let status: string;
+  if (!memory.enabled) status = t("memory.card.disabled");
+  else if (memory.formedBy === "bot")
+    status =
+      t("memory.card.formedBy", { name: botName }) +
+      (memory.reviewState === "unreviewed"
+        ? t("memory.card.awaitingReview")
+        : "");
+  else if (memory.reviewState === "unreviewed")
+    status = t("memory.card.importedAwaiting");
+  else status = t("memory.card.reviewed");
   return (
     <Item size="sm">
       <ItemMedia variant="icon">
@@ -213,6 +238,7 @@ function MemoryRow({
         </ItemTitle>
         <ItemDescription className="line-clamp-none">
           {memory.provenance} · {status}
+          <MemorySyncBadge status={syncStatus} />
         </ItemDescription>
         {memory.formedBy === "bot" && (
           <ItemDescription className="line-clamp-none">
@@ -298,6 +324,63 @@ function MemoryRow({
         />
       ) : null}
     </Item>
+  );
+}
+
+/**
+ * The memory's sync status (#384), appended to its provenance line: synced, waiting, or failed.
+ * Only the status surface's own answer draws a badge — a subject the chain does not hold, or a
+ * deployment without the chain, draws nothing rather than a made-up "indexed". A failure is
+ * clickable and explains that the retry comes on its own. The entry arrives from the list's one
+ * batched read; the badge makes no request of its own.
+ */
+function MemorySyncBadge({ status }: { status: MemorySyncStatus | undefined }) {
+  const { t } = useTranslation("agents");
+  const [explaining, setExplaining] = useState(false);
+  const state = status?.state;
+  if (state === undefined || state === "unknown-subject") return null;
+  let label: string | null = null;
+  if (state === "indexed") label = t("memory.sync.indexed");
+  else if (state === "pending") label = t("memory.sync.pending");
+  return (
+    <>
+      {" · "}
+      {label !== null ? (
+        label
+      ) : (
+        <button
+          type="button"
+          className="text-destructive underline underline-offset-4"
+          onClick={() => setExplaining(true)}
+        >
+          {t("memory.sync.failed")}
+        </button>
+      )}
+      {state === "failed" ? (
+        <Dialog
+          onOpenChange={(next) => !next && setExplaining(false)}
+          open={explaining}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("memory.sync.failedTitle")}</DialogTitle>
+              <DialogDescription>
+                {t("memory.sync.failedBody")}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <Button
+                onClick={() => setExplaining(false)}
+                size="sm"
+                variant="outline"
+              >
+                {t("memory.sync.close")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+    </>
   );
 }
 

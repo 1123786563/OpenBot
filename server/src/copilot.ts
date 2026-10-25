@@ -1,7 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
-import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
+import {
+  type AbstractAgent,
+  type BaseEvent,
+  EventType,
+  HttpAgent,
+  type Message,
+  type RunAgentInput,
+} from "@ag-ui/client";
 import { createOpenAI } from "@ai-sdk/openai";
 import type {
   AgentRunnerConnectRequest,
@@ -43,6 +49,7 @@ import {
   defer,
   finalize,
   from,
+  map,
   Observable,
   switchMap,
   tap,
@@ -77,6 +84,10 @@ import {
   currentRunnerRequest,
   withRunnerRequestContext,
 } from "./enterprise/runs/request-context";
+import {
+  type PersonalMemoryBasisPointer,
+  parsePersonalMemoryBasis,
+} from "./hindsight/personal-memory-context";
 import { observeIntelligenceAuthentication } from "./intelligence-client";
 import {
   IntelligenceUnconfiguredError,
@@ -2288,6 +2299,55 @@ export async function resumeFromApprovalDecision(input: {
 }
 
 /**
+ * FIX-W14 (FR3-1, #387): bind the answer's actual basis to the answer itself.
+ *
+ * The run's prompt carried the #395 block — the {id, kind} pointers of every memory and
+ * judgment this run's answers may draw on — and this wrapper carries that same pointer set
+ * out again on the run's assistant text messages, through the AG-UI event metadata the
+ * client already reconstructs messages from. Server-composed only: the pointers come from
+ * the block the loader rendered for THIS run's admitted scope, never from a client field,
+ * and the client cannot widen, narrow or forge the set — the expansion re-verifies current
+ * authorization anyway, and an id the person can no longer see answers unavailable there.
+ *
+ * Every assistant text message of the run carries the same set (one block per run, one read
+ * of the authority), so live view and event-store replay agree on what an answer used. Since
+ * FIX-OCR3 (O3-H1) the stamp also survives the store: the produced-message fold keeps the
+ * START frame's metadata, the stored envelope carries the pointers, and a rebuilt history
+ * (refresh included) re-attaches them — the person's basis rows no longer vanish on reload.
+ *
+ * SCOPE (O3-M7, disclosed): the wrap covers the FIRST-EXECUTION stream alone. A run that
+ * pauses on a durable continuation and resumes goes through the resume driver's own event
+ * drain, which never passes through this wrapper — its final answer carries no basis stamp,
+ * on the live stream or in the store. The resume path would need the run's pointer set
+ * persisted with the continuation and re-stamped at the drain's event exit; that seam is not
+ * wired, and this comment says so rather than letting "replay agrees" be read wider than it
+ * holds.
+ *
+ * An absent or empty basis wraps nothing: an answer with no memory behind it shows no basis.
+ */
+function withAnswerMemoryBasis(
+  basis: readonly PersonalMemoryBasisPointer[] | undefined,
+  execute: ExecuteMastra,
+): ExecuteMastra {
+  if (basis === undefined || basis.length === 0) return execute;
+  return (request) =>
+    execute(request).pipe(
+      map((event) =>
+        event.type === EventType.TEXT_MESSAGE_START &&
+        (event.role === undefined || event.role === "assistant")
+          ? {
+              ...event,
+              metadata: {
+                ...event.metadata,
+                openbot: { personalMemoryBasis: basis },
+              },
+            }
+          : event,
+      ),
+    );
+}
+
+/**
  * Wrap one governed execution so its produced messages are PERSISTED before
  * the success terminal is forwarded.
  *
@@ -2435,6 +2495,13 @@ function mastraAgentConfiguration(input: {
         const personalMemoryBlock = mastraPersonalMemoryContext
           ? await mastraPersonalMemoryContext(facts.scope, facts.botId)
           : undefined;
+        // FIX-W14 (FR3-1): the same block's own {id, kind} pointers, read back
+        // out by the module that rendered it — the id set this run's answers
+        // carry to the person (see withAnswerMemoryBasis). One authority read,
+        // zero second reads: what the model saw is what the answer cites.
+        const personalMemoryBasis = personalMemoryBlock
+          ? parsePersonalMemoryBasis(personalMemoryBlock)
+          : undefined;
         // ME03 production wiring: the engine path runs on the server-rebuilt
         // authorized history and persists its output through the conversation
         // runtime. Without one the run refuses rather than executing on the
@@ -2500,7 +2567,14 @@ function mastraAgentConfiguration(input: {
             : [],
         );
         const executionAgent = createMastraAgUiAgent(
-          withPersistedOutput(execute, runtime, binding),
+          // FIX-W14 (FR3-1): the basis stamp rides INNERMOST, so persistence,
+          // the runner's event store and the live relay all see the stamped
+          // stream — the answer and its basis cannot disagree downstream.
+          withPersistedOutput(
+            withAnswerMemoryBasis(personalMemoryBasis, execute),
+            runtime,
+            binding,
+          ),
           binding,
           {
             instructions: instructionParts,

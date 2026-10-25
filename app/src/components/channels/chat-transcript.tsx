@@ -5,6 +5,10 @@ import {
   useRenderToolCall,
 } from "@copilotkit/react-core/v2";
 import {
+  refusalBody as markerRefusalBody,
+  readConnectPrompt,
+} from "@openbot/shared/connect-prompt";
+import {
   IconAlertTriangle,
   IconBox,
   IconChevronDown,
@@ -24,6 +28,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
+import { MemoryAnswerBasisSection } from "@/components/memory/answer-basis";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
   Dialog,
@@ -61,10 +66,6 @@ import {
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
 import { readTeamBotConsent } from "@/lib/team-bots";
-import {
-  readConnectPrompt,
-  refusalBody as markerRefusalBody,
-} from "@openbot/shared/connect-prompt";
 import { cn } from "@/lib/utils";
 import { VOICE_CHAT_ACTIVITY, type VoiceChatEntry } from "@/lib/voice/archive";
 import {
@@ -1790,6 +1791,19 @@ export function ChatTranscript({
                     attachments={item.attachments}
                     delay={delays.delayFor(item.id, index, items.length)}
                   />
+                </MessageScrollerItem>
+              ) : item.kind === "answer-basis" ? (
+                <MessageScrollerItem key={item.id} messageId={item.id}>
+                  <Arriving
+                    delay={delays.delayFor(item.id, index, items.length)}
+                  >
+                    {/*
+                     * The answer's own basis (FIX-W14, #387): one control under the turn's
+                     * final answer, expanding exactly the ids that answer carried — the
+                     * person can check, correct or forget from the answer itself.
+                     */}
+                    <MemoryAnswerBasisSection basis={item.basis} />
+                  </Arriving>
                 </MessageScrollerItem>
               ) : (
                 // Every member of the union is handled above. `assertNever` types `item` as

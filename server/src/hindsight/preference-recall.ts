@@ -31,7 +31,8 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { getLogger } from "../../../shared/logger";
 import type { Database } from "../db/client";
 import { genericPersonalPreferences } from "../db/schema/hindsight-preferences";
 import type { PlatformScope } from "../enterprise/contracts";
@@ -40,6 +41,7 @@ import {
   mintBankScopeAssertion,
   resolveHindsightBankScope,
 } from "./bank-scope";
+import type { HindsightBudgetGate } from "./budget-gate";
 import { type HindsightPauseControls, usagePausedFor } from "./pause-controls";
 import { type HindsightRecoveryGate, recallOpenFor } from "./restore-recovery";
 import {
@@ -47,6 +49,7 @@ import {
   type PersonalMemoryRevocationRecorder,
   STOPPED_USING_SUMMARY,
 } from "./revocation-ledger";
+import { assertMemoryContentAdmissible } from "./sensitivity-gate";
 
 /** What a Bot receives: the confirmed original, and nothing remote-derived. */
 export type RecalledGenericPreference = {
@@ -110,6 +113,16 @@ export interface PreferenceRecordStore {
     tenantId: string,
     principalId: string,
     documentIds: readonly string[],
+  ): Promise<PreferenceAuthorityRow[]>;
+  /**
+   * This principal's living rows in this company, newest change first (FIX-W12 FR2-3): the raw
+   * feed the answer-basis listing filters further — the service decides eligibility, the store
+   * only narrows to the principal's own, not-yet-forgotten rows.
+   */
+  listLiving(
+    tenantId: string,
+    principalId: string,
+    limit: number,
   ): Promise<PreferenceAuthorityRow[]>;
 }
 
@@ -354,8 +367,18 @@ export function createPreferenceRecallService(
      * degradation path (whose rows a restore may have resurrected) never runs either.
      */
     recovery?: HindsightRecoveryGate;
+    /**
+     * The background-processing budget gate (#393, FIX-F23 / FR-2). The confirm/edit/
+     * correction eager retains are model-call paths exactly like the judgment review's, and
+     * they admit through the same gate the sync queue's drains do: exhaustion skips the
+     * retain — the person's confirmation stands and the work row keeps the retry — and an
+     * admitted retain settles when the service answered (a refusal did the work) and
+     * releases when it was never reached, the queue's discipline.
+     */
+    budget?: HindsightBudgetGate;
   } = {},
 ) {
+  const log = getLogger("server");
   const now = options.now ?? (() => new Date());
   const doFetch =
     config.fetch ?? ((input: string, init?: RequestInit) => fetch(input, init));
@@ -429,12 +452,13 @@ export function createPreferenceRecallService(
    * Retain one row's confirmed content under its stable document identity. `replace` makes the
    * retain idempotent per document: an edit supersedes what the service held instead of
    * appending a second copy. A non-2xx answer is reported, never thrown — the authority row
-   * stands on its own and simply stays pending its sync (#384 drains those).
+   * stands on its own and simply stays pending its sync (#384 drains those). `reached` says
+   * which of the two happened, so a budgeted caller can settle the one and release the other.
    */
   async function retain(
     grant: HindsightBankScope,
     row: PreferenceAuthorityRow,
-  ): Promise<boolean> {
+  ): Promise<{ synced: boolean; reached: boolean }> {
     try {
       const response = await hindsight(
         grant,
@@ -451,12 +475,88 @@ export function createPreferenceRecallService(
           },
         },
       );
-      if (!response.ok) return false;
+      if (!response.ok) return { synced: false, reached: true };
       row.syncedContentDigest = digestOf(row.content);
       row.syncedAt = now();
-      return true;
+      return { synced: true, reached: true };
     } catch {
+      return { synced: false, reached: false };
+    }
+  }
+
+  /**
+   * The eager retain behind a confirm/edit/correction, admitted through the budget gate when
+   * one is wired (#393, FIX-F23 / FR-2 — the seam the final review caught bypassing it). An
+   * exhausted budget does NOT fail the person's decision: the retain is skipped,
+   * `remoteSynced` answers false and the work row recorded just above owns the retry — the
+   * drain re-admits it under its own work key once the budget recovers, so an exhausted
+   * decision charges nothing here. The admission key is stable per row and confirmed
+   * content: re-asserting the same text re-admits one reservation (charged once), while an
+   * edit's new text is genuinely new processing and honestly separate — the judgment
+   * review's `admittedRetain` discipline.
+   *
+   * FIX-OCR3 (O3-M1): "verbatim" now includes the bookkeeping guard the judgment review
+   * gained in O2-M1 — the admission and settle/release calls are local DB writes that run
+   * after the authority row and work row already landed, so their failure degrades, never
+   * fails the confirm a retry would then hit as "already confirmed".
+   */
+  async function admittedRetain(
+    grant: HindsightBankScope,
+    row: PreferenceAuthorityRow,
+  ): Promise<boolean> {
+    if (!options.budget) return (await retain(grant, row)).synced;
+    let admission: Awaited<
+      ReturnType<HindsightBudgetGate["admitBackgroundWork"]>
+    >;
+    try {
+      admission = await options.budget.admitBackgroundWork({
+        tenantId: grant.tenantId,
+        principalId: grant.principalId,
+        workKey: `preference-eager:${row.id}:${digestOf(row.content)}`,
+        units: 1,
+      });
+    } catch {
+      log.error(
+        {
+          type: "preference-eager-budget-admit-failed",
+          context: { rowId: row.id },
+          timestamp: new Date().toISOString(),
+        },
+        "preference-eager-budget-admit-failed",
+      );
       return false;
+    }
+    if (!admission.ok) return false;
+    const outcome = await retain(grant, row);
+    try {
+      if (outcome.synced) {
+        await options.budget.settleBackgroundWork(admission.reservationId);
+        return true;
+      }
+      if (outcome.reached) {
+        // The service answered and refused: it did the work, the charge stands — the same
+        // split the sync queue's retains draw.
+        await options.budget.settleBackgroundWork(admission.reservationId);
+      } else {
+        await options.budget.releaseBackgroundWork(
+          admission.reservationId,
+          "eager retain could not reach the service",
+        );
+      }
+      return false;
+    } catch {
+      log.error(
+        {
+          type: "preference-eager-budget-bookkeeping-failed",
+          context: { rowId: row.id, reservationId: admission.reservationId },
+          timestamp: new Date().toISOString(),
+        },
+        "preference-eager-budget-bookkeeping-failed",
+      );
+      // The retain itself already answered; only its ledger entry is unsound. The decision
+      // stands with the outcome the service gave, and the reservation the failed call left
+      // behind is the period's to age out.
+      return outcome.synced;
     }
   }
 
@@ -469,13 +569,21 @@ export function createPreferenceRecallService(
      */
     async confirmGenericPreference(
       scope: PlatformScope,
-      input: { content: unknown; provenance?: unknown },
+      input: {
+        content: unknown;
+        provenance?: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{
       record: RecalledGenericPreference;
       remoteSynced: boolean;
     }> {
       const grant = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // The chain-side sensitivity gate (audit F-G1-4): the same classifier the personal
+      // store applies. Credentials never store; sensitive classes need the second confirmation.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const provenance = plainString(
         input.provenance ?? "You",
         "provenance",
@@ -518,7 +626,7 @@ export function createPreferenceRecallService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(grant, row);
+      const remoteSynced = await admittedRetain(grant, row);
       if (remoteSynced) await store.save(row);
       return { record: toRecalledPreferenceView(row), remoteSynced };
     },
@@ -531,10 +639,16 @@ export function createPreferenceRecallService(
     async editGenericPreference(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown },
+      input: {
+        content: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{ record: RecalledGenericPreference; remoteSynced: boolean }> {
       const grant = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // An edit may not walk a credential in through the back door either — same gate as confirm.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const row = await store.load(grant.tenantId, id);
       if (
         !row ||
@@ -554,7 +668,7 @@ export function createPreferenceRecallService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(grant, row);
+      const remoteSynced = await admittedRetain(grant, row);
       await store.save(row);
       return { record: toRecalledPreferenceView(row), remoteSynced };
     },
@@ -574,7 +688,12 @@ export function createPreferenceRecallService(
     async correctGenericPreference(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown; effectiveFrom?: unknown },
+      input: {
+        content: unknown;
+        effectiveFrom?: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{
       record: RecalledGenericPreference;
       superseded: RecalledGenericPreference;
@@ -582,6 +701,8 @@ export function createPreferenceRecallService(
     }> {
       const grant = resolveHindsightBankScope(scope);
       const content = plainString(input.content, "content", CONTENT_MAX);
+      // A correction IS a new confirmed fact, so it answers to the same sensitivity gate.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       let effectiveFrom: Date | null = null;
       if (input.effectiveFrom !== undefined) {
         const parsed =
@@ -598,7 +719,11 @@ export function createPreferenceRecallService(
         effectiveFrom = parsed;
       }
       const row = await store.load(grant.tenantId, id);
-      if (!row || row.principalId !== grant.principalId || row.deletedAt !== null)
+      if (
+        !row ||
+        row.principalId !== grant.principalId ||
+        row.deletedAt !== null
+      )
         throw new PreferenceNotFoundError();
       if (row.supersededBy !== null) {
         throw new PreferenceRefusedError(
@@ -633,7 +758,10 @@ export function createPreferenceRecallService(
         enabled: true,
         deletedAt: null,
         markedGenericAt: at,
-        hindsightDocumentId: preferenceDocumentIdFor(grant.tenantId, successorId),
+        hindsightDocumentId: preferenceDocumentIdFor(
+          grant.tenantId,
+          successorId,
+        ),
         syncedContentDigest: null,
         syncedAt: null,
         effectiveFrom,
@@ -655,7 +783,7 @@ export function createPreferenceRecallService(
           contentDigest: digestOf(successor.content),
         });
       }
-      const remoteSynced = await retain(grant, successor);
+      const remoteSynced = await admittedRetain(grant, successor);
       if (remoteSynced) await store.save(successor);
       return {
         record: toRecalledPreferenceView(successor, effectiveFrom === null),
@@ -872,6 +1000,20 @@ export function createDrizzlePreferenceRecords(
             inArray(table.hindsightDocumentId, [...documentIds]),
           ),
         );
+    },
+    async listLiving(tenantId, principalId, limit) {
+      return database
+        .select()
+        .from(table)
+        .where(
+          and(
+            eq(table.tenantId, tenantId),
+            eq(table.principalId, principalId),
+            isNull(table.deletedAt),
+          ),
+        )
+        .orderBy(desc(table.updatedAt))
+        .limit(limit);
     },
   };
 }

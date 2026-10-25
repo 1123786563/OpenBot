@@ -45,6 +45,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { getLogger } from "../../../shared/logger";
 import type { PlatformScope } from "../enterprise/contracts";
 import {
   backgroundTaskBankScope,
@@ -59,6 +60,7 @@ import {
   teamBankFor,
   userBankFor,
 } from "./bank-scope";
+import type { HindsightBudgetGate } from "./budget-gate";
 import {
   createDerivedJudgmentEvidenceVerifier,
   DerivedJudgmentRefusedError,
@@ -90,6 +92,7 @@ import {
   type SourceBoundAuthorizationStore,
   type SourceBoundRecordStore,
 } from "./scoped-recall";
+import { assertMemoryContentAdmissible } from "./sensitivity-gate";
 export interface JudgmentWorkRecorder {
   record(input: {
     subjectType: "derived_judgment";
@@ -206,6 +209,16 @@ const QUERY_MAX = 512;
 const AGENT_ID_MAX = 128;
 /** Bot-context economy: recall answers at most as many judgments as the other seams do. */
 const RECALL_LIMIT = 20;
+/**
+ * How many adopted rows the query-less context half scans before giving up on filling the
+ * limit: rows whose basis died are withheld, so a full page may need to look past them.
+ */
+const CONTEXT_SCAN_MAX = 200;
+/** The adopted listing's page discipline: the same ceilings the candidates listing keeps. */
+const ADOPTED_LIST_DEFAULT = 50;
+const ADOPTED_LIST_MAX = 100;
+/** How many adopted rows one management listing scans past withheld rows to fill its page. */
+const ADOPTED_LIST_SCAN_MAX = 200;
 /** The spec's candidate rule: unhandled proposals expire after thirty days. */
 const CANDIDATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -270,9 +283,18 @@ export function createDerivedJudgmentReviewService(
      * degradation path (whose rows a restore may have resurrected) never runs either.
      */
     recovery?: HindsightRecoveryGate;
+    /**
+     * The background-processing budget gate (#393, FIX-W11 A-2). The confirm/edit eager
+     * retain is the model-call path of a judgment's adoption, and it admits through the same
+     * gate the sync queue's drains do: exhaustion skips the retain — the decision stands and
+     * the work row keeps the retry — and an admitted retain settles when the service answered
+     * (a refusal did the work) and releases when it was never reached, the queue's discipline.
+     */
+    budget?: HindsightBudgetGate;
   } = {},
 ) {
   const now = options.now ?? (() => new Date());
+  const log = getLogger("server");
   const doFetch =
     config.fetch ?? ((input: string, init?: RequestInit) => fetch(input, init));
   const verifier = createDerivedJudgmentEvidenceVerifier(
@@ -313,12 +335,13 @@ export function createDerivedJudgmentReviewService(
    * Retain one row's adopted content into its own bank under its hdj_ identity; `replace`
    * keeps the retain idempotent per document, so an edit replaces in place. A non-2xx or an
    * unreachable service is reported, never thrown — the review decision stands and the work
-   * row awaits the queue (#384).
+   * row awaits the queue (#384). `reached` says which of the two happened, so a budgeted
+   * caller can settle the one and release the other.
    */
   async function retain(
     identity: { tenantId: string; principalId: string },
     row: DerivedJudgmentRow,
-  ): Promise<boolean> {
+  ): Promise<{ synced: boolean; reached: boolean }> {
     const bank = bankGrantFor(row);
     try {
       const response = await hindsight(
@@ -336,12 +359,93 @@ export function createDerivedJudgmentReviewService(
           },
         },
       );
-      if (!response.ok) return false;
+      if (!response.ok) return { synced: false, reached: true };
       row.syncedContentDigest = digestOf(row.content);
       row.syncedAt = now();
-      return true;
+      return { synced: true, reached: true };
     } catch {
+      return { synced: false, reached: false };
+    }
+  }
+
+  /**
+   * The eager retain behind a review decision, admitted through the budget gate when one is
+   * wired (#393, FIX-W11 A-2). An exhausted budget does NOT fail the decision: the retain is
+   * skipped, `remoteSynced` answers false and the work row recorded just above owns the
+   * retry — the drain re-admits it under its own work key once the budget recovers, so an
+   * exhausted decision charges nothing here. The admission key is stable per row and adopted
+   * content: re-asserting the same text re-admits one reservation (charged once), while an
+   * edit's new text is genuinely new processing and honestly separate.
+   *
+   * FIX-OCR2 (O2-M1): the bookkeeping below is a local DB write, and everything it guards is
+   * already durable — the decision row and the work row both landed before this ran. A
+   * bookkeeping error therefore degrades, never fails the decision: an admission that throws
+   * behaves exactly like the refused one (the retain is skipped, the work row keeps the
+   * retry), and a settle or release that throws leaves the reservation where it is — a stray
+   * reserved hold rolls over with the period, the cheaper evil next to telling the person a
+   * confirmation failed that already succeeded and sending their retry into "already
+   * confirmed".
+   */
+  async function admittedRetain(
+    identity: { tenantId: string; principalId: string },
+    row: DerivedJudgmentRow,
+  ): Promise<boolean> {
+    if (!options.budget) return (await retain(identity, row)).synced;
+    let admission: Awaited<
+      ReturnType<HindsightBudgetGate["admitBackgroundWork"]>
+    >;
+    try {
+      admission = await options.budget.admitBackgroundWork({
+        tenantId: identity.tenantId,
+        principalId: identity.principalId,
+        workKey: `judgment-review:${row.id}:${digestOf(row.content)}`,
+        units: 1,
+      });
+    } catch {
+      log.error(
+        {
+          type: "judgment-review-budget-admit-failed",
+          context: { judgmentId: row.id },
+          timestamp: new Date().toISOString(),
+        },
+        "judgment-review-budget-admit-failed",
+      );
       return false;
+    }
+    if (!admission.ok) return false;
+    const outcome = await retain(identity, row);
+    try {
+      if (outcome.synced) {
+        await options.budget.settleBackgroundWork(admission.reservationId);
+        return true;
+      }
+      if (outcome.reached) {
+        // The service answered and refused: it did the work, the charge stands — the same
+        // split the sync queue's retains draw.
+        await options.budget.settleBackgroundWork(admission.reservationId);
+      } else {
+        await options.budget.releaseBackgroundWork(
+          admission.reservationId,
+          "eager retain could not reach the service",
+        );
+      }
+      return false;
+    } catch {
+      log.error(
+        {
+          type: "judgment-review-budget-bookkeeping-failed",
+          context: {
+            judgmentId: row.id,
+            reservationId: admission.reservationId,
+          },
+          timestamp: new Date().toISOString(),
+        },
+        "judgment-review-budget-bookkeeping-failed",
+      );
+      // The retain itself already answered; only its ledger entry is unsound. The decision
+      // stands with the outcome the service gave, and the reservation the failed call left
+      // behind is the period's to age out.
+      return outcome.synced;
     }
   }
 
@@ -437,6 +541,39 @@ export function createDerivedJudgmentReviewService(
     );
   }
 
+  /**
+   * Whether the judgment is still inside its OWN scope's current authorization, judged on the
+   * row itself — the MANAGEMENT rule (FIX-OCR2 O2-HIGH, #387/#389). The asking-agent match
+   * `judgmentScopeAuthorizedNow` adds is a USE rule: it decides which Bot recall and the
+   * context half may hand a judgment to. On a management surface it was structural
+   * withholding — the management snapshot carries no asking agent (the person is reading,
+   * not a Bot), so every bot-scope row answered false forever there, and a judgment this
+   * same surface let the person confirm could never again be seen, expanded or forgotten.
+   * Here the row's own scope answers, the same rule the candidate listing's Gate 4 and
+   * `listPersonalMemories` apply to source-bound facts: a bot judgment stays while its own
+   * Bot's grant stands, and returns by itself when the authority returns.
+   */
+  async function judgmentManageableNow(
+    row: DerivedJudgmentRow,
+    base: AuthorizationSnapshot,
+  ): Promise<boolean> {
+    if (row.scopeKind === "general") return true;
+    if (row.scopeKind === "team") {
+      return base.workspaceActive && row.workspaceId === base.workspaceId;
+    }
+    if (row.scopeKind === "source") {
+      return base.sourceIds.includes(row.sourceId ?? "");
+    }
+    return (
+      row.agentId !== null &&
+      (await authorizations.botAuthorized(
+        row.tenantId,
+        row.principalId,
+        row.agentId,
+      ))
+    );
+  }
+
   function reviewedView(
     row: DerivedJudgmentRow,
     evidence: readonly ResolvedEvidence[],
@@ -480,6 +617,10 @@ export function createDerivedJudgmentReviewService(
     async confirmDerivedJudgment(
       scope: PlatformScope,
       id: string,
+      input: {
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      } = {},
     ): Promise<{ judgment: ReviewedDerivedJudgment; remoteSynced: boolean }> {
       const identity = resolveHindsightBankScope(scope);
       const row = await loadOwned(scope, id);
@@ -490,6 +631,9 @@ export function createDerivedJudgmentReviewService(
           `This judgment was already ${row.reviewState}; only an unreviewed candidate can be confirmed.`,
         );
       }
+      // Adopting a candidate is a confirm/retain path too: the stored content answers to the
+      // same sensitivity gate before it can ever be indexed (audit F-G1-4).
+      assertMemoryContentAdmissible(row.content, input.confirmSensitive);
       const snapshot = await snapshotFor(scope);
       const verified = await verifier.verifyStoredEvidence(
         identity.tenantId,
@@ -516,7 +660,7 @@ export function createDerivedJudgmentReviewService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(identity, row);
+      const remoteSynced = await admittedRetain(identity, row);
       if (remoteSynced) await judgments.save(row);
       return { judgment: reviewedView(row, verified.evidence), remoteSynced };
     },
@@ -532,7 +676,11 @@ export function createDerivedJudgmentReviewService(
     async editDerivedJudgment(
       scope: PlatformScope,
       id: string,
-      input: { content: unknown },
+      input: {
+        content: unknown;
+        /** The person's explicit second confirmation for sensitive content (F-G1-4). */
+        confirmSensitive?: unknown;
+      },
     ): Promise<{ judgment: ReviewedDerivedJudgment; remoteSynced: boolean }> {
       const identity = resolveHindsightBankScope(scope);
       const content = plainString(
@@ -540,6 +688,8 @@ export function createDerivedJudgmentReviewService(
         "a judgment",
         JUDGMENT_CONTENT_MAX,
       );
+      // Editing a judgment re-asserts its text into the index; the same gate applies.
+      assertMemoryContentAdmissible(content, input.confirmSensitive);
       const row = await loadOwned(scope, id);
       if (!row || row.deletedAt !== null)
         throw new DerivedJudgmentNotFoundError();
@@ -580,7 +730,7 @@ export function createDerivedJudgmentReviewService(
           contentDigest: digestOf(row.content),
         });
       }
-      const remoteSynced = await retain(identity, row);
+      const remoteSynced = await admittedRetain(identity, row);
       if (remoteSynced) await judgments.save(row);
       return { judgment: reviewedView(row, verified.evidence), remoteSynced };
     },
@@ -711,6 +861,64 @@ export function createDerivedJudgmentReviewService(
     },
 
     /**
+     * The adopted half of the person's review surface (FIX-W12 / FR2-3, #389): the judgments
+     * the person already stood behind, listed across sessions — the refresh-and-still-there
+     * control a confirm's one answer cannot give. Availability is re-decided NOW per row,
+     * exactly as the expansion seam decides it: the row must still be adopted and alive, still
+     * sit inside its own scope's CURRENT authorization, and still pass the four evidence gates
+     * over its stored relation. A judgment whose basis died is withheld, not refused — the
+     * person did nothing wrong, and it returns by itself when the authority returns, the same
+     * withholding the candidates listing and the query-less context half apply. No pause or
+     * restore gate runs here: those stop a Bot's USE of memory, not the person's management
+     * of it — a paused person can still read and forget what they adopted. The scope check is
+     * the management one (`judgmentManageableNow`, FIX-OCR2 O2-HIGH): a bot-scope judgment
+     * answers by its OWN Bot's live grant, never by whether a Bot happens to be asking,
+     * because nothing is asking — this is the person's own surface.
+     */
+    async listAdoptedJudgments(
+      scope: PlatformScope,
+      input: { limit?: unknown } = {},
+    ): Promise<ReviewedDerivedJudgment[]> {
+      let limit = ADOPTED_LIST_DEFAULT;
+      if (input.limit !== undefined) {
+        if (
+          typeof input.limit !== "number" ||
+          !Number.isInteger(input.limit) ||
+          input.limit < 1 ||
+          input.limit > ADOPTED_LIST_MAX
+        ) {
+          throw new DerivedJudgmentRefusedError(
+            "shape",
+            `An adopted listing needs a limit of 1..${ADOPTED_LIST_MAX}.`,
+          );
+        }
+        limit = input.limit;
+      }
+      const identity = resolveHindsightBankScope(scope);
+      const snapshot = await snapshotFor(scope);
+      const adopted = await judgments.loadAdopted(
+        identity.tenantId,
+        identity.principalId,
+        ADOPTED_LIST_SCAN_MAX,
+      );
+      const listed: ReviewedDerivedJudgment[] = [];
+      for (const row of adopted) {
+        if (!derivedJudgmentEligible(row)) continue;
+        if (!(await judgmentManageableNow(row, snapshot))) continue;
+        const verified = await verifier.verifyStoredEvidence(
+          identity.tenantId,
+          identity.principalId,
+          row,
+          snapshot,
+        );
+        if (!verified.ok) continue;
+        listed.push(reviewedView(row, verified.evidence));
+        if (listed.length === limit) break;
+      }
+      return listed;
+    },
+
+    /**
      * THE judgment recall: Hindsight ranks, OpenBot answers. The banks asked are the ones the
      * asking context is CURRENTLY authorized for — the person's own user bank, plus the
      * scoped banks #383's resolver names — and only this principal's rows behind the hit
@@ -836,10 +1044,86 @@ export function createDerivedJudgmentReviewService(
     },
 
     /**
+     * The query-less context half (FIX-W11 A-1, #396 A-1): the adopted judgments that still
+     * stand, read from the authority rows the way the personal-memory loader's other two
+     * halves read theirs — there is no query to rank, so no bank is asked and no ranking is
+     * claimed. The gate order is the query recall's own: pause-usage and the restore gate
+     * close before any row is read; the authorization snapshot is read twice — before the
+     * rows load and again after, the #383 discipline — and every row must still be adopted,
+     * still sit inside its scope's CURRENT authorization, and still pass the four evidence
+     * gates through the one verifier. A judgment whose basis died between two turns simply
+     * is not in the next block; nothing was cached at confirm time.
+     */
+    async derivedJudgmentContext(
+      scope: PlatformScope,
+      askingAgentId?: string,
+    ): Promise<RecalledDerivedJudgment[]> {
+      const identity = resolveHindsightBankScope(scope);
+      // Pause-usage (#392): before any row is read, the same place the query recall checks.
+      if (await usagePausedFor(options.pause, scope)) return [];
+      // Backup-restore gate (#391): an unreplayed restore keeps the context half closed too.
+      if (!(await recallOpenFor(options.recovery))) return [];
+      // The ask's authorization, read before any judgment row leaves the store — the query
+      // recall's first read, minus the banks it resolves there.
+      const first = await readScopedAuthorization(
+        authorizations,
+        identity.tenantId,
+        identity.principalId,
+        scope.workspaceId,
+        askingAgentId,
+      );
+      const adopted = await judgments.loadAdopted(
+        identity.tenantId,
+        identity.principalId,
+        CONTEXT_SCAN_MAX,
+      );
+      // The second read: what the authorization looks like NOW, after the rows loaded — the
+      // same TOCTOU discipline the query recall applies after the remote answered. Rows the
+      // FIRST snapshot already refuses never reach the verifier; the SECOND is the word that
+      // counts for everything that does.
+      const second = await readScopedAuthorization(
+        authorizations,
+        identity.tenantId,
+        identity.principalId,
+        scope.workspaceId,
+        askingAgentId,
+      );
+      const recalled: RecalledDerivedJudgment[] = [];
+      for (const row of adopted) {
+        if (recalled.length >= RECALL_LIMIT) break;
+        if (!derivedJudgmentEligible(row)) continue;
+        if (!(await judgmentScopeAuthorizedNow(row, first))) continue;
+        if (!(await judgmentScopeAuthorizedNow(row, second))) continue;
+        const verified = await verifier.verifyStoredEvidence(
+          identity.tenantId,
+          identity.principalId,
+          row,
+          second,
+        );
+        if (!verified.ok) continue;
+        recalled.push({
+          id: row.id,
+          content: row.content,
+          provenance: row.provenance,
+          scope: judgmentScopeOf(row),
+          reviewState: row.reviewState as "confirmed" | "edited",
+          reviewedAt: row.reviewedAt ?? row.updatedAt,
+          evidence: verified.evidence.map((basis) => ({
+            id: basis.row.id,
+            kind: basis.kind,
+          })),
+        });
+      }
+      return recalled;
+    },
+
+    /**
      * Expand one judgment's record id into its evidence-chain entry: the adopted text, its
      * scope, when the person adopted it, and the complete basis one level deep. Availability is
-     * re-decided NOW — the row must still be adopted, its scope still authorized, and its whole
-     * basis still stand — and everything else answers the same { state: "unavailable" } the
+     * re-decided NOW — the row must still be adopted, its scope still authorized (by the
+     * management rule `judgmentManageableNow`, FIX-OCR2 O2-HIGH: a bot judgment by its OWN
+     * Bot's live grant, never by an asking agent), and its whole basis still stand — and
+     * everything else answers the same { state: "unavailable" } the
      * evidence seam (#387) answers missing, foreign or revoked bases with: no content, and
      * deliberately no reason.
      */
@@ -853,7 +1137,7 @@ export function createDerivedJudgmentReviewService(
         return { state: "unavailable", id };
       }
       const snapshot = await snapshotFor(scope);
-      if (!(await judgmentScopeAuthorizedNow(row, snapshot))) {
+      if (!(await judgmentManageableNow(row, snapshot))) {
         return { state: "unavailable", id };
       }
       const verified = await verifier.verifyStoredEvidence(

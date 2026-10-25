@@ -32,6 +32,7 @@ import {
   userBankFor,
   verifyBankScopeAssertion,
 } from "../src/hindsight/bank-scope";
+import type { HindsightBudgetGate } from "../src/hindsight/budget-gate";
 import {
   createDrizzleSourceBoundAuthorizations,
   createDrizzleSourceBoundRecords,
@@ -244,10 +245,7 @@ async function makeTrustedScope(
 }
 
 /** A structurally perfect scope nobody issued — the forgery this seam must refuse. */
-function forgedScope(
-  principalId: string,
-  workspaceId: string,
-): PlatformScope {
+function forgedScope(principalId: string, workspaceId: string): PlatformScope {
   return Object.freeze({
     tenantId: TENANT,
     workspaceId,
@@ -267,9 +265,9 @@ beforeAll(async () => {
     { id: `usr_emp-${run}`, email: `emp-${run}@example.invalid` },
     { id: `usr_admin-${run}`, email: `admin-${run}@example.invalid` },
   ]);
-  await database.insert(enterpriseTenants).values([
-    { id: TENANT, name: `Acme ${run}` },
-  ]);
+  await database
+    .insert(enterpriseTenants)
+    .values([{ id: TENANT, name: `Acme ${run}` }]);
   await database.insert(enterprisePrincipals).values([
     { id: PRINCIPAL_EMP, userId: `usr_emp-${run}` },
     { id: PRINCIPAL_ADMIN, userId: `usr_admin-${run}` },
@@ -355,9 +353,7 @@ async function suspendMembership(workspaceId: string) {
   await database
     .update(enterpriseWorkspaceMemberships)
     .set({ status: "suspended" })
-    .where(
-      eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId),
-    );
+    .where(eq(enterpriseWorkspaceMemberships.workspaceId, workspaceId));
 }
 
 async function restoreMembership(workspaceId: string) {
@@ -410,7 +406,9 @@ describe("Hindsight 06 (#383): confirming keeps the memory source-bound", () => 
       restriction: { kind: "bot", agentId: BOT_ONE },
     });
     const banks = scripted.calls
-      .filter((call) => call.method === "POST" && call.path.endsWith("/memories"))
+      .filter(
+        (call) => call.method === "POST" && call.path.endsWith("/memories"),
+      )
       .map((call) => call.bank);
     expect(banks).toContain(SOURCE_BANK_ONE);
     expect(banks).toContain(BOT_BANK_ONE);
@@ -521,9 +519,7 @@ describe("Hindsight 06 (#383): revocation excludes on the next recall", () => {
       content: `来源受限事实 ${run}`,
       restriction: { kind: "source", sourceId: SOURCE_ONE },
     });
-    answerHits(SOURCE_BANK_ONE, [
-      sourceBoundDocumentIdFor(TENANT, record.id),
-    ]);
+    answerHits(SOURCE_BANK_ONE, [sourceBoundDocumentIdFor(TENANT, record.id)]);
     const before = await service.recallSourceBoundMemories(scope, {
       query: "来源事实",
     });
@@ -549,9 +545,7 @@ describe("Hindsight 06 (#383): revocation excludes on the next recall", () => {
       content: `团队事实（成员资格） ${run}`,
       restriction: { kind: "team", workspaceId: WORKSPACE_A },
     });
-    answerHits(TEAM_BANK_A, [
-      sourceBoundDocumentIdFor(TENANT, record.id),
-    ]);
+    answerHits(TEAM_BANK_A, [sourceBoundDocumentIdFor(TENANT, record.id)]);
     await suspendMembership(WORKSPACE_A);
     try {
       scripted.calls.length = 0;
@@ -575,9 +569,7 @@ describe("Hindsight 06 (#383): revocation excludes on the next recall", () => {
       content: `Bot 事实（应用权限） ${run}`,
       restriction: { kind: "bot", agentId: BOT_ONE },
     });
-    answerHits(BOT_BANK_ONE, [
-      sourceBoundDocumentIdFor(TENANT, record.id),
-    ]);
+    answerHits(BOT_BANK_ONE, [sourceBoundDocumentIdFor(TENANT, record.id)]);
     const asking = await service.recallSourceBoundMemories(scope, {
       query: "Bot 事实",
       askingAgentId: BOT_ONE,
@@ -706,9 +698,7 @@ describe("Hindsight 06 (#383): the person boundary", () => {
       content: `员工的事实 ${run}`,
       restriction: { kind: "team", workspaceId: WORKSPACE_A },
     });
-    answerHits(TEAM_BANK_A, [
-      sourceBoundDocumentIdFor(TENANT, record.id),
-    ]);
+    answerHits(TEAM_BANK_A, [sourceBoundDocumentIdFor(TENANT, record.id)]);
     // The scripted service hands the employee's document id to whoever asks; the admin's
     // own rows do not own it, so the seam drops it before anything reaches the Bot.
     const asAdmin = await service.recallSourceBoundMemories(
@@ -727,11 +717,106 @@ describe("Hindsight 06 (#383): the person boundary", () => {
       ),
     ).rejects.toThrow("UNVERIFIED_SCOPE");
     await expect(
-      service.confirmSourceBoundMemory(forgedScope(PRINCIPAL_EMP, WORKSPACE_A), {
-        content: `伪造身份的事实 ${run}`,
-        restriction: { kind: "team", workspaceId: WORKSPACE_A },
-      }),
+      service.confirmSourceBoundMemory(
+        forgedScope(PRINCIPAL_EMP, WORKSPACE_A),
+        {
+          content: `伪造身份的事实 ${run}`,
+          restriction: { kind: "team", workspaceId: WORKSPACE_A },
+        },
+      ),
     ).rejects.toThrow("UNVERIFIED_SCOPE");
     expect(scripted.calls.length).toBe(0);
+  });
+});
+
+/*
+ * FIX-OCR3 (O3-M1): the eager retain's budget bookkeeping is a local DB write that runs
+ * after the source-bound row and its work row already landed — the judgment review's O2-M1
+ * rule, which this seam's docblock claimed by name but did not actually carry. On BASE a
+ * throwing settle or admission released into the confirm's answer: a decision that had
+ * already succeeded reported failure, and the person's retry landed on the same content.
+ */
+describe("FIX-OCR3 — budget bookkeeping never fails the source-bound confirm", () => {
+  const failures = { admit: false, settle: false, release: false };
+  const throwingBudget: HindsightBudgetGate = {
+    async admitBackgroundWork() {
+      if (failures.admit) throw new Error("admission ledger exploded");
+      return { ok: true, reservationId: `res-o3-${run}` };
+    },
+    async settleBackgroundWork() {
+      if (failures.settle) throw new Error("settle ledger exploded");
+    },
+    async releaseBackgroundWork() {
+      if (failures.release) throw new Error("release ledger exploded");
+    },
+    async currentUsage() {
+      return { companyUnits: 0, personalUnits: [], period: "2026-10" };
+    },
+  };
+  /** A source-bound service over the same records as the suite's, with the failing budget. */
+  const budgetedService = (config: {
+    apiUrl: string;
+    serviceApiKey: string;
+    assertionSecret: string;
+    requestTimeoutMs: number;
+  }) =>
+    createSourceBoundRecallService(
+      createDrizzleSourceBoundRecords(database),
+      createDrizzleSourceBoundAuthorizations(database),
+      config,
+      { budget: throwingBudget },
+    );
+
+  test("a settle that throws after a successful retain keeps the confirm standing and synced", async () => {
+    failures.admit = false;
+    failures.settle = true;
+    failures.release = false;
+    const scope = await makeTrustedScope(PRINCIPAL_EMP, WORKSPACE_A);
+    const { record, remoteSynced } = await budgetedService({
+      apiUrl: scripted.url,
+      serviceApiKey: SERVICE_KEY,
+      assertionSecret: SECRET,
+      requestTimeoutMs: 2000,
+    }).confirmSourceBoundMemory(scope, {
+      content: `簿记失败结算来源事实 ${run}`,
+      restriction: { kind: "source", sourceId: SOURCE_ONE },
+    });
+    expect(remoteSynced).toBe(true);
+    const [row] = await database
+      .select()
+      .from(sourceBoundMemories)
+      .where(eq(sourceBoundMemories.id, record.id));
+    expect(row.reviewState).toBe("confirmed");
+    failures.settle = false;
+  });
+
+  test("an admission that throws skips the retain: the decision stands, unsynced", async () => {
+    failures.admit = true;
+    failures.settle = false;
+    failures.release = false;
+    const scope = await makeTrustedScope(PRINCIPAL_EMP, WORKSPACE_A);
+    const retainsBefore = scripted.calls.filter(
+      (call) => call.method === "POST" && call.path.endsWith("/memories"),
+    ).length;
+    const { record, remoteSynced } = await budgetedService({
+      apiUrl: scripted.url,
+      serviceApiKey: SERVICE_KEY,
+      assertionSecret: SECRET,
+      requestTimeoutMs: 2000,
+    }).confirmSourceBoundMemory(scope, {
+      content: `簿记失败准入来源事实 ${run}`,
+      restriction: { kind: "source", sourceId: SOURCE_ONE },
+    });
+    expect(remoteSynced).toBe(false);
+    const [row] = await database
+      .select()
+      .from(sourceBoundMemories)
+      .where(eq(sourceBoundMemories.id, record.id));
+    expect(row.reviewState).toBe("confirmed");
+    const retainsAfter = scripted.calls.filter(
+      (call) => call.method === "POST" && call.path.endsWith("/memories"),
+    ).length;
+    expect(retainsAfter).toBe(retainsBefore);
+    failures.admit = false;
   });
 });

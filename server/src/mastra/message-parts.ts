@@ -68,6 +68,61 @@ export interface OpenBotFullMessage {
   readonly parts: readonly OpenBotMessagePart[];
   readonly engineMessageId?: string;
   readonly toolCallId?: string;
+  /**
+   * FIX-OCR3 (O3-H1, FIX-W14's replay half): the {id, kind} pointers the run's
+   * answer cited, stamped on the assistant message's AG-UI metadata by the engine
+   * wrapper and carried HERE so the basis survives the store — a refresh rebuilds
+   * history from these rows, and a basis only the live event stream carried was a
+   * basis the person lost the moment they reloaded. Assistant envelopes only.
+   */
+  readonly answerBasis?: readonly OpenBotAnswerBasisPointer[];
+}
+
+/** Which half of the person's memory an answer drew on — the server's own vocabulary. */
+export type OpenBotAnswerBasisKind =
+  | "general-preference"
+  | "source-bound"
+  | "derived-judgment";
+
+/** One record an answer cited: the id the evidence seam expands, and which half it came from. */
+export type OpenBotAnswerBasisPointer = {
+  id: string;
+  kind: OpenBotAnswerBasisKind;
+};
+
+const ANSWER_BASIS_KINDS: readonly OpenBotAnswerBasisKind[] = [
+  "general-preference",
+  "source-bound",
+  "derived-judgment",
+];
+
+/**
+ * The basis pointers of one AG-UI message's metadata, or undefined when it carries none.
+ *
+ * Tolerant on the way IN: `openbot` is a shared metadata namespace other writers may use, so
+ * a shape that is not this stamp reads as "no basis" rather than corrupting the persistence
+ * of a message that happens to carry foreign metadata. Strict on the way OUT of storage
+ * (`parseStoredFullMessage`): the envelope is this module's own representation, and an
+ * answerBasis it cannot prove is corrupt.
+ */
+export function answerBasisOfAgUiMetadata(
+  metadata: unknown,
+): readonly OpenBotAnswerBasisPointer[] | undefined {
+  if (!isRecord(metadata)) return undefined;
+  const openbot = metadata.openbot;
+  if (!isRecord(openbot)) return undefined;
+  const raw = openbot.personalMemoryBasis;
+  if (!Array.isArray(raw)) return undefined;
+  const pointers: OpenBotAnswerBasisPointer[] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry)) return undefined;
+    const { id, kind } = entry;
+    if (typeof id !== "string" || id.length === 0) return undefined;
+    if (!ANSWER_BASIS_KINDS.includes(kind as OpenBotAnswerBasisKind))
+      return undefined;
+    pointers.push({ id, kind: kind as OpenBotAnswerBasisKind });
+  }
+  return pointers.length > 0 ? pointers : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,6 +137,36 @@ function assertString(value: unknown, what: string): string {
 }
 
 /** Strict parse of a stored full message. Anything unprovable is corrupt. */
+/** The stored basis pointers, proven or corrupt — never silently half-read (O3-H1). */
+function parseStoredAnswerBasis(
+  value: unknown,
+): readonly OpenBotAnswerBasisPointer[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new MastraMessagePartsCorruptError(
+      "answerBasis must be a non-empty array",
+    );
+  }
+  return value.map((entry): OpenBotAnswerBasisPointer => {
+    if (!isRecord(entry)) {
+      throw new MastraMessagePartsCorruptError(
+        "answerBasis entry is not an object",
+      );
+    }
+    const { id, kind } = entry;
+    if (typeof id !== "string" || id.length === 0) {
+      throw new MastraMessagePartsCorruptError(
+        "answerBasis entry id must be a string",
+      );
+    }
+    if (!ANSWER_BASIS_KINDS.includes(kind as OpenBotAnswerBasisKind)) {
+      throw new MastraMessagePartsCorruptError(
+        `answerBasis entry kind is unknown: ${String(kind)}`,
+      );
+    }
+    return { id, kind: kind as OpenBotAnswerBasisKind };
+  });
+}
+
 export function parseStoredFullMessage(value: unknown): OpenBotFullMessage {
   if (!isRecord(value)) {
     throw new MastraMessagePartsCorruptError("parts envelope is not an object");
@@ -158,6 +243,9 @@ export function parseStoredFullMessage(value: unknown): OpenBotFullMessage {
     ...(typeof value.toolCallId === "string"
       ? { toolCallId: value.toolCallId }
       : {}),
+    ...(value.answerBasis !== undefined
+      ? { answerBasis: parseStoredAnswerBasis(value.answerBasis) }
+      : {}),
   };
   if (role === "tool" && full.toolCallId === undefined) {
     throw new MastraMessagePartsCorruptError("tool row carries no toolCallId");
@@ -206,6 +294,8 @@ interface AgUiShape {
   toolCalls?: unknown;
   toolCallId?: unknown;
   error?: unknown;
+  /** The protocol-level metadata channel; the basis stamp rides it (O3-H1). */
+  metadata?: unknown;
 }
 
 /**
@@ -329,8 +419,18 @@ export function fullMessageFromAgUi(message: Message): {
         parts.push({ kind: "tool-call", toolCallId, toolName, args });
       }
     }
+    // O3-H1: the basis stamp the engine wrapper put on this assistant message rides the
+    // stored envelope, so the replay half of "live and replayed agree" has something to
+    // rebuild from. Foreign metadata shapes read as no basis (the tolerant reader above).
+    const answerBasis = answerBasisOfAgUiMetadata(shape.metadata);
     return {
-      full: { schemaVersion: 1, role: "assistant", parts, engineMessageId },
+      full: {
+        schemaVersion: 1,
+        role: "assistant",
+        parts,
+        engineMessageId,
+        ...(answerBasis !== undefined ? { answerBasis } : {}),
+      },
       content: text,
       attachments: [],
     };
@@ -571,6 +671,16 @@ export function agUiMessageFromStoredRow(row: {
         role: "assistant",
         content: text,
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
+        // O3-H1: the basis the answer carried live is restored, not re-derived — the
+        // replayed transcript and the event store agree on what the answer used. This is
+        // the one metadata an engine-output rebuild carries (see storedMetadataOf).
+        ...(full.answerBasis !== undefined
+          ? {
+              metadata: {
+                openbot: { personalMemoryBasis: [...full.answerBasis] },
+              },
+            }
+          : {}),
       } as Message;
       return { message: rebuilt, attachments: [] };
     }
@@ -657,7 +767,9 @@ export function agUiMessageFromStoredRow(row: {
  * metadata: the assistant/tool rebuilds carry no metadata object because
  * their engine message id IS the rebuilt message's `id` (R4-10 — consumers
  * must not expect `metadata.openbotEngineMessageId` on engine output rows).
- * Nothing else leaks from storage metadata.
+ * Nothing else leaks from storage metadata. The one exception rides the envelope, not
+ * this projection: an assistant rebuild's basis pointers (O3-H1 above) — server-composed,
+ * carried in openbotParts, never assembled from row-level metadata here.
  */
 function storedMetadataOf(
   metadata: Record<string, unknown>,

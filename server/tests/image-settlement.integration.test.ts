@@ -9,7 +9,9 @@ import type { ConversionRate } from "../src/gateway/conversion-rate";
 import {
   GATEWAY_PRICE_SNAPSHOT_SOURCE,
   PRICE_DIMENSIONS,
+  WIRE_PRICED_DIMENSIONS,
   mapPriceDims,
+  type PriceDimension,
   type PriceSnapshotDims,
 } from "../src/gateway/price-snapshot";
 import { createEnterpriseGatewayPriceSnapshotStore } from "../src/gateway/price-snapshot";
@@ -79,6 +81,46 @@ type ImageWorld = {
 };
 
 /**
+ * The dimensions the v1 wire has no field for, as THIS fixture writes them out by hand —
+ * `image_output` carries the scenario's own price (or the mapping's unknown); the rest a
+ * complete basis prices at an explicit "0" (free is a price). The list is deliberately
+ * literal so `assertReservedDimCoverage` below can catch the vocabulary moving under it.
+ */
+const FIXTURE_RESERVED_DIMENSIONS: readonly PriceDimension[] = [
+  "image_output",
+  "audio_input",
+  "audio_output",
+  "video",
+  "video_input",
+  "surcharge_tool_call",
+  "surcharge_a2a_call",
+];
+
+/**
+ * Check the fixture's hand-written reserved list against 03.2's own module — the complement of
+ * `WIRE_PRICED_DIMENSIONS` is the authoritative set of dimensions the v1 wire cannot price.
+ * Both directions are compared so a vocabulary that grows (a dimension this fixture never
+ * heard of) or shrinks (a dimension the wire now prices) is a red with the diff named.
+ */
+function assertReservedDimCoverage(covered: readonly PriceDimension[]): void {
+  const coveredSet = new Set<string>(covered);
+  const expected = new Set<string>(
+    PRICE_DIMENSIONS.filter(
+      (dimension) => !WIRE_PRICED_DIMENSIONS.includes(dimension),
+    ),
+  );
+  const missing = [...expected].filter((dim) => !coveredSet.has(dim)).sort();
+  const unexpected = [...coveredSet].filter((dim) => !expected.has(dim)).sort();
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      "image fixture reserved-dimension coverage drifted from price-snapshot.ts: " +
+        `missing [${missing.join(", ")}], ` +
+        `unexpected [${unexpected.join(", ")}]`,
+    );
+  }
+}
+
+/**
  * The dims of one priced cell, built the way a source that CAN price the generated image
  * would record them: every wire dimension complete (03.2's own v1 mapping over a complete
  * pricing object) with the reserved dimensions overlaid — `image_output` known at
@@ -86,9 +128,11 @@ type ImageWorld = {
  * audio/video slots a complete basis prices at "0" (free is a price), because 06.5's
  * conversion prices every dimension of the vocabulary and refuses any unknown one.
  * (`mapPriceDims` alone can never produce a known `image_output` — the v1 wire has no
- * field for it.)
+ * field for it.) Every build re-checks the hand-written reserved list against
+ * `price-snapshot.ts`'s derived set (R2-F1).
  */
 function imageDimsOf(imageOutputUsd: string | null): PriceSnapshotDims {
+  assertReservedDimCoverage(FIXTURE_RESERVED_DIMENSIONS);
   const mapped = mapPriceDims({ pricing: COMPLETE_WIRE_PRICING });
   return Object.fromEntries(
     PRICE_DIMENSIONS.map((dimension) => [
@@ -97,11 +141,7 @@ function imageDimsOf(imageOutputUsd: string | null): PriceSnapshotDims {
         ? imageOutputUsd === null
           ? mapped[dimension]
           : { status: "known", amount: imageOutputUsd }
-        : dimension === "audio_input" ||
-            dimension === "audio_output" ||
-            dimension === "video" ||
-            dimension === "surcharge_tool_call" ||
-            dimension === "surcharge_a2a_call"
+        : FIXTURE_RESERVED_DIMENSIONS.includes(dimension)
           ? { status: "known", amount: "0" }
           : mapped[dimension],
     ]),
