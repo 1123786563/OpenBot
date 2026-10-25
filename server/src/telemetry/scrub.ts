@@ -38,6 +38,15 @@ const SECRET_NAME =
  * (A-H1, F04-6, T14, R8-C5, R10-C7) lived in one copy disagreeing with another. QUOTE_ARMS is a
  * paired double- or single-quoted word beside the fallback that reads an unpaired quote as an
  * ordinary character, each fallback guarded so exactly one arm can match at a quote (R10-C7).
+ *
+ * Residual window, recorded as it is: a quoted secret that truly closes on a later line is
+ * redacted only up to the line break, and the rest of it stays in the record. Pairing a quote
+ * across lines is what swallowed whole following command lines when the quote was never closed
+ * (F10-2, pinned by T30), so no reading satisfies both — the choice is that a later-closing
+ * secret leaks rather than that a command is deleted. bash keeps a newline inside double quotes
+ * as part of the word, so this departs from the shell's reading by choice, not by derivation from
+ * it. PEM blocks and long vendor tokens are caught by TOKEN_SHAPES whatever their line breaks.
+ *
  * LEAD_SPAN is a lead's run from its anchor word to its flag, a VALUE_UNIT is one unit of a bare
  * value, and BARE_VALUE is the value word, its first unit refusing `-` and the separators. The
  * rules interpolate them the way the SECRET_NAME rules interpolate their name, each with its
@@ -79,11 +88,11 @@ const RULES: [RegExp, (match: string, ...groups: string[]) => string][] = [
    * keeps its separators: inside the quotes they are part of the word, not the shell's.
    *
    * A quoted argument is consumed whole, quotes and all. The scan still stops at a line break
-   * inside the quotes — a quote that spans lines is a quote the shell itself would not keep to one
-   * command — but a `;`, `|` or `&` inside the quotes belongs to the quoted word, not to the shell
-   * listing commands, so it must not end the sweep before the flag is found
-   * (`mysql -e "SELECT 1;" -p…`, `docker login -u "a&b" -p…`). An unclosed quote just ends the
-   * scan there, as a shell still inside the quote would read no further command either.
+   * inside the quotes — the residual window that leaves is recorded at QUOTE_ARMS — but a `;`, `|`
+   * or `&` inside the quotes belongs to the quoted word, not to the shell listing commands, so it
+   * must not end the sweep before the flag is found (`mysql -e "SELECT 1;" -p…`,
+   * `docker login -u "a&b" -p…`). An unclosed quote just ends the scan there instead of reading
+   * on, which is what keeps the lines that follow in the record.
    *
    * A double-quoted word may itself hold an escaped quote (`docker login -u "dev\"ops" -p…`). The
    * arm consumes the backslash and the character it escapes as a pair: `[^"\\\r\n]` alone would
