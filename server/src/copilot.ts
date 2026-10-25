@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { BaseEvent, Message, RunAgentInput } from "@ag-ui/client";
 import { type AbstractAgent, HttpAgent } from "@ag-ui/client";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -39,6 +39,7 @@ import {
 import { sanitizeSeededHistory } from "@openbot/toolkit/history-sanitize";
 import { executeNativeApprovalTool } from "@openbot/toolkit/native-approval";
 import { historyOrEmpty } from "@openbot/toolkit/thread-history";
+import { type Context, context, TraceFlags, trace } from "@opentelemetry/api";
 import {
   defer,
   filter,
@@ -60,6 +61,7 @@ import {
   planModelForEnvironment,
 } from "./agents/plan-model";
 import type { AgentActor } from "./agents/profile-types";
+import { runUpstreamIdentity } from "./ai-observability/opik-http";
 import type { AuditInitiator } from "./audit";
 import { CreditInsufficientError } from "./billing/payer-binding";
 import {
@@ -4199,6 +4201,13 @@ async function remoteTransport(
  * request rather than captured once, because a fetch built at run start may serve a replayed
  * run and the chain it should carry is the one active when it is actually called. An empty
  * context injects nothing — no `traceparent` is ever synthesized.
+ *
+ * R4-01: for a governed run the "ambient context at fetch time" is no longer luck. The run
+ * middleware ({@link governedRemoteRun}) decides the run's chain from the run's own identity
+ * and binds it around the subscription ({@link subscribeWithin}), so this read is
+ * deterministic wherever the runtime scheduled the run. A dial this layer makes with nothing
+ * active — a transport built for a roster fetch, a `run()`-path delegation that skips
+ * `.use()` — still propagates nothing, by the rule above.
  */
 function withTraceparent(inner: AgentFetch): AgentFetch {
   return async (url, requestInit) => {
@@ -4210,6 +4219,253 @@ function withTraceparent(inner: AgentFetch): AgentFetch {
       headers: new Headers(headers),
     });
   };
+}
+
+/*
+ * R4-01: a run's W3C chain is DECIDED per run, not inherited from wherever the runtime
+ * happened to schedule the run.
+ *
+ * The F7E evidence was 9 dials and 3 joins, split exactly by scheduling. The three that joined
+ * were CopilotKit's thread-name generations (`runTitleGenerationAttempt`), which run a cloned
+ * agent inline in the request handler, so the request's span was still the ambient context at
+ * fetch time. The six that rooted a trace of their own were the person's runs: the Intelligence
+ * runner executes those from a Phoenix channel-join callback (`IntelligenceAgentRunner`
+ * `channel.join().receive("ok")` → `executeAgentRun` → `agent.runAgent`), a WebSocket
+ * continuation the HTTP request's AsyncLocalStorage store does not survive into. So
+ * `currentTraceContext()` read nothing, the dial carried no `traceparent`, and the run's basic
+ * record had no chain to claim — safe, as designed, but not the product's contract (A2/A13,
+ * #23): a run this deployment mediates hands the endpoint the chain of THAT run, every time.
+ *
+ * The run middleware — the one place that holds the run's authoritative identity — now decides
+ * the chain before the dial and binds it around the subscription:
+ *
+ *   * AMBIENT, when a span IS active (inline execution, the thread-name path, an SSE
+ *     deployment): the dial continues exactly what it continued before — an existing parent
+ *     span on its own trace — and no span is invented;
+ *   * DERIVED, when nothing is active: the trace id is derived from the run's identity
+ *     (`botId` + `runId`, one derivation, idempotent across a re-dial or re-execution of the
+ *     same run), and the parent is a REAL span this middleware starts for the dial window and
+ *     exports like any other, parented under the run-root id the binding store derives for
+ *     that trace (`runUpstreamIdentity`) so the exported tree and the governance tree name
+ *     one root;
+ *   * UNAVAILABLE, when not even a run identity is there: no header, ever — no context is
+ *     synthesized — and the degradation is COUNTED and logged, not smoothed over.
+ *
+ * The counts are process-level and read by tests and ops (`remoteDialChainCounts`). A dial is
+ * counted when it is BOUND, not when its chain is resolved: a run refused at the budget gate
+ * never dials and never counts.
+ */
+
+/** Which way a run's dial got its W3C chain. `unavailable` never carries one. */
+export type RemoteDialChainOrigin = "ambient" | "derived" | "unavailable";
+
+/** The chain decision for one run: what the dial carries and the record claims. */
+export type RemoteDialChain = Readonly<{
+  origin: RemoteDialChainOrigin;
+  /** The trace the dial and the run's basic record must agree on; null when unverifiable. */
+  traceId: string | null;
+  /** The ambient parent span the dial continues; set only for `ambient`. */
+  parentSpanId?: string;
+}>;
+
+/**
+ * The trace id a run with no ambient context runs its chain under: the first 32 hex of a
+ * domain-separated digest of the run's own identity. Deterministic on purpose — a re-dial or
+ * a re-execution of the same run id continues the same chain instead of rooting a new one —
+ * and an all-zero digest (an id the W3C format refuses) is remapped rather than shipped.
+ */
+export function derivedRemoteRunTraceId(botId: string, runId: string): string {
+  const hex = createHash("sha256")
+    .update(`openbot.remote.run:${botId}:${runId}`)
+    .digest("hex");
+  return /^0+$/.test(hex.slice(0, 32))
+    ? `${"0".repeat(31)}1`
+    : hex.slice(0, 32);
+}
+
+/**
+ * Decide a run's chain from the authoritative identity, ambient first. Pure: no span is
+ * started, nothing counted — the decision is cheap, and a run refused at admission makes it
+ * for a dial it never performs.
+ */
+export function resolveRemoteDialChain(
+  botId: string,
+  runId: string,
+): RemoteDialChain {
+  const ambient = currentTraceContext();
+  if (ambient !== undefined) {
+    return {
+      origin: "ambient",
+      traceId: ambient.traceId,
+      parentSpanId: ambient.spanId,
+    };
+  }
+  if (runId.trim() !== "") {
+    return {
+      origin: "derived",
+      traceId: derivedRemoteRunTraceId(botId, runId),
+    };
+  }
+  return { origin: "unavailable", traceId: null };
+}
+
+/** The dial-chain counts by origin — the visible half of the degradation contract. */
+const dialChainCounts: Record<RemoteDialChainOrigin, number> = {
+  ambient: 0,
+  derived: 0,
+  unavailable: 0,
+};
+
+/** Read the dial-chain counts (a copy: readers cannot reset what production counted). */
+export function remoteDialChainCounts(): Readonly<
+  Record<RemoteDialChainOrigin, number>
+> {
+  return { ...dialChainCounts };
+}
+
+/** One bound chain: the context the dial's fetch reads, and what closes it. */
+type BoundRemoteDial = Readonly<{
+  /** Set unless the chain is `unavailable`: the context active across the dial. */
+  context?: Context;
+  /** Ends the derived dial span, once; a no-op for the other origins. */
+  close: () => void;
+}>;
+
+/**
+ * Bind a decided chain to the dial it was decided for: count it, say it in the log, and for a
+ * derived chain START the real span the endpoint's chain parents under. Started here rather
+ * than at decision time because a span is a measurement — a run refused at admission
+ * measured nothing.
+ *
+ * Exported for the one contract no product path can reach on purpose: the `unavailable`
+ * binding, whose visible absence (no context, a counted degradation) is pinned by its suite.
+ */
+export function bindRemoteDialChain(
+  chain: RemoteDialChain,
+  botId: string,
+  runId: string,
+): BoundRemoteDial {
+  if (chain.origin === "ambient") {
+    dialChainCounts.ambient += 1;
+    log.info(
+      {
+        type: "remote-run-dial-chain",
+        botId,
+        runId,
+        origin: "ambient",
+        traceId: chain.traceId,
+      },
+      "remote-run-dial-chain",
+    );
+    // A non-recording stand-in for the ambient span, read at fetch time exactly as the span
+    // itself would be: the dial names the parent that was active when the run began.
+    return {
+      context: trace.setSpan(
+        context.active(),
+        trace.wrapSpanContext({
+          traceId: chain.traceId ?? "",
+          spanId: chain.parentSpanId ?? "",
+          traceFlags: TraceFlags.SAMPLED,
+          isRemote: false,
+          traceState: undefined,
+        }),
+      ),
+      close: () => {},
+    };
+  }
+  if (chain.origin === "derived") {
+    dialChainCounts.derived += 1;
+    /*
+     * The root the binding store derives for this trace — the id the run's governance tree
+     * hangs its business spans under (`runUpstreamIdentity`, F5E1-F3). Parenting the dial span
+     * under it means the tree this export lands in names the same root the binding
+     * materialized upstream, and the endpoint's whole chain hangs off a span this deployment
+     * actually wrote.
+     */
+    const parent = trace.setSpan(
+      context.active(),
+      trace.wrapSpanContext({
+        traceId: chain.traceId ?? "",
+        spanId: runUpstreamIdentity(chain.traceId ?? "").rootSpanId,
+        traceFlags: TraceFlags.SAMPLED,
+        isRemote: false,
+        traceState: undefined,
+      }),
+    );
+    const span = trace.getTracer("openbot.remote").startSpan(
+      "remote run",
+      {
+        attributes: {
+          "openbot.bot.id": botId,
+          "openbot.run.id": runId,
+          "openbot.dial.chain": "derived",
+        },
+      },
+      parent,
+    );
+    log.info(
+      {
+        type: "remote-run-dial-chain",
+        botId,
+        runId,
+        origin: "derived",
+        traceId: chain.traceId,
+        spanId: span.spanContext().spanId,
+      },
+      "remote-run-dial-chain",
+    );
+    /*
+     * With no provider registered (`OPENBOT_TRACES=off`), the API hands back a no-op span
+     * with no ids of its own — a dial under it would name nothing, and the header the
+     * acceptance counts on would silently vanish while the count above said "derived". The
+     * dial then names the run-root id instead: the one span of this chain this deployment
+     * writes regardless of the OTEL pipeline, through the binding's own materialization.
+     */
+    const dialParent = trace.isSpanContextValid(span.spanContext())
+      ? span
+      : trace.wrapSpanContext({
+          traceId: chain.traceId ?? "",
+          spanId: runUpstreamIdentity(chain.traceId ?? "").rootSpanId,
+          traceFlags: TraceFlags.SAMPLED,
+          isRemote: false,
+          traceState: undefined,
+        });
+    let closed = false;
+    return {
+      context: trace.setSpan(context.active(), dialParent),
+      close: () => {
+        if (closed) return;
+        closed = true;
+        span.end();
+      },
+    };
+  }
+  dialChainCounts.unavailable += 1;
+  log.warn(
+    {
+      type: "remote-run-dial-chain-unavailable",
+      botId,
+      runId: runId.trim() === "" ? null : runId,
+    },
+    "remote-run-dial-chain-unavailable: no active span and no run identity to derive a chain from; the dial carries no traceparent",
+  );
+  return { close: () => {} };
+}
+
+/**
+ * Subscribe INSIDE a context. `context.with(fn)` only covers `fn`'s synchronous body — an
+ * observable returned from it is cold, and the fetch that fires at subscription runs in
+ * whoever's context subscribes later, which is exactly the scheduling this fix cannot depend
+ * on. Running the subscription itself under the context is what makes the dial's ambient read
+ * deterministic: the middleware that knows the run hands the fetch the chain.
+ */
+function subscribeWithin<T>(
+  ctx: Context,
+  source: Observable<T>,
+): Observable<T> {
+  return new Observable((subscriber) =>
+    context.with(ctx, () => source.subscribe(subscriber)),
+  );
 }
 
 /**
@@ -4310,9 +4566,14 @@ function governedRemoteRun(
   return defer(() => {
     const occurredAt = new Date();
     const runId = input.runId;
-    // Captured here, not at settle: this is the run-start context the endpoint's dial and the
-    // basic record must agree on, and by teardown the ambient context is not guaranteed.
-    const traceId = currentTraceContext()?.traceId ?? null;
+    /*
+     * R4-01: the run's chain is DECIDED here, from the run's own authoritative identity, not
+     * read off whatever context the runtime scheduled this subscription in. Captured once so
+     * the endpoint's dial, the basic record and the binding all claim ONE chain even when the
+     * ambient context differs at each — and by teardown there is no context guaranteed at all.
+     */
+    const chain = resolveRemoteDialChain(agent.id, runId);
+    const traceId = chain.traceId;
     return from(
       Promise.all([
         gate({
@@ -4524,7 +4785,20 @@ function governedRemoteRun(
               break;
           }
         };
-        return next.run(input).pipe(
+        /*
+         * R4-01: the decided chain is BOUND to this dial — the context the fetch reads, the
+         * span it parents under when the chain is derived, the count and the log line that
+         * make the binding visible. Bound here rather than at decision time so a run refused
+         * at the admission above measures and counts nothing.
+         */
+        const dial = bindRemoteDialChain(chain, agent.id, runId);
+        const dialStream =
+          dial.context === undefined
+            ? next.run(input)
+            : // The subscription runs under the chain's context, so the transport's fetch —
+              // wherever the runtime scheduled this middleware — reads the run's chain.
+              subscribeWithin(dial.context, next.run(input));
+        return dialStream.pipe(
           tap({
             next: observe,
             /*
@@ -4550,7 +4824,11 @@ function governedRemoteRun(
           // The receipt was checked in `observe` above; it is control-plane, so it stops here
           // rather than being relayed to the person's surface as an unknown event.
           filter((event) => !isRemoteBudgetReceipt(event)),
-          finalize(settle),
+          // The derived dial span measured the dial window; it closes with the stream.
+          finalize(() => {
+            dial.close();
+            settle();
+          }),
         );
       }),
     );
