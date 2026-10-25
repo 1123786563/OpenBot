@@ -11,8 +11,14 @@
  * consecutive failures and self-close) is preserved exactly.
  */
 
+import {
+  EXECUTION_TENANT_HEADER,
+  EXECUTION_WORKSPACE_HEADER,
+  type ExecutionScope,
+} from "../../../../shared/execution-scope";
 import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
+import { SandboxExecutionScopeUnavailableError } from "../errors";
 
 type Json = Record<string, unknown>;
 
@@ -89,6 +95,14 @@ export type PodEventBusOptions = {
   directory?: string | null;
   token?: string | null;
   botId?: string | null;
+  /**
+   * The execution ownership the SSE dial states beside the token (MT050, #618) — same
+   * triple semantics as OpencodeServeClientOptions.executionScope: a resolved scope
+   * rides on the dial; null means the deployment has NO scope and subscribe() refuses
+   * with the displayable fail-closed error rather than letting the reconnect ladder
+   * retry an unattributed dial in silence; undefined is the unmanaged standalone shape.
+   */
+  executionScope?: ExecutionScope | null;
   fetchImpl?: typeof fetch;
 };
 
@@ -105,6 +119,7 @@ export class PodEventBus {
   private readonly directory: string | null;
   private readonly token: string | null;
   private readonly botId: string | null;
+  private readonly executionScope: ExecutionScope | null | undefined;
   private readonly doFetch: typeof fetch;
 
   private stopped = false;
@@ -129,6 +144,7 @@ export class PodEventBus {
     this.directory = options.directory ?? null;
     this.token = options.token ?? null;
     this.botId = options.botId ?? null;
+    this.executionScope = options.executionScope;
     this.doFetch = options.fetchImpl ?? fetch;
   }
 
@@ -147,6 +163,12 @@ export class PodEventBus {
   }
 
   subscribe(sessionId: string): PodSubscription {
+    // #618 fail-closed: refuse here, loudly — a null scope bus that started its reader
+    // would spend the reconnect budget retrying a dial the proxy refuses anyway, and
+    // the person's only signal would be a silent stream. The throw happens before any
+    // fetch, so no unattributed request can leave.
+    if (this.executionScope === null)
+      throw new SandboxExecutionScopeUnavailableError();
     const sub: PodSubscription = {
       sessionId,
       queue: new SubscriberQueue(SUBSCRIBER_QUEUE_MAXSIZE),
@@ -249,11 +271,19 @@ export class PodEventBus {
       : `/${this.config.opencodeEventPath}`;
     const url = new URL(`${this.base}${path}`);
     if (this.directory) url.searchParams.set("directory", this.directory);
+    // Belt to subscribe()'s gate: the reader only starts through subscribe, but the
+    // refusal is repeated here so no future entrypoint can dial without it.
+    if (this.executionScope === null)
+      throw new SandboxExecutionScopeUnavailableError();
     const headers: Record<string, string> = {
       accept: "text/event-stream",
     };
     if (this.token) headers["x-sandbox-token"] = this.token;
     if (this.botId) headers["x-openbot-bot-id"] = this.botId;
+    if (this.executionScope) {
+      headers[EXECUTION_TENANT_HEADER] = this.executionScope.tenantId;
+      headers[EXECUTION_WORKSPACE_HEADER] = this.executionScope.workspaceId;
+    }
 
     const response = await this.doFetch(url.toString(), {
       headers,

@@ -65,6 +65,7 @@ export {
   loadCraftConfig,
 } from "./config";
 export {
+  SandboxExecutionScopeUnavailableError,
   SandboxProvisioningError,
   SandboxProvisioningInProgressError,
   StaleProvisioningAttemptError,
