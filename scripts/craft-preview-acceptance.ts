@@ -1172,11 +1172,17 @@ try {
       }
       // 严格 ⊆：容器多发布几个端口不阻塞（别的 project 或更宽的旧段），配置段里有端口
       // 未发布才是「栈与配置不一致」—— 正是 AC3 要 preflight 明确报错的形态。两侧段值、
-      // 容器名与修正命令一并进文案，FAIL 即可复跑。
-      const coverage = checkRangeCovered(range, published.ports);
+      // 容器名与修正命令一并进文案，FAIL 即可复跑。汇总先按配置段过滤再交给
+      // publishedSpanSummary（OCR-L2）：⊆ 语义下 missing 集合不变，但摘要的 min–max 不再
+      // 被段外端口（如固定的 SANDBOX_PORT 4300）拉宽 ——「端口数小于跨度即段内有洞」的
+      // 读法只对段内集合成立。
+      const inRange = published.ports.filter(
+        (port) => port >= range.start && port <= range.end,
+      );
+      const coverage = checkRangeCovered(range, inRange);
       if (!coverage.ok) {
         throw new Error(
-          `配置段 ${range.start}-${range.end} 有 ${coverage.missing.length} 个端口未被容器 ${SANDBOX_CONTAINER} 发布（如 ${coverage.missing.slice(0, 5).join("、")}）：栈与配置不一致 —— 容器实际发布 ${publishedSpanSummary(published.ports)}。改 .env 的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END 为目标段后 docker compose up -d agent-sandbox 重建发布，宿主 API server 一并重启（它在启动时读这对键）`,
+          `配置段 ${range.start}-${range.end} 有 ${coverage.missing.length} 个端口未被容器 ${SANDBOX_CONTAINER} 发布（如 ${coverage.missing.slice(0, 5).join("、")}）：栈与配置不一致 —— 容器实际发布（配置段内）${publishedSpanSummary(inRange)}。改 .env 的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END 为目标段后 docker compose up -d agent-sandbox 重建发布，宿主 API server 一并重启（它在启动时读这对键）`,
         );
       }
       return `段 ${range.start}-${range.end}（${range.end - range.start + 1} 端口）已全部由 ${SANDBOX_CONTAINER} 发布`;

@@ -193,8 +193,11 @@ does not use. Every port in the range is checked on both loopback families. A po
 stack's own `agent-sandbox` — same Compose service *and* same project, judged against the
 `com.docker.compose.project` label with the project compose itself would derive
 (`COMPOSE_PROJECT_NAME`, else the normalized repository directory name; the compose file has no
-`name:`) — prints as ours and passes, so `scripts/start.sh`, which runs the preflight before its
-first `docker compose up`, stays safe to rerun. A same-named `agent-sandbox` from another checkout
+`name:`) — prints as ours and passes. `scripts/start.sh` runs the preflight before its first
+`docker compose up` and, on a conflict, warns without aborting — the hard gates are the preflight
+CLI itself and acceptance step 0b, the paths that actually publish the range — so a rerun stays
+safe even when a held port inside the range is one the core stack itself started (the app's own
+3010, inside the key-less default range). A same-named `agent-sandbox` from another checkout
 is a different project and is reported as a conflict. Anything else is listed with its holder —
 the container from `docker ps`, with image, Compose service and project, or the process from
 `lsof`, with name and pid — followed by the two fixes: move the range and bring the sandbox up

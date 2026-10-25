@@ -84,7 +84,6 @@ export type LsofSnapshot =
   | { status: "ok"; listens: ProcessListen[] }
   | { status: "unavailable"; reason: string };
 
-/** 探测面（可注入）：一次调用返回全量快照，而不是逐端口 × N 次子进程。 */
 /**
  * compose 对「未显式命名的 project」的默认取法：目录名转小写并去掉既非小写字母数字、
  * 下划线也非连字符的字符（OpenBot → openbot，My.Repo → myrepo；`_` 保留 —— R2R-F1
@@ -111,6 +110,7 @@ export function expectedComposeProject(
   return composeProjectFromDirectory(repoRootDirName);
 }
 
+/** 探测面（可注入）：一次调用返回全量快照，而不是逐端口 × N 次子进程。 */
 export interface ProbeDeps {
   /** 运行中容器 → 发布端口 × 地址族；不可用时如实返回 unavailable。 */
   docker: () => DockerSnapshot;
@@ -229,12 +229,17 @@ export function resolvePortRange(
         `端口段倒置：${PORT_START_KEY}=${start.port} > ${PORT_END_KEY}=${end.port}；修正示例：${PORT_START_KEY}=${end.port}、${PORT_END_KEY}=${start.port}`,
       );
     } else if (start.port !== null) {
+      // OCR-L1：另一端按 present 区分「未设置按默认」与「设置了但非法（见上方错误）」——
+      // 非法值已被 readKey 报过错，这里再说「未设置」是 R2-F6 矛盾形态在 errors 非空场景
+      // 的残留；修正示例钳制 1–65535（START≥65527 时 +9 越界，文案不得自己给出非法端口）。
       errors.push(
-        `端口段倒置：${PORT_START_KEY}=${start.port}，${PORT_END_KEY} 未设置按默认 ${DEFAULT_PORT_END}，生效段 ${startFinal}-${endFinal} 倒置；修正示例：${PORT_START_KEY}=${start.port}、${PORT_END_KEY}=${start.port + 9}`,
+        `端口段倒置：${PORT_START_KEY}=${start.port}，${PORT_END_KEY} ${end.present ? "设置了但非法（见上方错误）" : `未设置按默认 ${DEFAULT_PORT_END}`}，生效段 ${startFinal}-${endFinal} 倒置；修正示例：${PORT_START_KEY}=${start.port}、${PORT_END_KEY}=${Math.min(65535, start.port + 9)}`,
       );
     } else if (end.port !== null) {
+      // 同上（镜像端）：START 非法时不再说「未设置按默认」；END≤9 时 -9 会出非正数端口，
+      // 示例钳到 1。
       errors.push(
-        `端口段倒置：${PORT_END_KEY}=${end.port}，${PORT_START_KEY} 未设置按默认 ${DEFAULT_PORT_START}，生效段 ${startFinal}-${endFinal} 倒置；修正示例：${PORT_START_KEY}=${end.port - 9}、${PORT_END_KEY}=${end.port}`,
+        `端口段倒置：${PORT_END_KEY}=${end.port}，${PORT_START_KEY} ${start.present ? "设置了但非法（见上方错误）" : `未设置按默认 ${DEFAULT_PORT_START}`}，生效段 ${startFinal}-${endFinal} 倒置；修正示例：${PORT_START_KEY}=${Math.max(1, end.port - 9)}、${PORT_END_KEY}=${end.port}`,
       );
     }
   }
@@ -729,6 +734,11 @@ export type DockerPortSnapshot =
  * —— 那是 AC3 的「明确报错」材料而不是可跳过状态：调用方（craft-preview-acceptance 的
  * preflight）把 reason 翻成失败文案与修正命令。argv 形式调用不经 shell，容器名不构成
  * 注入面；与 killPortOccupant 的 docker exec 不同，这里不需要形状白名单。
+ * 已知限制（漏报方向，OCR-L2）：返回的端口集合不含 host 地址族 —— `docker port` 的行
+ * 本带 `127.0.0.1:`/`[::1]:` 前缀，parseDockerPortLines 只取端口号。compose 声明两族
+ * loopback 各发布一次，若容器实际只在单族（如仅 127.0.0.1、缺 [::1]）发布，
+ * checkRangeCovered 仍判 ok ——「两族发布完整」未被核验。只漏报不误报；如需核验须在
+ * 解析层保留族信息，本批不扩展，在此如实披露。
  */
 export function dockerPortPublishedPorts(
   container: string,
