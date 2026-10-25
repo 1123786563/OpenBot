@@ -75,3 +75,11 @@ R13（r13-adjudication.md）3 有效 medium：
 **T35（server 侧）**：①`createMastraTools` 判重按 `name.replace(/\./g,"_")` 归一化（F18-5）——管理面点/下划线孪生挂载期命名拒绝（沿 MASTRA_TOOL_NAME_COLLISION 词表）；②frontend-tools 构建碰撞集时把授予名归一化下划线拼写加入（F18-4）——客户端下划线拼写声明与点号授予的线上坍缩在挂载期拦截。两处共用 wireName 归一化 helper（tools.ts 导出）。RED→GREEN：授予 foo.bar+foo_bar 挂载期拒绝、客户端 foo_bar+授予 foo.bar 挂载期拦截、正常名零回退。owned=tools.ts/frontend-tools.ts+测试。门沿 T32（两套件+seam 51/51+adapter+enterprise+tsc 3+biome）。
 
 流程：并行→R1→串行集成→F19 收官门→R19 全量→f01-r12→V03/C01。
+
+## 附录八：F20 波 T36/T37（R19 续跑追加，2026-10-25；r19b 补扫在途，届时并入终裁）
+
+**T36（F19-1 high + F19-2 medium，tools.ts 三面统一 wire 判定）**：①认领前对 wire 拼写补做保留名判定——`isReservedToolName(wireName(granted.name))` 命中 ⇒ MASTRA_TOOL_NAME_RESERVED（消息含原名与 wire 名，learning 建议形）；②`createMastraLearnedTools` 的 granted 集合（:469/:486）经 wireName 归一（learned 保留对不含点、自身 wire 不变，判定变 wire 对 wire）；③孪生用例：`copilotkit.load_skill`+learned 保留对挂载期拒绝、learned 面孪生拦截、既有保留名/授权对零回退。owned=tools.ts+相关测试。门沿 T32/T35。
+
+**T37（F19-4 medium + F19-3 部分接受，passwords/service.ts）**：①计数门改 `result?.submitted && !result.error`——takeover 迁移答复（submitted+error）不计入 wrongCodes（RED：迁移态第 5 次不得以 TOO_MANY 关闭、且 tally 不增）；②注释取舍声明扩展多副本场景（本仓 handoff-runner 明示集群形态、5×N 缩水如实记录；审计派生计数列为后续设计项，行为不变）。owned=service.ts+passwords-sign-in.test.ts。门沿 T17。
+
+流程：并行→R1→集成→F20 收官门→R20 全量→f01-r12→V03/C01。
