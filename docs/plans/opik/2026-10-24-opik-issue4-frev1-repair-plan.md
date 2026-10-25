@@ -27,3 +27,17 @@
 - 每任务：修复前 RED 复现（含 finding 给出的反例形状）→ 最小正确修复 → 目标套件绿 → 报告（workers/f5*.md）+ 任务分支提交。
 - 集成：编排者串行合并 + 全量 opik 组合验证（1094+/0 基线不回退）+ 受影响面 biome/typecheck。
 - 终局：全部集成后重做 codex FREV（新 HEAD 冻结）→ OCR（BASE b117c3c3e..新 HEAD）→ 有效 findings 回环。
+
+## FREV R2（2026-10-25）终裁 FAIL：6 阻塞 → 波四修复
+
+报告 `reviews/final-review-codex-r2.md`：4 项原 finding 关闭（01/02/03/05），3 项部分解决（04/06/07 根验收未关），F5E1 三 finding 升级阻塞 + R2-01 新增。**全部按实现修复路线**（用户已裁决不缩小交付声明）。
+
+| 任务 | finding | 关闭条件（摘自 R2 §5） | owned files | 流 |
+| --- | --- | --- | --- | --- |
+| F6A 循环预算强制 | FREV-R2-01 (high) | 每步走受控 billing/admission 或 case 级可强制总额 + 每步剩余输入/输出上界，额度不足不发下一步；真实 gateway 协议测试（第二步调用前拒绝/正常两步结算/取消未知费用按既有账本） | execution-runner.ts、execution-billing.ts、workshop/metering.ts（读取用）、executions.ts（结算面） | 1（前） |
+| F6E 公共执行 seam | FREV-04 (high) | 抽出可隔离的公共执行 seam，同一冻结配置验证公共语义/fixture 拦截/零生产副作用（不装生产记忆不绕权限） | execution-runner.ts、execution-boot.ts、executions.ts、可抽出的共享层 | 1（后） |
+| F6B 物化+清理定位 | F5E1-F3 (medium) + FREV-07 (medium) | 生产调用 createTrace 物化根/run；权威 reconcile opikTraceId；root span 与父子；retention 对 project=null/ok 不提前完成、保留定位至验证查无；补 project404 残留回归 | opik-http.ts、retention.ts、bindings.ts、queries/runs.ts(读面)、index.ts(接线) | 2 |
+| F6C 观测去计费耦合 | F5E1-F1 (medium) | Opik 启用的 stock 启动在 billing 关闭时仍产生受治理事实（独立 observation wrapper），或经批准明确报告不支持（默认走前者） | copilot.ts、index.ts（meter/observation 装配面） | 3（前） |
+| F6D remote 预算拨号 | F5E1-F2 (high) | 恢复经可信预算校验的 remote 拨号（不关安全防护）；或经批准范围变更（默认走前者） | copilot.ts、index.ts remote 面、budget 校验相关 | 3（后） |
+
+门禁不变：RED→GREEN + 独立审核 0 阻塞 + 集成组合验证 → 再 FREV(R3) + OCR。
