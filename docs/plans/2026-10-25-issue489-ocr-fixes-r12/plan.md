@@ -83,3 +83,9 @@ R13（r13-adjudication.md）3 有效 medium：
 **T37（F19-4 medium + F19-3 部分接受，passwords/service.ts）**：①计数门改 `result?.submitted && !result.error`——takeover 迁移答复（submitted+error）不计入 wrongCodes（RED：迁移态第 5 次不得以 TOO_MANY 关闭、且 tally 不增）；②注释取舍声明扩展多副本场景（本仓 handoff-runner 明示集群形态、5×N 缩水如实记录；审计派生计数列为后续设计项，行为不变）。owned=service.ts+passwords-sign-in.test.ts。门沿 T17。
 
 流程：并行→R1→集成→F20 收官门→R20 全量→f01-r12→V03/C01。
+
+## 附录九：F21 波 T38（f01-r12 终审追加，2026-10-25）
+
+**T38（F01-R12-M1 bug·medium）**：直连判定归一化补 DNS 终止点——对 `new Request(url).url` 解析后的 **hostname 去除单个合法终止点**（`hostname.replace(/\.$/,"")`）后再行常量比对（scheme/端口/path 不变）；两 provider 各补终止点形回归用例（`https://api.openai.com./v1`、`https://api.anthropic.com./v1` + 点分名 → 400 具名拒绝）；自定义网关（含其自身带终止点的 hostname）继续放行（网关 hostname 同样去终止点后与公共常量比对，仅公共 API 两 host 命中）。T22 R1 当年 OBS-T22R1-1 预言的等价类经 Codex curl 实证可达后闭合。owned=gateway.ts+model-gateway.test.ts。门沿 T26（seam 全绿+adapter+enterprise+tsc 3+biome）。
+
+流程：T38→R1→集成→F21 收官门→R21 全量→f01-r13→V03/C01。
