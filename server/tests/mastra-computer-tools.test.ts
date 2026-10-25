@@ -413,6 +413,59 @@ describe("ME06 frontend bridge tool name charset (F16-2)", () => {
   });
 });
 
+/*
+ * F18-4 / T35: the granted-name collision set matches in the engine's WIRE
+ * spelling. A granted `github.get_current_user` rides the same formatTools
+ * dot-to-underscore rewrite as everything else, so the client's
+ * `github_get_current_user` — legal on the strict charset, no exact match in
+ * the set — used to mount and collapse the run with it at the engine's
+ * AGENT_TOOL_NAME_COLLISION. Normalizing the granted names into their
+ * underscore spelling drops the twin declaration at mount (fail-soft, one
+ * structured diagnostic) instead.
+ */
+describe("ME06 frontend bridge granted-name collision on the wire name (F18-4)", () => {
+  it("an_underscore_declaration_colliding_with_a_dotted_grant_is_dropped", () => {
+    let bridges: Record<string, unknown> = {};
+    const diagnostics = dropDiagnostics(() => {
+      bridges = createFrontendBridgeTools(
+        [
+          {
+            name: "github_get_current_user",
+            description: "The underscore twin of a dotted grant.",
+            parameters: { type: "object" },
+          },
+        ],
+        { grantedNames: ["github.get_current_user"] },
+      );
+    });
+    // The twin is not mounted; the drop is the one structured line.
+    expect(Object.keys(bridges)).toEqual([]);
+    expect(diagnostics).toEqual([
+      {
+        event: "mastra_frontend_tool_declaration_dropped",
+        toolName: "github_get_current_user",
+        reason: "collides with a granted (server-executed) tool",
+      },
+    ]);
+  });
+
+  it("a_non_twin_declaration_still_mounts_beside_a_dotted_grant", () => {
+    // Zero regression: only the wire-twin pair is a collision. An unrelated
+    // underscore declaration mounts normally beside a dotted grant.
+    const bridges = createFrontendBridgeTools(
+      [
+        {
+          name: "github_list_repos",
+          description: "",
+          parameters: { type: "object" },
+        },
+      ],
+      { grantedNames: ["github.get_current_user"] },
+    );
+    expect(Object.keys(bridges)).toEqual(["github_list_repos"]);
+  });
+});
+
 /**
  * A granted (server-executed) tool that must never reach its execute in the
  * approval-pause test: if the durable pause fails to fire, the throw surfaces

@@ -9,6 +9,7 @@ import {
   MastraToolRefusal,
   VALID_BRIDGE_TOOL_NAME,
   VALID_TOOL_NAME,
+  wireName,
 } from "../src/mastra/tools";
 import { createPluginStore } from "../src/plugins/store";
 import { markUntrusted } from "../src/untrusted-content";
@@ -283,6 +284,51 @@ describe("createMastraTools wrapping", () => {
         { name: "mcp__server__half_tool" } as unknown as GrantedTool,
       ]),
     ).toThrow(/MASTRA_TOOL_UNKNOWN/);
+  });
+
+  it("dotted_underscore_twin_grants_collide_at_mount_on_the_wire_name", () => {
+    // F18-5 (T35): the pinned engine's formatTools rewrites every `.` to
+    // `_` before the wire, so `github.get_current_user` and
+    // `github_get_current_user` are ONE model name. The mount-time claim
+    // registry judges the wire spelling and refuses the twin pair HERE —
+    // named, with both original spellings so the offending grants are
+    // findable — instead of mounting both and letting the run die in the
+    // engine's AGENT_TOOL_NAME_COLLISION.
+    const twinPair = () =>
+      createMastraTools([
+        tool({ name: "github.get_current_user" }),
+        tool({ name: "github_get_current_user" }),
+      ]);
+    expect(twinPair).toThrow(/MASTRA_TOOL_NAME_COLLISION/);
+    expect(twinPair).toThrow(/github\.get_current_user/);
+    expect(twinPair).toThrow("github_get_current_user");
+    // Order-independence: the underscore spelling first is the same claim.
+    expect(() =>
+      createMastraTools([
+        tool({ name: "github_get_current_user" }),
+        tool({ name: "github.get_current_user" }),
+      ]),
+    ).toThrow(/MASTRA_TOOL_NAME_COLLISION/);
+    // The degenerate names ride the same rewrite: `.` claims `_`, which a
+    // bare-underscore grant already owns (F18-5's `.` / `..` note).
+    expect(() =>
+      createMastraTools([tool({ name: "." }), tool({ name: "_" })]),
+    ).toThrow(/MASTRA_TOOL_NAME_COLLISION/);
+    // Zero regression on non-twins: unrelated dotted and underscored grants
+    // whose wire spellings differ still mount side by side.
+    const record = createMastraTools([
+      tool({ name: "github.get_current_user" }),
+      tool({ name: "github_list_repos" }),
+    ]);
+    expect(Object.keys(record)).toEqual([
+      "github.get_current_user",
+      "github_list_repos",
+    ]);
+    // wireName is the one shared rewrite both faces judge by: dotted in,
+    // underscored out; a dot-free name passes through unchanged.
+    expect(wireName("github.get_current_user")).toBe("github_get_current_user");
+    expect(wireName("github_get_current_user")).toBe("github_get_current_user");
+    expect(wireName(".")).toBe("_");
   });
 
   it("grant_write_refuses_model_unaddressable_tool_names", async () => {

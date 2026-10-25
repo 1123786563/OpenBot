@@ -1,7 +1,7 @@
 import { toStandardSchema } from "@mastra/core/schema";
 import { createTool, type Tool } from "@mastra/core/tools";
 import type { FrontendToolDefinition } from "./execution-contracts";
-import { isReservedToolName, VALID_BRIDGE_TOOL_NAME } from "./tools";
+import { isReservedToolName, VALID_BRIDGE_TOOL_NAME, wireName } from "./tools";
 
 /*
  * ME06 (#478): the frontend (client-participation) tool bridge.
@@ -51,7 +51,10 @@ export interface CreateFrontendBridgeToolsOptions {
    * declaration colliding with one is DROPPED — the granted tool is the
    * server's authority and must never be shadowed by what the wire declared
    * (the mirror image of the granted wrapper's mount-time collision refusal,
-   * which guards two server claims).
+   * which guards two server claims). Matching is in the engine's WIRE
+   * spelling (wireName): the underscore twin of a dotted grant collides too
+   * (F18-4), because that is the pair the engine collapses to one name
+   * before any provider dial.
    */
   readonly grantedNames?: readonly string[];
   /** Test/diagnostic probe: observes the execute context the engine hands the bridge. */
@@ -79,7 +82,17 @@ export function createFrontendBridgeTools(
   options: CreateFrontendBridgeToolsOptions = {},
 ): Record<string, Tool> {
   const record: Record<string, Tool> = Object.create(null);
-  const granted = new Set(options.grantedNames ?? []);
+  // F18-4 (T35): granted names enter the collision set in their WIRE
+  // spelling. The engine rewrites every `.` to `_` before the wire (the
+  // pinned formatTools behavior), so a client declaration of the underscore
+  // twin of a dotted grant — `github_get_current_user` beside the granted
+  // `github.get_current_user` — used to pass the exact-match set, mount, and
+  // collapse the run at the engine's AGENT_TOOL_NAME_COLLISION; normalized
+  // here, that declaration is dropped at mount instead (fail-soft, one
+  // structured diagnostic). Client names carry no dot
+  // (VALID_BRIDGE_TOOL_NAME), so the normalized spelling is lossless: an
+  // exact-match collision and a wire-twin collision both land in this set.
+  const granted = new Set((options.grantedNames ?? []).map(wireName));
   const mounted = new Set<string>();
   for (const definition of definitions) {
     const name = definition?.name;

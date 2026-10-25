@@ -159,6 +159,21 @@ export const VALID_TOOL_NAME = /^[A-Za-z0-9._-]{1,64}$/;
  */
 export const VALID_BRIDGE_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
+/**
+ * The engine's model-visible spelling of a tool name: the pinned
+ * `@mastra/core` 1.64.0 `formatTools` rewrites every `.` to `_` before the
+ * wire (measured and pinned in mastra-computer-tools.test.ts, F16-2), so two
+ * mounts whose names differ only in dots and underscores are ONE name to the
+ * model. Collision identity is claimed in this spelling (F18-5/T35): an
+ * exact-string check let a `foo.bar` + `foo_bar` grant pair mount and die
+ * whole-run in the engine's AGENT_TOOL_NAME_COLLISION instead of being
+ * refused at mount. Exported so the granted wrapper's claim registry and the
+ * frontend bridge's grantedNames set both judge the same wire.
+ */
+export function wireName(name: string): string {
+  return name.replace(/\./g, "_");
+}
+
 export function isReservedToolName(name: string): boolean {
   // The runtime's own system tools: the learned-skill pair (ME08 mounts them
   // through `createMastraLearnedTools`, and nothing else may take the names).
@@ -248,6 +263,12 @@ export function createMastraTools(
   // never read as an existing mount.
   const record: Record<string, Tool> = Object.create(null);
   const operations = new Map<string, MastraToolOperation>();
+  // F18-5 (T35): claims are keyed by the WIRE name (wireName above — the
+  // engine rewrites `.` to `_` before the wire), so a dotted/underscore twin
+  // pair is refused HERE, at mount, instead of mounting both and dying
+  // whole-run in the engine's AGENT_TOOL_NAME_COLLISION. The map remembers
+  // the first claimant's original spelling so the refusal names both grants.
+  const claimedWireNames = new Map<string, string>();
   for (const [index, granted] of tools.entries()) {
     if (
       !granted ||
@@ -268,11 +289,14 @@ export function createMastraTools(
         `MASTRA_TOOL_NAME_RESERVED: ${granted.name} is a system tool name and cannot be overridden by a grant.`,
       );
     }
-    if (record[granted.name]) {
+    const claimed = wireName(granted.name);
+    const firstClaim = claimedWireNames.get(claimed);
+    if (firstClaim !== undefined) {
       throw new MastraToolRefusal(
-        `MASTRA_TOOL_NAME_COLLISION: two granted tools claim the model name ${granted.name}; refusing to override.`,
+        `MASTRA_TOOL_NAME_COLLISION: two granted tools claim the model name ${claimed} (the engine's wire spelling of ${JSON.stringify(firstClaim)} and ${JSON.stringify(granted.name)}); refusing to override.`,
       );
     }
+    claimedWireNames.set(claimed, granted.name);
     record[granted.name] = createTool({
       id: granted.name,
       description: granted.description,
