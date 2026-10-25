@@ -194,9 +194,12 @@ export function previewSessionCookieHeader(value: string, path = "/"): string {
   // (neither carries `;` `,` or a control byte, so neither can rewrite an
   // attribute): the registry-internal sessionId (`[A-Za-z0-9_-]`, bounded at
   // 128 — the pre-repair transitional caller, gone once redemption mints
-  // passes) and the SIGNED pass (`v1.<user>.<mac>`, PREVIEW_PASS_COOKIE_SHAPE
-  // — the codec's own definition, bounded at 512: `v1.` + a ≤256-byte userId's
-  // base64url + `.` + the 43-char MAC). The whitelist is an INJECTION guard,
+  // passes) and the SIGNED pass (`v1.<token>.<mac>`, PREVIEW_PASS_COOKIE_SHAPE
+  // — the codec's own definition, bounded at 512: `v1.` + the 16-byte random
+  // token's base64url (22 chars, #427 — the pre-#427 stateless `v1.<user>.<mac>`
+  // frame no longer exists; its userId slot died at verify's strict decode) +
+  // `.` + the 43-char MAC; the longest live value is 69 chars, the 512 bound
+  // stays headroom for future frames). The whitelist is an INJECTION guard,
   // not the auth decision — whether a carried value opens anything is the
   // codec's signature check alone, and the old plaintext session-id cookie is
   // rejected THERE (verify), never waved through here.
