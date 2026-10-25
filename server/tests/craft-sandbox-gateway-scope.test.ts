@@ -9,7 +9,11 @@ import {
   OpencodeHttpError,
   OpencodeServeClient,
 } from "../src/craft/opencode/serve-client";
-import { createSandboxGateway } from "../src/craft/sandbox-gateway";
+import {
+  createSandboxGateway,
+  type SandboxGateway,
+  SandboxHttpError,
+} from "../src/craft/sandbox-gateway";
 
 /**
  * #618: the agent-sandbox proxy (MT050) refuses a token-only request, so every
@@ -665,5 +669,133 @@ describe("#618 OCR#12: the liveness probe surfaces the refusal, not a cold start
       SandboxExecutionScopeUnavailableError,
     );
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("#618 OCR r4: an !ok body is released before the throw; the snapshot pair's verdict carries its status", () => {
+  /**
+   * An unconsumed response body pins its pool socket in undici until GC — the
+   * leak the event-bus dial fixed for /event (OCR r2). Every !ok THROW site in
+   * this gateway is the same shape, so the stream below never closes: cancel()
+   * is the only way it settles, which makes the release observable per verb.
+   */
+  const releasingFetch = (
+    status: number,
+    onRelease: () => void,
+  ): typeof fetch =>
+    (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1, 2, 3]));
+          },
+          cancel() {
+            onRelease();
+          },
+        }),
+        { status },
+      )) as typeof fetch;
+
+  test("every !ok throw site cancels its response body before throwing", async () => {
+    const verbs: {
+      verb: string;
+      run: (gateway: SandboxGateway) => Promise<unknown>;
+    }[] = [
+      {
+        verb: "listFiles",
+        run: (gateway) => gateway.fileApiFor("craft")!.listFiles("dir"),
+      },
+      {
+        verb: "writeFile",
+        run: (gateway) =>
+          gateway.fileApiFor("craft")!.writeFile("dir/a.txt", "x"),
+      },
+      {
+        verb: "writeFileBytes",
+        run: (gateway) =>
+          gateway
+            .fileApiFor("craft")!
+            .writeFileBytes("dir/a.bin", new Uint8Array([1])),
+      },
+      {
+        verb: "deletePath",
+        run: (gateway) => gateway.fileApiFor("craft")!.deletePath("dir/a.bin"),
+      },
+      {
+        verb: "readFile",
+        run: (gateway) => gateway.fileApiFor("craft")!.readFile("dir/a.txt"),
+      },
+      {
+        verb: "readFileBytes",
+        run: (gateway) =>
+          gateway.fileApiFor("craft")!.readFileBytes("dir/a.bin"),
+      },
+      {
+        verb: "snapshotArchiveFor",
+        run: (gateway) => gateway.snapshotArchiveFor("craft"),
+      },
+      {
+        verb: "restoreWorkspace",
+        run: (gateway) =>
+          gateway.restoreWorkspace("craft", new Uint8Array([1])),
+      },
+    ];
+    for (const { verb, run } of verbs) {
+      let released = false;
+      const gateway = scopedGateway(
+        releasingFetch(403, () => {
+          released = true;
+        }),
+      );
+      await expect(run(gateway), verb).rejects.toThrow(/answered 403/);
+      expect(released, `${verb} released its response body`).toBe(true);
+    }
+  });
+
+  test("a cancel() that itself rejects never masks the gateway verdict", async () => {
+    const fetchImpl = (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          cancel() {
+            throw new Error("cancel exploded");
+          },
+        }),
+        { status: 500 },
+      )) as typeof fetch;
+    await expect(
+      scopedGateway(fetchImpl).snapshotArchiveFor("craft"),
+    ).rejects.toThrow("Sandbox /workspace/snapshot answered 500.");
+  });
+
+  test("snapshot/restore throw SandboxHttpError — status as a field, message text unchanged", async () => {
+    const snapshotError = await scopedGateway(releasingFetch(403, () => {}))
+      .snapshotArchiveFor("craft")
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(snapshotError instanceof SandboxHttpError).toBe(true);
+    expect(snapshotError).toMatchObject({
+      path: "/workspace/snapshot",
+      status: 403,
+    });
+    expect((snapshotError as Error).message).toBe(
+      "Sandbox /workspace/snapshot answered 403.",
+    );
+
+    const restoreError = await scopedGateway(releasingFetch(403, () => {}))
+      .restoreWorkspace("craft", new Uint8Array([1]))
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(restoreError instanceof SandboxHttpError).toBe(true);
+    expect(restoreError).toMatchObject({
+      path: "/workspace/restore",
+      status: 403,
+    });
+    expect((restoreError as Error).message).toBe(
+      "Sandbox /workspace/restore answered 403.",
+    );
   });
 });

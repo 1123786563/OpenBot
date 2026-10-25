@@ -10,6 +10,7 @@ import {
   createSandboxGateway,
   type SandboxGateway,
 } from "../src/craft/sandbox-gateway";
+import { sandboxScopeRefusalOf } from "../src/craft/scope-refusal";
 import { createSessionRoutes } from "../src/craft/session-routes";
 import type {
   CraftSessionRow,
@@ -464,5 +465,19 @@ describe("#618 FR-F1: the scope refusal answers at the session-lifecycle entranc
     expect(body.session_loaded_in_sandbox).toBe(true);
     expect(rows.get(SESSION_ID)?.status).toBe("active");
     expect(calls).toEqual([]);
+  });
+});
+
+describe("#618 OCR r4: the recognizer hands back the ORIGINAL refused instance", () => {
+  test("the structural cause arm returns error.cause — the first-throw stack survives the wrap", () => {
+    // The refusal design keeps no log line, so the first throw's stack — minted
+    // inside scopeHeaders(), before the archive walk folds it — is the only
+    // trace an operator ever sees. The wrap's cause IS that instance; a rebuild
+    // (what this arm used to answer) discards its stack. The direct arm already
+    // returned the original; the two paths now agree.
+    const refusal = new SandboxExecutionScopeUnavailableError();
+    const wrap = new WorkspaceListingError("dir", refusal);
+    expect(sandboxScopeRefusalOf(wrap)).toBe(refusal);
+    expect(sandboxScopeRefusalOf(refusal)).toBe(refusal);
   });
 });
