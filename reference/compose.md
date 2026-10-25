@@ -180,9 +180,39 @@ published range equals the range the server allocates from. `.env.example` ships
 instead, because 3010 collides with the vite dev server and a fresh checkout copies the example.
 To change the range, edit the two keys in `.env` and run `docker compose up -d agent-sandbox`
 again (the container is recreated with the new publish; restart a host-run API too — it reads
-the keys at startup). A port already taken makes the publish fail —
-`lsof -nP -iTCP:<port> -sTCP:LISTEN` and `docker ps --filter publish=<port>` name the holder;
-free it or move the range.
+the keys at startup).
+
+Before the stack comes up, `bun scripts/craft-port-range-preflight.ts` answers the question
+Compose otherwise answers badly. It resolves the range exactly as the compose file does — process
+environment, then the project `.env`, then the 3010/3100 defaults — and checks every port in it on
+both loopback families. A port held by this stack's own `agent-sandbox` prints as ours and passes,
+so `scripts/start.sh`, which runs the preflight before its first `docker compose up`, stays safe to
+rerun; anything else is listed with its holder — the container from `docker ps`, with image and
+Compose service, or the process from `lsof`, with name and pid — followed by the two fixes: move
+the range and bring the sandbox up again, or free the port. Where `lsof` or `docker` is missing the
+preflight says so per probe surface instead of reporting an empty, green read, and it refuses to
+certify the range when neither surface could be checked at all. A failing run looks like this:
+
+```text
+agent-sandbox 端口段 3010-3100（91 个端口）：127.0.0.1 与 [::1] 共 1 处占用
+  - 端口 3050（127.0.0.1）：Python (pid=14233)
+
+解决（两选一，修完重跑 bun scripts/craft-port-range-preflight.ts 验证）：
+  1. 改段：编辑 .env 的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START / OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_END（当前 3010/3100），再执行
+       docker compose up -d agent-sandbox
+     宿主上直接跑的 API server 也要重启 —— 它在启动时读取这两个键。
+  2. 停占用：先定位占用者 ——
+       docker ps --filter publish=3050
+       lsof -nP -iTCP:3050 -sTCP:LISTEN
+     确认后停止：docker stop <容器名> 或 kill <pid>。
+```
+
+The configured range is checked a second time against reality by the acceptance preflight:
+`bun run test:craft-preview-e2e` reads the ports the running sandbox actually publishes
+(`docker port`) and fails loud when one in the range is missing — the "stack and `.env` disagree"
+case (AC3), reported with both sides and the command that fixes it. Once `docker compose up` is
+already failing, `lsof -nP -iTCP:<port> -sTCP:LISTEN` and `docker ps --filter publish=<port>`
+still name the holder; free it or move the range.
 
 Production never publishes this range to a host: the orchestrator assigns sandbox ports there,
 and the loopback publish is a dev-stack concern only.

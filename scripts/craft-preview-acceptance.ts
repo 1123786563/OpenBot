@@ -94,6 +94,12 @@ import {
   chromium,
   type Page,
 } from "playwright-core";
+import {
+  checkRangeCovered,
+  dockerPortPublishedPorts,
+  type PortRange,
+  resolvePortRange,
+} from "./craft-port-range-preflight";
 
 // e2e.config 同款：先加载 .env，再读环境变量（DATABASE_URL 在里面）。必须
 // 在下方所有常量声明之前执行：loadEnvFile 只填充 process.env，声明顺序倒置
@@ -1137,6 +1143,42 @@ try {
         );
       }
       return `preview ${TOPOLOGY} 拓扑就绪（base=${base}）`;
+    },
+  );
+
+  // ── 0b. 端口段一致性（#619 AC3）────────────────────────────────────────────
+  await step(
+    "pass",
+    "preflight: 配置端口段 ⊆ 运行中 sandbox 已发布段",
+    async () => {
+      // 解析规则与 compose / 预检脚本同一事实源（scripts/craft-port-range-preflight.ts）：
+      // 进程环境优先、其次 .env（本模块顶部已 loadEnvFile，loadEnvFile 不覆盖既有进程
+      // 环境，优先级与 compose 插值一致）、缺省 3010/3100。配置非法（倒置/非整数/越界）
+      // 在这里就 FAIL —— 一个不可能成立的段，不必等到会话预约撞上去才失败。
+      const resolution = resolvePortRange(process.env);
+      if (resolution.range === null) {
+        throw new Error(`端口段配置非法：${resolution.errors.join("；")}`);
+      }
+      const range = resolution.range as PortRange;
+      // AC3 的另一侧：配置说的不算，容器实际发布的才算。docker port 对不在运行的容器
+      // 非零退出（"No such container" / daemon 未起）—— 这里把它翻成「容器不在运行」的
+      // 明确失败与起栈命令，而不是静默跳过（头注「绝不静默 skip」的同一纪律）。
+      const published = dockerPortPublishedPorts(SANDBOX_CONTAINER);
+      if (published.status !== "ok") {
+        throw new Error(
+          `读不到容器 ${SANDBOX_CONTAINER} 的发布端口：${published.reason} —— 容器不在运行？先 docker compose up -d agent-sandbox（带上与 .env 一致的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END）；宿主 API server 也要重启，它在启动时读这对键`,
+        );
+      }
+      // 严格 ⊆：容器多发布几个端口不阻塞（别的 project 或更宽的旧段），配置段里有端口
+      // 未发布才是「栈与配置不一致」—— 正是 AC3 要 preflight 明确报错的形态。两侧段值、
+      // 容器名与修正命令一并进文案，FAIL 即可复跑。
+      const coverage = checkRangeCovered(range, published.ports);
+      if (!coverage.ok) {
+        throw new Error(
+          `配置段 ${range.start}-${range.end} 有 ${coverage.missing.length} 个端口未被容器 ${SANDBOX_CONTAINER} 发布（如 ${coverage.missing.slice(0, 5).join("、")}）：栈与配置不一致 —— 改 .env 的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END 后 docker compose up -d agent-sandbox（宿主 API server 一并重启），或对齐 CRAFT_ACCEPTANCE_* / .env 让两侧指向同一段`,
+        );
+      }
+      return `段 ${range.start}-${range.end}（${range.end - range.start + 1} 端口）已全部由 ${SANDBOX_CONTAINER} 发布`;
     },
   );
 

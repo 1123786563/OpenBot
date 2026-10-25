@@ -221,6 +221,17 @@ echo "OpenBot"
 echo "======="
 
 info "1/4  Docker services"
+# The craft sandbox publishes its dev range port by port, on both loopback families, so the first
+# clash makes `docker compose up` fail with "port is already allocated" — naming neither the range
+# nor the holder, and nobody bisects 88 ports by hand. The preflight reads the same two keys
+# compose interpolates (environment first, then `.env`), reports every held port with its holder
+# and the two fixes (move the range, or free the port), and treats a range held by this stack's
+# own agent-sandbox as ours — the same `require_free_or_ours` leniency the host services below
+# get, so a rerun is never blocked by the sandbox this very script started the time before.
+if ! bun scripts/craft-port-range-preflight.ts; then
+  red "  agent-sandbox port range preflight failed; see the steps it printed."
+  exit 1
+fi
 SERVICES=(postgres)
 if [ "$ONE_COMPUTER_EACH" = "true" ]; then
   # SPIRE starts beside the supervisor, so every computer it makes can be issued an identity. The
