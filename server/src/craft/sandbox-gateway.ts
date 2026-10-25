@@ -319,7 +319,15 @@ export function createSandboxGateway(
           ),
         },
       );
-      if (!response.ok) return null;
+      // #618 (FR-F2): only a 404 is the honest "no snapshot yet". Folding every !ok
+      // into null dressed a scope-mismatch 403 up as "nothing to restore" — the
+      // mismatch verdict must travel out as the error it is.
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        throw new Error(
+          `Sandbox /workspace/snapshot answered ${response.status}.`,
+        );
+      }
       return new Uint8Array(await response.arrayBuffer());
     },
 

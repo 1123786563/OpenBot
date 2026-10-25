@@ -1,8 +1,14 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { loadCraftConfig } from "../src/craft/config";
 import { SandboxExecutionScopeUnavailableError } from "../src/craft/errors";
-import { PodEventBus } from "../src/craft/opencode/event-bus";
-import { OpencodeServeClient } from "../src/craft/opencode/serve-client";
+import {
+  POD_EVENT_BUS_CLOSED,
+  PodEventBus,
+} from "../src/craft/opencode/event-bus";
+import {
+  OpencodeHttpError,
+  OpencodeServeClient,
+} from "../src/craft/opencode/serve-client";
 import { createSandboxGateway } from "../src/craft/sandbox-gateway";
 
 /**
@@ -402,5 +408,138 @@ describe("#618 fail-closed: no scope, no request, a displayable reason", () => {
     expect(message).not.toContain(TENANT);
     expect(message).not.toContain(WORKSPACE);
     expect(message).not.toContain("sandbox-secret");
+  });
+});
+
+describe("#618 FR-F2: a scope-mismatch 403 propagates — no retry, no fold, no fallback", () => {
+  /**
+   * The mismatch half of AC4: the sandbox gateway answers a bot already bound to another
+   * scope with 403. Every craft face must carry that verdict out as an error — never fold
+   * it into the null/false "absent" contracts, never retry it, never fall back to another
+   * or a default scope. One dial per operation, the SAME configured pair on it, the throw.
+   */
+  const statusFetch = (status: number) => {
+    const calls: Recorded[] = [];
+    const fetchImpl = (async (input: unknown, init?: RequestInit) => {
+      const url = new URL(String(input));
+      calls.push({
+        method: init?.method ?? "GET",
+        url: url.pathname,
+        headers: { ...((init?.headers ?? {}) as Record<string, string>) },
+      });
+      return new Response(null, { status });
+    }) as typeof fetch;
+    return { calls, fetchImpl };
+  };
+
+  test("file face: a 403 throws on every verb — only 404 degrades to null/false", async () => {
+    const { calls, fetchImpl } = statusFetch(403);
+    const files = scopedGateway(fetchImpl).fileApiFor("craft");
+    expect(files).not.toBe(null);
+    if (!files) return;
+
+    await expect(files.readFile("dir/a.txt")).rejects.toThrow(/answered 403/);
+    await expect(files.readFileBytes("dir/b.bin")).rejects.toThrow(
+      /answered 403/,
+    );
+    await expect(files.deletePath("dir/b.bin")).rejects.toThrow(/answered 403/);
+    await expect(files.listFiles("dir")).rejects.toThrow(/answered 403/);
+    await expect(files.writeFile("dir/a.txt", "x")).rejects.toThrow(
+      /answered 403/,
+    );
+
+    // One dial per verb — the verdict is never retried — and every dial states the
+    // same configured pair (no scope switch, no default fallback).
+    expect(calls).toHaveLength(5);
+    for (const call of calls) expectScopeHeaders(call.headers);
+  });
+
+  test("file face: the honest-absent contracts stay 404-scoped (regression pins)", async () => {
+    const { calls, fetchImpl } = statusFetch(404);
+    const files = scopedGateway(fetchImpl).fileApiFor("craft");
+    expect(files).not.toBe(null);
+    if (!files) return;
+
+    expect(await files.readFile("dir/a.txt")).toBe(null);
+    expect(await files.readFileBytes("dir/b.bin")).toBe(null);
+    expect(await files.deletePath("dir/b.bin")).toBe(false);
+    expect(calls).toHaveLength(3);
+  });
+
+  test("serve client: /session create against 403 rejects once, same scope", async () => {
+    const { calls, fetchImpl } = statusFetch(403);
+    const client = scopedGateway(fetchImpl).serveClientFor({
+      botId: "craft",
+      directory: "dir",
+    });
+    expect(client).not.toBe(null);
+    if (!client) return;
+
+    let caught: unknown = null;
+    try {
+      await client.ensureSession(null, { directory: "dir" });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught instanceof OpencodeHttpError).toBe(true);
+    expect((caught as OpencodeHttpError).status).toBe(403);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.url).toBe("/session");
+    expectScopeHeaders(calls[0]?.headers ?? {});
+  });
+
+  test("event bus: a 403 on the dial closes the bus terminally — no reconnect ladder", async () => {
+    const { calls, fetchImpl } = statusFetch(403);
+    const bus = scopedGateway(fetchImpl).eventBusFor({
+      botId: "craft",
+      directory: "dir",
+    });
+    expect(bus).not.toBe(null);
+    if (!bus) return;
+
+    const sub = bus.subscribe("ses_scope");
+    try {
+      await Promise.race([
+        bus.readerSettled(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("bus reader did not settle after the 403")),
+            3000,
+          ),
+        ),
+      ]);
+    } finally {
+      bus.close();
+    }
+    // Terminal, not laddered: after ONE refused dial the bus is closed (the ladder
+    // variant would still be "reconnecting" here, silently redialing the verdict).
+    expect(bus.isClosed()).toBe(true);
+    const dials = calls.filter(
+      (call) => call.url === "/event" || call.url === "/events",
+    );
+    expect(dials).toHaveLength(1);
+    expectScopeHeaders(dials[0]?.headers ?? {});
+    // The subscriber's signal is the closed sentinel — the thing the turn layer
+    // translates into a transport error, never silence, never success.
+    expect(await sub.queue.shift({ timeoutMs: 100 })).toBe(
+      POD_EVENT_BUS_CLOSED,
+    );
+  });
+
+  test("snapshot read: a 403 throws — 403-as-null was the fold this closed", async () => {
+    const { calls, fetchImpl } = statusFetch(403);
+    const gateway = scopedGateway(fetchImpl);
+    await expect(gateway.snapshotArchiveFor("craft")).rejects.toThrow(
+      /answered 403/,
+    );
+    expect(calls).toHaveLength(1);
+    expectScopeHeaders(calls[0]?.headers ?? {});
+
+    // The honest "no snapshot yet" stays 404 → null; only 404 means absent.
+    const notFound = statusFetch(404);
+    const gateway404 = scopedGateway(notFound.fetchImpl);
+    expect(await gateway404.snapshotArchiveFor("craft")).toBe(null);
+    expect(notFound.calls).toHaveLength(1);
   });
 });
