@@ -3,26 +3,44 @@
  * judgment candidate, the text-only re-assertion of an adopted judgment, the correction and
  * forgetting launched from an expanded basis, and the explicit cleanup verification.
  *
- * Like the reads beside them, none of these carries a company or team selection: the server
- * resolves one trusted scope per request, and a body that tried to name a tenant, principal or
- * bank is not refused — it is simply never read. Every success settles the whole `hindsight`
- * namespace, because each write changes what the next answer (and the next expansion) reads.
+ * Every write rides the scope the screen holds (MT089's family, FIX-W12 FR2-1): the selection
+ * pair rides the request, the server's membership decides, and a body that tried to name a
+ * tenant, principal or bank is not refused — it is simply never read. Each success settles the
+ * scope's own `hindsight` subtree, because each write changes what the next answer (and the
+ * next expansion, and the adopted listing) reads.
  */
 
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   hindsightKeys,
   type MemoryRevocation,
   type ReviewedJudgment,
 } from "./queries";
 
-/** One settlement for every write here: re-read whatever the seams now answer. */
-const settle = (queryClient: QueryClient) => () =>
-  queryClient.invalidateQueries({ queryKey: hindsightKeys.all });
+/** The selection pair a scoped call rides, spread into the client options (MT089's family). */
+function scopePair(scope: ScopedCache) {
+  return scope.status === "open" ? (scope.selection ?? {}) : {};
+}
+
+/**
+ * One settlement for every write here: re-read whatever the seams now answer, under the scope
+ * the write rode. A switch that happened mid-flight already removed that prefix, so the
+ * invalidation lands as the no-op it should be rather than resurrecting anything.
+ */
+const settle = (queryClient: QueryClient, scope: ScopedCache) => () =>
+  scope.status === "open"
+    ? queryClient.invalidateQueries({
+        queryKey: [...scope.prefix, ...hindsightKeys.all],
+      })
+    : undefined;
 
 /** Adopt a candidate (#389): the gates re-ran on the server; the answer is the adopted judgment. */
-export const confirmJudgmentMutationOptions = (queryClient: QueryClient) =>
+export const confirmJudgmentMutationOptions = (
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: (id: string): Promise<ReviewedJudgment> =>
       client(
@@ -31,16 +49,20 @@ export const confirmJudgmentMutationOptions = (queryClient: QueryClient) =>
         {
           method: "POST",
           fallbackKey: "hindsight.confirm",
+          ...scopePair(scope),
         },
       ),
-    onSettled: settle(queryClient),
+    onSettled: settle(queryClient, scope),
   });
 
 /**
  * Re-assert a judgment's text (#389 AC2): the words alone change — the evidence relation and
  * scope never ride this call, so an edit can neither swap the basis nor widen the authority.
  */
-export const editJudgmentMutationOptions = (queryClient: QueryClient) =>
+export const editJudgmentMutationOptions = (
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: ({
       id,
@@ -53,12 +75,16 @@ export const editJudgmentMutationOptions = (queryClient: QueryClient) =>
         method: "PATCH",
         body: input,
         fallbackKey: "hindsight.edit",
+        ...scopePair(scope),
       }),
-    onSettled: settle(queryClient),
+    onSettled: settle(queryClient, scope),
   });
 
 /** Reject a candidate (#389): terminal on the server; the settle drops it from the listing. */
-export const rejectJudgmentMutationOptions = (queryClient: QueryClient) =>
+export const rejectJudgmentMutationOptions = (
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: (id: string): Promise<unknown> =>
       client(
@@ -67,9 +93,10 @@ export const rejectJudgmentMutationOptions = (queryClient: QueryClient) =>
         {
           method: "POST",
           fallbackKey: "hindsight.reject",
+          ...scopePair(scope),
         },
       ),
-    onSettled: settle(queryClient),
+    onSettled: settle(queryClient, scope),
   });
 
 /**
@@ -77,16 +104,20 @@ export const rejectJudgmentMutationOptions = (queryClient: QueryClient) =>
  * `stoppedUsingAt`, remote cleanup reported separately and never claimed cleared. The screen
  * shows exactly that and points at the cleanup section for the rest.
  */
-export const forgetJudgmentMutationOptions = (queryClient: QueryClient) =>
+export const forgetJudgmentMutationOptions = (
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: async (id: string): Promise<MemoryRevocation> =>
       (
         await client(`/api/hindsight/judgments/${encodeURIComponent(id)}`, {
           method: "DELETE",
           fallbackKey: "hindsight.forget",
+          ...scopePair(scope),
         })
       ).json(),
-    onSettled: settle(queryClient),
+    onSettled: settle(queryClient, scope),
   });
 
 /**
@@ -94,20 +125,25 @@ export const forgetJudgmentMutationOptions = (queryClient: QueryClient) =>
  * old window, and the next answer reads the corrected row. Only a preference basis offers this
  * action; the seam refuses the other kinds with its own reason.
  */
-export const correctEvidenceMutationOptions = (queryClient: QueryClient) =>
+export const correctEvidenceMutationOptions = (
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: ({ id, input }: { id: string; input: { content: string } }) =>
       client(`/api/hindsight/evidence/${encodeURIComponent(id)}/correction`, {
         method: "POST",
         body: input,
         fallbackKey: "hindsight.correct",
+        ...scopePair(scope),
       }),
-    onSettled: settle(queryClient),
+    onSettled: settle(queryClient, scope),
   });
 
 /** Forget a preference basis (#387 AC2 / #390): same honest answer as a judgment forget. */
 export const forgetPreferenceEvidenceMutationOptions = (
   queryClient: QueryClient,
+  scope: ScopedCache,
 ) =>
   mutationOptions({
     mutationFn: async (id: string): Promise<MemoryRevocation> =>
@@ -117,15 +153,17 @@ export const forgetPreferenceEvidenceMutationOptions = (
           {
             method: "DELETE",
             fallbackKey: "hindsight.forget",
+            ...scopePair(scope),
           },
         )
       ).json(),
-    onSettled: settle(queryClient),
+    onSettled: settle(queryClient, scope),
   });
 
 /** Forget a source-bound basis (#387 AC2 / #390), through the memory family's own face. */
 export const forgetSourceBoundEvidenceMutationOptions = (
   queryClient: QueryClient,
+  scope: ScopedCache,
 ) =>
   mutationOptions({
     mutationFn: async (id: string): Promise<MemoryRevocation> =>
@@ -135,22 +173,27 @@ export const forgetSourceBoundEvidenceMutationOptions = (
           {
             method: "DELETE",
             fallbackKey: "hindsight.forget",
+            ...scopePair(scope),
           },
         )
       ).json(),
-    onSettled: settle(queryClient),
+    onSettled: settle(queryClient, scope),
   });
 
 /**
  * Re-probe the person's own confirmed deletions and reconcile the backup manifests (#391): the
  * actions behind the cleanup picture. Idempotent, and the settle re-reads what it observed.
  */
-export const verifyCleanupMutationOptions = (queryClient: QueryClient) =>
+export const verifyCleanupMutationOptions = (
+  queryClient: QueryClient,
+  scope: ScopedCache,
+) =>
   mutationOptions({
     mutationFn: () =>
       client("/api/hindsight/cleanup/verify", {
         method: "POST",
         fallbackKey: "hindsight.verify",
+        ...scopePair(scope),
       }),
-    onSettled: settle(queryClient),
+    onSettled: settle(queryClient, scope),
   });

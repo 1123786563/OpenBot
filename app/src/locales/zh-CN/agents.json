@@ -392,6 +392,7 @@
       "contentLabel": "判断",
       "adoptedTitle": "已确认判断",
       "adoptedEmpty": "还没有。确认一条判断后它会出现在这里。",
+      "adoptedDescription": "你确认过的判断。在你遗忘之前，Bot 会继续用它回答。",
       "adopted": {
         "confirmed": "确认于 {{when}}",
         "edited": "编辑于 {{when}}"
@@ -419,6 +420,12 @@
       "corrected": "已保存。Bot 的下一次回答会使用新事实。",
       "forget": "遗忘",
       "stopped": "已于 {{when}} 停止使用这条记忆。OpenBot 之外的副本另行清理。"
+    },
+    "answerBasis": {
+      "title": "回答依据",
+      "description": "Bot 回答所用的记忆。展开一条可查看来源、更正或遗忘。",
+      "empty": "还没有内容。Bot 确认的记忆会连同依据出现在这里。",
+      "basis": "依据"
     },
     "cleanup": {
       "title": "清理",

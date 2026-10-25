@@ -13,12 +13,13 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { useDateTime } from "@/lib/i18n/datetime";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { verifyCleanupMutationOptions } from "@/lib/hindsight/mutations";
 import {
-  cleanupStatusQueryOptions,
   type CleanupStatus,
+  scopedCleanupStatusQueryOptions,
 } from "@/lib/hindsight/queries";
+import { useDateTime } from "@/lib/i18n/datetime";
 
 /**
  * The cleanup progress of what the person forgot (#390 AC3 / #391 AC3): the three legs the
@@ -34,9 +35,11 @@ import {
  */
 export function MemoryCleanupSection() {
   const { t } = useTranslation("agents");
+  // The picture rides the scope the screen holds, like every other memory call (MT089).
   const queryClient = useQueryClient();
-  const cleanup = useQuery(cleanupStatusQueryOptions());
-  const verify = useMutation(verifyCleanupMutationOptions(queryClient));
+  const scope = useScopedCache();
+  const cleanup = useQuery(scopedCleanupStatusQueryOptions(queryClient, scope));
+  const verify = useMutation(verifyCleanupMutationOptions(queryClient, scope));
   return (
     <PageSection
       action={

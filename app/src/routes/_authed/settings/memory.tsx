@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { PageShell } from "@/components/layout/page-shell";
+import { MemoryAnswerBasisSection } from "@/components/memory/answer-basis";
 import { MemoryCleanupSection } from "@/components/memory/cleanup-progress";
 import { JudgmentReviewSections } from "@/components/memory/judgment-review";
 import { MemoryList, RememberFact } from "@/components/memory/memories";
@@ -20,6 +21,7 @@ function MemorySettingsPage() {
     >
       <MemoryPauseControlsSection />
       <MemoryList />
+      <MemoryAnswerBasisSection />
       <JudgmentReviewSections />
       <MemoryCleanupSection />
     </PageShell>

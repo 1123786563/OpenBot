@@ -25,7 +25,10 @@ import { hindsightSyncWork } from "../src/db/schema/hindsight-sync";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
-import { createAnswerEvidenceService } from "../src/hindsight/answer-evidence";
+import {
+  createAnswerEvidenceService,
+  EvidenceRefusedError,
+} from "../src/hindsight/answer-evidence";
 import { teamBankFor, userBankFor } from "../src/hindsight/bank-scope";
 import {
   createDerivedJudgmentService,
@@ -1159,5 +1162,168 @@ describe("Hindsight 12 (#389): the expandable evidence chain behind an answer", 
     expect(forgotten?.content).toBe("");
     const [expanded] = await evidence.inspectEvidence(scope, { ids: [id] });
     expect(expanded.state).toBe("unavailable");
+  });
+});
+
+describe("FIX-W12 answer basis (FR2-3): the memory entries a Bot reads", () => {
+  test("the listing answers confirmed preferences and authorized source-bound facts", async () => {
+    const scope = await employeeScope();
+    const preference = await preferences.confirmGenericPreference(scope, {
+      content: `依据列表偏好 ${run}`,
+    });
+    const { record: bound } = await scoped.confirmSourceBoundMemory(scope, {
+      content: `依据列表来源事实 ${run}`,
+      restriction: { kind: "source", sourceId: SOURCE_ONE },
+    });
+    await syncQueue.drain();
+    const listed = await evidence.listPersonalMemories(scope);
+    const kinds = new Map(listed.map((entry) => [entry.id, entry.kind]));
+    expect(kinds.get(preference.record.id)).toBe("preference");
+    expect(kinds.get(bound.id)).toBe("source_bound");
+    const entry = listed.find((row) => row.id === bound.id);
+    expect(entry?.content).toBe(`依据列表来源事实 ${run}`);
+  });
+
+  test("a source-bound entry whose authorization lapsed is withheld, and returns with it", async () => {
+    const scope = await employeeScope();
+    const { record } = await scoped.confirmSourceBoundMemory(scope, {
+      content: `依据列表停用事实 ${run}`,
+      restriction: { kind: "source", sourceId: SOURCE_ONE },
+    });
+    await syncQueue.drain();
+    expect(
+      (await evidence.listPersonalMemories(scope)).map((row) => row.id),
+    ).toContain(record.id);
+    await setGrant(SOURCE_ONE, false);
+    try {
+      expect(
+        (await evidence.listPersonalMemories(scope)).map((row) => row.id),
+      ).not.toContain(record.id);
+    } finally {
+      await setGrant(SOURCE_ONE, true);
+    }
+    expect(
+      (await evidence.listPersonalMemories(scope)).map((row) => row.id),
+    ).toContain(record.id);
+  });
+
+  test("another principal's listing never carries this person's entries", async () => {
+    const scope = await employeeScope();
+    const preference = await preferences.confirmGenericPreference(scope, {
+      content: `依据列表隔离偏好 ${run}`,
+    });
+    await syncQueue.drain();
+    const admin = await adminScope();
+    const listed = await evidence.listPersonalMemories(admin);
+    expect(listed.map((row) => row.id)).not.toContain(preference.record.id);
+  });
+
+  test("an out-of-range limit is refused rather than clamped", async () => {
+    const scope = await employeeScope();
+    await expect(
+      evidence.listPersonalMemories(scope, { limit: 0 }),
+    ).rejects.toBeInstanceOf(EvidenceRefusedError);
+  });
+});
+
+describe("FIX-W12 adopted listing (FR2-3): the cross-session control, re-verified", () => {
+  test("a confirmed judgment lists after a fresh session, with its complete basis", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `跨会话已确认判断 ${run}`,
+    );
+    await review.confirmDerivedJudgment(scope, id);
+    await syncQueue.drain();
+    // A fresh session is a fresh call through the scope: no page state survives it.
+    const listed = await review.listAdoptedJudgments(await employeeScope());
+    const found = listed.find((row) => row.id === id);
+    expect(found).toBeDefined();
+    expect(found?.reviewState).toBe("confirmed");
+    expect(found?.evidence).toHaveLength(2);
+    expect(found?.content).toBe(`跨会话已确认判断 ${run}`);
+  });
+
+  test("an edited judgment lists with its edited text and unchanged basis", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `跨会话编辑判断 ${run}`,
+    );
+    await review.editDerivedJudgment(scope, id, {
+      content: `编辑后确认的判断 ${run}`,
+    });
+    await syncQueue.drain();
+    const found = (await review.listAdoptedJudgments(scope)).find(
+      (row) => row.id === id,
+    );
+    expect(found?.reviewState).toBe("edited");
+    expect(found?.content).toBe(`编辑后确认的判断 ${run}`);
+    expect(found?.evidence).toHaveLength(2);
+  });
+
+  test("a judgment whose basis lost its authorization is withheld, and returns with it", async () => {
+    const scope = await employeeScope();
+    const first = await confirmBound(scope, `列表停用依据一 ${run}`, {
+      kind: "source",
+      sourceId: SOURCE_ONE,
+    });
+    const second = await confirmBound(scope, `列表停用依据二 ${run}`, {
+      kind: "source",
+      sourceId: SOURCE_ONE,
+    });
+    const candidate = await proposals.proposeDerivedJudgmentCandidate(scope, {
+      judgment: `列表停用判断 ${run}`,
+      evidence: [first, second],
+    });
+    await review.confirmDerivedJudgment(scope, candidate.id);
+    await syncQueue.drain();
+    const before = await review.listAdoptedJudgments(scope);
+    expect(before.map((row) => row.id)).toContain(candidate.id);
+    await setGrant(SOURCE_ONE, false);
+    try {
+      const withheld = await review.listAdoptedJudgments(scope);
+      expect(withheld.map((row) => row.id)).not.toContain(candidate.id);
+    } finally {
+      await setGrant(SOURCE_ONE, true);
+    }
+    const returned = await review.listAdoptedJudgments(scope);
+    expect(returned.map((row) => row.id)).toContain(candidate.id);
+  });
+
+  test("a forgotten judgment leaves the listing", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `跨会话遗忘判断 ${run}`,
+    );
+    await review.confirmDerivedJudgment(scope, id);
+    await syncQueue.drain();
+    await review.forgetDerivedJudgment(scope, id);
+    const listed = await review.listAdoptedJudgments(scope);
+    expect(listed.map((row) => row.id)).not.toContain(id);
+  });
+
+  test("another principal's listing never shows this person's adopted judgments", async () => {
+    const scope = await employeeScope();
+    const { id } = await proposeGeneralCandidate(
+      scope,
+      `跨会话隔离判断 ${run}`,
+    );
+    await review.confirmDerivedJudgment(scope, id);
+    await syncQueue.drain();
+    const admin = await adminScope();
+    const listed = await review.listAdoptedJudgments(admin);
+    expect(listed.map((row) => row.id)).not.toContain(id);
+  });
+
+  test("an out-of-range limit is refused rather than clamped", async () => {
+    const scope = await employeeScope();
+    await expect(
+      review.listAdoptedJudgments(scope, { limit: 0 }),
+    ).rejects.toBeInstanceOf(DerivedJudgmentRefusedError);
+    await expect(
+      review.listAdoptedJudgments(scope, { limit: 101 }),
+    ).rejects.toBeInstanceOf(DerivedJudgmentRefusedError);
   });
 });
