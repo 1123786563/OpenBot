@@ -1005,13 +1005,14 @@ export type OpencodeServeClientOptions = {
   botId?: string | null;
   /**
    * The execution ownership every request states beside the token (MT050, #618) — the
-   * two headers agent-sandbox's proxy demands, mirroring SandboxClientOptions.
-   * executionScope in codesandbox/client.ts: a resolved scope rides on every request;
-   * null means the caller (the craft gateway) knows the deployment has NO scope, and
-   * every outbound verb then refuses with the displayable fail-closed error instead of
-   * sending an unattributed request; undefined is the unmanaged shape (standalone
-   * constructions) — requests go out unattributed and the proxy's own 403 is the
-   * honest answer, exactly the contract the codesandbox client documents.
+   * two headers agent-sandbox's proxy demands, mirroring
+   * SandboxClientOptions.executionScope in codesandbox/client.ts: a resolved scope
+   * rides on every request; null means the caller (the craft gateway) knows the
+   * deployment has NO scope, and every outbound verb then refuses with the
+   * displayable fail-closed error instead of sending an unattributed request;
+   * undefined is the unmanaged shape (standalone constructions) — requests go out
+   * unattributed and the proxy's own 403 is the honest answer, exactly the contract
+   * the codesandbox client documents.
    */
   executionScope?: ExecutionScope | null;
   eventBus?: PodEventBus | null;
@@ -1058,9 +1059,11 @@ export class OpencodeServeClient {
     // is abort, answerPermission, deleteSession, disposeInstance and getMessage
     // (advisory hydration: null is "no message"); healthCheckStatus RETHROWS it
     // (#618 OCR#12: a scopeless deployment is a permanent failure, not a cold
-    // start, so the probe's null must not mask it); sendMessage wraps it into a
-    // transport error envelope (a visible exit, not a swallow) on its prompt leg;
-    // every other verb propagates.
+    // start, so the probe's null must not mask it); sendMessage surfaces it as the
+    // RAW throw from bus.subscribe() before its try (bus and client always share the
+    // deployment's scope value — the subscribe gate fires first); only a bus/client
+    // scope mismatch, which the gateway never constructs, would reach the prompt
+    // leg's transport-error envelope; every other verb propagates.
     if (this.executionScope === null)
       throw new SandboxExecutionScopeUnavailableError();
     const headers: Record<string, string> = { ...extra };

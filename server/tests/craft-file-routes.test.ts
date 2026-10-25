@@ -775,4 +775,26 @@ describe("#618 R1-F2: the fail-closed refusal answers as its own 503", () => {
     expect(body.error).not.toContain("acme-co");
     expect(calls).toEqual([]);
   });
+
+  test("download-directory answers 503 by the wrap's CAUSE when the text lost the sentence (OCR r2)", async () => {
+    // OCR r2: an error-enhancing layer (or a future wrap-template tweak) can rewrite
+    // the message until the fixed sentence is gone from the wrap's TEXT — recognition
+    // must ride the structural cause chain, or this face falls back into the 404
+    // "Directory not found" mask the refusal must never wear.
+    const rewritten = new SandboxExecutionScopeUnavailableError();
+    rewritten.message = "rewritten by an error-reporting layer";
+    const { api } = memoryFileApi();
+    const listingRefuses: AgentSandboxFileApi = {
+      ...api,
+      async listFiles() {
+        throw rewritten;
+      },
+    };
+    const response = await routes(listingRefuses).request(
+      `/sessions/${SESSION_ID}/download-directory/outputs`,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+  });
 });

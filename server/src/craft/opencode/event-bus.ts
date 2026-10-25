@@ -321,6 +321,12 @@ export class PodEventBus {
       ),
     });
     if (!response.ok) {
+      // Release the body before throwing (#618 OCR r2): an unconsumed body pins its
+      // pool socket in undici until GC — and with the gateway's per-turn bus rebuilds
+      // (closed bus → new dial → 403 again) a scope-misconfigured deployment with live
+      // turns would leak one socket per turn. Covers both the terminal 403 and the
+      // retried non-403 throw; the success path consumes its body through the reader.
+      await response.body?.cancel().catch(() => undefined);
       if (response.status === 403) {
         throw new EventStreamForbiddenError();
       }
