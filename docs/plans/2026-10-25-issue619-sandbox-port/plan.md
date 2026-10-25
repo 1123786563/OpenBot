@@ -34,7 +34,7 @@
 3. **占用预检**（可单测）：`scripts/craft-port-range-preflight.ts`
    - 读取同一来源（process env 优先，其次项目 `.env`），校验成对、`START<=END`、范围为合法 TCP 端口；
    - 对段内每个端口探测 `127.0.0.1` 与 `::1` 监听者；占用时输出：端口、地址族、占用者（进程名+pid；若为 Docker 发布端口则容器名/镜像）、以及两条可复跑步骤（改段：改 `.env` 的 START/END 并重启栈；停占用：`lsof -nP -iTCP:<port> -sTCP:LISTEN` / `docker ps --filter publish=<port>` → `kill`/`docker stop`）；
-   - 非法配置（只设一端、START>END、越界）明确拒绝并给出修正指引；
+   - 只设一端时以另一端默认合成生效段并提示（2026-10-25 派发 Brief 修订，取代原「明确拒绝」）；START>END、非整数、越界明确拒绝并给出修正指引；
    - 依赖注入探测函数，便于单测。
 4. **接线**：
    - `scripts/start.sh` 在 `docker compose up` 之前调用预检（失败即退出，带定位信息）；
