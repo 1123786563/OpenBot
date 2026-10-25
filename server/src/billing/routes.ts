@@ -361,6 +361,7 @@ export function createBillingCreditRoutes(deps: {
    * client that tries. Amounts stay the ledger's own ×100 integers.
    */
   routes.get("/credits/realtime-sessions", async (context) => {
+    // 503 准入读原件、读走门面：原件与 accountQuery 须成对注入（见 public.ts）。
     if (!deps.realtimeUsage) {
       return context.json(
         { error: "Realtime usage is unavailable. Try again." },
@@ -386,6 +387,7 @@ export function createBillingCreditRoutes(deps: {
    * frozen grant/payer — a key that expired after the submit changes nothing (归属不变).
    */
   routes.get("/credits/async-jobs", async (context) => {
+    // 503 准入读原件、读走门面：原件与 accountQuery 须成对注入（见 public.ts）。
     if (!deps.asyncJobsView) {
       return context.json(
         { error: "Async jobs are unavailable. Try again." },

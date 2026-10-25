@@ -60,6 +60,11 @@ import type { BillingService } from "./types";
  *
  * 全部是读：每一个成员在内件里都是 SELECT 或纯函数（payer 解析不打开映射行），
  * 账户永远由调用方按会话解析后传入——门面不接受、不推导账户。
+ *
+ * **成对注入约定（装配侧）**：`realtimeSessionsForPayer`/`asyncJobsForPayer` 的
+ * 读经 `accountQuery` 门面，而路由的 503 准入检查读 `realtimeUsage`/
+ * `asyncJobsView` 原件——原件与门面必须由同一次装配成对注入。只注门面（原件
+ * 缺席）→ 准入误判 503；只注原件（门面调用处缺原件）→ TypeError 500。
  */
 export interface BillingAccountQuery {
   /** 套餐用量（statements 内件；`externalCustomerId` 缺省即部署自身）。 */
