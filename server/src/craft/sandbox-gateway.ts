@@ -79,15 +79,28 @@ export type SandboxGateway = {
   }): OpencodeServeClient | null;
   /** The shared per-(sandbox, directory) event bus, created on first use, replaced when dead. */
   eventBusFor(input: { botId: string; directory: string }): PodEventBus | null;
-  /** Liveness of the sandbox's opencode-serve (readiness probes). */
+  /**
+   * Liveness of the sandbox's opencode-serve (readiness probes). Rejects with the
+   * displayable scope refusal in a scopeless deployment (#618 OCR#12) — a permanent
+   * configuration failure callers answer as unavailable, not as a cold start.
+   */
   healthCheck(botId: string): Promise<boolean>;
   /** Close every cached bus (shutdown hook). */
   close(): void;
   /** The workspace-write view of the file API. */
   workspaceApiFor(botId: string): WorkspaceApi | null;
-  /** One packed snapshot of the Bot's whole workspace (application/gzip), or null when absent. */
+  /**
+   * One packed snapshot of the Bot's whole workspace (application/gzip). Null ONLY on
+   * 404 ("nothing snapshotted yet") — any other failure, a scope mismatch included,
+   * throws (#618 FR-F2); a missing execution scope throws the displayable refusal.
+   */
   snapshotArchiveFor(botId: string): Promise<Uint8Array | null>;
-  /** Replay a snapshot archive into the Bot's workspace; false when refused/unreachable. */
+  /**
+   * Replay a snapshot archive into the Bot's workspace. False only when the gateway
+   * refused the payload (409 mid-turn, 400 non-snapshot); every other failure throws,
+   * and a missing execution scope throws the displayable refusal instead of answering
+   * false (#618 OCR#5) — false is "could not restore this instant", never a verdict.
+   */
   restoreWorkspace(botId: string, archive: Uint8Array): Promise<boolean>;
 };
 
@@ -113,10 +126,14 @@ export function createSandboxGateway(
   };
 
   /*
-   * #618: the execution ownership, resolved per use through the injected lambda (the
-   * boot file's one-const family) or the config's parsed pair — one source either way.
-   * Per use, not cached: the refusal must keep firing as long as the deployment has no
-   * scope, and a later fix (env reload aside, tests flipping the lambda) is honored.
+   * #618: the execution ownership, resolved through the injected lambda (the boot
+   * file's one-const family) or the config's parsed pair — one source either way.
+   * Two cadences by consumer (OCR#7): the file verbs and healthCheck resolve per
+   * use, so the refusal keeps firing as long as the deployment has no scope;
+   * serveClientFor and eventBusFor freeze the value resolved at CONSTRUCTION into
+   * their cached instances (never invalidated while alive), so a later scope change
+   * reaches them only through a fresh client or bus — in production the pair is
+   * boot-time config, so there is no such moment.
    */
   const executionScope = (): ExecutionScope | null =>
     options.executionScopeFor
@@ -158,8 +175,13 @@ export function createSandboxGateway(
         const response = await doFetch(`${base}${path}`, {
           ...init,
           headers: {
-            ...headersFor(),
+            // #618 (OCR#4): trust headers land LAST, mirroring serve-client's
+            // buildHeaders — token/bot-id/scope are always the deployment's, so
+            // a future verb that forwards caller headers into init.headers can
+            // never override ownership or strip the credentials. headersFor()
+            // states no content-type, so writeFile's own survives untouched.
             ...(init.headers as Record<string, string>),
+            ...headersFor(),
           },
           signal: AbortSignal.timeout(timeoutMs),
         });
@@ -353,9 +375,17 @@ export function createSandboxGateway(
         },
       );
       // The gateway refuses a restore mid-turn (409) and rejects a non-snapshot (400); both are
-      // honest "could not restore this instant" answers — false, not a throw — so the caller can
-      // degrade to "rebuild the workspace" instead of surfacing a phantom error.
-      return response.ok;
+      // honest "could not restore this instant" answers — false, not a throw. Every OTHER
+      // verdict — a scope-mismatch 403 included — travels out as the error it is, mirroring
+      // the snapshot half (#618 FR-F2/OCR#5): folding it into false dressed a mismatch up as
+      // "nothing to restore" and the wake silently rebuilt the workspace over the mismatch.
+      if (response.status === 409 || response.status === 400) return false;
+      if (!response.ok) {
+        throw new Error(
+          `Sandbox /workspace/restore answered ${response.status}.`,
+        );
+      }
+      return true;
     },
 
     serveClientFor(input) {

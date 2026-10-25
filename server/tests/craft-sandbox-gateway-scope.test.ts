@@ -166,6 +166,25 @@ describe("#618 file API: every verb carries the ownership headers", () => {
     ]);
     for (const call of calls) expectScopeHeaders(call.headers);
   });
+
+  test("caller headers ride WITH the trust headers — none can override the deployment's", async () => {
+    // OCR#4: headersFor() lands LAST, mirroring serve-client's buildHeaders, so
+    // the token/bot-id/scope values are always the deployment's. No verb
+    // forwards caller-controlled headers today (#618 forbids that shape); the
+    // pin holds the merge order for the day one does: writeFile's own
+    // content-type (the one init.headers a verb states) survives untouched
+    // beside the four trust headers carrying the configured values.
+    const { calls, fetchImpl } = recordingFetch();
+    const files = scopedGateway(fetchImpl).fileApiFor("craft");
+    expect(files).not.toBe(null);
+    if (!files) return;
+
+    await files.writeFile("dir/a.txt", "hello");
+
+    const write = calls.find((call) => call.method === "POST");
+    expect(write?.headers["content-type"]).toBe("text/plain");
+    expectScopeHeaders(write?.headers ?? {});
+  });
 });
 
 describe("#618 opencode-serve: client and bus carry the ownership headers", () => {
@@ -382,6 +401,47 @@ describe("#618 fail-closed: no scope, no request, a displayable reason", () => {
     expect(calls).toHaveLength(0);
   });
 
+  test("the belt: a null-scope reader entered without subscribe() is terminal, not laddered", async () => {
+    // OCR#8: subscribe()'s gate is the door; readOneStream's belt is the
+    // guarantee that no FUTURE entrypoint can dial unattributed. Driven on the
+    // belt's own path (the reader loop, not the door), the refusal must close
+    // the bus now — feeding it to the reconnect ladder would spend ~8 minutes
+    // redialing a deployment fact and hand subscribers nothing but silence.
+    const { calls, fetchImpl } = recordingFetch();
+    const bus = new PodEventBus({
+      baseUrl: "http://gw.test",
+      config: unscopedConfig,
+      directory: "dir",
+      token: "sandbox-secret",
+      botId: "craft",
+      executionScope: null,
+      fetchImpl,
+    });
+    const readerDone = (
+      bus as unknown as { readerLoop: () => Promise<void> }
+    ).readerLoop();
+    try {
+      await Promise.race([
+        readerDone,
+        new Promise((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "the belt's refusal did not close the reader — it is feeding the reconnect ladder",
+                ),
+              ),
+            3000,
+          ),
+        ),
+      ]);
+    } finally {
+      bus.close();
+    }
+    expect(bus.isClosed()).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
   test("the refusal names no ownership value", async () => {
     // A tenant is configured but its workspace half is missing: the pair is
     // unusable, and the refusal must not echo even the half it did see.
@@ -541,5 +601,69 @@ describe("#618 FR-F2: a scope-mismatch 403 propagates — no retry, no fold, no 
     const gateway404 = scopedGateway(notFound.fetchImpl);
     expect(await gateway404.snapshotArchiveFor("craft")).toBe(null);
     expect(notFound.calls).toHaveLength(1);
+  });
+
+  test("restore write: a 403 throws — folding it to false was the silent rebuild", async () => {
+    // OCR#5: only 409 (mid-turn) and 400 (not a snapshot) are the honest
+    // "could not restore this instant" → false; a scope-mismatch 403 (or any
+    // other verdict) travels out as the error it is, mirroring the snapshot
+    // half — false would dress a mismatch up as "nothing to restore" and the
+    // wake would silently rebuild the workspace over it.
+    const { calls, fetchImpl } = statusFetch(403);
+    await expect(
+      scopedGateway(fetchImpl).restoreWorkspace("craft", new Uint8Array([1])),
+    ).rejects.toThrow(/answered 403/);
+    expect(calls).toHaveLength(1); // one dial, never retried
+    expectScopeHeaders(calls[0]?.headers ?? {});
+
+    const conflict = statusFetch(409);
+    expect(
+      await scopedGateway(conflict.fetchImpl).restoreWorkspace(
+        "craft",
+        new Uint8Array([1]),
+      ),
+    ).toBe(false);
+    const badPayload = statusFetch(400);
+    expect(
+      await scopedGateway(badPayload.fetchImpl).restoreWorkspace(
+        "craft",
+        new Uint8Array([1]),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("#618 OCR#12: the liveness probe surfaces the refusal, not a cold start", () => {
+  test("a null-scope client's healthCheckStatus throws — the catch must not fold it to null", async () => {
+    const { calls, fetchImpl } = recordingFetch();
+    const client = new OpencodeServeClient({
+      baseUrl: "http://gw.test",
+      config: unscopedConfig,
+      token: "sandbox-secret",
+      botId: "craft",
+      executionScope: null,
+      fetchImpl,
+    });
+    await expect(client.healthCheckStatus()).rejects.toThrow(
+      SandboxExecutionScopeUnavailableError,
+    );
+    expect(calls).toHaveLength(0); // the refusal precedes the dial
+  });
+
+  test("the gateway's healthCheck propagates the refusal — no dial, no swallow", async () => {
+    const { calls, fetchImpl } = recordingFetch();
+    const gateway = createSandboxGateway({
+      config: unscopedConfig,
+      connectionFor: () => ({
+        botId: "craft",
+        baseUrl: "http://gw.test",
+        token: "sandbox-secret",
+      }),
+      fetchImpl,
+    });
+    await expect(gateway.healthCheck("craft")).rejects.toThrow(
+      SandboxExecutionScopeUnavailableError,
+    );
+    expect(calls).toHaveLength(0);
   });
 });

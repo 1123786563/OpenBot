@@ -19,11 +19,12 @@ import type { Database } from "../db/client";
 const logger = getLogger("server");
 
 import type { CraftConfig } from "./config";
+import { SandboxExecutionScopeUnavailableError } from "./errors";
 import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
 import { generateSessionName } from "./naming";
 import type { SandboxGateway } from "./sandbox-gateway";
-import { sandboxScopeRefusalOf } from "./scope-refusal";
+import { sandboxScopeRefusalOf, scopeRefusalResponse } from "./scope-refusal";
 import { sessionRuntimeStale } from "./skills";
 import {
   deleteSnapshots,
@@ -142,6 +143,11 @@ export function createSessionRoutes(
    * the restore entrance surfaces it (`surfaceScopeRefusal`), because the detail read must stay
    * available in a scopeless deployment (the turn face carries the refusal when the person
    * actually acts); silently degrading the WAKE itself into "no snapshot" was the mask T2 saw.
+   *
+   * #618 (OCR#11): a SWALLOWED refusal must not CAS the row active either — "200 + active +
+   * nothing restored" was the same mask moved onto the detail face, and it stranded the restore
+   * entrance's 503 behind the warm fast path. The row honestly stays idle (detail shows
+   * sleeping), so POST restore — and the turn — keep their chance to surface the refusal.
    */
   const wakeIfIdle = async (
     session: CraftSessionRow,
@@ -150,14 +156,17 @@ export function createSessionRoutes(
     if (session.status !== "idle") return session;
     const botId = await deps.botIdFor(session.id);
     if (botId) {
+      let scopeRefused = false;
       await restoreLatestSnapshot(snapshotCtx(), {
         botId,
         sessionId: session.id,
       }).catch((error) => {
         const refusal = sandboxScopeRefusalOf(error);
         if (refusal && options.surfaceScopeRefusal) throw refusal;
+        if (refusal) scopeRefused = true;
         return false;
       });
+      if (scopeRefused) return session; // not woken: keep idle, keep the entrances reachable
     }
     const updated = await deps.store.updateSession(session.id, {
       status: "active",
@@ -205,10 +214,8 @@ export function createSessionRoutes(
       // #618 (FR-F1): a scopeless deployment is an answerable, admin-fixable condition —
       // the fixed sentence as 503, not the generic 500 T2 saw swallow it. Like the file
       // face, no log line and no echoed value: the sentence IS the reason and names none.
-      const refusal = sandboxScopeRefusalOf(error);
-      if (refusal) {
-        return context.json({ error: refusal.message }, 503);
-      }
+      const refusalResponse = scopeRefusalResponse(context, error);
+      if (refusalResponse) return refusalResponse;
       logger.error(
         { error: error instanceof Error ? error.stack : String(error) },
         "[craft] session creation failed",
@@ -369,10 +376,8 @@ export function createSessionRoutes(
     } catch (error) {
       // #618 (FR-F1): same recognizer, same 503, before the generic 502 — the snapshot
       // dial is an outbound request like any other and must not wear "Snapshot failed".
-      const refusal = sandboxScopeRefusalOf(error);
-      if (refusal) {
-        return context.json({ error: refusal.message }, 503);
-      }
+      const refusalResponse = scopeRefusalResponse(context, error);
+      if (refusalResponse) return refusalResponse;
       logger.error({ error }, "[craft] snapshot failed");
       return context.json({ error: "Snapshot failed" }, 502);
     }
@@ -399,10 +404,8 @@ export function createSessionRoutes(
         }),
       );
     } catch (error) {
-      const refusal = sandboxScopeRefusalOf(error);
-      if (refusal) {
-        return context.json({ error: refusal.message }, 503);
-      }
+      const refusalResponse = scopeRefusalResponse(context, error);
+      if (refusalResponse) return refusalResponse;
       throw error;
     }
   });
@@ -443,6 +446,12 @@ export function createSessionRoutes(
       );
       return context.json({ skills_stale: skillsStale });
     } catch (error) {
+      // #618 (OCR#1): reload is a person's explicit action, and its file writes route
+      // through the gateway — a scopeless deployment answers the fixed 503 sentence
+      // BEFORE the generic 502, the same contract create/snapshot/restore already
+      // carry (the turn face carries the refusal when the person actually acts).
+      const refusalResponse = scopeRefusalResponse(context, error);
+      if (refusalResponse) return refusalResponse;
       logger.error({ error }, "[craft] skills reload failed");
       return context.json({ error: "Failed to reload session." }, 502);
     }
@@ -462,6 +471,8 @@ export function createSessionRoutes(
  * - active         → probe the gateway's opencode-serve: reachable = "running"; unreachable =
  *   "provisioning" — the closest onyx value, honest here because the gateway spawns a Bot's
  *   runtime lazily and reaps it idle, so "not answering yet" is a cold start, not a failure.
+ *   A scopeless deployment's refusal is the one probe failure that is NOT a cold start (#618
+ *   OCR#12): it answers "failed", the settled state the chip renders red.
  *   A session whose Bot is not even configured has no sandbox to speak of: null (onyx's
  *   "no sandbox record" answer).
  *
@@ -477,6 +488,14 @@ async function sandboxStatusFor(
   if (session.status === "idle") return "sleeping";
   if (session.status === "initializing") return "provisioning";
   if (!botId) return null;
-  const alive = await deps.gateway.healthCheck(botId).catch(() => false);
-  return alive ? "running" : "provisioning";
+  try {
+    const alive = await deps.gateway.healthCheck(botId);
+    return alive ? "running" : "provisioning";
+  } catch (error) {
+    // #618 (OCR#12): a missing scope is an admin-level permanent failure, not a cold
+    // start — the probe rethrows the displayable refusal, and the chip wears the
+    // settled red "failed" instead of a "provisioning" that can never clear.
+    if (error instanceof SandboxExecutionScopeUnavailableError) return "failed";
+    return "provisioning"; // a probe outage stays a cold start, the pre-#618 answer
+  }
 }

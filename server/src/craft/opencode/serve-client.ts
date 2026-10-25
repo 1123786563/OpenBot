@@ -1053,8 +1053,12 @@ export class OpencodeServeClient {
   private buildHeaders(extra?: Record<string, string>): Record<string, string> {
     // #618 fail-closed chokepoint: every outbound fetch in this client builds its
     // headers here, so the refusal lives here and no verb can slip an unattributed
-    // request past it. The catch-bearing verbs (abort, answerPermission) swallow the
-    // throw per their own best-effort contracts — the request still never leaves.
+    // request past it. The catch-bearing verbs that swallow the throw per their own
+    // best-effort contracts — the request still never leaves — are abort,
+    // answerPermission, deleteSession and disposeInstance; healthCheckStatus
+    // RETHROWS it (#618 OCR#12: a scopeless deployment is a permanent failure, not
+    // a cold start, so the probe's null must not mask it); every other verb
+    // propagates.
     if (this.executionScope === null)
       throw new SandboxExecutionScopeUnavailableError();
     const headers: Record<string, string> = { ...extra };
@@ -1128,7 +1132,11 @@ export class OpencodeServeClient {
         ),
       });
       return response.status;
-    } catch {
+    } catch (error) {
+      // #618 (OCR#12): a missing scope is an admin-level permanent failure — rethrow
+      // instead of folding into the "not listening" null, which the chip renders as
+      // an eternally-pulsing "provisioning" that can never clear.
+      if (error instanceof SandboxExecutionScopeUnavailableError) throw error;
       return null;
     }
   }
@@ -1907,7 +1915,7 @@ export class OpencodeServeClient {
             } else {
               await deny("no connect-app rendezvous for this turn");
             }
-          } else if (gate !== null && gate.isGated(info)) {
+          } else if (gate?.isGated(info)) {
             try {
               const approvalId = await gate.open(info);
               pendingPermissions.set(info.permissionId, {
