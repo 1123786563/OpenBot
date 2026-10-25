@@ -69,8 +69,11 @@ describe("the closed dimension vocabulary", () => {
         "cache_read",
         "cache_write",
         "video",
+        "video_input",
         "surcharge_web_search",
         "surcharge_per_request",
+        "surcharge_tool_call",
+        "surcharge_a2a_call",
       ].sort(),
     );
   });
