@@ -26,10 +26,16 @@
 //      （INSERT 策略钉 app.tenant_id + app.operation_id）。
 
 import { sql } from "drizzle-orm";
+import type { Database } from "../../db/client";
 import { enterpriseSecurityEvents } from "../../db/schema/enterprise-tenancy";
 import type { PlatformScope } from "../contracts";
 import type { DataDatabase, OperatorDatabase } from "./connections";
-import { createWorkspaceGate } from "./scope-gate";
+import {
+  type BaWorkspaceGateDeps,
+  createBaWorkspaceGate,
+  createWorkspaceGate,
+  type WorkspaceGate,
+} from "./scope-gate";
 import { assertTrustedScope } from "./store";
 
 // ---------------------------------------------------------------------------
@@ -100,8 +106,13 @@ export interface RevocationGuard {
  * gate: trust boundary, transaction shape, lock order and fact rows are the
  * gate's, so gate semantics and this checkpoint face cannot drift apart.
  */
-export function createRevocationGuard(data: DataDatabase): RevocationGuard {
-  const gate = createWorkspaceGate(data);
+/**
+ * The one guard-over-gate wiring both factories share: the decide/assert face
+ * over any workspace gate. The MT005 guard wraps the legacy gate; the BA
+ * guard (T03.01) wraps the authority-aware gate, so a removed-and-rejoined
+ * member cannot reuse a scope under ba authority either.
+ */
+function revocationGuardOverGate(gate: WorkspaceGate): RevocationGuard {
   const decide = async (
     scope: PlatformScope,
     checkpoint: RevocationCheckpoint,
@@ -122,7 +133,8 @@ export function createRevocationGuard(data: DataDatabase): RevocationGuard {
       if (code === "WORKSPACE_REVOKED") {
         return Object.freeze({ outcome: "deny", code, level: "team" });
       }
-      // Infrastructure faults are never folded into a verdict.
+      // Infrastructure and proof faults (a CompanyAssuranceRefusal, an
+      // AuthorityRefusal, a driver error) are never folded into a verdict.
       throw error;
     }
   };
@@ -135,6 +147,31 @@ export function createRevocationGuard(data: DataDatabase): RevocationGuard {
       }
     },
   };
+}
+
+export function createRevocationGuard(data: DataDatabase): RevocationGuard {
+  return revocationGuardOverGate(createWorkspaceGate(data));
+}
+
+/**
+ * The BA-aware revocation guard (T03.01): the same single revocation judgment
+ * entry over the authority-aware workspace gate. Under ba authority the gate
+ * revalidates the persistent identity and both eligibility clocks, so the
+ * six checkpoints refuse a scope whose versions drifted even when every live
+ * status row still looks active. The required gate dependencies are checked
+ * by the gate factory — an optional port is the bypass interfaces §3.3/§5
+ * forbid.
+ */
+export function createBaRevocationGuard(
+  data: Database,
+  deps: BaWorkspaceGateDeps,
+): RevocationGuard {
+  if (!deps) {
+    throw new Error(
+      "BA_REVOCATION_GUARD_DEPS_REQUIRED: createBaRevocationGuard needs the BA workspace gate's authority and assurance ports — the guard is only the checkpoint face over that gate, and a gate without its ports would silently judge against a guessed branch",
+    );
+  }
+  return revocationGuardOverGate(createBaWorkspaceGate(data, deps));
 }
 
 // ---------------------------------------------------------------------------

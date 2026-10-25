@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T02.15 task registration (server/tests/better-auth:T02.15.01)",
+  "generatedBy": "T03.01 task registration (server/tests/better-auth:T03.01.01)",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1253,6 +1253,12 @@
       "files": [
         "server/tests/better-auth/migration-verify.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T03.01.01",
+      "files": [
+        "server/tests/better-auth/scope-generations.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1455,6 +1461,7 @@
     "server/tests/better-auth/schema-clocks.test.ts",
     "server/tests/better-auth/schema-command-authority.test.ts",
     "server/tests/better-auth/schema-roles.test.ts",
+    "server/tests/better-auth/scope-generations.test.ts",
     "server/tests/better-auth/team-extension-contract.test.ts",
     "server/tests/better-auth/transaction-contract.test.ts",
     "server/tests/better-auth/transaction-hooks.test.ts",
@@ -2082,6 +2089,7 @@
     "server/tests/better-auth/schema-authority-sources.test.ts": "bun:test + postgres (drizzle schema pinned against the real migration on the BA_TEST_* stack); registered by T02.04 (#526)",
     "server/tests/better-auth/directory-command.test.ts": "T02.08 directory command executor/finalizer suite: needs Bun runtime (bun:test lifecycle + Bun SQL client), registered by the task through writeManifest with payload.task T02.08",
     "server/tests/better-auth/outbox-fence.test.ts": "T02.12 outbox fence suite: bun:test layer (support/bun-test-compat) over Bun SQL and Bun server surfaces; registration restored from the T02.12 task worktree (integration filelist omission, same incident as the contracts.ts repair)",
-    "server/tests/better-auth/migration-verify.test.ts": "runner named it: runs on the five BA_TEST_* island URLs and imports server/src/db/client (bun-sql), the same better-auth island family as T02.13/T02.14"
+    "server/tests/better-auth/migration-verify.test.ts": "runner named it: runs on the five BA_TEST_* island URLs and imports server/src/db/client (bun-sql), the same better-auth island family as T02.13/T02.14",
+    "server/tests/better-auth/scope-generations.test.ts": "T03.01 scope-generations suite: runs on the five BA_TEST_* island URLs and exercises server/src/enterprise/tenancy (store/scope-gate/revocation) through Bun SQL; registered by the task through writeManifest with payload.task T03.01"
   }
 }
