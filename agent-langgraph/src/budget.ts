@@ -242,7 +242,9 @@ export class RunBudgetLedger {
    * Called with the full message list the call would see: the projected input is the
    * last call's measured input plus a conservative estimate of the messages added
    * since, which is why refusing happens here rather than after the provider has been
-   * paid for the same prompt a second time.
+   * paid for the same prompt a second time. The caps are examined in a fixed order —
+   * model steps, then input, then total, then output — so a call that would cross
+   * several at once records the first cap it reaches.
    */
   beginModelStep(messages: readonly BaseMessage[]): number {
     if (this.stopReason !== null) {
