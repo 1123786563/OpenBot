@@ -276,6 +276,32 @@ describe("#427 rotation: single-token revocation", () => {
     expect(c.revoke(SESSION_ID, candidate)).toBe(false);
   });
 
+  test("#650: revoke and verify refuse the SAME mac frames — the 43-char charset test is a shape bound, not a length bound", () => {
+    // A 43-char base64url string is 32 bytes only when it is the canonical
+    // encoding; Node's decoder silently accepts hostile trailing bits, so
+    // these parse as a different length (or not at all) while passing the
+    // charset test revoke used to rely on alone. revoke now runs verify's
+    // decodeStrict + MAC_BYTES pair as well, so the two gates agree on
+    // every frame — the precondition for "a value this deployment's shape
+    // would refuse never reaches the index lookup".
+    const c = codec();
+    const pass = c.issue(SESSION_ID, USER_ID);
+    // The token slot must name a LIVE entry, or the assert below would pass
+    // on the index miss instead of on the MAC gate it exists to pin.
+    const [, token] = pass.split(".");
+    for (const macPart of ["_".repeat(43), "-".repeat(43)]) {
+      const candidate = `v1.${token}.${macPart}`;
+      expect(c.verify(SESSION_ID, candidate)).toBeNull();
+      expect(c.revoke(SESSION_ID, candidate)).toBe(false);
+      // The decisive part: a refused frame must not have retired the pass.
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    // The canonical 32-byte MAC still reaches the index: a known token
+    // revokes, so #650 tightened the frame without touching the semantics.
+    expect(c.revoke(SESSION_ID, pass)).toBe(true);
+    expect(c.revoke(SESSION_ID, pass)).toBe(false);
+  });
+
   test("a legal value revokes true once; the second revoke is a clean false (N4-01 shape suite)", () => {
     const c = codec();
     const pass = c.issue(SESSION_ID, USER_ID);

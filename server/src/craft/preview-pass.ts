@@ -288,20 +288,36 @@ export function createPreviewPassCodec(
       ) {
         return false;
       }
-      // Frame rules aligned with verify's SHAPE (N4-01): macPart charset
-      // (43 chars = the 32-byte MAC's base64url), strict token decode, and
-      // the TOKEN_BYTES length — a value this deployment's own shape would
-      // refuse never reaches the index lookup, so revoke===true keeps
-      // meaning "a well-formed pass this deployment could have minted".
+      // Frame rules aligned with verify's SHAPE (N4-01, and to verify's full
+      // byte-level strictness since #650): macPart charset (43 chars = the
+      // 32-byte MAC's base64url), strict token decode, and the TOKEN_BYTES
+      // length — a value this deployment's own shape would refuse never
+      // reaches the index lookup, so revoke===true keeps meaning "a
+      // well-formed pass this deployment could have minted".
       // The MAC itself is deliberately NOT re-verified — the index, not the
       // signature, is revocation's authority (a known token retires its own
-      // entry; proving the deployment key buys nothing here).
+      // entry; proving the deployment key buys nothing here). #650 changed
+      // only HOW STRICTLY the MAC's FRAME is checked, never that the MAC's
+      // VALUE is checked at all: revoke remains non-cryptographic.
       const parts = candidate.split(".");
       if (parts.length !== 3) return false;
       const [version, token, macPart] = parts;
       if (version !== PREVIEW_PASS_VERSION) return false;
       if (!/^[A-Za-z0-9_-]+$/.test(token)) return false;
+      // #650: the charset test above is a SHAPE bound, not a length bound —
+      // a 43-char base64url string is only 32 bytes when it is the
+      // canonical encoding, and Node's decoder silently accepts hostile
+      // trailing bits ("_"*43 decodes to a different length, "-"*43 does
+      // not round-trip at all). verify therefore ran the same charset
+      // test and then pinned the bytes with decodeStrict + MAC_BYTES;
+      // revoke now runs the identical pair. Behavior is unchanged for
+      // every value a mint can produce (canonically encoded, exactly 32
+      // bytes), and the two gates now refuse exactly the same frames —
+      // which is what lets the sentence below be TRUE rather than merely
+      // intended.
       if (!/^[A-Za-z0-9_-]{43}$/.test(macPart)) return false;
+      const mac = decodeStrict(macPart);
+      if (mac === null || mac.length !== MAC_BYTES) return false;
       const tokenBytes = decodeStrict(token);
       if (tokenBytes === null || tokenBytes.length !== TOKEN_BYTES)
         return false;
