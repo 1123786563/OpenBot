@@ -22,6 +22,7 @@ pub mod pull_metrics;
 pub mod quiet;
 pub mod saved_intent;
 pub mod self_hosted_intelligence;
+pub mod sign_in;
 pub mod stack;
 pub mod supervise;
 pub mod telemetry;

@@ -1,12 +1,8 @@
 //! Employee identity from the customer's OpenBot authority. Intelligence credentials are separate.
 use crate::problem::{Connection, Problem};
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
-use rand::RngCore;
 use reqwest::blocking::Client;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -54,11 +50,6 @@ fn problem(message: &str) -> Problem {
 }
 fn auth_problem(message: &str) -> Problem {
     problem(message).connection(Connection::Organization)
-}
-fn random() -> String {
-    let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 // MT098: pub so the bin crate's sign-in gate compares the same normalized origin the session
@@ -267,9 +258,9 @@ pub fn begin(root: &Path, authority_url: &str, provider: &str) -> Result<String,
         .local_addr()
         .map_err(|_| problem("OpenBot could not read its callback address."))?
         .port();
-    let state = random();
-    let verifier = random();
-    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    // The pair is minted by the shared sign-in seam, so this flow and the model flows sign
+    // their requests with exactly the same construction.
+    let (verifier, state, challenge) = crate::sign_in::pkce_pair();
     let (sender, receiver) = mpsc::channel();
     let cancelled = Arc::new(AtomicBool::new(false));
     let cancel_listener = cancelled.clone();
@@ -639,7 +630,12 @@ mod tests {
     #[test]
     fn credential_namespace_the_session_lives_in_its_own_organizations_namespace() {
         let root = crate::test_support::temp_root("org-session-namespace");
-        store_session(&root, "https://company-a.example", &saved_session("https://company-a.example")).unwrap();
+        store_session(
+            &root,
+            "https://company-a.example",
+            &saved_session("https://company-a.example"),
+        )
+        .unwrap();
         // The owning authority recovers its own session…
         let recalled = recall_session(&root, "https://company-a.example")
             .unwrap()
@@ -659,12 +655,22 @@ mod tests {
     fn credential_namespace_a_legacy_flat_session_migrates_into_its_authoritys_namespace() {
         let root = crate::test_support::temp_root("org-session-legacy-migrate");
         let authority = "https://company-a.example";
-        crate::vault::remember(&root, SAVED_COOKIE, &encoded_session(&saved_session(authority)))
-            .unwrap();
+        crate::vault::remember(
+            &root,
+            SAVED_COOKIE,
+            &encoded_session(&saved_session(authority)),
+        )
+        .unwrap();
         // The first recovery reads the MT098-era flat entry and moves it into the namespace.
-        let recalled = recall_session(&root, authority).unwrap().expect("legacy session recovered");
+        let recalled = recall_session(&root, authority)
+            .unwrap()
+            .expect("legacy session recovered");
         assert_eq!(recalled.authority, authority);
-        assert_eq!(crate::vault::recall(&root, SAVED_COOKIE).unwrap(), None, "the flat copy is retired once the namespace holds the session");
+        assert_eq!(
+            crate::vault::recall(&root, SAVED_COOKIE).unwrap(),
+            None,
+            "the flat copy is retired once the namespace holds the session"
+        );
         assert_eq!(
             crate::credential_namespace::org_recall(
                 &root,
@@ -696,7 +702,9 @@ mod tests {
         );
         // The legacy record is neither adopted nor destroyed: it still belongs to A.
         assert_eq!(
-            crate::vault::recall(&root, SAVED_COOKIE).unwrap().as_deref(),
+            crate::vault::recall(&root, SAVED_COOKIE)
+                .unwrap()
+                .as_deref(),
             Some(legacy.as_str())
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -727,20 +735,37 @@ mod tests {
     #[test]
     fn credential_namespace_a_stored_session_makes_its_authority_the_installations_current() {
         let root = crate::test_support::temp_root("org-session-current");
-        store_session(&root, "https://company-a.example", &saved_session("https://company-a.example")).unwrap();
+        store_session(
+            &root,
+            "https://company-a.example",
+            &saved_session("https://company-a.example"),
+        )
+        .unwrap();
         assert_eq!(
-            crate::credential_namespace::current_organization(&root).unwrap().as_deref(),
+            crate::credential_namespace::current_organization(&root)
+                .unwrap()
+                .as_deref(),
             Some("https://company-a.example")
         );
         // A later completion moves the current mark; the earlier session stays in its own
         // namespace for its own organization (cleanup, not overwrite, retires it).
-        store_session(&root, "https://company-b.example", &saved_session("https://company-b.example")).unwrap();
+        store_session(
+            &root,
+            "https://company-b.example",
+            &saved_session("https://company-b.example"),
+        )
+        .unwrap();
         assert_eq!(
-            crate::credential_namespace::current_organization(&root).unwrap().as_deref(),
+            crate::credential_namespace::current_organization(&root)
+                .unwrap()
+                .as_deref(),
             Some("https://company-b.example")
         );
         assert_eq!(
-            recall_session(&root, "https://company-a.example").unwrap().unwrap().authority,
+            recall_session(&root, "https://company-a.example")
+                .unwrap()
+                .unwrap()
+                .authority,
             "https://company-a.example"
         );
         std::fs::remove_dir_all(&root).unwrap();
