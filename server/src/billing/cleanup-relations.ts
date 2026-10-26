@@ -61,12 +61,29 @@ export type RemovalReason =
   | "attribution_basis_of_kept_records"
   | "deletion_blocked_by_retained_reference";
 
-/** What makes a touched row untouchable: its class, its anchor role, or its evidence role. */
+/**
+ * What makes a touched row untouchable: its class, its anchor role, its evidence role — or
+ * the ownership it verifiably carries. The last eight are the R2-F1 (REV-2 → FIX-2b)
+ * ownership kinds: the first six name a 0163 upstream child row by the ownership its own
+ * columns prove (an unrecognized account shape fails closed as unknown-owner), the seventh
+ * names a row whose deletion would destroy one of them, and the eighth (R2B-F1, REV-2b)
+ * names a funding row (credit_grants/credit_ledger/credit_reservations) whose customer key
+ * carries a protected 0163 row — the ownership verdict travels to the key's money with or
+ * without an attribution chain.
+ */
 export type ProtectionKind =
   | "retained"
   | "external_subscription_anchor"
   | "external_payment_order_open"
-  | "attribution_kept";
+  | "attribution_kept"
+  | "company_account"
+  | "personal_account"
+  | "quarantined_account"
+  | "unknown_account_shape"
+  | "company_payment_mapping"
+  | "company_call_attribution"
+  | "protects_owned_record"
+  | "funding_of_protected_key";
 
 /** How deleting the candidate would touch the row. */
 export type ImpactEffect =
@@ -251,6 +268,12 @@ const TABLE_ORDER = [
 type TableSpec = {
   /** The column the classification's recordId names. */
   idColumn: string;
+  /**
+   * A composite primary key, when the table's identity is one: the probe renders the
+   * recordId by joining these in order. Absent for every single-column key, where
+   * `idColumn` already names the identity.
+   */
+  idColumns?: string[];
   /** The columns a probe of this table must return for traversal and live-state reads. */
   columns: string[];
 };
@@ -316,6 +339,89 @@ const TABLE_SPECS: Record<string, TableSpec> = {
   credit_recovery_items: {
     idColumn: "id",
     columns: ["id", "reservation_id", "state"],
+  },
+  // Added by migration 0176 (BP06 #374): the account-level resolution registry — one
+  // append-only row per authorized disposal command an operator made on a payer account,
+  // written by billing/account-resolution.ts and deleted by nothing (it is the idempotency
+  // answer a replayed command reads and the refund ceiling's prior history). Not a legacy
+  // billing table — the classification never names it, and 21.5's estate wall keeps
+  // refusing it as a deletion target — but its CASCADE edge into billing_customers is an
+  // edge a customer candidate's deletion travels, so the probe universe knows the child
+  // like the 0145/0147 one-hop entries above.
+  billing_account_resolutions: {
+    idColumn: "id",
+    columns: ["id", "external_customer_id"],
+  },
+  // The rest of the upstream children 0163 (#436) restored around the estate, same rule:
+  // the catalog's edges out of the estate are edges a candidate's deletion travels, so the
+  // probe universe knows each child. But these three are NOT the deleted record's own test
+  // data (R2-F1, REV-2): the account's own columns carry its registered ownership verdict
+  // (status/account_type/tenant_id/owner_user_id/quarantine_reason — the schema declares
+  // the three legal shapes, but the shipped 0163 migration creates no CHECK, so the
+  // ownership pass below is the runtime enforcement), the mapping row IS the company
+  // relationship, and the attribution's NOT NULL tenant/workspace/principal make every row
+  // a company call fact. The ownership pass below reads exactly these columns and verifies
+  // each row before it may ride a cascade.
+  billing_credit_accounts: {
+    idColumn: "id",
+    columns: [
+      "id",
+      "external_customer_id",
+      "status",
+      "account_type",
+      "tenant_id",
+      "owner_user_id",
+      "quarantine_reason",
+    ],
+  },
+  billing_customer_mappings: {
+    idColumn: "tenant_id",
+    columns: ["tenant_id", "external_customer_id"],
+  },
+  billing_call_attributions: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "tenant_id", "workspace_id", "principal_id"],
+  },
+  // The settlement and job family the later migrations added: NO ACTION children of the
+  // holds and their ledger lines (0179/0181/0188/0189/0194/0195/0197-0199, 0204-0207) —
+  // probed for the blockedBy pass, protected by table in protectionOf — plus the
+  // dimension breakdown (0189), a CASCADE child of a ledger line that rides its deletion.
+  async_jobs: {
+    idColumn: "job_id",
+    columns: ["job_id", "reservation_id"],
+  },
+  batch_jobs: {
+    idColumn: "batch_id",
+    columns: ["batch_id", "reservation_id"],
+  },
+  credit_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_async_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_speech_settlement_details: {
+    idColumn: "reservation_id",
+    columns: ["reservation_id", "ledger_id"],
+  },
+  credit_batch_settlement_details: {
+    idColumn: "item_id",
+    columns: ["item_id", "ledger_id"],
+  },
+  realtime_units: {
+    idColumn: "unit_id",
+    columns: ["unit_id", "reservation_id"],
+  },
+  tool_call_charges: {
+    idColumn: "charge_id",
+    columns: ["charge_id", "reservation_id"],
+  },
+  credit_settlement_dimension_breakdown: {
+    idColumn: "ledger_id",
+    idColumns: ["ledger_id", "dimension"],
+    columns: ["ledger_id", "dimension"],
   },
 };
 
@@ -419,6 +525,127 @@ const DECLARED_EDGES: {
     parentColumn: "id",
     onDelete: "cascade",
   },
+  // 0176 (BP06 #374): the resolution registry's account key, the one-hop shape again —
+  // with the difference that its rows are operator decision records, not the deleted
+  // account's own test data: protectionOf keeps them off every candidate's cascade.
+  {
+    childTable: "billing_account_resolutions",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  // 0163 (#436) restored the rest of the upstream children around the estate: the account
+  // state, the tenant mapping and the per-call attribution ride CASCADE edges like the
+  // estate's own children do.
+  {
+    childTable: "billing_credit_accounts",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_customer_mappings",
+    childColumn: "external_customer_id",
+    parentTable: "billing_customers",
+    parentColumn: "external_id",
+    onDelete: "cascade",
+  },
+  {
+    childTable: "billing_call_attributions",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
+  // The settlement and job family (0179/0181/0188/0189/0194/0195/0197-0199): NO ACTION
+  // children — the database refuses the parent's deletion while they stand, which is the
+  // blockedBy pass's own subject — plus the dimension breakdown's CASCADE.
+  {
+    childTable: "async_jobs",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "batch_jobs",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_async_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_async_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_speech_settlement_details",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_speech_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_batch_settlement_details",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "realtime_units",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "tool_call_charges",
+    childColumn: "reservation_id",
+    parentTable: "credit_reservations",
+    parentColumn: "id",
+    onDelete: "no_action",
+  },
+  {
+    childTable: "credit_settlement_dimension_breakdown",
+    childColumn: "ledger_id",
+    parentTable: "credit_ledger",
+    parentColumn: "id",
+    onDelete: "cascade",
+  },
 ];
 
 const ON_DELETE_BY_CODE: Record<string, RelationFkEdge["onDelete"]> = {
@@ -435,6 +662,43 @@ const KEEP_CLASSES: ReadonlySet<RowClass> = new Set<RowClass>([
   "unknown_owner",
 ]);
 
+/**
+ * Out-of-estate children a candidate's deletion can reach but must never take with it —
+ * protected by table, because the classification cannot name rows in tables it does not
+ * cover (its verdicts are the legacy estate's four, nothing else):
+ *
+ * - `billing_account_resolutions` (0176, BP06 #374): the append-only registry of every
+ *   authorized disposal command an operator made on a payer account — the idempotency
+ *   answer a replayed command reads and the refund ceiling's prior history. Each row is
+ *   AC18's "financial history", not the deleted account's own test data, and nothing in
+ *   the system ever deletes one: no candidate's cascade may either.
+ * - the settlement and job family (`async_jobs`, `batch_jobs`, `credit_settlement_details`,
+ *   `credit_async_settlement_details`, `credit_speech_settlement_details`,
+ *   `credit_batch_settlement_details`, `realtime_units`, `tool_call_charges`): NO ACTION
+ *   children of the holds and their ledger lines. The database itself refuses the parent's
+ *   deletion while they stand, and the executor deletes only estate rows children-first —
+ *   so a candidate blocked behind out-of-estate rows is pulled here, in the manifest, with
+ *   the blocking rows named, instead of being discovered as an FK error mid-execution.
+ *
+ * The dimension breakdown rides its ledger line's cascade: it is the ledger row's own
+ * per-dimension split, so it is cleanable exactly when the ledger line itself is. The three
+ * 0163 children are NOT — they are verified per row by the ownership pass below (R2-F1,
+ * REV-2 → FIX-2b): a registered account, the company payment binding and the company call
+ * attribution carry ownership in their own columns, and the cascade of a legacy-classified
+ * parent may never take them.
+ */
+const PROTECTED_OUTSIDE_ESTATE: ReadonlySet<string> = new Set([
+  "billing_account_resolutions",
+  "async_jobs",
+  "batch_jobs",
+  "credit_settlement_details",
+  "credit_async_settlement_details",
+  "credit_speech_settlement_details",
+  "credit_batch_settlement_details",
+  "realtime_units",
+  "tool_call_charges",
+]);
+
 /** A probed legacy row: its identity and the columns traversal needs. */
 type ProbeRow = {
   table: string;
@@ -443,6 +707,29 @@ type ProbeRow = {
 };
 
 const rowKey = (table: string, recordId: string) => `${table}/${recordId}`;
+
+/** Render raw query rows of `table` as probe rows, per its registered spec. */
+function toProbeRows(
+  table: string,
+  rows: Record<string, unknown>[],
+): ProbeRow[] {
+  const spec = TABLE_SPECS[table];
+  if (!spec) throw new Error(`no probe spec for legacy table ${table}`);
+  return rows.map((row) => ({
+    table,
+    recordId: (spec.idColumns ?? [spec.idColumn])
+      .map((column) => String(row[column]))
+      .join("/"),
+    cols: Object.fromEntries(
+      spec.columns.map((column) => [
+        column,
+        row[column] === null || row[column] === undefined
+          ? null
+          : String(row[column]),
+      ]),
+    ),
+  }));
+}
 
 /** One row probe: the named columns of every row of `table` whose `whereColumn` equals `value`. */
 async function probeRows(
@@ -461,18 +748,27 @@ async function probeRows(
       FROM ${sql.identifier(table)}
       WHERE ${sql.identifier(whereColumn)} = ${value}`,
   );
-  return rows.map((row) => ({
-    table,
-    recordId: String(row[spec.idColumn]),
-    cols: Object.fromEntries(
-      spec.columns.map((column) => [
-        column,
-        row[column] === null || row[column] === undefined
-          ? null
-          : String(row[column]),
-      ]),
-    ),
-  }));
+  return toProbeRows(table, rows);
+}
+
+/**
+ * Every row of `table` as probe rows — the R2-F1 ownership pass's full-table read. Same
+ * fail-closed spec gate as probeRows: the probe universe never silently widens.
+ */
+async function scanTableRows(
+  tx: Transaction,
+  table: string,
+): Promise<ProbeRow[]> {
+  const spec = TABLE_SPECS[table];
+  if (!spec) throw new Error(`no probe spec for legacy table ${table}`);
+  const rows = await tx.execute<Record<string, unknown>>(
+    sql`SELECT ${sql.join(
+      spec.columns.map((column) => sql.identifier(column)),
+      sql`, `,
+    )}
+      FROM ${sql.identifier(table)}`,
+  );
+  return toProbeRows(table, rows);
 }
 
 /** Deterministic sort: 21.2's table order, then record id. */
@@ -686,6 +982,171 @@ export async function evaluateCleanupRelations(
     const classOf = (row: ProbeRow): RowClass =>
       recordClassByKey.get(rowKey(row.table, row.recordId)) ?? "unclassified";
 
+    // --- 0163 ownership verification (R2-F1, REV-2 -> FIX-2b). These rows live outside
+    // the twelve-table estate, so 21.2 cannot classify them. Their own columns are the
+    // authoritative ownership facts instead; a legacy payer_accounts mapping on the same
+    // customer key is never allowed to overrule them.
+    const ownershipProtectionByKey = new Map<string, ProtectionKind>();
+    const ownershipRowByKey = new Map<string, ProbeRow>();
+    const protect = (row: ProbeRow, protection: ProtectionKind): boolean => {
+      const key = rowKey(row.table, row.recordId);
+      if (ownershipProtectionByKey.has(key)) return false;
+      ownershipProtectionByKey.set(key, protection);
+      ownershipRowByKey.set(key, row);
+      return true;
+    };
+    const tableTouchesEstate = (table: string) =>
+      edges.some(
+        (edge) => edge.childTable === table || edge.parentTable === table,
+      );
+    const scanReachableTable = (table: string) =>
+      tableTouchesEstate(table)
+        ? scanTableRows(tx, table)
+        : Promise.resolve([]);
+    const present = (value: string | null) => value !== null && value !== "";
+    const testUserIds = new Set(classification.evidenceInput.testUserIds);
+
+    for (const account of await scanReachableTable("billing_credit_accounts")) {
+      const status = account.cols.status;
+      const accountType = account.cols.account_type;
+      const tenantId = account.cols.tenant_id;
+      const ownerUserId = account.cols.owner_user_id;
+      const quarantineReason = account.cols.quarantine_reason;
+      let protection: ProtectionKind | null;
+      if (
+        status === "active" &&
+        accountType === "company" &&
+        present(tenantId) &&
+        ownerUserId === null &&
+        quarantineReason === null
+      ) {
+        protection = "company_account";
+      } else if (
+        status === "quarantined" &&
+        accountType === null &&
+        tenantId === null &&
+        ownerUserId === null &&
+        present(quarantineReason)
+      ) {
+        protection = "quarantined_account";
+      } else if (
+        status === "active" &&
+        accountType === "personal" &&
+        tenantId === null &&
+        present(ownerUserId) &&
+        quarantineReason === null
+      ) {
+        // A personal account follows the existing obsolete-test estate semantics only when
+        // its actual owner is in this run's explicit test-user registry. Otherwise it is
+        // personal financial history and stays. This is evidence, never a name guess.
+        protection = testUserIds.has(ownerUserId ?? "")
+          ? null
+          : "personal_account";
+      } else {
+        // The schema declares row-shape CHECKs for the legal shapes, but the shipped 0163
+        // migration creates none — this unknown_account_shape branch is the runtime
+        // enforcement: unreadable ownership fails closed instead of inheriting the legacy
+        // parent class.
+        protection = "unknown_account_shape";
+      }
+      if (protection) protect(account, protection);
+    }
+
+    for (const mapping of await scanReachableTable(
+      "billing_customer_mappings",
+    )) {
+      // This table is the company's unique payment-Customer relationship, not a legacy
+      // test mapping. Every row is company financial history by table contract.
+      protect(mapping, "company_payment_mapping");
+    }
+
+    for (const attribution of await scanReachableTable(
+      "billing_call_attributions",
+    )) {
+      // tenant_id/workspace_id/principal_id are probed and are all NOT NULL under 0163's
+      // composite FKs: every row is a company call-accounting fact. Even a historical
+      // malformed row stays protected — malformed ownership cannot be evidence for deletion.
+      protect(attribution, "company_call_attribution");
+    }
+
+    // The shelter closure, walked UP the catalog's own edges from every ownership-protected
+    // row: a row whose deletion would cascade-delete, SET NULL-mutate or stand
+    // NO ACTION/RESTRICT-blocked by a protected row shelters it and is untouchable in
+    // turn. The SET NULL direction is what keeps a company-attributed hold's settlement
+    // ledger (and the grant its settlement pointer names) intact when the ledger is a
+    // candidate of its own — R2-F1 repro B. The walk is FK-precise: unrelated rows of the
+    // same legacy key stay cleanable.
+    const frontier: ProbeRow[] = [...ownershipRowByKey.values()].sort(
+      (a, b) => {
+        const ka = rowKey(a.table, a.recordId);
+        const kb = rowKey(b.table, b.recordId);
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+      },
+    );
+    while (frontier.length > 0) {
+      const row = frontier.pop();
+      if (!row) break;
+      for (const edge of edges) {
+        if (edge.childTable !== row.table) continue;
+        const value = row.cols[edge.childColumn];
+        if (value === null || value === undefined) continue;
+        for (const parentRow of await probeRows(
+          tx,
+          edge.parentTable,
+          edge.parentColumn,
+          value,
+        )) {
+          if (protect(parentRow, "protects_owned_record")) {
+            frontier.push(parentRow);
+          }
+        }
+      }
+    }
+
+    // R2B-F1 (REV-2b): the ownership verdict belongs to the customer key, not to the
+    // attribution chain. A protected 0163 row that names a customer key — the account rows
+    // above, or the company payment mapping — proves a current owner for that key; the
+    // funding rows written under it are that owner's financial history whether or not a
+    // billing_call_attributions row exists yet (AC18: company financial history stays
+    // intact). Keys with no protected 0163 row — the pure legacy estate — keep their
+    // funding rows fully cleanable. After the closure, so rows the FK-precise walk already
+    // keeps keep their protects_owned_record naming and only the unattributed rows are
+    // named by the new kind.
+    const ownedCustomerKeys = new Set<string>();
+    for (const row of ownershipRowByKey.values()) {
+      const customerKey = row.cols.external_customer_id;
+      if (customerKey) ownedCustomerKeys.add(customerKey);
+    }
+    for (const table of [
+      "credit_grants",
+      "credit_ledger",
+      "credit_reservations",
+    ] as const) {
+      for (const row of await scanReachableTable(table)) {
+        if (ownedCustomerKeys.has(row.cols.external_customer_id ?? "")) {
+          protect(row, "funding_of_protected_key");
+        }
+      }
+    }
+
+    // A protected ledger line takes its per-dimension split rows with it by CASCADE — pin
+    // them explicitly so the manifest names the exact dimension identities that survive,
+    // not only the parent ledger.
+    const protectedLedgerIds = new Set(
+      [...ownershipRowByKey.values()]
+        .filter((row) => row.table === "credit_ledger")
+        .map((row) => row.recordId),
+    );
+    if (protectedLedgerIds.size > 0) {
+      for (const dimension of await scanReachableTable(
+        "credit_settlement_dimension_breakdown",
+      )) {
+        if (protectedLedgerIds.has(dimension.cols.ledger_id ?? "")) {
+          protect(dimension, "protects_owned_record");
+        }
+      }
+    }
+
     /** Live in-flight duty: a reserved or unknown-result hold (06.8), or an allocation of one. */
     const isLiveInFlight = (row: ProbeRow) => {
       if (row.table === "credit_reservations") {
@@ -867,6 +1328,9 @@ export async function evaluateCleanupRelations(
           : "external_payment_order_open";
       }
       if (mappingKeptIds.has(key)) return "attribution_kept";
+      const ownershipProtection = ownershipProtectionByKey.get(key);
+      if (ownershipProtection) return ownershipProtection;
+      if (PROTECTED_OUTSIDE_ESTATE.has(row.table)) return "retained";
       if (KEEP_CLASSES.has(classOf(row)) || isLiveInFlight(row))
         return "retained";
       return null;
@@ -1010,6 +1474,19 @@ export async function evaluateCleanupRelations(
         candidate.row,
       );
       const retainedImpact: RetainedImpact[] = [];
+      // A candidate can itself carry a newer ownership verdict than 21.2's legacy mapping
+      // (R2-F1). Name that conflict as an impact on the root, so relations removes it and
+      // the fresh 21.5 guard refuses it with the same reviewable reason.
+      const rootProtection = ownershipProtectionByKey.get(key);
+      if (rootProtection) {
+        retainedImpact.push({
+          table: candidate.row.table,
+          recordId: candidate.row.recordId,
+          effect: "cascade_delete",
+          protection: rootProtection,
+          class: classOf(candidate.row),
+        });
+      }
       for (const row of closure) {
         const protection = protectionOf(row);
         if (protection) {
