@@ -316,10 +316,12 @@ test("an in-budget run dials under its contract, delivers, and settles its hold 
     expect(delivered.map((event) => event.type)).toContain("RUN_FINISHED");
     expect(delivered.map((event) => event.type)).not.toContain("CUSTOM");
 
-    // The model really streamed from the scripted provider, capped to the contract's output
-    // budget on the provider's side of the call.
+    // The model really streamed from the scripted provider, capped on the provider's
+    // side of the call. The cap is the contract's output budget MINUS the projected
+    // input the ledger reserves against the shared total (ocrfix-d addaf7b5d):
+    // totalTokens 8_000 − projectedInput 2_182 = 5_818 for this fixture's first call.
     expect(provider.calls).toHaveLength(1);
-    expect(provider.calls[0]?.max_tokens).toBe(Number(POLICY_TOKENS));
+    expect(provider.calls[0]?.max_tokens).toBe(5_818);
 
     // The hold was taken for this run and settles as an unknown cost, as before — the
     // contract bounds what was spent; it does not price it. The idempotency key carries a
