@@ -26,8 +26,11 @@
 -- pg_constraint and acts only on the exact legacy name `<table>_pkey`; a database that already
 -- carries the target name (every fresh chain, and any database this migration already ran on)
 -- matches nothing and the block does nothing. A table that does not exist at all is skipped
--- rather than raising, so a partially built database is not wedged here. Renaming a primary
--- key constraint also renames its backing index, and foreign keys point at the index rather
+-- rather than raising, so a partially built database is not wedged here. A table whose primary
+-- key carries neither name fails loudly, the 0064/0087 guard convention: the deployment
+-- migrator swallows NOTICE (server/scripts/migrate.ts pins onnotice: () => {}), so anything
+-- quieter is invisible on the only path that deploys this file. Renaming a primary key
+-- constraint also renames its backing index, and foreign keys point at the index rather
 -- than at the constraint name, so no dependent object needs touching.
 --
 -- After this runs, `select conname from pg_constraint where contype = 'p' and conrelid in
@@ -88,9 +91,12 @@ BEGIN
       RAISE NOTICE 'ocrfix-1: renamed %.% to %',
         target.table_name, legacy_name, target.target_name;
     ELSE
-      -- Neither name is the primary key. Not a shape this migration authored, so say so instead
-      -- of guessing: an operator reading the log can then look at the table directly.
-      RAISE NOTICE 'ocrfix-1: % has no primary key named % or %; left untouched',
+      -- Neither name is the primary key: not a shape this chain authored. Fail loudly, the
+      -- 0064/0087 guard convention — the deployment migrator (server/scripts/migrate.ts) runs
+      -- with onnotice: () => {}, so a NOTICE here is invisible on the only path that deploys
+      -- this file. The message names the table and both candidate names; the operator settles
+      -- the live constraint by hand before re-running.
+      RAISE EXCEPTION 'ocrfix-1: % has no primary key named % or %; settle the live constraint name by hand, then re-run migrations',
         target.table_name, legacy_name, target.target_name;
     END IF;
   END LOOP;

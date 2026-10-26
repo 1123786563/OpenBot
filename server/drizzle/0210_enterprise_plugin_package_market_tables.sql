@@ -6,11 +6,12 @@
 -- (enterprise_package_grant_pk / enterprise_package_link_pk / enterprise_package_expert_pk /
 -- enterprise_run_package_pin_pk in server/src/db/schema/enterprise-plugin-packages.ts) originally
 -- shipped with anonymous PRIMARY KEY clauses, landing as <table>_pkey and forking the constraint
--- names from the mirror with no anchor for name-based ALTER/DROP. Rewritten in place within the
--- no-external-deployments window (entered main 2026-10-25).
+-- names from the mirror with no anchor for name-based ALTER/DROP. #652 rewrote them in place
+-- believing the no-external-deployments window was still open; it was not (the rewrite entered
+-- main 2026-10-25, after origin/main had already carried the older revision out).
 --
--- OCRfix-1 (OCR-5/OCR-6, 2026-10-26): that window is closed — origin/main already carried this
--- revision — so the in-place rewrite alone would be a silent fork. Every table below now names its
+-- OCRfix-1 (OCR-5/OCR-6, 2026-10-26): that window is closed — origin/main already carried the
+-- older revision — so the in-place rewrite alone would be a silent fork. Every table below now names its
 -- primary key after the authoritative DDL (scripts/multitenancy/migrate-test.ts PKG02/PKG03/PKG04,
 -- the same names the drizzle mirror generates):
 --   enterprise_package_plans_tenant_id_id_pk / enterprise_package_revisions_tenant_id_install_id_revision_pk
