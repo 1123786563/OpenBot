@@ -2,6 +2,14 @@
 -- by the wave merges (fd62295a14, a789f6a438, 0453ed6b9c, f45a87104f) but never generated:
 -- 32 tables / 294 columns absent from every fresh deployment (db-drift-check FAIL, 294 problems).
 --
+-- #652 (2026-10-26): the four tables whose drizzle config declares a NAMED primary key
+-- (enterprise_package_grant_pk / enterprise_package_link_pk / enterprise_package_expert_pk /
+-- enterprise_run_package_pin_pk in server/src/db/schema/enterprise-plugin-packages.ts) originally
+-- shipped with anonymous PRIMARY KEY clauses, landing as <table>_pkey and forking the constraint
+-- names from the mirror with no anchor for name-based ALTER/DROP. Rewritten in place within the
+-- no-external-deployments window (entered main 2026-10-25): any surviving database that applied
+-- the earlier revision keeps the default names under watermark semantics — rebuild it.
+--
 -- Expand-only, mirroring the 0163/#436 discipline: only CREATE TABLE / CREATE INDEX /
 -- ADD CONSTRAINT FK. No existing table or column is touched. Column names, types, nullability
 -- and defaults, plus index and FK definitions, are transcribed from the drizzle table configs of
@@ -94,7 +102,7 @@ CREATE TABLE "enterprise_package_grants" (
   "granted_by" text NOT NULL,
   "granted_at" timestamp with time zone NOT NULL DEFAULT now(),
   "revoked_at" timestamp with time zone,
-  PRIMARY KEY ("tenant_id", "install_id", "generation", "bot_id", "resource_id", "tool_ref")
+  CONSTRAINT "enterprise_package_grant_pk" PRIMARY KEY ("tenant_id", "install_id", "generation", "bot_id", "resource_id", "tool_ref")
 );
 
 
@@ -111,7 +119,7 @@ CREATE TABLE "enterprise_package_experts" (
   "expert_template_ref" text NOT NULL,
   "created_by" text NOT NULL,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "agent_id")
+  CONSTRAINT "enterprise_package_expert_pk" PRIMARY KEY ("tenant_id", "agent_id")
 );
 
 
@@ -129,7 +137,7 @@ CREATE TABLE "enterprise_package_resource_links" (
   "connector_install_id" text,
   "expert_template_ref" text,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "install_id", "revision", "resource_id")
+  CONSTRAINT "enterprise_package_link_pk" PRIMARY KEY ("tenant_id", "install_id", "revision", "resource_id")
 );
 
 
@@ -167,7 +175,7 @@ CREATE TABLE "enterprise_run_package_pins" (
   "grant_revision" integer NOT NULL,
   "allowed_resource_ids" jsonb NOT NULL,
   "pinned_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "run_id", "attempt_generation", "install_id")
+  CONSTRAINT "enterprise_run_package_pin_pk" PRIMARY KEY ("tenant_id", "run_id", "attempt_generation", "install_id")
 );
 
 
