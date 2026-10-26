@@ -39,6 +39,7 @@ import {
   createRunBindingStore,
 } from "../src/ai-observability/bindings";
 import { opikConfigFromEnv } from "../src/ai-observability/config";
+import { runUpstreamIdentity } from "../src/ai-observability/opik-http";
 import { createOpikHealthService } from "../src/ai-observability/health";
 import type { OpikReadiness } from "../src/ai-observability/health";
 import { createModelSpanRecorder } from "../src/ai-observability/model-span";
@@ -126,7 +127,9 @@ async function main(): Promise<void> {
   }
   const database = createDatabase(databaseUrl);
   const bindings = createRunBindingStore(database);
-  const observerBindings = createObserverRunBindingGate(bindings);
+  const observerBindings = createObserverRunBindingGate(bindings, {
+    port: () => port,
+  });
 
   const healthService = createOpikHealthService({ config: () => config, port });
   const recorder = createModelSpanRecorder({
@@ -212,7 +215,7 @@ async function main(): Promise<void> {
   submitBoth();
   await healthService.drain();
   let stats = healthService.writeStats();
-  for (let round = 0; round < 3 && stats.accepted < 2; round++) {
+  for (let round = 0; round < 3 && (stats.accepted < 2 || stats.completed < 2); round++) {
     readiness = await awaitReady();
     submitBoth();
     await healthService.drain();
@@ -249,12 +252,20 @@ async function main(): Promise<void> {
           };
     });
 
+    // #21: an empty page is NOT a terminal state — writes are async and upstream
+    // read visibility lags. Poll until content is non-empty (or the poll window
+    // closes) so a timing hiccup doesn't read as "zero traces".
     const traces = await poll("listTraces", async () => {
       const r = await port.listTraces(scope, { projectId, size: 100 });
-      return r.outcome === "ok"
-        ? { ok: true as const, value: r.value }
-        : { ok: false as const, detail: r.outcome };
+      if (r.outcome !== "ok") return { ok: false as const, detail: r.outcome };
+      if (r.value.content.length === 0) return { ok: false as const, detail: "empty page (read visibility lag)" };
+      return { ok: true as const, value: r.value };
     });
+    // #17: single-page size=100 truncation — if total exceeds content.length,
+    // the absence proof covers only the first page. Fail explicitly.
+    if (traces.total > traces.content.length) {
+      throw new Error(`listTraces truncated: total=${traces.total} > content=${traces.content.length} (absence proof would cover only page 1)`);
+    }
     for (const trace of traces.content as readonly OpikTraceRow[]) {
       // A failed span read is NOT "this trace has no spans": poll like the
       // other read-backs, and on persistent failure record the trace id and
@@ -265,10 +276,14 @@ async function main(): Promise<void> {
           traceId: trace.id,
           size: 100,
         });
-        return r.outcome === "ok"
-          ? { ok: true as const, value: r.value }
-          : { ok: false as const, detail: r.outcome };
+        if (r.outcome !== "ok") return { ok: false as const, detail: r.outcome };
+        if (r.value.content.length === 0) return { ok: false as const, detail: "empty page (read visibility lag)" };
+        return { ok: true as const, value: r.value };
       });
+      // #17: same truncation guard for spans.
+      if (spans.total > spans.content.length) {
+        throw new Error(`listSpans truncated for trace ${trace.id}: total=${spans.total} > content=${spans.content.length} (absence proof would cover only page 1)`);
+      }
       rows.push({ traceId: trace.id, spans: spans.content as unknown });
     }
   } catch (error) {
@@ -309,10 +324,18 @@ async function main(): Promise<void> {
   } catch (error) {
     bindingReadError = error instanceof Error ? error.message : String(error);
   }
+  // C2: materialization chain must have been exercised — the gate now receives
+  // { port: () => port }, so the run's upstream identity is created upstream and
+  // reconciled into the binding. Assert the binding carries a non-null opikTraceId
+  // matching runUpstreamIdentity(runChainId).opikTraceId; without it the gate
+  // would have taken the binding-only path (the tests' seam), not the production
+  // shape the header claims.
+  const expectedOpikTraceId = runUpstreamIdentity(runChainId).opikTraceId;
   const bindingEstablished =
     bindingReadError === null &&
     bindingRead !== null &&
     bindingRead.traceId === runChainId &&
+    bindingRead.opikTraceId === expectedOpikTraceId &&
     bindingRead.capability === "detailed" &&
     bindingRead.state === "unknown";
 
