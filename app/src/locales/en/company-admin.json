@@ -23,6 +23,23 @@
       "description": "The company admin surface did not answer. Try again in a moment."
     }
   },
+  "shell": {
+    "noCompany": {
+      "title": "You're not in a company yet",
+      "description": "An admin has to invite you. Your company and its teams show up here after you join."
+    },
+    "noTeam": {
+      "title": "No team yet",
+      "description": "An admin has to add you to a team. You can still open company settings."
+    },
+    "revoked": {
+      "title": "Your access to that company ended",
+      "description": "Choose another company, or ask an admin to add you back."
+    },
+    "companySettings": "Company settings",
+    "chooseScope": "Choose a company or team",
+    "reauth": "This company asks for an extra sign-in first. That isn't available in OpenBot yet."
+  },
   "people": {
     "title": "People",
     "description": "Every member of this company — nothing else. Actions submit to this company and are audited by the server.",

@@ -23,6 +23,23 @@
       "description": "公司管理面未响应，请稍后重试。"
     }
   },
+  "shell": {
+    "noCompany": {
+      "title": "你还不属于任何公司",
+      "description": "需要管理员邀请你加入。加入后，你的公司与团队会显示在这里。"
+    },
+    "noTeam": {
+      "title": "还没有团队",
+      "description": "需要管理员把你加入一个团队。公司设置仍可打开。"
+    },
+    "revoked": {
+      "title": "你对这家公司的访问已结束",
+      "description": "请选择其他公司，或请管理员重新把你加入。"
+    },
+    "companySettings": "公司设置",
+    "chooseScope": "选择公司或团队",
+    "reauth": "这家公司需要先完成一次额外登录。OpenBot 暂未提供这个步骤。"
+  },
   "people": {
     "title": "人员",
     "description": "本公司的全部成员——只有本公司。管理动作提交到本公司范围并由服务端留审计。",
