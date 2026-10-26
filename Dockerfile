@@ -140,16 +140,6 @@ COPY toolkit toolkit
 COPY examples examples
 COPY agent-computer/src agent-computer/src
 COPY agent-computer/package.json agent-computer/package.json
-# PKG11 (#470, Spec §12): the plugin-package marketplace ships WITH the image.
-# `plugins/marketplace.json` is the release registry the server reads at boot
-# (its default path resolves here), and `plugins/.artifacts/sha256/<digest>/`
-# are the immutable, content-addressed package bytes every install pins. The
-# dot-directory matters: COPY carries hidden entries unless ignored, and
-# `.dockerignore` does not exclude it. A deployment that mounts or overrides
-# the index still points `OPENBOT_PLUGIN_MARKETPLACE_INDEX` at its own file;
-# without this COPY the default boot answers an empty marketplace instead.
-COPY plugins plugins
-
 # `bun run composio:smoke`, because the manifest copied above carries that entry and the question it
 # answers belongs here rather than on a laptop: it asks what THIS deployment's Composio key can see,
 # and that key is the one in this container's environment. It reads `server/src/plugins/composio*`,
@@ -258,6 +248,28 @@ ENV AGENT_COMPUTER_URL=http://127.0.0.1:4100
 # the root of the filesystem and the failure surfaces as EACCES on the first navigation.
 RUN mkdir -p /workspace /profiles \
   && chown -R pwuser:pwuser /workspace /profiles /app
+
+# PKG11 (#470, Spec §12): the plugin-package marketplace ships WITH the image.
+# `plugins/marketplace.json` is the release registry the server reads at boot
+# (its default path resolves here), and `plugins/.artifacts/sha256/<digest>/`
+# are the immutable, content-addressed package bytes every install pins. The
+# dot-directory matters: COPY carries hidden entries unless ignored, and
+# `.dockerignore` does not exclude it. A deployment that mounts or overrides
+# the index still points `OPENBOT_PLUGIN_MARKETPLACE_INDEX` at its own file;
+# without this COPY the default boot answers an empty marketplace instead.
+#
+# AFTER THE chown ABOVE, AND OWNED BY `apiuser`, NOT `pwuser`. The generic
+# `chown -R pwuser:pwuser /app` would hand the marketplace index — the
+# withdrawal gate's source of truth — to the Bot's shell user, and a Bot
+# could then rewrite the index (withdrawn→published) behind the API's back.
+# Kept out of that chown and owned by `apiuser` instead: the API (as apiuser)
+# needs to create its `plugins/<index>.lock` directory beside the index, and
+# pwuser only ever reads it through the gateway.
+#
+# shortcut: /app itself stays pwuser-owned, so a Bot could still rename
+# plugins/ aside wholesale; closing that means shrinking the /app chown
+# itself, which is a larger change than this fix was scoped for.
+COPY --chown=apiuser:apiuser plugins plugins
 
 # Where the embedded database answers, when there is one. Overridden by whatever you set, so an
 # external database needs no special case: set DATABASE_URL and EMBEDDED_POSTGRES stays off.

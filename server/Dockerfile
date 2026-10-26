@@ -61,7 +61,10 @@ COPY examples examples
 # PKG11 (#470, Spec §12): the plugin-package marketplace ships WITH the image
 # (see the root Dockerfile's note) — the release index plus the immutable
 # content-addressed artifacts the server's default boot path resolves.
-COPY plugins plugins
+# `--chown` because the runtime user below opens `plugins/<index>.lock` in
+# that directory (acquireReleaseLock mkdir); a root-owned COPY would make
+# every dispatch fail-closed with EACCES once the marketplace is enabled.
+COPY --chown=openbot:openbot plugins plugins
 
 # The marketplace's governance sources: `server/src/plugin-packages/deployment-facts.ts`
 # imports `scripts/plugin-packages/index-file` as a value (the withdrawal-facts gate

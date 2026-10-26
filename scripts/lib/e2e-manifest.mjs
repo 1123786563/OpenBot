@@ -65,7 +65,7 @@ export const EXPLICIT_GROUPS = {
    * PKG02's end-to-end suite lives in server/tests/ but applies the same MT task chain
    * (MT004→…→PKG04 through ./multitenancy/support/package-install) against the dedicated
    * enterprise test database, and plugin-install's fixture builds on MT004/MT008 and applies
-   * MT031 in the same database. Keeping all six in one process is what makes the chain's
+   * MT031 in the same database. Keeping all thirteen in one process is what makes the chain's
    * reconcile→apply sequential instead of two e2e workers racing one schema, and the name
    * carries the island so `MT_TEST_DATABASE_URL` routing in tests/bun-suites.test.ts applies.
    */
@@ -90,20 +90,43 @@ export const EXPLICIT_GROUPS = {
      */
     "server/tests/multitenancy/package-dispatch.test.ts",
     /*
+     * PKG10 (#469) and the #459 T13-fix-2 suite: the unknown-effect and
+     * crash-recovery faces read and settle the same dispatched rows the chain
+     * above leaves behind (lease evidence, orphan settlement), so they run in
+     * this sequential process rather than a racing sibling.
+     */
+    "server/tests/multitenancy/package-unknown.test.ts",
+    "server/tests/multitenancy/package-crash-recovery.test.ts",
+    /*
+     * PKG06 (#465): the upgrade/rollback suite seeds the same installed chain
+     * (applyPackageTasks) and its plan-preview reads it, same dedicated
+     * database, same one-sequential-process rule.
+     */
+    "server/tests/multitenancy/package-upgrade.test.ts",
+    /*
      * PKG09 (#468): the entrypoint suite seeds the same chain (applyPackageTasks)
      * against the same dedicated database, so it runs in this one sequential
      * process after the dispatch/upgrade suites rather than as a racing sibling.
      */
     "server/tests/multitenancy/package-entrypoints.test.ts",
+    /*
+     * PKG07 (#466) and PKG08 (#467): the lifecycle and withdraw suites install
+     * the chain and then assert on its rows (tombstones, dispatch blocking);
+     * the withdraw fixture also reads the same catalogue index.
+     */
+    "server/tests/multitenancy/package-lifecycle.test.ts",
+    "server/tests/multitenancy/package-withdraw.test.ts",
     "server/tests/package-install.integration.test.ts",
   ],
   /*
-   * PKG09 (#468): the store/executor face of the entry support matrix. It reads
-   * the shared dev test database for the audit/plugin tables (like PKG05's call
-   * suite) and needs no enterprise roles, so it gets its own group.
+   * PKG11 (#470): the legacy-migration drill drives the dry-run→apply CLI
+   * against the enterprise test database (same environment as the chain
+   * above, reached through server/src/db/client), but it does not join the
+   * chain — it seeds its own pre-migration state. Its own group, still named
+   * after the island so the `MT_TEST_DATABASE_URL` routing applies.
    */
-  "server/tests/package-entrypoints": [
-    "server/tests/package-entrypoints.test.ts",
+  "server/tests/multitenancy/package-migration": [
+    "server/tests/multitenancy/package-migration.test.ts",
   ],
   /*
    * MT032's suite was written against the e2e (Node) layer while its fixture chain reaches
@@ -113,6 +136,30 @@ export const EXPLICIT_GROUPS = {
    */
   "server/tests/multitenancy/tool-invocation": [
     "server/tests/multitenancy/tool-invocation.test.ts",
+  ],
+  /*
+   * PKG05 (#464): the store-side `pkg:` branch of callTool. It reads the
+   * shared dev test database through server/src/db/client (like the
+   * entrypoints store suite below) and needs no enterprise roles, so it gets
+   * its own group.
+   */
+  "server/tests/package-dispatch-call": [
+    "server/tests/package-dispatch-call.test.ts",
+  ],
+  /*
+   * PKG08 (#467): the native face of deployment-side publish/withdraw —
+   * CLI-level Bun.spawn cases against the on-disk index, its lock and its
+   * artifacts, with no database — so it neither shares the multitenancy
+   * environment nor the chain's database at all.
+   */
+  "server/tests/package-index-ops": ["server/tests/package-index-ops.test.ts"],
+  /*
+   * PKG09 (#468): the store/executor face of the entry support matrix. It reads
+   * the shared dev test database for the audit/plugin tables (like PKG05's call
+   * suite) and needs no enterprise roles, so it gets its own group.
+   */
+  "server/tests/package-entrypoints": [
+    "server/tests/package-entrypoints.test.ts",
   ],
 };
 
