@@ -15,8 +15,11 @@
 //   d. an observation-only wrapper never gates, meters, or decides a run's outcome;
 //   e. a run shape that still cannot be observed is COUNTED and warned, never silent.
 
+import { createHmac } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { BaseEvent } from "@ag-ui/client";
+import { EventType } from "@ag-ui/client";
 import { LLMock } from "@copilotkit/aimock";
 import { context, trace } from "@opentelemetry/api";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
@@ -27,19 +30,35 @@ import type { OpikObservationWrite } from "../src/ai-observability/health";
 import { createModelSpanRecorder } from "../src/ai-observability/model-span";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
 import {
+  canonicalRemoteEndpoint,
+  createRemoteBudgetContractResolver,
+  createRemoteRunBudgetGate,
+  remoteBudgetCaps,
+} from "../src/ai-observability/remote-run";
+import {
   type ObservationScope,
   resolveObservationScope,
 } from "../src/ai-observability/scope";
+import type { AgentFetch } from "../src/channels/stall-guard";
 import {
   type BuiltinModelSpanFact,
+  buildAgents,
   builtInAgentConfiguration,
   builtinObservationGapForTests,
   meteredModelForTests,
+  REMOTE_BUDGET_RECEIPT_EVENT,
+  type RemoteBudgetContractCaps,
+  type RemoteRunFact,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
   setBuiltinModelSpanObserver,
+  setBuiltinToolStepObserver,
   setModelUsageGate,
   setModelUsageMeter,
+  setRemoteBudgetContractResolver,
+  setRemoteRunBudgetGate,
+  setRemoteRunObserver,
+  standingRoleMessage,
   UnmeterableModelError,
   withUsageMeterForTests,
 } from "../src/copilot";
@@ -663,5 +682,264 @@ describe("shapes that still cannot be observed are counted, never silent (F5E1-F
       if (originalBase === undefined) delete process.env.OPENAI_BASE_URL;
       else process.env.OPENAI_BASE_URL = originalBase;
     }
+  });
+});
+
+// OCR R2 #14 (C3) — the run's own fact array is bounded, not only its tool cells. The cell
+// ceiling capped `toolCells` while every protocol fact still landed in `events` unbounded,
+// so one hostile or looping endpoint could grow this server's resident memory per run
+// without limit. The cap here pins three things at once: the fact array stays at its
+// ceiling (never past it), settlement still reads the terminal the endpoint actually sent
+// (the outcome is never a casualty of the bound), and the tool cells keep their own,
+// independent 128 ceiling while the events ceiling is 256.
+describe("remote run facts stay bounded under an event-spamming endpoint (OCR R2 #14)", () => {
+  /** The deployment token both ends hold: the endpoint's MAC key and this server's check. */
+  const SECRET = `synthetic-${"managed-token"}`;
+  /** The policy's approved per-run token ceiling; the caps and the receipt both derive from it. */
+  const POLICY_TOKENS = 1_000_000;
+  const MAX_MODEL_STEPS = 8;
+  const ENDPOINT = "https://cap.test/ag-ui";
+  const CAPS = remoteBudgetCaps(
+    POLICY_TOKENS,
+    MAX_MODEL_STEPS,
+  ) as RemoteBudgetContractCaps;
+  /** The events ceiling `copilot.ts` holds (REMOTE_EVENTS_CAP); the cells' own is 128. */
+  const EVENTS_CAP = 256;
+  const CELL_CAP = 128;
+  /** Comfortably past both ceilings: enough proposals to fill the cells and the facts. */
+  const PROPOSALS = 400;
+
+  /** Let the fire-and-forget settlement and the step emission land before assertions read them. */
+  const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 25));
+
+  /** One endpoint receipt, MAC'd the way the budget contract signs it (the dial suite's pin). */
+  function receiptEvent(runId: string): BaseEvent {
+    const receipt = {
+      kind: REMOTE_BUDGET_RECEIPT_EVENT,
+      v: 1,
+      runId,
+      caps: CAPS,
+      usage: {
+        modelSteps: 1,
+        inputTokens: 400,
+        outputTokens: 40,
+        totalTokens: 440,
+      },
+      status: "ok" as const,
+    };
+    const macKey = createHmac("sha256", SECRET)
+      .update("openbot-budget-receipt-mac-v1")
+      .digest("hex");
+    const mac = createHmac("sha256", macKey)
+      .update(
+        [
+          "openbot-budget-receipt",
+          "v=1",
+          `runId=${runId}`,
+          `caps=${CAPS.modelSteps}|${CAPS.inputTokens}|${CAPS.outputTokens}|${CAPS.totalTokens}`,
+          "usage=1|400|40|440",
+          "status=ok",
+        ].join("\n"),
+      )
+      .digest("hex");
+    return {
+      type: "CUSTOM",
+      name: REMOTE_BUDGET_RECEIPT_EVENT,
+      value: { ...receipt, mac },
+    } as unknown as BaseEvent;
+  }
+
+  /** The budget seams with a recording credit writer (the dial suite's harness shape). */
+  function budgetHarness() {
+    const marks: { reservationId: string; reason: string }[] = [];
+    const creditWriter = {
+      async reserveCredits() {
+        return { reserved: true as const, reservationId: "reservation-1" };
+      },
+      async markReservationUnknown(reservationId: string, reason: string) {
+        marks.push({ reservationId, reason });
+      },
+    };
+    const gate = createRemoteRunBudgetGate({
+      creditWriter,
+      resolvePayer: () => ({
+        externalCustomerId: "customer-1",
+        payer: { kind: "personal" as const },
+      }),
+      maximumCents: 5_000,
+      reservationWindowMs: 15 * 60_000,
+      idempotencyPrefix: "usage:",
+      log: { error: () => {}, warn: () => {} },
+      refusals: {
+        gateFailure: () => {
+          const error = new Error("credit_gate_unavailable");
+          error.name = "CreditGateFailureError";
+          return error;
+        },
+        insufficient: () => new Error("credits_exhausted"),
+      },
+    });
+    const resolver = createRemoteBudgetContractResolver({
+      endpoints: new Set([canonicalRemoteEndpoint(ENDPOINT) as string]),
+      sharedSecret: SECRET,
+      maximumTokens: POLICY_TOKENS,
+      maxModelSteps: MAX_MODEL_STEPS,
+    });
+    return { gate, resolver, marks };
+  }
+
+  test("facts stop at the ceiling, settle by the endpoint's real terminal, and tool cells keep their own", async () => {
+    // THE SCRIPT: a legal run whose endpoint spams business tool proposals far past both
+    // ceilings, then reports its receipt and finishes — everything a hostile stream needs
+    // to have grown the run's facts without limit before the cap.
+    const script: BaseEvent[] = [
+      {
+        type: EventType.RUN_STARTED,
+        threadId: "cap-thread",
+        runId: "cap-run",
+      } as BaseEvent,
+    ];
+    for (let i = 0; i < PROPOSALS; i++) {
+      // START opens the proposal fact (and a cell, under its own ceiling); END only
+      // closes the call so the protocol validator lets RUN_FINISHED through — it
+      // opens no fact of its own.
+      script.push({
+        type: EventType.TOOL_CALL_START,
+        toolCallId: `spam-${i}`,
+        toolCallName: `businessCall${i}`,
+      } as unknown as BaseEvent);
+      script.push({
+        type: EventType.TOOL_CALL_END,
+        toolCallId: `spam-${i}`,
+      } as unknown as BaseEvent);
+    }
+    script.push(receiptEvent("cap-run"));
+    script.push({
+      type: EventType.RUN_FINISHED,
+      threadId: "cap-thread",
+      runId: "cap-run",
+    } as BaseEvent);
+
+    const fetch: AgentFetch = async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const event of script) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+            );
+          }
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    const facts: RemoteRunFact[] = [];
+    const steps: { origin: string }[] = [];
+    const { gate, resolver, marks } = budgetHarness();
+    const tracerProvider = new NodeTracerProvider();
+    tracerProvider.register();
+
+    setRemoteRunObserver((fact) => facts.push(fact));
+    setBuiltinToolStepObserver((fact) => {
+      if (fact.origin === "remote-agui") steps.push(fact);
+    });
+    setRemoteRunBudgetGate(gate);
+    setRemoteBudgetContractResolver(resolver);
+    try {
+      const agents = await buildAgents(
+        [
+          {
+            id: "risk",
+            name: "Risk",
+            type: "remote_ag_ui" as const,
+            endpoint: ENDPOINT,
+            headers: { "x-openbot-agent-token": SECRET },
+            standingMessage: standingRoleMessage({
+              id: "risk",
+              name: "Risk",
+              type: "remote_ag_ui" as const,
+              title: "Risk & Compliance",
+              roleDescription: "Investigate policies and controls.",
+            }),
+          },
+        ],
+        { provider: "openai", defaultModel: "test" },
+        null,
+        undefined,
+        async () => [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        fetch,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { userId: "person-1" },
+        undefined,
+        {
+          actorId: "person-1",
+          resolveScope: () =>
+            Promise.resolve(
+              resolveObservationScope({
+                actorId: "person-1",
+                botId: "risk",
+                ownership: "owner",
+                epoch: 1,
+              }),
+            ),
+        },
+      );
+      const agent = agents.risk;
+      if (!agent) throw new Error("buildAgents returned no remote agent");
+      agent.threadId = "cap-thread";
+      await agent.runAgent({ runId: "cap-run" }, { onEvent: () => {} });
+      await flush();
+    } finally {
+      setRemoteRunObserver(undefined);
+      setBuiltinToolStepObserver(undefined);
+      setRemoteRunBudgetGate(undefined);
+      setRemoteBudgetContractResolver(undefined);
+      await tracerProvider.shutdown();
+      trace.disable();
+    }
+
+    // THE FACT ARRAY IS BOUNDED, exactly at the ceiling and never past it: the protocol
+    // facts (first frame, run start) plus 253 proposals fill slots 0..254, and the run's
+    // terminal takes the final slot rather than growing past it.
+    expect(facts).toHaveLength(1);
+    const events = facts[0].events;
+    expect(events.length).toBe(EVENTS_CAP);
+    const types = events.map((event) => event.type);
+    expect(types[0]).toBe("http_first_frame");
+    expect(types[1]).toBe("run_started");
+    expect(types.filter((type) => type === "tool_proposed")).toHaveLength(
+      EVENTS_CAP - 3,
+    );
+    expect(types[types.length - 1]).toBe("success");
+
+    // SETTLEMENT READ THE TERMINAL, not the truncation: the endpoint finished the run and
+    // the hold was marked by that outcome — the fact that the terminal landed past the
+    // proposal ceiling changes nothing about what the person is charged against.
+    expect(marks).toEqual([
+      {
+        reservationId: "reservation-1",
+        reason: "remote_usage_unreported:succeeded",
+      },
+    ]);
+
+    // THE TOOL CELLS KEEP THEIR OWN CEILING: 400 proposals still open exactly the 128
+    // cells the cell cap allows — the events cap neither lowered nor raised it — and
+    // each stayed a proposal the server never executed.
+    expect(steps).toHaveLength(CELL_CAP);
   });
 });

@@ -4942,6 +4942,46 @@ function governedRemoteRun(
         /** A defensive ceiling: an endpoint spamming proposals bounds this run's capture. */
         const REMOTE_TOOL_CELL_CAP = 128;
         let toolCellCapped = false;
+        /**
+         * A defensive ceiling for the whole run fact array (OCR R2 #14): cells were capped
+         * above, but every protocol fact still landed here unbounded, so one hostile stream
+         * could grow this run's resident memory without limit. Past the cap, non-terminal
+         * facts are dropped with one bounded warn while protocol and budget processing run
+         * unchanged; terminal facts still land by taking the final slot, so settle() and the
+         * admission outcome read exactly what the endpoint said.
+         */
+        const REMOTE_EVENTS_CAP = 256;
+        let eventsCappedWarned = false;
+        const pushEvent = (event: RemoteRunEventFact): void => {
+          if (events.length < REMOTE_EVENTS_CAP) {
+            events.push(event);
+            return;
+          }
+          switch (event.type) {
+            case "success":
+            case "error":
+            case "interrupted":
+            case "canceled":
+              // The outcome is never a casualty of the bound: settle() reads the LAST
+              // terminal fact, so this replaces whatever stands at the ceiling and the
+              // newest terminal wins, exactly as it would uncapped.
+              events[events.length - 1] = event;
+              return;
+            default:
+              if (!eventsCappedWarned) {
+                eventsCappedWarned = true;
+                log.warn(
+                  {
+                    type: "remote-run-events-capped",
+                    botId: agent.id,
+                    runId,
+                  },
+                  "remote-run-events-capped: the endpoint's facts exceeded the capture ceiling; further facts are dropped, terminal facts still land",
+                );
+              }
+              return;
+          }
+        };
         const appendRemoteToolArg = (
           cell: { args: string[]; argsLength: number; argsTruncated: boolean },
           delta: string,
@@ -4965,8 +5005,7 @@ function governedRemoteRun(
           if (stepObserver === undefined) return;
           if (scope === null || scope === undefined) return;
           if (traceId === null) return;
-          const parentSpanId =
-            chain.parentSpanId ?? runRootSpanId(traceId);
+          const parentSpanId = chain.parentSpanId ?? runRootSpanId(traceId);
           for (const cell of toolCells.values()) {
             try {
               stepObserver({
@@ -5010,7 +5049,7 @@ function governedRemoteRun(
          * the observer's own `next`, so rxjs tears the upstream down and `finalize` settles.
          */
         const refuseContract = (reason: string): never => {
-          events.push({ type: "error" });
+          pushEvent({ type: "error" });
           throw new Error(`REMOTE_RUN_BUDGET_CONTRACT_VIOLATION: ${reason}`);
         };
         const settle = () => {
@@ -5029,7 +5068,7 @@ function governedRemoteRun(
             // The window closed with nothing terminal: the consumer stopped watching, or the
             // stream was torn down. An observation, never an outcome (T10) — the run may still
             // be executing at the endpoint.
-            events.push({ type: "disconnected" });
+            pushEvent({ type: "disconnected" });
           }
           const outcomeByTerminal: Record<string, RemoteRunAdmissionOutcome> = {
             success: "succeeded",
@@ -5129,10 +5168,10 @@ function governedRemoteRun(
             return;
           }
           // The first event of any kind is the evidence the endpoint spoke at all.
-          if (events.length === 0) events.push({ type: "http_first_frame" });
+          if (events.length === 0) pushEvent({ type: "http_first_frame" });
           switch (event.type) {
             case "RUN_STARTED":
-              events.push({ type: "run_started" });
+              pushEvent({ type: "run_started" });
               break;
             case "RUN_FINISHED": {
               if (receipt === null) {
@@ -5147,7 +5186,7 @@ function governedRemoteRun(
                */
               const outcome = (event as { outcome?: { type?: unknown } })
                 .outcome?.type;
-              events.push({
+              pushEvent({
                 type:
                   outcome === "interrupt"
                     ? "interrupted"
@@ -5163,12 +5202,12 @@ function governedRemoteRun(
                   "the endpoint reported an error with no budget receipt",
                 );
               }
-              events.push({ type: "error" });
+              pushEvent({ type: "error" });
               break;
             case "TOOL_CALL_START": {
               const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
               if (typeof toolCallId === "string" && toolCallId.trim() !== "") {
-                events.push({ type: "tool_proposed", toolCallId });
+                pushEvent({ type: "tool_proposed", toolCallId });
                 // R4-03: the proposal as its own observable fact — see the cells above.
                 const name = (event as { toolCallName?: unknown }).toolCallName;
                 const toolName =
@@ -5224,7 +5263,7 @@ function governedRemoteRun(
               // A receipt, which is the only evidence of an execution this path can observe.
               const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
               if (typeof toolCallId === "string" && toolCallId.trim() !== "") {
-                events.push({ type: "tool_executed", toolCallId });
+                pushEvent({ type: "tool_executed", toolCallId });
                 const cell = toolCells.get(toolCallId);
                 if (cell !== undefined) {
                   cell.receiptObserved = true;
@@ -5287,7 +5326,7 @@ function governedRemoteRun(
                     event.type === "canceled",
                 )
               ) {
-                events.push({ type: "error" });
+                pushEvent({ type: "error" });
               }
             },
           }),
