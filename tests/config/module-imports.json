@@ -1360,14 +1360,6 @@
       "reason": "模块级环边 M03 -> M05（M03 与 M05 互相可达）"
     },
     {
-      "source": "server/src/agents/agent-resolver.ts",
-      "target": "server/src/learning/runtime.ts",
-      "category": "cycle",
-      "ticket": "MOD23 (S7 隔离可选 Learning)",
-      "exit_condition": "LEARNING 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔LEARNING 单向化后移除此例外",
-      "reason": "模块级环边 M03 -> LEARNING（M03 与 LEARNING 互相可达）"
-    },
-    {
       "source": "server/src/agents/auth-header.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
@@ -4362,10 +4354,10 @@
     {
       "source": "server/src/learning/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 LEARNING 改走公开出口，使 LEARNING↔M01 单向化后移除此例外",
-      "reason": "模块级环边 LEARNING -> M01（LEARNING 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口，server/src/learning/routes.ts 改走公开出口后移除",
+      "reason": "跨模块深层引用 LEARNING -> M01（环已由 MOD23 出口收拢解开：M03/M05 经 learning/public.ts 改道，M01 不再可达 LEARNING，环边降级为深层引用）"
     },
     {
       "source": "server/src/marketplace/routes.ts",
@@ -4734,14 +4726,6 @@
       "ticket": "MOD12 (S5 工具审批与恢复)",
       "exit_condition": "M08 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M08 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M08（M05 与 M08 互相可达）"
-    },
-    {
-      "source": "server/src/mastra/tools.ts",
-      "target": "server/src/learning/runtime.ts",
-      "category": "cycle",
-      "ticket": "MOD23 (S7 隔离可选 Learning)",
-      "exit_condition": "LEARNING 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔LEARNING 单向化后移除此例外",
-      "reason": "模块级环边 M05 -> LEARNING（M05 与 LEARNING 互相可达）"
     },
     {
       "source": "server/src/mastra/tools.ts",
