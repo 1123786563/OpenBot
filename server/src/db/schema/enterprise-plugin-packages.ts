@@ -967,6 +967,20 @@ export const enterprisePackageDispatches = pgTable(
     /** Redacted outcome facts: effectStatus and the tool receipt status. */
     receiptRef: jsonbDocument("receipt_ref"),
     errorCode: text("error_code"),
+    /**
+     * T13-fix-2 (Codex FC-02): the dispatcher-process lease recorded by the
+     * dispatched CAS — which assembly (process incarnation, a startup uuid)
+     * took the dispatch and the lease window it promised to settle within.
+     * Nullable: prepared rows carry no lease, and rows dispatched before the
+     * column existed stay NULL. The crash recovery treats a dispatched row
+     * whose owner incarnation is NULL or foreign as a dead owner's orphan and
+     * settles it unknown (DISPATCH_CRASH) — never a resend.
+     */
+    ownerIncarnation: text("owner_incarnation"),
+    /** Lease promise window recorded at the CAS; evidence, not a resend trigger. */
+    ownerLeaseExpiresAt: timestamp("owner_lease_expires_at", {
+      withTimezone: true,
+    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -1008,6 +1022,10 @@ export const enterprisePackageDispatches = pgTable(
     check(
       "enterprise_package_dispatch_effect",
       sql`${table.effect} in ('read', 'write')`,
+    ),
+    check(
+      "enterprise_package_dispatch_owner_lease_shape",
+      sql`(${table.ownerIncarnation} is null) = (${table.ownerLeaseExpiresAt} is null) and (${table.ownerIncarnation} is null or char_length(${table.ownerIncarnation}) between 1 and 64)`,
     ),
     uniqueIndex("enterprise_package_dispatch_call_uq").on(
       table.tenantId,

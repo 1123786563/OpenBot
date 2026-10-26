@@ -22,9 +22,15 @@
 //      面——策略/审批门打开前先落 prepared 行并解析票面（effect/schema
 //      digest/连接 generation），策略拒绝转 cancelled，审批挂起保留
 //      prepared，批准后 dispatch 重验全部事实再放行（A07）。
+//   5. T13-fix-2 (Codex FC-02)：派发者进程租约与崩溃恢复。dispatched CAS
+//      同事务落 owner_incarnation/owner_lease_expires_at；owner 缺失或异于
+//      本进程的 dispatched 行是死进程的孤儿，恒经查询面
+//      （listDispatches/inspectDispatch）在读之前结算为 unknown
+//      （DISPATCH_CRASH），绝不自动重发（单写者边界，与 §10 release 锁
+//      单机语义一致；见 settleOrphanedDispatchesWithin）。
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
   type PackageDispatchSummaryDTO,
   PackageDispatchSummaryDTOSchema,
@@ -264,7 +270,12 @@ export interface PackageDispatchService {
       toolCallId: string;
     },
   ): Promise<void>;
-  /** 崩溃/写超时后的 unknown 记账（人工/清扫入口；绝不自动重发）。 */
+  /**
+   * 崩溃/写超时后的 unknown 记账（人工/清扫入口；绝不自动重发）。生产中的
+   * 自动恢复不经过本方法：T13-fix-2 的恢复路径由租约证据驱动，恒经查询面
+   * （listDispatches/inspectDispatch）结算孤儿 dispatched 行（见
+   * settleOrphanedDispatchesWithin）。
+   */
   markUnknown(
     scope: PlatformScope,
     input: {
@@ -333,7 +344,8 @@ export interface PackageDispatchService {
   ): Promise<PackageToolDispatchResult>;
   /**
    * PKG10：本安装的派发台账（脱敏摘要，含 unknown）。跨范围/未知安装
-   * 同形 NOT_AVAILABLE；只读，不触发任何 transport。
+   * 同形 NOT_AVAILABLE；只读，不触发任何 transport。T13-fix-2：本面同时是
+   * 崩溃恢复的生产入口——读之前先按租约证据结算孤儿 dispatched 行。
    */
   listDispatches(
     scope: PlatformScope,
@@ -343,7 +355,8 @@ export interface PackageDispatchService {
   >;
   /**
    * PKG10：单个派发的核对视图——事实 + 证据绑定（原账号/目标/参数摘要）
-   * + 关联回执 + unknown 的不可自动重发原因与恢复门。只读。
+   * + 关联回执 + unknown 的不可自动重发原因与恢复门。T13-fix-2：与台账同
+   * 为崩溃恢复的生产入口（读之前先按租约证据结算孤儿 dispatched 行）。只读。
    */
   inspectDispatch(
     scope: PlatformScope,
@@ -706,6 +719,11 @@ export interface CreatePackageDispatchInput {
    * 注入用（package-unknown.test.ts 的协议路径）。
    */
   readonly vendorQuery?: PackageVendorQueryProtocol;
+  /**
+   * T13-fix-2 (Codex FC-02)：派发者进程租约身份的显式覆盖。缺省取本进程的
+   * PROCESS_INCARNATION；只有测试（同库新装配模拟重启后的新进程）需要传入。
+   */
+  readonly incarnation?: string;
 }
 
 const DEFAULT_VENDOR: PackageVendorCaller = async (access, toolName, args) => {
@@ -727,6 +745,17 @@ const DEFAULT_VENDOR: PackageVendorCaller = async (access, toolName, args) => {
   );
 };
 
+/**
+ * T13-fix-2 (Codex FC-02)：派发者进程租约的身份与窗口。 incarnation 在进程
+ * 内生成（模块加载即进程启动），生产装配每进程恰好一个 dispatch 服务，因此
+ * 本常量即「本进程」的身份；测试以 `incarnation` 注入覆盖来模拟重启后的新
+ * 进程。租约窗口只是崩溃恢复的证据事实（owner 承诺的结算期限），不是自动
+ * 重发的触发器——恢复判定只看 owner incarnation 是否为本进程（单写者边界，
+ * 与 §10 release 锁单机语义一致）。
+ */
+const PROCESS_INCARNATION = randomUUID();
+const OWNER_LEASE_WINDOW_MS = 15 * 60_000;
+
 export function createPackageDispatchService(
   input: CreatePackageDispatchInput,
 ): PackageDispatchService {
@@ -742,6 +771,8 @@ export function createPackageDispatchService(
   const vendorCall: PackageVendorCaller = input.vendorCall ?? DEFAULT_VENDOR;
   // PKG10：查询协议只在显式注册时存在；未注册即「不可核对、不可自动重发」。
   const vendorQuery: PackageVendorQueryProtocol | undefined = input.vendorQuery;
+  // T13-fix-2：本装配的派发者租约身份（见 PROCESS_INCARNATION 注释）。
+  const ownerIncarnation = input.incarnation ?? PROCESS_INCARNATION;
 
   /**
    * 连接/账号访问解析（Spec §9 resolveManagedAccess）。判定面只读、无网络：
@@ -1409,6 +1440,47 @@ export function createPackageDispatchService(
       return operation(tx);
     });
 
+  /**
+   * T13-fix-2 (Codex FC-02)：崩溃恢复路径（生产恢复入口，证据规则 a——
+   * 单写者边界）。把 owner incarnation 缺失（存量行）或异于本装配的
+   * `dispatched` 行按「派发者已死」结算为 unknown（DISPATCH_CRASH 系语义，
+   * 与 markUnknown 同一 SET 形状），绝不自动重发；本装配自己的 in-flight
+   * 行（owner 即本 incarnation）不受影响。仅被恒经查询面
+   * （listDispatches/inspectDispatch）在同一事务内、于读之前调用——台账与
+   * 详情读到的永远先经一次结算，进程重启后第一次台账读即完成恢复。单实例
+   * 部署边界（多进程共享一库时另一存活进程的 in-flight 行会被结算）与 §10
+   * release 锁单机语义一致，见 Run 报告披露。
+   */
+  const settleOrphanedDispatchesWithin = async (
+    tx: DataTransaction,
+    scope: PlatformScope,
+    installId: string,
+  ): Promise<void> => {
+    await tx
+      .update(dispatchRows)
+      .set({
+        state: "unknown",
+        receiptRef: { effectStatus: "unknown" },
+        errorCode: "DISPATCH_CRASH",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(dispatchRows.tenantId, scope.tenantId),
+          eq(dispatchRows.workspaceId, scope.workspaceId),
+          eq(dispatchRows.installId, installId),
+          eq(dispatchRows.state, "dispatched"),
+          // The lease evidence decides: a missing owner (pre-lease row) or a
+          // foreign incarnation means the dispatching process is gone.
+          or(
+            isNull(dispatchRows.ownerIncarnation),
+            ne(dispatchRows.ownerIncarnation, ownerIncarnation),
+          ),
+        ),
+      );
+  };
+
   const accessOf = async (
     tx: DataTransaction,
     scope: PlatformScope,
@@ -1589,7 +1661,16 @@ export function createPackageDispatchService(
             .onConflictDoNothing();
           const dispatched = await tx
             .update(dispatchRows)
-            .set({ state: "dispatched", updatedAt: new Date() })
+            .set({
+              state: "dispatched",
+              // T13-fix-2 (Codex FC-02): the lease evidence rides the SAME
+              // transaction as the CAS — who dispatched (this assembly's
+              // process incarnation) and the settle-by window it promised.
+              // Crash recovery reads exactly these facts.
+              ownerIncarnation,
+              ownerLeaseExpiresAt: new Date(Date.now() + OWNER_LEASE_WINDOW_MS),
+              updatedAt: new Date(),
+            })
             .where(
               and(
                 eq(dispatchRows.tenantId, scope.tenantId),
@@ -1985,6 +2066,9 @@ export function createPackageDispatchService(
         if (!(await installVisibleUnder(tx, scope, rawInput.installId))) {
           return surfaceRefused("NOT_AVAILABLE");
         }
+        // T13-fix-2 (Codex FC-02)：台账读即恢复入口——先结算孤儿 dispatched
+        // 行，本进程重启后第一次台账读即把崩溃行呈现为 unknown。
+        await settleOrphanedDispatchesWithin(tx, scope, rawInput.installId);
         const rows = await tx
           .select(DISPATCH_COLUMNS)
           .from(dispatchRows)
@@ -2020,6 +2104,9 @@ export function createPackageDispatchService(
         if (!(await installVisibleUnder(tx, scope, rawInput.installId))) {
           return surfaceRefused("NOT_AVAILABLE");
         }
+        // T13-fix-2 (Codex FC-02)：详情读同走恢复入口——被查看安装的孤儿
+        // dispatched 行先结算，dead owner 的行不再以 in_flight 形象示人。
+        await settleOrphanedDispatchesWithin(tx, scope, rawInput.installId);
         const [row] = await tx
           .select({
             ...DISPATCH_EVIDENCE_COLUMNS,

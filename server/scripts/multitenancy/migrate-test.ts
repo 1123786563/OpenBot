@@ -2315,6 +2315,35 @@ const PACKAGE_LIFECYCLE_TASK: TaskMigrationSpec = {
 };
 
 /**
+ * PKG11（T13-fix-2，Codex FC-02）：派发者进程租约。expand-only——为
+ * enterprise_package_dispatches 追加派发者租约两列与形状 CHECK：
+ * owner_incarnation（执行 dispatched CAS 的服务实例身份，进程启动时生成的
+ * uuid，随 CAS 同事务落库）与 owner_lease_expires_at（租约承诺窗口，崩溃
+ * 恢复的证据事实）。两列可空：prepared 行无租约；存量 dispatched 行 owner
+ * 为 NULL 或异于当前 incarnation 即视为派发者已死（单写者边界，与 §10
+ * release 锁单机语义一致），恢复路径转 unknown/DISPATCH_CRASH，绝不自动
+ * 重发。不改既有列/约束/策略/授权。
+ */
+const PACKAGE_DISPATCH_LEASE_TASK: TaskMigrationSpec = {
+  id: "PKG11",
+  description:
+    "PKG11（T13-fix-2）：插件包派发者进程租约——dispatches 追加 owner_incarnation/owner_lease_expires_at 两列与形状 CHECK（expand-only，恢复路径的证据事实）。",
+  steps: [
+    {
+      slug: "package_dispatch_owner_lease",
+      impact:
+        "为 enterprise_package_dispatches 追加派发者租约两列：owner_incarnation（执行 dispatched CAS 的进程身份，uuid）与 owner_lease_expires_at（租约承诺窗口）。两列同空同非空（prepared 行与存量行均为 NULL，由恢复路径按孤儿收编转 unknown/DISPATCH_CRASH，绝不自动重发）；incarnation 有长度上限。expand-only，不改既有列/约束/策略。",
+      objects: ["enterprise_package_dispatches"],
+      statements: [
+        'ALTER TABLE "enterprise_package_dispatches" ADD COLUMN "owner_incarnation" text;',
+        'ALTER TABLE "enterprise_package_dispatches" ADD COLUMN "owner_lease_expires_at" timestamp with time zone;',
+        'ALTER TABLE "enterprise_package_dispatches" ADD CONSTRAINT "enterprise_package_dispatch_owner_lease_shape" CHECK (("owner_incarnation" is null) = ("owner_lease_expires_at" is null) and ("owner_incarnation" is null or char_length("owner_incarnation") between 1 and 64));',
+      ],
+    },
+  ],
+};
+
+/**
  * MT042（Issue #85）：平台扫描作用域重建。expand-only——为 MT041 的
  * job_ownership 表追加一条 ob_ent_operator SELECT 策略臂：仅当事务本地上下文
  * app.scan_sweep='on' 时允许跨租户读（平台扫描专用；普通业务事务不设该上
@@ -4656,6 +4685,7 @@ export const TASKS: ReadonlyMap<string, TaskMigrationSpec> = new Map([
   [PACKAGE_EXPERT_TASK.id, PACKAGE_EXPERT_TASK],
   [PACKAGE_DISPATCH_TASK.id, PACKAGE_DISPATCH_TASK],
   [PACKAGE_LIFECYCLE_TASK.id, PACKAGE_LIFECYCLE_TASK],
+  [PACKAGE_DISPATCH_LEASE_TASK.id, PACKAGE_DISPATCH_LEASE_TASK],
   [SCAN_SCOPE_REBUILD_TASK.id, SCAN_SCOPE_REBUILD_TASK],
   [PERSONAL_BOT_TASK.id, PERSONAL_BOT_TASK],
   [CREDENTIAL_LEASE_TASK.id, CREDENTIAL_LEASE_TASK],
