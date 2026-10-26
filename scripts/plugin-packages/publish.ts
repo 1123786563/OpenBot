@@ -49,9 +49,15 @@ export interface PublishReleaseInput {
   readonly version: string;
   readonly artifactDigest: string;
   readonly category: string;
-  /** Default true — the command's own default, explicit in the receipt. */
+  /**
+   * Default true on a first registration; an update inherits the recorded
+   * value when omitted (the §10 withdraw gate).
+   */
   readonly listed?: boolean;
-  /** Default "published" (the index contract's default made explicit here). */
+  /**
+   * Default "published" on a first registration; an update inherits the
+   * recorded state when omitted — reviving a withdrawal is explicit.
+   */
   readonly state?: PackageReleaseState;
 }
 
@@ -85,8 +91,6 @@ export async function publishMarketplaceRelease(
       `category must be a kebab-case id: ${input.category}`,
     );
   }
-  const listed = input.listed ?? true;
-  const state = input.state ?? "published";
   /*
    * Artifact verification happens BEFORE the lock: it is pure reading, and
    * its failure (missing or unverified bytes, a manifest claiming another
@@ -127,6 +131,14 @@ export async function publishMarketplaceRelease(
       packageKey: input.packageKey,
       version: input.version,
     });
+    /*
+     * §10 withdraw gate: an omitted --state/--listed on a re-registration
+     * keeps the recorded values — an unadorned re-publish must not resurrect
+     * a withdrawn or unlisted release. The published/true defaults apply to
+     * a first registration only.
+     */
+    const listed = input.listed ?? existing?.listed ?? true;
+    const state = input.state ?? existing?.state ?? "published";
     const packages = existing
       ? index.packages.map((entry) =>
           entry.packageKey === input.packageKey &&

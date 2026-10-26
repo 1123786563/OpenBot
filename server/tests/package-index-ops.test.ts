@@ -18,8 +18,8 @@
 import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { exportBuiltinPackage } from "../../scripts/plugin-packages/export-builtin";
 import { pathToFileURL } from "node:url";
+import { exportBuiltinPackage } from "../../scripts/plugin-packages/export-builtin";
 import {
   acquireIndexLock,
   type IndexLockHandle,
@@ -273,6 +273,107 @@ describe("PKG08 publish command", () => {
       state: "published",
     });
     expect(index.packages).toHaveLength(1);
+  });
+
+  test("OCR-fix-C (R2-H1): an omitted --state/--listed re-publish inherits the recorded values; explicit --state revives", async () => {
+    await freshIndex();
+    const { digest } = await storeFixturePackage(root, "openbot/demo", "1.0.0");
+    const cliPublish = (extra: string[]) => {
+      const proc = Bun.spawn(
+        [
+          "bun",
+          join(REPO_ROOT, "scripts/plugin-packages/publish.ts"),
+          "--index",
+          indexPath,
+          "--artifact-root",
+          root,
+          "--package",
+          "openbot/demo",
+          "--version",
+          "1.0.0",
+          "--digest",
+          digest,
+          "--category",
+          "productivity",
+          ...extra,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      return (async () => {
+        const exitCode = await proc.exited;
+        const stdout = await new Response(proc.stdout).text();
+        return {
+          exitCode,
+          receipt:
+            exitCode === 0 ? (JSON.parse(stdout) as PublishReceipt) : null,
+          stderr: exitCode === 0 ? "" : stdout,
+        };
+      })();
+    };
+    // 下架（listed=false）后撤回：state=withdrawn、listed=false。
+    const unlist = await cliPublish(["--listed", "false"]);
+    expect(unlist.exitCode).toBe(0);
+    await withdrawMarketplaceRelease({
+      indexPath,
+      packageKey: "openbot/demo",
+      version: "1.0.0",
+    });
+    // ① 省参重跑 publish：§10 撤回闸门——不复活 withdrawn/unlisted。
+    const bare = await cliPublish([]);
+    expect(bare.exitCode).toBe(0);
+    expect(bare.receipt).toMatchObject({
+      action: "updated",
+      state: "withdrawn",
+      listed: false,
+    });
+    expect(await readMarketplaceIndex(indexPath)).toMatchObject({
+      packages: [
+        expect.objectContaining({ state: "withdrawn", listed: false }),
+      ],
+    });
+    // ② 显式 --state published：复活是显式意图，不受继承限制。
+    const revived = await cliPublish(["--state", "published"]);
+    expect(revived.exitCode).toBe(0);
+    expect(revived.receipt).toMatchObject({
+      action: "updated",
+      state: "published",
+      listed: false,
+    });
+    // ③ 新包注册省参仍是 published/true（默认只属于首次注册）。
+    const { digest: otherDigest } = await storeFixturePackage(
+      root,
+      "openbot/other",
+      "1.0.0",
+    );
+    const proc = Bun.spawn(
+      [
+        "bun",
+        join(REPO_ROOT, "scripts/plugin-packages/publish.ts"),
+        "--index",
+        indexPath,
+        "--artifact-root",
+        root,
+        "--package",
+        "openbot/other",
+        "--version",
+        "1.0.0",
+        "--digest",
+        otherDigest,
+        "--category",
+        "productivity",
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const freshExit = await proc.exited;
+    const freshReceipt = JSON.parse(
+      await new Response(proc.stdout).text(),
+    ) as PublishReceipt;
+    expect(freshExit).toBe(0);
+    expect(freshReceipt).toMatchObject({
+      action: "registered",
+      state: "published",
+      listed: true,
+    });
   });
 
   test("a different digest for the same version is refused and leaves the index untouched (A01)", async () => {

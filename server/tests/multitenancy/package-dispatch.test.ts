@@ -989,6 +989,53 @@ describeDb("PKG05 package tool dispatch (real roles)", () => {
   );
 
   itDb(
+    "OCR-fix-C (R2-H3): a duplicate prepare answers the ledger row's facts, never a fresh ticket",
+    async () => {
+      const current = await prepareCase();
+      const toolCallId = `call-${randomUUID()}`;
+      const prepare = (args: Record<string, unknown>) =>
+        dispatch.preparePackageTool(scopeA1, {
+          runId: current.runId,
+          attemptGeneration: 1,
+          toolCallId,
+          ref: toolRefFor(current.installId, "lookup"),
+          args,
+          botId: current.botId,
+        });
+      const first = await prepare({ query: "first-args" });
+      expect(first.outcome).toBe("ticket");
+      if (first.outcome !== "ticket") return;
+
+      // ① 同 toolCallId 换参重入，旧行仍 prepared：票面必须回到台账行的
+      // 事实（argsDigest=旧行值）——票面=台账=transport 三方一致。
+      const retry = await prepare({ query: "changed-second-args" });
+      expect(retry.outcome).toBe("ticket");
+      if (retry.outcome !== "ticket") return;
+      expect(retry.ticket.argsDigest).toBe(first.ticket.argsDigest);
+      expect(retry.ticket.toolRef).toBe(first.ticket.toolRef);
+      expect(retry.ticket.installId).toBe(first.ticket.installId);
+      const ledgerRows = (await setup.$client.unsafe(
+        "select count(*)::int as n from enterprise_package_dispatches where run_id = $1 and tool_call_id = $2",
+        [current.runId, toolCallId],
+      )) as Array<{ n: number }>;
+      expect(ledgerRows[0]?.n).toBe(1);
+
+      // ② 旧行已 dispatched：二次 prepare 是 typed 拒绝，不再发新事实票。
+      vendorBehaviour = async () => ({ text: "ok", isError: false });
+      const dispatched = await dispatch.dispatchPackageTool(
+        scopeA1,
+        first.ticket,
+        { query: "first-args" },
+      );
+      expect(dispatched.outcome).toBe("ok");
+      expect(await prepare({ query: "first-args" })).toEqual({
+        outcome: "refused",
+        code: "DUPLICATE_DISPATCH",
+      });
+    },
+  );
+
+  itDb(
     "an account-bearing connector without the caller's own connection refuses",
     async () => {
       const botId = await seedBot();
