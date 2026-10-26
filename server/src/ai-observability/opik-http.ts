@@ -888,12 +888,18 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
        * Replay-safe materialization (F5E1-F3): the ids this side creates are DERIVED from
        * the run's chain, so a retry after a lost local acknowledgment asks for the very
        * trace the backend already holds. The verified contract has no "already exists"
-       * status, so a client error is not by itself a failure — it is an ambiguity, and the
+       * status, so a conflict is not by itself a failure — it is an ambiguity, and the
        * answer is decided by observation: the creation succeeded exactly when the trace is
-       * observable upstream inside the bounded window. Anything else, including a project
-       * that is itself absent (nothing can corroborate it), stays the failure it was.
+       * observable upstream inside the bounded window.
+       *
+       * C4: only a status that can mean "already exists" earns the read-back — 409 is
+       * the one 4xx with that semantic, and no other code has the evidence. Every other
+       * 4xx is the deterministic refusal it is and returns as itself, never polled into
+       * a retryable timeout. A conflict the window cannot corroborate (the trace never
+       * reads back) keeps the original 409 too: a permanent client refusal is never
+       * rewritten into OPIK_TIMEOUT for the caller to retry.
        */
-      if (response.status >= 400 && response.status < 500) {
+      if (response.status === 409) {
         const resolved = await resolveProject(
           "createTrace",
           scope.key,
@@ -910,8 +916,11 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
               `/v1/private/traces/${encodeURIComponent(input.traceId)}?project_id=${encodeURIComponent(project.id)}`,
             ),
         ]);
-        if (observed !== null) return observed;
-        return { outcome: "ok", value: { traceId: input.traceId } };
+        if (observed === null) return { outcome: "ok", value: { traceId: input.traceId } };
+        if (observed.outcome === "unavailable" && observed.code === "OPIK_TIMEOUT") {
+          return statusFailure("createTrace", response.status);
+        }
+        return observed;
       }
       return statusFailure("createTrace", response.status);
     },
@@ -972,14 +981,34 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
         if (recordedUpstream === null) return span;
         const identity = runUpstreamIdentity(span.traceId);
         if (identity.opikTraceId !== recordedUpstream) return null;
+        /*
+         * C5: a span's carried W3C parent is its real place in the run's chain — the
+         * recorder proved it when it adopted the context — so completion preserves it
+         * and derives the matching Opik parent from the same chain, instead of
+         * flattening every span onto the run root. Only a parent that names nothing
+         * verifiable — missing, self-referential, not a live W3C span id, or the root
+         * itself — falls back to the root this deployment wrote. (A bare 16-hex id
+         * cannot carry a chain; the chain check above is the cross-chain refusal, and
+         * a span that fails it never reaches this line.)
+         */
+        const carried = span.parentSpanId;
+        const keepCarried =
+          carried !== undefined &&
+          HEX16.test(carried) &&
+          !/^0+$/.test(carried) &&
+          carried !== span.spanId &&
+          carried !== identity.rootSpanId;
         return {
           ...span,
-          // Both id channels name the same parent: the run root this deployment wrote.
-          parentSpanId: identity.rootSpanId,
+          // Both id channels name the same parent: the carried one when it holds,
+          // else the run root this deployment wrote.
+          parentSpanId: keepCarried ? carried : identity.rootSpanId,
           opik: {
             traceId: identity.opikTraceId,
             spanId: spanUpstreamId(span.traceId, span.spanId),
-            parentSpanId: identity.rootOpikSpanId,
+            parentSpanId: keepCarried
+              ? spanUpstreamId(span.traceId, carried)
+              : identity.rootOpikSpanId,
           },
         };
       });

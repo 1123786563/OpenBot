@@ -1406,6 +1406,91 @@ describe("the explicit-id identity strategy (F5E1-F3)", () => {
     expect(calls.length).toBe(0);
   });
 
+  test("completion preserves a carried same-chain parent instead of flattening to the root (C5)", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 200 }),
+    );
+    const carried = "118aa9a8465a5f38";
+    const result = await port({ fetch: transport }).writeSpans(trusted, {
+      binding: reconciledBinding,
+      spans: [{ ...derivedSpan, parentSpanId: carried }],
+    });
+    expect(result).toEqual({ outcome: "ok", value: { accepted: true } });
+    const span = JSON.parse(String(calls[0].init.body)).resourceSpans[0]
+      .scopeSpans[0].spans[0];
+    // Both parent channels name the carried parent — the W3C id verbatim, and the
+    // Opik id derived from the same chain, never the run root.
+    expect(span.parentSpanId).toBe(carried);
+    const overrides = Object.fromEntries(
+      span.attributes
+        .filter((attribute: { key: string }) =>
+          attribute.key.startsWith("opik."),
+        )
+        .map((attribute: { key: string; value: { stringValue: string } }) => [
+          attribute.key,
+          attribute.value.stringValue,
+        ]),
+    );
+    expect(overrides).toEqual({
+      "opik.trace_id": identity.opikTraceId,
+      "opik.span_id": spanUpstreamId(chain, derivedSpan.spanId),
+      "opik.parent_span_id": spanUpstreamId(chain, carried),
+    });
+    expect(overrides["opik.parent_span_id"]).not.toBe(identity.rootOpikSpanId);
+  });
+
+  test("a carried parent that names nothing verifiable falls back to the run root (C5)", async () => {
+    // Self-referential, all-zero, and malformed parents carry no provable chain
+    // position: each falls back to the root, the same outcome a missing parent gets.
+    for (const parentSpanId of [
+      derivedSpan.spanId,
+      "0000000000000000",
+      "not-a-span-id",
+    ]) {
+      const { calls, transport } = recorder(
+        () => new Response("", { status: 200 }),
+      );
+      const result = await port({ fetch: transport }).writeSpans(trusted, {
+        binding: reconciledBinding,
+        spans: [{ ...derivedSpan, parentSpanId }],
+      });
+      expect(result).toEqual({ outcome: "ok", value: { accepted: true } });
+      const span = JSON.parse(String(calls[0].init.body)).resourceSpans[0]
+        .scopeSpans[0].spans[0];
+      expect(span.parentSpanId).toBe(identity.rootSpanId);
+      const overrides = Object.fromEntries(
+        span.attributes
+          .filter((attribute: { key: string }) =>
+            attribute.key.startsWith("opik."),
+          )
+          .map(
+            (attribute: { key: string; value: { stringValue: string } }) => [
+              attribute.key,
+              attribute.value.stringValue,
+            ],
+          ),
+      );
+      expect(overrides["opik.parent_span_id"]).toBe(identity.rootOpikSpanId);
+    }
+  });
+
+  test("a carried parent cannot rescue a span of another chain: cross-chain stays drift (C5)", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 200 }),
+    );
+    const foreign = {
+      ...derivedSpan,
+      traceId: "ffffffffffffffffffffffffffffffff",
+      parentSpanId: "118aa9a8465a5f38",
+    };
+    const result = await port({ fetch: transport }).writeSpans(trusted, {
+      binding: reconciledBinding,
+      spans: [foreign],
+    });
+    expect(driftOf(result).reason).toBe("binding_mismatch");
+    expect(calls.length).toBe(0);
+  });
+
   test("a caller-supplied explicit id stays authoritative and untouched", async () => {
     const { calls, transport } = recorder(
       () => new Response("", { status: 200 }),
@@ -1467,10 +1552,37 @@ describe("the explicit-id identity strategy (F5E1-F3)", () => {
     );
   });
 
-  test("an ambiguous create whose trace never reads back is a timeout, never a success", async () => {
+  test("a deterministic 4xx with the project present is the refusal it was, never polled (C4)", async () => {
+    // 400/422 are permanent client refusals, not "already exists": the port must
+    // answer them as themselves — no project resolution, no presence read-back,
+    // and never a retryable OPIK_TIMEOUT.
+    for (const status of [400, 422]) {
+      const { calls, transport } = recorder((call) =>
+        call === 1
+          ? json(status, "{}")
+          : json(200, JSON.stringify({ id: "proj-1", name: locator.project })),
+      );
+      const result = await port({ fetch: transport }).createTrace(trusted, {
+        traceId: identity.opikTraceId,
+        name: okText("run"),
+        startTime: new Date("2026-10-15T03:57:39.074Z"),
+        binding: ownBinding,
+      });
+      expect(result).toEqual({
+        outcome: "upstream_error",
+        operation: "createTrace",
+        code: "OPIK_CLIENT_ERROR",
+        status,
+      });
+      // One exchange: the create. Nothing else was asked.
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  test("a conflict whose trace never reads back keeps its 409, never a retryable timeout (C4)", async () => {
     const { transport } = recorder((call) =>
       call === 1
-        ? json(400, "{}")
+        ? json(409, "{}")
         : call === 2
           ? json(200, JSON.stringify({ id: "proj-1", name: locator.project }))
           : json(404, "{}"),
@@ -1484,14 +1596,17 @@ describe("the explicit-id identity strategy (F5E1-F3)", () => {
       startTime: new Date("2026-10-15T03:57:39.074Z"),
       binding: ownBinding,
     });
+    // The window closed without observing the trace: the conflict stands as the
+    // permanent refusal it was, not a timeout a caller would retry.
     expect(result).toEqual({
-      outcome: "unavailable",
+      outcome: "upstream_error",
       operation: "createTrace",
-      code: "OPIK_TIMEOUT",
+      code: "OPIK_CLIENT_ERROR",
+      status: 409,
     });
   });
 
-  test("an ambiguous create with the project itself absent is the client error it was", async () => {
+  test("a create refused outright is the client error it was, without a corroboration round trip", async () => {
     const { calls, transport } = recorder(() => json(404, "{}"));
     const result = await port({ fetch: transport }).createTrace(trusted, {
       traceId: identity.opikTraceId,
@@ -1499,14 +1614,14 @@ describe("the explicit-id identity strategy (F5E1-F3)", () => {
       startTime: new Date("2026-10-15T03:57:39.074Z"),
       binding: ownBinding,
     });
-    // Nothing can corroborate the trace: the project the create was routed to is
-    // gone, so the creation failure stands as itself.
+    // A 404 has no "already exists" reading: the failure stands as itself and no
+    // presence read-back is even attempted.
     expect(result).toEqual({
       outcome: "upstream_error",
       operation: "createTrace",
       code: "OPIK_CLIENT_ERROR",
       status: 404,
     });
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
   });
 });
