@@ -183,12 +183,29 @@ export function receiptSigningInput(input: {
   ].join("\n");
 }
 
-/** HMAC-SHA256 over the signing input with the secret the deployment and this process share. */
+/**
+ * The receipt's MAC is keyed by a PURPOSE-DERIVED key, not the raw shared secret: the
+ * deployment's token also travels as the HTTP dial's Bearer credential, and one key
+ * serving two purposes lets a MAC oracle be reangled at the bearer role (or the
+ * reverse). Both ends derive `HMAC(secret, label)` as the HMAC key, so a signature is
+ * valid only for receipt signing. The label is part of the contract — the server's
+ * verifier and this package's tests pin it, and a change here breaks every old
+ * signature by design (bump the version suffix when the contract moves).
+ */
+export const BUDGET_RECEIPT_MAC_LABEL = "openbot-budget-receipt-mac-v1";
+
+export function receiptMacKey(secret: string): string {
+  return createHmac("sha256", secret)
+    .update(BUDGET_RECEIPT_MAC_LABEL)
+    .digest("hex");
+}
+
+/** Signs the receipt's MAC over the signing input with the purpose-derived key. */
 export function signReceipt(
   input: Parameters<typeof receiptSigningInput>[0],
   secret: string,
 ): string {
-  return createHmac("sha256", secret)
+  return createHmac("sha256", receiptMacKey(secret))
     .update(receiptSigningInput(input))
     .digest("hex");
 }

@@ -524,6 +524,19 @@ function receiptSigningInput(input: {
 }
 
 const MAC_PATTERN = /^[0-9a-f]{64}$/;
+
+/*
+ * The MAC key is PURPOSE-DERIVED from the shared secret, byte for byte the endpoint's
+ * derivation (`agent-langgraph/src/budget.ts` `receiptMacKey`): the token also travels as
+ * the HTTP dial's Bearer credential, so the raw secret must never key the MAC directly —
+ * a MAC oracle answered here must not be reanglable at the bearer role. The label is part
+ * of the contract both packages pin in their suites.
+ */
+const BUDGET_RECEIPT_MAC_LABEL = "openbot-budget-receipt-mac-v1";
+
+function receiptMacKey(secret: string): string {
+  return createHmac("sha256", secret).update(BUDGET_RECEIPT_MAC_LABEL).digest("hex");
+}
 const wholeNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
@@ -612,7 +625,7 @@ export function verifyRemoteBudgetReceipt(
     usage: resolved,
     status,
   });
-  const computed = createHmac("sha256", expected.secret)
+  const computed = createHmac("sha256", receiptMacKey(expected.secret))
     .update(signingInput)
     .digest();
   const offered = Buffer.from(mac, "hex");

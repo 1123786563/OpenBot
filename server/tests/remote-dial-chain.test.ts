@@ -238,7 +238,12 @@ function scriptedEndpoint() {
       },
       status: "ok" as const,
     };
-    const mac = createHmac("sha256", SECRET)
+    // Purpose-derived key (OCR R5 handoff): HMAC(secret, label), same pin as the
+    // other budget suites — the raw token also travels as the Bearer credential.
+    const macKey = createHmac("sha256", SECRET)
+      .update("openbot-budget-receipt-mac-v1")
+      .digest("hex");
+    const mac = createHmac("sha256", macKey)
       .update(
         [
           "openbot-budget-receipt",

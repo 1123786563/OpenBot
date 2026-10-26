@@ -233,9 +233,15 @@ describe("the receipt's signature, pinned", () => {
     );
   });
 
-  test("the MAC is the HMAC of that literal under the shared token", () => {
+  test("the MAC is the HMAC of that literal under the purpose-derived key", () => {
+    // The pin re-derives the key by hand: HMAC(secret, label) — the same
+    // derivation the server's verifier pins, keyed off the raw shared token
+    // because that token also travels as the dial's Bearer credential.
+    const macKey = createHmac("sha256", "shared")
+      .update("openbot-budget-receipt-mac-v1")
+      .digest("hex");
     expect(signReceipt(body, "shared")).toBe(
-      createHmac("sha256", "shared")
+      createHmac("sha256", macKey)
         .update(receiptSigningInput(body))
         .digest("hex"),
     );
