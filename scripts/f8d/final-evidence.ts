@@ -50,10 +50,21 @@ const need = (a: Args, name: string): string => {
   return value;
 };
 
-function readEnvValue(envFile: string, name: string): string {
-  const text = readFileSync(envFile, "utf8");
-  const match = text.match(new RegExp(`^${name}=(.*)$`, "m"));
-  return match ? match[1].trim() : "";
+// The two markers that discriminate the OpenBot server's contribution to a
+// dial trace: the in-process "remote run" dial span, and the better-auth
+// integration tag on server-exported spans. Deliberately NOT a
+// startsWith("openbot") match: the agent-langgraph process names its own
+// tracer "openbot.agent-langgraph", Opik records that tracer name as
+// metadata.integration, and matching it here would read a langgraph-only
+// trace as joined (R1-E-02; f7e's spanService special-cases that name first).
+// "POST /ag-ui"/"GET /" are likewise the endpoint's own spans — langgraphSide.
+export function isServerSideSpan(sp: {
+  name?: string;
+  metadata?: Record<string, unknown>;
+}): boolean {
+  const integration =
+    (sp.metadata as { integration?: string } | undefined)?.integration ?? "";
+  return String(sp.name ?? "") === "remote run" || integration === "better-auth";
 }
 
 // The F8A derivation, recomputed here independently of the server (the same
@@ -65,6 +76,26 @@ function derivedRemoteRunTraceId(botId: string, runId: string): string {
   return /^0+$/.test(hex.slice(0, 32))
     ? `${"0".repeat(31)}1`
     : hex.slice(0, 32);
+}
+
+// The three-state dial-chain acceptance, over the DERIVED dials only: the sha
+// recompute is meaningful only for origin=derived (an ambient dial continues an
+// ambient chain — shaPinned is null by contract — and ambient dials are
+// disclosed separately in facts.f8a, never judged here). Exported for the
+// minimal self-check in dial-chain-checks.selftest.ts.
+export function dialChainThreeStateLogged(counts: {
+  totalDials: number;
+  derivedCount: number;
+  derivedPinned: number;
+}): Check {
+  return {
+    check: "f8a.dial-chain-three-state-logged",
+    verdict:
+      counts.derivedCount >= 10 && counts.derivedPinned === counts.derivedCount
+        ? "PASS"
+        : "GAP",
+    detail: `${counts.derivedCount} derived dials logged (${counts.derivedPinned} with the sha256(openbot.remote.run:<botId>:<runId>)[0:32] trace recomputed here); ${counts.totalDials - counts.derivedCount} ambient dials logged too and disclosed in facts.f8a (ambient chains carry no derived id to recompute)`,
+  };
 }
 
 function client(state: string, server: string) {
@@ -167,7 +198,6 @@ async function f8abc(a: Args): Promise<void> {
   const projects = await opikGet<{ content?: Array<{ id: string; name: string }> }>(opik, "/v1/private/projects?size=100");
   const projectIdByName = new Map((projects.body?.content ?? []).map((p) => [p.name, p.id]));
 
-  type OpikTrace = { id: string; name?: string; project_id?: string };
   type OpikSpan = { id: string; name?: string; type?: string; parent_span_id?: string | null; metadata?: Record<string, unknown> };
 
   // The authoritative dialTraces: the server logs one remote-run-dial-chain line
@@ -177,7 +207,15 @@ async function f8abc(a: Args): Promise<void> {
     dialLog = readFileSync(a["server-log"], "utf8")
       .split("\n")
       .filter((l) => l.includes("remote-run-dial-chain"))
-      .map((l) => JSON.parse(l));
+      // non-JSON neighbours (multi-line log continuations, plain-text warns)
+      // are skipped, not fatal to the whole command
+      .flatMap((l) => {
+        try {
+          return [JSON.parse(l) as { botId: string; runId: string; origin: string; traceId: string; spanId?: string }];
+        } catch {
+          return [];
+        }
+      });
   }
   const drivenRunIds = new Set(remoteRuns.map((r) => r.runId));
   const drivenDials = dialLog.filter((d) => drivenRunIds.has(d.runId));
@@ -210,7 +248,7 @@ async function f8abc(a: Args): Promise<void> {
     const found = await spansAnywhere(dial.traceId);
     if (found) {
       opikPresent += 1;
-      const serverSide = found.spans.some((sp) => /remote run|POST \/ag-ui|GET \//.test(String(sp.name ?? "")) || (sp.metadata as { integration?: string })?.integration === "better-auth");
+      const serverSide = found.spans.some(isServerSideSpan);
       const langgraphSide = found.spans.some((sp) => String(sp.name ?? "").startsWith("model:") || String(sp.name ?? "").startsWith("chain:") || sp.name === "ag-ui run" || sp.name === "POST /ag-ui");
       if (serverSide && langgraphSide) joinedCross += 1;
       dialRows.push({ runId: dial.runId, origin: dial.origin, dialTraceId: dial.traceId, shaPinned, opikSpans: found.spans.length, project: found.project, serverSide, langgraphSide, joined: serverSide && langgraphSide, bindingTraceId: binding?.opik_trace_id ?? null, bindingTraceEqualsDialTrace: binding ? binding.opik_trace_id?.replaceAll("-", "") === dial.traceId : null });
@@ -219,15 +257,12 @@ async function f8abc(a: Args): Promise<void> {
     }
   }
   const totalDials = drivenDials.length;
-  checks.push({
-    check: "f8a.dial-chain-three-state-logged",
-    verdict: totalDials >= 10 && derivedPinned === totalDials ? "PASS" : "GAP",
-    detail: `${totalDials} driven dials logged; ${derivedPinned} derived with the sha256(openbot.remote.run:<botId>:<runId>)[0:32] trace recomputed here`,
-  });
+  const derivedCount = drivenDials.filter((d) => d.origin === "derived").length;
+  checks.push(dialChainThreeStateLogged({ totalDials, derivedCount, derivedPinned }));
   checks.push({
     check: "f8a.w3c-cross-service-join-100pct",
     verdict: totalDials > 0 && joinedCross === totalDials ? "PASS" : "GAP",
-    detail: `${joinedCross}/${totalDials} driven dials have their dial trace in Opik with both server-side and agent-langgraph spans (F8A closure condition: 100%)`,
+    detail: `${joinedCross}/${totalDials} driven dials (${derivedCount} derived + ${totalDials - derivedCount} ambient) have their dial trace in Opik with both server-side and agent-langgraph spans (F8A closure condition: 100% of every dial, ambient included)`,
   });
   const divergent = dialRows.filter((r) => r.bindingTraceEqualsDialTrace === false).length;
   facts.f8a = {
@@ -250,16 +285,16 @@ async function f8abc(a: Args): Promise<void> {
   if (defRun) {
     const list = await api.getRaw(`/api/ai-observability/bots/${defRun.agentId}/runs`);
     let rows: unknown[] = [];
-    let detailStatus = 0, detailBody: unknown = null, stepsStatus = 0, stepsBody: unknown = null;
+    let detailStatus = 0, stepsStatus = 0;
     const listBody = list.body as { runs?: unknown[] } | null;
     rows = listBody?.runs ?? [];
     const settled = bindings.filter((b) => defRun.loops.some((l) => l.runIds.includes(b.run_id)) && b.state === "completed");
     if (rows.length > 0 && settled.length > 0) {
       const runId = settled[0].run_id;
       const detail = await api.getRaw(`/api/ai-observability/bots/${defRun.agentId}/runs/${runId}`);
-      detailStatus = detail.status; detailBody = detail.body;
+      detailStatus = detail.status;
       const steps = await api.getRaw(`/api/ai-observability/bots/${defRun.agentId}/runs/${runId}/steps`);
-      stepsStatus = steps.status; stepsBody = steps.body;
+      stepsStatus = steps.status;
     }
     const bindingStates = bindings.filter((b) => defRun.loops.some((l) => l.runIds.includes(b.run_id))).map((b) => b.state);
     checks.push({
@@ -693,12 +728,20 @@ async function a11Retention(a: Args): Promise<void> {
   // frozen rows' immutability triggers guard content, not age; they are
   // disabled for the timestamp UPDATE and re-enabled immediately, and that
   // fact is recorded in the evidence below.
-  await sql`update ai_observation_bindings set created_at = now() - interval '2 days' where state <> 'running'`;
-  await sql`update ai_observation_export_jobs set created_at = now() - interval '2 days', settled_at = coalesce(settled_at, now() - interval '2 days')`;
+  // Age only rows inside the sweep window — older rows are already eligible and
+  // re-aging them again only churns rows other evidence may still reference.
+  await sql`update ai_observation_bindings set created_at = now() - interval '2 days' where state <> 'running' and created_at > now() - interval '2 days'`;
+  await sql`update ai_observation_export_jobs set created_at = now() - interval '2 days', settled_at = coalesce(settled_at, now() - interval '2 days') where created_at > now() - interval '2 days'`;
+  // The immutability trigger must never stay disabled: any throw between the
+  // disable and the re-enable (connection drop, constraint) would leave the
+  // evidence database unprotected with no signal.
   await sql`alter table ai_observation_experiments disable trigger ai_observation_experiments_immutable`;
-  await sql`update ai_observation_experiments set created_at = now() - interval '2 days'`;
-  await sql`alter table ai_observation_experiments enable trigger ai_observation_experiments_immutable`;
-  await sql`update ai_observation_datasets set created_at = now() - interval '2 days'`;
+  try {
+    await sql`update ai_observation_experiments set created_at = now() - interval '2 days' where created_at > now() - interval '2 days'`;
+  } finally {
+    await sql`alter table ai_observation_experiments enable trigger ai_observation_experiments_immutable`;
+  }
+  await sql`update ai_observation_datasets set created_at = now() - interval '2 days' where created_at > now() - interval '2 days'`;
   facts.aged = { bindings: binds.length, allDatasets: true, allExperiments: true, allExportJobs: true };
 
   const worker = createObservationRetentionWorker({
@@ -753,7 +796,7 @@ async function a11Retention(a: Args): Promise<void> {
   const datasetUpstream = datasets.map((d) => d.opik_dataset_id).filter(Boolean);
   checks.push({
     check: "a11a.dataset-deletion",
-    verdict: (postDatasets[0] as { n: number }).n === 0 ? (datasetUpstream.length > 0 ? "PASS" : "PASS") : "GAP",
+    verdict: (postDatasets[0] as { n: number }).n === 0 ? "PASS" : "GAP",
     detail: `local datasets left ${(postDatasets[0] as { n: number }).n}; ${datasetUpstream.length} of them carried an upstream opik_dataset_id (${datasetUpstream.length > 0 ? "upstream copy verified gone below" : "local-only by construction — case-review datasets have no upstream mirror, honest boundary"})`,
   });
 
@@ -763,15 +806,19 @@ async function a11Retention(a: Args): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-const command = process.argv[2];
-const a = args(process.argv.slice(3));
-switch (command) {
-  case "f8abc": await f8abc(a); break;
-  case "a7": await a7(a); break;
-  case "a9": await a9(a); break;
-  case "a11-export": await a11Export(a); break;
-  case "a11-retention": await a11Retention(a); break;
-  default:
-    console.error("commands: f8abc | a7 | a9 | a11-export | a11-retention");
-    process.exit(2);
+// import.meta.main guard: dial-chain-checks.selftest.ts imports this file for
+// the exported verdict helper; only a direct run dispatches commands.
+if (import.meta.main) {
+  const command = process.argv[2];
+  const a = args(process.argv.slice(3));
+  switch (command) {
+    case "f8abc": await f8abc(a); break;
+    case "a7": await a7(a); break;
+    case "a9": await a9(a); break;
+    case "a11-export": await a11Export(a); break;
+    case "a11-retention": await a11Retention(a); break;
+    default:
+      console.error("commands: f8abc | a7 | a9 | a11-export | a11-retention");
+      process.exit(2);
+  }
 }

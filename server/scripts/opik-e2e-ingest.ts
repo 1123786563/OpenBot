@@ -33,12 +33,14 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import {
   createObserverRunBindingGate,
   createRunBindingStore,
 } from "../src/ai-observability/bindings";
 import { opikConfigFromEnv } from "../src/ai-observability/config";
 import { createOpikHealthService } from "../src/ai-observability/health";
+import type { OpikReadiness } from "../src/ai-observability/health";
 import { createModelSpanRecorder } from "../src/ai-observability/model-span";
 import type { OpikTraceRow } from "../src/ai-observability/opik-port";
 import {
@@ -67,10 +69,10 @@ function parseArgs(argv: readonly string[]): Args {
   return { baseUrl, apiKey, evidenceDir };
 }
 
+// Crypto-random hex (W3C trace ids must be unique across runs — a Math.random
+// collision would merge two runs into one chain and misattribute evidence).
 const hex = (n: number): string =>
-  Array.from({ length: n }, () =>
-    Math.floor(Math.random() * 16).toString(16),
-  ).join("");
+  randomBytes(Math.ceil(n / 2)).toString("hex").slice(0, n);
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -163,8 +165,6 @@ async function main(): Promise<void> {
     );
   }
 
-  let readiness = await healthService.readiness();
-
   // The bounded write entry fails closed until a probe has actually succeeded (T09), and a
   // refused submit is a counter, never a silent retry. So: wait for readiness, submit both
   // observations, and if the counters show either was refused behind a probe flip, wait out
@@ -198,20 +198,22 @@ async function main(): Promise<void> {
       contentApproval,
     });
   };
-  const awaitReady = async (): Promise<void> => {
-    readiness = await healthService.readiness();
-    for (let i = 0; i < 30 && !readiness.ready; i++) {
+
+  const awaitReady = async (): Promise<OpikReadiness> => {
+    let current = await healthService.readiness();
+    for (let i = 0; i < 30 && !current.ready; i++) {
       await new Promise((res) => setTimeout(res, 2000));
-      readiness = await healthService.readiness();
+      current = await healthService.readiness();
     }
+    return current;
   };
 
-  await awaitReady();
+  let readiness = await awaitReady();
   submitBoth();
   await healthService.drain();
   let stats = healthService.writeStats();
   for (let round = 0; round < 3 && stats.accepted < 2; round++) {
-    await awaitReady();
+    readiness = await awaitReady();
     submitBoth();
     await healthService.drain();
     stats = healthService.writeStats();
@@ -254,14 +256,20 @@ async function main(): Promise<void> {
         : { ok: false as const, detail: r.outcome };
     });
     for (const trace of traces.content as readonly OpikTraceRow[]) {
-      const spans = await port.listSpans(scope, {
-        projectId,
-        traceId: trace.id,
-        size: 100,
+      // A failed span read is NOT "this trace has no spans": poll like the
+      // other read-backs, and on persistent failure record the trace id and
+      // fail the read-back — unread spans must never read as "no leak" (A4).
+      const spans = await poll(`listSpans ${trace.id}`, async () => {
+        const r = await port.listSpans(scope, {
+          projectId,
+          traceId: trace.id,
+          size: 100,
+        });
+        return r.outcome === "ok"
+          ? { ok: true as const, value: r.value }
+          : { ok: false as const, detail: r.outcome };
       });
-      if (spans.outcome === "ok") {
-        rows.push({ traceId: trace.id, spans: spans.value.content as unknown });
-      }
+      rows.push({ traceId: trace.id, spans: spans.content as unknown });
     }
   } catch (error) {
     // Record the honest failure — never a fabricated pass, never a thrown-away run.
@@ -311,7 +319,12 @@ async function main(): Promise<void> {
   const checks = {
     readinessReady: readiness.ready,
     readinessAtEndReady: readinessAtEnd.ready,
-    writeAccepted: stats.accepted >= 2 && stats.droppedFull === 0,
+    // `completed` (not `accepted`): accepted only proves the writes were queued;
+    // completed proves they were performed. With accepted == 2 and no drops,
+    // completed >= 2 is exactly "both observations landed", which is what makes
+    // forbiddenCanariesAbsent non-vacuous — if the secret-bearing write failed
+    // at perform time, its absence from storage would prove nothing.
+    writeAccepted: stats.accepted >= 2 && stats.completed >= 2 && stats.droppedFull === 0,
     readbackSettled: readbackError === null,
     projectResolved: projectId.length > 0,
     safeCanaryInStorage: safeFound,
@@ -392,7 +405,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   console.log(
-    `E2E ingest PASSED project=${locator.project} projectId=${projectId} accepted=${stats.accepted} safeCanaryFound=${safeFound} forbiddenFound=${secretFound.length} bindingState=${bindingRead?.state ?? "absent"}`,
+    `E2E ingest PASSED project=${locator.project} projectId=${projectId} accepted=${stats.accepted} completed=${stats.completed} safeCanaryFound=${safeFound} forbiddenFound=${secretFound.length} bindingState=${bindingRead?.state ?? "absent"}`,
   );
 }
 
