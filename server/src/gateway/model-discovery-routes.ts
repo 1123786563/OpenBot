@@ -58,7 +58,7 @@ import type {
 } from "../bot-services/auth";
 import { requireBotService } from "../bot-services/auth";
 import type { BotServiceStore } from "../bot-services/store";
-import { type ModelRef, modelRefKey } from "./catalog";
+import type { ModelRef } from "./catalog";
 import {
   type GatewayModelCapabilityFilterService,
   gatewayModelCapabilityFilterControls,
@@ -68,7 +68,7 @@ import {
   createEnterpriseGatewayPriceSnapshotStore,
   type GatewayPriceSnapshotStore,
 } from "./price-snapshot";
-import { summarizeCapabilityAvailability } from "./capability-availability";
+import { createModelAccessPublic } from "./public";
 import { speechTailAvailabilityView } from "../billing/speech-tail-availability";
 
 /** The services the route asks; the real mount resolves the gateway ones lazily per request. */
@@ -182,45 +182,30 @@ export function createModelDiscoveryRoutes(
     }
 
     // One decision, 03.8's and only 03.8's; one price read for the display
-    // annotation, the same store the picker annotates from.
-    const [selection, snapshots] = await Promise.all([
-      selectable.listSelectableModels(capabilities, {
-        kind: "bot_service",
-        id: identity.botId,
-      }),
-      priceSnapshots.listLatestPriceSnapshots(),
-    ]);
-    const priceStatusByRef = new Map(
-      snapshots.map((snapshot) => [
-        modelRefKey(snapshot.ref),
-        snapshot.classification.status,
-      ]),
-    );
+    // annotation, the same store the picker annotates from — both asked through
+    // M06's business facade (Issue #628), the one available-model exit this
+    // route now consumes instead of composing the internals itself.
+    const modelAccess = createModelAccessPublic({
+      models: { selectable, priceSnapshots },
+    });
+    const answer = await modelAccess.availableModels({
+      botCapabilities: capabilities,
+      requester: { kind: "bot_service", id: identity.botId },
+    });
 
     // The whole body is the Bot's own business: a capability-mismatched ref
     // is never named, so the mismatch reason cannot appear either.
-    const selectableViews: SelectableModelView[] = selection.selectable.map(
-      (ref) => ({
-        ref,
-        priceStatus: priceStatusByRef.get(modelRefKey(ref)) ?? "unmapped",
-      }),
+    const selectableViews: SelectableModelView[] = answer.selectable.map(
+      (entry) => ({ ref: entry.ref, priceStatus: entry.priceStatus }),
     );
-    const excludedViews: ExcludedModelView[] = selection.excluded
+    const excludedViews: ExcludedModelView[] = answer.excluded
       .filter((entry) => entry.reasonCode !== "model_capability_mismatch")
       .map((entry) => ({ ref: entry.ref, reasonCode: entry.reasonCode }));
 
-    // 11.6 (#301): the three group-11 capabilities' enablement summary — embedding, rerank
-    // and OCR against their own billed dimensions on the same latest snapshots the price
-    // annotations above read. A capability's state and its reason when unavailable are the
-    // summary's own words; unknown never renders as free. Additive to the frozen contract
-    // (the ticket's Produces records the field), and it carries only basis-level facts —
-    // no configuration, no operator identity, no other subject's data.
-    const groupElevenAvailability = summarizeCapabilityAvailability({
-      snapshots: snapshots.map((snapshot) => ({
-        ref: snapshot.ref,
-        dims: snapshot.dims,
-      })),
-    });
+    // 11.6 (#301): the three group-11 capabilities' enablement summary now rides
+    // `answer.capabilityAvailability` (the facade's answer over the same latest
+    // snapshots). This route's wire is unchanged — the field was, and remains,
+    // not part of the response — so the migration neither adds nor removes a key.
 
     return context.json({
       bot: { botId: bot.botId, displayName: bot.displayName },

@@ -28,10 +28,8 @@
  * freeze itself stays durable and the funded retry replays it. Errors keep the house
  * convention: the code is the contract.
  */
-import { Hono } from "hono";
-import type { AgentActor } from "../../agents/profile-types";
+import { type Context, Hono } from "hono";
 import type { AuditStore } from "../../audit";
-import type { AppVariables } from "../../auth/guards";
 import { type BotManagementCheck, resolveObservationBot } from "../context";
 import { ObservationScopeError } from "../contracts";
 import {
@@ -48,6 +46,22 @@ import {
   type SaveExperimentInput,
 } from "../experiments";
 import { resolveObservationScope } from "../scope";
+import type { AiObservabilityDeps } from "./index";
+
+/**
+ * MOD18（#638）：两条身份类型边改走组内签名提取（MOD05-08 先例），M11 的
+ * 直连 import 移除——`agents/profile-types` 的 `AgentActor` 经 context.ts 既有
+ * `BotManagementCheck` 合同的首参收拢（M03 边）；`auth/guards` 的
+ * `AppVariables` 经 routes/index.ts 既有 `AiObservabilityDeps` 的 requireUser
+ * 中间件签名收拢（Context 泛型反解，M01 边）。两者都是类型级引用：运行时
+ * 零边、零新合同，形状漂移由 typecheck 红。
+ */
+type AgentActor = Parameters<BotManagementCheck>[0];
+type RouteEnv =
+  Parameters<AiObservabilityDeps["requireUser"]>[0] extends Context<infer E>
+    ? E
+    : never;
+type AppVariables = NonNullable<RouteEnv["Variables"]>;
 
 export type ExperimentWriteRouteDeps = Readonly<{
   canManageBot: BotManagementCheck;

@@ -84,6 +84,7 @@ import type {
   OpenMuseTaskStore,
   StoredOpenMuseTask,
 } from "../../openmuse-tasks/store";
+import type { Access } from "../authz/public";
 import type { PlatformScope } from "../contracts";
 import { assertTrustedMachineIdentity } from "../runs/scan-executor";
 import {
@@ -103,7 +104,7 @@ import {
   type ResourceNotFoundVerdict,
 } from "./not-found-semantics";
 import type { PersonalBotService } from "./personal-bot";
-import { type WorkspaceGate, workspaceMembershipLockKey } from "./scope-gate";
+import { workspaceMembershipLockKey } from "./scope-gate";
 import { assertTrustedScope } from "./store";
 
 // ---------------------------------------------------------------------------
@@ -458,8 +459,8 @@ export function createOpenMuseTaskTenancyService(deps: {
   readonly jobs: JobOwnershipService;
   /** MT059 私有 Bot 服务（绑定验证，只读消费）。 */
   readonly personalBots: PersonalBotService;
-  /** MT005 gate（执行回调事务）。 */
-  readonly gate: WorkspaceGate;
+  /** MOD04：M02 Access 门面（runInScope 委托 MT005 gate 事务本体，零改动）。 */
+  readonly access: Pick<Access, "runInScope">;
   /**
    * 签发入口适配：以权威协会行事实（user/tenant/workspace）经真实
    * createScopeResolver（entrypoint="schedule"）产出受信 Scope。本模块从不
@@ -474,7 +475,7 @@ export function createOpenMuseTaskTenancyService(deps: {
   assertDataDatabase(deps.data);
   assertOperatorDatabase(deps.operator);
 
-  const { data, operator, rows, jobs, personalBots, gate, platform } = deps;
+  const { data, operator, rows, jobs, personalBots, access, platform } = deps;
 
   /** 事务开场（MT008/MT011/MT016/MT021/MT022 判定入口同一形状）。 */
   const beginContext = async (
@@ -940,7 +941,7 @@ export function createOpenMuseTaskTenancyService(deps: {
         };
       }
       try {
-        await gate.transaction(scope, async (tx) => {
+        await access.runInScope(scope, async (tx) => {
           await input.work({ scope, tx, facts });
         });
       } catch {

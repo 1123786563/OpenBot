@@ -1055,7 +1055,8 @@
         "server/tests/multitenancy/inbound-attribution.test.ts",
         "server/tests/multitenancy/integration-evidence.test.ts",
         "server/tests/multitenancy/inventory.test.ts",
-        "server/tests/multitenancy/job-claim-cancel.test.ts"
+        "server/tests/multitenancy/job-claim-cancel.test.ts",
+        "server/tests/multitenancy/model-invocation-budget-public.test.ts"
       ]
     },
     {

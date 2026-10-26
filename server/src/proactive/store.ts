@@ -6,7 +6,8 @@ import {
   proactiveSettings,
   proactiveSuggestions,
 } from "../db/schema/proactive";
-import { lockDefaults, recordOptOut } from "../memory/defaults";
+// MOD15 (#635)：M10 出口段迁移——defaults 两函数改经 M10 公开门面，环边落公开出口。
+import { lockDefaults, recordOptOut } from "../memory/public";
 import { PROACTIVE_INITIATOR_PREFIX } from "./restriction";
 import {
   ProactiveNotFoundError,

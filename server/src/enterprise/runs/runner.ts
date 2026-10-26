@@ -43,14 +43,15 @@ import {
 } from "./events";
 import {
   classifyGovernedRunFailure,
-  createGovernedModelExecution,
   type GovernedModelExecution,
 } from "./governed-execution";
+import { createGovernedExecutionArm } from "./integration";
 import {
   ModelRouteCatalogStore,
   type ModelRouteSnapshotInput,
 } from "./model-route-catalog";
 import { runOutputCeilingFromInput } from "./output-ceiling";
+import { createRunLifecyclePublic, type RunLifecyclePublic } from "./public";
 import {
   createRunService,
   type RunModelRoute,
@@ -100,6 +101,13 @@ export interface ProductionRunnerDependencies {
   readonly gatewayEnvironment?: Record<string, string | undefined>;
   /** Upstream fetch for the gateway dial; defaults to the runtime's fetch. */
   readonly modelFetch?: typeof fetch;
+  /**
+   * MOD07（#627）：聊天提交→Run 建立的 M05 公开门面（薄委托）。生产组合
+   * （createProductionRunnerComposition）恒注入，浏览器 admit 路径因此恒经
+   * 门面；直构本依赖的存量调用方（runner-production / mastra-browser-runner
+   * 测试）不注入时回退 runs.start——两臂同参同结果（MOD06 routes 双路先例）。
+   */
+  readonly runLifecycle?: RunLifecyclePublic;
 }
 
 /** Server-issued Bot Expert identity, frozen for the governed executor slice. */
@@ -374,7 +382,7 @@ class DurableProductionRunner extends AgentRunner {
       secret !== undefined &&
       encryptionKey !== undefined &&
       credentialReader !== undefined
-        ? createGovernedModelExecution({
+        ? createGovernedExecutionArm({
             scope,
             agentId,
             routeRef: route.routeRef,
@@ -454,7 +462,11 @@ class DurableProductionRunner extends AgentRunner {
         routeRef: route.routeRef,
         maximumTokens: ceiling,
       },
-      () => deps.runs.start(scope, admission),
+      // MOD07 (#627): the chat-submit → Run-establishment call goes through the
+      // M05 public facade in production (the composition always injects it);
+      // a directly-built runner without the facade falls back to the internal
+      // service — both arms pass the identical (scope, admission) objects.
+      () => (deps.runLifecycle ?? deps.runs).start(scope, admission),
     );
 
     let lease: RunnerRequestLease;
@@ -932,6 +944,8 @@ export function createProductionRunnerComposition(
     scopeResolver: deps.scopeResolver,
     conversations: deps.conversations,
     runs,
+    // MOD07 (#627): 生产链恒经 M05 公开门面（薄委托，五能力同参同结果）
+    runLifecycle: createRunLifecyclePublic({ runs }),
     events,
     expertVersions,
     modelRoutes,

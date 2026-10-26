@@ -8,12 +8,14 @@
  * the turn runner's `buildAgentFor` narrows on; this module adds two tools of its own and nothing
  * that can write outside OpenBot.
  */
+
+import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
+import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { z } from "zod";
 import type { AuditInitiator } from "../audit";
-import type { MemoryStore } from "../memory/store";
+// MOD15 (#635)：M10 出口段迁移——MemoryStore 类型改经 M10 公开门面，环边落公开出口。
+import type { MemoryStore } from "../memory/public";
 import { REFUSAL_MARKER } from "../plugins/tools";
-import type { TurnRunner } from "@openbot/toolkit/run-turn";
-import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import type { WorkQueue } from "../work/queue";
 import {
   proactiveInitiator,

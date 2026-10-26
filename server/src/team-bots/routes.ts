@@ -1,5 +1,6 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
+import type { BotCatalog } from "../agents/public";
 import type { AppVariables } from "../auth/guards";
 import { afterExposureChange } from "../plugins/exposure-change";
 import type { SharedUseStore } from "../plugins/shared-use-store";
@@ -14,6 +15,12 @@ export function createTeamBotRoutes(
   teamBots: TeamBots,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   sharedUse?: SharedUseStore,
+  /**
+   * MOD05（#625，根 #620）：发布/撤回两 handler 改经 M03 BotCatalog 门面（装配
+   * 注入）；未注入门面的调用方保持 teamBots 直用旧路径——两路行为逐字节
+   * 等价（组内自由）。最小消费面：只取 publish/withdraw 两能力。
+   */
+  botCatalog?: Pick<BotCatalog, "publish" | "withdraw">,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser);
@@ -53,7 +60,7 @@ export function createTeamBotRoutes(
         groups: z.array(z.string().max(200)).max(100).default([]),
       })
       .parse(await context.req.json());
-    await teamBots.publish(
+    await (botCatalog ?? teamBots).publish(
       context.var.actor,
       context.req.param("botId"),
       input,
@@ -67,7 +74,9 @@ export function createTeamBotRoutes(
     });
   });
   routes.delete("/:botId/publication", async (context) => {
-    await teamBots.unpublish(context.var.actor, context.req.param("botId"));
+    await (botCatalog
+      ? botCatalog.withdraw(context.var.actor, context.req.param("botId"))
+      : teamBots.unpublish(context.var.actor, context.req.param("botId")));
     return context.body(null, 204);
   });
   routes.post("/:botId/assignments", async (context) => {

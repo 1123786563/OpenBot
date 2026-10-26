@@ -1,13 +1,8 @@
 import type { SafeText, SafeValue } from "../../../../shared/ai-observability";
 import { getLogger } from "../../../../shared/logger";
-import {
-  CreditReservationConflictError,
-  type CreditWriter,
-} from "../../billing/credits-writer";
-import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../../billing/types";
 import { createUsageEvidenceRecorder } from "../../billing/usage-evidence";
-import type { UsageOutbox } from "../../billing/usage-outbox";
 import type { BillingModelCreditPolicyEntry } from "../../config";
+import type { ModelBudgetCreditCollaborator } from "../../enterprise/models/public";
 import {
   calculateExactModelUsageCharge,
   UsageChargeError,
@@ -21,6 +16,10 @@ import type {
   EvaluationCaseOutcome,
   EvaluationCaseRunner,
 } from "../executions";
+import {
+  type EvaluationUsageOutbox,
+  USAGE_IDEMPOTENCY_KEY_PREFIX,
+} from "../public";
 import { projectSafeText } from "../redaction";
 
 /**
@@ -299,6 +298,18 @@ const failed = (code: JudgeFailureCode, message: string): JudgeScoreRecord => ({
 });
 
 /**
+ * The hold conflict's structural discriminator (MOD18): billing's
+ * `CreditReservationConflictError` answers `code = "reservation_conflict"`
+ * (credits-writer.ts), and it reaches here as an opaque thrown value from the
+ * injected writer — the instance passes through untouched and the log code
+ * reads the same field the class declares.
+ */
+const isReservationConflict = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  (error as { code?: unknown }).code === "reservation_conflict";
+
+/**
  * The judge's verdict JSON, recovered from the shapes models actually answer in
  * (OCR m226): a fenced block, a fenced block inside prose, or a balanced object
  * with a prose prefix. The strict whole-string parse stays the first candidate —
@@ -383,8 +394,8 @@ export function createJudgeScorer(
       policy: ReadonlyMap<string, BillingModelCreditPolicyEntry>;
     }>;
     billing: Readonly<{
-      creditWriter: Pick<CreditWriter, "reserveCredits">;
-      outbox: Pick<UsageOutbox, "record">;
+      creditWriter: Pick<ModelBudgetCreditCollaborator, "reserveCredits">;
+      outbox: Pick<EvaluationUsageOutbox, "record">;
       externalCustomerId: string;
     }>;
     reservationWindowMs?: number;
@@ -486,7 +497,7 @@ export function createJudgeScorer(
       // A terminal hold's replay is a refusal: a settled judge call is never dialed again.
       deps.log?.(
         `billing: opik_judge_admission_failed event=${eventId} code=${
-          error instanceof CreditReservationConflictError
+          isReservationConflict(error)
             ? "reservation_conflict"
             : "credit_gate_failed"
         }`,

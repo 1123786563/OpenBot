@@ -887,7 +887,7 @@ async function serveLevelEntrances(): Promise<{
 }> {
   const entrances: EntranceEntry[] = [];
   const verification: string[] = [];
-  const indexPath = resolve(SERVER_ROOT, "src/index.ts");
+  const indexPath = resolve(SERVER_ROOT, "src/assembly/runtime.ts");
   const indexSource = existsSync(indexPath)
     ? readFileSync(indexPath, "utf8")
     : "";
@@ -971,7 +971,7 @@ async function serveLevelEntrances(): Promise<{
 // ---------------------------------------------------------------------------
 
 const BACKGROUND_SOURCES = [
-  "src/index.ts",
+  "src/assembly/runtime.ts",
   "../worker/src/index.ts",
   "scripts/fire-routines.ts",
   "scripts/fire-workshop-schedules.ts",
