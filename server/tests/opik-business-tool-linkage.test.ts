@@ -442,6 +442,14 @@ const remoteAgentRow = () => ({
 
 /** The receipt both ends speak, MAC'd the way the budget contract signs it. */
 function receiptEvent(runId: string): BaseEvent {
+  const receipt = {
+    kind: REMOTE_BUDGET_RECEIPT_EVENT,
+    v: 1,
+    runId,
+    caps: CAPS,
+    usage: { modelSteps: 1, inputTokens: 400, outputTokens: 40, totalTokens: 440 },
+    status: "ok" as const,
+  };
   // Purpose-derived key (OCR R5 handoff): HMAC(secret, label), same pin as
   // the other budget suites — the token also travels as the dial's Bearer.
   const macKey = createHmac("sha256", SECRET)
