@@ -1953,7 +1953,7 @@ export function createPackageDispatchService(
         );
         if (resolution.outcome !== "facts") return resolution;
         const operationId = randomUUID();
-        await tx
+        const inserted = await tx
           .insert(dispatchRows)
           .values({
             tenantId: scope.tenantId,
@@ -1973,7 +1973,72 @@ export function createPackageDispatchService(
             effect: resolution.facts.effect,
             state: "prepared",
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ operationId: dispatchRows.operationId });
+        if (inserted.length === 0) {
+          // R2-H3: the (tenant, run, attemptGeneration, toolCallId) row
+          // already exists — the insert was swallowed, so the ticket must
+          // describe the LEDGER row (what beginDispatch CAS's and transport
+          // executes), never this call's fresh resolution.
+          const [standing] = await tx
+            .select({
+              state: dispatchRows.state,
+              installId: dispatchRows.installId,
+              resourceId: dispatchRows.resourceId,
+              toolRef: dispatchRows.toolRef,
+              connectorInstallId: dispatchRows.connectorInstallId,
+              connectionId: dispatchRows.connectionId,
+              connectionGeneration: dispatchRows.connectionGeneration,
+              argsDigest: dispatchRows.argsDigest,
+              effect: dispatchRows.effect,
+            })
+            .from(dispatchRows)
+            .where(
+              and(
+                eq(dispatchRows.tenantId, scope.tenantId),
+                eq(dispatchRows.workspaceId, scope.workspaceId),
+                eq(dispatchRows.runId, rawInput.runId),
+                eq(dispatchRows.attemptGeneration, rawInput.attemptGeneration),
+                eq(dispatchRows.toolCallId, rawInput.toolCallId),
+              ),
+            )
+            .limit(1);
+          if (standing?.state !== "prepared") {
+            // Already dispatched (or cancelled): the same duplicate gate the
+            // beginDispatch CAS answers. A vanished row cannot happen (no
+            // DELETE policy) and folds into the canonical refusal.
+            return refused("DUPLICATE_DISPATCH");
+          }
+          const rowToolName = toolNameOfRef(
+            standing.resourceId,
+            standing.toolRef,
+          );
+          return {
+            outcome: "ticket" as const,
+            ticket: {
+              runId: rawInput.runId,
+              attemptGeneration: rawInput.attemptGeneration,
+              toolCallId: rawInput.toolCallId,
+              installId: standing.installId,
+              resourceId: standing.resourceId,
+              toolName: rowToolName,
+              toolRef: standing.toolRef,
+              ref: packageToolRefFor(
+                standing.installId,
+                standing.resourceId,
+                rowToolName,
+              ),
+              // Descriptive only (no row column): the binding resolved for
+              // this call; every ledger-binding field above is the row's.
+              schemaDigest: resolution.facts.schemaDigest,
+              effect: standing.effect as "read" | "write",
+              connectorInstallId: standing.connectorInstallId,
+              connectionId: standing.connectionId,
+              connectionGeneration: standing.connectionGeneration,
+              argsDigest: standing.argsDigest,
+            },
+          };
+        }
         return {
           outcome: "ticket" as const,
           ticket: {

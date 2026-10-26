@@ -266,12 +266,16 @@ export async function runApply(input: {
       });
 
       // -- 6. The scope's install of the built-in package (create once).
+      //    R2-H4: the revision rides this step's authoritative value out to
+      //    step 7 — no cross-channel re-read, no silent ?? 1 fallback.
       const existingInstall = await findScopeInstall(channels.setup, scopeIds);
       let installId: string;
       let created: boolean;
+      let installRevision: number;
       if (existingInstall && existingInstall.status !== "uninstalled") {
         installId = existingInstall.id;
         created = false;
+        installRevision = existingInstall.revision;
       } else {
         const plan = await service.plan(scope, admin, {
           operation: "install",
@@ -289,13 +293,12 @@ export async function runApply(input: {
         );
         installId = applied.install.installId;
         created = applied.created;
+        installRevision = applied.install.revision;
       }
 
       // -- 7. Expert provenance for the migrated legacy Bots (existing Bots
       //    keep running; the row records which template created them).
       const mutation = createPackageMutationStore(operator);
-      const installRevision =
-        (await findScopeInstall(channels.setup, scopeIds))?.revision ?? 1;
       let provenanceWritten = 0;
       for (const record of expertRecords) {
         const written = await upsertExpertProvenance(mutation, scope, admin, {

@@ -583,6 +583,19 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
         `from enterprise_package_experts where agent_id = '${editedAgentId}' or agent_id = '${unownedAgentId}'`,
       ),
     ).toBe(0);
+    // OCR-fix-C (R2-H4): expert provenance records the install's actual
+    // revision — the authoritative step-6 value, never a fallback.
+    const [revisionPair] = (await setup.$client.unsafe(
+      `select (select revision from enterprise_package_experts
+                where tenant_id = $1 and workspace_id = $2 and agent_id = $3) as expert_revision,
+              (select revision from enterprise_package_installs
+                where tenant_id = $1 and workspace_id = $2 and id = $4) as install_revision`,
+      [tenantA, teamA1, pristineAgentId, outcome.install.installId],
+    )) as Array<{
+      expert_revision: number;
+      install_revision: number;
+    }>;
+    expect(revisionPair?.expert_revision).toBe(revisionPair?.install_revision);
     const grants = (await setup.$client.unsafe(
       `select resource_id from enterprise_package_grants
        where tenant_id = $1 and workspace_id = $2 and bot_id = $3 and revoked_at is null`,
