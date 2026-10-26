@@ -322,13 +322,13 @@ test("an in-budget run dials under its contract, delivers, and settles its hold 
     expect(provider.calls[0]?.max_tokens).toBe(Number(POLICY_TOKENS));
 
     // The hold was taken for this run and settles as an unknown cost, as before — the
-    // contract bounds what was spent; it does not price it.
-    expect(seams.reservations).toEqual([
-      {
-        idempotencyKey: "usage:remote-run:risk:smoke-run",
-        maximumCents: 8_000,
-      },
-    ]);
+    // contract bounds what was spent; it does not price it. The idempotency key carries a
+    // server nonce after the bot (OCR R5): a client's reused runId cannot share a hold.
+    expect(seams.reservations).toHaveLength(1);
+    expect(seams.reservations[0]!.maximumCents).toBe(8_000);
+    expect(seams.reservations[0]!.idempotencyKey).toMatch(
+      /^usage:remote-run:risk:[0-9a-f-]{36}$/,
+    );
     expect(seams.marks).toEqual([
       {
         reservationId: "hold-smoke",
