@@ -17,7 +17,8 @@
  * every row, cursor-space, upstream workspace and project of one Bot live under one key, so an
  * administrator looking at a creator's Bot, a profile rename, or an ownership transfer all reach
  * the SAME records — data never moves when the actor or the epoch changes. Who may look is
- * answered per request by the live manage gate that precedes scope minting, never by the key.
+ * answered per request by the live observation gate (canObserveAgent, R4-02) that
+ * precedes scope minting, never by the key.
  *
  * The actor and the epoch live on the scope for the artifacts that ARE per-request: cursors,
  * job idempotency keys and export artifact keys bind `authorizationKey(actorId, botId, epoch)`,
@@ -56,7 +57,7 @@ function joinKey(segments: string[]): string {
 /**
  * The stable resource key of one Bot's observation range (FREV-03): the `wb` kind tag plus the
  * Bot id, nothing else. This is a DATA identity, not a permission — who may hold a scope for it
- * is decided by the live manage gate at mint time, on every request. Because it contains neither
+ * is decided by the live observation gate at mint time, on every request. Because it contains neither
  * the actor nor the epoch, an administrator's scope, the creator's scope and a post-rename scope
  * for the same Bot all answer the same key, so they read and write one range of records.
  *
@@ -152,9 +153,9 @@ const CURSOR_KEY = new TextEncoder().encode(
   `opik-cursor/${process.pid}/${Date.now()}`,
 );
 
-function mac(authorizationKey: string, payload: string): Uint8Array {
+function mac(authKey: string, payload: string): Uint8Array {
   const hmac = createHmac("sha256", CURSOR_KEY);
-  hmac.update(authorizationKey);
+  hmac.update(authKey);
   hmac.update("\u0000");
   hmac.update(payload);
   return new Uint8Array(hmac.digest());
@@ -209,7 +210,7 @@ export function readCursor(scope: ObservationScope, cursor: string): string {
 /**
  * Read-cache keys carry the scope's data key, so a cache entry belongs to one Bot's data range,
  * not to one actor's view of it. That is deliberate (FREV-03): every reader of such an entry is a
- * scope the live manage gate freshly authorized — a transferred bot's new owner and its creator
+ * scope the live observation gate freshly authorized — a transferred bot's new owner and its creator
  * are two valid readers of the SAME range, while a revoked one cannot mint a scope at all — and
  * it is what lets the retention worker drop the entry from the stored row key alone (`scopeCacheKey`).
  */
@@ -247,12 +248,7 @@ export function jobKey(
   idempotencyKey: string,
 ): string {
   assertObservationScope(scope);
-  return joinKey([
-    "job",
-    authorizationKeyOf(scope),
-    name,
-    idempotencyKey,
-  ]);
+  return joinKey(["job", authorizationKeyOf(scope), name, idempotencyKey]);
 }
 
 export function exportKey(scope: ObservationScope, exportId: string): string {

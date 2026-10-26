@@ -18,8 +18,8 @@
  * bot, scope, locator or upstream filter can steer a read. Ownership is answered
  * per request — a transfer or revocation is effective on the very next call — and
  * the T07 binding table, never an owner snapshot captured at collection time,
- * decides which runs this scope may
- * see. Errors keep the house convention: the code is the contract.
+ * decides which runs this scope may see. Errors keep the house convention: the code
+ * is the contract.
  */
 import { Hono } from "hono";
 import type { AgentActor } from "../../agents/profile-types";

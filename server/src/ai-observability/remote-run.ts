@@ -535,7 +535,9 @@ const MAC_PATTERN = /^[0-9a-f]{64}$/;
 const BUDGET_RECEIPT_MAC_LABEL = "openbot-budget-receipt-mac-v1";
 
 function receiptMacKey(secret: string): string {
-  return createHmac("sha256", secret).update(BUDGET_RECEIPT_MAC_LABEL).digest("hex");
+  return createHmac("sha256", secret)
+    .update(BUDGET_RECEIPT_MAC_LABEL)
+    .digest("hex");
 }
 const wholeNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;

@@ -5,10 +5,10 @@ function spreadOptional<K extends string, V>(
   return value === undefined ? {} : ({ [key]: value } as { [_ in K]?: V });
 }
 
-import { createRequire } from "node:module";
 // Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
 // without putting it in this module's eager import graph. Node has no such global, so the same
 // laziness needs a handle.
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required

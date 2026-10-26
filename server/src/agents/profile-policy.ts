@@ -64,8 +64,6 @@ export function canObserveAgent(
   }
 
   return canManageAgent(actor, agent);
-
-  return canManageAgent(actor, agent);
 }
 
 /**

@@ -45,7 +45,7 @@ export const OBSERVATION_BOT_REQUIRED = "A Bot id is required.";
 export type ObservationOwnership = "owner" | "admin";
 
 /**
- * The explicit ownership answer, read off the same profile row the manage decision
+ * The explicit ownership answer, read off the same profile row the observation decision
  * was made on: the profile's owner is "owner", a global admin is "admin", and
  * anything else is a refusal — never an inference.
  *
@@ -73,7 +73,7 @@ export type ObservationBotAccess =
 
 /**
  * The one place observation authorization happens. A missing Bot id is refused before
- * any lookup; an unknown Bot and a Bot the caller may not manage answer identically —
+ * any lookup; an unknown Bot and a Bot the caller may not observe answer identically —
  * not found rather than forbidden, as the agents store answers everywhere else and the
  * parent Spec §7 requires ("统一不存在语义") — so probing ids cannot tell the two
  * apart and learns nothing about which Bots exist.

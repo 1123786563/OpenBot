@@ -463,7 +463,14 @@ export function createRunsQueryService(
       case "unavailable":
         throw new RunsQueryError(result.code, 503);
       case "upstream_error":
-        throw new RunsQueryError(result.code, 502);
+        // The read faces never call deleteTraces, so the port's missing-project
+        // code cannot arise here; it folds into the generic upstream word.
+        throw new RunsQueryError(
+          result.code === "OPIK_PROJECT_MISSING"
+            ? "OPIK_UPSTREAM_ERROR"
+            : result.code,
+          502,
+        );
       case "malformed":
         throw new RunsQueryError(result.code, 502);
       case "ownership_drift":

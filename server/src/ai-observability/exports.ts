@@ -62,6 +62,10 @@ export const EXPORT_JOB_ERROR_CODES = [
   "OPIK_UNREACHABLE",
   "OPIK_UPSTREAM_ERROR",
   "OPIK_CLIENT_ERROR",
+  // ocrfix-a (OCR R5 b-handoff): the port's deleteTraces now names a missing
+  // locator project apart; the export worker's delete sweep can hit it and must
+  // be able to store the code.
+  "OPIK_PROJECT_MISSING",
   "OPIK_MALFORMED_RESPONSE",
   "OPIK_OWNERSHIP_DRIFT",
 ] as const;

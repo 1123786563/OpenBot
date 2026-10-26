@@ -683,59 +683,58 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
   type AbsenceProbe = () => Promise<OpikPortResult<{ absent: boolean }>>;
 
   /**
-   * The second half of a deletion (FREV-07): drive every read-back probe to an observed
-   * absence inside the bounded window before the caller may treat the delete as done. A hard
-   * read-back failure (an upstream error, drift, malformed) surfaces immediately — it is a
-   * fact about the verification, not a poll condition. What is still queryable when the
-   * window closes answers the port's timeout: retryable by the caller, never a disguised
-   * success. Probes rather than paths because a deletion is confirmed over more than one
-   * shape now (the trace row, and its spans when the manifest can query them).
+   * The bounded read-back window both verifications run (FREV-07's deletion absence,
+   * and materialization presence): drive every probe to its expected state —
+   * `want` names which — before the caller may treat the operation as done. A hard
+   * read-back failure (an upstream error, drift, malformed) surfaces immediately — it
+   * is a fact about the verification, not a poll condition. What is still unobserved
+   * when the window closes answers the port's timeout: retryable by the caller, never
+   * a disguised success. Probes rather than paths because a verification is confirmed
+   * over more than one shape (a deleted trace's row and its spans; a created trace's
+   * row). ONE loop answers both states (OCR R5-719) and runs each attempt's probes in
+   * parallel (OCR R5-702): the two shapes used to be near-identical serial copies
+   * that could drift, and a serial batch delete cost N×2×attempts round trips.
    */
-  const awaitAbsence = async (
+  const awaitProbeSettled = async (
     operation: OpikOperation,
     probes: readonly AbsenceProbe[],
+    want: "absent" | "present",
   ): Promise<Failure | null> => {
     const deadline = Date.now() + timeoutMs;
     let remaining = [...probes];
     for (let attempt = 0; attempt < DELETE_ABSENCE_MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await sleep(DELETE_ABSENCE_POLL_MS);
-      const stillPresent: AbsenceProbe[] = [];
-      for (const probe of remaining) {
-        const read = await probe();
+      // OCR R5-702: one attempt's probes go out in parallel — independent reads,
+      // and a serial loop turns a batch delete into N×2×attempts round trips.
+      // "Any hard failure wins" is kept: the first failed read answers as itself.
+      const reads = await Promise.all(
+        remaining.map(async (probe) => ({ probe, read: await probe() })),
+      );
+      const unobserved: AbsenceProbe[] = [];
+      for (const { probe, read } of reads) {
         if (read.outcome !== "ok") return read;
-        if (!read.value.absent) stillPresent.push(probe);
+        const observed =
+          want === "absent" ? read.value.absent : !read.value.absent;
+        if (!observed) unobserved.push(probe);
       }
-      if (stillPresent.length === 0) return null;
-      remaining = stillPresent;
+      if (unobserved.length === 0) return null;
+      remaining = unobserved;
       if (Date.now() + DELETE_ABSENCE_POLL_MS > deadline) break;
     }
     return unavailable(operation, "OPIK_TIMEOUT");
   };
 
-  /**
-   * The presence mirror of `awaitAbsence`: inside the same bounded window, every probe must
-   * observe its object before the caller may treat a materialization as done.
-   */
-  const awaitPresence = async (
+  /** The absence shape of `awaitProbeSettled`: every object observed GONE. */
+  const awaitAbsence = (
     operation: OpikOperation,
     probes: readonly AbsenceProbe[],
-  ): Promise<Failure | null> => {
-    const deadline = Date.now() + timeoutMs;
-    let remaining = [...probes];
-    for (let attempt = 0; attempt < DELETE_ABSENCE_MAX_ATTEMPTS; attempt++) {
-      if (attempt > 0) await sleep(DELETE_ABSENCE_POLL_MS);
-      const stillAbsent: AbsenceProbe[] = [];
-      for (const probe of remaining) {
-        const read = await probe();
-        if (read.outcome !== "ok") return read;
-        if (read.value.absent) stillAbsent.push(probe);
-      }
-      if (stillAbsent.length === 0) return null;
-      remaining = stillAbsent;
-      if (Date.now() + DELETE_ABSENCE_POLL_MS > deadline) break;
-    }
-    return unavailable(operation, "OPIK_TIMEOUT");
-  };
+  ): Promise<Failure | null> => awaitProbeSettled(operation, probes, "absent");
+
+  /** The presence mirror: every object observed THERE. */
+  const awaitPresence = (
+    operation: OpikOperation,
+    probes: readonly AbsenceProbe[],
+  ): Promise<Failure | null> => awaitProbeSettled(operation, probes, "present");
 
   /**
    * One project resolution, two callers (OCR m151): retrieveProject and deleteTraces
@@ -992,7 +991,9 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
           {
             scopeSpans: [
               {
-                spans: completed.map((span) => buildSpan(span as OpikOtlpSpan)),
+                spans: completed
+                  .filter((span): span is OpikOtlpSpan => span !== null)
+                  .map((span) => buildSpan(span)),
               },
             ],
           },

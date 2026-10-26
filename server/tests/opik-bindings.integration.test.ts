@@ -958,6 +958,62 @@ describe("the observer gate materializes and reconciles upstream identity (F5E1-
     expect(roots).toHaveLength(1);
   });
 
+  test("eviction defers an in-flight chain: the same chain never materializes twice (OCR R5-725)", async () => {
+    const chainId = chain();
+    const identity = runUpstreamIdentity(chainId);
+    const created: string[] = [];
+    let releaseA!: () => void;
+    const hangA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    // A port whose createTrace HANGS for chain A: the begun entry stays in flight
+    // while later chains arrive and force an eviction pass.
+    const port: OpikPort = {
+      healthCheck: async () => ({
+        outcome: "ok" as const,
+        value: { healthy: true as const },
+      }),
+      createTrace: async (_s, input: { traceId: string }) => {
+        created.push(input.traceId);
+        if (input.traceId === identity.opikTraceId) {
+          await hangA; // chain A stays in flight across the eviction pass
+        }
+        return { outcome: "ok" as const, value: { traceId: input.traceId } };
+      },
+      writeSpans: async () => ({
+        outcome: "ok" as const,
+        value: { accepted: true as const },
+      }),
+    } as unknown as OpikPort;
+
+    const gate = createObserverRunBindingGate(store, {
+      port: () => port,
+      maxChainsPerScope: 2, // the third chain forces an eviction
+    });
+
+    const first = gate.ensure(scope, { traceId: chainId }); // A: in flight
+    for (let i = 0; i < 100 && created.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await gate.ensure(scope, { traceId: chain() }); // B: done, evictable
+    await gate.ensure(scope, { traceId: chain() }); // C: eviction fires
+    // A concurrent fact of the SAME chain while A is still in flight: the deferred
+    // (not dropped) entry keeps the dedup alive — one createTrace, ever.
+    const second = gate.ensure(scope, { traceId: chainId });
+    releaseA();
+
+    const [ref1, ref2] = await Promise.all([first, second]);
+    // Chains B and C each materialize their own trace once; the pinned fact is
+    // chain A's id appearing EXACTLY once across the eviction pass and the
+    // concurrent second fact.
+    expect(created.filter((id) => id === identity.opikTraceId)).toEqual([
+      identity.opikTraceId,
+    ]);
+    expect(ref1.opikTraceId).toBe(identity.opikTraceId);
+    expect(ref2.opikTraceId).toBe(identity.opikTraceId);
+    expect(ref1).toBe(ref2);
+  });
+
   test("a materialization failure leaves the row unreconciled and the retry converges", async () => {
     const chainId = chain();
     let down = true;
