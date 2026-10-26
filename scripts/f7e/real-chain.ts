@@ -452,6 +452,7 @@ async function langgraph(a: Args): Promise<void> {
   const threads = Number(a.threads ?? "2");
   const token = readEnvValue(envFile, "MANAGED_AGENT_TOKEN");
   const api = client(state, server);
+  const startedAt = new Date().toISOString(); // collect's dial-trace window anchor
   const NAME = "f7e LangGraph Probe";
   let bot = await findBot(api, NAME);
   if (!bot) {
@@ -482,7 +483,7 @@ async function langgraph(a: Args): Promise<void> {
   writeFileSync(
     join(state, "langgraph-run.json"),
     JSON.stringify(
-      { agentId: bot.id, agentName: NAME, endpoint, loops, result: RESULT },
+      { agentId: bot.id, agentName: NAME, endpoint, startedAt, loops, result: RESULT },
       null,
       2,
     ),
@@ -498,6 +499,7 @@ async function defaultLanggraph(a: Args): Promise<void> {
   const server = need(a, "server");
   const state = need(a, "state");
   const api = client(state, server);
+  const startedAt = new Date().toISOString(); // collect's dial-trace window anchor
   const NAME = a.name ?? "Risk Analyst";
   const bot = await findBot(api, NAME);
   if (!bot)
@@ -523,6 +525,7 @@ async function defaultLanggraph(a: Args): Promise<void> {
         agentId: bot.id,
         agentName: NAME,
         endpoint: bot.endpoint,
+        startedAt,
         loops,
         result: RESULT,
       },
@@ -710,14 +713,23 @@ async function collectBuiltin(
   const stepsAll: unknown[] = [];
   for (const binding of bindings as Array<{ run_id: string }>) {
     const runId = binding.run_id;
-    const detail = await api.get(
-      `/api/ai-observability/bots/${encodeURIComponent(record.agentId)}/runs/${encodeURIComponent(runId)}`,
-    );
-    details.push(detail);
-    const stepResult = await api.get<{ steps: Array<Record<string, unknown>> }>(
-      `/api/ai-observability/bots/${encodeURIComponent(record.agentId)}/runs/${encodeURIComponent(runId)}/steps`,
-    );
-    stepsAll.push({ runId, steps: stepResult.steps });
+    // Error isolation per binding (f5e1 precedent): one 404 or transient
+    // network error must not terminate collect and lose every other fact.
+    try {
+      const detail = await api.get(
+        `/api/ai-observability/bots/${encodeURIComponent(record.agentId)}/runs/${encodeURIComponent(runId)}`,
+      );
+      details.push(detail);
+      const stepResult = await api.get<{ steps: Array<Record<string, unknown>> }>(
+        `/api/ai-observability/bots/${encodeURIComponent(record.agentId)}/runs/${encodeURIComponent(runId)}/steps`,
+      );
+      stepsAll.push({ runId, steps: stepResult.steps });
+    } catch (error) {
+      stepsAll.push({
+        runId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   evidence.runDetails = details;
   evidence.runSteps = stepsAll;
@@ -786,10 +798,16 @@ async function collectBuiltin(
     verdict: toolSteps.length > 0 ? "PASS" : "GAP",
     detail: `${toolSteps.length} tool step(s); executionState=${toolSteps.map((s) => s.executionState ?? "?").join(",") || "-"}`,
   });
+  const vocabularyNamed = toolSteps.filter(
+    (s) => typeof s.executionState === "string" && s.executionState !== "",
+  );
   findings.push({
     check: "steps.proposed-vs-executed",
-    verdict: toolSteps.length > 0 ? "PASS" : "GAP",
-    detail: `honest determination vocabulary present: ${toolSteps.map((s) => `${s.name}:${s.executionState ?? "?"}`).join(",") || "-"} (surface-executed tools are unobserved-by-design; receipt is its own fact)`,
+    verdict:
+      toolSteps.length > 0 && vocabularyNamed.length === toolSteps.length
+        ? "PASS"
+        : "GAP",
+    detail: `every tool step names its determination vocabulary: ${toolSteps.map((s) => `${s.name}:${s.executionState ?? "?"}`).join(",") || "-"} (surface-executed tools are unobserved-by-design; receipt is its own fact)`,
   });
 
   // 5. Usage on the run query face (the product's own projection).
@@ -928,6 +946,7 @@ async function collectLanggraph(
   sql: ReturnType<typeof Bun.SQL>,
   record: {
     agentId: string;
+    startedAt?: string;
     loops: Array<{
       threadId: string;
       runIds: string[];
@@ -1059,16 +1078,37 @@ async function collectLanggraph(
     evidence.findings = findings;
     return evidence;
   }
+  // OCR r5 (dial-scan window): bound the scan to THIS drive's window — unjoined
+  // residue from an earlier phase or a previous collect on the same instance
+  // would otherwise sit in the acceptance denominator forever. Traces without a
+  // parseable start_time are kept: the window scopes, it does not assert.
+  const windowStart =
+    typeof record.startedAt === "string" &&
+    !Number.isNaN(Date.parse(record.startedAt))
+      ? Date.parse(record.startedAt)
+      : null;
   const traces =
     (
-      await opikGet<{ content?: Array<{ id: string; name?: string }> }>(
-        opik,
-        `/v1/private/traces?project_id=${def.id}&size=100`,
-      )
+      await opikGet<{
+        content?: Array<{ id: string; name?: string; start_time?: string }>;
+      }>(opik, `/v1/private/traces?project_id=${def.id}&size=100`)
     ).content ?? [];
+  const windowed =
+    windowStart === null
+      ? traces
+      : traces.filter((t) => {
+          if (typeof t.start_time !== "string" || Number.isNaN(Date.parse(t.start_time)))
+            return true;
+          return Date.parse(t.start_time) >= windowStart;
+        });
+  evidence.dialWindow = {
+    startedAt: record.startedAt ?? null,
+    tracesScanned: traces.length,
+    tracesInWindow: windowed.length,
+  };
   const matched: Array<{ traceId: string; spans: SpanRow[]; runId: string }> =
     [];
-  for (const trace of traces) {
+  for (const trace of windowed) {
     const spans =
       (
         await opikGet<{ content?: SpanRow[] }>(
@@ -1127,7 +1167,7 @@ async function collectLanggraph(
     crossEdges: number;
     services: string[];
   }> = [];
-  for (const trace of traces) {
+  for (const trace of windowed) {
     const spans =
       (
         await opikGet<{ content?: SpanRow[] }>(
@@ -1369,42 +1409,45 @@ async function collect(a: Args): Promise<void> {
     phase,
     collectedAt: new Date().toISOString(),
   };
-
-  if (existsSync(join(state, "builtin-run.json"))) {
-    const record = JSON.parse(
-      readFileSync(join(state, "builtin-run.json"), "utf8"),
-    );
-    output.builtin = await collectBuiltin(api, opik, sql, record, "builtin");
+  // try/finally: a collect-half throw must still release the connection.
+  try {
+    if (existsSync(join(state, "builtin-run.json"))) {
+      const record = JSON.parse(
+        readFileSync(join(state, "builtin-run.json"), "utf8"),
+      );
+      output.builtin = await collectBuiltin(api, opik, sql, record, "builtin");
+    }
+    if (existsSync(join(state, "langgraph-run.json"))) {
+      const record = JSON.parse(
+        readFileSync(join(state, "langgraph-run.json"), "utf8"),
+      );
+      output.langgraph = await collectLanggraph(api, opik, sql, record);
+    }
+    if (existsSync(join(state, "default-langgraph-run.json"))) {
+      const record = JSON.parse(
+        readFileSync(join(state, "default-langgraph-run.json"), "utf8"),
+      );
+      output.defaultLanggraph = await collectLanggraph(api, opik, sql, record);
+    }
+    if (existsSync(join(state, "remote-refusal.json"))) {
+      output.remoteRefusal = JSON.parse(
+        readFileSync(join(state, "remote-refusal.json"), "utf8"),
+      );
+    }
+    const agentPaths: string[] = [];
+    for (const file of ["builtin-run.json", "langgraph-run.json"]) {
+      if (!existsSync(join(state, file))) continue;
+      const record = JSON.parse(readFileSync(join(state, file), "utf8"));
+      agentPaths.push(
+        `/api/copilotkit/agent/${encodeURIComponent(record.agentId)}/run`,
+      );
+    }
+    if (agentPaths.length > 0) {
+      output.hostProcess = await collectHostProcess(opik, agentPaths);
+    }
+  } finally {
+    await sql.close();
   }
-  if (existsSync(join(state, "langgraph-run.json"))) {
-    const record = JSON.parse(
-      readFileSync(join(state, "langgraph-run.json"), "utf8"),
-    );
-    output.langgraph = await collectLanggraph(api, opik, sql, record);
-  }
-  if (existsSync(join(state, "default-langgraph-run.json"))) {
-    const record = JSON.parse(
-      readFileSync(join(state, "default-langgraph-run.json"), "utf8"),
-    );
-    output.defaultLanggraph = await collectLanggraph(api, opik, sql, record);
-  }
-  if (existsSync(join(state, "remote-refusal.json"))) {
-    output.remoteRefusal = JSON.parse(
-      readFileSync(join(state, "remote-refusal.json"), "utf8"),
-    );
-  }
-  const agentPaths: string[] = [];
-  for (const file of ["builtin-run.json", "langgraph-run.json"]) {
-    if (!existsSync(join(state, file))) continue;
-    const record = JSON.parse(readFileSync(join(state, file), "utf8"));
-    agentPaths.push(
-      `/api/copilotkit/agent/${encodeURIComponent(record.agentId)}/run`,
-    );
-  }
-  if (agentPaths.length > 0) {
-    output.hostProcess = await collectHostProcess(opik, agentPaths);
-  }
-  await sql.close();
   const file = join(evidenceDir, `real-chain-${phase}.json`);
   writeFileSync(file, JSON.stringify(output, null, 2));
   console.log(JSON.stringify({ step: "collect", evidence: file }));
@@ -1424,7 +1467,7 @@ const table: Record<string, (args: Args) => Promise<void>> = {
 const run = table[command];
 if (!run) {
   console.error(
-    `unknown command ${command ?? "(none)"}; use login|builtin|remote-unavailable|langgraph|grant-credits|collect`,
+    `unknown command ${command ?? "(none)"}; use login|builtin|remote-unavailable|langgraph|default-langgraph|grant-credits|collect`,
   );
   process.exit(2);
 }

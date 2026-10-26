@@ -15,8 +15,8 @@
  *  5. assert the record completed only through the observed absence of the derived
  *     trace AND its spans, and the local binding row is gone.
  *
- * Run from server/:
- *   TEST_DATABASE_URL=postgres://opik4:opik4@127.0.0.1:55433/openbot_f7b \
+ * Run from server/ (no credentials in this file — pass the URL through the env):
+ *   TEST_DATABASE_URL=$TEST_DATABASE_URL \
  *     bun scripts/f7b/real-orphan-cleanup.ts [http://127.0.0.1:5174/api]
  */
 import { randomBytes, randomUUID } from "node:crypto";
@@ -27,11 +27,13 @@ import {
   observerBindingRefForTests,
 } from "../../src/ai-observability/bindings";
 import type { OpikConfig } from "../../src/ai-observability/config";
+import { opikConfigFromEnv } from "../../src/ai-observability/config";
 import { runUpstreamIdentity } from "../../src/ai-observability/opik-http";
 import type { OpikOtlpSpan } from "../../src/ai-observability/opik-port";
 import {
   createObservationRetentionWorker,
   resolveRetentionDays,
+  RETENTION_WORK_KIND,
 } from "../../src/ai-observability/retention";
 import {
   resolveObservationScope,
@@ -60,7 +62,6 @@ const bindings = createRunBindingStore(database);
 function fail(step: string, detail: unknown): never {
   console.error(JSON.stringify({ step, ok: false, detail }, null, 1));
   process.exit(1);
-  throw new Error(step);
 }
 
 const getJson = async (path: string) => {
@@ -146,27 +147,28 @@ if (beforeTrace.status !== 200)
 const beforeSpanTotal = beforeSpans.body?.total ?? 0;
 if (beforeSpanTotal < 1) fail("orphan-spans-present", beforeSpanTotal);
 
-// The lease lapses and the retention window passes: backdate past the 7-day runs TTL.
+// The lease lapses and the retention window passes: backdate past the runs
+// retention floor, derived from the same resolver the worker uses (runs + 1)
+// instead of a literal that silently stops matching when the default moves.
+const retention = resolveRetentionDays({});
 await database
   .update(aiObservationBindings)
-  .set({ createdAt: sql`now() - interval '8 days'` })
+  .set({ createdAt: sql`now() - make_interval(days => ${retention.runs + 1})` })
   .where(eq(aiObservationBindings.id, binding.id));
 
-// 4. The real retention worker over the verified port.
-const config: OpikConfig = {
-  enabled: true,
-  baseUrl,
-  apiKey: null,
-  workspaceName: "default",
-  port: 5174,
-  otlpHttpPort: 5418,
-  otlpGrpcPort: 5417,
-};
+// 4. The real retention worker over the verified port. The worker's ports and
+// workspace come from the one canonical resolver (defaults live in config.ts),
+// not hand-copied literals that drift when the assembly changes.
+const config: OpikConfig = opikConfigFromEnv({
+  OPIK_ENABLED: "true",
+  OPIK_BASE_URL: baseUrl,
+  OPIK_WORKSPACE_NAME: "default",
+});
 const worker = createObservationRetentionWorker({
   database,
   config: () => config,
   port,
-  retention: () => resolveRetentionDays({}),
+  retention: () => retention,
   audit: createAuditStore(database),
   owner: `f7b-owner-${randomUUID()}`,
   concurrency: 8,
@@ -205,19 +207,25 @@ const afterSpans = await getJson(
   `/v1/private/spans?project_id=${projectId}&trace_id=${identity.opikTraceId}&size=10`,
 );
 if (afterTrace.status !== 404) fail("trace-absence", afterTrace.status);
+if (afterSpans.status !== 200)
+  fail("span-absence-status", afterSpans.status);
+if (afterSpans.body === null)
+  fail("span-absence-body", "span list read failed (non-JSON body)");
 const afterSpanTotal = afterSpans.body?.total ?? 0;
 if (afterSpanTotal !== 0) fail("span-absence", afterSpanTotal);
 
-// Leave the shared test database as this run found it: the evidence is this log and
-// the JSON below, and a stray run-deletion row would skew the suite's global
-// governance counts on its next run.
+// Restore this run's own rows. Honest scope note (OCR r5): worker.sweep() is a
+// whole-database operation — it lapses every expired lease and processes every
+// expired target it finds, not only this case's. Running this script against a
+// shared database mutates other data there; the dedicated-database requirement
+// above is what keeps that safe. The evidence is this log and the JSON below.
 await database
   .delete(aiObservationRetentionDeletions)
   .where(eq(aiObservationRetentionDeletions.id, record.id));
 await database
   .delete(workItems)
   .where(
-    and(eq(workItems.kind, "opik.retention"), eq(workItems.key, record.id)),
+    and(eq(workItems.kind, RETENTION_WORK_KIND), eq(workItems.key, record.id)),
   );
 
 console.log(

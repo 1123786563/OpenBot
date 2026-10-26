@@ -127,7 +127,7 @@ async function main() {
   // database, the runs query service over the same store and port.
   const database = databaseUrl ? createDatabase(databaseUrl) : null;
   const bindingStore = database ? createRunBindingStore(database) : null;
-  if (!bindingStore)
+  if (!database || !bindingStore)
     throw new Error(
       "--database is required (the real store is part of the fix)",
     );
@@ -257,6 +257,8 @@ async function main() {
     bindingOpikTraceId: binding2?.opikTraceId ?? null,
   });
 
+  // Each raw REST call is status-checked before its body is trusted: a failed
+  // retrieve must fail the step, not feed `undefined` into the delete payload.
   const resolveProject = await fetch(
     `${opikUrl}/v1/private/projects/retrieve`,
     {
@@ -265,28 +267,35 @@ async function main() {
       body: JSON.stringify({ name: locator.project }),
     },
   );
-  const project = (await resolveProject.json()) as { id: string };
-  const projectDeleted = await fetch(`${opikUrl}/v1/private/projects/delete`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ids: [project.id] }),
-  });
-  const goneCheck = await fetch(`${opikUrl}/v1/private/projects/retrieve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: locator.project }),
-  });
-  // The row that survives the project delete, by the span/trace tables' own
-  // query path (the trace id is still enumerable through the raw API? the
-  // project-scoped query is gone — the clickhouse residual check happens
-  // outside this script and lands in the evidence directory).
+  const project = resolveProject.ok
+    ? ((await resolveProject.json()) as { id: string })
+    : null;
+  const projectDeleted = project
+    ? await fetch(`${opikUrl}/v1/private/projects/delete`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids: [project.id] }),
+      })
+    : null;
+  const goneCheck = project
+    ? await fetch(`${opikUrl}/v1/private/projects/retrieve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: locator.project }),
+      })
+    : null;
+  // The rows that survive the project delete are asserted through deleteTraces'
+  // own outcome below: the project-scoped query path is gone with the project,
+  // and the clickhouse residual check happens outside this script and lands in
+  // the evidence directory.
   const deleteAfterProjectGone = await port.deleteTraces(locator, {
     traceIds: [identity2.opikTraceId],
   });
   step("project-404-residual", {
-    projectId: project.id,
-    projectDeleteStatus: projectDeleted.status,
-    projectRetrieveAfter: goneCheck.status,
+    projectResolved: project !== null,
+    projectId: project?.id ?? null,
+    projectDeleteStatus: projectDeleted?.status ?? null,
+    projectRetrieveAfter: goneCheck?.status ?? null,
     deleteTracesOutcome: deleteAfterProjectGone.outcome,
     deleteTracesCode:
       deleteAfterProjectGone.outcome === "upstream_error"
@@ -309,9 +318,11 @@ async function main() {
   if (s["instance-health"].healthy !== true)
     failures.push("instance-unhealthy");
   if (s["materialize"].reconciled !== true) failures.push("not-reconciled");
-  if (s["materialize"].healthStats === undefined) failures.push("no-stats");
-  const stats = s["materialize"].healthStats as { completed: number };
-  if (stats.completed !== 2) failures.push(`completed=${stats.completed}`);
+  // no-stats fails the run AND skips the dependent assertion: dereferencing a
+  // missing stats object here would throw away every failure collected above.
+  const stats = s["materialize"].healthStats as { completed: number } | undefined;
+  if (stats === undefined) failures.push("no-stats");
+  else if (stats.completed !== 2) failures.push(`completed=${stats.completed}`);
   const rb = s["readback"];
   if (rb.detailStatus !== "present") failures.push(`detail=${rb.detailStatus}`);
   if (rb.syncing !== false) failures.push("still-syncing");
@@ -322,6 +333,7 @@ async function main() {
   if (del.outcome !== "ok") failures.push(`delete=${del.outcome}`);
   if (del.listTotalAfter !== 0) failures.push("still-listed");
   const p4 = s["project-404-residual"];
+  if (p4.projectResolved !== true) failures.push("project-not-resolved");
   if (
     p4.deleteTracesOutcome !== "upstream_error" ||
     p4.deleteTracesStatus !== 404
@@ -334,6 +346,7 @@ async function main() {
   } else {
     console.log("[f6b] all steps verified");
   }
+  await database.$client.close();
 }
 
 await main();

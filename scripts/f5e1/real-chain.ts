@@ -14,7 +14,8 @@
  *   login    --server=URL [--casdoor=CASDOOR_URL] [--user=admin] [--password=123] --state=DIR
  *   builtin  --server=URL --state=DIR
  *   langgraph --server=URL --state=DIR --endpoint=URL --env-file=PATH
- *   collect  --server=URL --state=DIR --opik=URL --evidence=DIR
+ *   langgraph-direct --endpoint=URL --env-file=PATH --state=DIR
+ *   collect  --server=URL --state=DIR --opik=URL --evidence=DIR --env-file=PATH
  *
  * The login command is the repository's own e2e precedent (craft-preview-acceptance.ts
  * selectors #username/#password/button[type=submit], auth.setup.e2e.ts credentials):
@@ -567,6 +568,8 @@ type SpanRow = {
   usage?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
   start_time?: string;
   end_time?: string;
 };
@@ -690,7 +693,7 @@ async function collectOne(
     detail: `${toolSteps.length} tool step(s); executionState=${toolSteps.map((s) => s.executionState ?? "?").join(",") || "-"}`,
   });
 
-  // 3. Hierarchy: a model/tool step whose parent is a span in the same run tree
+  // 4. Hierarchy: a model/tool step whose parent is a span in the same run tree
   // (run root → model/tool), and a tool step authenticating the proposed/executed
   // distinction from this driver's REAL two-turn loop.
   const spanIds = new Set(allSteps.map((s) => s.spanId));
@@ -709,7 +712,7 @@ async function collectOne(
     detail: `proposed=${toolSteps.filter((s) => s.executionState === "proposed").length} executed=${executed.length}`,
   });
 
-  // 4. Real provider usage, as the run summary reports it.
+  // 5. Real provider usage, as the run summary reports it.
   const providerUsage = list.runs.filter(
     (run) => (run.usage as { source?: string }).source === "provider",
   );
@@ -722,7 +725,7 @@ async function collectOne(
         : "no run reported provider usage",
   });
 
-  // 5. Raw Opik rows, across ALL projects: REST-written spans (the bot-* project)
+  // 6. Raw Opik rows, across ALL projects: REST-written spans (the bot-* project)
   // and OTLP-written spans (the collector's default project) are both this
   // deployment's evidence, so the search is not narrowed to one project.
   // The REST writer's spans adopt Opik-derived trace ids that the binding's W3C
@@ -963,28 +966,33 @@ async function collect(a: Args): Promise<void> {
   mkdirSync(evidenceDir, { recursive: true });
   const api = client(state, server);
   const output: Record<string, unknown> = {};
-  for (const [label, file] of [
-    ["builtin", "builtin-run.json"],
-    ["langgraph", "langgraph-run.json"],
-  ] as const) {
-    if (!existsSync(join(state, file))) {
-      output[label] = {
-        findings: [
-          { check: "record", verdict: "GAP", detail: `${file} absent` },
-        ],
-      };
-      continue;
+  // try/finally: any await throwing mid-collect must still release the
+  // connection (same discipline as f7e/f8d's collect tails).
+  try {
+    for (const [label, file] of [
+      ["builtin", "builtin-run.json"],
+      ["langgraph", "langgraph-run.json"],
+    ] as const) {
+      if (!existsSync(join(state, file))) {
+        output[label] = {
+          findings: [
+            { check: "record", verdict: "GAP", detail: `${file} absent` },
+          ],
+        };
+        continue;
+      }
+      const record = JSON.parse(readFileSync(join(state, file), "utf8"));
+      output[label] = await collectOne(api, opik, sql, record, label);
     }
-    const record = JSON.parse(readFileSync(join(state, file), "utf8"));
-    output[label] = await collectOne(api, opik, sql, record, label);
+    if (existsSync(join(state, "langgraph-direct-run.json"))) {
+      const record = JSON.parse(
+        readFileSync(join(state, "langgraph-direct-run.json"), "utf8"),
+      );
+      output["langgraph-direct"] = await collectLanggraphDirect(opik, record);
+    }
+  } finally {
+    await sql.close();
   }
-  if (existsSync(join(state, "langgraph-direct-run.json"))) {
-    const record = JSON.parse(
-      readFileSync(join(state, "langgraph-direct-run.json"), "utf8"),
-    );
-    output["langgraph-direct"] = await collectLanggraphDirect(opik, record);
-  }
-  await sql.close();
   writeFileSync(
     join(evidenceDir, "real-chain.json"),
     JSON.stringify(output, null, 2),
