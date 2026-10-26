@@ -361,12 +361,14 @@ const TABLE_SPECS: Record<string, TableSpec> = {
   // the catalog's edges out of the estate are edges a candidate's deletion travels, so the
   // probe universe knows each child. But these three are NOT the deleted record's own test
   // data (R2-F1, REV-2): the account's own columns carry its registered ownership verdict
-  // (status/account_type/tenant_id/owner_user_id/quarantine_reason — the schema declares
-  // the three legal shapes, but the shipped 0163 migration creates no CHECK, so the
-  // ownership pass below is the runtime enforcement), the mapping row IS the company
-  // relationship, and the attribution's NOT NULL tenant/workspace/principal make every row
-  // a company call fact. The ownership pass below reads exactly these columns and verifies
-  // each row before it may ride a cascade.
+  // (status/account_type/tenant_id/owner_user_id/quarantine_reason — and the derived
+  // account_key, 'company:'||tenant_id / 'personal:'||owner_user_id, NULL when quarantined.
+  // The schema declares the three legal shapes and the derived key, but the shipped 0163
+  // migration creates no CHECK, so the ownership pass below is the runtime enforcement), the
+  // mapping row IS the company relationship, and the attribution's NOT NULL
+  // tenant/workspace/principal make every row a company call fact. The ownership pass below
+  // reads exactly these columns (account_key included) and verifies each row — shape and
+  // derived key — before it may ride a cascade.
   billing_credit_accounts: {
     idColumn: "id",
     columns: [
@@ -376,6 +378,7 @@ const TABLE_SPECS: Record<string, TableSpec> = {
       "account_type",
       "tenant_id",
       "owner_user_id",
+      "account_key",
       "quarantine_reason",
     ],
   },
@@ -1036,7 +1039,8 @@ export async function evaluateCleanupRelations(
       tableTouchesEstate(table)
         ? scanTableRows(tx, table)
         : Promise.resolve([]);
-    const present = (value: string | null) => value !== null && value !== "";
+    const present = (value: string | null): value is string =>
+      value !== null && value !== "";
     const testUserIds = new Set(classification.evidenceInput.testUserIds);
 
     for (const account of await scanReachableTable("billing_credit_accounts")) {
@@ -1044,6 +1048,7 @@ export async function evaluateCleanupRelations(
       const accountType = account.cols.account_type;
       const tenantId = account.cols.tenant_id;
       const ownerUserId = account.cols.owner_user_id;
+      const accountKey = account.cols.account_key;
       const quarantineReason = account.cols.quarantine_reason;
       let protection: ProtectionKind | null;
       if (
@@ -1051,6 +1056,7 @@ export async function evaluateCleanupRelations(
         accountType === "company" &&
         present(tenantId) &&
         ownerUserId === null &&
+        accountKey === `company:${tenantId}` &&
         quarantineReason === null
       ) {
         protection = "company_account";
@@ -1059,6 +1065,7 @@ export async function evaluateCleanupRelations(
         accountType === null &&
         tenantId === null &&
         ownerUserId === null &&
+        accountKey === null &&
         present(quarantineReason)
       ) {
         protection = "quarantined_account";
@@ -1067,14 +1074,13 @@ export async function evaluateCleanupRelations(
         accountType === "personal" &&
         tenantId === null &&
         present(ownerUserId) &&
+        accountKey === `personal:${ownerUserId}` &&
         quarantineReason === null
       ) {
         // A personal account follows the existing obsolete-test estate semantics only when
         // its actual owner is in this run's explicit test-user registry. Otherwise it is
         // personal financial history and stays. This is evidence, never a name guess.
-        protection = testUserIds.has(ownerUserId ?? "")
-          ? null
-          : "personal_account";
+        protection = testUserIds.has(ownerUserId) ? null : "personal_account";
       } else {
         // The schema declares row-shape CHECKs for the legal shapes, but the shipped 0163
         // migration creates none — this unknown_account_shape branch is the runtime
@@ -1147,6 +1153,14 @@ export async function evaluateCleanupRelations(
     // named by the new kind.
     const ownedCustomerKeys = new Set<string>();
     for (const row of ownershipRowByKey.values()) {
+      // Only a protected 0163 row proves a current owner for its key; rows the shelter
+      // closure pulled in protect themselves but do not widen the funding key set.
+      if (
+        row.table !== "billing_credit_accounts" &&
+        row.table !== "billing_customer_mappings"
+      ) {
+        continue;
+      }
       const customerKey = row.cols.external_customer_id;
       if (customerKey) ownedCustomerKeys.add(customerKey);
     }
@@ -1183,12 +1197,13 @@ export async function evaluateCleanupRelations(
         .map((row) => row.recordId),
     );
     if (protectedLedgerIds.size > 0) {
-      for (const dimension of await scanReachableTable(
+      for (const dimension of await probeRowsWhereIn(
+        tx,
         "credit_settlement_dimension_breakdown",
+        "ledger_id",
+        [...protectedLedgerIds],
       )) {
-        if (protectedLedgerIds.has(dimension.cols.ledger_id ?? "")) {
-          protect(dimension, "protects_owned_record");
-        }
+        protect(dimension, "protects_owned_record");
       }
     }
 

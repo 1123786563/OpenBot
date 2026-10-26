@@ -48,7 +48,7 @@ REV-2b 裁决的 R2B-F1（medium）与 R2B-F2（low）均已整改完毕，全�
 
 1. **公司键**（legacy 证据 + 真实 `bindCompanyCustomer`/`registerCompanyAccount` + 注册后经真实 `createCreditWriter().grantCredits` 写入的无归属 promo grant + settled ledger/hold）：客户/账户/映射/全部资金行存活；
 2. **隔离键**（`quarantineUnknownAccount` + 无归属 grant）：账户与资金行存活；<br>
-   （注：unknown-shape 与注册外 personal 键的资金跟随本轮无直接用例臂，语义由产品源码审读与既有 R2-F1 用例覆盖，建议后续补臂。）
+   （注：unknown-shape 与注册外 personal 键无直接用例臂；隔离键的 ledger/reservations 庇护亦未直接断言——已知缺口，登记后续补臂。）
 3. **registry-personal 臂（防过度保护）**：账户 owner 在 `testUserIds` 注册表内——账户、客户、资金全部真实删除；
 4. **纯 legacy 臂（防过度保护）**：无任何 0163 行——客户、legacy payer/order、grant、settled ledger/hold 全部真实删除。
 
@@ -109,11 +109,11 @@ bunx biome check server/src/billing/cleanup-relations.ts \
 
 净库声明：七件套件在 `openbot_b5r_fix4_final`（全新库）一次性跑完，未复用；无 dry-run 计数漂移。作为对照，`cleanup-relations` 单件在 `openbot_b5r_fix4_suite`（全新库）15/15 pass 409 expect。
 
-对基线的增量：REV-2b 报 76 pass / 1077 expect（当时 6 件列名中含 `cleanup-accounting`——该文件在本树不存在，实为 enumeration 套件；本报告按本树实际七件列名）。本树 = 76 基线 + 1 新用例 = 77 pass。
+对基线的增量：base `465486a0c` 以**相同七件列名**于净库同口径重跑得 **76 pass / 0 fail / 1077 expect**（`openbot_b5r_fix6_base`；方法：`git worktree add /tmp/fix6-base-wt 465486a0c`，node_modules 符号链接自主 checkout，`cd server && bun test <七件列名>`）。FIX-4 树 = 76 基线 + 1 新用例 = 77 pass / 1129 expect；FIX-6 树（account_key 形状判定 + 漂移臂）= 78 pass / 1155 expect，同口径链条闭合。
 
 ## 5. 风险与边界披露
 
-- `funding_of_protected_key` 是新增 `ProtectionKind` 成员；类型检查显示仓库内无对 ProtectionKind 的穷举 switch 消费者（仅本测试文件按字符串断言，已覆盖新值），无外部破坏性。
+- `funding_of_protected_key` 是新增 `ProtectionKind` 成员；消费面双向核（FIX-6/OCR2R-M2）：(a) tsc 与全仓检索确认无对 ProtectionKind 的穷举 switch 消费者；(b) 检索（`rg`，`server/src` + `app/src`）确认无以 protection kind 为键的 reason/展示 Record 映射——dry-run 的 `pulledCandidates.byReason` 以 `RemovalReason`（非 ProtectionKind）为键，relations evidence 串与守卫拒删文案均把原始 kind 字符串直接透传。FIX-6 已在 R2B-F1 用例补断言：被庇护资金行的守卫拒删 `evidence` 含 `funding_of_protected_key`（dry-run 哈希覆盖的 relations evidence 同源），无外部破坏性。
 - 资金行庇护以 0163 行上的 `external_customer_id` 为准：映射行的 `external_customer_id` 即公司键。三个资金表均逐表核实了归属列（`credit_grants.external_customer_id`、`credit_ledger.external_customer_id`、`credit_reservations.external_customer_id` 存在于 schema 与本表 probe spec）。
 - 隔离账户键的资金行同样受保护（失败关闭方向，与 AC18「公司金融史保留」一致）；未知形状账户 fail-closed 后其键资金亦受保护，符合「unreadable ownership cannot be evidence for deletion」。
 - R2B-INFO-2（三个 0163 表全扫）的扫描成本延续到资金三表——沿用既有 `scanReachableTable` 全扫模式，量级不变。

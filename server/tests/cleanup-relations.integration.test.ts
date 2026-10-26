@@ -96,7 +96,7 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const run = `b347-${Math.random().toString(36).slice(2, 10)}`;
 
-/** The four fixture keys: one company keep, and the three legacy situations. */
+/** The five fixture keys: one company keep, and the four legacy situations (K1–K4). */
 const companyKey = `b347-co-${run}`;
 const flightKey = `b347-leg1-${run}`;
 const activeSubKey = `b347-leg2-${run}`;
@@ -167,7 +167,7 @@ const resolutionAllocationId = `b347-as4-${run}`;
 /** A pending order needs a deployment purchase slot of its own: one pending per scope. */
 const cleanOrderScope = `b347-scope-${run}`;
 
-/** The operator-vouched test-evidence registries: the three legacy orders, nothing else. */
+/** The operator-vouched test-evidence registries: the four legacy orders (K1–K4), nothing else. */
 const evidenceInput = {
   testOrderIds: [
     flightOrderId,
@@ -398,6 +398,21 @@ const DECLARED_EDGES: {
 let classification: CleanupClassification;
 let manifest: CleanupRelationsManifest;
 
+/** Fresh rows of a table by identity column, for the post-execution assertions. */
+async function rowsOf(table: string, idColumn: string, ids: string[]) {
+  if (ids.length === 0) return [];
+  // Per-value bound params via sql.join — the same parameterized pattern the production
+  // probeRowsWhereIn uses. (Drizzle's plain `${ids}` expands to a value-list tuple and a
+  // bare array param serializes untyped on this driver; both fail at ANY().)
+  const rows = await database.execute(
+    sql`SELECT * FROM ${sql.identifier(table)} WHERE ${sql.identifier(idColumn)} IN (${sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    )}) ORDER BY 1`,
+  );
+  return JSON.parse(JSON.stringify(rows)) as Record<string, unknown>[];
+}
+
 afterAll(async () => {
   // Children first, mirroring the FK graph the module evaluates.
   await database
@@ -416,6 +431,7 @@ afterAll(async () => {
         flightOrderId,
         activeSubOrderId,
         cleanOrderId,
+        resolutionOrderId,
       ]),
     );
   await database
@@ -818,7 +834,8 @@ beforeAll(async () => {
     },
     {
       id: cleanOrderId,
-      // Its own scope: the schema allows one pending order per deployment scope.
+      // cleanOrderScope is shared with K4's paid resolution order below: the schema allows
+      // one PENDING order per deployment scope, and only this order is pending in it.
       deploymentScope: cleanOrderScope,
       planCode: "legacy-test",
       provider: "alipay",
@@ -1665,17 +1682,6 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
       .where(inArray(users.id, [aUserPersonal, aUserPersonalTest, bUser]));
   });
 
-  /** Fresh rows of a table by identity column, for the post-execution assertions. */
-  async function rowsOf(table: string, idColumn: string, ids: string[]) {
-    if (ids.length === 0) return [];
-    const rows = await database.execute(
-      sql`SELECT * FROM ${sql.identifier(table)} WHERE ${sql.identifier(
-        idColumn,
-      )} = ANY(${sql.raw(`ARRAY[${ids.map((id) => `'${id.replaceAll("'", "''")}'`).join(",")}]`)}) ORDER BY 1`,
-    );
-    return JSON.parse(JSON.stringify(rows)) as Record<string, unknown>[];
-  }
-
   function evaluationIn(
     evaluated: CleanupRelationsManifest,
     table: string,
@@ -1820,6 +1826,11 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
     expect(report.transaction.committed).toBe(true);
     expect(report.postVerification.passed).toBe(true);
     expect(report.accountingSmoke.passed).toBe(true);
+    // Cross-suite survival (OCR2R-H2): this real deletion must not have touched the
+    // sibling suites' fixture keys — a scope that silently widened shows up here.
+    expect(
+      await rowsOf("billing_customers", "external_id", fixtureKeys),
+    ).toHaveLength(5);
 
     // The three ownership-protected customers, their accounts and the company mapping
     // survived — on disk, after the commit.
@@ -1962,6 +1973,10 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
     expect(report.transaction.committed).toBe(true);
     expect(report.postVerification.passed).toBe(true);
     expect(report.accountingSmoke.passed).toBe(true);
+    // Cross-suite survival (OCR2R-H2), same contract as repro A.
+    expect(
+      await rowsOf("billing_customers", "external_id", fixtureKeys),
+    ).toHaveLength(5);
 
     expect(
       await rowsOf("billing_customers", "external_id", [bKey]),
@@ -2296,6 +2311,11 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
     expect(guard.refused).toHaveLength(2);
     for (const refusal of guard.refused) {
       expect(refusal.reason).toBe("not_in_verified_deletion_scope");
+      // OCR2R-M2: the kind reaches reviewer-facing evidence verbatim (no keyed
+      // display map exists in app/server src — grep verified); both surfaces —
+      // the relations manifest evidence the dry-run's hash covers, and this guard
+      // copy — pass the raw string through.
+      expect(refusal.evidence).toContain("funding_of_protected_key");
     }
     expect(guard.deletable).toEqual([
       { table: "credit_grants", recordId: legacyGrantId },
@@ -2314,6 +2334,10 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
     expect(report.transaction.committed).toBe(true);
     expect(report.postVerification.passed).toBe(true);
     expect(report.accountingSmoke.passed).toBe(true);
+    // Cross-suite survival (OCR2R-H2), same contract as the R2-F1 repros.
+    expect(
+      await rowsOf("billing_customers", "external_id", fixtureKeys),
+    ).toHaveLength(5);
 
     // The ownership survivors: both keys' customers/accounts, the company mapping, and
     // every unattributed funding row of both keys.
@@ -2400,5 +2424,175 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
         .from(paymentOrders)
         .where(inArray(paymentOrders.id, orders)),
     ).toHaveLength(0);
+  });
+});
+
+/*
+ * OCR2R-H1 regression (FIX-6): the account shape includes the derived account_key, and the
+ * ownership pass enforces it at runtime like every other shape column — an account whose
+ * five legacy columns form a legal personal shape and whose owner is even in the test-user
+ * registry still fails closed when its account_key is missing or points at another owner.
+ * These rows are direct inserts on purpose: the real service derives the key correctly, so
+ * only a historical drift row can carry a missing or mismatching one.
+ */
+describe("OCR2R-H1 (FIX-6): account_key drift fails closed as unknown_account_shape", () => {
+  const fix6 = `fix6-${Math.random().toString(36).slice(2, 10)}`;
+  const actor = `fix6-review-${fix6}`;
+  const registryUser = `${fix6}-user`;
+  const nullKey = `${fix6}-null`;
+  const mismatchKey = `${fix6}-mismatch`;
+  const keys = [nullKey, mismatchKey];
+  const payers = keys.map((key) => `${key}-pa`);
+  const deploys = keys.map((key) => `${key}-deploy`);
+  const orders = keys.map((key) => `${key}-order`);
+  const nullAccountId = `${fix6}-acc-null`;
+  const mismatchAccountId = `${fix6}-acc-mismatch`;
+
+  const evidence = { testOrderIds: orders, testUserIds: [registryUser] };
+
+  beforeAll(async () => {
+    await database
+      .insert(users)
+      .values([{ id: registryUser, email: `${registryUser}@openbot.test` }]);
+    await database.insert(billingCustomers).values(
+      keys.map((externalId) => ({
+        externalId,
+        name: `fix6 fixture ${externalId}`,
+      })),
+    );
+    await database.insert(payerAccounts).values(
+      keys.map((key, index) => ({
+        id: payers[index],
+        kind: "legacy_deployment",
+        payerId: deploys[index],
+        externalCustomerId: key,
+      })),
+    );
+    await database.insert(paymentOrders).values(
+      orders.map((id, index) => ({
+        id,
+        deploymentScope: `${fix6}-scope`,
+        planCode: "legacy-test",
+        provider: "alipay" as const,
+        amountCents: 2_000 + index,
+        status: "canceled" as const,
+        activationState: "pending" as const,
+        ownerPayerKind: "legacy_deployment" as const,
+        ownerPayerId: deploys[index],
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        terminalAt: new Date("2026-01-01T00:30:00Z"),
+      })),
+    );
+    // The drift arms: every one of the five legacy columns reads as a legal personal
+    // account and the owner IS in this run's registry — only account_key breaks the
+    // declared shape (NULL, or a key derived from a different owner).
+    await database.insert(billingCreditAccounts).values([
+      {
+        id: nullAccountId,
+        externalCustomerId: nullKey,
+        accountType: "personal",
+        status: "active",
+        ownerUserId: registryUser,
+        accountKey: null,
+      },
+      {
+        id: mismatchAccountId,
+        externalCustomerId: mismatchKey,
+        accountType: "personal",
+        status: "active",
+        ownerUserId: registryUser,
+        accountKey: "personal:someone-else",
+      },
+    ]);
+  });
+
+  afterAll(async () => {
+    // Children before parents; rows a successful execution deleted are no-ops here.
+    await database
+      .delete(billingCreditAccounts)
+      .where(
+        inArray(billingCreditAccounts.id, [nullAccountId, mismatchAccountId]),
+      );
+    await database
+      .delete(payerAccounts)
+      .where(inArray(payerAccounts.id, payers));
+    await database
+      .delete(paymentOrders)
+      .where(inArray(paymentOrders.id, orders));
+    await database
+      .delete(billingCustomers)
+      .where(inArray(billingCustomers.externalId, keys));
+    await database.delete(users).where(eq(users.id, registryUser));
+  });
+
+  test("a drifted account_key is unknown_account_shape: the account and its customer survive", async () => {
+    // 21.2 classifies both keys from the legacy mapping alone.
+    const classification = await classifyCleanup(database, evidence);
+    for (const key of keys) {
+      const record = classification.records.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === key,
+      );
+      expect(record?.class).toBe("confirmed_obsolete_test");
+    }
+
+    // 21.3 fails both drifted shapes closed and pulls their keys with the kind named.
+    const evaluated = await evaluateCleanupRelations(database, classification);
+    for (const [key, accountId] of [
+      [nullKey, nullAccountId],
+      [mismatchKey, mismatchAccountId],
+    ] as const) {
+      const evaluation = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === key,
+      );
+      expect(evaluation).toBeDefined();
+      expect(evaluation!.removed).toBe(true);
+      expect(evaluation!.removalReason).toBe("cascade_impact_on_retained");
+      expect(
+        evaluation!.retainedImpact.some(
+          (impact) =>
+            impact.table === "billing_credit_accounts" &&
+            impact.recordId === accountId &&
+            impact.protection === "unknown_account_shape",
+        ),
+      ).toBe(true);
+      expect(evaluation!.evidence).toContain("unknown_account_shape");
+      expect(
+        evaluated.safeCandidates.some(
+          (entry) =>
+            entry.table === "billing_customers" && entry.recordId === key,
+        ),
+      ).toBe(false);
+    }
+
+    // The real authorized execution commits its verified scope — both drifted accounts
+    // and their customers are still standing afterwards, while the legacy attribution
+    // rows of the same keys stay cleanable.
+    const dryRun = await buildCleanupDryRun(database, evidence);
+    const report = await executeAuthorizedCleanup(database, evidence, {
+      authorizationVersion: 1,
+      authorizedBy: actor,
+      authorizedAt: new Date().toISOString(),
+      statement: `OCR2R-H1 regression on ${dryRun.binding.database}: execute the verified scope; drifted account_key rows must survive`,
+      scope: dryRun.binding,
+    });
+    expect(report.transaction.committed).toBe(true);
+    expect(report.postVerification.passed).toBe(true);
+    expect(report.accountingSmoke.passed).toBe(true);
+    // Cross-suite survival (OCR2R-H2), same contract as the other real executions.
+    expect(
+      await rowsOf("billing_customers", "external_id", fixtureKeys),
+    ).toHaveLength(5);
+    expect(await rowsOf("billing_customers", "external_id", keys)).toHaveLength(
+      2,
+    );
+    expect(
+      await rowsOf("billing_credit_accounts", "id", [
+        nullAccountId,
+        mismatchAccountId,
+      ]),
+    ).toHaveLength(2);
+    expect(await rowsOf("payer_accounts", "id", payers)).toHaveLength(0);
   });
 });
