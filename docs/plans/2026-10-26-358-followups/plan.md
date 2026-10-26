@@ -18,8 +18,8 @@
 | OCRfix-1 | （#652 伞） | 0210 守卫式迁移（OCR-5 high）+四表命名（OCR-6 medium） | 终门 OCR R1 | ✅ verified：审核双 PASS（3 info）→ 集成 `c400130bb` |
 | OCRfix-2 | （#651 伞） | craft rebind 分支逐出补齐（OCR-1 medium） | 终门 OCR R1 | ✅ verified：审核双 PASS（0 findings）→ 集成 `7575ceb2a` |
 
-- Wave-1 并行 T1/T3/T4/T5（K=4 依 #358 程序授权）已全部收割；T2 于 T1 集成后 Wave-2 派发并闭环；T6 环境门解除后重估。
-- 每节点门禁全部走完：实施（claude）→ 独立审核 r1（claude 异会话，Spec+质量双结论）→ 集成+组合验证 → verified。终审 R1（final-review-r1.md）：Spec PwF / Quality PASS / **可交付**。
+- Wave-1 并行 T1/T3/T4/T5（K=4 依 #358 程序授权）已全部收割；T2 于 T1 集成后 Wave-2 派发并闭环。**8/9 票 verified；T6（#654）blocked(env) 票保持 OPEN**，环境门解除后重估。
+- 每代码节点门禁全部走完：实施（claude）→ 独立审核 r1（claude 异会话，Spec+质量双结论）→ 集成+组合验证 → verified。终审：R1（Spec PwF=PASS-with-findings / Quality PASS / 可交付）→ OCR R1 修复波（OCRfix-1/2）→ R2（Spec PwF / Quality PASS / 可交付）→ OCR 终跑修复波（OCRfix-3）→ R3（见 reviews/final-review-r3.md）。状态回填以 `.archive/runs/2026-10-26-358-followups/`（主 checkout：dag.json、ledger.md、reviews/、tickets/ 快照）为权威证据源。
 
 ## 2. 验收映射
 
