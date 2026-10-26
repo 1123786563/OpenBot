@@ -16,6 +16,7 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   PREVIEW_PASS_COOKIE_SHAPE,
+  PREVIEW_PASSES_PER_SESSION,
   createPreviewPassCodec,
   createPreviewPassIndex,
   type PreviewPassCodec,
@@ -27,6 +28,7 @@ import {
 
 const SECRET = "deployment-key-1";
 const SESSION_ID = "cs-444455556666";
+const OTHER_SESSION_ID = "cs-777788889999";
 const USER_ID = "u1";
 
 function codec(secret: string = SECRET): PreviewPassCodec {
@@ -308,6 +310,129 @@ describe("#427 rotation: single-token revocation", () => {
     expect(c.revoke(SESSION_ID, pass)).toBe(true);
     expect(c.revoke(SESSION_ID, pass)).toBe(false);
     expect(c.verify(SESSION_ID, pass)).toBeNull();
+  });
+});
+
+// ── #651: the per-session capacity bound (eviction) ──────────────────────────
+//
+// The index used to grow with every redemption and never evicted: an
+// authenticated client looping mint+redeem grew the process's memory
+// monotonically and every superseded token stayed live until revoked or
+// restart. The bound is per session and takes the OLDEST token, which is what
+// keeps the one invariant the small N needs: a session's CURRENT (latest) mint
+// is never the victim of its own mint.
+describe("#651: per-session capacity bound", () => {
+  /** A codec over an index of its own — never the process default, so a test
+   * with a tiny capacity cannot evict another test's entries. */
+  function bounded(capacity: number) {
+    const index = createPreviewPassIndex(capacity);
+    return { index, codec: createPreviewPassCodec(SECRET, index) };
+  }
+
+  test("minting past the bound evicts the OLDEST token of that session; the newest always verifies", () => {
+    const { codec: c } = bounded(3);
+    const first = c.issue(SESSION_ID, USER_ID);
+    const second = c.issue(SESSION_ID, USER_ID);
+    const third = c.issue(SESSION_ID, USER_ID);
+    // At the bound: every mint still verifies.
+    for (const pass of [first, second, third]) {
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    const fourth = c.issue(SESSION_ID, USER_ID); // the 4th over a bound of 3
+    // The oldest is gone, passively: the SAME index-miss judgment as an
+    // expired/restart-cleared pass — 401, no new shape.
+    expect(c.verify(SESSION_ID, first)).toBeNull();
+    // Everything from the eviction point onward stays live — and, the
+    // invariant: the CURRENT mint is one of them.
+    for (const pass of [second, third, fourth]) {
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    expect(c.verify(SESSION_ID, fourth)).toEqual({ userId: USER_ID });
+  });
+
+  test("the invariant holds at every step: after each mint the LATEST pass verifies", () => {
+    // The property, not an instance: whatever the capacity, the token the
+    // caller just received is never the one evicted by that same mint. A
+    // holder following the front-end path (mint, then present the newest)
+    // therefore never 401s because of eviction.
+    for (const capacity of [1, 2, 8]) {
+      const { codec: c } = bounded(capacity);
+      let latest = "";
+      for (let i = 0; i < capacity * 3; i++) {
+        latest = c.issue(SESSION_ID, USER_ID);
+        expect(c.verify(SESSION_ID, latest)).toEqual({ userId: USER_ID });
+      }
+      // And the index never exceeds the bound for that session.
+      expect(c.size()).toBeLessThanOrEqual(capacity);
+    }
+  });
+
+  test("eviction is per session: another session's mints never retire this session's passes", () => {
+    const { codec: c } = bounded(2);
+    const mine = [c.issue(SESSION_ID, USER_ID), c.issue(SESSION_ID, USER_ID)];
+    // A different session minting far past ITS bound must not touch mine.
+    for (let i = 0; i < 10; i++) c.issue(OTHER_SESSION_ID, USER_ID);
+    for (const pass of mine) {
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    // Each session is bounded independently — 2 + 2, not 2 total.
+    expect(c.size()).toBe(4);
+  });
+
+  test("revoke does not resurrect an evicted entry, and a re-mint does not bring the old token back", () => {
+    const { codec: c } = bounded(3);
+    const evicted = c.issue(SESSION_ID, USER_ID);
+    const alsoEvicted = c.issue(SESSION_ID, USER_ID);
+    const keep = c.issue(SESSION_ID, USER_ID);
+    c.issue(SESSION_ID, USER_ID); // the 4th: evicts `evicted`, not `keep`
+    expect(c.verify(SESSION_ID, evicted)).toBeNull();
+    expect(c.verify(SESSION_ID, keep)).toEqual({ userId: USER_ID });
+    // Revoking the evicted token is a clean false (nothing to delete), and it
+    // stays dead — the queue slot did not linger to be reused.
+    expect(c.revoke(SESSION_ID, evicted)).toBe(false);
+    expect(c.verify(SESSION_ID, evicted)).toBeNull();
+    // A re-mint plants a NEW token and evicts the next oldest (`alsoEvicted`),
+    // never resurrecting the already-evicted value.
+    const replanted = c.issue(SESSION_ID, USER_ID);
+    expect(replanted).not.toBe(evicted);
+    expect(c.verify(SESSION_ID, replanted)).toEqual({ userId: USER_ID });
+    expect(c.verify(SESSION_ID, evicted)).toBeNull();
+    expect(c.verify(SESSION_ID, alsoEvicted)).toBeNull();
+    // A sibling minted after the evicted one is still live: eviction walks the
+    // queue in mint order and stops at the bound.
+    expect(c.verify(SESSION_ID, keep)).toEqual({ userId: USER_ID });
+  });
+
+  test("revoking a live token frees its queue slot — the bound counts LIVE tokens, not historical mints", () => {
+    const { codec: c } = bounded(2);
+    const a = c.issue(SESSION_ID, USER_ID);
+    const b = c.issue(SESSION_ID, USER_ID);
+    expect(c.revoke(SESSION_ID, a)).toBe(true);
+    const d = c.issue(SESSION_ID, USER_ID); // 3rd mint, but only 2 live
+    // Nothing was evicted for the revoked slot: both survivors verify.
+    expect(c.verify(SESSION_ID, b)).toEqual({ userId: USER_ID });
+    expect(c.verify(SESSION_ID, d)).toEqual({ userId: USER_ID });
+    expect(c.size()).toBe(2);
+  });
+
+  test("the default bound is the documented 8, and a session at 8 keeps its oldest until the 9th mint", () => {
+    const c = codec(); // production default index path
+    const passes = Array.from({ length: PREVIEW_PASSES_PER_SESSION }, () =>
+      c.issue(SESSION_ID, USER_ID),
+    );
+    // Exactly at the bound: nothing evicted yet.
+    for (const pass of passes) {
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    c.issue(SESSION_ID, USER_ID); // the 9th
+    expect(c.verify(SESSION_ID, passes[0] ?? "")).toBeNull();
+    expect(c.verify(SESSION_ID, passes[1] ?? "")).toEqual({ userId: USER_ID });
+  });
+
+  test("a capacity below 1 fails at construction — never a mint that evicts itself", () => {
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      expect(() => createPreviewPassIndex(bad)).toThrow(RangeError);
+    }
   });
 });
 
