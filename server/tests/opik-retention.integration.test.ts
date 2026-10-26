@@ -179,7 +179,7 @@ function fakePort(options: {
         return {
           outcome: "upstream_error" as const,
           operation: "deleteTraces" as const,
-          code: "OPIK_CLIENT_ERROR" as const,
+          code: "OPIK_PROJECT_MISSING" as const,
           status: 404,
         };
       }

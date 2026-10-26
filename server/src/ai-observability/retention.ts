@@ -964,9 +964,12 @@ export function createObservationRetentionWorker(
             // FREV-07: a missing locator project answers 404, and its traces may well be
             // the rows the E2E evidence watched survive a project delete — named apart so
             // the parked record says what it is waiting on, not a generic client error.
+            // The port's code names the ONE verified missing-project fact; deleteTraces
+            // has several 404 sources, and the delete endpoint's own 404 (path/version
+            // drift) stays OPIK_CLIENT_ERROR via failureCode (ocrfix-a port half).
             upstreamKind === "trace" &&
               result.outcome === "upstream_error" &&
-              result.status === 404
+              result.code === "OPIK_PROJECT_MISSING"
               ? "OPIK_PROJECT_MISSING"
               : failureCode(result as OpikPortResult<never>),
           );
