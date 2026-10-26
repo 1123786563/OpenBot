@@ -3,6 +3,7 @@
   "description": "本公司的人员、身份、审计与计费——每一项入口都以服务端给出的能力为准。",
   "nav": {
     "people": "人员与凭据",
+    "organization": "组织",
     "audit": "审计",
     "enterprise": "企业设置",
     "learning": "学习",
@@ -189,5 +190,50 @@
     "refused": "公司账簿仅对获显式授权的财务读取者开放——管理员身份本身并不足够。",
     "failed": "公司账簿读取失败。",
     "entryRefused": "计费管理入口仅对获显式授权的主体开放。"
+  },
+  "organization": {
+    "title": "组织",
+    "description": "公司资料与团队成员。",
+    "view": {
+      "settings": "设置",
+      "members": "成员"
+    },
+    "noSelection": {
+      "title": "尚未选择公司",
+      "description": "请先在选择页选择公司与团队。"
+    },
+    "failed": {
+      "title": "无法加载你的公司",
+      "description": "请重试；若持续失败，请联系管理员。"
+    },
+    "profile": {
+      "title": "公司资料",
+      "description": "这里只能更改名称、slug 和标志图片。",
+      "name": "名称",
+      "slug": "Slug",
+      "logo": "标志图片地址",
+      "status": "状态",
+      "statusReadOnly": "公司状态为只读。",
+      "statusUnavailable": "你看不到公司状态。",
+      "deletion": "关闭公司需要走评审申请。请联系 OpenBot 管理员发起。",
+      "save": "保存更改",
+      "readOnly": "你可以查看这份资料，但不能更改。",
+      "refused": "你不能更改这家公司的资料。请联系公司管理员。",
+      "invalid": "请检查资料字段后重试。",
+      "paused": "公司变更暂时停用，请稍后再试。",
+      "failed": "无法连接 OpenBot，请重试。"
+    },
+    "team": {
+      "title": "团队成员",
+      "description": "添加或移除所选团队的成员。",
+      "rolesNote": "角色与团队管理员由公司管理员设置。",
+      "principalId": "成员 ID",
+      "add": "添加成员",
+      "remove": "移除成员",
+      "refused": "你不能管理这个团队的成员。请联系公司管理员。",
+      "invalid": "请检查成员 ID 后重试。",
+      "paused": "团队变更暂时停用，请稍后再试。",
+      "failed": "无法连接 OpenBot，请重试。"
+    }
   }
 }

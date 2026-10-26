@@ -37,6 +37,24 @@
       "upstream": "src/components/auth/forms/sign-in-form.tsx",
       "sha256": "df90cbd4c358b622746998d8e9f68b38b75a414e26cf330bd5ee3786a3b51254",
       "note": "OpenBot's fixed auth entry wrapping the pinned SignInForm; OpenBot method props arrive with the T01.09 client adapters."
+    },
+    {
+      "path": "app/src/components/auth/organization/organization-view.tsx",
+      "upstream": "src/components/organization/organization-view.tsx",
+      "sha256": "e3220ba9b761876435f37e3bb31958712b8737e4494cee3b4a52137baef51d2e",
+      "note": "T04.09: entry view composing OpenBot's adapted cards; views ride the existing Router (/organization/$view), listing-derived capabilities decide the writable surface."
+    },
+    {
+      "path": "app/src/components/auth/organization/organization-settings-cards.tsx",
+      "upstream": "src/components/organization/organization-settings-cards.tsx",
+      "sha256": "666f46b6ca58264066a97676af937e22d9a0d96d6f0fdaa78e9ba68a53188b84",
+      "note": "T04.09: company profile limited to name/slug/logo via the Directory command adapter (flat ingress body); status read-only; deletion stays a reviewed platform request with no control here."
+    },
+    {
+      "path": "app/src/components/auth/organization/organization-members-card.tsx",
+      "upstream": "src/components/organization/organization-members-card.tsx",
+      "sha256": "3cf0a0b5f74fcab6fde1dc418d48bbc005caeeffdca8746fce38c7410adf6811",
+      "note": "T04.09: scoped team member add/remove through the T04.08 workspace-scope routes by OpenBot principalId; no company-role or organization write composes here."
     }
   ],
   "organization": {

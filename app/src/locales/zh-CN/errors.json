@@ -262,5 +262,9 @@
   "modelSelection": {
     "loadFailed": "无法加载你的模型选择。",
     "writeFailed": "无法保存你的模型选择。"
+  },
+  "companyAdmin": {
+    "saveCompanyProfile": "无法保存公司资料。",
+    "changeTeamMembers": "无法更改团队成员。"
   }
 }

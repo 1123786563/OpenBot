@@ -3,6 +3,7 @@
   "description": "Your company's people, identity, audit and billing — what the server says you may manage here.",
   "nav": {
     "people": "People & credentials",
+    "organization": "Organization",
     "audit": "Audit",
     "enterprise": "Enterprise settings",
     "learning": "Learning",
@@ -189,5 +190,50 @@
     "refused": "The company books are open to an explicitly authorized finance reader only — being an administrator is not enough.",
     "failed": "The company books could not be read.",
     "entryRefused": "Billing management is open to explicitly authorized subjects only."
+  },
+  "organization": {
+    "title": "Organization",
+    "description": "Your company's profile and your team's members.",
+    "view": {
+      "settings": "Settings",
+      "members": "Members"
+    },
+    "noSelection": {
+      "title": "No company selected",
+      "description": "Choose a company and a team on the selection page first."
+    },
+    "failed": {
+      "title": "Couldn't load your companies",
+      "description": "Retry, or ask an admin if it keeps happening."
+    },
+    "profile": {
+      "title": "Company profile",
+      "description": "Only the name, the slug and the logo can change here.",
+      "name": "Name",
+      "slug": "Slug",
+      "logo": "Logo image address",
+      "status": "Status",
+      "statusReadOnly": "The company's status is read-only.",
+      "statusUnavailable": "You can't see the company's status.",
+      "deletion": "Closing a company is a reviewed request. Ask the OpenBot admin to start it.",
+      "save": "Save changes",
+      "readOnly": "You can view this profile, not change it.",
+      "refused": "You can't change this company's profile. Ask a company admin.",
+      "invalid": "Check the profile fields and try again.",
+      "paused": "Company changes are paused right now. Try again later.",
+      "failed": "Couldn't reach OpenBot. Try again."
+    },
+    "team": {
+      "title": "Team members",
+      "description": "Add or remove members of your selected team.",
+      "rolesNote": "Roles and team managers are set by a company admin.",
+      "principalId": "Member id",
+      "add": "Add member",
+      "remove": "Remove member",
+      "refused": "You can't manage this team's members. Ask a company admin.",
+      "invalid": "Check the member id and try again.",
+      "paused": "Team changes are paused right now. Try again later.",
+      "failed": "Couldn't reach OpenBot. Try again."
+    }
   }
 }

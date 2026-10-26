@@ -262,5 +262,9 @@
   "modelSelection": {
     "loadFailed": "Your model selection could not be loaded.",
     "writeFailed": "Your model selection could not be saved."
+  },
+  "companyAdmin": {
+    "saveCompanyProfile": "Couldn't save the company profile.",
+    "changeTeamMembers": "Couldn't change the team's members."
   }
 }

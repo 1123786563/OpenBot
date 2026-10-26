@@ -45,6 +45,7 @@ import { Route as AuthedAdminObservabilityRouteImport } from './routes/_authed/a
 import { Route as AuthedAdminPeopleRouteImport } from './routes/_authed/admin/people'
 import { Route as AuthedAdminPlaygroundRouteImport } from './routes/_authed/admin/playground'
 import { Route as AuthedAdminSkillsRouteImport } from './routes/_authed/admin/skills'
+import { Route as AuthedOrganizationViewRouteImport } from './routes/_authed/organization/$view'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsApprovalsRouteImport } from './routes/_authed/settings/approvals'
 import { Route as AuthedSettingsAsyncJobsRouteImport } from './routes/_authed/settings/async-jobs'
@@ -285,6 +286,11 @@ const AuthedAdminSkillsRoute = AuthedAdminSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
   getParentRoute: () => AuthedAdminRouteRoute,
+} as any)
+const AuthedOrganizationViewRoute = AuthedOrganizationViewRouteImport.update({
+  id: '/organization/$view',
+  path: '/organization/$view',
+  getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   id: '/',
@@ -647,6 +653,7 @@ export interface FileRoutesByFullPath {
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
+  '/organization/$view': typeof AuthedOrganizationViewRoute
   '/settings/approvals': typeof AuthedSettingsApprovalsRoute
   '/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/settings/invoices': typeof AuthedSettingsInvoicesRoute
@@ -738,6 +745,7 @@ export interface FileRoutesByTo {
   '/admin/people': typeof AuthedAdminPeopleRoute
   '/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/admin/skills': typeof AuthedAdminSkillsRoute
+  '/organization/$view': typeof AuthedOrganizationViewRoute
   '/settings/approvals': typeof AuthedSettingsApprovalsRoute
   '/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/settings/invoices': typeof AuthedSettingsInvoicesRoute
@@ -834,6 +842,7 @@ export interface FileRoutesById {
   '/_authed/admin/people': typeof AuthedAdminPeopleRoute
   '/_authed/admin/playground': typeof AuthedAdminPlaygroundRoute
   '/_authed/admin/skills': typeof AuthedAdminSkillsRoute
+  '/_authed/organization/$view': typeof AuthedOrganizationViewRoute
   '/_authed/settings/approvals': typeof AuthedSettingsApprovalsRoute
   '/_authed/settings/async-jobs': typeof AuthedSettingsAsyncJobsRoute
   '/_authed/settings/invoices': typeof AuthedSettingsInvoicesRoute
@@ -931,6 +940,7 @@ export interface FileRouteTypes {
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
+    | '/organization/$view'
     | '/settings/approvals'
     | '/settings/async-jobs'
     | '/settings/invoices'
@@ -1022,6 +1032,7 @@ export interface FileRouteTypes {
     | '/admin/people'
     | '/admin/playground'
     | '/admin/skills'
+    | '/organization/$view'
     | '/settings/approvals'
     | '/settings/async-jobs'
     | '/settings/invoices'
@@ -1117,6 +1128,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/people'
     | '/_authed/admin/playground'
     | '/_authed/admin/skills'
+    | '/_authed/organization/$view'
     | '/_authed/settings/approvals'
     | '/_authed/settings/async-jobs'
     | '/_authed/settings/invoices'
@@ -1437,6 +1449,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/skills'
       preLoaderRoute: typeof AuthedAdminSkillsRouteImport
       parentRoute: typeof AuthedAdminRouteRoute
+    }
+    '/_authed/organization/$view': {
+      id: '/_authed/organization/$view'
+      path: '/organization/$view'
+      fullPath: '/organization/$view'
+      preLoaderRoute: typeof AuthedOrganizationViewRouteImport
+      parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/': {
       id: '/_authed/settings/'
@@ -2093,6 +2112,7 @@ interface AuthedRouteChildren {
   AuthedAppRoute: typeof AuthedAppRouteWithChildren
   AuthedOnboardingRoute: typeof AuthedOnboardingRoute
   AuthedTenantAdminRouteRoute: typeof AuthedTenantAdminRouteRouteWithChildren
+  AuthedOrganizationViewRoute: typeof AuthedOrganizationViewRoute
   AuthedSignInRequestIdRoute: typeof AuthedSignInRequestIdRoute
   AuthedTenantChannelsRoute: typeof AuthedTenantChannelsRoute
   AuthedTenantSelectionRoute: typeof AuthedTenantSelectionRoute
@@ -2104,6 +2124,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAppRoute: AuthedAppRouteWithChildren,
   AuthedOnboardingRoute: AuthedOnboardingRoute,
   AuthedTenantAdminRouteRoute: AuthedTenantAdminRouteRouteWithChildren,
+  AuthedOrganizationViewRoute: AuthedOrganizationViewRoute,
   AuthedSignInRequestIdRoute: AuthedSignInRequestIdRoute,
   AuthedTenantChannelsRoute: AuthedTenantChannelsRoute,
   AuthedTenantSelectionRoute: AuthedTenantSelectionRoute,
