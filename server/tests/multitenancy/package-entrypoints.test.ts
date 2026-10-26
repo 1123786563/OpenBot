@@ -21,6 +21,9 @@
 //       连接换账号 → CONNECTION_UNAVAILABLE；均 transport 0 次。
 //   (7) 取消/重试不重置 operation identity：cancelled 后同 toolCallId 再派发
 //       → DUPLICATE_DISPATCH，transport 0 次。
+//   (8) 生产接缝形状（OCR H1 修复回测）：cancel 臂经 run context 携带的 scope
+//       取消——策略/审批拒绝后 prepared 行转 cancelled，不留悬空行（同 id
+//       再派发仍是 DUPLICATE_DISPATCH，transport 0 次）。
 //
 // 真实受限角色（data/operator/directory）+ 真实 RLS；transport 为可控注入
 // （不拨真实供应商）。安排行（install/grant/run 种子）经披露过的 superuser/
@@ -61,6 +64,7 @@ import type {
   PackageCatalogue,
   PackageReleaseFacts,
 } from "../../src/plugin-packages/catalogue";
+import type { PackageToolSeam } from "../../src/plugins/package-tools";
 import {
   enterpriseRuntimeDatabaseUrlFrom,
   enterpriseTestDatabaseUrlFrom,
@@ -751,6 +755,98 @@ describeDb("PKG09 package entrypoints (real roles)", () => {
         await dispatch.dispatchPackageTool(restored.run.scope, retried.ticket, {
           query: "notes",
         }),
+      ).toEqual({ outcome: "refused", code: "DUPLICATE_DISPATCH" });
+      expect(vendorCalls).toHaveLength(0);
+    },
+  );
+
+  itDb(
+    "the production seam shape cancels through the run context's scope — no dangling prepared row (OCR-fix-A2)",
+    async () => {
+      const current = await prepareCase();
+      const restored = await entrypoints.restoreRunContext({
+        ownerUserId,
+        runId: current.runId,
+        botId: current.botId,
+      });
+      expect(restored.outcome).toBe("context");
+      if (restored.outcome !== "context") return;
+
+      /*
+       * server/src/index.ts's packageToolSeam, mirrored: the scope rides the
+       * SERVER-ISSUED run context of the seam input — never the ticket, which
+       * carries no scope. The OCR H1 bug read it off the ticket instead, so
+       * every cancel threw PACKAGE_RUN_SCOPE_MISSING and the store's swallowed
+       * error stranded the prepared row.
+       */
+      const scopeOf = (context: {
+        runId: string;
+        attemptGeneration: number;
+      }) => {
+        const scope = (context as { scope?: unknown }).scope;
+        if (!scope) throw new Error("PACKAGE_RUN_SCOPE_MISSING");
+        return scope as Parameters<typeof dispatch.beginDispatch>[0];
+      };
+      const seam: PackageToolSeam = {
+        async list() {
+          return [];
+        },
+        prepare: ({ context, botId, toolCallId, ref, args }) =>
+          dispatch.preparePackageTool(scopeOf(context), {
+            runId: context.runId,
+            attemptGeneration: context.attemptGeneration,
+            toolCallId,
+            ref,
+            args,
+            botId,
+          }),
+        dispatch: (ticket, args, { context }) =>
+          dispatch.dispatchPackageTool(scopeOf(context), ticket, args),
+        cancel: (ticket, { context }) =>
+          dispatch.cancelDispatch(scopeOf(context), {
+            runId: ticket.runId,
+            attemptGeneration: ticket.attemptGeneration,
+            toolCallId: ticket.toolCallId,
+          }),
+      };
+
+      const context = {
+        runId: current.runId,
+        attemptGeneration: 1,
+        scope: restored.run.scope,
+      };
+      const toolCallId = `call-${randomUUID()}`;
+      const prepared = await seam.prepare({
+        context,
+        botId: current.botId,
+        actorId: ownerUserId,
+        toolCallId,
+        ref: toolRefFor(current.installId),
+        args: { query: "notes" },
+      });
+      expect(prepared.outcome).toBe("ticket");
+      if (prepared.outcome !== "ticket") return;
+
+      // Policy (or the person) refuses: the cancel arm drives the prepared
+      // row to cancelled THROUGH the context's scope.
+      await expect(
+        seam.cancel(prepared.ticket, { context }),
+      ).resolves.toBeUndefined();
+      const rows = (await setup.$client.unsafe(
+        "select state from enterprise_package_dispatches where run_id = $1 and tool_call_id = $2",
+        [current.runId, toolCallId],
+      )) as Array<{ state: string }>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.state).toBe("cancelled");
+
+      // PKG09's identity invariant survives the refusal: with the row
+      // cancelled (not dangling prepared) a same-id redispatch is
+      // DUPLICATE_DISPATCH and the transport never fires. With the old arm
+      // the row stayed prepared, this CAS would have SUCCEEDED and dialed
+      // the vendor a second time for a refused call.
+      vendorCalls = [];
+      expect(
+        await seam.dispatch(prepared.ticket, { query: "notes" }, { context }),
       ).toEqual({ outcome: "refused", code: "DUPLICATE_DISPATCH" });
       expect(vendorCalls).toHaveLength(0);
     },

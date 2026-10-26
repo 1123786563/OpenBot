@@ -63,6 +63,13 @@ COPY examples examples
 # content-addressed artifacts the server's default boot path resolves.
 COPY plugins plugins
 
+# The marketplace's governance sources: `server/src/plugin-packages/deployment-facts.ts`
+# imports `scripts/plugin-packages/index-file` as a value (the withdrawal-facts gate
+# dispatch consults under the release lock), so the runtime image needs this subtree
+# beside the marketplace it governs, or the server's static import chain fails module
+# resolution at startup. Its only other import is `shared/enterprise/`, copied above.
+COPY scripts/plugin-packages scripts/plugin-packages
+
 # The built app, served by the process below. `APP_DIST_DIR` is what turns that on, so an image
 # without this layer is still a working API.
 COPY --from=app-build /app/app/dist app/dist

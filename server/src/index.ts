@@ -1823,8 +1823,8 @@ const packageTooling = await (async () => {
       }),
     dispatch: (ticket, args, { context }) =>
       dispatch.dispatchPackageTool(scopeOf(context), ticket, args),
-    cancel: (ticket) =>
-      dispatch.cancelDispatch(scopeOf(ticket), {
+    cancel: (ticket, { context }) =>
+      dispatch.cancelDispatch(scopeOf(context), {
         runId: ticket.runId,
         attemptGeneration: ticket.attemptGeneration,
         toolCallId: ticket.toolCallId,
