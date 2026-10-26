@@ -456,7 +456,6 @@ import { createDrizzleBudgetGate } from "../hindsight/budget-gate";
 import { createCleanupEvidenceService } from "../hindsight/cleanup-evidence";
 import { parseHindsightPrivacy } from "../hindsight/config";
 import {
-  createDegradedRecallFacade,
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
 } from "../hindsight/degraded-recall";
@@ -471,10 +470,12 @@ import {
   createDrizzlePauseControls,
   createUserPauseGate,
 } from "../hindsight/pause-controls";
+// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
+// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
 import {
-  createPersonalMemoryContext,
-  renderPersonalMemoryContext,
-} from "../hindsight/personal-memory-context";
+  createHindsightRecallArm,
+  createHindsightSyncArm,
+} from "../memory/integration";
 import {
   createDrizzlePreferenceRecords,
   createPreferenceRecallService,
@@ -4359,14 +4360,11 @@ if (
       },
     };
   }
-  const personalMemoryContext = createPersonalMemoryContext({
-    recall: createDegradedRecallFacade(
-      hindsightPreferences,
-      hindsightSourceBound,
-      hindsightPreferenceSearch,
-      hindsightSourceBoundSearch,
-      hindsightAuthorizations,
-    ),
+  // MOD15 (#635)：装配点经 M10 具名臂——降级门面、语境组合与两处共用的渲染装载器
+  // （ME10 AC3 one loader）收拢进 createHindsightRecallArm，参数逐一对应原内联组合。
+  const hindsightRecallArm = createHindsightRecallArm({
+    preferences: hindsightPreferences,
+    sourceBound: hindsightSourceBound,
     preferenceSearch: hindsightPreferenceSearch,
     sourceBoundSearch: hindsightSourceBoundSearch,
     authorizations: hindsightAuthorizations,
@@ -4376,19 +4374,10 @@ if (
     pause: hindsightPause,
     recovery: hindsightRecovery.gate,
   });
-  setMastraPersonalMemoryContext(async (scope, botId) =>
-    renderPersonalMemoryContext(
-      (await personalMemoryContext.personalMemoryContext(scope, botId))
-        .memories,
-    ),
-  );
+  setMastraPersonalMemoryContext(hindsightRecallArm.renderedLoader);
   // ME10 (AC3): the SAME authority serves the governed headless turns —
   // one loader, the same rendered block, no parallel memory path.
-  headlessPersonalMemoryContext = async (scope, botId) =>
-    renderPersonalMemoryContext(
-      (await personalMemoryContext.personalMemoryContext(scope, botId))
-        .memories,
-    );
+  headlessPersonalMemoryContext = hindsightRecallArm.renderedLoader;
   /*
    * Hindsight 14 (#392, F-G1-5): the derived-judgment expiry, handed to the sweep above. The
    * review service is the same production assembly the review entries read (authority rows,
@@ -4412,12 +4401,16 @@ if (
   // each stage under the sweep's own logged swallow, and every pass idempotent
   // — the queue's drain re-reads ownership and authorization at task time, so
   // an interrupted pass simply retries.
-  hindsightSyncSweep = repeatAfterEach(async () => {
-    await sweepStep("hindsightSyncDrain", () => hindsightSyncQueue.drain());
-    await sweepStep("hindsightDeletionRetry", () =>
-      hindsightRevocations.retryOutstandingDeletions(),
-    );
-  }, HINDSIGHT_SYNC_DRAIN_INTERVAL_MS);
+  // MOD15 (#635)：drain + 撤销重试的两段清扫经 M10 具名臂（memory/integration.ts
+  // createHindsightSyncArm），段名与逐段吞错的日志形状与原 sweepStep 内联完全一致。
+  const hindsightSyncArm = createHindsightSyncArm({
+    queue: hindsightSyncQueue,
+    revocations: hindsightRevocations,
+  });
+  hindsightSyncSweep = repeatAfterEach(
+    hindsightSyncArm.sweep,
+    HINDSIGHT_SYNC_DRAIN_INTERVAL_MS,
+  );
 }
 
 const mastraContinuationRouteDeps =

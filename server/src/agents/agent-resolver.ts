@@ -16,7 +16,8 @@ import {
 } from "../copilot";
 import type { GovernedModelRequest } from "../enterprise/runs/governed-execution";
 import type { AcquireLearnedSkills } from "../learning/runtime";
-import type { LoadPersonalMemory } from "../memory/tools";
+// MOD15 (#635)：M10 出口段迁移——记忆装载器类型改经 M10 公开门面，环边落公开出口。
+import type { LoadPersonalMemory } from "../memory/public";
 import type { AgentActor } from "./profile-types";
 
 export type AgentResolutionContext = {
