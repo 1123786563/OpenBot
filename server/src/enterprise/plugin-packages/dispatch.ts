@@ -51,6 +51,7 @@ import {
   enterpriseWorkspaceMemberships,
 } from "../../db/schema/enterprise-tenancy";
 import type { PackageCatalogue } from "../../plugin-packages/catalogue";
+import type { PackageReleaseFactsGate } from "../../plugin-packages/deployment-facts";
 import type { PackageToolTicket } from "../../plugins/package-tools";
 import { transportFor } from "../../plugins/transport";
 import type { PlatformScope } from "../contracts";
@@ -678,6 +679,14 @@ export interface CreatePackageDispatchInput {
   readonly data: DataDatabase;
   /** 撤回判定面；null 时派发一律 fail closed（只读浏览不受影响）。 */
   readonly catalogue: PackageCatalogue | null;
+  /**
+   * T13-fix-1 (Codex FC-01)：部署侧共享撤回事实面（可选）。注入时
+   * beginDispatch 先取与部署命令同一把跨进程 release 锁，并两臂检查前重读
+   * 当前索引事实——「撤回先提交→transport 0 / dispatch 先提交→已 dispatched
+   * 保留」跨进程线性化成立。未注入时维持启动快照判定（既有测试注入面的
+   * 行为不变；生产装配恒注入）。
+   */
+  readonly releaseFacts?: PackageReleaseFactsGate | null;
   /** 内容寻址制品根；null 时工具派发 fail closed。 */
   readonly artifactRoot: string | null;
   /** MT031 envelope 解封；null 时带 secret 的安装不可拨号（fail closed）。 */
@@ -724,6 +733,7 @@ export function createPackageDispatchService(
   const {
     data,
     catalogue,
+    releaseFacts,
     artifactRoot,
     vault,
     toolInvocation,
@@ -1170,6 +1180,27 @@ export function createPackageDispatchService(
     ) {
       return refused("PACKAGE_WITHDRAWN");
     }
+    if (releaseFacts) {
+      // T13-fix-1 (Codex FC-01)：部署侧当前事实（pin 臂）——在共享 release
+      // 锁内重读当前部署索引，读取后到 dispatched CAS 提交之间撤回无法落
+      // 锁；「撤回先提交→transport 0」跨进程成立。读取失败/不在当前索引/
+      // 摘要不符/非 published 一律 fail closed；boot 快照臂保留为门未注入
+      // 部署（既有测试面）的兜底。listed 与此无关（发现面正交）。
+      try {
+        const pinnedDeployed = await releaseFacts.readFreshFacts(
+          install.packageKey,
+          pinnedRevision.releaseVersion,
+        );
+        if (
+          pinnedDeployed?.artifactDigest !== pin.releaseDigest ||
+          pinnedDeployed?.state !== "published"
+        ) {
+          return refused("PACKAGE_WITHDRAWN");
+        }
+      } catch {
+        return refused("PACKAGE_WITHDRAWN");
+      }
+    }
     const pinnedRelease = await catalogue.resolveRelease(
       install.packageKey,
       pinnedRevision.releaseVersion,
@@ -1198,6 +1229,25 @@ export function createPackageDispatchService(
     if (currentRelease.state !== "published") {
       // PKG08 (#467)：install 当前版本被撤回同样阻断（不依赖 pin 侧）。
       return refused("PACKAGE_WITHDRAWN");
+    }
+    if (releaseFacts) {
+      // T13-fix-1 (Codex FC-01)：部署侧当前事实（install 当前版本臂）——
+      // 同一锁窗口内重读；摘要与 boot 快照交叉核对（同版本异摘要不可能经
+      // 部署通道发生，出现即索引漂移 → fail closed）。
+      try {
+        const currentDeployed = await releaseFacts.readFreshFacts(
+          install.packageKey,
+          install.version,
+        );
+        if (
+          currentDeployed?.state !== "published" ||
+          currentDeployed?.artifactDigest !== currentRelease.artifactDigest
+        ) {
+          return refused("PACKAGE_WITHDRAWN");
+        }
+      } catch {
+        return refused("PACKAGE_WITHDRAWN");
+      }
     }
     const declared = addedToolsOf(currentRelease.manifest).find(
       (tool) => tool.ref === binding.toolRef,
@@ -1414,147 +1464,171 @@ export function createPackageDispatchService(
       const binding = resolveBinding(rawInput.bindingId);
       if (!binding) return refused("NOT_AVAILABLE");
       /*
-       * The decision surfaces FIRST, each in its own short transaction: #75's
-       * per-call Bot/account revalidation and MT031's install/connection
-       * invoke gate. They are never called from inside the CAS transaction
-       * (that would need a second pooled connection while this one is held —
-       * a deadlock on a single-connection pool, and needless contention on any
-       * other). The CAS transaction below re-reads every fact they checked
-       * directly; neither surface is a substitute for those reads.
+       * T13-fix-1 (Codex FC-01)：共享 release 锁。在取任何数据库锁之前获取
+       * （部署命令只持这一把锁——锁序无环），持有直到 dispatched CAS 的事务
+       * 提交之后：撤回无法落在锁内 fresh-facts 读取与 CAS 提交之间，故
+       * 「撤回先提交→transport 0 / dispatch 先提交→已 dispatched 保留」跨
+       * 进程线性化成立。transport 拨号在本区间之外（permit 返回后才发生）。
+       * 锁超时（部署侧长时间持锁/陈旧锁竞态）按 fail closed 拒绝：transport
+       * 0，typed refusal——事实不可核实即不可派发，绝不让其变成 500。
        */
-      const preTargets = await readTargets(
-        scope,
-        rawInput.runId,
-        rawInput.attemptGeneration,
-        binding,
-      );
-      if (!preTargets.botId) return refused("RUN_LEASE_INVALID");
-      const surfacesBefore = await authorizeSurfaces(
-        scope,
-        preTargets.botId,
-        binding.toolRef,
-        preTargets.connectorInstallId,
-      );
-      if (surfacesBefore) return surfacesBefore;
-      return openTransaction(scope, async (tx) => {
+      let releaseLock: Awaited<
+        ReturnType<NonNullable<PackageReleaseFactsGate["acquireReleaseLock"]>>
+      > | null = null;
+      if (releaseFacts) {
+        try {
+          releaseLock = await releaseFacts.acquireReleaseLock();
+        } catch {
+          return refused("NOT_AVAILABLE");
+        }
+      }
+      try {
         /*
-         * Spec §8 lock order, staged because the connector-install and
-         * connection ids only become known from the pin: member class first
-         * (shared, from the trusted scope), then a lock-free read of the pin's
-         * binding learns the lower-class ids, and every class is then locked
-         * IN ORDER before the revalidation reads — install → grant(bot) →
-         * connector-install → connection → operation. The pre-lock read is
-         * only to learn ids; every authorization fact is re-read under the
-         * locks below by resolveFacts.
+         * The decision surfaces FIRST, each in its own short transaction:
+         * #75's per-call Bot/account revalidation and MT031's install/
+         * connection invoke gate. They are never called from inside the CAS
+         * transaction (that would need a second pooled connection while this
+         * one is held — a deadlock on a single-connection pool, and needless
+         * contention on any other). The CAS transaction below re-reads every
+         * fact they checked directly; neither surface is a substitute for
+         * those reads.
          */
-        await takeSharedLocks(tx, memberLockKeys(scope));
-        const staged = await readBindingTargets(
-          tx,
+        const preTargets = await readTargets(
           scope,
           rawInput.runId,
           rawInput.attemptGeneration,
           binding,
         );
-        await takeSharedLocks(tx, [
-          packageInstallKey(scope, binding.installId),
-          packageGrantKey(scope, staged.botId ?? "", binding.installId),
-          ...(staged.connectorInstallId
-            ? [pluginInstallKey(scope, staged.connectorInstallId)]
-            : []),
-          ...(staged.connectionId
-            ? [pluginConnectionKey(scope, staged.connectionId)]
-            : []),
-        ]);
-        // Spec §8 operation level: exclusive on the dispatch identity.
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${dispatchOperationKey(
-            {
+        if (!preTargets.botId) return refused("RUN_LEASE_INVALID");
+        const surfacesBefore = await authorizeSurfaces(
+          scope,
+          preTargets.botId,
+          binding.toolRef,
+          preTargets.connectorInstallId,
+        );
+        if (surfacesBefore) return surfacesBefore;
+        return await openTransaction(scope, async (tx) => {
+          /*
+           * Spec §8 lock order, staged because the connector-install and
+           * connection ids only become known from the pin: member class first
+           * (shared, from the trusted scope), then a lock-free read of the
+           * pin's binding learns the lower-class ids, and every class is then
+           * locked IN ORDER before the revalidation reads — install →
+           * grant(bot) → connector-install → connection → operation. The
+           * pre-lock read is only to learn ids; every authorization fact is
+           * re-read under the locks below by resolveFacts.
+           */
+          await takeSharedLocks(tx, memberLockKeys(scope));
+          const staged = await readBindingTargets(
+            tx,
+            scope,
+            rawInput.runId,
+            rawInput.attemptGeneration,
+            binding,
+          );
+          await takeSharedLocks(tx, [
+            packageInstallKey(scope, binding.installId),
+            packageGrantKey(scope, staged.botId ?? "", binding.installId),
+            ...(staged.connectorInstallId
+              ? [pluginInstallKey(scope, staged.connectorInstallId)]
+              : []),
+            ...(staged.connectionId
+              ? [pluginConnectionKey(scope, staged.connectionId)]
+              : []),
+          ]);
+          // Spec §8 operation level: exclusive on the dispatch identity.
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${dispatchOperationKey(
+              {
+                tenantId: scope.tenantId,
+                runId: rawInput.runId,
+                attemptGeneration: rawInput.attemptGeneration,
+                toolCallId: rawInput.toolCallId,
+              },
+            )}, 0))`,
+          );
+          const resolution = await resolveFacts(
+            tx,
+            scope,
+            null,
+            rawInput.runId,
+            rawInput.attemptGeneration,
+            binding,
+            rawInput.args,
+            rawInput.expectedConnection,
+          );
+          if (resolution.outcome !== "facts") return resolution;
+          const access = await accessOf(
+            tx,
+            scope,
+            resolution.facts.botId,
+            resolution.facts,
+          );
+          if (access.outcome !== "allow") return access;
+          const operationId = randomUUID();
+          await tx
+            .insert(dispatchRows)
+            .values({
               tenantId: scope.tenantId,
+              operationId,
+              workspaceId: scope.workspaceId,
               runId: rawInput.runId,
               attemptGeneration: rawInput.attemptGeneration,
               toolCallId: rawInput.toolCallId,
+              installId: resolution.facts.installId,
+              revision: resolution.facts.revision,
+              resourceId: resolution.facts.resourceId,
+              toolRef: resolution.facts.toolRef,
+              connectorInstallId: resolution.facts.connectorInstallId,
+              connectionId: resolution.facts.connectionId,
+              connectionGeneration: resolution.facts.connectionGeneration,
+              argsDigest: resolution.facts.argsDigest,
+              effect: resolution.facts.effect,
+              state: "prepared",
+            })
+            .onConflictDoNothing();
+          const dispatched = await tx
+            .update(dispatchRows)
+            .set({ state: "dispatched", updatedAt: new Date() })
+            .where(
+              and(
+                eq(dispatchRows.tenantId, scope.tenantId),
+                eq(dispatchRows.workspaceId, scope.workspaceId),
+                eq(dispatchRows.runId, rawInput.runId),
+                eq(dispatchRows.attemptGeneration, rawInput.attemptGeneration),
+                eq(dispatchRows.toolCallId, rawInput.toolCallId),
+                eq(dispatchRows.state, "prepared"),
+              ),
+            )
+            .returning({ operationId: dispatchRows.operationId });
+          if (dispatched.length === 0) {
+            // Another caller already CAS'd this tool call (or cancelled it):
+            // the transport must NOT be invoked a second time.
+            return refused("DUPLICATE_DISPATCH");
+          }
+          return {
+            outcome: "permit" as const,
+            permit: {
+              operationId: dispatched[0]?.operationId ?? operationId,
+              runId: rawInput.runId,
+              attemptGeneration: rawInput.attemptGeneration,
+              toolCallId: rawInput.toolCallId,
+              installId: resolution.facts.installId,
+              resourceId: resolution.facts.resourceId,
+              toolName: resolution.facts.toolName,
+              toolRef: resolution.facts.toolRef,
+              connectorInstallId: resolution.facts.connectorInstallId,
+              connectionId: resolution.facts.connectionId,
+              connectionGeneration: resolution.facts.connectionGeneration,
+              argsDigest: resolution.facts.argsDigest,
+              effect: resolution.facts.effect,
+              access: access.access,
             },
-          )}, 0))`,
-        );
-        const resolution = await resolveFacts(
-          tx,
-          scope,
-          null,
-          rawInput.runId,
-          rawInput.attemptGeneration,
-          binding,
-          rawInput.args,
-          rawInput.expectedConnection,
-        );
-        if (resolution.outcome !== "facts") return resolution;
-        const access = await accessOf(
-          tx,
-          scope,
-          resolution.facts.botId,
-          resolution.facts,
-        );
-        if (access.outcome !== "allow") return access;
-        const operationId = randomUUID();
-        await tx
-          .insert(dispatchRows)
-          .values({
-            tenantId: scope.tenantId,
-            operationId,
-            workspaceId: scope.workspaceId,
-            runId: rawInput.runId,
-            attemptGeneration: rawInput.attemptGeneration,
-            toolCallId: rawInput.toolCallId,
-            installId: resolution.facts.installId,
-            revision: resolution.facts.revision,
-            resourceId: resolution.facts.resourceId,
-            toolRef: resolution.facts.toolRef,
-            connectorInstallId: resolution.facts.connectorInstallId,
-            connectionId: resolution.facts.connectionId,
-            connectionGeneration: resolution.facts.connectionGeneration,
-            argsDigest: resolution.facts.argsDigest,
-            effect: resolution.facts.effect,
-            state: "prepared",
-          })
-          .onConflictDoNothing();
-        const dispatched = await tx
-          .update(dispatchRows)
-          .set({ state: "dispatched", updatedAt: new Date() })
-          .where(
-            and(
-              eq(dispatchRows.tenantId, scope.tenantId),
-              eq(dispatchRows.workspaceId, scope.workspaceId),
-              eq(dispatchRows.runId, rawInput.runId),
-              eq(dispatchRows.attemptGeneration, rawInput.attemptGeneration),
-              eq(dispatchRows.toolCallId, rawInput.toolCallId),
-              eq(dispatchRows.state, "prepared"),
-            ),
-          )
-          .returning({ operationId: dispatchRows.operationId });
-        if (dispatched.length === 0) {
-          // Another caller already CAS'd this tool call (or cancelled it):
-          // the transport must NOT be invoked a second time.
-          return refused("DUPLICATE_DISPATCH");
-        }
-        return {
-          outcome: "permit" as const,
-          permit: {
-            operationId: dispatched[0]?.operationId ?? operationId,
-            runId: rawInput.runId,
-            attemptGeneration: rawInput.attemptGeneration,
-            toolCallId: rawInput.toolCallId,
-            installId: resolution.facts.installId,
-            resourceId: resolution.facts.resourceId,
-            toolName: resolution.facts.toolName,
-            toolRef: resolution.facts.toolRef,
-            connectorInstallId: resolution.facts.connectorInstallId,
-            connectionId: resolution.facts.connectionId,
-            connectionGeneration: resolution.facts.connectionGeneration,
-            argsDigest: resolution.facts.argsDigest,
-            effect: resolution.facts.effect,
-            access: access.access,
-          },
-        };
-      });
+          };
+        });
+      } finally {
+        await releaseLock?.release();
+      }
     },
 
     async completeDispatch(scope, permit, completion) {
