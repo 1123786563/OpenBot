@@ -15,6 +15,8 @@
 | T4 | #655 | agent-sandbox Dockerfile | — | ✅ verified：COPY shared /shared → 集成 `1d4beb954` |
 | T5 | #659 | DELETE 重试缺陷诊断+修复+真机复跑 | — | ✅ verified：204/205 早返回+幂等容忍 → 集成 `b45aacfb3` |
 | T6 | #654 | same-site/host mint 观察 | — | **blocked(env)**：票面钉 BE-2 环境（同 #416 BE-2 门），票保持 OPEN；解除条件=BE-2 可用或用户批准本地 host-form 等价栈 |
+| OCRfix-1 | （#652 伞） | 0210 守卫式迁移（OCR-5 high）+四表命名（OCR-6 medium） | 终门 OCR R1 | ✅ verified：审核双 PASS（3 info）→ 集成 `c400130bb` |
+| OCRfix-2 | （#651 伞） | craft rebind 分支逐出补齐（OCR-1 medium） | 终门 OCR R1 | ✅ verified：审核双 PASS（0 findings）→ 集成 `7575ceb2a` |
 
 - Wave-1 并行 T1/T3/T4/T5（K=4 依 #358 程序授权）已全部收割；T2 于 T1 集成后 Wave-2 派发并闭环；T6 环境门解除后重估。
 - 每节点门禁全部走完：实施（claude）→ 独立审核 r1（claude 异会话，Spec+质量双结论）→ 集成+组合验证 → verified。终审 R1（final-review-r1.md）：Spec PwF / Quality PASS / **可交付**。
