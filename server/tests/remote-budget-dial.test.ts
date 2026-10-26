@@ -546,7 +546,11 @@ test("a supported endpoint dials under its contract, and only a checked receipt 
       traceId: chain.traceId,
     });
     expect(createdTraces).toHaveLength(1);
+    // Two writes of the SAME run root: the materialization's open row, then the terminal
+    // close with the observed window (R3-03's remote half, OCR R5-297) — the second is
+    // the upsert the deterministic root id exists for.
     expect(writtenSpans.map((span) => span.name)).toEqual([
+      { state: "projected", text: "run" },
       { state: "projected", text: "run" },
     ]);
     expect(store.reconciled).toHaveLength(1);

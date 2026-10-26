@@ -28,6 +28,14 @@
  * is logged, and the run stays locatable in the binding table (and, after a later successful
  * reconcile path, upstream) rather than silently absent from both.
  *
+ * T09 QUEUE EXEMPTION, DELIBERATE (OCR R5-985): the dial span and terminal root close this
+ * recorder writes are direct port calls, not T09 bounded-queue submissions — the same
+ * exemption the observer gate's materialize/close carry (see bindings.ts). These writes are
+ * the run's OWN lifecycle markers (at most one dial and one close per run, both gated on the
+ * confirmed materialization the shared `materializeRunUpstream` established), they must not
+ * reorder behind queued business spans, and their failures log under this module's own
+ * `opik-remote-run-*` types. Business-span egress stays queue-only, as ever.
+ *
  * THIS MODULE ALSO OWNS THE REMOTE BUDGET SEAM (R3-02): the per-run admission that holds
  * credits, the declaration of which endpoints can actually enforce a budget, and the receipt
  * check that proves a run stayed inside it. They live beside the recorder because they are the
@@ -38,7 +46,6 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { matchesToken } from "../../../shared/agent-authorisation";
-import type { SafeText } from "../../../shared/ai-observability";
 import { getLogger } from "../../../shared/logger";
 import type {
   RemoteBudgetContract,
@@ -50,6 +57,12 @@ import type {
   RemoteRunAdmissionInput,
 } from "../copilot";
 import type { RunBindingStore } from "./bindings";
+import {
+  DEFAULT_RUN_BINDING_TTL_MS,
+  materializeRunUpstream,
+  RUN_ROOT_SPAN_NAME,
+  runRootCloseSpan,
+} from "./bindings";
 import type { ObservationScope } from "./contracts";
 import { runUpstreamIdentity } from "./opik-http";
 import type { OpikOtlpSpan, OpikPort, OpikRunBindingRef } from "./opik-port";
@@ -61,17 +74,6 @@ import {
 import { nanos, nowNs, W3C_TRACE_ID } from "./span-support";
 
 const log = getLogger("server");
-
-/** The same seven-day lease the HTTP report path and the observer gate write. */
-const DEFAULT_BINDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * The run root span's name — the tree's own word for the run, never projected text (the
- * port refuses a withheld name because the read-back locates spans by name). MUST stay the
- * literal `bindings.ts` materializes for built-in runs: the query face locates a run's root
- * by this name without asking which origin wrote it.
- */
-const RUN_ROOT_SPAN_NAME: SafeText = { state: "projected", text: "run" };
 
 /** What one remote run's fact carries, in the closed event vocabulary the middleware observed. */
 export type RemoteRunRecordInput = Readonly<{
@@ -104,6 +106,11 @@ export type RemoteRunRecordInput = Readonly<{
       }
     | { type: "tool_proposed" | "tool_executed"; toolCallId: string }
   )[];
+  /**
+   * The run's terminal moment as the middleware observed it — read by the terminal
+   * settle, which closes the upstream run root with the observed window (R3-03's remote
+   * half, OCR R5-297); never by the close's own clock.
+   */
   endedAt: Date;
 }>;
 
@@ -122,7 +129,7 @@ export function createRemoteRunRecorder(
     now?: () => Date;
   }>,
 ): RemoteRunRecorder {
-  const ttlMs = deps.ttlMs ?? DEFAULT_BINDING_TTL_MS;
+  const ttlMs = deps.ttlMs ?? DEFAULT_RUN_BINDING_TTL_MS;
   const now = deps.now ?? (() => new Date());
   return {
     record(input) {
@@ -179,14 +186,17 @@ async function recordRemoteRun(
   }
 
   /*
-   * F5E1-F3's materialization, same ordering on the crash path: create, root, THEN
-   * reconcile. A crash between the create and the reconcile leaves upstream objects the
-   * deterministic derivation finds again on a retry; a reconcile written first could claim a
-   * tree nobody wrote. Absent port (Opik disabled or unverified) or an already-materialized
-   * row keeps the binding-only shape — the recorder's local record is complete without it.
+   * F5E1-F3's materialization, shared with the observer gate (`materializeRunUpstream` in
+   * bindings.ts, OCR R5-310). It answers the AUTHORITATIVE ref — the binding row WITH the
+   * upstream id recorded — when this fact's chain is confirmed upstream: a fresh
+   * materialization that completed create → root → reconcile, or an earlier pass's
+   * recorded id. Null means no confirmed upstream (no port, or a materialization that
+   * failed and is logged below), and the local record stands alone — the recorder's
+   * settlement-divergence discipline above. R3-03 (OCR R5-325): the start is the dial's
+   * own observed start when the fact carried one, never the materialization clock.
    */
-  await materializeUpstream(
-    deps,
+  const runStartedAt = input.dial?.startedAt ?? timing.now();
+  const materialized: OpikRunBindingRef | null = await materializeRunUpstream(
     scope,
     {
       scopeKey: binding.scopeKey,
@@ -197,6 +207,17 @@ async function recordRemoteRun(
       opikTraceId: binding.opikTraceId,
     },
     traceId,
+    runStartedAt,
+    {
+      port: deps.port,
+      reconcile: deps.bindings.reconcile,
+      refuse: (reason) =>
+        new Error(
+          reason === "reconcile_unwired"
+            ? "REMOTE_RUN_RECONCILE_UNWIRED"
+            : "REMOTE_RUN_UPSTREAM_UNAVAILABLE",
+        ),
+    },
   ).catch((error) => {
     log.error(
       {
@@ -205,6 +226,7 @@ async function recordRemoteRun(
       },
       "opik-remote-run-materialize-failed",
     );
+    return null;
   });
 
   /*
@@ -217,15 +239,20 @@ async function recordRemoteRun(
    * upstream ids of its own on purpose: the port completes them from the AUTHORITATIVE
    * binding — the run's trace, the span's own id, its parent the run root — the same
    * `runUpstreamIdentity(traceId)` derivation the binding's own `opikTraceId` came from, so
-   * the dial span and the record that claims it cannot name different chains. Only written
-   * once the binding names an upstream trace (a materialization that failed leaves nothing
-   * to parent under, and that degradation is the materialize failure already logged).
+   * the dial span and the record that claims it cannot name different chains.
+   *
+   * THE GUARD (OCR R5, HIGH — the guard that used to be a no-op): the export happens only
+   * when THIS fact's materialization is confirmed (`materialized` names the upstream id the
+   * authoritative row recorded). The previous spelling — `binding.opikTraceId ?? identity
+   * .opikTraceId` — was equal to the derived id whether the row had reconciled or not, so a
+   * failed materialization still exported the dial span under an upstream trace nobody
+   * confirmed existed, exactly the unattributed write the paragraph above claims to
+   * exclude. A failed materialization now leaves nothing parented and nothing exported.
    */
-  if (input.dial !== null) {
+  if (input.dial !== null && materialized !== null) {
     const identity = runUpstreamIdentity(traceId);
-    const upstream = binding.opikTraceId ?? identity.opikTraceId;
     const port = deps.port();
-    if (port !== null && upstream === identity.opikTraceId) {
+    if (port !== null && materialized.opikTraceId === identity.opikTraceId) {
       const dialSpan: OpikOtlpSpan = {
         traceId,
         spanId: input.dial.spanId,
@@ -242,14 +269,7 @@ async function recordRemoteRun(
       await port
         .writeSpans(scope, {
           spans: [dialSpan],
-          binding: {
-            scopeKey: binding.scopeKey,
-            runId: binding.runId,
-            attemptId: binding.attemptId,
-            locatorWorkspace: binding.locatorWorkspace,
-            locatorProject: binding.locatorProject,
-            opikTraceId: identity.opikTraceId,
-          },
+          binding: materialized,
         })
         .then(
           (written) => {
@@ -301,58 +321,60 @@ async function recordRemoteRun(
       input.attemptId,
       record.outcome.state,
     );
+    /*
+     * The remote half of R3-03's root close (OCR R5-297): the root this fact's
+     * materialization wrote open is closed with the observed window — the dial's start,
+     * the terminal's end (`input.endedAt`, the field this recorder previously carried
+     * without reading), the settled state word — through the SAME span shape the builtin
+     * gate's settleObservedRun writes (`runRootCloseSpan` in bindings.ts). Before this,
+     * the remote path only wrote the local binding state, so a locally-completed run's
+     * root stayed open upstream forever. Only when the upstream is confirmed: a root that
+     * was never materialized has nothing to close, and that absence is already logged by
+     * the materialization failure. A close that fails is logged and left — the binding's
+     * terminal state, already written, is the authority.
+     */
+    if (materialized !== null) {
+      const port = deps.port();
+      if (port !== null) {
+        await port
+          .writeSpans(scope, {
+            spans: [
+              runRootCloseSpan(traceId, {
+                startedAt: runStartedAt,
+                endedAt: input.endedAt,
+                state: record.outcome.state,
+              }),
+            ],
+            binding: materialized,
+          })
+          .then(
+            (written) => {
+              if (written.outcome !== "ok") {
+                log.warn(
+                  {
+                    type: "opik-remote-run-root-close-failed",
+                    outcome: written.outcome,
+                  },
+                  "opik-remote-run-root-close-failed",
+                );
+              }
+            },
+            (error: unknown) => {
+              log.warn(
+                {
+                  type: "opik-remote-run-root-close-failed",
+                  name: (error as Error | null | undefined)?.name,
+                },
+                "opik-remote-run-root-close-failed",
+              );
+            },
+          );
+      }
+    }
   }
   // No terminal outcome: the binding stays `running` and the lease sweeper's `unknown` is
   // the net — the run may still be executing at the endpoint, and nothing here invents an
   // ending it did not see (T10).
-}
-
-async function materializeUpstream(
-  deps: Parameters<typeof createRemoteRunRecorder>[0],
-  scope: ObservationScope,
-  ref: OpikRunBindingRef,
-  traceId: string,
-): Promise<void> {
-  const port = deps.port();
-  if (port === null) return;
-  if (ref.opikTraceId !== null) return; // an earlier pass materialized this chain
-  const reconcile = deps.bindings.reconcile;
-  if (reconcile === undefined) {
-    // A port without the authoritative store's mapping write is a wiring defect: fail
-    // loudly rather than export under an identity nobody records.
-    throw new Error("REMOTE_RUN_RECONCILE_UNWIRED");
-  }
-  const identity = runUpstreamIdentity(traceId);
-  const startedAt = new Date();
-  const created = await port.createTrace(scope, {
-    traceId: identity.opikTraceId,
-    name: RUN_ROOT_SPAN_NAME,
-    startTime: startedAt,
-    binding: ref,
-  });
-  if (created.outcome !== "ok") {
-    throw new Error("REMOTE_RUN_UPSTREAM_UNAVAILABLE");
-  }
-  const rootSpan: OpikOtlpSpan = {
-    traceId,
-    spanId: identity.rootSpanId,
-    name: RUN_ROOT_SPAN_NAME,
-    startTimeUnixNano: nanos(startedAt) ?? nowNs(),
-    // The root's close is not observed here — an end time would be a duration nobody
-    // measured, so the row stays open and the query face reports what it knows.
-    opik: {
-      traceId: identity.opikTraceId,
-      spanId: identity.rootOpikSpanId,
-    },
-  };
-  const rooted = await port.writeSpans(scope, {
-    spans: [rootSpan],
-    binding: { ...ref, opikTraceId: identity.opikTraceId },
-  });
-  if (rooted.outcome !== "ok") {
-    throw new Error("REMOTE_RUN_UPSTREAM_UNAVAILABLE");
-  }
-  await reconcile(scope, ref.runId, ref.attemptId, identity.opikTraceId);
 }
 
 /* ------------------------------------------------------------------------------------------

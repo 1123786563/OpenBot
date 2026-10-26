@@ -47,8 +47,10 @@ import {
   createRemoteBudgetContractResolver,
   createRemoteRunBudgetGate,
   createRemoteRunRecorder,
+  type RemoteRunRecordInput,
   remoteBudgetCaps,
 } from "../src/ai-observability/remote-run";
+import { nanos } from "../src/ai-observability/span-support";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import {
   type AgentFetch,
@@ -850,4 +852,129 @@ test("the derivation is idempotent per run and distinct across runs", () => {
   expect(d).not.toBe("0".repeat(16));
   // And the two derivations of one run stay distinct from each other.
   expect(d).not.toBe(derivedTraceIdOf("risk", "run-same").slice(0, 16));
+});
+
+/*
+ * The governed recorder's own window, driven fact by fact (OCR R5's HIGH): the dial span's
+ * export is anchored on a materialization this process CONFIRMED, and a terminal run closes
+ * its upstream root with the window the fact observed — the same discipline the builtin gate's
+ * settle keeps (R3-03), which the remote path previously had no equivalent of at all.
+ */
+
+/** A port whose createTrace is refused upstream: the materialization cannot be confirmed. */
+function refusingTracePort() {
+  const writtenSpans: Array<{
+    spans: OpikOtlpSpan[];
+    binding?: OpikRunBindingRef;
+  }> = [];
+  const port = {
+    async createTrace() {
+      return {
+        outcome: "upstream_error" as const,
+        code: "OPIK_UPSTREAM_ERROR",
+      };
+    },
+    async writeSpans(
+      _scope: unknown,
+      input: { spans: OpikOtlpSpan[]; binding?: OpikRunBindingRef },
+    ) {
+      writtenSpans.push({ spans: input.spans, binding: input.binding });
+      return { outcome: "ok" as const, value: { accepted: true as const } };
+    },
+  };
+  return { port: port as unknown as OpikPort, writtenSpans };
+}
+
+/** Waits until `probe` answers true, or fails the window's 5s budget. */
+async function until(probe: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!probe()) {
+    if (Date.now() > deadline) throw new Error("condition not reached in window");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+function aDerivedFact(runId: string): RemoteRunRecordInput {
+  return {
+    scope: scope(),
+    botId: "risk",
+    threadId: "thread-governed",
+    runId,
+    attemptId: `${runId}-attempt`,
+    traceId: derivedTraceIdOf("risk", runId),
+    dial: {
+      spanId: derivedDialSpanIdOf("risk", runId),
+      startedAt: new Date("2026-10-26T10:00:00.000Z"),
+      endedAt: new Date("2026-10-26T10:00:02.000Z"),
+    },
+    events: [{ type: "success" }],
+    endedAt: new Date("2026-10-26T10:00:03.000Z"),
+  };
+}
+
+test("a materialization that failed keeps the dial span unexported — nothing is written to an unconfirmed upstream", async () => {
+  const store = fakeBindingStore();
+  const { port, writtenSpans } = refusingTracePort();
+  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+
+  recorder.record(aDerivedFact("run-unconfirmed"));
+  await until(() => store.finished.length === 1);
+
+  // The local record is complete exactly as the settlement-divergence docblock promises:
+  // begun and finished, the materialization failure logged and swallowed.
+  expect(store.begun).toHaveLength(1);
+  expect(store.finished).toEqual([{ runId: "run-unconfirmed", state: "completed" }]);
+  expect(store.reconciledByRun("run-unconfirmed")).toBeNull();
+
+  // But nothing exported: the binding names no upstream trace, so there is no tree to
+  // parent a dial span under — writing one would be exactly the unattributed write the
+  // guard's own comment claims to exclude.
+  expect(writtenSpans).toHaveLength(0);
+});
+
+test("a terminal remote run closes its upstream root with the observed window", async () => {
+  const store = fakeBindingStore();
+  const { port, createdTraces, writtenSpans } = fakePort();
+  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+
+  const fact = aDerivedFact("run-closed");
+  recorder.record(fact);
+  await until(
+    () =>
+      writtenSpans.filter((write) =>
+        write.spans.some((span) => span.attributes !== undefined),
+      ).length > 0,
+  );
+
+  const identity = runUpstreamIdentity(fact.traceId);
+  expect(createdTraces.map((trace) => trace.traceId)).toEqual([
+    identity.opikTraceId,
+  ]);
+
+  // The root the materialization wrote open is closed again with the run's own window:
+  // the dial's observed start, the fact's terminal end, the local state word riding as
+  // structured data — the builtin path's closeRunRoot discipline, on the remote path.
+  const rootClose = writtenSpans.find((write) =>
+    write.spans.some(
+      (span) =>
+        span.spanId === identity.rootSpanId &&
+        span.attributes !== undefined &&
+        span.endTimeUnixNano !== undefined,
+    ),
+  );
+  expect(rootClose).toBeDefined();
+  const closed = rootClose!.spans.find((span) => span.spanId === identity.rootSpanId)!;
+  expect(closed.endTimeUnixNano).toBe(nanos(fact.endedAt));
+  expect(closed.startTimeUnixNano).toBe(nanos(fact.dial!.startedAt));
+  expect(
+    (closed.attributes as Record<string, unknown>)["span_state"],
+  ).toMatchObject({ state: "projected", value: "completed" });
+  expect(rootClose!.binding?.opikTraceId).toBe(identity.opikTraceId);
+
+  // And the dial span is exported too — under the SAME confirmed upstream identity.
+  const dialWrite = writtenSpans.find((write) =>
+    write.spans.some((span) => span.spanId === fact.dial!.spanId),
+  );
+  expect(dialWrite).toBeDefined();
+  expect(dialWrite!.binding?.opikTraceId).toBe(identity.opikTraceId);
 });
