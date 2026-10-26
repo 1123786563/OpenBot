@@ -2843,4 +2843,38 @@ describe("#418 Option B: singleReplicaStartupNotice — the startup line the boo
     info.mockRestore();
     warn.mockRestore();
   });
+
+  test("#647: the notice enumerates the pass index beside the label registry and ticket table — and names its own failure shape", () => {
+    // The contract covers every in-process registry/index a restart clears.
+    // Naming only the two it shipped with left the pass index — the family
+    // #427 added — unattributed, and its failure shape is the least obvious
+    // of the three: the index clears, so a pass that already redeemed and
+    // whose MAC still verifies misses the lookup and 401s AFTER a
+    // successful redemption, which reads as an auth bug rather than as a
+    // lost index. These pins hold the enumeration and that sentence in the
+    // line a person reads at boot.
+    for (const redisUrl of [undefined, "redis://redis:6379"]) {
+      const { info, warn } = logged();
+      singleReplicaStartupNotice({
+        previewOriginEnabled: true,
+        template: TEMPLATE,
+        redisUrl,
+        registryStats: () => ({ registeredLabels: 0 }),
+      });
+      const calls = redisUrl ? warn.mock.calls : info.mock.calls;
+      // pino's call shape is (fields, message) — the text is the 2nd arg.
+      const [, message] = calls[0] ?? [];
+      const text = String(message);
+      // The enumeration belongs on BOTH arms: which families are in-process
+      // is the same fact whether or not a multi-replica signal is present.
+      expect(text).toContain("pass index");
+      expect(text).toContain("label registry");
+      expect(text).toContain("ticket table");
+      // The 401 failure shape is spelled out on the escalated arm, where an
+      // operator is reading the line because the deployment is half-migrated.
+      if (redisUrl) expect(text).toContain("401");
+      info.mockRestore();
+      warn.mockRestore();
+    }
+  });
 });

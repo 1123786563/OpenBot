@@ -40,7 +40,11 @@
  * - IN-MEMORY, process-wide, one index per deployment secret (the #418
  *   single-replica contract the label registry and ticket table already live
  *   under). A multi-replica deployment needs sticky routing or a shared store;
- *   the boot log's single-replica notice covers the family.
+ *   the boot log's single-replica notice names this index alongside the label
+ *   registry and ticket table as the in-process families the contract covers
+ *   — the three a restart clears and a second replica never sees (#647: the
+ *   pass index's own failure shape is a 401 after a successful redemption,
+ *   MAC ok and index miss, which reads as an auth bug and is a lost index).
  * - Cleared by a restart: every outstanding pass then verifies to null (MAC
  *   ok, lookup miss) ⇒ 401. Holders recover exactly like M-2: they re-enter
  *   through the main site, which re-mints a ticket and plants a fresh token.

@@ -172,11 +172,19 @@ sticky 路由或共享存储，启动日志的 single-replica 通知覆盖这一
  （host 形态按 `<label>.<preview-base>` 子域哈希分发即可，dev 形态按源 IP）。没有
  sticky 的多副本不在支持范围内。
 
-启动检查（#418）：preview origin 开启时，启动日志必打一条
-`single-replica contract: the preview origin's label registry and ticket table are in-process …`
-（info 级）；当检测到 `OPENBOT_REDIS_URL` 已设（部署自己的多副本信号，与 workshop
-域读同一个变量）而 registry 仍是进程内状态时，升为 **warn** 并点名 sticky 路由。
-craft 关闭或 preview origin 关闭时不打——关闭的 origin 没有 preview host 可路由错。
+启动检查（#418，#647 补齐枚举）：preview origin 开启时，启动日志必打一条
+`single-replica contract: the preview origin's in-process registries/indexes …`
+（info 级）；这一条把进程内三族一次性点名——**label registry、ticket table、
+pass index**——因为它们是重启会清空、第二个副本永远看不见的三张表/索引。当检测到
+`OPENBOT_REDIS_URL` 已设（部署自己的多副本信号，与 workshop 域读同一个变量）而
+registry 仍是进程内状态时，升为 **warn** 并点名 sticky 路由。craft 关闭或 preview
+origin 关闭时不打——关闭的 origin 没有 preview host 可路由错。
+
+**pass index 的失败形态（#647 补写）**：索引随进程重启清空，于是**已成功兑换过**
+的存量通行证会出现「MAC 通过、索引 miss」——兑换之后才 401。这是它自己的形状，
+既不落进 label registry 的 404 "Unknown preview host."，也不像认证被篡改：
+看起来像鉴权 bug，实际是索引丢了。恢复与 M-2 相同（经主站重新进入即重新铸票）。
+启动日志一次点名该族，正是为了让这个 401 可被归因。
 
 可观测信号：preview origin 暴露 `registryStats()`（返回
 `{"registeredLabels": N}`，只计数，永不枚举 label 或 session id，AC9）。健康检查/

@@ -95,11 +95,21 @@ export type PreviewRegistryStats = { registeredLabels: number };
  * sticky routing or the preview traffic lands on an instance whose registry
  * never saw the label — a 404 "Unknown preview host." with no signal to
  * tell it from a restart (M-2). The notice states the contract at startup;
- * when OPENBOT_REDIS_URL is set (the deployment's own multi-replica signal —
+ * once OPENBOT_REDIS_URL is set (the deployment's own multi-replica signal —
  * the same variable the workshop layer reads) it escalates to warn, because
  * Redis configured but no sticky routing is precisely the half-migrated
  * shape that produces silent cross-instance 404s. Disabled origins stay
  * silent: a closed origin has no preview hosts to route wrong.
+ *
+ * The line names the in-process families the contract covers — the label
+ * registry, the ticket table and (since #427) the PASS INDEX — because they
+ * are the three registries/indexes a restart clears and a second replica
+ * never sees. The pass index's failure shape is its own and is worth
+ * spelling out: a restart clears the index, so an outstanding pass whose
+ * MAC still verifies misses the lookup and 401s (never passes through) —
+ * a 401 AFTER a successful redemption, which looks like an auth bug and
+ * is really a lost index. Stating the family once at startup is what keeps
+ * that 401 attributable.
  */
 export function singleReplicaStartupNotice(deps: {
   previewOriginEnabled: boolean;
@@ -123,13 +133,13 @@ export function singleReplicaStartupNotice(deps: {
         form,
         ...stats,
       },
-      "single-replica contract: the preview origin's label registry and ticket table are in-process, but OPENBOT_REDIS_URL is set (a multi-replica deployment signal) — route preview traffic with sticky routing or previews will 404 'Unknown preview host.' on the instances that never saw the label",
+      "single-replica contract: the preview origin's in-process registries/indexes (label registry, ticket table and pass index) are in-process, but OPENBOT_REDIS_URL is set (a multi-replica deployment signal) — route preview traffic with sticky routing or previews will 404 'Unknown preview host.' on the instances that never saw the label (and an outstanding pass 401s after a restart clears the pass index: MAC ok, index miss — never a pass-through)",
     );
     return;
   }
   log.info(
     { contract: "single-replica", multiReplicaSignal: false, form, ...stats },
-    "single-replica contract: the preview origin's label registry and ticket table are in-process — multi-replica deployments require sticky routing or a shared store (none configured)",
+    "single-replica contract: the preview origin's in-process registries/indexes (label registry, ticket table and pass index) live in THIS process — multi-replica deployments require sticky routing or a shared store (none configured)",
   );
 }
 
