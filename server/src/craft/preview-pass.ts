@@ -189,6 +189,28 @@ export function createPreviewPassIndex(
     if (queue.length === 0) bySession.delete(sessionId);
   }
 
+  /**
+   * #651/OCR-1 — evict this session's OLDEST tokens until its queue is at the
+   * capacity. BOTH push paths call it (a fresh mint AND a rebind onto another
+   * session): the ceiling is a property of the queue, not of how a token got
+   * there, so no branch that pushes may skip it. Extracted verbatim from the
+   * mint path, which it must keep answering identically — same oldest-first
+   * order, same guard, same entries/map pairing.
+   */
+  function trimSessionQueue(sessionId: string): void {
+    const queue = bySession.get(sessionId);
+    if (queue === undefined) return;
+    while (queue.length > perSessionCapacity) {
+      const oldest = queue.shift();
+      if (oldest === undefined) break;
+      // Only drop a map entry that still binds THIS session — the queue and
+      // the map are written together, so this is a guard, not a branch.
+      if (entries.get(oldest)?.sessionId === sessionId) {
+        entries.delete(oldest);
+      }
+    }
+  }
+
   return {
     remember(token, binding) {
       const existing = entries.get(token);
@@ -203,20 +225,17 @@ export function createPreviewPassIndex(
         dropFromQueue(existing.sessionId, token);
         entries.set(token, binding);
         queueFor(binding.sessionId).push(token);
+        // The rebind is a push like any other: the freshly bound session's
+        // queue obeys the SAME ceiling (OCR-1 — this branch used to return
+        // straight after pushing, so repeated rebinds on one session grew it
+        // past PREVIEW_PASSES_PER_SESSION).
+        trimSessionQueue(binding.sessionId);
         return;
       }
       entries.set(token, binding);
       const queue = queueFor(binding.sessionId);
       queue.push(token);
-      while (queue.length > perSessionCapacity) {
-        const oldest = queue.shift();
-        if (oldest === undefined) break;
-        // Only drop a map entry that still binds THIS session — the queue and
-        // the map are written together, so this is a guard, not a branch.
-        if (entries.get(oldest)?.sessionId === binding.sessionId) {
-          entries.delete(oldest);
-        }
-      }
+      trimSessionQueue(binding.sessionId);
     },
     lookup(token) {
       return entries.get(token);

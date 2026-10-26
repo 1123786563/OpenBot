@@ -429,6 +429,72 @@ describe("#651: per-session capacity bound", () => {
     expect(c.verify(SESSION_ID, passes[1] ?? "")).toEqual({ userId: USER_ID });
   });
 
+  // ── OCR-1: the ceiling is the QUEUE's, not the mint path's ────────────────
+  //
+  // `remember` has TWO push paths: a fresh token (a mint), and a token already
+  // in the index re-bound to a DIFFERENT session (a rebind). The rebind used to
+  // push and return before the trim, so planting tokens elsewhere and rebinding
+  // them onto one session grew that session past the capacity. A mint never
+  // reaches that branch (issue() always makes a fresh CSPRNG token), which is
+  // why the hole was unreachable in production — but the branch exists to
+  // defend against hand-planted state, and may not break the invariant itself.
+
+  test("OCR-1: rebinding hand-planted tokens onto one session evicts oldest-first, exactly like a mint", () => {
+    const { index } = bounded(3);
+    const rebound: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const token = `hand-planted-${i}`;
+      // A token can only reach the rebind branch if the index already holds it
+      // under ANOTHER session, so plant it on a session of its own first.
+      index.remember(token, { sessionId: `cs-plant-${i}`, userId: USER_ID });
+      index.remember(token, { sessionId: SESSION_ID, userId: USER_ID });
+      rebound.push(token);
+      // The invariant at EVERY step, not only at the end: the rebound session
+      // never holds more than the capacity (every live entry belongs to it —
+      // each planted session's queue empties and its key is dropped), and the
+      // token just bound is alive.
+      expect(index.size()).toBeLessThanOrEqual(3);
+      expect(index.lookup(token)).toEqual({
+        sessionId: SESSION_ID,
+        userId: USER_ID,
+      });
+    }
+    // Same oldest-first order as the mint path: the newest 3 rebound tokens are
+    // the survivors, the four before them left the map.
+    for (const gone of rebound.slice(0, 4)) {
+      expect(index.lookup(gone)).toBeUndefined();
+    }
+    for (const live of rebound.slice(4)) {
+      expect(index.lookup(live)).toEqual({
+        sessionId: SESSION_ID,
+        userId: USER_ID,
+      });
+    }
+    expect(index.size()).toBe(3);
+  });
+
+  test("OCR-1: repeated rebinds never push one session past the production bound of 8", () => {
+    // The Brief's literal claim, at the shipped N: 11 planted tokens rebound
+    // onto one session leave it holding exactly 8, the newest among them.
+    const index = createPreviewPassIndex();
+    const rebound: string[] = [];
+    const planted = PREVIEW_PASSES_PER_SESSION + 3;
+    for (let i = 0; i < planted; i++) {
+      const token = `hand-planted-default-${i}`;
+      index.remember(token, { sessionId: `cs-plant-${i}`, userId: USER_ID });
+      index.remember(token, { sessionId: SESSION_ID, userId: USER_ID });
+      rebound.push(token);
+      expect(index.size()).toBeLessThanOrEqual(PREVIEW_PASSES_PER_SESSION);
+    }
+    expect(index.size()).toBe(PREVIEW_PASSES_PER_SESSION);
+    expect(index.lookup(rebound[0] ?? "")).toBeUndefined();
+    const newest = rebound[rebound.length - 1] ?? "";
+    expect(index.lookup(newest)).toEqual({
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+    });
+  });
+
   test("a capacity below 1 fails at construction — never a mint that evicts itself", () => {
     for (const bad of [0, -1, 1.5, Number.NaN]) {
       expect(() => createPreviewPassIndex(bad)).toThrow(RangeError);
