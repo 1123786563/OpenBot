@@ -23,15 +23,21 @@
 // 写中途需要切换 app.operator_principal_id（重验期 pin 操作者，写入期 pin
 // 目标成员——MT004 的 update 策略按该上下文收紧行范围）。
 
-import { and, eq, sql } from "drizzle-orm";
 import type {
   ScopeListing,
   ScopeListingCompany,
   SelectionInput,
   ValidatedSelection,
 } from "@openbot/shared/auth-directory";
+import { and, eq, sql } from "drizzle-orm";
 import type { CompanyAssurance } from "../../auth/company-assurance";
 import type { DirectoryAuthority } from "../../auth/directory/authority";
+import {
+  type DirectoryTransitionReport,
+  MEMBERSHIP_LIFECYCLE_PAUSED,
+  type MembershipAdminTranslationPort,
+  translateMembershipLifecycle,
+} from "../../auth/directory/membership";
 import type { Database } from "../../db/client";
 import {
   authMembers,
@@ -505,9 +511,64 @@ async function beginTransaction(
 /** The management-plane write service over the restricted operator role. */
 export function createWorkspaceAdminService(
   operator: OperatorDatabase,
+  membership?: MembershipAdminTranslationPort,
 ): WorkspaceAdminService {
   assertOperatorDatabase(operator);
   type Tx = Parameters<Parameters<OperatorDatabase["transaction"]>[0]>[0];
+
+  /**
+   * The T04.03 authority branch for the company-member pair (ticket step 5):
+   * legacy keeps the original operator path below; paused answers the one
+   * 503; ba translates the write into ONE directory command (suspend or
+   * restore) and shapes the legacy report from the committed projection
+   * facts, extended with the directory provenance. Null means legacy.
+   */
+  const translatedCompanyMemberOrNull = async (
+    context: CompanyAdminContext,
+    principalId: string,
+    operation: "member.suspend" | "member.restore",
+    stateGate: (member: {
+      readonly role: string;
+      readonly status: string;
+    }) => boolean,
+  ): Promise<
+    | ({
+        readonly membership: CompanyMembershipFact;
+        readonly auditEventId: string;
+      } & DirectoryTransitionReport)
+    | null
+  > => {
+    if (!membership) return null;
+    const mode = await membership.modeOf();
+    if (mode === "legacy") return null;
+    if (mode === "paused") throw new Error(MEMBERSHIP_LIFECYCLE_PAUSED);
+    const facts = await translateMembershipLifecycle(membership, {
+      actorUserId: context.actorId,
+      tenantId: context.tenantId,
+      principalId,
+      operation,
+      payloadOf: (userId) => ({
+        userId,
+        reason:
+          operation === "member.suspend"
+            ? "company_admin_suspend"
+            : "company_admin_restore",
+      }),
+      stateGate,
+    });
+    return {
+      membership: {
+        principalId,
+        status: facts.after.status as "suspended" | "active",
+        epoch: facts.after.epoch,
+      },
+      auditEventId: facts.auditEventId,
+      via: "directory",
+      operation,
+      commandId: facts.commandId,
+      replayed: facts.replayed,
+    };
+  };
 
   /** Exclusive locks in canonical order: tenant → membership → workspace-membership. */
   const takeLocks = async (tx: Tx, keys: readonly string[]): Promise<void> => {
@@ -925,6 +986,14 @@ export function createWorkspaceAdminService(
       if (!principalId) {
         throw new Error("INVALID_REQUEST");
       }
+      const translated = await translatedCompanyMemberOrNull(
+        context,
+        principalId,
+        "member.suspend",
+        // The legacy rule: only an active company membership suspends.
+        (member) => member.status === "active",
+      );
+      if (translated) return translated;
       return operator.transaction(async (tx) => {
         await beginTransaction(tx);
         await tx.execute(
@@ -981,6 +1050,14 @@ export function createWorkspaceAdminService(
       if (!principalId) {
         throw new Error("INVALID_REQUEST");
       }
+      const translated = await translatedCompanyMemberOrNull(
+        context,
+        principalId,
+        "member.restore",
+        // The legacy rule: only a suspended company membership restores.
+        (member) => member.status === "suspended",
+      );
+      if (translated) return translated;
       return operator.transaction(async (tx) => {
         await beginTransaction(tx);
         await tx.execute(

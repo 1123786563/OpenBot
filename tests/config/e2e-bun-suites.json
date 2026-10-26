@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T04.02 integration merge (causes backfill per review R1-F1)",
+  "generatedBy": "T04.03 member lifecycle registration (#547)",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1289,6 +1289,12 @@
       "files": [
         "server/tests/better-auth/invitation-acceptance.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T04.03.01",
+      "files": [
+        "server/tests/better-auth/membership-lifecycle.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1482,6 +1488,7 @@
     "server/tests/better-auth/ingress-coverage.test.ts",
     "server/tests/better-auth/invitation-acceptance.test.ts",
     "server/tests/better-auth/invitation-commands.test.ts",
+    "server/tests/better-auth/membership-lifecycle.test.ts",
     "server/tests/better-auth/migration-expand.test.ts",
     "server/tests/better-auth/migration-inventory.test.ts",
     "server/tests/better-auth/migration-verify.test.ts",
@@ -2129,6 +2136,7 @@
     "server/tests/better-auth/company-provision.test.ts": "T03.03 company-provision suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0214 stack through the platform provision service, the directory executor handler and the payer mapping; registered by the task through writeManifest with payload.task T03.03",
     "server/tests/better-auth/company-lifecycle.test.ts": "T03.04 company-lifecycle suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0214 stack through the platform lifecycle service, the directory executor handlers and the frozen scope-selection/revocation faces; registered by the task through writeManifest with payload.task T03.04",
     "server/tests/better-auth/invitation-commands.test.ts": "T04.01 invitation-commands suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0215 stack through the native ingress, the directory executor invitation handlers and the U-class own read adapter; registered by the task through writeManifest with payload.task T04.01",
-    "server/tests/better-auth/invitation-acceptance.test.ts": "T04.02 invitation-acceptance suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0216 stack through the native ingress and the directory executor invitation handlers (accept/reject in the same command transaction); registered by the task through writeManifest with payload.task T04.02"
+    "server/tests/better-auth/invitation-acceptance.test.ts": "T04.02 invitation-acceptance suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0216 stack through the native ingress and the directory executor invitation handlers (accept/reject in the same command transaction); registered by the task through writeManifest with payload.task T04.02",
+    "server/tests/better-auth/membership-lifecycle.test.ts": "T04.03 membership-lifecycle suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0216 stack through the native ingress and the directory executor member lifecycle handlers (role.set/suspend/restore/remove/leave/owner.transfer) with last-owner protection riding the executor's tenant advisory lock; registered by the task through writeManifest with payload.task T04.03"
   }
 }

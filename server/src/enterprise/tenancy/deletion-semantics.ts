@@ -49,6 +49,13 @@
 // 的 promoted/demoted/offboarded、MT026 的 scim_* 集合互不重叠）。
 
 import { and, eq, sql } from "drizzle-orm";
+import {
+  type DirectoryTransitionReport,
+  isDirectoryMembershipRefusal,
+  MEMBERSHIP_LIFECYCLE_PAUSED,
+  type MembershipAdminTranslationPort,
+  translateMembershipLifecycle,
+} from "../../auth/directory/membership";
 import type { Database } from "../../db/client";
 import {
   enterpriseCredentialActions,
@@ -159,6 +166,10 @@ export interface CompanyCleanupReport {
   readonly auditEventId: string;
 }
 
+/** The ba-branch cleanup report: legacy fields are the real committed facts plus the directory provenance. */
+export type CompanyTranslatedCleanupReport = CompanyCleanupReport &
+  DirectoryTransitionReport;
+
 export interface CompanyMemberCleanupService {
   /**
    * The company-scoped data cleanup: removes THIS company's scope facts for
@@ -185,6 +196,7 @@ async function beginTransaction(tx: OperatorTransaction): Promise<void> {
 
 export function createCompanyMemberCleanupService(
   operator: OperatorDatabase,
+  membership?: MembershipAdminTranslationPort,
 ): CompanyMemberCleanupService {
   assertOperatorDatabase(operator);
 
@@ -242,12 +254,164 @@ export function createCompanyMemberCleanupService(
     }
   };
 
+  /**
+   * The T04.03 authority branch for Track A (ticket step 5 + the T02.13
+   * inventory's disposal of this file): legacy keeps the original operator
+   * path below; paused answers the one 503; ba disposes the two named halves
+   * through ONE directory command — member.remove owns the team relations
+   * and the membership deactivation (the inventory's member.remove /
+   * member.suspend pair, with removal subsuming suspension) — while the
+   * operator half below still scrubs the planes the directory does not own
+   * (grants, task scopes, credential actions, personal credentials) and
+   * writes this module's audit row. The legacy workspace-membership
+   * projection rows are deliberately NOT deleted on this branch: that
+   * table's controlled writer belongs to the team-projection task (P09
+   * forward), exactly as the finalizer documents.
+   *
+   * The actor authorization is the command's own in-lock live-role check
+   * (a demoted admin's execute is refused outright), so this branch needs
+   * no operator-side revalidation before the scrub.
+   */
+  const translatedCleanupOrNull = async (
+    context: CompanyAdminContext,
+    principalId: string,
+  ): Promise<CompanyTranslatedCleanupReport | null> => {
+    if (!membership) return null;
+    const mode = await membership.modeOf();
+    if (mode === "legacy") return null;
+    if (mode === "paused") throw new Error(MEMBERSHIP_LIFECYCLE_PAUSED);
+    const facts = await translateMembershipLifecycle(membership, {
+      actorUserId: context.actorId,
+      tenantId: context.tenantId,
+      principalId,
+      operation: "member.remove",
+      payloadOf: (userId) => ({ userId, reason: "company_member_cleanup" }),
+    });
+    // The operator half: the planes the directory does not own, scrubbed on
+    // the restricted channel with the same RLS pins as the legacy flow.
+    const scrubbed = await operator.transaction(async (tx) => {
+      await beginTransaction(tx);
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${context.tenantId}, true), set_config('app.operator_principal_id', ${principalId}, true), set_config('app.principal_id', ${principalId}, true)`,
+      );
+      // The legacy lock order, so this half stays serialized with the
+      // legacy writers of the same rows.
+      await takeLocks(tx, [
+        JSON.stringify(["enterprise", "tenant", context.tenantId]),
+        membershipLockKey(context.tenantId, context.principalId),
+        membershipLockKey(context.tenantId, principalId),
+      ]);
+      const grants = await tx
+        .select({ resourceId: enterpriseResourceGrants.resourceId })
+        .from(enterpriseResourceGrants)
+        .where(
+          and(
+            eq(enterpriseResourceGrants.tenantId, context.tenantId),
+            eq(enterpriseResourceGrants.principalId, principalId),
+          ),
+        );
+      for (const grant of grants) {
+        await tx.execute(
+          sql`select set_config('app.resource_id', ${grant.resourceId}, true)`,
+        );
+        const deleted = await tx
+          .delete(enterpriseResourceGrants)
+          .where(
+            and(
+              eq(enterpriseResourceGrants.tenantId, context.tenantId),
+              eq(enterpriseResourceGrants.resourceId, grant.resourceId),
+              eq(enterpriseResourceGrants.principalId, principalId),
+            ),
+          )
+          .returning({ resourceId: enterpriseResourceGrants.resourceId });
+        if (deleted.length !== 1) {
+          throw new Error("COMPANY_CLEANUP_CONFLICT");
+        }
+      }
+      const taskScopes = await tx
+        .delete(openmuseTaskScopes)
+        .where(
+          and(
+            eq(openmuseTaskScopes.tenantId, context.tenantId),
+            eq(openmuseTaskScopes.principalId, principalId),
+          ),
+        )
+        .returning({ taskId: openmuseTaskScopes.taskId });
+      const credentialActions = await tx
+        .delete(enterpriseCredentialActions)
+        .where(
+          and(
+            eq(enterpriseCredentialActions.tenantId, context.tenantId),
+            eq(enterpriseCredentialActions.principalId, principalId),
+          ),
+        )
+        .returning({
+          credentialId: enterpriseCredentialActions.credentialId,
+        });
+      const revokedCredentials = await tx
+        .update(enterpriseCredentials)
+        .set({ status: "revoked", updatedAt: new Date() })
+        .where(
+          and(
+            eq(enterpriseCredentials.tenantId, context.tenantId),
+            eq(enterpriseCredentials.ownerPrincipalId, principalId),
+            eq(enterpriseCredentials.status, "active"),
+          ),
+        )
+        .returning({ id: enterpriseCredentials.id });
+      const auditEventId = await recordDeletionAuditEvent(tx, {
+        eventType: "company_member.data_cleaned",
+        tenantId: context.tenantId,
+        operatorPrincipalId: context.principalId,
+        operatorUserId: context.actorId,
+        targetPrincipalId: principalId,
+        epoch: facts.after.epoch,
+        details: {
+          workspace_memberships_removed: 0,
+          grants_deleted: grants.length,
+          task_scopes_removed: taskScopes.length,
+          credential_actions_removed: credentialActions.length,
+          credentials_revoked: revokedCredentials.length,
+          via: "directory",
+          command_id: facts.commandId,
+        },
+      });
+      return {
+        grantsDeleted: grants.length,
+        taskScopesRemoved: taskScopes.length,
+        credentialActionsRemoved: credentialActions.length,
+        credentialsRevoked: revokedCredentials.length,
+        auditEventId,
+      };
+    });
+    return {
+      outcome: "company_scope_cleaned" as const,
+      tenantId: context.tenantId,
+      principalId,
+      membership: {
+        status: facts.after.status as "suspended",
+        epoch: facts.after.epoch,
+      },
+      // The directory-disposed half: member.remove cleared the team's own
+      // relations and projected the deactivation; this table's writer is
+      // P09's, so the legacy count reads zero rather than pretending.
+      workspaceMembershipsRemoved: 0,
+      ...scrubbed,
+      via: "directory" as const,
+      operation: "member.remove" as const,
+      commandId: facts.commandId,
+      replayed: facts.replayed,
+    };
+  };
+
   return {
     async cleanupCompanyMemberData(context, input) {
       assertTrustedAdminContext(context);
       const principalId =
         typeof input?.principalId === "string" ? input.principalId.trim() : "";
       if (!principalId) throw new Error("INVALID_REQUEST");
+      const translated = await translatedCleanupOrNull(context, principalId);
+      if (translated) return translated;
       return operator.transaction(async (tx) => {
         await beginTransaction(tx);
         await tx.execute(
@@ -442,6 +606,14 @@ export interface GlobalDeletionReport {
   readonly companiesRevoked: number;
   /** One audit event per affected company, in tenant order. */
   readonly auditEventIds: readonly string[];
+  /**
+   * T04.03 ba branch only: the companies whose member.leave the directory
+   * refused (a closed company, or the last-owner rule protecting the
+   * company from being stranded). The §9 fence has already disabled the
+   * identity globally; these companies keep their directory rows until the
+   * company's own lifecycle settles them.
+   */
+  readonly directorySkipped?: readonly string[];
 }
 
 export interface GlobalAccountDeletionService {
@@ -474,6 +646,13 @@ export function createGlobalAccountDeletionService(deps: {
     restoreUntil: Date | null;
     resources: string[];
   }>;
+  /**
+   * The T04.03 translation port (ticket step 5 + the T02.13 disposal): on
+   * the ba branch the per-company membership revocation becomes the
+   * member's own member.leave command; legacy keeps the operator suspension
+   * below; paused refuses the whole deletion before the fence moves.
+   */
+  readonly membership?: MembershipAdminTranslationPort;
 }): GlobalAccountDeletionService {
   assertOperatorDatabase(deps.operator);
 
@@ -488,6 +667,12 @@ export function createGlobalAccountDeletionService(deps: {
       if (input?.confirmation !== GLOBAL_DELETION_CONFIRMATION) {
         throw new Error("GLOBAL_DELETION_CONFIRMATION_REQUIRED");
       }
+
+      // The authority branch is decided before the fence moves: a paused
+      // directory refuses the whole deletion (one 503), so the marker never
+      // races a write that must not run.
+      const mode = deps.membership ? await deps.membership.modeOf() : null;
+      if (mode === "paused") throw new Error(MEMBERSHIP_LIFECYCLE_PAUSED);
 
       // §9 ordering: the marker is the first act of deletion. The fence is
       // insert-once (a repeat answers the same row / re-fences a lift).
@@ -529,7 +714,37 @@ export function createGlobalAccountDeletionService(deps: {
       );
 
       const auditEventIds: string[] = [];
+      const directorySkipped: string[] = [];
       for (const membership of activeMemberships) {
+        if (mode === "ba" && deps.membership) {
+          // The ba branch: the member's OWN member.leave command (the account
+          // owner is the actor — a self-removal, not an admin action). The
+          // command's executor carries the lock, the receipt, the clocks and
+          // the audit fact. A refusal here (a closed company, or the
+          // last-owner rule) is recorded and skipped, exactly as the legacy
+          // loop skips a membership row that already moved: the fence above
+          // has already disabled the identity globally.
+          try {
+            const result = await deps.membership.execute(
+              deps.membership.actorOf(userId),
+              {
+                operation: "member.leave",
+                tenantId: membership.tenantId,
+                idempotencyKey: crypto.randomUUID(),
+                payload: {},
+              },
+            );
+            const auditId = await deps.membership.auditEventIdOf({
+              tenantId: membership.tenantId,
+              commandId: result.commandId,
+            });
+            if (auditId) auditEventIds.push(auditId);
+          } catch (error) {
+            if (!isDirectoryMembershipRefusal(error)) throw error;
+            directorySkipped.push(membership.tenantId);
+          }
+          continue;
+        }
         const suspended = await deps.operator.transaction(async (tx) => {
           await beginTransaction(tx);
           await tx.execute(
@@ -579,6 +794,7 @@ export function createGlobalAccountDeletionService(deps: {
         phase: "fenced",
         companiesRevoked: auditEventIds.length,
         auditEventIds,
+        ...(mode === "ba" ? { directorySkipped } : {}),
       };
     },
   };

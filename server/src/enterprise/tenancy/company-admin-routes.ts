@@ -25,6 +25,7 @@
 // （createUnavailableCompanyAdminRoutes），绝不以宽松替身放行。
 
 import { Hono } from "hono";
+import { isDirectoryMembershipRefusal } from "../../auth/directory/membership";
 import type {
   CompanyBooks,
   CompanyFinanceVisibilityService,
@@ -139,6 +140,8 @@ const STATUS_BY_CODE: Readonly<
   SCIM_BINDING_NOT_FOUND: 404,
   COMPANY_ROLE_CHANGE_CONFLICT: 409,
   COMPANY_OFFBOARD_CONFLICT: 409,
+  // T04.03: the paused answer every translated member entrance shares.
+  MEMBERSHIP_LIFECYCLE_PAUSED: 503,
   DATA_DATABASE_UNAVAILABLE: 503,
   WORKSPACE_ADMIN_UNAVAILABLE: 503,
   MANAGEMENT_ENTRANCE_UNCLASSIFIED: 500,
@@ -149,6 +152,16 @@ function errorResponse(error: unknown): {
   code: string;
   body: { error: { code: string; message: string } };
 } {
+  // T04.03: the translated ba branch surfaces the membership module's own
+  // refusals (message "CODE: detail" plus the refusal's status); they land
+  // here with their real HTTP projection instead of folding into a 500.
+  if (isDirectoryMembershipRefusal(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
   const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
   const status = STATUS_BY_CODE[code] ?? 500;
   if (status === 500) {
