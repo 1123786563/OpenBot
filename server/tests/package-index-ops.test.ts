@@ -19,7 +19,10 @@ import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { exportBuiltinPackage } from "../../scripts/plugin-packages/export-builtin";
+import { pathToFileURL } from "node:url";
 import {
+  acquireIndexLock,
+  type IndexLockHandle,
   IndexOperationError,
   readMarketplaceIndex,
   withIndexLock,
@@ -603,6 +606,169 @@ describe("PKG08 index lock and atomic replace", () => {
       "PACKAGE_INDEX_LOCKED",
     );
     await rm(staleLock, { recursive: true, force: true });
+  });
+
+  // —— OCR-fix-B (B1)：共享 release 锁的心跳与破锁 TOCTOU（dispatch 持锁跨
+  // DB 事务+制品读取后，无心跳的长持锁会被他进程当崩溃残留破除）。 ——
+
+  /** A REAL second process holding the lock (the dispatch-side shape). */
+  async function spawnHolder(input: {
+    readonly indexPath: string;
+    readonly staleMs: number;
+    readonly holdMs: number | null;
+    readonly heldMarker: string;
+    readonly doneMarker: string | null;
+  }): Promise<Bun.Subprocess> {
+    const script = `
+      const { acquireIndexLock } = await import(${JSON.stringify(
+        pathToFileURL(join(REPO_ROOT, "scripts/plugin-packages/index-file.ts"))
+          .href,
+      )});
+      const { writeFile } = await import("node:fs/promises");
+      const lock = await acquireIndexLock(${JSON.stringify(input.indexPath)}, {
+        staleMs: ${input.staleMs},
+      });
+      await writeFile(${JSON.stringify(input.heldMarker)}, "1");
+      await new Promise((resolve) => setTimeout(resolve, ${input.holdMs ?? 0}));
+      ${
+        input.doneMarker
+          ? `await writeFile(${JSON.stringify(input.doneMarker)}, "1");`
+          : ""
+      }
+      ${
+        input.holdMs === null
+          ? `await new Promise(() => {});` // park forever — the "crash" is kill -9
+          : `await lock.release();`
+      }
+    `;
+    return Bun.spawn(["bun", "-e", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  }
+
+  async function waitForMarker(path: string): Promise<void> {
+    for (let i = 0; i < 100; i += 1) {
+      if (
+        await stat(path).then(
+          () => true,
+          () => false,
+        )
+      )
+        return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(`PKG08_TEST_MARKER_TIMEOUT ${path}`);
+  }
+
+  test("OCR-fix-B1: a holder past staleMs with a live heartbeat is never broken by another process", async () => {
+    root = await mkdtemp(join(tmpdir(), "pkg08-hb-"));
+    const indexPath = join(root, "marketplace.json");
+    await writeFile(
+      indexPath,
+      `${JSON.stringify({ schemaVersion: 1, packages: [] }, null, 2)}\n`,
+    );
+    const heldMarker = join(root, "held");
+    const doneMarker = join(root, "done");
+    // The holder keeps the lock for 1200ms against a 500ms stale window —
+    // only the heartbeat keeps it unbreakable.
+    const proc = await spawnHolder({
+      indexPath,
+      staleMs: 500,
+      holdMs: 1_200,
+      heldMarker,
+      doneMarker,
+    });
+    await waitForMarker(heldMarker);
+    // The competing acquire waits the full timeout and refuses: it never
+    // broke the live (heartbeating) lock even though the hold outlasts
+    // staleMs.
+    await expectIndexError(
+      acquireIndexLock(indexPath, { staleMs: 500, timeoutMs: 700 }),
+      "PACKAGE_INDEX_LOCKED",
+    );
+    // The holder's critical section completed and released cleanly.
+    await waitForMarker(doneMarker);
+    expect(await proc.exited).toBe(0);
+    // And the lock is genuinely free afterwards.
+    const handle = await acquireIndexLock(indexPath, { staleMs: 500 });
+    await handle.release();
+    expect(
+      await stat(`${indexPath}.lock`).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
+  });
+
+  test("OCR-fix-B1: a real crash (kill -9, heartbeat silenced) is breakable after staleMs", async () => {
+    root = await mkdtemp(join(tmpdir(), "pkg08-crash-"));
+    const indexPath = join(root, "marketplace.json");
+    await writeFile(
+      indexPath,
+      `${JSON.stringify({ schemaVersion: 1, packages: [] }, null, 2)}\n`,
+    );
+    const heldMarker = join(root, "held");
+    const proc = await spawnHolder({
+      indexPath,
+      staleMs: 700,
+      holdMs: null,
+      heldMarker,
+      doneMarker: null,
+    });
+    await waitForMarker(heldMarker);
+    proc.kill(9);
+    expect(await proc.exited).not.toBe(0);
+    // With the holder gone the lock ages past staleMs and the survivor
+    // breaks it and proceeds.
+    const handle = await acquireIndexLock(indexPath, {
+      staleMs: 700,
+      timeoutMs: 4_000,
+    });
+    await handle.release();
+  });
+
+  test("OCR-fix-B1: a lock recreated between the stale judgement and the break is not deleted (TOCTOU)", async () => {
+    root = await mkdtemp(join(tmpdir(), "pkg08-toctou-"));
+    const indexPath = join(root, "marketplace.json");
+    await writeFile(
+      indexPath,
+      `${JSON.stringify({ schemaVersion: 1, packages: [] }, null, 2)}\n`,
+    );
+    const lockDir = `${indexPath}.lock`;
+    // A live holder whose heartbeat interval is far longer than the test —
+    // then age its directory so a short-staleMs breaker judges it crashed.
+    const old = await acquireIndexLock(indexPath, { staleMs: 60_000 });
+    const ancient = new Date(Date.now() - 60_000);
+    await utimes(lockDir, ancient, ancient);
+    let successor: IndexLockHandle | null = null;
+    let hooked = false;
+    // The breaker judges stale, then — inside the break window — the old
+    // holder releases and a NEW process creates a fresh lock. The breaker
+    // must refuse to delete the newcomer and keep waiting instead. (The
+    // successor's own heartbeat keeps it fresh under the same staleMs, so
+    // the hook runs exactly once.)
+    const breaker = acquireIndexLock(indexPath, {
+      staleMs: 500,
+      timeoutMs: 900,
+      onStaleLockDetected: async () => {
+        if (hooked) return;
+        hooked = true;
+        await old.release();
+        successor = await acquireIndexLock(indexPath, { staleMs: 500 });
+      },
+    });
+    await expectIndexError(breaker, "PACKAGE_INDEX_LOCKED");
+    // The successor's lock survived the breaker's judgement and releases
+    // cleanly.
+    expect(successor).not.toBeNull();
+    await successor?.release();
+    expect(
+      await stat(lockDir).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
   });
 });
 

@@ -2293,6 +2293,20 @@ export function createPackageDispatchService(
           row.connectionId ?? undefined,
         );
         if (resolution.outcome !== "allow") return resolution;
+        // OCR-fix-B (B3): the resolution may have auto-selected the caller's
+        // CURRENT connection when the row carries none. A null connectionId
+        // is the explicit no-connection fact of the original operation — the
+        // vendor query must dial the original connection identity (id, and
+        // generation when there was one), never a newer binding. Any drift
+        // refuses here; the surface maps it to DISPATCH_ACCOUNT_UNAVAILABLE
+        // and no vendor dial happens under another account.
+        if (
+          resolution.facts.connectionId !== row.connectionId ||
+          (row.connectionId !== null &&
+            resolution.facts.connectionGeneration !== row.connectionGeneration)
+        ) {
+          return refused("CONNECTION_UNAVAILABLE");
+        }
         if (resolution.facts.envelope !== null && !vault) {
           return refused("NOT_AVAILABLE");
         }

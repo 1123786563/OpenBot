@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import {
   type MarketplaceV1,
@@ -109,6 +117,12 @@ const LOCK_TIMEOUT_MS = 10_000;
 export interface IndexLockOptions {
   readonly timeoutMs?: number;
   readonly staleMs?: number;
+  /**
+   * Test/observation hook: invoked after a lock is judged stale, BEFORE the
+   * second check that decides whether to break it. Contention tests use it
+   * as a barrier inside the break decision window.
+   */
+  readonly onStaleLockDetected?: () => Promise<void> | void;
 }
 
 /**
@@ -160,17 +174,37 @@ export async function acquireIndexLock(
       const exists = (error as NodeJS.ErrnoException).code === "EEXIST";
       if (!exists) throw error;
       let stale = false;
+      let staleMtimeMs = 0;
       try {
         const info = await stat(lockPath);
+        staleMtimeMs = info.mtimeMs;
         stale = Date.now() - info.mtimeMs > staleMs;
       } catch {
         // The holder released between mkdir and stat: retry immediately.
         stale = false;
       }
       if (stale) {
-        // A crashed holder's lock: break it and try again (best effort; a
-        // live holder always has a fresh mtime because it just created it).
-        await rm(lockPath, { recursive: true, force: true });
+        if (options.onStaleLockDetected) {
+          await options.onStaleLockDetected();
+        }
+        // OCR-fix-B (B1): re-verify before breaking. The judged-stale holder
+        // may have released and another writer recreated the lock between
+        // the stale stat and this point — a recreated lock has a fresh
+        // mtime, so only an UNCHANGED, still-stale lock is broken.
+        let stillStale = false;
+        try {
+          const recheck = await stat(lockPath);
+          stillStale =
+            recheck.mtimeMs === staleMtimeMs &&
+            Date.now() - recheck.mtimeMs > staleMs;
+        } catch {
+          stillStale = false;
+        }
+        if (stillStale) {
+          // A crashed holder's lock: break it and try again (best effort; a
+          // live holder's heartbeat keeps the mtime fresh).
+          await rm(lockPath, { recursive: true, force: true });
+        }
         continue;
       }
       if (Date.now() >= deadline) {
@@ -187,11 +221,27 @@ export async function acquireIndexLock(
   await writeFile(join(lockPath, "holder"), `${process.pid}\n`, {
     encoding: "utf8",
   });
+  // OCR-fix-B (B1): the dispatch side holds this lock across a database
+  // transaction plus artifact reads — longer than any single mtime write.
+  // A heartbeat under half of staleMs keeps a live holder unbreakable no
+  // matter how long it holds; it stops on release and on a vanished lock.
+  const heartbeatMs = Math.max(25, Math.floor(staleMs / 3));
+  let heartbeat: ReturnType<typeof setInterval> | null = setInterval(() => {
+    utimes(lockPath, new Date(), new Date()).catch(() => {
+      if (heartbeat) clearInterval(heartbeat);
+      heartbeat = null;
+    });
+  }, heartbeatMs);
+  heartbeat?.unref?.();
   let released = false;
   return {
     release: async () => {
       if (released) return;
       released = true;
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
       await rm(lockPath, { recursive: true, force: true }).catch(
         () => undefined,
       );
