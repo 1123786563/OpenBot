@@ -1520,6 +1520,13 @@
       "when": 1792992000000,
       "tag": "0216_better_auth_invitation_resend",
       "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1793078400000,
+      "tag": "0217_better_auth_team_management_grants",
+      "breakpoints": true
     }
   ]
 }

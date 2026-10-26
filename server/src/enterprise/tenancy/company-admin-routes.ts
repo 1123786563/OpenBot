@@ -26,6 +26,10 @@
 
 import { Hono } from "hono";
 import { isDirectoryMembershipRefusal } from "../../auth/directory/membership";
+import {
+  type CompanyTeamGrantPort,
+  isTeamGrantRefusal,
+} from "../../auth/directory/team-grants";
 import type {
   CompanyBooks,
   CompanyFinanceVisibilityService,
@@ -86,6 +90,17 @@ export interface CompanyAuditPort {
   ): Promise<void>;
 }
 
+/**
+ * The team-management-grant surface (T04.07 / #551, P09): the company admin
+ * grants and revokes the fixed team-member-management actions of one team to
+ * an existing active team member, and lists the stable grant rows. The port
+ * type lives beside the directory handlers (`team-grants.ts`); the concrete
+ * port runs the management-grant commands inside the company admin's
+ * trusted server-issued platform actor, and the company-role authorization
+ * and the team/target eligibility re-verification live in the directory
+ * command the handlers execute (the same lock the executor replays).
+ */
+
 export interface CompanyAdminRouteDeps {
   /** The authorizer both faces share: admin contexts for gated routes, member contexts otherwise. */
   authorizer: CompanyAdminAuthorizer & {
@@ -109,6 +124,15 @@ export interface CompanyAdminRouteDeps {
   };
   /** Resolves the full selection pair (tenant + workspace) against membership facts (MT005). */
   resolveScope(request: Request): Promise<PlatformScope>;
+  /**
+   * The team-management-grant surface (T04.07 / #551, P09). Optional at the
+   * type level on purpose: the concrete port needs a production Directory
+   * executor whose assembly arrives with the full-surface wiring task (the
+   * same deferral the T04.03 membership translation port made), so the dep is
+   * fail-closed — absent, the three routes answer 503, never a permissive
+   * stand-in.
+   */
+  teamGrants?: CompanyTeamGrantPort;
   audit: CompanyAuditPort;
   finance: Pick<
     CompanyFinanceVisibilityService,
@@ -142,6 +166,9 @@ const STATUS_BY_CODE: Readonly<
   COMPANY_OFFBOARD_CONFLICT: 409,
   // T04.03: the paused answer every translated member entrance shares.
   MEMBERSHIP_LIFECYCLE_PAUSED: 503,
+  // T04.07: the management-grant face before its production Directory wiring
+  // exists — fail-closed, never a permissive stand-in.
+  MANAGEMENT_GRANTS_UNAVAILABLE: 503,
   DATA_DATABASE_UNAVAILABLE: 503,
   WORKSPACE_ADMIN_UNAVAILABLE: 503,
   MANAGEMENT_ENTRANCE_UNCLASSIFIED: 500,
@@ -158,6 +185,30 @@ function errorResponse(error: unknown): {
   if (isDirectoryMembershipRefusal(error)) {
     return {
       status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isTeamGrantRefusal(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  // T04.07: the management-grant commands run through the directory executor,
+  // so its refusals (e.g. DIRECTORY_IDEMPOTENCY_CONFLICT) and the authority
+  // gate's (legacy/paused → 503) project with their own status, never a 500.
+  if (isDirectoryCommandRefusal(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isAuthorityRefusal(error)) {
+    return {
+      status: 503,
       code: error.code,
       body: { error: { code: error.code, message: "Request refused." } },
     };
@@ -237,6 +288,7 @@ async function readJsonObject(
 
 export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   const routes = new Hono();
+  const teamGrants = deps.teamGrants;
 
   routes.get("/admin/capabilities", async (context) => {
     try {
@@ -487,7 +539,145 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
     }
   });
 
+  // T04.07 (#551, P09): team-management grants of this workspace. Read the
+  // stable rows; the writer commands carry the company-role authorization and
+  // the team/target eligibility re-verification inside the directory command.
+  routes.get("/admin/teams/:workspaceId/management-grants", async (context) => {
+    try {
+      requireClassifiedCompanyEntrance(
+        "GET",
+        "/admin/teams/:workspaceId/management-grants",
+      );
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
+      if (!teamGrants) throw new Error("MANAGEMENT_GRANTS_UNAVAILABLE");
+      const workspaceId = workspaceParam(context.req.param("workspaceId"));
+      const grants = await teamGrants.listGrants({
+        tenantId: adminContext.tenantId,
+        workspaceId,
+      });
+      return context.json({ grants });
+    } catch (error) {
+      const response = errorResponse(error);
+      return context.json(response.body, response.status);
+    }
+  });
+
+  routes.post(
+    "/admin/teams/:workspaceId/management-grants",
+    async (context) => {
+      try {
+        requireClassifiedCompanyEntrance(
+          "POST",
+          "/admin/teams/:workspaceId/management-grants",
+        );
+        const adminContext = await deps.authorizer.resolveAdminContext(
+          context.req.raw,
+        );
+        if (!teamGrants) throw new Error("MANAGEMENT_GRANTS_UNAVAILABLE");
+        const workspaceId = workspaceParam(context.req.param("workspaceId"));
+        const idempotencyKey = context.req.header(IDEMPOTENCY_HEADER);
+        if (
+          idempotencyKey === undefined ||
+          idempotencyKey.trim() === "" ||
+          idempotencyKey.length > IDEMPOTENCY_KEY_MAX ||
+          !isPrintableText(idempotencyKey)
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const body = await readJsonObject(context.req.raw);
+        if (
+          typeof body.userId !== "string" ||
+          body.userId.trim() === "" ||
+          !Array.isArray(body.actions) ||
+          body.actions.length === 0 ||
+          !body.actions.every(
+            (action: unknown) =>
+              action === "team.member.add" || action === "team.member.remove",
+          ) ||
+          new Set(body.actions).size !== body.actions.length
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const outcome = await teamGrants.grant({
+          tenantId: adminContext.tenantId,
+          workspaceId,
+          actorUserId: adminContext.actorId,
+          actorPrincipalId: adminContext.principalId,
+          userId: body.userId,
+          actions: body.actions,
+          idempotencyKey,
+        });
+        return context.json(
+          { grant: outcome },
+          outcome.replayed ? 200 : 201,
+        );
+      } catch (error) {
+        const response = errorResponse(error);
+        return context.json(response.body, response.status);
+      }
+    },
+  );
+
+  routes.delete(
+    "/admin/teams/:workspaceId/management-grants/:grantId",
+    async (context) => {
+      try {
+        requireClassifiedCompanyEntrance(
+          "DELETE",
+          "/admin/teams/:workspaceId/management-grants/:grantId",
+        );
+        const adminContext = await deps.authorizer.resolveAdminContext(
+          context.req.raw,
+        );
+        if (!teamGrants) throw new Error("MANAGEMENT_GRANTS_UNAVAILABLE");
+        const workspaceId = workspaceParam(context.req.param("workspaceId"));
+        const grantId = context.req.param("grantId");
+        if (!grantId || !GRANT_ID_PATTERN.test(grantId)) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const body = await readJsonObject(context.req.raw);
+        if (
+          typeof body.reason !== "string" ||
+          body.reason.trim() === "" ||
+          body.reason.length > LIFECYCLE_REASON_MAX ||
+          !isPrintableText(body.reason)
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        // interfaces §3 (r1 remediation 2026-10-27): the port derives DELETE's
+        // idempotency key per grant generation (revoke-${grantId}-${generation}
+        // from its pre-read row) — a revoke after a re-grant is a fresh
+        // command, never a no-op replay of the earlier receipt.
+        const outcome = await teamGrants.revoke({
+          tenantId: adminContext.tenantId,
+          workspaceId,
+          actorUserId: adminContext.actorId,
+          actorPrincipalId: adminContext.principalId,
+          grantId,
+          reason: body.reason,
+        });
+        return context.json({ grant: outcome });
+      } catch (error) {
+        const response = errorResponse(error);
+        return context.json(response.body, response.status);
+      }
+    },
+  );
+
   return routes;
+}
+
+const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+const GRANT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+
+/** A Hono path workspace id: one stable business id, server-checked shape. */
+function workspaceParam(value: string | undefined): string {
+  if (value === undefined || !WORKSPACE_ID_PATTERN.test(value)) {
+    throw new Error("INVALID_REQUEST");
+  }
+  return value;
 }
 
 /**

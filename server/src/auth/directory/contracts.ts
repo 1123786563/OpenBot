@@ -17,9 +17,9 @@
  * adds the Directory command envelope and result (DirectoryRole,
  * DirectoryOperation, EligibilityKey, EligibilityVersion, DirectoryCommand,
  * DirectoryResult), the Directory service view and the DirectoryFinalizer
- * contract (interfaces §2/§3, P04). TeamManagementGrantView belongs to a
- * later task (T04.07/P09) and is deliberately not defined here, so its
- * definition is not shadowed by a premature sketch.
+ * contract (interfaces §2/§3, P04). T04.07 (#551, original task P09) adds the
+ * TeamManagementGrantView read model the management-grants GET answers with
+ * (interfaces §3).
  */
 
 import type { Database } from "../../db/client";
@@ -158,6 +158,25 @@ export interface ScopedTeamExtension {
     userId: string,
   ): Promise<void>;
 }
+
+/**
+ * The management-grant read model (interfaces §3, T04.07 / #551, original
+ * task P09): what `GET .../admin/teams/:workspaceId/management-grants`
+ * answers with. One stable row per (tenant, workspace, principal) — a grant,
+ * a revoke and a re-grant all advance the same row's `generation`, and
+ * revocation is a status, never a deletion. `userId` is the grantee's BA
+ * user id resolved from the stored principal; the durable row and its
+ * snapshot generations live in `auth_team_management_grants` (T02.04).
+ */
+export type TeamManagementGrantView = Readonly<{
+  grantId: string;
+  tenantId: string;
+  workspaceId: string;
+  userId: string;
+  actions: readonly ("team.member.add" | "team.member.remove")[];
+  generation: Version;
+  status: "active" | "revoked";
+}>;
 
 /**
  * A deferred side effect registered by Better Auth during a transaction-bound

@@ -1134,10 +1134,12 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
     const before = journal.entries[journal.entries.length - 2];
     // T03.04 (#541) appended 0215 (the guard's company.suspend/restore
     // admission) and amended this pin; T04.01 (#545) appended 0216 (the
-    // guard's invitation.resend admission) the same way: the newest entry
-    // is always the latest amendment, still contiguous on the one before.
-    expect(before?.tag).toBe("0215_better_auth_company_lifecycle");
-    expect(last?.tag).toBe("0216_better_auth_invitation_resend");
+    // guard's invitation.resend admission) and T04.07 (#551) appended 0217
+    // (the guard's team-management-grant admission) the same way: the newest
+    // entry is always the latest amendment, still contiguous on the one
+    // before.
+    expect(before?.tag).toBe("0216_better_auth_invitation_resend");
+    expect(last?.tag).toBe("0217_better_auth_team_management_grants");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });
