@@ -256,6 +256,23 @@ export function projectRow(
   };
 }
 
+/**
+ * The ONE local-state adoption rule, shared by the list page, the detail read and the
+ * export projection (the R3-03 / R5-26 discipline, OCR R5-550): the upstream word stands
+ * unless it is "unknown" — evidence absence, not an observation — and a locally observed
+ * lifecycle state exists, in which case the local answer is the actual answer. Exported
+ * so the export worker projects the same words the query face answers (m143's
+ * same-projection contract); every state-adopting read path calls this, none re-derives it.
+ */
+export function adoptLocalState<S extends { state: string }>(
+  summary: S,
+  localState: string | undefined,
+): S {
+  return localState !== undefined && summary.state === "unknown"
+    ? { ...summary, state: localState }
+    : summary;
+}
+
 /*
  * The step projection (Issue #24 / T18-server). The recorder families the tree renders are
  * named by the spans themselves: T14's model spans (`model:<id>`) and T15's steps (`tool:<name>`,
@@ -375,10 +392,18 @@ function projectStep(row: OpikSpanRow): RunStep | null {
     kind === "retrieval" ? stepRetrieval(attributes) : undefined;
   // R4-03: the call id the protocol named the call by, when the recorded step
   // carried one — the correspondence between a real business call and its
-  // governance step, fail closed to absent when the row says nothing.
+  // governance step, fail closed to absent when the row says nothing. The same
+  // read-side ceiling the other projected fields answer to (OCR R5-379): the
+  // write-side allowlist binds this service's writers only, so an OTLP-ingested
+  // or hand-edited row of unbounded text would ride the wire whole — over-long
+  // ids are treated as never provided, like a withheld projection.
+  const rawCallId = attributes.tool_call_id;
   const toolCallId =
-    kind === "tool" && typeof attributes.tool_call_id === "string"
-      ? attributes.tool_call_id
+    kind === "tool" &&
+    typeof rawCallId === "string" &&
+    rawCallId.length > 0 &&
+    rawCallId.length <= 256
+      ? rawCallId
       : undefined;
   return {
     kind,
@@ -438,7 +463,14 @@ export function createRunsQueryService(
       case "unavailable":
         throw new RunsQueryError(result.code, 503);
       case "upstream_error":
-        throw new RunsQueryError(result.code, 502);
+        // The read faces never call deleteTraces, so the port's missing-project
+        // code cannot arise here; it folds into the generic upstream word.
+        throw new RunsQueryError(
+          result.code === "OPIK_PROJECT_MISSING"
+            ? "OPIK_UPSTREAM_ERROR"
+            : result.code,
+          502,
+        );
       case "malformed":
         throw new RunsQueryError(result.code, 502);
       case "ownership_drift":
@@ -518,39 +550,32 @@ export function createRunsQueryService(
      * effective on the very next call: the capability verdicts joined from this scope's
      * own binding rows (an unbound trace is the honest "unavailable", never a guess), and
      * whether bindings exist that never reconciled upstream — the "still syncing" signal.
+     *
+     * R3-03's lifecycle join rides the same page: the binding's state for the rows this
+     * scope bound, applied under the SAME discipline detail keeps (R5-26) — the trace rows
+     * a real deployment answers carry no `status` word at all, so an unknown upstream is
+     * evidence absence, not an observation, and the local binding's state is the actual
+     * answer; a word the vocabulary table maps is an upstream observation and stands. An
+     * unbound trace keeps the upstream word, whatever it was.
+     *
+     * The three reads are independent and all keyed on these rows, so they go out in
+     * parallel — they were serial awaits, three sequential round trips per page (OCR
+     * R5-537).
      */
-    const verdicts = deps.bindings.capabilitiesByOpikTraceIds;
-    const joined = verdicts
-      ? await verdicts(
-          scope,
-          rows.map((row) => row.id),
-        )
-      : null;
-    /*
-     * R3-03's lifecycle join: the binding's state for the rows this scope bound, applied
-     * under the SAME discipline detail keeps (R5-26) — the trace rows a real deployment
-     * answers carry no `status` word at all, so an unknown upstream is evidence absence,
-     * not an observation, and the local binding's state is the actual answer; a word the
-     * vocabulary table maps is an upstream observation and stands. An unbound trace keeps
-     * the upstream word, whatever it was.
-     */
-    const stateJoin = deps.bindings.statesByOpikTraceIds;
-    const localStates = stateJoin
-      ? await stateJoin(
-          scope,
-          rows.map((row) => row.id),
-        )
-      : null;
-    const unreconciled = deps.bindings.countUnreconciled;
-    const syncing = unreconciled ? (await unreconciled(scope)) > 0 : false;
+    const ids = rows.map((row) => row.id);
+    const [joined, localStates, syncedCount] = await Promise.all([
+      deps.bindings.capabilitiesByOpikTraceIds?.(scope, ids) ?? null,
+      deps.bindings.statesByOpikTraceIds?.(scope, ids) ?? null,
+      deps.bindings.countUnreconciled?.(scope) ?? Promise.resolve(0),
+    ]);
+    const syncing = syncedCount > 0;
     return {
-      runs: rows.map((row) => {
-        const summary = projectRow(row, joined?.get(row.id) ?? "unavailable");
-        const localState = localStates?.get(row.id);
-        return localState !== undefined && summary.state === "unknown"
-          ? { ...summary, state: localState }
-          : summary;
-      }),
+      runs: rows.map((row) =>
+        adoptLocalState(
+          projectRow(row, joined?.get(row.id) ?? "unavailable"),
+          localStates?.get(row.id),
+        ),
+      ),
       pagination: {
         total: current.total,
         window: current.rows.length,
@@ -609,7 +634,9 @@ export function createRunsQueryService(
     return {
       run: {
         ...run,
-        state: summary.state === "unknown" ? binding.state : summary.state,
+        // The same adoption rule the list page and the export projection run
+        // (adoptLocalState's docblock carries the discipline).
+        state: adoptLocalState(summary, binding.state).state,
       },
       upstream: { status: "present", ...summary },
     };

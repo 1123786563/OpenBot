@@ -90,12 +90,16 @@ describe("agent profile permissions", () => {
 
   test("keeps a system profile with a nominal owner closed rather than guessing", () => {
     // The provisioner never writes an owner onto a package Bot; if one ever
-    // appears, the owner observes nothing until the access contract says who
-    // does — fail closed, never assume.
+    // appears, nobody observes it until the access contract says who does —
+    // fail closed, never assume. The admin divergence is scoped to the
+    // creatorless row the Spec actually assigned (OCR R5-60): handing an
+    // owner-bearing system Bot's observation face to the admin would widen
+    // reading past what the contract ever said.
     const agent = profile({ visibility: "public", systemOwned: true });
 
     expect(canObserveAgent(creator, agent)).toBe(false);
-    expect(canObserveAgent(admin, agent)).toBe(true);
+    expect(canObserveAgent(otherUser, agent)).toBe(false);
+    expect(canObserveAgent(admin, agent)).toBe(false);
   });
 
   test("observes a user profile exactly as its managers do", () => {

@@ -6,6 +6,7 @@ import { createObservationDatasetStore } from "../src/ai-observability/datasets"
 import {
   createBilledEvaluationCaseRunner,
   createExecutionBudgetPrecheck,
+  EvaluationCaseSettlementError,
   evaluationCaseStepUsageId,
 } from "../src/ai-observability/execution-billing";
 import {
@@ -32,6 +33,7 @@ import { createAuditStore } from "../src/audit";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createCreditUsageTarget } from "../src/billing/usage-delivery";
 import { createUsageOutbox } from "../src/billing/usage-outbox";
+import type { UsageOutbox } from "../src/billing/usage-outbox";
 import type { BillingModelCreditPolicyEntry } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
@@ -876,6 +878,84 @@ test("a two-step loop admits each step, settles each against its own hold, and c
       .from(creditGrants)
       .where(eq(creditGrants.externalCustomerId, customer));
     expect(grantRow.used).toBe(2050);
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("a charging failure for any step writes evidence for that step and continues settling all remaining (OCR R5-517)", async () => {
+  // The counterexample: the first hold is spendable but the outbox write fails on
+  // step 0; without the fix, steps 1..N are never settled and their holds stay
+  // reserved forever — the reconciliation gap this loop's own promise forbids.
+  const customer = `${prefix}-settlement-error`;
+  await grant(customer, 10_000);
+  const gateway = scriptedGateway([
+    toolCallRound({ input: 100, output: 600 }),
+    answerRound("the outage reached three regions", {
+      input: 150,
+      output: 300,
+    }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-settlement-error`;
+    // The outbox refuses exactly ONE write — the first charge fact (a settlement
+    // record carries a reservationId; the evidence recorder's rows carry null, so
+    // the unsettled-fact write for the same step still lands).
+    let failedOnce = false;
+    const failingOutbox: UsageOutbox = {
+      ...outbox,
+      record: async (input) => {
+        if (input.reservationId !== null && !failedOnce) {
+          failedOnce = true;
+          throw new Error("injected usage_outbox_write_failed");
+        }
+        return outbox.record(input);
+      },
+    };
+    const runner = createBilledEvaluationCaseRunner({
+      callModel: createGatewayModelCall({
+        apiKey: "test-key",
+        baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      }),
+      billing: {
+        creditWriter: writer,
+        outbox: failingOutbox,
+        policy: stepPolicies,
+        externalCustomerId: customer,
+      },
+    });
+
+    // The settlement failure surfaces as the case runner's thrown error — the
+    // worker records the execution failed, never a success whose cost vanished.
+    // But the throw happens AFTER the loop: step 1 was settled like any other.
+    await expect(runner(toolContextFor(executionId))).rejects.toThrow(
+      EvaluationCaseSettlementError,
+    );
+    expect(gateway.bodies.length).toBe(2);
+
+    // Step 0: its unsettled fact is on the outbox, naming why — the hold stays
+    // occupied (Pending Settlement), never a confirmed no-cost.
+    const eventId = eventIdOf(executionId, 0);
+    expect(await outboxRow(eventId)).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      status: "usage_outbox_write_failed",
+    });
+    expect(await reservationOf(eventId)).toMatchObject({ status: "reserved" });
+
+    // Step 1 — the assertion the old mid-loop abort could never reach: its hold
+    // was already reserved when step 0 failed, so it settles against its own
+    // hold like any other step, instead of stranding pending forever.
+    const secondEventId = evaluationCaseStepUsageId(executionId, 0, 1);
+    const secondFact = await outboxRow(secondEventId);
+    expect(secondFact).toMatchObject({
+      inputTokens: 150,
+      outputTokens: 300,
+      actualCostNumerator: "750",
+    });
+    expect(secondFact?.reservationId).toBe(
+      (await reservationOf(secondEventId))?.id,
+    );
   } finally {
     gateway.stop();
   }

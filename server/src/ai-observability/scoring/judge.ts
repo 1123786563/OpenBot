@@ -691,11 +691,18 @@ export function createJudgeScoringCaseRunner(
     // FREV-05: the re-check before the judge's own billed call — see the module
     // note above. Composition without a re-check seam (a unit fixture, a caller
     // that never heard of it) keeps the signal check alone; production's worker
-    // always supplies both.
+    // always supplies both. The gate only guards a JUDGE (OCR R5-695): a
+    // rules-only experiment has no judge call to protect, and a fabricated
+    // JUDGE_CANCELLED failure record here would contradict this module's own
+    // "disabled is not a failure" semantics — it would render "判分失败" on a
+    // run that never had a judging step.
+    const judgeConfigured =
+      extractJudgeSpec(context.config.judgeConfig).kind !== "disabled";
     if (
-      context.signal?.aborted === true ||
-      (context.recheckAdmission !== undefined &&
-        !(await context.recheckAdmission().catch(() => false)))
+      judgeConfigured &&
+      (context.signal?.aborted === true ||
+        (context.recheckAdmission !== undefined &&
+          !(await context.recheckAdmission().catch(() => false))))
     ) {
       return {
         ...outcome,

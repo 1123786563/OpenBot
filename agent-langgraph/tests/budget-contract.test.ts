@@ -258,7 +258,12 @@ function receiptOf(
 function expectedMac(value: Record<string, unknown>): string {
   const caps = value.caps as Record<string, number>;
   const usage = value.usage as Record<string, number>;
-  return createHmac("sha256", "synthetic-managed-token")
+  // Purpose-derived key (OCR R5 handoff): HMAC(secret, label), same pin as
+  // the other budget suites — the token also travels as the dial's Bearer.
+  const macKey = createHmac("sha256", "synthetic-managed-token")
+    .update("openbot-budget-receipt-mac-v1")
+    .digest("hex");
+  return createHmac("sha256", macKey)
     .update(
       [
         BUDGET_RECEIPT_EVENT,

@@ -1105,7 +1105,22 @@ const opikBootConfig = opikConfigFromEnv(process.env);
  * LangGraph Bot executing, billing and writing traces upstream while every
  * observation face answered 404 and no binding ever existed. `canObserveAgent`
  * keeps the manage answer for user-owned Bots and hands a creatorless system
- * Bot's data to the administrator alone; the edit paths keep `canManageAgent`.
+ * Bot's data to the administrator alone; the profile EDIT paths keep
+ * `canManageAgent`.
+ *
+ * CONSUMER AUDIT (OCR R5): this one guard is wired at four places, and the audit
+ * is the boundary statement. (1) The builtin run scope resolver mints observation
+ * scopes — reading. (2) The observation routes use it for every per-Bot answer,
+ * including the observation domain's OPERATIONAL faces — export queueing,
+ * case-review persistence, experiment submit/start — which write observation DATA
+ * (and a billed evaluation execution spends credits); none of them edits a Bot
+ * profile. (3) The export re-authorization reads data out — reading. (4) The
+ * evaluation execution worker runs billed evaluations over observed runs — an
+ * observation-data operation, the operator's own job on a Bot whose data the Spec
+ * assigns to administrators. The divergence therefore reaches the observation
+ * domain's own faces, including the spend, and never the profile edit paths; a
+ * face that must refuse admin on system Bots gets its own gate, it does not
+ * reroute this one.
  */
 const aiObservabilityCanObserveBot: BotManagementCheck = async (
   actor,

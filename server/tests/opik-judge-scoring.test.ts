@@ -676,6 +676,29 @@ describe("the case-runner wrapper", () => {
     expect(model.calls).toHaveLength(0);
   });
 
+  test("a cancellation on a rules-only experiment fabricates no judge failure (OCR R5-695)", async () => {
+    // The gate protects a JUDGE call; a run with no judge subtree has none to
+    // protect. Without this guard the wrapper wrote a JUDGE_CANCELLED failure
+    // record for an experiment that never had a judging step — contradicting
+    // the module's own "disabled is not a failure" semantics on the results page.
+    const { runner, model } = wrappedCaseRunner(
+      { output: VERDICT },
+      { status: "completed", output: "the answer" },
+    );
+    const controller = new AbortController();
+
+    const settled = runner({
+      ...context(frozenConfig({ rules: [] })),
+      signal: controller.signal,
+    });
+    controller.abort();
+    const outcome = await settled;
+
+    expect(outcome.status).toBe("completed");
+    expect(outcome.judge).toBeUndefined();
+    expect(model.calls).toHaveLength(0);
+  });
+
   test("a refused judge admission fails the scoring, not the case", async () => {
     const { runner, model } = wrappedCaseRunner(
       { output: VERDICT, inputTokens: 1, outputTokens: 1 },

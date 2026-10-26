@@ -38,7 +38,12 @@ function mac(body: {
   };
   status: "ok" | "budget_exceeded";
 }): string {
-  return createHmac("sha256", SECRET)
+  // Purpose-derived key (OCR R5 handoff): HMAC(secret, label) — the token also
+  // travels as the dial's Bearer, so the raw secret never keys the MAC directly.
+  const macKey = createHmac("sha256", SECRET)
+    .update("openbot-budget-receipt-mac-v1")
+    .digest("hex");
+  return createHmac("sha256", macKey)
     .update(
       [
         "openbot-budget-receipt",

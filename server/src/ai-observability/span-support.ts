@@ -123,9 +123,11 @@ export function projectApprovedSpanContent(
 
 /** Span content on the recorder's own assertion — the deny patterns still run first
  * and always win. FREV-01 closed this door for model spans (see
- * projectApprovedSpanContent); this recorder-asserted variant remains only for the
- * tool-step builders whose policy wiring has not landed, and is pinned as-is by
- * opik-tool-steps.test.ts. */
+ * projectApprovedSpanContent); this recorder-asserted variant is TEST-ONLY now —
+ * the tool-step builders that used it migrated to the approved path, and only
+ * opik-span-support.test.ts / opik-tool-steps.test.ts still pin its shape (OCR
+ * R5). Removing it means removing those pins; keeping it live is the cheaper lie
+ * no production caller pays for. */
 export function projectSpanContent(
   text: string | null | undefined,
 ): SafeValue | null {

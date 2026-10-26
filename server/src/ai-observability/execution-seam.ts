@@ -72,17 +72,17 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { BuiltInAgentClassicConfig } from "@copilotkit/runtime/v2";
 import { BuiltInAgentWithSaneHistory } from "@openbot/toolkit/copilotkit/agents";
 import { type GrantedTool, parametersFor } from "@openbot/toolkit/granted-tool";
+import { countChatInputTokens } from "../billing/input-bound";
 import {
   builtInAgentConfiguration,
   type RegisteredBuiltInAgent,
   type RuntimeModel,
   type WorkbenchGatewayModelDial,
 } from "../copilot";
-import { countChatInputTokens } from "../billing/input-bound";
 import {
+  EVALUATION_INPUT_OVER_LIMIT,
   type EvaluationCallableTool,
   type EvaluationModelCall,
-  EVALUATION_INPUT_OVER_LIMIT,
   type EvaluationStepBudget,
   GATEWAY_CALL_TIMEOUT_MS,
   gatewaySettings,
@@ -534,7 +534,12 @@ export function createPublicExecutionSeamModelCall(
     // The engine stops silently when aborted (its completion IS the stop): the runner
     // classifies by the task's own signal — a cancellation stays a cancellation, and
     // the seam's own time bound a provider failure — so the signal is all that is said.
-    if (stop.aborted) throw new Error("EVALUATION_SEAM_RUN_ABORTED");
+    // A stop that races a normal finish is the finish (OCR R5-537): only the task's own
+    // cancellation signal turns a stopped run into an aborted one — the seam's bare time
+    // bound alone would misfile a case that actually completed.
+    if (stop.aborted && signal?.aborted === true) {
+      throw new Error("EVALUATION_SEAM_RUN_ABORTED");
+    }
 
     const terminal = run.events.find(
       (event) => event.type === EventType.RUN_FINISHED,

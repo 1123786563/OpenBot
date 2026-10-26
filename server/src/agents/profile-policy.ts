@@ -55,9 +55,13 @@ export function canObserveAgent(
    * The one divergence: a creatorless system Bot's observation data belongs to the deployment's
    * administrator. A system Bot with an owner would be a row the package provisioner never writes;
    * if one ever appears, nobody observes it until the access contract says who does — fail closed,
-   * never assume the owner reads what the Spec only ever assigned to administrators.
+   * never assume the owner reads what the Spec only ever assigned to administrators. The ownerless
+   * check is the code, not just this paragraph: an admin observing an owner-bearing system Bot
+   * would hand it to them through the same divergence the paragraph below forbids widening.
    */
-  if (agent.systemOwned) return actor.role === "admin";
+  if (agent.systemOwned && agent.ownerUserId === null) {
+    return actor.role === "admin";
+  }
 
   return canManageAgent(actor, agent);
 }

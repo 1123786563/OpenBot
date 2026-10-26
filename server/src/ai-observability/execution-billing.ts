@@ -99,6 +99,20 @@ export function evaluationCaseStepUsageId(
 }
 
 /**
+ * The one token-ceiling shape both step ceilings share (OCR R5-129): a non-positive
+ * policy maximum means no hold, an enormous one clamps to the largest exact number —
+ * one copy so the input and output ceilings cannot drift apart on a future edit.
+ */
+function tokenCeiling(maximum: bigint): number | undefined {
+  if (maximum <= 0n) return undefined;
+  return Number(
+    maximum > BigInt(Number.MAX_SAFE_INTEGER)
+      ? BigInt(Number.MAX_SAFE_INTEGER)
+      : maximum,
+  );
+}
+
+/**
  * The output ceiling one loop step's hold prices (FREV-R2-01). The policy's output
  * token maximum is exactly the output that `maximumReservationUnits` covers, so it is
  * what the step's request must carry: the provider cannot generate past the hold even
@@ -107,13 +121,7 @@ export function evaluationCaseStepUsageId(
 function stepOutputCeiling(
   policy: BillingModelCreditPolicyEntry,
 ): number | undefined {
-  const maximum = policy.output.maximumTokens;
-  if (maximum <= 0n) return undefined;
-  return Number(
-    maximum > BigInt(Number.MAX_SAFE_INTEGER)
-      ? BigInt(Number.MAX_SAFE_INTEGER)
-      : maximum,
-  );
+  return tokenCeiling(policy.output.maximumTokens);
 }
 
 /**
@@ -126,13 +134,7 @@ function stepOutputCeiling(
 function stepInputCeiling(
   policy: BillingModelCreditPolicyEntry,
 ): number | undefined {
-  const maximum = policy.input.maximumTokens;
-  if (maximum <= 0n) return undefined;
-  return Number(
-    maximum > BigInt(Number.MAX_SAFE_INTEGER)
-      ? BigInt(Number.MAX_SAFE_INTEGER)
-      : maximum,
-  );
+  return tokenCeiling(policy.input.maximumTokens);
 }
 
 /**
@@ -444,6 +446,8 @@ export function createBilledEvaluationCaseRunner(
         });
       }
       const usage = new Map(stepUsage.map((one) => [one.index, one]));
+      // The first settlement failure, held until every step has had its turn (OCR R5-517).
+      let settlementError: string | null = null;
       const steps = [...new Set([...holds.keys(), ...usage.keys()])].sort(
         (left, right) => left - right,
       );
@@ -520,8 +524,19 @@ export function createBilledEvaluationCaseRunner(
             outputTokens: tokens.outputTokens,
             reason: code,
           });
-          throw new EvaluationCaseSettlementError(code);
+          /*
+           * OCR R5-517: keep settling. Every later step's hold is already
+           * reserved, and aborting the loop here strands those holds with no
+           * usage/evidence fact forever — the reconciliation gap this loop's
+           * own promise ("every step gets an evidence row and a settlement")
+           * forbids. Each remaining step settles or writes its own failure
+           * evidence; the first failure code is thrown once the loop ends.
+           */
+          settlementError ??= code;
         }
+      }
+      if (settlementError !== null) {
+        throw new EvaluationCaseSettlementError(settlementError);
       }
       return outcome;
     }

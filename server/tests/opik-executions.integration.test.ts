@@ -78,7 +78,19 @@ const config = {
   modelName: "claude-sonnet-5",
   modelParameters: { temperature: 0, maxTokens: 1024 },
   toolFixtures: { search: { query: "outage", results: 0 } },
-  judgeConfig: { type: "llm-judge", threshold: 0.8 },
+  // The judge subtree makes this a judge-configured experiment (OCR R5-695): the
+  // FREV-05 withholding below protects a JUDGE call, so the tests that assert a
+  // withheld judge run against a config that actually has one. A judgeless
+  // (rules-only) config must never fabricate a JUDGE_CANCELLED record — the
+  // unit suite pins that half.
+  judgeConfig: {
+    judge: {
+      entrance: "approved",
+      rubric: "Score the answer's agreement with the reference, 0 to 1.",
+    },
+    type: "llm-judge",
+    threshold: 0.8,
+  },
   judgeVersion: "judge/1",
   readOnlyTools: ["search"],
 };

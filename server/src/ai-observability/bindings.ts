@@ -28,8 +28,9 @@ import { nanos, nowNs, W3C_TRACE_ID } from "./span-support";
  * FREV-03: the scope key a row carries is the Bot's STABLE data identity (scope.ts
  * `resourceScopeKey`), so every authorized holder of a scope for one Bot — its creator, a
  * managing administrator, a post-transfer owner — reads and writes the SAME rows. Who may hold
- * the scope at all is the live manage gate's answer upstream of this store; the row's own
- * `actor_id` remains the provenance of who recorded it.
+ * the scope at all is the live observation gate's answer upstream of this store (R4-02:
+ * `canObserveAgent`, never the manage gate); the row's own `actor_id` remains the provenance
+ * of who recorded it.
  */
 
 export type RunBindingErrorCode =
@@ -299,13 +300,11 @@ export function createRunBindingStore(db: Database): RunBindingStore {
     },
 
     async reconcile(scope, runId, attemptId, opikTraceId) {
-      // OCR R4-25: RESERVED — NOT WIRED. This is opik_trace_id's only write site and
-      // has zero production callers (tests only): the production run path is begin +
-      // finish, and finish writes state only. Until a call site exists on the
-      // lost-acknowledgment path (see the interface note above), every
-      // reconciliation-dependent read answers its empty case by design. Deliberately
-      // left unwired here — wiring it is a behavior change needing its own approved
-      // Spec, not a defect fix.
+      // WIRED (F5E1-F3, closing OCR R4-25's reservation; supersedes the earlier
+      // "RESERVED — NOT WIRED" note, which contradicted the interface docblock above):
+      // the observer binding gate and the remote run recorder are the production
+      // callers — each run origin's materialization records the derived id here. This
+      // remains opik_trace_id's sole write site, and begin/finish still never write it.
       assertObservationScope(scope);
       reference(runId);
       reference(attemptId);
@@ -702,6 +701,107 @@ function observerBindingRef(row: RunBinding): OpikRunBindingRef {
   };
 }
 
+/**
+ * F5E1-F3's materialization, extracted as the ONE shape both run origins run (OCR R5-310:
+ * the observer gate's builtin path and the remote recorder carried near-identical copies).
+ * Ordering is the crash discipline both docblocks state: create, root, THEN reconcile — a
+ * crash between the create and the reconcile leaves upstream objects the deterministic
+ * derivation finds again on a retry; a reconcile written first could claim a tree nobody
+ * wrote. Answers the binding ref WITH the upstream id recorded (the authority the run's
+ * spans write under), the ref unchanged when an earlier pass already materialized this
+ * chain, or null when the deployment has no verified port. `refuse` names each failure in
+ * the caller's own error vocabulary (the gate's RunBindingError, the recorder's Error).
+ */
+export async function materializeRunUpstream(
+  scope: ObservationScope,
+  ref: OpikRunBindingRef,
+  traceId: string,
+  startedAt: Date,
+  deps: Readonly<{
+    port: () => OpikPort | null;
+    reconcile: RunBindingStore["reconcile"] | undefined;
+    refuse: (reason: "reconcile_unwired" | "upstream_unavailable") => Error;
+  }>,
+): Promise<OpikRunBindingRef | null> {
+  const port = deps.port();
+  if (port === null) return null;
+  if (ref.opikTraceId !== null) return ref; // an earlier pass materialized this chain
+  const reconcile = deps.reconcile;
+  if (reconcile === undefined) {
+    // A port without the authoritative store's mapping write is a wiring defect: fail
+    // loudly rather than export under an identity nobody records.
+    throw deps.refuse("reconcile_unwired");
+  }
+  const identity = runUpstreamIdentity(traceId);
+  const created = await port.createTrace(scope, {
+    traceId: identity.opikTraceId,
+    name: RUN_ROOT_SPAN_NAME,
+    startTime: startedAt,
+    binding: ref,
+  });
+  if (created.outcome !== "ok") {
+    throw deps.refuse("upstream_unavailable");
+  }
+  const rootSpan: OpikOtlpSpan = {
+    traceId,
+    spanId: identity.rootSpanId,
+    name: RUN_ROOT_SPAN_NAME,
+    startTimeUnixNano: nanos(startedAt) ?? nowNs(),
+    // The root's close is not observed here — an end time would be a duration nobody
+    // measured, so the row stays open and the query face reports what it knows. The
+    // run's own lifecycle observation closes it later (see settleObservedRun).
+    opik: {
+      traceId: identity.opikTraceId,
+      spanId: identity.rootOpikSpanId,
+    },
+  };
+  const rooted = await port.writeSpans(scope, {
+    spans: [rootSpan],
+    binding: { ...ref, opikTraceId: identity.opikTraceId },
+  });
+  if (rooted.outcome !== "ok") {
+    throw deps.refuse("upstream_unavailable");
+  }
+  // The authoritative mapping: the binding now names the trace its spans attach to.
+  const reconciled = await reconcile(
+    scope,
+    ref.runId,
+    ref.attemptId,
+    identity.opikTraceId,
+  );
+  return observerBindingRef(reconciled.binding);
+}
+
+/**
+ * The run root re-written closed (R3-03): the same deterministic identity the
+ * materialization wrote open, with the observed window — the start the fact face
+ * reported, the end the terminal named, the binding-state word the local row settled
+ * onto riding as structured data. Shared with the remote recorder's terminal close
+ * (OCR R5-297) so both origins write one root shape. An unmeasurable time degrades to
+ * the other end of the window, never an invented clock.
+ */
+export function runRootCloseSpan(
+  traceId: string,
+  timing: Readonly<{ startedAt: Date; endedAt: Date; state: string }>,
+): OpikOtlpSpan {
+  const identity = runUpstreamIdentity(traceId);
+  const startNs = nanos(timing.startedAt) ?? nanos(timing.endedAt) ?? nowNs();
+  return {
+    traceId,
+    spanId: identity.rootSpanId,
+    name: RUN_ROOT_SPAN_NAME,
+    startTimeUnixNano: startNs,
+    endTimeUnixNano: nanos(timing.endedAt) ?? startNs,
+    opik: {
+      traceId: identity.opikTraceId,
+      spanId: identity.rootOpikSpanId,
+    },
+    attributes: {
+      span_state: { state: "projected", value: timing.state },
+    },
+  };
+}
+
 /** A non-empty carried reference; `null` when the fact carried none usable. */
 function carriedRef(value: string | undefined): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
@@ -714,13 +814,20 @@ function gateReason(error: unknown): string {
 
 /** The builtin path observes its own internal steps, so its capability is detailed. */
 const OBSERVER_CAPABILITY: AiObservationBindingCapability = "detailed";
-/** The same seven-day lease the HTTP report path writes (routes/basic-run.ts). */
-const DEFAULT_OBSERVER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * The binding lease both run origins write (the builtin gate and the remote recorder):
+ * the same seven-day window the HTTP report path (routes/basic-run.ts) uses. One exported
+ * constant because OCR R5-310 — the two copies had already drifted into "same value, three
+ * comments" territory.
+ */
+export const DEFAULT_RUN_BINDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /**
  * The run root span's name — the tree's own word for the run, never projected text (the
- * port refuses a withheld name because the read-back locates spans by name).
+ * port refuses a withheld name because the read-back locates spans by name). MUST stay the
+ * literal every origin materializes: the query face locates a run's root by this name
+ * without asking which origin wrote it.
  */
-const RUN_ROOT_SPAN_NAME: SafeText = { state: "projected", text: "run" };
+export const RUN_ROOT_SPAN_NAME: SafeText = { state: "projected", text: "run" };
 /** Bounded memory: recent chains per scope, and scopes, before FIFO eviction. */
 const DEFAULT_MAX_CHAINS_PER_SCOPE = 2048;
 const DEFAULT_MAX_SCOPES = 4096;
@@ -728,6 +835,12 @@ const DEFAULT_MAX_SCOPES = 4096;
 type ScopeChains = {
   begun: Map<string, Promise<OpikRunBindingRef>>;
   settled: Set<string>;
+  /**
+   * Chains whose `begun` promise has settled (success or failure) — the eviction
+   * roster: only entries here may be retired, an in-flight begun is deferred
+   * (OCR R5-725).
+   */
+  done: Set<string>;
   /**
    * The run's observed start per chain (R3-03), stored ahead of the first
    * materialization so the upstream trace and root carry the run's real start.
@@ -756,7 +869,7 @@ export function createObserverRunBindingGate(
 ): ObserverRunBindingGate {
   const log = getLogger("server");
   const now = options.now ?? (() => new Date());
-  const ttlMs = options.ttlMs ?? DEFAULT_OBSERVER_TTL_MS;
+  const ttlMs = options.ttlMs ?? DEFAULT_RUN_BINDING_TTL_MS;
   const maxChains = options.maxChainsPerScope ?? DEFAULT_MAX_CHAINS_PER_SCOPE;
   const maxScopes = options.maxScopes ?? DEFAULT_MAX_SCOPES;
   const scopes = new Map<string, ScopeChains>();
@@ -770,66 +883,28 @@ export function createObserverRunBindingGate(
    * (and what the query face and retention read). A run whose upstream objects cannot be
    * established exports nothing — the failure is closed, not degraded, because a span that
    * lands where the binding cannot name it is exactly the unattributable write the port
-   * refuses elsewhere.
+   * refuses elsewhere. The three steps themselves live in `materializeRunUpstream`, shared
+   * with the remote recorder (OCR R5-310), so the two run origins cannot drift apart.
    *
-   * Ordering on the crash path: create, root, THEN reconcile. A crash between the create
-   * and the reconcile leaves upstream objects the deterministic derivation finds again on
-   * the retry; a reconcile written first could claim a tree nobody wrote.
+   * T09 QUEUE EXEMPTION, DELIBERATE (OCR R5-985): the create/root writes here are the port
+   * calls that ESTABLISH the identity the T09 bounded queue's business-span writes ride
+   * under — routing them through that queue would invert the dependency (a queued span
+   * needs the ref only this synchronous path can return) — so they go direct: at most once
+   * per chain, and a failure fails the export closed, counted where the caller counts
+   * every refused write. The settle-side root close below carries the same exemption:
+   * once per chain, guarded by the `settled` set, logged when it fails.
    */
-  const materialize = async (
+  const materialize = (
     scope: ObservationScope,
     ref: OpikRunBindingRef,
     traceId: string,
     startedAt: Date,
-  ): Promise<OpikRunBindingRef> => {
-    const port = options.port?.() ?? null;
-    if (port === null) return ref;
-    if (ref.opikTraceId !== null) return ref; // already materialized by an earlier pass
-    const reconcile = store.reconcile;
-    if (reconcile === undefined) {
-      // A port without the authoritative store's mapping write is a wiring defect: fail
-      // loudly rather than export under an identity nobody records.
-      throw new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503);
-    }
-    const identity = runUpstreamIdentity(traceId);
-    const created = await port.createTrace(scope, {
-      traceId: identity.opikTraceId,
-      name: RUN_ROOT_SPAN_NAME,
-      startTime: startedAt,
-      binding: ref,
-    });
-    if (created.outcome !== "ok") {
-      throw new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503);
-    }
-    const rootSpan: OpikOtlpSpan = {
-      traceId,
-      spanId: identity.rootSpanId,
-      name: RUN_ROOT_SPAN_NAME,
-      startTimeUnixNano: nanos(startedAt) ?? nowNs(),
-      // The root's close is not observed here — an end time would be a duration nobody
-      // measured, so the row stays open and the query face reports what it knows. The
-      // run's own lifecycle observation closes it later (see settleObservedRun).
-      opik: {
-        traceId: identity.opikTraceId,
-        spanId: identity.rootOpikSpanId,
-      },
-    };
-    const rooted = await port.writeSpans(scope, {
-      spans: [rootSpan],
-      binding: { ...ref, opikTraceId: identity.opikTraceId },
-    });
-    if (rooted.outcome !== "ok") {
-      throw new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503);
-    }
-    // The authoritative mapping: the binding now names the trace its spans attach to.
-    const reconciled = await reconcile(
-      scope,
-      ref.runId,
-      ref.attemptId,
-      identity.opikTraceId,
-    );
-    return observerBindingRef(reconciled.binding);
-  };
+  ): Promise<OpikRunBindingRef> =>
+    materializeRunUpstream(scope, ref, traceId, startedAt, {
+      port: () => options.port?.() ?? null,
+      reconcile: store.reconcile,
+      refuse: () => new RunBindingError("BINDING_UPSTREAM_UNAVAILABLE", 503),
+    }).then((materialized) => materialized ?? ref);
 
   const chainsOf = (scope: ObservationScope): ScopeChains => {
     const existing = scopes.get(scope.key);
@@ -843,6 +918,7 @@ export function createObserverRunBindingGate(
     const fresh: ScopeChains = {
       begun: new Map(),
       settled: new Set(),
+      done: new Set(),
       starts: new Map(),
       order: [],
     };
@@ -906,12 +982,46 @@ export function createObserverRunBindingGate(
     })();
     chains.begun.set(traceId, attempt);
     chains.order.push(traceId);
+    /*
+     * `catch` first: `.finally` alone would re-emit the rejection on a promise
+     * nobody awaits — an unhandled rejection that surfaces between tests/facts
+     * (the gate's own caller below handles `attempt` itself). The `begun` check
+     * is the R1-A-01 discipline: only the attempt still registered under this
+     * chain may mark it done. A FAILED attempt is unregistered by the catch
+     * below (which also drops the mark, covering the microtask order where this
+     * `then` ran first), so a failure leaves no done entry behind — a stale one
+     * would mark a retried chain as settled and let an eviction retire the
+     * in-flight retry, re-opening the duplicate-materialization door 725 closed.
+     */
+    void attempt
+      .catch(() => {})
+      .then(() => {
+        if (chains.begun.get(traceId) === attempt) {
+          chains.done.add(traceId);
+        }
+      });
     if (chains.order.length > maxChains) {
-      const oldest = chains.order.shift();
-      if (oldest !== undefined) {
+      /*
+       * OCR R5-725: evict the oldest chain that is no longer in flight, deferring
+       * pending ones (re-queued at the back) — dropping an in-flight begun would make
+       * the chain's concurrent facts re-run begin/materialize and amplify the upstream
+       * calls the idempotent derivation only happens to make safe. If every entry is
+       * in flight the bound is exceeded temporarily by exactly the in-flight set,
+       * which concurrency itself bounds; the next eviction pass retires them.
+       */
+      let rotations = chains.order.length;
+      while (chains.order.length > maxChains && rotations-- > 0) {
+        const oldest = chains.order.shift();
+        if (oldest === undefined) break;
+        if (!chains.done.has(oldest)) {
+          chains.order.push(oldest);
+          continue;
+        }
         chains.begun.delete(oldest);
         chains.settled.delete(oldest);
         chains.starts.delete(oldest);
+        chains.done.delete(oldest);
+        break; // one retirement per insertion keeps the map at its cap
       }
     }
     try {
@@ -919,8 +1029,12 @@ export function createObserverRunBindingGate(
     } catch (error) {
       // A failed establishment is not cached: the database may come back, and
       // the next fact of the run asks again — each failure fails only the
-      // facts whose write it gated.
+      // facts whose write it gated. The done mark goes with it (R1-A-01): the
+      // settlement callback above may already have added it in the other
+      // microtask order, and a left-behind mark is stale by the time a retry
+      // re-registers the chain.
       chains.begun.delete(traceId);
+      chains.done.delete(traceId);
       const at = chains.order.indexOf(traceId);
       if (at >= 0) chains.order.splice(at, 1);
       log.warn(
@@ -938,11 +1052,12 @@ export function createObserverRunBindingGate(
    * The run root's close (R3-03): the same deterministic identity the materialization
    * wrote open, re-written with the observed window — the start the fact face reported,
    * the end the terminal named, and the same binding-state word the local row settled
-   * onto. Writing the root again with the identical ids is the upsert the derived
-   * identity exists for (a retry asks for the very same objects); a close that fails is
-   * logged and left, because the binding's terminal state — already written — is the
-   * authority and a root that stays open upstream is the honest absence the query face
-   * already knows how to report.
+   * onto (the span itself is `runRootCloseSpan`, shared with the remote recorder's
+   * terminal close, OCR R5-297). Writing the root again with the identical ids is the
+   * upsert the derived identity exists for (a retry asks for the very same objects); a
+   * close that fails is logged and left, because the binding's terminal state — already
+   * written — is the authority and a root that stays open upstream is the honest absence
+   * the query face already knows how to report.
    */
   const closeRunRoot = async (
     scope: ObservationScope,
@@ -963,27 +1078,8 @@ export function createObserverRunBindingGate(
       );
       return;
     }
-    const identity = runUpstreamIdentity(traceId);
-    const startNs = nanos(timing.startedAt) ?? nanos(timing.endedAt) ?? nowNs();
-    const rootSpan: OpikOtlpSpan = {
-      traceId,
-      spanId: identity.rootSpanId,
-      name: RUN_ROOT_SPAN_NAME,
-      startTimeUnixNano: startNs,
-      endTimeUnixNano: nanos(timing.endedAt) ?? startNs,
-      // The terminal word rides as structured data in the step projection's own
-      // vocabulary (a fixed enumeration, nothing to redact): the root's row says
-      // upstream what the local binding settled.
-      attributes: {
-        span_state: { state: "projected", value: timing.state },
-      },
-      opik: {
-        traceId: identity.opikTraceId,
-        spanId: identity.rootOpikSpanId,
-      },
-    };
     const closed = await port.writeSpans(scope, {
-      spans: [rootSpan],
+      spans: [runRootCloseSpan(traceId, timing)],
       binding: ref,
     });
     if (closed.outcome !== "ok") {
@@ -1031,7 +1127,15 @@ export function createObserverRunBindingGate(
           // when the upstream root cannot be closed behind it.
           await store.finish(scope, binding.runId, binding.attemptId, state);
           await closeRunRoot(scope, binding, traceId, {
-            startedAt: observed.startedAt,
+            // OCR R5-1033: the settle validates its dates like noteObservedRunStart
+            // does — a carried non-date is evidence absence, and the close falls
+            // back to the validated starts value / the other end of the window,
+            // never to the close clock inventing a start.
+            startedAt:
+              observed.startedAt instanceof Date &&
+              !Number.isNaN(observed.startedAt.getTime())
+                ? observed.startedAt
+                : (chains.starts.get(traceId) ?? observed.endedAt),
             endedAt: observed.endedAt,
             state,
           });

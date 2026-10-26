@@ -416,7 +416,7 @@ export function createProductionEvaluationCaseRunner(
         ...(deps.stepBudget === undefined
           ? {}
           : { stepBudget: deps.stepBudget }),
-        signal: context.signal,
+        ...(context.signal === undefined ? {} : { signal: context.signal }),
       });
       // FREV-04: a tool the model invented is a call it made, and the gate is where
       // calls are judged — so every name the engine could not answer goes through it

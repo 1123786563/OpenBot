@@ -14,6 +14,7 @@
  * the route never reads an actor, scope, epoch or locator from the request.
  */
 import { Hono } from "hono";
+import { getLogger } from "../../../../shared/logger";
 import type { AgentActor, AgentProfile } from "../../agents/profile-types";
 import type { AppVariables } from "../../auth/guards";
 import type { AdminSummaryService } from "../admin-summary";
@@ -25,7 +26,6 @@ import {
 } from "../context";
 import { ObservationScopeError } from "../contracts";
 import { resolveObservationScope } from "../scope";
-import { getLogger } from "../../../../shared/logger";
 
 export type AdminSummaryRouteDeps = Readonly<{
   canManageBot: BotManagementCheck;
@@ -140,7 +140,7 @@ export function createAdminSummaryRoutes(
           // to its unavailable fault), and the raw error stays on the log
           // trail instead of riding hono's silent dispatch fallback.
           log.warn(
-            { type: "opik-admin-summary-list-failed", err: error },
+            { type: "opik-admin-summary-list-failed", error: String(error) },
             "opik-admin-summary-list-failed",
           );
           throw new AdminSummaryError("ADMIN_SUMMARY_UNAVAILABLE", 500);

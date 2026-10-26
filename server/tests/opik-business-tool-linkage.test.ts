@@ -552,7 +552,12 @@ function receiptEvent(runId: string): BaseEvent {
     usage: { modelSteps: 1, inputTokens: 400, outputTokens: 40, totalTokens: 440 },
     status: "ok" as const,
   };
-  const mac = createHmac("sha256", SECRET)
+  // Purpose-derived key (OCR R5 handoff): HMAC(secret, label), same pin as
+  // the other budget suites — the token also travels as the dial's Bearer.
+  const macKey = createHmac("sha256", SECRET)
+    .update("openbot-budget-receipt-mac-v1")
+    .digest("hex");
+  const mac = createHmac("sha256", macKey)
     .update(
       [
         "openbot-budget-receipt",
