@@ -254,13 +254,6 @@ export class RunBudgetLedger {
     if (this.callsStarted >= this.contract.caps.modelSteps) {
       this.stop("model_steps", this.contract.caps.modelSteps);
     }
-    const outputCap = Math.min(
-      this.contract.caps.outputTokens - this.outputTokens,
-      this.contract.caps.totalTokens - this.inputTokens - this.outputTokens,
-    );
-    if (outputCap <= 0) {
-      this.stop("output_tokens", this.contract.caps.outputTokens);
-    }
     const projectedInput =
       this.lastInputTokens +
       estimateTokens(messages.slice(this.countedMessages));
@@ -272,6 +265,16 @@ export class RunBudgetLedger {
       this.contract.caps.totalTokens
     ) {
       this.stop("total_tokens", this.contract.caps.totalTokens);
+    }
+    const outputCap = Math.min(
+      this.contract.caps.outputTokens - this.outputTokens,
+      this.contract.caps.totalTokens -
+        this.inputTokens -
+        this.outputTokens -
+        projectedInput,
+    );
+    if (outputCap <= 0) {
+      this.stop("output_tokens", this.contract.caps.outputTokens);
     }
     this.callsStarted += 1;
     this.countedMessages = messages.length;
@@ -380,7 +383,14 @@ function estimateContentTokens(content: unknown): number {
   if (Array.isArray(content)) {
     let tokens = 0;
     for (const part of content) {
-      if (typeof part !== "object" || part === null) continue;
+      if (typeof part === "string") {
+        tokens += estimateTextTokens(part);
+        continue;
+      }
+      if (typeof part !== "object" || part === null) {
+        tokens += NON_TEXT_PART_TOKENS;
+        continue;
+      }
       const record = part as { type?: unknown; text?: unknown };
       tokens +=
         record.type === "text" && typeof record.text === "string"
