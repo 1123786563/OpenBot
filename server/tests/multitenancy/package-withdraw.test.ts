@@ -17,10 +17,13 @@
 //   (7) AC2 跨范围：B 公司同包同版本的派发同样被阻断（撤回是全局部署事实）。
 //   (8) AC6：撤回只改元数据——制品、索引行、pin、dispatch 台账全保留。
 //
-// 「撤回」的进程内模型：loadPackageCatalogue 在服务器启动时装配一次，运行期
-// 是不可变快照；部署撤回=写索引+下次装配生效。测试以重建 catalogue/dispatch/
-// service 实例表达「撤回先提交」，与生产的提交-重载语义一致（判定点都在
-// §8 锁序的 CAS 事务内，谁先提交谁赢）。
+// 「撤回」的进程内模型（T13-fix-1 更正，Codex FC-01 终审否决旧「下次装配」
+// 裁决）：loadPackageCatalogue 的启动快照只承载 manifest/验证事实；部署撤回
+// 经 deployment-facts 门（与部署命令同一把跨进程 release 锁 + 当前索引重读）
+// 在每次 dispatched CAS 前生效——撤回先提交则存活进程立即 transport 0，
+// dispatch 先提交则已 dispatched 保留结果/unknown，无需重启。本套件的
+// dispatch 服务未注入 releaseFacts 门（行为与门未注入的判定路径一致）；跨进
+// 程竞争与存活进程无需重启的证据在 package-withdraw-contention.test.ts。
 
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";

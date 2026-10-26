@@ -650,6 +650,7 @@ import { createPasswordStore } from "./passwords/store";
 import { createOnboardingStore } from "./people/onboarding";
 import { createPeopleStore } from "./people/store";
 import { loadPackageCatalogue } from "./plugin-packages/catalogue";
+import { createDeployedReleaseFactsGate } from "./plugin-packages/deployment-facts";
 import { createAccountModeSwitch } from "./plugins/account-mode";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { useComposioClient } from "./plugins/composio";
@@ -1754,6 +1755,17 @@ const packageTooling = await (async () => {
   const dispatch = createPackageDispatchService({
     data: enterpriseCapabilities.data,
     catalogue: packageCatalogue,
+    /*
+     * T13-fix-1 (Codex FC-01): the withdrawal-facts gate. The boot catalogue
+     * above stays the manifest/verification snapshot, but every dispatch now
+     * re-reads the CURRENT deployment index under the deploy commands' own
+     * cross-process release lock before its CAS — so a CLI withdrawal blocks
+     * live processes immediately, and a dispatch that committed first keeps
+     * its preserved/unknown outcome. Same index path, same lock, one fact.
+     */
+    releaseFacts: createDeployedReleaseFactsGate({
+      indexPath: config.pluginMarketplaceIndexPath,
+    }),
     artifactRoot: config.pluginArtifactRoot,
     vault,
     toolInvocation,

@@ -121,6 +121,32 @@ export async function withIndexLock<T>(
   work: () => Promise<T>,
   options: IndexLockOptions = {},
 ): Promise<T> {
+  const lock = await acquireIndexLock(indexPath, options);
+  try {
+    return await work();
+  } finally {
+    await lock.release();
+  }
+}
+
+/** A held index lock; `release()` is idempotent-safe to call once. */
+export interface IndexLockHandle {
+  release(): Promise<void>;
+}
+
+/**
+ * T13-fix-1 (FC-01): the acquire/release split of `withIndexLock`. The
+ * dispatch side holds the SAME directory lock across its decide-and-CAS span
+ * (acquired before any database lock, released after the dispatch transaction
+ * has committed), which is what makes a withdrawal and a dispatch strictly
+ * ordered against each other across processes. The protocol is byte-for-byte
+ * the deployment writers' protocol — same path, same mkdir/EEXIST atomicity,
+ * same stale-lock breaking — so there is exactly one lock, not two flavors.
+ */
+export async function acquireIndexLock(
+  indexPath: string,
+  options: IndexLockOptions = {},
+): Promise<IndexLockHandle> {
   const timeoutMs = options.timeoutMs ?? LOCK_TIMEOUT_MS;
   const staleMs = options.staleMs ?? LOCK_STALE_MS;
   const lockPath = `${indexPath}.lock`;
@@ -156,16 +182,21 @@ export async function withIndexLock<T>(
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  try {
-    // Refresh the lock's mtime while held so a long mutation is never
-    // mistaken for a crashed holder.
-    await writeFile(join(lockPath, "holder"), `${process.pid}\n`, {
-      encoding: "utf8",
-    });
-    return await work();
-  } finally {
-    await rm(lockPath, { recursive: true, force: true }).catch(() => undefined);
-  }
+  // Refresh the lock's mtime while held so a long mutation is never
+  // mistaken for a crashed holder.
+  await writeFile(join(lockPath, "holder"), `${process.pid}\n`, {
+    encoding: "utf8",
+  });
+  let released = false;
+  return {
+    release: async () => {
+      if (released) return;
+      released = true;
+      await rm(lockPath, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    },
+  };
 }
 
 export interface ReleaseIdentity {
