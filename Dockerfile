@@ -163,6 +163,14 @@ COPY plugins plugins
 # has something to do.
 COPY scripts/composio-smoke.ts scripts/composio-smoke.ts
 
+# The one scripts subtree the SERVER resolves at boot (not a laptop convenience):
+# `server/src/plugin-packages/deployment-facts.ts` imports
+# `scripts/plugin-packages/index-file` as a value, so without these sources the
+# production entry's static import chain fails module resolution and the image
+# crashes at startup. Its only other import is `shared/enterprise/`, already
+# copied above; nothing else under `scripts/` is reached from server code.
+COPY scripts/plugin-packages scripts/plugin-packages
+
 # The built app, served by the API on the same origin. There is no CORS in this server, so this is
 # not a convenience: two origins would simply fail.
 COPY --from=app-build /src/app/dist app/dist

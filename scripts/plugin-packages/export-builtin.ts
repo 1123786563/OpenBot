@@ -222,10 +222,15 @@ export async function exportBuiltinPackage(options: {
       });
       indexAction = "registered";
     } else {
+      /*
+       * The export never decides lifecycle (OCR H2): a withdrawn or unlisted
+       * release keeps its state and visibility — withdrawal is a PKG08 gate
+       * decision, and a re-run of the export must not resurrect it. The
+       * digest is already asserted identical above, so only the category is
+       * a live metadata update here.
+       */
       existing.artifactDigest = artifact.digest;
       existing.category = category;
-      existing.listed = true;
-      existing.state = "published";
     }
     await writeMarketplaceIndexAtomic(indexPath, index);
   });

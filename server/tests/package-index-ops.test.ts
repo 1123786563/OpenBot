@@ -18,10 +18,12 @@
 import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { exportBuiltinPackage } from "../../scripts/plugin-packages/export-builtin";
 import {
   IndexOperationError,
   readMarketplaceIndex,
   withIndexLock,
+  writeMarketplaceIndexAtomic,
 } from "../../scripts/plugin-packages/index-file";
 import {
   type PublishReceipt,
@@ -655,5 +657,87 @@ describe("PKG08 permission boundary (AC1)", () => {
         "PATCH /installs/:id/status",
       ]),
     );
+  });
+});
+
+describe("PKG11 builtin export respects lifecycle state (OCR-fix-A3)", () => {
+  let root = "";
+  let indexPath = "";
+
+  afterEach(async () => {
+    if (root) await rm(root, { recursive: true, force: true });
+  });
+
+  /** A throwaway repo root: plugins/marketplace.json + artifact tree. */
+  async function freshRepo(): Promise<void> {
+    root = await mkdtemp(join(tmpdir(), "pkg11-export-"));
+    await mkdir(join(root, "plugins"), { recursive: true });
+    indexPath = join(root, "plugins/marketplace.json");
+    await writeFile(
+      indexPath,
+      `${JSON.stringify({ schemaVersion: 1, packages: [] }, null, 2)}\n`,
+    );
+  }
+
+  test("a re-export over a withdrawn release keeps the withdrawal; a new version registers published", async () => {
+    await freshRepo();
+    const first = await exportBuiltinPackage({
+      repoRoot: root,
+      version: "1.0.0",
+    });
+    expect(first.indexAction).toBe("registered");
+    // The withdrawal is PKG08's gate decision; a deterministic re-export of
+    // the same catalogue must not resurrect what it retired.
+    await withdrawMarketplaceRelease({
+      indexPath,
+      packageKey: first.packageKey,
+      version: "1.0.0",
+    });
+    const rerun = await exportBuiltinPackage({
+      repoRoot: root,
+      version: "1.0.0",
+    });
+    expect(rerun.indexAction).toBe("metadata-noop");
+    expect(rerun.artifactDigest).toBe(first.artifactDigest);
+    let index = await readMarketplaceIndex(indexPath);
+    expect(index.packages).toHaveLength(1);
+    expect(index.packages[0]).toMatchObject({
+      version: "1.0.0",
+      artifactDigest: first.artifactDigest,
+      state: "withdrawn",
+    });
+    // A bumped version registers normally: the export still publishes new
+    // releases; it never reaches into the lifecycle of existing ones.
+    const next = await exportBuiltinPackage({
+      repoRoot: root,
+      version: "1.1.0",
+    });
+    expect(next.indexAction).toBe("registered");
+    index = await readMarketplaceIndex(indexPath);
+    expect(index.packages).toHaveLength(2);
+    const byVersion = new Map(
+      index.packages.map((entry) => [entry.version, entry] as const),
+    );
+    expect(byVersion.get("1.0.0")).toMatchObject({ state: "withdrawn" });
+    expect(byVersion.get("1.1.0")).toMatchObject({
+      state: "published",
+      listed: true,
+    });
+  });
+
+  test("an unlisted release keeps its visibility: listing is a discovery decision, not the export's", async () => {
+    await freshRepo();
+    await exportBuiltinPackage({ repoRoot: root, version: "1.0.0" });
+    // An operator unlists the release (discovery-only, PKG08's listed axis).
+    const index = await readMarketplaceIndex(indexPath);
+    index.packages[0]!.listed = false;
+    await writeMarketplaceIndexAtomic(indexPath, index);
+    await exportBuiltinPackage({ repoRoot: root, version: "1.0.0" });
+    const after = await readMarketplaceIndex(indexPath);
+    expect(after.packages).toHaveLength(1);
+    expect(after.packages[0]).toMatchObject({
+      state: "published",
+      listed: false,
+    });
   });
 });
