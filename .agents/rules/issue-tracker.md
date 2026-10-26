@@ -1,6 +1,6 @@
 # Issue tracker
 
-本仓库的正式 Issue tracker 为 GitHub `1123786563/OpenBot`。仓库代码、Spec 与实现 Tickets 均使用此仓库；。
+本仓库的正式 Issue tracker 为 GitHub `1123786563/OpenBot`。仓库代码、Spec 与实现 Tickets 均使用此仓库。
 
 已完成需求与验收定义的 Spec/Ticket 使用现有 `ready-for-agent` 标签。依赖未完成时不能派发实现；该标签不代表无阻塞或已经实现。
 
