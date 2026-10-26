@@ -71,6 +71,8 @@ export interface PackageTaskOutcomes {
   readonly pkg05?: RunOutcome;
   /** PKG07 (#466): lifecycle action vocabulary in the changes ledger. */
   readonly pkg07?: RunOutcome;
+  /** PKG11 (T13-fix-2): the dispatcher-process lease columns on dispatches. */
+  readonly pkg11?: RunOutcome;
 }
 
 /**
@@ -79,10 +81,10 @@ export interface PackageTaskOutcomes {
  * authority the package links reference), PKG02 (install storage), MT016 (the
  * Bot-ownership authority PKG03's grant FK pins), PKG03 (Bot grant storage),
  * PKG04 (expert provenance storage + restricted creation function), PKG05
- * (dispatch ledger + connector-tool grants + pin bindings) and PKG07 (the
- * lifecycle verbs in the changes ledger) in order through the real migration
- * tool. `up-to-date` is a legitimate rerun; `refused`/`failed` throws with the
- * tool's own reason.
+ * (dispatch ledger + connector-tool grants + pin bindings), PKG07 (the
+ * lifecycle verbs in the changes ledger) and PKG11 (the dispatcher-process
+ * lease columns) in order through the real migration tool. `up-to-date` is a
+ * legitimate rerun; `refused`/`failed` throws with the tool's own reason.
  *
  * Before the chain runs, `reconcileTaskDrift` removes drizzle-restored
  * objects that the chain's not-yet-journaled steps also create (0163's
@@ -112,6 +114,12 @@ export const PACKAGE_CHAIN_TASK_IDS = [
    * rewrites the same constraint.
    */
   "PKG07",
+  /**
+   * PKG11 (T13-fix-2, Codex FC-02): the dispatcher-process lease columns
+   * (owner_incarnation/owner_lease_expires_at) on the dispatch table. Ordered
+   * after PKG05, whose table it ALTERs.
+   */
+  "PKG11",
 ] as const;
 
 export async function applyPackageTasks(): Promise<PackageTaskOutcomes> {
@@ -183,6 +191,7 @@ export async function applyPackageTasks(): Promise<PackageTaskOutcomes> {
       pkg04: outcomes[6],
       pkg05: outcomes[7],
       pkg07: outcomes[8],
+      pkg11: outcomes[9],
     };
   } finally {
     await lockAdvisory.$client

@@ -2,8 +2,12 @@
 // PKG10（Issue #469）：unknown 效果核对的证据面（真实受限角色 + 真实 RLS）。
 //
 // 证据映射（#469 AC + A05/A08/A12 + Spec §9–10）：
-//   (1) dispatched 后收回执前崩溃：新进程实例（“重启”）扫出同 operation 的
-//       unknown，可被本范围成员查询（跨公司同形 NOT_AVAILABLE）。
+//   (1) dispatched 后收回执前崩溃：新装配（同库、新 incarnation）走生产恢复
+//       路径——台账/详情读之前按租约证据结算孤儿 dispatched 行
+//       （owner 缺失或异于本装配 → unknown/DISPATCH_CRASH），全程零手动改
+//       状态；可被本范围成员查询（跨公司同形 NOT_AVAILABLE），unknown 计数
+//       随结算出现。本装配自有 in-flight 行不被误转。
+//   (1b) 手动清扫入口 markUnknown 保持原语义（非崩溃重启证明的一部分）。
 //   (2) 供应商写超时 → unknown；同 toolCallId 再派发 DUPLICATE_DISPATCH，
 //       transport 不再被调（无重发）。
 //   (3) 无已验证协议：核对入口拒绝（VENDOR_QUERY_PROTOCOL_UNAVAILABLE），
@@ -452,7 +456,7 @@ describeDb("PKG10 unknown dispatch ledger (real roles)", () => {
   });
 
   itDb(
-    "a crash after dispatched survives a restart as the same unknown operation",
+    "a crash after dispatched settles as unknown through a new assembly's recovery path",
     async () => {
       const seed = await prepareCase();
       vendorCalls = 0;
@@ -466,9 +470,23 @@ describeDb("PKG10 unknown dispatch ledger (real roles)", () => {
         args: { note: "n" },
       });
       expect(begun.outcome).toBe("permit");
-      // Process death: nothing completes the row.
-      // "Restart": a fresh service instance over the same database, plus the
-      // documented sweep entry that settles the dangling dispatched row.
+      // Process death: nothing completes the row. The lease evidence is on
+      // the row (same transaction as the dispatched CAS).
+      const leaseRows = (await setup.$client.unsafe(
+        "select owner_incarnation, owner_lease_expires_at from enterprise_package_dispatches where run_id = $1 and tool_call_id = $2",
+        [seed.runId, toolCallId],
+      )) as Array<{ owner_incarnation: string; owner_lease_expires_at: Date }>;
+      expect(leaseRows).toHaveLength(1);
+      expect(leaseRows[0]?.owner_incarnation).toMatch(/^[0-9a-f-]{36}$/);
+      expect(leaseRows[0]!.owner_lease_expires_at!.getTime()).toBeGreaterThan(
+        Date.now(),
+      );
+      // The crash evidence stays on the row even after recovery: the settle
+      // never rewrites the lease to the recovering assembly's identity.
+      const crashedOwner = leaseRows[0]!.owner_incarnation;
+      // "Restart": a fresh assembly over the SAME database with a NEW
+      // incarnation. The recovery path is the production ledger read — no
+      // markUnknown call anywhere in this test.
       const restarted = createPackageDispatchService({
         data: fixture.base.data,
         catalogue,
@@ -480,15 +498,8 @@ describeDb("PKG10 unknown dispatch ledger (real roles)", () => {
         catalogDecisions: createPluginCatalogDecisionService(fixture.base.data),
         pinnedTools: runtime.readPinnedTools,
         vendorCall,
+        incarnation: randomUUID(),
       });
-      expect(
-        await restarted.markUnknown(scopeA1, {
-          runId: seed.runId,
-          attemptGeneration: 1,
-          toolCallId,
-          errorCode: "DISPATCH_CRASH",
-        }),
-      ).toBe(true);
       const listed = await restarted.listDispatches(scopeA1, {
         installId: seed.installId,
       });
@@ -502,7 +513,13 @@ describeDb("PKG10 unknown dispatch ledger (real roles)", () => {
         effect: "write",
         errorCode: "DISPATCH_CRASH",
       });
+      expect(listed.value[0]!.completedAt).not.toBeNull();
       const operationId = listed.value[0]?.operationId ?? "";
+      const settledRows = (await setup.$client.unsafe(
+        "select owner_incarnation from enterprise_package_dispatches where operation_id = $1",
+        [operationId],
+      )) as Array<{ owner_incarnation: string }>;
+      expect(settledRows[0]?.owner_incarnation).toBe(crashedOwner);
       const inspected = await restarted.inspectDispatch(scopeA1, {
         installId: seed.installId,
         operationId,
@@ -523,6 +540,10 @@ describeDb("PKG10 unknown dispatch ledger (real roles)", () => {
       });
       expect(inspected.value.evidence.argsDigest).toMatch(/^[0-9a-f]{64}$/);
       expect(inspected.value.recovery).toEqual({ ready: true });
+      // The recovered unknown row counts in the redacted badge counter.
+      expect(
+        await fixture.readStore.countUnknownDispatches(scopeA1, seed.installId),
+      ).toBe(1);
       // Cross-company: one identical NOT_AVAILABLE (existence never leaks).
       expect(
         await restarted.listDispatches(scopeB1, { installId: seed.installId }),
@@ -533,6 +554,223 @@ describeDb("PKG10 unknown dispatch ledger (real roles)", () => {
           operationId,
         }),
       ).toEqual({ outcome: "refused", code: "NOT_AVAILABLE" });
+    },
+  );
+
+  itDb(
+    "the detail read settles a second crash without any prior ledger read",
+    async () => {
+      const seed = await prepareCase();
+      vendorCalls = 0;
+      vendorBehaviour = async () => ({ text: "ok", isError: false });
+      const toolCallId = `call-${randomUUID()}`;
+      const begun = await dispatch.beginDispatch(scopeA1, {
+        runId: seed.runId,
+        attemptGeneration: 1,
+        toolCallId,
+        bindingId: writeBinding(seed.installId),
+        args: { note: "n" },
+      });
+      expect(begun.outcome).toBe("permit");
+      const operationId = await operationIdOf(seed, toolCallId);
+      // A fresh assembly goes straight to the DETAIL surface (no list first):
+      // the inspect read settles the dangling row and presents it as unknown.
+      const restarted = createPackageDispatchService({
+        data: fixture.base.data,
+        catalogue,
+        artifactRoot,
+        vault,
+        toolInvocation: createToolInvocationService({
+          data: fixture.base.data,
+        }),
+        catalogDecisions: createPluginCatalogDecisionService(fixture.base.data),
+        pinnedTools: runtime.readPinnedTools,
+        vendorCall,
+        incarnation: randomUUID(),
+      });
+      const inspected = await restarted.inspectDispatch(scopeA1, {
+        installId: seed.installId,
+        operationId,
+      });
+      expect(inspected.outcome).toBe("found");
+      if (inspected.outcome !== "found") return;
+      expect(inspected.value.dispatch).toMatchObject({
+        state: "unknown",
+        errorCode: "DISPATCH_CRASH",
+        toolCallId,
+      });
+      expect(inspected.value.verification.kind).toBe("unknown");
+    },
+  );
+
+  itDb("an assembly never settles its own in-flight dispatch", async () => {
+    const seed = await prepareCase();
+    vendorCalls = 0;
+    vendorBehaviour = async () => ({ text: "ok", isError: false });
+    const toolCallId = `call-${randomUUID()}`;
+    const begun = await dispatch.beginDispatch(scopeA1, {
+      runId: seed.runId,
+      attemptGeneration: 1,
+      toolCallId,
+      bindingId: writeBinding(seed.installId),
+      args: { note: "n" },
+    });
+    expect(begun.outcome).toBe("permit");
+    // The owning assembly's ledger read shows the row as dispatched, and
+    // the row really stays dispatched (the owner's lease is not foreign).
+    const ownListed = await dispatch.listDispatches(scopeA1, {
+      installId: seed.installId,
+    });
+    expect(ownListed.outcome).toBe("found");
+    if (ownListed.outcome !== "found") return;
+    expect(ownListed.value).toHaveLength(1);
+    expect(ownListed.value[0]).toMatchObject({
+      state: "dispatched",
+      toolCallId,
+    });
+    const ownInspected = await dispatch.inspectDispatch(scopeA1, {
+      installId: seed.installId,
+      operationId: await operationIdOf(seed, toolCallId),
+    });
+    expect(ownInspected.outcome).toBe("found");
+    if (ownInspected.outcome !== "found") return;
+    expect(ownInspected.value.verification.kind).toBe("in_flight");
+    const rawRows = (await setup.$client.unsafe(
+      "select state from enterprise_package_dispatches where run_id = $1 and tool_call_id = $2",
+      [seed.runId, toolCallId],
+    )) as Array<{ state: string }>;
+    expect(rawRows[0]?.state).toBe("dispatched");
+  });
+
+  itDb(
+    "recovery settles only dangling dispatched rows — prepared and settled receipts stay put",
+    async () => {
+      const seed = await prepareCase();
+      vendorBehaviour = async () => ({ text: "ok", isError: false });
+      vendorCalls = 0;
+      // A definite succeeded receipt.
+      const okCallId = `call-${randomUUID()}`;
+      const okCall = await dispatch.execute(scopeA1, {
+        runId: seed.runId,
+        attemptGeneration: 1,
+        toolCallId: okCallId,
+        bindingId: lookupBinding(seed.installId),
+        args: { query: "q" },
+      });
+      expect(okCall.outcome).toBe("ok");
+      // An approval-pending prepared row and a cancelled row.
+      const preparedCallId = `call-${randomUUID()}`;
+      const ticket = await dispatch.preparePackageTool(scopeA1, {
+        runId: seed.runId,
+        attemptGeneration: 1,
+        toolCallId: preparedCallId,
+        ref: writeBinding(seed.installId),
+        args: { note: "pending" },
+        botId: seed.botId,
+      });
+      expect(ticket.outcome).toBe("ticket");
+      const cancelledCallId = `call-${randomUUID()}`;
+      await dispatch.preparePackageTool(scopeA1, {
+        runId: seed.runId,
+        attemptGeneration: 1,
+        toolCallId: cancelledCallId,
+        ref: writeBinding(seed.installId),
+        args: { note: "revoked" },
+        botId: seed.botId,
+      });
+      await dispatch.cancelDispatch(scopeA1, {
+        runId: seed.runId,
+        attemptGeneration: 1,
+        toolCallId: cancelledCallId,
+      });
+      // The crashed row: dispatched and never completed.
+      const crashedCallId = `call-${randomUUID()}`;
+      const begun = await dispatch.beginDispatch(scopeA1, {
+        runId: seed.runId,
+        attemptGeneration: 1,
+        toolCallId: crashedCallId,
+        bindingId: writeBinding(seed.installId),
+        args: { note: "n" },
+      });
+      expect(begun.outcome).toBe("permit");
+      // A fresh assembly's ledger read walks the recovery path: exactly the
+      // dangling dispatched row settles; every other state is untouched.
+      const restarted = createPackageDispatchService({
+        data: fixture.base.data,
+        catalogue,
+        artifactRoot,
+        vault,
+        toolInvocation: createToolInvocationService({
+          data: fixture.base.data,
+        }),
+        catalogDecisions: createPluginCatalogDecisionService(fixture.base.data),
+        pinnedTools: runtime.readPinnedTools,
+        vendorCall,
+        incarnation: randomUUID(),
+      });
+      const listed = await restarted.listDispatches(scopeA1, {
+        installId: seed.installId,
+      });
+      expect(listed.outcome).toBe("found");
+      if (listed.outcome !== "found") return;
+      const byCallId = new Map(
+        listed.value.map((row) => [row.toolCallId, row]),
+      );
+      expect(byCallId.get(crashedCallId)).toMatchObject({
+        state: "unknown",
+        errorCode: "DISPATCH_CRASH",
+      });
+      expect(byCallId.get(okCallId)).toMatchObject({ state: "succeeded" });
+      expect(byCallId.get(preparedCallId)).toMatchObject({
+        state: "prepared",
+        errorCode: null,
+      });
+      expect(byCallId.get(cancelledCallId)).toMatchObject({
+        state: "cancelled",
+      });
+      expect(listed.value).toHaveLength(4);
+      expect(
+        await fixture.readStore.countUnknownDispatches(scopeA1, seed.installId),
+      ).toBe(1);
+    },
+  );
+
+  itDb(
+    "markUnknown stays the manual settle entry with the same unknown semantics",
+    async () => {
+      const seed = await prepareCase();
+      vendorCalls = 0;
+      vendorBehaviour = async () => ({ text: "ok", isError: false });
+      const toolCallId = `call-${randomUUID()}`;
+      const begun = await dispatch.beginDispatch(scopeA1, {
+        runId: seed.runId,
+        attemptGeneration: 1,
+        toolCallId,
+        bindingId: writeBinding(seed.installId),
+        args: { note: "n" },
+      });
+      expect(begun.outcome).toBe("permit");
+      // The manual/ops entry settles by identity, lease-independent.
+      expect(
+        await dispatch.markUnknown(scopeA1, {
+          runId: seed.runId,
+          attemptGeneration: 1,
+          toolCallId,
+          errorCode: "DISPATCH_CRASH",
+        }),
+      ).toBe(true);
+      const listed = await dispatch.listDispatches(scopeA1, {
+        installId: seed.installId,
+      });
+      expect(listed.outcome).toBe("found");
+      if (listed.outcome !== "found") return;
+      expect(listed.value[0]).toMatchObject({
+        state: "unknown",
+        toolCallId,
+        runId: seed.runId,
+        effect: "write",
+        errorCode: "DISPATCH_CRASH",
+      });
     },
   );
 

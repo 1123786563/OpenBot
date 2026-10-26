@@ -54,3 +54,4 @@ OPENBOT_PACKAGE_PILOT_WORKSPACES='[{"tenantId":"<t>","workspaceId":"<w>"}]' \
 - 连接器安装只导出清单，映射留待声明它的包出现（NO_DECLARING_PACKAGE 保持 legacy；卸载任何包都不会破坏共享连接器——link 是引用不是搬运）。
 - 迁移 apply 的清单绑定是文件摘要级：换一个 manifest（哪怕同内容不同 generatedAt 之外的差异）需要重新 dry-run + 绑定新摘要。
 - `plugins/marketplace.json` 由 `publish.ts`/`export-builtin.ts` 等工具在锁下原子写；演示条目随本票首次具名 `state: "published"`（语义与缺省一致）。
+- **派发崩溃恢复的单实例部署边界（T13-fix-2 / FC-02）**：崩溃恢复的判定规则是「单写者边界」——`dispatched` 行的 `owner_incarnation` 缺失或 ≠ 本进程 incarnation 即按死进程的孤儿转 `unknown`/`DISPATCH_CRASH`（绝不自动重发）。该规则假设**单机/单进程装配**：若两个进程共享同一库并同时在飞，先做台账读的进程会按租约证据把对方仍 in-flight 的行结算为 unknown。此与 §10 release 锁的单机语义同构，均为已披露前提；将来若需多实例并发派发，须改为「心跳租约」判定（owner 心跳过期才转），并补过期窗与「不误伤活租约」两类测试。运维核对时：`owner_lease_expires_at` 只作证据，当前不参与任何自动判定。
