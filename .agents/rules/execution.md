@@ -1,16 +1,22 @@
 # 实施、派发与上下文
 
-编写实施计划、派发、实现、修复或恢复任务时读取。Issue 实施先完成 [摄取与 DAG](issue-delivery.md)；只做文档或小范围配置不启动完整 Issue 流水线。
+编写实施计划、派发、实现、修复或恢复任务时读取。凡以 Issue 为依据，先完成[只读摄取](issue-delivery.md)；实施授权才启动完整流水线。纯文档修订或满足下述低风险条件的小范围配置可由当前 Agent 在已核对基线的合适工作区直接完成，按风险独立审查，不强制创建 Issue 或启动 SDD/Orca Run。
+
+“小范围配置”仅指单一模块内可逆、无运行行为/数据/权限/发布影响的展示或开发便利配置，先列文件和风险。CI、身份权限、安全、隔离、部署、数据迁移、依赖/运行链路及本身改变工程放行门禁的配置不适用此例外；它们即使只有一行，也须计划、独立验证/Review 和完整 OCR，是否创建 Issue 仍依用户范围。本次规则类文档修订可在当前工作区完成，但改变门禁时须逐条覆盖核对及独立审查。
 
 ## 计划与工作区
 
-Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`systematic-debugging`、任务 Review、验证及 `finishing-a-development-branch`。按当前可用技能执行，不用竞争实现编排器。
+Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`systematic-debugging`、任务 Review、验证及 `finishing-a-development-branch`。按当前可用技能执行；非 Orca 使用 SDD，Orca 使用[监督式流程](orchestration.md)承载执行，不同时运行两套派发器。SDD 工具目录、活动 Ledger 与归档的映射按 [artifacts.md](artifacts.md)。
 
-实施前读取根 `CONTEXT.md`、批准 Spec、相关 ADR 和当前 Ticket；使用 `writing-plans`，方案存 `docs/plans/`。保留技能标准头、Global Constraints、Review Focus 和 Task 编号；引用 Issue 快照、DAG 和事实源。
+能力预检在写计划/派发前执行：核对当前技能目录、可读 SKILL.md、版本及所需工具的实际入口，不把历史目录或命令名当作可用证据。缺失的强制技能先按其名称搜索；仍缺时记录 `capability_blocked`（技能、受阻阶段、已完成只读准备、恢复条件），不得声称已执行技能或调用不存在的 sdd-workspace。高层指令要求特定技能时，以该阻塞为准，只有已获当前用户明确授权的等价流程才可替代。
+
+若没有更高层强制技能要求，或已有明确等价授权，可采用手工等价步骤并记录依据：详细计划含 Goal/批准事实源、Global Constraints、Review Focus、编号 Task 与接口/验证；已核验的 Git Worktree；单 Brief 串行专业实现者→独立行为验证→独立 Spec/质量 Review；冻结 manifest 与单一 Ledger；根因假设→复现→证伪/修复→回归的诊断记录；完整 OCR；核验内容保留和授权后的分支收尾。Orca 可承载这些执行阶段，但不自动豁免仍强制的 writing-plans 等依赖。工具缺失不是请求无关授权或重复询问已授权执行方式的理由；只继续不受影响工作，清楚报告受阻能力，不在未知状态下实施。
+
+实施前读取根 `CONTEXT.md`、批准 Spec、相关 ADR 和当前 Ticket；按上述能力预检使用 `writing-plans` 或已获准的等价流程，方案存 `docs/plans/`。保留技能标准头、Global Constraints、Review Focus 和 Task 编号；引用 Issue 快照、DAG 和事实源。
 
 每 Task 写清依赖、角色、owned_files、Consumes/Produces、具体步骤、适用测试与预期结果、验收和失败处理，不留 TODO/TBD。派发前完成需求覆盖、共享文件/接口和任务内部一致性预检。用户已要求端到端实施时，保存并展示方案后直接执行，常规修复不增加确认门槛。
 
-普通实施默认沿 DAG 串行派发。使用 Orca 协调多个 Agent 实施 Issue 时，按 [Orca 多 Agent 编排](orchestration.md)的活跃任务上限及派发门禁执行，仍须满足依赖、独立 Worktree、不相交写权限、稳定接口、资源容量及集成次序。数据库、端口、缓存和产物目录均属共享状态。工作区细则见 [worktrees.md](worktrees.md)。
+实施默认沿 DAG 串行派发；并行实现须有已记录且仍有效的明确用户授权，复用本任务既有授权而不重复询问。使用 Orca 或设定 K 上限本身不授予并行权限。已获并行授权时，仍须满足[编排门禁](orchestration.md)、独立 Worktree、不相交写权限、稳定接口、资源容量及集成次序。数据库、端口、缓存和产物目录均属共享状态；跨 Run 声明遵守[共享协调状态](coordination-state.md)。工作区细则见 [worktrees.md](worktrees.md)。
 
 ## 角色与独立性
 
@@ -28,7 +34,7 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 
 保留内置 default、worker、explorer；探索优先 researcher，若用 explorer，按当前可用目录核实 `gpt-5.6-luna / low`，不可用时报告并选择已验证模型。派发实现前检查专业角色，派发后核对实际 agent_type、模型和推理等级，不以提示词中的角色名称代替实际配置。固定角色配置可能覆盖 spawn 参数；升级改用 default 并传专业约束。Ledger 写明具体障碍、升级原因、模型与受影响 Task；数量多、并行或主控模型强都不是升级理由。
 
-以上 agent_type 路由用于非 Orca 编排的子 Agent。Orca 多 Agent 流程按 [编排规范](orchestration.md)由 Pi 实施、Claude 任务审核、Codex 最终审核；后端/前端专业职责仍写入 Brief，记录实际 Orca Agent 身份，不能将非 Orca 子 Agent 当作满足该流程的派发证据。
+以上 agent_type 路由用于非 Orca 编排的子 Agent。Orca 多 Agent 流程的实施、独立任务审核和终审 Agent 按 [Agent 选择](orchestration-agents.md)确定；后端/前端专业职责仍写入 Brief，记录实际 Orca Agent 身份，不能将非 Orca 子 Agent 当作满足该流程的派发证据。
 
 实现者负责适用的 RED → GREEN → REFACTOR、针对性检查和自查，不批准自己的实现。验证者只读业务代码及测试源文件，可写缓存、构建产物和指定报告；复用同一代码版本有效证据，仅补缺失验收。前后端验证按实际范围选择。Reviewer 独立输出 Spec compliance 与 code quality；测试不能替代 Review。
 
@@ -44,11 +50,8 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 
 ## 提交与检查点
 
-派发前在 Brief 写明提交策略。有本地提交授权时可授权实现者按任务提交，Review Package 使用真实 BASE/HEAD。无授权或用户禁止提交时使用未提交检查点，不偷偷提交，也不以空 BASE..HEAD 代替审查：
+派发前在 Brief 写明提交策略。有本地提交授权时可授权实现者按任务提交，Review Package 使用真实 BASE/HEAD。无授权或用户禁止提交时使用未提交检查点，不偷偷提交，也不以空 BASE..HEAD 代替审查。
 
-1. Task 前后记录 HEAD、tracked staged/unstaged diff、任务范围内 untracked 完整内容和哈希；无关用户改动作为基线保留。快照存 `.archive/runs/<run-key>/checkpoints/`。
-2. 生成包含新增/删除文件的任务增量 Review Package，记录前后快照路径、哈希、实际检查命令和结果。
-3. Reviewer 审查该增量；验证绑定同一快照，内容变更后补相关验证及 Review。Ledger 用检查点 ID 替代提交区间。
-4. 同一串行工作区集成后才放行下游；跨工作区须显式转移并核对检查点。
+检查点的内容、敏感文件例外、子模块逐仓库审查、无关用户基线及跨工作区转移统一遵守[检查点与内容转移](checkpoints.md)。生成完整任务增量 Review Package；Reviewer 与验证绑定同一 manifest，Ledger 用检查点 ID 或真实提交区间引用。下游及终审修复工作区必须包含完整前置树，未提交模式在 HEAD 上显式应用前置检查点并核验后才启动 Worker。
 
-实现缺陷用 `systematic-debugging`；根因属于领域或架构问题时先更新对应事实源。修复轮次与 OCR 闭环见 [review.md](review.md)。
+实现缺陷按上述能力预检使用 `systematic-debugging` 或已获准的等价诊断；根因属于领域或架构问题时先更新对应事实源。修复轮次与 OCR 闭环见 [review.md](review.md)。
