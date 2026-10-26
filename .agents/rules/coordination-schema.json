@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openbot.invalid/agent-rules/coordination-v1.schema.json",
-  "title": "OpenBot coordination v1 (local schema; no remote resolution required)",
+  "$id": "https://openbot.invalid/agent-rules/coordination-v2.schema.json",
+  "title": "OpenBot coordination v2 (local schema; no remote resolution required)",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "kind", "revision", "host_id", "updated_at", "records"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "kind": { "enum": ["claims", "daily"] },
     "revision": { "type": "integer", "minimum": 0 },
     "host_id": { "type": "string", "format": "uuid" },
@@ -36,6 +36,7 @@
       "then": {
         "properties": {
           "records": {
+            "minItems": 1,
             "maxItems": 1,
             "items": { "$ref": "#/$defs/daily" }
           }
@@ -173,6 +174,111 @@
         }
       }
     },
+    "audit_epoch_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "epoch_id",
+        "root_issue",
+        "contains",
+        "requirements_fingerprint",
+        "target",
+        "policy",
+        "children_queue"
+      ],
+      "properties": {
+        "epoch_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "root_issue": {
+          "type": "string",
+          "pattern": "^[^#]+#[1-9][0-9]*$"
+        },
+        "contains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^#]+#[1-9][0-9]*$"
+          }
+        },
+        "requirements_fingerprint": {
+          "$ref": "#/$defs/requirement_fp"
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "ref",
+            "sha",
+            "gitlinks"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ref": {
+              "type": "string",
+              "pattern": "^refs/heads/.+$"
+            },
+            "sha": {
+              "$ref": "#/$defs/sha"
+            },
+            "gitlinks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "repository",
+                  "sha"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "repository": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha": {
+                    "$ref": "#/$defs/sha"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "revision",
+            "manifest"
+          ],
+          "properties": {
+            "revision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "manifest": {
+              "$ref": "#/$defs/evidence"
+            }
+          }
+        },
+        "children_queue": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^#]+#[1-9][0-9]*$"
+          }
+        }
+      }
+    },
     "condition": {
       "type": "object",
       "additionalProperties": false,
@@ -201,7 +307,7 @@
       "additionalProperties": false,
       "required": ["algorithm", "sha256", "input_ref"],
       "properties": {
-        "algorithm": { "const": "requirements-v2" },
+        "algorithm": { "const": "requirements-v3" },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "input_ref": { "$ref": "#/$defs/evidence" }
       }
@@ -211,7 +317,7 @@
       "additionalProperties": false,
       "required": ["algorithm", "sha256", "input_ref"],
       "properties": {
-        "algorithm": { "const": "daily-input-v2" },
+        "algorithm": { "const": "daily-input-v3" },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "input_ref": { "$ref": "#/$defs/evidence" }
       }
@@ -254,16 +360,20 @@
     "event": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["event_id", "slot_sequence", "action", "result", "attempt", "at", "refs"],
+      "required": ["event_id", "slot_sequence", "action", "result", "attempt", "at", "refs", "run_id", "class_at_selection", "capacity_at_selection"],
       "properties": {
         "event_id": { "type": "string", "format": "uuid" },
-        "slot_sequence": { "type": "integer", "minimum": 1 },
-        "action": { "enum": ["slot_selected", "dispatch_started", "settled"] },
-        "result": { "enum": ["not_settled", "verified", "failed", "blocked", "unproven", "intake_incomplete", "aggregate_pending", "corrected", "skipped"] },
+        "slot_sequence": { "type": ["integer", "null"], "minimum": 1 },
+        "action": { "enum": ["slot_selected", "dispatch_started", "settled", "state_changed", "evidence_invalidated", "scope_changed", "policy_changed"] },
+        "run_id": { "type": "string", "minLength": 1 },
+        "class_at_selection": { "enum": ["recovery", "new", "revalidate", null] },
+        "capacity_at_selection": { "type": ["integer", "null"], "minimum": 1 },
+        "result": { "enum": ["recorded", "not_settled", "verified", "failed", "blocked", "unproven", "intake_incomplete", "aggregate_pending", "corrected", "skipped"] },
         "attempt": { "type": "integer", "minimum": 0 },
         "at": { "type": "string", "format": "date-time" },
         "refs": {
           "type": "array",
+          "minItems": 1,
           "items": { "$ref": "#/$defs/evidence" }
         }
       },
@@ -283,15 +393,29 @@
             "required": ["action"]
           },
           "then": {
-            "properties": { "result": { "not": { "const": "not_settled" } } }
+            "properties": { "result": { "not": { "enum": ["not_settled", "recorded"] } } }
           }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["slot_selected", "dispatch_started", "settled"] } } },
+          "then": { "properties": {
+            "slot_sequence": { "type": "integer", "minimum": 1 },
+            "class_at_selection": { "enum": ["recovery", "new", "revalidate"] },
+            "capacity_at_selection": { "type": "integer", "minimum": 1 }
+          } },
+          "else": { "properties": {
+            "slot_sequence": { "type": "null" },
+            "class_at_selection": { "type": "null" },
+            "capacity_at_selection": { "type": "null" },
+            "result": { "const": "recorded" }
+          } }
         }
       ]
     },
     "issue": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["issue", "class", "eligible_since", "last_slot", "target_sha", "requirements_fingerprint", "validation_state", "delivery_state", "label_action", "run", "workspace", "checkpoint", "review", "delivery", "label", "close", "wait_reason", "resume_condition", "input_fingerprint", "retry_after", "next_action", "aggregate_children", "history", "action_reason", "label_intent", "close_action", "close_intent"],
+      "required": ["issue", "class", "eligible_since", "last_slot", "target_sha", "requirements_fingerprint", "validation_state", "delivery_state", "label_action", "run", "workspace", "checkpoint", "review", "delivery", "label", "close", "wait_reason", "resume_condition", "input_fingerprint", "retry_after", "next_action", "aggregate_children", "history", "action_reason", "label_intent", "close_action", "close_intent", "audit_epoch", "delivery_action", "delivery_intent"],
       "properties": {
         "issue": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" },
         "class": { "enum": ["recovery", "new", "revalidate", null] },
@@ -355,7 +479,10 @@
         "action_reason": { "type": ["string", "null"] },
         "label_intent": { "$ref": "#/$defs/nullable_evidence" },
         "close_action": { "enum": ["none", "close_pending", "applied_valid", "stale", "close_correction_pending", "corrected"] },
-        "close_intent": { "$ref": "#/$defs/nullable_evidence" }
+        "close_intent": { "$ref": "#/$defs/nullable_evidence" },
+        "audit_epoch": { "$ref": "#/$defs/nullable_evidence" },
+        "delivery_action": { "enum": ["none", "delivery_pending", "applied_valid", "stale", "delivery_correction_pending", "corrected"] },
+        "delivery_intent": { "$ref": "#/$defs/nullable_evidence" }
       },
       "allOf": [
         {
@@ -389,7 +516,7 @@
           },
           "then": {
             "properties": {
-              "validation_state": { "const": "verified" },
+              "validation_state": { "enum": ["verified", "revalidating", "blocked", "failed", "unproven", "intake_incomplete"] },
               "checkpoint": { "$ref": "#/$defs/evidence" },
               "review": { "$ref": "#/$defs/evidence" }
             }
@@ -476,6 +603,82 @@
             "properties": {
               "eligible_since": { "type": "string", "format": "date-time" },
               "input_fingerprint": { "$ref": "#/$defs/input_fp" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "delivery_action": {
+                "enum": [
+                  "delivery_pending",
+                  "applied_valid",
+                  "stale",
+                  "delivery_correction_pending",
+                  "corrected"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "delivery_intent": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "delivery_action": {
+                "const": "applied_valid"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "delivery_state": {
+                "const": "delivered"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "delivery_action": {
+                "enum": [
+                  "applied_valid",
+                  "stale",
+                  "corrected"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "delivery": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "delivery_action": {
+                "const": "stale"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "validation_state": {
+                "not": {
+                  "const": "verified"
+                }
+              }
             }
           }
         }

@@ -5,7 +5,8 @@
 ## 目标与证据版本
 
 - 摄取时登记原 Issue 的交付契约：规范仓库、远程身份、目标 ref、验收交付物和关闭授权依据。未约定时，OpenBot 的代码交付目标为 `1123786563/OpenBot` 的 `origin/main`；功能分支上的通过不能给 main 尚未交付的票贴标或关票。明确另约定 PR/分支为交付物时引用有权批准者的决定；回溯审计和每日审计采用同一含义。有权批准依据只能是当前用户覆盖该范围的明确决定，或已批准 Spec/ADR 中可核实且覆盖该范围的决策角色授权；GitHub 身份、维护者标签、Agent 自述或角色名称本身不构成批准。
-- `requirements_fingerprint` 使用 RFC 8785 JSON Canonicalization Scheme（JCS）编码后的 UTF-8 字节的 SHA-256，统一 Unicode、数字及转义表示；输入字符串先统一 CRLF 为 LF，其他内容保留，集合在编码前按规范仓库/编号或稳定 ID 排序。输入包含本票及递归子项的标题/正文/验收、讨论决定及其批准权限证据、contains/depends_on、外部依赖相关状态/接口、有效 Spec/ADR/CONTEXT 内容指纹及批准/替代链。缺页或无法核实权限时不生成“有效完整”指纹。保留规范对象、算法版本 `requirements-v2` 和来源，不能只存哈希。`requirements-v1` 仅作历史，须完整 rescan 后按 v2 重建，不能直接承认为当前有效指纹。敏感字段按 [产物规范](artifacts.md)保存受控引用，不用脱敏文本哈希冒充原需求指纹。
+- requirements_fingerprint 采用 requirements-v3，按 [指纹合同](fingerprints.md) 的精确输入 schema、规范身份、集合排序和 RFC 8785 JCS 的 UTF-8 字节计算 SHA-256。缺页或批准权限未核实时不能生成有效完整指纹；保留规范输入和来源，不只存哈希。v1/v2 仅作历史，完整 rescan 后重建 v3。敏感输入存已有授权的受保护位置，不能以脱敏文本、裸秘密哈希或无授权外部副本替代原需求。
+
 - 将状态/关闭原因/资格标签另存为 `eligibility`，目标 ref 的完整 SHA、递归 gitlink 和交付树 manifest 另存为 `target`。本次预期改变的标签/状态在写入意图中列为允许差异，正文、关系、权限证据和代码不在允许差异内。
 - 目标 SHA 上的 Required Checks/标准 CI 按 [testing.md](testing.md)核验。交付树、目标 SHA 或需求指纹变化后重新冻结并执行相关验收、完整独立终审及完整 OCR；旧报告只作历史或辅助证据，不能替代新树的完整终审/OCR。报告范围按 [review.md](review.md)对账。
 
@@ -13,7 +14,7 @@
 
 1. 持有 [共享协调声明](coordination-state.md)，核对目标远程 ref 当前 SHA 等于本轮预期值。在最新目标上构造实际待写入结果（含子模块），固定最终 tree、manifest 和可预知的写入标识，完成该 tree 的组合验证、完整终审、完整 OCR 和适用 CI。写后检查不能替代这些写前门禁。
 2. 使用可核实的条件写机制，保证实际写入的 base、最终 tree 和交付内容与已审结果一致。merge queue 或批量合入若会产生另一棵未审 tree，必须在目标写入前对队列实际生成的最终 tree 完成同等验证、终审和 OCR；无法做到时保持 `integration_pending`，不得先入队再补审。普通 PR merge 的 head SHA 检查只保护 PR head，不证明 base 未前移；本地锁不约束其他写入者。没有等价条件写保证时不能用一次 fetch 后直接 merge/push 冒充门禁，也不得擅自强推或修改分支保护。
-3. 写后回读目标 ref、合并提交/树和检查状态，核对实际交付结果与写前意图。实际 tree 偏离已审 tree 属于交付门禁失效：保存证据、将当前验证置为 `revalidating` 并禁止关闭/贴标；若代码已进入目标，delivery 可如实记 `delivered`，但不得伪装成尚未交付或验证通过。后续修复或回退仍须另有授权，不能把写后重验描述成原门禁已满足。
+3. 写后回读目标 ref、合并提交/树和检查状态，核对实际交付结果与写前意图。交付动作的 delivery_intent/delivery_action 和回执按 [协调格式](coordination-format.md)保存；写前 delivery_pending，意图匹配后 applied_valid，结果不明保持 pending。实际 tree 偏离已审 tree 属于交付门禁失效，动作记 stale：保存证据、将当前验证置为 `revalidating` 并禁止关闭/贴标；若代码已进入目标，delivery 可如实记 `delivered`，但不得伪装成尚未交付或验证通过。后续修复或回退仍须另有授权，不能把写后重验描述成原门禁已满足。
 
 ## 关闭/标签的写入意图与对账
 
