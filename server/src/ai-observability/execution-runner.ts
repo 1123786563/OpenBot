@@ -58,6 +58,7 @@
  *    exactly the place production calls are. The observation bypass rules hold —
  *    an observer that throws is swallowed, never a reason a case fails.
  */
+import { createHash } from "node:crypto";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, jsonSchema, stepCountIs } from "ai";
 import type { SafeText, SafeValue } from "../../../shared/ai-observability";
@@ -304,6 +305,33 @@ function callableToolsFor(
     });
 }
 
+/**
+ * The chain an evaluation case's observations join (OCR R2 C1). The worker runs
+ * cases outside any ambient span, so there is no run W3C context to capture —
+ * the execution's OWN identity is the chain: the first 32 hex of a
+ * domain-separated digest of the execution id, the same discipline the remote
+ * dial's derived chain uses (`derivedRemoteRunTraceId`). Deterministic on
+ * purpose: every case of one execution lands in ONE chain, and a re-run of the
+ * same execution continues it instead of rooting a new one. An all-zero digest
+ * (an id the W3C format refuses) is remapped rather than shipped.
+ *
+ * An execution without a usable id proves no chain: the observation carries
+ * none, and the recorder's FREV-02 gate counts the drop instead of exporting
+ * under an invented one.
+ */
+export function evaluationObservationChain(
+  executionId: string,
+): Readonly<{ traceId: string }> | undefined {
+  if (executionId.trim() === "") return undefined;
+  const hex = createHash("sha256")
+    .update(`openbot.evaluation.execution:${executionId}`)
+    .digest("hex");
+  const traceId = /^0+$/.test(hex.slice(0, 32))
+    ? `${"0".repeat(31)}1`
+    : hex.slice(0, 32);
+  return { traceId };
+}
+
 export function createProductionEvaluationCaseRunner(
   deps: Readonly<{
     callModel: EvaluationModelCall;
@@ -331,10 +359,15 @@ export function createProductionEvaluationCaseRunner(
     const system = textOf(context.config.prompt);
     const user = textOf(context.frozenCase.safeInput);
     const startedAt = new Date();
+    // OCR R2 C1: the case's chain is captured ONCE at entry and rides the base,
+    // so every report below carries it unchanged. Without it a scoped evaluation
+    // observation hit the recorder's FREV-02 chain gate and exported nothing.
+    const chain = evaluationObservationChain(context.executionId);
     const base = {
       modelId: modelName,
       scope: context.scope,
       input: `${system}\n\n${user}`,
+      ...(chain === undefined ? {} : { trace: chain }),
     };
 
     // Fail-closed at the projection boundary (OCR R4-21, the judge's AC3 precedent):

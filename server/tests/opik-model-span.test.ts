@@ -19,6 +19,7 @@ import type { OpikObservationWrite } from "../src/ai-observability/health";
 import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
 import {
   createModelSpanRecorder,
+  modelSpanChainGateDrops,
   type ModelSpanObservation,
 } from "../src/ai-observability/model-span";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
@@ -212,6 +213,63 @@ describe("the model span recorder", () => {
       { chain: null },
     );
     expect(absent.writes).toHaveLength(0);
+  });
+
+  test("the evaluation shape — a chain with no parent span — is joined and exported (OCR R2 C1)", async () => {
+    // The evaluation runner's chain names the execution's trace and claims no
+    // parent (there is no enclosing span to prove). Before C1 the base carried
+    // no trace at all and the FREV-02 gate dropped every evaluation span.
+    const chainTraceId = "d".repeat(32);
+    const { writes } = await recordAndCapture({
+      occurredAt,
+      endedAt,
+      provider: "openai",
+      modelId: "gpt-test",
+      ending: { kind: "succeeded", inputTokens: 10, outputTokens: 5 },
+      scope: aScope(),
+      trace: { traceId: chainTraceId },
+    });
+    expect(writes).toHaveLength(1);
+    const span = writes[0].spans[0];
+    expect(span.traceId).toBe(chainTraceId);
+    // No provable parent: the span roots at the chain, it never invents one.
+    expect(span.parentSpanId).toBeUndefined();
+    expect(span.attributes?.usage_state).toEqual({
+      state: "projected",
+      value: "actual",
+    });
+  });
+
+  test("a scoped observation with no provable chain is a COUNTED drop, never silent (OCR R2 C1)", async () => {
+    const before = modelSpanChainGateDrops().missingChain;
+    // The gate's fail-closed verdict is unchanged: nothing exports...
+    const dropped = await recordAndCapture(
+      {
+        occurredAt,
+        endedAt,
+        ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+        scope: aScope(),
+      },
+      { chain: null },
+    );
+    expect(dropped.writes).toHaveLength(0);
+    // ...but the drop is an observable fact, one count per refused observation —
+    // and a malformed chain is the same counted refusal, not a separate silence.
+    const malformed = await recordAndCapture(
+      {
+        occurredAt,
+        endedAt,
+        ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+        scope: aScope(),
+        trace: { traceId: "not-a-chain" },
+      },
+      { chain: null },
+    );
+    expect(malformed.writes).toHaveLength(0);
+    expect(modelSpanChainGateDrops().missingChain).toBe(before + 2);
+    // The reader hands out a copy: tests and operators cannot reset the count.
+    (modelSpanChainGateDrops() as { missingChain: number }).missingChain = 0;
+    expect(modelSpanChainGateDrops().missingChain).toBe(before + 2);
   });
 
   test("a settled call carries the actual provider usage (acceptance 1)", async () => {

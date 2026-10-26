@@ -5,9 +5,13 @@ import {
   test,
 } from "../../tests/support/bun-test-compat";
 import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
+import type { OpikObservationWrite } from "../src/ai-observability/health";
+import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
+import { createModelSpanRecorder } from "../src/ai-observability/model-span";
 import {
   createGatewayModelCall,
   createProductionEvaluationCaseRunner,
+  evaluationObservationChain,
   type EvaluationModelCall,
   type EvaluationModelCallObserver,
   type EvaluationStepBudget,
@@ -170,6 +174,45 @@ describe("the production case runner makes one controlled, observed model call",
       kind: "refused",
       code: "budget_refused",
     });
+  });
+
+  test("every report carries the execution's derived chain and passes the FREV-02 gate (OCR R2 C1)", async () => {
+    // The regression: the runner's base carried no trace, so a scoped
+    // observation hit the recorder's chain gate and was silently dropped. Now
+    // the observation joins the chain derived from the execution's identity —
+    // fed into the REAL recorder it is enqueued, not dropped.
+    const submitted: OpikObservationWrite[] = [];
+    const recorderImpl = createModelSpanRecorder({
+      healthService: {
+        submit(write: OpikObservationWrite) {
+          submitted.push(write);
+          return "accepted" as const;
+        },
+      },
+      bindings: observerRunBindingGateForTests(),
+    });
+    const runner = createProductionEvaluationCaseRunner({
+      callModel: async () => ({ output: "ok", inputTokens: 1, outputTokens: 1 }),
+      observe: (observation) => recorderImpl.record(observation),
+    });
+
+    const outcome = await runner(contextFor());
+
+    expect(outcome.status).toBe("completed");
+    expect(submitted).toHaveLength(1);
+    // One chain per execution, deterministic: a re-run of the same execution
+    // continues the same chain instead of rooting a new one, and another
+    // execution roots its own.
+    const chain = evaluationObservationChain("execution-1");
+    expect(chain).toBeDefined();
+    expect(chain).toEqual(evaluationObservationChain("execution-1"));
+    expect(chain?.traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(chain?.traceId).not.toBe(
+      evaluationObservationChain("execution-2")?.traceId,
+    );
+    // An execution id that cannot name a chain carries none — that drop is the
+    // recorder's counted refusal, never a silent one.
+    expect(evaluationObservationChain("  ")).toBeUndefined();
   });
 
   test("a withheld prompt refuses the case before admission and before any dial (OCR R4-21)", async () => {

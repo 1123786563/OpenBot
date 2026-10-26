@@ -249,6 +249,21 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   };
 }
 
+/**
+ * The counted half of the FREV-02 chain gate (OCR R2 C1). A scoped observation
+ * whose run cannot prove a chain exports nothing — the fail-closed verdict is
+ * unchanged — but the drop is a fact, never silence: counted here, bounded by
+ * construction (one number per reason, no ids, no content). The same footing
+ * the remote dial's chain counts have (`remoteDialChainCounts`): the visible
+ * half of a degradation contract, read by the tests that pin the gate.
+ */
+const chainGateDrops = { missingChain: 0 };
+
+/** Read the chain-gate drop counts (a copy: readers cannot reset what was counted). */
+export function modelSpanChainGateDrops(): Readonly<{ missingChain: number }> {
+  return { ...chainGateDrops };
+}
+
 export function createModelSpanRecorder(
   deps: Readonly<{
     healthService: Pick<OpikHealthService, "submit">;
@@ -271,7 +286,12 @@ export function createModelSpanRecorder(
       // submits nothing rather than rooting a fresh trace per span — that
       // fallback is precisely the unattributable write the review refused.
       const chainTraceId = observerChainId(observation.trace?.traceId);
-      if (chainTraceId === null) return;
+      if (chainTraceId === null) {
+        // Counted, never silent (OCR R2 C1): the refusal above is the FREV-02
+        // verdict; this count is its visibility.
+        chainGateDrops.missingChain += 1;
+        return;
+      }
       const span = buildModelSpan(observation);
       const write: OpikObservationWrite = {
         scopeKey: scope.key,
