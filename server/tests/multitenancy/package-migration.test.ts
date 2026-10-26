@@ -528,6 +528,105 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
     expect((outcome as { code: string }).code).toBe("MANIFEST_DIGEST_MISMATCH");
   });
 
+  // OCR-fix-E (R4-H5): an install the administrator disabled or uninstalled
+  // must refuse the apply as a typed machine-readable receipt BEFORE any
+  // write — the old guard reused a disabled install (provenance landed, then
+  // the grant step threw: half-applied) and replanned over an uninstalled
+  // tombstone (PACKAGE_UNSUPPORTED mid-apply, no receipt at all). Re-enabling
+  // is an administrator lifecycle action the migration must not take over.
+  // Seeded via the superuser setup channel (the suite's disclosed
+  // arrangement); removed in finally so the happy-path drill below still
+  // starts from no install even when this arm goes red.
+  async function refuseNonEnabledInstall(
+    status: "disabled" | "uninstalled",
+  ): Promise<void> {
+    const builtin = builtinFacts(await builtinIndexEntry(INDEX_PATH));
+    const manifest = buildManifest(
+      builtin,
+      await readLegacyInventory(setup, setup, builtin),
+    );
+    const installId = `pkg11-arm-${randomUUID()}`;
+    await setup.$client.unsafe(
+      `insert into enterprise_package_installs
+         (tenant_id, id, workspace_id, package_key, current_version, status, installed_by)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        tenantA,
+        installId,
+        teamA1,
+        BUILTIN_PACKAGE_KEY,
+        builtin.version,
+        status,
+        fixture.principalOf("a1-member", "company-a"),
+      ],
+    );
+    try {
+      const path = `/tmp/pkg11-arm-${status}-${randomUUID()}.json`;
+      await writeFile(path, JSON.stringify(manifest));
+      const outcome = await runApply({
+        manifestPath: path,
+        expectedDigest: manifest.manifestDigest,
+        scope: { tenantId: tenantA, workspaceId: teamA1 },
+        actorUserId: (
+          fixture.base.isolation.identities["a1-member"] as { userId: string }
+        ).userId,
+        indexPath: INDEX_PATH,
+        artifactRoot: ARTIFACT_ROOT,
+        urls: {
+          legacyUrl: urls.setup,
+          setupUrl: urls.setup,
+          directoryUrl: urls.directory,
+          dataUrl: urls.data,
+          operatorUrl: urls.operator,
+        },
+      });
+      expect(outcome.refused).toBe(true);
+      expect((outcome as { code: string }).code).toBe(
+        "MIGRATION_INSTALL_NOT_ENABLED",
+      );
+      // Zero partial writes: no expert provenance, no grants, and the
+      // install row itself untouched (status and revision as seeded).
+      expect(
+        await countRows(
+          `from enterprise_package_experts where tenant_id = '${tenantA}'`,
+        ),
+      ).toBe(0);
+      expect(
+        await countRows(
+          `from enterprise_package_grants where tenant_id = '${tenantA}'`,
+        ),
+      ).toBe(0);
+      const [row] = (await setup.$client.unsafe(
+        `select status, revision from enterprise_package_installs
+         where tenant_id = $1 and workspace_id = $2 and package_key = $3`,
+        [tenantA, teamA1, BUILTIN_PACKAGE_KEY],
+      )) as Array<{ status: string; revision: number }>;
+      expect(row?.status).toBe(status);
+      expect(row?.revision).toBe(1);
+    } finally {
+      await setup.$client.unsafe(
+        `delete from enterprise_package_experts where tenant_id = $1`,
+        [tenantA],
+      );
+      await setup.$client.unsafe(
+        `delete from enterprise_package_grants where tenant_id = $1`,
+        [tenantA],
+      );
+      await setup.$client.unsafe(
+        `delete from enterprise_package_installs where tenant_id = $1 and id = $2`,
+        [tenantA, installId],
+      );
+    }
+  }
+
+  test("apply refuses a disabled install with a typed receipt and zero writes", async () => {
+    await refuseNonEnabledInstall("disabled");
+  });
+
+  test("apply refuses an uninstalled tombstone with a typed receipt and zero writes", async () => {
+    await refuseNonEnabledInstall("uninstalled");
+  });
+
   test("apply migrates only proven records and never writes legacy rows", async () => {
     const builtin = builtinFacts(await builtinIndexEntry(INDEX_PATH));
     const manifest = buildManifest(

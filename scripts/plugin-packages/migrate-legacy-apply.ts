@@ -56,7 +56,8 @@ export interface ApplyRefusal {
     | "SOURCE_CHANGED"
     | "BUILTIN_DRIFT"
     | "BUILTIN_MISSING"
-    | "SCOPE_HAS_NO_MAPPING";
+    | "SCOPE_HAS_NO_MAPPING"
+    | "MIGRATION_INSTALL_NOT_ENABLED";
   readonly detail: string;
 }
 
@@ -268,14 +269,25 @@ export async function runApply(input: {
       // -- 6. The scope's install of the built-in package (create once).
       //    R2-H4: the revision rides this step's authoritative value out to
       //    step 7 — no cross-channel re-read, no silent ?? 1 fallback.
+      //    OCR-fix-E (R4-H5): ONLY an `enabled` install is reusable. A
+      //    disabled or uninstalled one is an administrator's lifecycle
+      //    decision the migration must not act out: reusing it lands
+      //    provenance ahead of the grant refusal, and replanning over it
+      //    dies mid-apply on PACKAGE_UNSUPPORTED. Typed refusal, zero writes.
       const existingInstall = await findScopeInstall(channels.setup, scopeIds);
       let installId: string;
       let created: boolean;
       let installRevision: number;
-      if (existingInstall && existingInstall.status !== "uninstalled") {
+      if (existingInstall && existingInstall.status === "enabled") {
         installId = existingInstall.id;
         created = false;
         installRevision = existingInstall.revision;
+      } else if (existingInstall) {
+        return {
+          refused: true,
+          code: "MIGRATION_INSTALL_NOT_ENABLED",
+          detail: `the scope's ${BUILTIN_PACKAGE_KEY} install is "${existingInstall.status}" (${existingInstall.id}) — enabling or reinstalling it is an administrator lifecycle action a migration must not take over; nothing was written`,
+        };
       } else {
         const plan = await service.plan(scope, admin, {
           operation: "install",
