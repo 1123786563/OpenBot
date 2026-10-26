@@ -209,3 +209,53 @@ export function observationEnabled(
 ): boolean {
   return config.enabled;
 }
+
+// ---------------------------------------------------------------------------
+// MOD18（Issue #638，根 #620）：评测/Judge 的计费收拢面（组内签名提取，MOD15 先例）。
+// ---------------------------------------------------------------------------
+
+/**
+ * The usage hold's idempotency-key prefix, declared in place after
+ * MOD10's billing exit deliberately carries no write faces (its header
+ * says so). The authoritative declaration is `billing/types.ts`'s
+ * `USAGE_IDEMPOTENCY_KEY_PREFIX` — this is the same literal re-homed for
+ * the judge (MOD18-plan §1.A's named shape), and the governed-model test
+ * pins both files byte-for-byte so a one-sided edit goes red before a
+ * hold key can silently fork from the credit machinery's namespace.
+ */
+export const USAGE_IDEMPOTENCY_KEY_PREFIX = "usage:";
+
+/**
+ * The usage-outbox row the judge's settlement writes — `billing/usage-outbox.ts`'s
+ * `UsageOutboxInput` field-for-field (MOD09's in-place-shape precedent: no billing
+ * import, structural identity keeps the real `UsageOutbox` injectable in both
+ * directions). `runId`/`workspaceId`/`sessionId` stay on the shape even though the
+ * judge passes none of them: an omitted field is an input contract fact, not a
+ * caller's convenience.
+ */
+export type EvaluationUsageOutboxInput = {
+  eventId: string;
+  source: "llm" | "code_run";
+  externalCustomerId: string;
+  transactionId: string;
+  inputTokens: number;
+  outputTokens: number;
+  model: string;
+  client: string;
+  occurredAt: Date;
+  reservationId?: string | null;
+  actualCostNumerator?: string | null;
+  actualCostDenominator?: string | null;
+  runId?: string | null;
+  botId?: string | null;
+  ownerUserId?: string | null;
+  /** The team dimension (09.2): the workspace of a company-workbench call, null elsewhere. */
+  workspaceId?: string | null;
+  sessionId?: string | null;
+  status?: string | null;
+};
+
+/** The judge's minimal usage-outbox face (`Pick<UsageOutbox, "record">`'s structural twin). */
+export type EvaluationUsageOutbox = {
+  record(input: EvaluationUsageOutboxInput): Promise<{ inserted: boolean }>;
+};

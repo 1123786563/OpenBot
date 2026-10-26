@@ -1904,22 +1904,6 @@
       "reason": "模块级环边 M11 -> M01（M11 与 M01 互相可达）"
     },
     {
-      "source": "server/src/ai-observability/routes/experiments.ts",
-      "target": "server/src/agents/profile-types.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M03 单向化后移除此例外",
-      "reason": "模块级环边 M11 -> M03（M11 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/ai-observability/routes/experiments.ts",
-      "target": "server/src/auth/guards.ts",
-      "category": "cycle",
-      "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M01 单向化后移除此例外",
-      "reason": "模块级环边 M11 -> M01（M11 与 M01 互相可达）"
-    },
-    {
       "source": "server/src/ai-observability/routes/exports.ts",
       "target": "server/src/agents/profile-types.ts",
       "category": "cycle",
@@ -1993,31 +1977,7 @@
     },
     {
       "source": "server/src/ai-observability/scoring/judge.ts",
-      "target": "server/src/billing/credits-writer.ts",
-      "category": "cycle",
-      "ticket": "MOD09 (S4 受管模型与资金)",
-      "exit_condition": "M07 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M07 单向化后移除此例外",
-      "reason": "模块级环边 M11 -> M07（M11 与 M07 互相可达）"
-    },
-    {
-      "source": "server/src/ai-observability/scoring/judge.ts",
-      "target": "server/src/billing/types.ts",
-      "category": "cycle",
-      "ticket": "MOD09 (S4 受管模型与资金)",
-      "exit_condition": "M07 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M07 单向化后移除此例外",
-      "reason": "模块级环边 M11 -> M07（M11 与 M07 互相可达）"
-    },
-    {
-      "source": "server/src/ai-observability/scoring/judge.ts",
       "target": "server/src/billing/usage-evidence.ts",
-      "category": "cycle",
-      "ticket": "MOD09 (S4 受管模型与资金)",
-      "exit_condition": "M07 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M07 单向化后移除此例外",
-      "reason": "模块级环边 M11 -> M07（M11 与 M07 互相可达）"
-    },
-    {
-      "source": "server/src/ai-observability/scoring/judge.ts",
-      "target": "server/src/billing/usage-outbox.ts",
       "category": "cycle",
       "ticket": "MOD09 (S4 受管模型与资金)",
       "exit_condition": "M07 建立 public/integration 出口并让 M11 改走公开出口，使 M11↔M07 单向化后移除此例外",
