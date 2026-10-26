@@ -2,6 +2,27 @@
 -- by the wave merges (fd62295a14, a789f6a438, 0453ed6b9c, f45a87104f) but never generated:
 -- 32 tables / 294 columns absent from every fresh deployment (db-drift-check FAIL, 294 problems).
 --
+-- #652 (2026-10-26): the four tables whose drizzle config declares a NAMED primary key
+-- (enterprise_package_grant_pk / enterprise_package_link_pk / enterprise_package_expert_pk /
+-- enterprise_run_package_pin_pk in server/src/db/schema/enterprise-plugin-packages.ts) originally
+-- shipped with anonymous PRIMARY KEY clauses, landing as <table>_pkey and forking the constraint
+-- names from the mirror with no anchor for name-based ALTER/DROP. #652 rewrote them in place
+-- believing the no-external-deployments window was still open; it was not (the rewrite entered
+-- main 2026-10-25, after origin/main had already carried the older revision out).
+--
+-- OCRfix-1 (OCR-5/OCR-6, 2026-10-26): that window is closed — origin/main already carried the
+-- older revision — so the in-place rewrite alone would be a silent fork. Every table below now names its
+-- primary key after the authoritative DDL (scripts/multitenancy/migrate-test.ts PKG02/PKG03/PKG04,
+-- the same names the drizzle mirror generates):
+--   enterprise_package_plans_tenant_id_id_pk / enterprise_package_revisions_tenant_id_install_id_revision_pk
+--   enterprise_package_installs_tenant_id_id_pk / enterprise_package_changes_tenant_id_change_id_pk
+--   enterprise_package_grant_pk / enterprise_package_expert_pk / enterprise_package_link_pk
+--   enterprise_run_package_pin_pk
+-- Fresh databases get these names from here. A database that applied the earlier revision keeps
+-- <table>_pkey — the journal watermark skips this file and never checks a hash — and is repaired by
+-- the conditional renames in 0216_enterprise_package_primary_key_names.sql. Do not rely on this
+-- file alone to converge an existing database.
+--
 -- Expand-only, mirroring the 0163/#436 discipline: only CREATE TABLE / CREATE INDEX /
 -- ADD CONSTRAINT FK. No existing table or column is touched. Column names, types, nullability
 -- and defaults, plus index and FK definitions, are transcribed from the drizzle table configs of
@@ -40,7 +61,7 @@ CREATE TABLE "enterprise_package_plans" (
   "consumed_at" timestamp with time zone,
   "result" jsonb,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "id")
+  CONSTRAINT "enterprise_package_plans_tenant_id_id_pk" PRIMARY KEY ("tenant_id", "id")
 );
 
 
@@ -56,7 +77,7 @@ CREATE TABLE "enterprise_package_revisions" (
   "config" jsonb NOT NULL,
   "created_by" text NOT NULL,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "install_id", "revision")
+  CONSTRAINT "enterprise_package_revisions_tenant_id_install_id_revision_pk" PRIMARY KEY ("tenant_id", "install_id", "revision")
 );
 
 
@@ -75,7 +96,7 @@ CREATE TABLE "enterprise_package_installs" (
   "installed_by" text NOT NULL,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "id")
+  CONSTRAINT "enterprise_package_installs_tenant_id_id_pk" PRIMARY KEY ("tenant_id", "id")
 );
 
 
@@ -94,7 +115,7 @@ CREATE TABLE "enterprise_package_grants" (
   "granted_by" text NOT NULL,
   "granted_at" timestamp with time zone NOT NULL DEFAULT now(),
   "revoked_at" timestamp with time zone,
-  PRIMARY KEY ("tenant_id", "install_id", "generation", "bot_id", "resource_id", "tool_ref")
+  CONSTRAINT "enterprise_package_grant_pk" PRIMARY KEY ("tenant_id", "install_id", "generation", "bot_id", "resource_id", "tool_ref")
 );
 
 
@@ -111,7 +132,7 @@ CREATE TABLE "enterprise_package_experts" (
   "expert_template_ref" text NOT NULL,
   "created_by" text NOT NULL,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "agent_id")
+  CONSTRAINT "enterprise_package_expert_pk" PRIMARY KEY ("tenant_id", "agent_id")
 );
 
 
@@ -129,7 +150,7 @@ CREATE TABLE "enterprise_package_resource_links" (
   "connector_install_id" text,
   "expert_template_ref" text,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "install_id", "revision", "resource_id")
+  CONSTRAINT "enterprise_package_link_pk" PRIMARY KEY ("tenant_id", "install_id", "revision", "resource_id")
 );
 
 
@@ -149,7 +170,7 @@ CREATE TABLE "enterprise_package_changes" (
   "request_digest" text NOT NULL,
   "result_json" jsonb NOT NULL,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "change_id")
+  CONSTRAINT "enterprise_package_changes_tenant_id_change_id_pk" PRIMARY KEY ("tenant_id", "change_id")
 );
 
 
@@ -167,7 +188,7 @@ CREATE TABLE "enterprise_run_package_pins" (
   "grant_revision" integer NOT NULL,
   "allowed_resource_ids" jsonb NOT NULL,
   "pinned_at" timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY ("tenant_id", "run_id", "attempt_generation", "install_id")
+  CONSTRAINT "enterprise_run_package_pin_pk" PRIMARY KEY ("tenant_id", "run_id", "attempt_generation", "install_id")
 );
 
 

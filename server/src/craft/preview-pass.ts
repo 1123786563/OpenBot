@@ -40,15 +40,36 @@
  * - IN-MEMORY, process-wide, one index per deployment secret (the #418
  *   single-replica contract the label registry and ticket table already live
  *   under). A multi-replica deployment needs sticky routing or a shared store;
- *   the boot log's single-replica notice covers the family.
+ *   the boot log's single-replica notice names this index alongside the label
+ *   registry and ticket table as the in-process families the contract covers
+ *   — the three a restart clears and a second replica never sees (#647: the
+ *   pass index's own failure shape is a 401 after a successful redemption,
+ *   MAC ok and index miss, which reads as an auth bug and is a lost index).
  * - Cleared by a restart: every outstanding pass then verifies to null (MAC
  *   ok, lookup miss) ⇒ 401. Holders recover exactly like M-2: they re-enter
  *   through the main site, which re-mints a ticket and plants a fresh token.
- * - Entries live until revoked or the process restarts. The D9 cookie is
- *   session-level (the browser drops it at close), but the server cannot see
- *   that event; the index therefore keeps the entry — the same accepted
- *   no-eviction trade as the label registry, bounded by redemptions per
- *   process lifetime rather than by sessions.
+ * - Bounded per session (#651 — this REPLACES the earlier no-eviction trade
+ *   this note used to record). Each session keeps at most its 8 most recent
+ *   tokens (PREVIEW_PASSES_PER_SESSION, with the N-value reasoning there);
+ *   minting a 9th evicts that session's OLDEST entry. Eviction is passive: the
+ *   evicted token is simply absent, so redeeming it hits the SAME index-miss
+ *   branch as an expired or restart-cleared pass — 401, never an error code and
+ *   never a pass-through. The invariant that makes the small N safe is that
+ *   eviction always takes the oldest of THAT session, so the session's current
+ *   (latest) mint can never be evicted by its own mint, and a pass for session
+ *   A never affects session B's queue.
+ *   Why the trade flipped: the old note accepted growth "bounded by redemptions
+ *   per process lifetime", but redemptions are client-driven — an authenticated
+ *   client looping mint+redeem grew the process's memory monotonically, and
+ *   every superseded token stayed live until revoked or restart. A per-session
+ *   ceiling makes growth "per session" instead, at the cost that a holder who
+ *   mints more than 8 times without redeeming the newest loses the older
+ *   cookies — which the ordinary steady state never does (one cookie slot per
+ *   preview host/path, overwritten at each redemption).
+ *   The session-deletion sweep remains the cleaner shape and is NOT this
+ *   ticket's: it needs a production caller on the session-deletion hook
+ *   (`revokePass` still has none, #649's seam), so the capacity bound is what
+ *   holds today — it needs no caller and works even if no hook ever fires.
  * - Single-token revocation (AC7) deletes one entry: that pass 401s while the
  *   session and every other token for it keep working. Global key/version
  *   rotation remains the higher, coarser layer (it invalidates everything).
@@ -74,7 +95,11 @@ export type PreviewPassBinding = { sessionId: string; userId: string };
  * boots with) and so a future shared-store adapter has one seam to implement.
  */
 export type PreviewPassIndex = {
-  /** Record a freshly minted token's binding. Overwrites only an identical token. */
+  /**
+   * Record a freshly minted token's binding. Overwrites only an identical
+   * token, and — since #651 — evicts that session's OLDEST entry once the
+   * session holds more than the capacity (see PREVIEW_PASSES_PER_SESSION).
+   */
   remember(token: string, binding: PreviewPassBinding): void;
   /** The binding for a token, or undefined — the ONE shape a miss takes. */
   lookup(token: string): PreviewPassBinding | undefined;
@@ -84,18 +109,143 @@ export type PreviewPassIndex = {
   size(): number;
 };
 
-/** The in-memory index (#418 single-replica contract — see the header). */
-export function createPreviewPassIndex(): PreviewPassIndex {
+/**
+ * #651 — how many live passes ONE session may hold. The index used to grow with
+ * every redemption (no eviction, no ceiling): an authenticated client that
+ * looped mint+redeem grew the process's memory monotonically, and every
+ * superseded token stayed redeemable until revoked or restart.
+ *
+ * Why 8 (the trade this number buys):
+ * - A session's cookie jar holds ONE preview pass per (preview host, path): a
+ *   mint at ticket redemption OVERWRITES the previous cookie, so the ordinary
+ *   steady state is one live token per session. Re-entry through the main site
+ *   (the M-2 recovery path) re-mints; a browser that reconnects repeatedly in a
+ *   short window — HMR reload loops, several preview tabs on one session, a
+ *   dev-form host whose Path=/ slots collide — can legitimately mint a handful.
+ * - 8 is an order of magnitude above the steady state and above every
+ *   concurrent-pass count the suites exercise, so eviction is never the reason
+ *   a real holder 401s; it only bounds a client that mints in a loop.
+ * - Bound per session ≈ 8 × (22-char token + ≤128-byte sessionId + ≤256-byte
+ *   userId) < 4 KiB, i.e. a few MB at a thousand concurrent sessions — the
+ *   ceiling replaces "growth per redemption" with "growth per session".
+ * - The invariant that makes a small N safe: eviction always takes the OLDEST
+ *   token of that session, so the session's CURRENT (latest) mint is never the
+ *   victim — a mint may only retire tokens N mints older than itself.
+ *
+ * Eviction is PASSIVE (the entry is simply gone): a redeemed evicted token hits
+ * the index-miss branch and 401s, which reads exactly like an expired pass —
+ * not like an error, and never like a pass-through. Holders recover through the
+ * main site, the same re-entry path a restart already forces.
+ *
+ * Not chosen: a session-deletion hook that sweeps a session's entries. That
+ * needs a production caller wired to session deletion (#649's note: revokePass
+ * has no production caller yet), which is a later ticket's seam — the capacity
+ * bound here needs no caller and holds even when no hook ever fires.
+ */
+export const PREVIEW_PASSES_PER_SESSION = 8;
+
+/**
+ * The in-memory index (#418 single-replica contract — see the header).
+ *
+ * Two structures, one truth: `entries` answers lookups, and `bySession` holds
+ * each session's live tokens in MINT order (a token is appended when remembered
+ * and spliced out when forgotten/evicted), which is what makes "evict the
+ * oldest of THIS session" an O(1) shift instead of a scan. They are only ever
+ * mutated together, so a queue slot never outlives its map entry.
+ *
+ * `perSessionCapacity` is a parameter so tests can drive the bound with a small
+ * N; production takes the default.
+ */
+export function createPreviewPassIndex(
+  perSessionCapacity: number = PREVIEW_PASSES_PER_SESSION,
+): PreviewPassIndex {
+  if (!Number.isInteger(perSessionCapacity) || perSessionCapacity < 1) {
+    // Capacity 0 would evict the mint it just recorded — the one entry the
+    // invariant forbids losing. A bad value must fail at construction, not
+    // silently 401 every holder.
+    throw new RangeError(
+      `preview pass index: per-session capacity must be a positive integer, got ${perSessionCapacity}.`,
+    );
+  }
   const entries = new Map<string, PreviewPassBinding>();
+  const bySession = new Map<string, string[]>();
+
+  function queueFor(sessionId: string): string[] {
+    let queue = bySession.get(sessionId);
+    if (queue === undefined) {
+      queue = [];
+      bySession.set(sessionId, queue);
+    }
+    return queue;
+  }
+
+  function dropFromQueue(sessionId: string, token: string): void {
+    const queue = bySession.get(sessionId);
+    if (queue === undefined) return;
+    const at = queue.lastIndexOf(token);
+    if (at !== -1) queue.splice(at, 1);
+    // An emptied session leaves no key behind: the map itself must not become
+    // the new unbounded structure (one array per session ever seen).
+    if (queue.length === 0) bySession.delete(sessionId);
+  }
+
+  /**
+   * #651/OCR-1 — evict this session's OLDEST tokens until its queue is at the
+   * capacity. BOTH push paths call it (a fresh mint AND a rebind onto another
+   * session): the ceiling is a property of the queue, not of how a token got
+   * there, so no branch that pushes may skip it. Extracted verbatim from the
+   * mint path, which it must keep answering identically — same oldest-first
+   * order, same guard, same entries/map pairing.
+   */
+  function trimSessionQueue(sessionId: string): void {
+    const queue = bySession.get(sessionId);
+    if (queue === undefined) return;
+    while (queue.length > perSessionCapacity) {
+      const oldest = queue.shift();
+      if (oldest === undefined) break;
+      // Only drop a map entry that still binds THIS session — the queue and
+      // the map are written together, so this is a guard, not a branch.
+      if (entries.get(oldest)?.sessionId === sessionId) {
+        entries.delete(oldest);
+      }
+    }
+  }
+
   return {
     remember(token, binding) {
+      const existing = entries.get(token);
+      if (existing !== undefined) {
+        // 128-bit random tokens make a repeat unreachable in practice; keeping
+        // the queue honest anyway means a hand-planted duplicate can never
+        // leave a slot pointing at a token the map no longer binds here.
+        if (existing.sessionId === binding.sessionId) {
+          entries.set(token, binding);
+          return;
+        }
+        dropFromQueue(existing.sessionId, token);
+        entries.set(token, binding);
+        queueFor(binding.sessionId).push(token);
+        // The rebind is a push like any other: the freshly bound session's
+        // queue obeys the SAME ceiling (OCR-1 — this branch used to return
+        // straight after pushing, so repeated rebinds on one session grew it
+        // past PREVIEW_PASSES_PER_SESSION).
+        trimSessionQueue(binding.sessionId);
+        return;
+      }
       entries.set(token, binding);
+      const queue = queueFor(binding.sessionId);
+      queue.push(token);
+      trimSessionQueue(binding.sessionId);
     },
     lookup(token) {
       return entries.get(token);
     },
     forget(token) {
-      return entries.delete(token);
+      const binding = entries.get(token);
+      if (binding === undefined) return false;
+      entries.delete(token);
+      dropFromQueue(binding.sessionId, token);
+      return true;
     },
     size() {
       return entries.size;
@@ -288,20 +438,36 @@ export function createPreviewPassCodec(
       ) {
         return false;
       }
-      // Frame rules aligned with verify's SHAPE (N4-01): macPart charset
-      // (43 chars = the 32-byte MAC's base64url), strict token decode, and
-      // the TOKEN_BYTES length — a value this deployment's own shape would
-      // refuse never reaches the index lookup, so revoke===true keeps
-      // meaning "a well-formed pass this deployment could have minted".
+      // Frame rules aligned with verify's SHAPE (N4-01, and to verify's full
+      // byte-level strictness since #650): macPart charset (43 chars = the
+      // 32-byte MAC's base64url), strict token decode, and the TOKEN_BYTES
+      // length — a value this deployment's own shape would refuse never
+      // reaches the index lookup, so revoke===true keeps meaning "a
+      // well-formed pass this deployment could have minted".
       // The MAC itself is deliberately NOT re-verified — the index, not the
       // signature, is revocation's authority (a known token retires its own
-      // entry; proving the deployment key buys nothing here).
+      // entry; proving the deployment key buys nothing here). #650 changed
+      // only HOW STRICTLY the MAC's FRAME is checked, never that the MAC's
+      // VALUE is checked at all: revoke remains non-cryptographic.
       const parts = candidate.split(".");
       if (parts.length !== 3) return false;
       const [version, token, macPart] = parts;
       if (version !== PREVIEW_PASS_VERSION) return false;
       if (!/^[A-Za-z0-9_-]+$/.test(token)) return false;
+      // #650: the charset test above is a SHAPE bound, not a length bound —
+      // a 43-char base64url string is only 32 bytes when it is the
+      // canonical encoding, and Node's decoder silently accepts hostile
+      // trailing bits ("_"*43 decodes to a different length, "-"*43 does
+      // not round-trip at all). verify therefore ran the same charset
+      // test and then pinned the bytes with decodeStrict + MAC_BYTES;
+      // revoke now runs the identical pair. Behavior is unchanged for
+      // every value a mint can produce (canonically encoded, exactly 32
+      // bytes), and the two gates now refuse exactly the same frames —
+      // which is what lets the sentence below be TRUE rather than merely
+      // intended.
       if (!/^[A-Za-z0-9_-]{43}$/.test(macPart)) return false;
+      const mac = decodeStrict(macPart);
+      if (mac === null || mac.length !== MAC_BYTES) return false;
       const tokenBytes = decodeStrict(token);
       if (tokenBytes === null || tokenBytes.length !== TOKEN_BYTES)
         return false;
