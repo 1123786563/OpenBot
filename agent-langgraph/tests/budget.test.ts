@@ -116,6 +116,17 @@ describe("the ledger: what may start, what must stop", () => {
     expect(ledger.usage.modelSteps).toBe(0); // never started
   });
 
+  test("the output cap reserves this call's projected input out of the total", () => {
+    // Total 10 with a ~5-token projected input ("hi" = 1 + 4 overhead): the provider's
+    // output knob can only be the 5 tokens of headroom that remain, or the call's own
+    // input plus its full knob would cross the total and the run would be stopped from
+    // outside a contract it was told it could spend.
+    const ledger = new RunBudgetLedger(
+      contract({ inputTokens: 100, outputTokens: 100, totalTokens: 10 }),
+    );
+    expect(ledger.beginModelStep(messages("hi"))).toBe(5);
+  });
+
   test("the per-call output cap is the REMAINING budget, and shrinks", () => {
     const ledger = new RunBudgetLedger(contract());
     expect(ledger.beginModelStep(messages("hi"))).toBe(200);
@@ -190,6 +201,16 @@ describe("the estimate: conservative in both directions that matter", () => {
       ],
     });
     expect(estimateTokens([message])).toBeGreaterThanOrEqual(2_000);
+  });
+
+  test("string and unrecognised parts of a content array are never free", () => {
+    // A bare string part and a null would both have been skipped as 0 tokens; the estimate
+    // must never be the optimist in the room, so text counts as text and the rest as a block.
+    const message = new AIMessage({
+      content: ["abcdefgh", null] as unknown as AIMessage["content"],
+    });
+    // ceil(8/3) text tokens + a 2_000 block + overhead.
+    expect(estimateTokens([message])).toBe(3 + 2_000 + 4);
   });
 
   test("tool call arguments are part of the next call's input", () => {

@@ -223,20 +223,37 @@ function toBoundTools(input: RunAgentInput) {
  * Every one of these binds tools the same way and streams the same way, which is exactly why the
  * rest of this file does not know which one it got.
  *
- * `maxOutputTokens` is the run's remaining output budget (R3-02), handed to the provider so the
- * cap is enforced on ITS side of the call rather than only accounted after it: each provider's
+ * `maxOutputTokens` is the run's remaining output budget (R3-02), clamped to the model's
+ * output ceiling before the provider enforces it: each provider's
  * own knob for "stop after this many completion tokens" (`maxTokens` on OpenAI and Anthropic,
  * `maxOutputTokens` on Google). Absent means an unbudgeted run — a caller that sent no contract —
  * and the provider's own default applies, exactly as before the contract existed.
  */
+// Conservative ceilings for configured models; unknown models and compatible gateways use
+// 8,192 until their output limit is confirmed. A smaller cap still fits the budget contract.
+const MODEL_OUTPUT_CEILINGS: Record<string, number> = {
+  "claude-sonnet-4-5": 64_000,
+  "gemini-2.5-flash": 65_536,
+  "gpt-4.1": 32_768,
+  "gpt-4.1-mini": 32_768,
+};
+const UNKNOWN_MODEL_OUTPUT_CEILING = 8_192;
+
 function buildModel(maxOutputTokens?: number) {
+  const cappedOutputTokens =
+    maxOutputTokens === undefined
+      ? undefined
+      : Math.min(
+          maxOutputTokens,
+          MODEL_OUTPUT_CEILINGS[MODEL] ?? UNKNOWN_MODEL_OUTPUT_CEILING,
+        );
   if (PROVIDER === "anthropic") {
     return new ChatAnthropic({
       model: MODEL,
       apiKey: apiKeyOrPlaceholder(API_KEY),
       streaming: true,
       ...(BASE_URL ? { anthropicApiUrl: BASE_URL } : {}),
-      ...(maxOutputTokens === undefined ? {} : { maxTokens: maxOutputTokens }),
+      ...(cappedOutputTokens === undefined ? {} : { maxTokens: cappedOutputTokens }),
     });
   }
   if (PROVIDER === "google") {
@@ -245,7 +262,9 @@ function buildModel(maxOutputTokens?: number) {
       apiKey: apiKeyOrPlaceholder(API_KEY),
       streaming: true,
       ...(BASE_URL ? { baseUrl: BASE_URL } : {}),
-      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+      ...(cappedOutputTokens === undefined
+        ? {}
+        : { maxOutputTokens: cappedOutputTokens }),
     });
   }
   return new ChatOpenAI({
@@ -254,7 +273,7 @@ function buildModel(maxOutputTokens?: number) {
     streaming: true,
     ...(BASE_URL ? { configuration: { baseURL: BASE_URL } } : {}),
     ...(USE_RESPONSES_API ? { useResponsesApi: true } : {}),
-    ...(maxOutputTokens === undefined ? {} : { maxTokens: maxOutputTokens }),
+    ...(cappedOutputTokens === undefined ? {} : { maxTokens: cappedOutputTokens }),
     /*
      * `reasoning.effort`, not the `reasoningEffort` convenience field: the integration deprecated
      * the latter in favour of merging it into this object, and one of them is the one that survives.

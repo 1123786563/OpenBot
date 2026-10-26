@@ -369,6 +369,41 @@ test("a call past its input-token cap stops the loop with the crossing recorded"
   await stop();
 }, 30_000);
 
+test("a remaining budget past the model's own output ceiling is clamped before the provider", async () => {
+  const { calls, start, stop } = scriptedProvider(() => ({
+    delta: { role: "assistant", content: "the answer" },
+    finish: "stop",
+    usage: { prompt_tokens: 220, completion_tokens: 25 },
+  }));
+  const providerUrl = await start();
+  await withEndpoint(providerUrl, async (port) => {
+    // A contract far larger than any provider's output limit (the server derives caps from
+    // BILLING_CODE_RUN_MAX_RESERVATION_TOKENS, which can exceed the model's own ceiling).
+    const { events } = await runAgainstEndpoint(port, {
+      budget: {
+        v: 1,
+        runId: "run-clamped",
+        caps: {
+          modelSteps: 4,
+          inputTokens: 200_000,
+          outputTokens: 100_000,
+          totalTokens: 300_000,
+        },
+      },
+    });
+
+    expect(calls).toHaveLength(1);
+    // gpt-4.1-mini's ceiling, not the contract's 100_000 — a value the provider would
+    // refuse outright. The clamp is physical guardrail only: the run still answers, and
+    // the budget's own stop remains the accounting layer.
+    expect(calls[0]?.max_tokens ?? calls[0]?.max_completion_tokens).toBe(32_768);
+    expect(events.at(-1)?.type).toBe("RUN_FINISHED");
+    const [receipt] = receiptOf(events) as unknown as ReceiptValue[];
+    expect(receipt.status).toBe("ok");
+  });
+  await stop();
+}, 30_000);
+
 test("a run inside its caps answers, caps its output per call, and signs its receipt", async () => {
   const { calls, start, stop } = scriptedProvider(() => ({
     delta: { role: "assistant", content: "the answer" },
