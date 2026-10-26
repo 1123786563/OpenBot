@@ -43,9 +43,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import {
+  scopedAgentListQueryOptions,
+} from "@/lib/agents/queries";
 import { conversationLabel } from "@/lib/channels/label";
-import { channelListQueryOptions } from "@/lib/channels/queries";
+import { scopedChannelListQueryOptions } from "@/lib/channels/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   changeProactiveSettingMutationOptions,
   createProactiveSettingMutationOptions,
@@ -84,7 +87,9 @@ export function SuggestionsInbox({
   const shown = (suggestions.data ?? []).filter(
     (suggestion) => agentId === undefined || suggestion.agentId === agentId,
   );
-  const bots = useQuery(agentListQueryOptions());
+  // The roster reads ride the scope the screen holds (MOD19 / Issue #639, T1b).
+  const scope = useScopedCache();
+  const bots = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const act = useMutation(resolveSuggestionMutationOptions(queryClient));
   const botName = (id: string) =>
     bots.data?.find((bot) => bot.id === id)?.name ?? t("proactive.yourBot");
@@ -194,7 +199,8 @@ export function ProactiveResearchSettings({
 } = {}) {
   const { t } = useTranslation("agents");
   const settings = useQuery(proactiveSettingsQueryOptions());
-  const bots = useQuery(agentListQueryOptions());
+  const scope = useScopedCache();
+  const bots = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const [adding, setAdding] = useState(false);
   const shown = (settings.data ?? []).filter(
     (setting) => fixedBot === undefined || setting.agentId === fixedBot,
@@ -251,8 +257,9 @@ function TurnOnResearchDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation("agents");
-  const bots = useQuery(agentListQueryOptions());
-  const channels = useInfiniteQuery(channelListQueryOptions());
+  const scope = useScopedCache();
+  const bots = useQuery(scopedAgentListQueryOptions(queryClient, scope));
+  const channels = useInfiniteQuery(scopedChannelListQueryOptions(queryClient, scope));
   const [pickedBot, setAgentId] = useState("");
   const agentId = fixedBot ?? pickedBot;
   const [channelId, setChannelId] = useState("");

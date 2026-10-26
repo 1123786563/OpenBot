@@ -1,5 +1,5 @@
 import { IconChevronRight } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -23,8 +23,12 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
-import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
+import {
+  scopedAgentListQueryOptions,
+  type AgentProfile,
+} from "@/lib/agents/queries";
 import { groupRoster } from "@/lib/agents/roster";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   type BotAttention,
   botAttentionQueryOptions,
@@ -38,8 +42,12 @@ import {
  */
 export function BotRoster() {
   const { t } = useTranslation("agents");
-  const agents = useQuery(agentListQueryOptions());
-  const hidden = useQuery(agentListQueryOptions(true));
+  // The roster is scoped business data (MOD19 / Issue #639, T1b): keyed under the scope's own
+  // prefix and answered under the selection in force, so a switch drops the old roster wholesale.
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
+  const hidden = useQuery(scopedAgentListQueryOptions(queryClient, scope, true));
   const attention = useQuery(botAttentionQueryOptions());
   const byId = new Map((attention.data ?? []).map((bot) => [bot.agentId, bot]));
 

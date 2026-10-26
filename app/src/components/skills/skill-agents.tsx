@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trans, useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { setPluginGrantMutationOptions } from "@/lib/plugins/mutations";
 
 /**
@@ -26,7 +27,9 @@ export function SkillAgents({
 }) {
   const { t } = useTranslation("skills");
   const queryClient = useQueryClient();
-  const { data: agents } = useQuery(agentListQueryOptions());
+  // The roster read rides the scope the screen holds (MOD19 / Issue #639, T1b).
+  const scope = useScopedCache();
+  const { data: agents } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const mine = (agents ?? []).filter((agent) => agent.mine);
   const held = new Set(grantedTo);
 

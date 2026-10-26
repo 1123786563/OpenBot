@@ -68,8 +68,6 @@ export const agentKeys = {
   all: ["agents"] as const,
   list: (hidden = false) => ["agents", "list", { hidden }] as const,
   detail: (agentId: string) => ["agents", "detail", agentId] as const,
-  botRouteDetail: (agentId: string) =>
-    ["agents", "bot-route-detail", agentId] as const,
   handoff: (agentId: string) => ["agents", "handoff", agentId] as const,
   capabilities: () => ["agents", "capabilities"] as const,
 };
@@ -266,13 +264,51 @@ export function scopedAgentDetailQueryOptions(
   });
 }
 
-export function agentHandoffQueryOptions(agentId: string) {
+/**
+ * The handoff grants, bound to the scope the screen holds (MOD19 / Issue #639, T1b): keyed under
+ * the scope's own cache prefix, carrying the selection pair, answered through the same generation
+ * guard every scoped read passes — the shape `scopedAgentDetailQueryOptions` (MT084) established,
+ * so the delegation screen reads its Bot under the scope in force and a late answer from another
+ * selection is refused rather than drawn.
+ */
+export function scopedAgentHandoffQueryOptions(
+  queryClient: QueryClient,
+  scope: ScopedCache,
+  agentId: string,
+) {
+  const open = scope.status === "open" ? scope : null;
   return queryOptions({
-    queryKey: agentKeys.handoff(agentId),
-    queryFn: (): Promise<HandoffGrants> =>
-      client(`${agentApiPath(agentId)}/handoff`, "handoff", {
-        fallbackKey: "agents.loadDelegation",
-      }),
+    queryKey:
+      open !== null
+        ? [...open.prefix, ...agentKeys.handoff(agentId)]
+        : [...agentKeys.handoff(agentId), ":scope-pending"],
+    enabled: open !== null,
+    queryFn:
+      open === null
+        ? () => new Promise<HandoffGrants>(() => {})
+        : async ({ signal }): Promise<HandoffGrants> =>
+            guarded(queryClient, open.userId, async () => {
+              const response = await tryClient(
+                `${agentApiPath(agentId)}/handoff`,
+                { signal, fallbackKey: "agents.loadDelegation", ...(open.selection ?? {}) },
+              );
+              if (!response.ok) {
+                if (response.status === 404) throw new AgentUnavailableError();
+                throw new Error("The delegation could not be read.");
+              }
+              const body = (await response.json().catch(() => null)) as {
+                handoff?: HandoffGrants;
+              } | null;
+              if (
+                body === null ||
+                typeof body !== "object" ||
+                body.handoff === null ||
+                typeof body.handoff !== "object"
+              ) {
+                throw new Error("The delegation could not be read.");
+              }
+              return body.handoff;
+            }),
   });
 }
 

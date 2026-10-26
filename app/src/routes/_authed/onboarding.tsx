@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import Avatar from "boring-avatars";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
@@ -10,7 +10,8 @@ import { Composer } from "@/components/channels/composer";
 import { DesktopIllustration } from "@/components/computer/desktop-illustration";
 import { ComputerPlaceholder } from "@/components/computer/placeholder";
 import { Button } from "@/components/ui/button";
-import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
+import { type AgentProfile, scopedAgentListQueryOptions } from "@/lib/agents/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { currentUserQueryOptions, needsOnboarding } from "@/lib/auth/queries";
 import { appConfig } from "@/lib/generated/application-config";
 import { completeOnboardingMutationOptions } from "@/lib/onboarding/mutations";
@@ -108,7 +109,11 @@ const AGENTS_PLACEHOLDER = [
 
 function RosterStep() {
   const { t } = useTranslation("common");
-  const { data: agents } = useQuery(agentListQueryOptions());
+  // The roster read rides the scope the screen holds (MOD19 / Issue #639, T1b): onboarding runs in
+  // the personal context, whose open scope reads exactly as the unscoped read did.
+  const cache = useQueryClient();
+  const scope = useScopedCache();
+  const { data: agents } = useQuery(scopedAgentListQueryOptions(cache, scope));
   const explore =
     agents?.filter((a) => !a.mine && a.visibility === "public") ?? [];
   // Always three cards: real public agents first, placeholders topping up a sparse deployment.

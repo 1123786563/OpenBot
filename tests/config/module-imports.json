@@ -5894,6 +5894,22 @@
       "ticket": "MOD15 (S7 记忆) 重类目（原 合并汇入 (#618/#376 经 main，#620 集成树) 环例外）",
       "exit_condition": "M-obs（hindsight/memory 路由层）建立公开出口并让消费者改走公开出口，使环单向化后移除此例（#620 收口合并汇入，closure-ocr 期登记）；MOD15 已建 M10 公开出口并使 M03/AUTOMATION→M10 单向化，该边不再处于环上，转为普通深层引用例外，出口建立后迁移并移除",
       "reason": "MOD15 单向化后脱离环籍（原环例外登记见 ticket），现为跨模块深层引用；两段式第二段（M01/M02/M08 出口迁移）不变"
+    },
+    {
+      "source": "app/src/lib/copilot/approval-tools.tsx",
+      "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
+      "category": "cycle",
+      "ticket": "MOD04 (S2 身份与 Access)",
+      "exit_condition": "M02 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔M02 单向化后移除此例外",
+      "reason": "模块级环边 M04 -> M02（M04 与 M02 互相可达）"
+    },
+    {
+      "source": "app/src/lib/plugin-packages/use-package-scope.ts",
+      "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
+      "category": "cycle",
+      "ticket": "MOD04 (S2 身份与 Access)",
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
+      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
     }
   ]
 }

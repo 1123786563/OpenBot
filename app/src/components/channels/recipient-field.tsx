@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChannelAvatar } from "@/components/channels/avatar";
@@ -14,7 +14,8 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * Who a conversation that does not exist yet is with.
@@ -30,7 +31,10 @@ export function RecipientField({
   onChange: (next: Recipient[]) => void;
 }) {
   const { t } = useTranslation("channels");
-  const { data: profiles } = useQuery(agentListQueryOptions());
+  // The roster read rides the scope the screen holds (MOD19 / Issue #639, T1b).
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
+  const { data: profiles } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const [search, setSearch] = useState("");
 
   const chosen = new Set(recipients.map((recipient) => recipient.id));

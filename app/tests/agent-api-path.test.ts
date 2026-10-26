@@ -17,10 +17,11 @@ import {
   updateAgentMutationOptions,
 } from "../src/lib/agents/mutations";
 import {
-  agentHandoffQueryOptions,
   agentKeys,
   agentQueryOptions,
+  scopedAgentHandoffQueryOptions,
 } from "../src/lib/agents/queries";
+import type { ScopedCache } from "../src/lib/enterprise/tenant/scoped-cache";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -30,6 +31,20 @@ const actor = {
   id: "synthetic-reader",
   email: "reader@example.test",
   role: "user" as const,
+};
+/*
+ * The handoff read is scoped (MOD19 / Issue #639). This file pins the wire of the agent routes,
+ * so the scope it hands the factory is the personal context: an open scope with no selection,
+ * whose request rides no pair and whose guard passes at generation 0 — the read then answers
+ * exactly as the old unscoped one did.
+ */
+const PERSONAL_SCOPE: ScopedCache = {
+  status: "open",
+  userId: actor.id,
+  selection: null,
+  generation: 0,
+  prefix: ["personal-test", actor.id],
+  key: "personal-test",
 };
 const input = {
   name: "Synthetic",
@@ -266,7 +281,8 @@ for (const id of [
       expect((await client.fetchQuery(agentQueryOptions(id))).id).toBe(id);
       expect(client.getQueryData(agentKeys.detail(id))).toBeDefined();
       expect(
-        (await client.fetchQuery(agentHandoffQueryOptions(id))).enabled,
+        (await client.fetchQuery(scopedAgentHandoffQueryOptions(client, PERSONAL_SCOPE, id)))
+          .enabled,
       ).toBe(false);
       for (const operation of operations(client, id)) {
         await operation.run();
@@ -299,7 +315,9 @@ for (const refusal of ["unauthenticated", "forbidden"] as const) {
     try {
       await expect(client.fetchQuery(agentQueryOptions(id))).rejects.toThrow();
       await expect(
-        client.fetchQuery(agentHandoffQueryOptions(id)),
+        client.fetchQuery(
+          scopedAgentHandoffQueryOptions(client, PERSONAL_SCOPE, id),
+        ),
       ).rejects.toThrow();
       for (const operation of operations(client, id))
         await expect(operation.run()).rejects.toThrow();

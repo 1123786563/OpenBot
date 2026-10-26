@@ -4,9 +4,10 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   type ApprovalDecision,
-  approvalInboxOptions,
-  decideApproval,
+  decideApprovalMutationOptions,
+  scopedApprovalInboxOptions,
 } from "@/lib/approvals";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 
 /**
  * A pending approval, drawn in the conversation where the action it holds would have been.
@@ -24,12 +25,14 @@ export function InlineApproval({
 }) {
   const { t } = useTranslation("approvals");
   const cache = useQueryClient();
-  const inbox = useQuery(approvalInboxOptions());
-  const decision = useMutation({
-    mutationFn: (choice: ApprovalDecision) =>
-      decideApproval(request?.id ?? "", choice),
-    onSuccess: () => cache.invalidateQueries({ queryKey: ["approvals"] }),
-  });
+  // The inbox read and the decision ride the scope the surface holds (MOD19 / Issue #639, T1b) —
+  // the same scoped read the Approvals page makes, so a decision lands in one scope or the other,
+  // never across.
+  const scope = useScopedCache();
+  const inbox = useQuery(scopedApprovalInboxOptions(cache, scope));
+  const decision = useMutation(
+    decideApprovalMutationOptions(cache, scope),
+  );
   const request = toolCallId
     ? inbox.data?.requests.find(
         (candidate) => candidate.action.toolCallId === toolCallId,
@@ -74,7 +77,9 @@ export function InlineApproval({
             size="sm"
             variant={index === 0 ? "default" : "outline"}
             disabled={decision.isPending}
-            onClick={() => decision.mutate(choice)}
+            onClick={() =>
+              decision.mutate({ id: request?.id ?? "", choice })
+            }
           >
             {label}
           </Button>
@@ -95,7 +100,10 @@ export function PendingApprovals({
 }: {
   toolCallIds: readonly string[];
 }) {
-  const inbox = useQuery(approvalInboxOptions());
+  // Same scoped inbox the Approvals page reads (MOD19 / Issue #639, T1b).
+  const cache = useQueryClient();
+  const scope = useScopedCache();
+  const inbox = useQuery(scopedApprovalInboxOptions(cache, scope));
   const waiting = new Set(
     (inbox.data?.requests ?? [])
       .filter((request) => request.status === "pending")

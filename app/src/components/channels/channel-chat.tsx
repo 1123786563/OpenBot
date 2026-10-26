@@ -21,7 +21,7 @@ import {
 } from "@/components/channels/transcript-messages";
 import { VoiceCallWidget } from "@/components/channels/voice-call-widget";
 import { HandoffResumeNotice } from "@/components/computer/handoff-resume-notice";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { attachmentUrl } from "@/lib/channels/attachments";
 import {
   recordChannelActivityMutationOptions,
@@ -34,6 +34,8 @@ import {
 } from "@/lib/channels/queries";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { observeApprovalAgent } from "@/lib/copilot/approval-context";
+import { pairOf, useCallTimeScope } from "@/lib/copilot/approval-tools";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { afterMs, joinWithin } from "@/lib/copilot/join-thread";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
@@ -264,8 +266,17 @@ export function ChannelChat({
   const { t } = useTranslation("channels");
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
+  // Every scoped call on this surface rides the scope the screen holds (MOD19 / Issue #639): the
+  // mention roster's read, the answer-basis re-export of a history restore, and the activity and
+  // busy reports all carry the selection pair and are keyed under the scope's own prefix.
+  const scope = useScopedCache();
+  // The history restore runs inside async flows that outlive the render, so its pair comes from
+  // the call-time holder (the same seam the tool handlers use), not a closed-over render value.
+  const scopeHolder = useCallTimeScope();
   // Mentions are scoped to the channel's permitted agents.
-  const { data: agentProfiles } = useQuery(agentListQueryOptions());
+  const { data: agentProfiles } = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope),
+  );
   const channelAgentId = `channel:${channel.id}`;
   const { agent, isReady } = useAgent({
     agentId: channelAgentId,
@@ -373,10 +384,9 @@ export function ChannelChat({
       }
 
       try {
-        const stored = await readThreadMessages(
-          channel.threadId,
-          runtimeAgentId,
-        );
+        const stored = await readThreadMessages(channel.threadId, runtimeAgentId, {
+          pair: pairOf(scopeHolder.current),
+        });
         const isCurrent = current && version === historyReadVersion.current;
         if (isCurrent) {
           // The gateway snapshot can lag the store. Keep its valid local rows even when the
@@ -429,9 +439,17 @@ export function ChannelChat({
    */
   useEffect(() => {
     const authoredActivity = (): ChannelActivitySignature | null => {
+      // The roster this screen watches lives under the scope's own prefix since MOD19 (#639):
+      // read it where the scoped list query writes it, from the live holder so a switch between
+      // effect runs reads the prefix in force, never a closed-over one.
+      const heldScope = scopeHolder.current;
+      const rosterKey =
+        heldScope.status === "open"
+          ? [...heldScope.prefix, ...channelKeys.list()]
+          : channelKeys.list();
       const cache = queryClient.getQueryData<{
         pages: { channels: ChannelSummary[] }[];
-      }>(channelKeys.list());
+      }>(rosterKey);
       const summary = cache?.pages
         .flatMap((page) => page.channels)
         .find((row) => row.id === channel.id);
@@ -469,6 +487,7 @@ export function ChannelChat({
           const stored = await readThreadMessages(
             channel.threadId,
             runtimeAgentId,
+            { pair: pairOf(scopeHolder.current) },
           );
           if (!isCurrent()) return;
           if (stored.availability === "unavailable") {
@@ -601,7 +620,9 @@ export function ChannelChat({
   /**
    * Tell the roster what was just said. Failures here must not block the conversation.
    */
-  const recordActivity = useMutation(recordChannelActivityMutationOptions());
+  const recordActivity = useMutation(
+    recordChannelActivityMutationOptions(scope),
+  );
   const selfReportedBotActivity = useRef<ChannelActivitySignature | null>(null);
 
   const report = (text: string, agentId: string | null) => {
@@ -795,7 +816,7 @@ export function ChannelChat({
     turnsRef.current += 1;
     setTurnsInFlight(turnsRef.current);
     if (turnsRef.current === 1) {
-      void setChannelBusy({ channelId: channel.id, busy: true });
+      void setChannelBusy({ channelId: channel.id, busy: true }, scope);
     }
     try {
       return await deliver(trimmed, skillInstructions, attachments);
@@ -805,7 +826,7 @@ export function ChannelChat({
       // Sent from here rather than from an effect on `turnsInFlight`: this runs after unmount, that
       // does not, and the last turn out is what takes the roster's working indicator down.
       if (turnsRef.current === 0) {
-        void setChannelBusy({ channelId: channel.id, busy: false });
+        void setChannelBusy({ channelId: channel.id, busy: false }, scope);
       }
     }
   };

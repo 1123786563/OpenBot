@@ -67,7 +67,7 @@ export function createChannelMutationOptions(
  *
  * Fire-and-forget on purpose: a failed preview update is a stale roster line, not a lost message.
  */
-export function recordChannelActivityMutationOptions() {
+export function recordChannelActivityMutationOptions(scope?: ScopedCache) {
   return mutationOptions({
     mutationFn: async (variables: {
       channelId: string;
@@ -83,6 +83,7 @@ export function recordChannelActivityMutationOptions() {
           at: variables.at,
           text: variables.text,
         },
+        ...scopeOptions(scope),
       });
     },
   });
@@ -99,13 +100,17 @@ export function recordChannelActivityMutationOptions() {
  * A plain function, not a mutation handle: the turn it reports on outlives the screen that started
  * it, and `mutate` on an unmounted component is a no-op.
  */
-export async function setChannelBusy(variables: {
-  channelId: string;
-  busy: boolean;
-}) {
+export async function setChannelBusy(
+  variables: {
+    channelId: string;
+    busy: boolean;
+  },
+  scope?: ScopedCache,
+) {
   await tryClient(`/api/channels/${variables.channelId}/busy`, {
     method: "POST",
     body: { busy: variables.busy },
+    ...scopeOptions(scope),
   });
 }
 

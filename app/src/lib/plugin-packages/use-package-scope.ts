@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
-  readStoredSelection,
   workspaceScopeListingQueryOptions,
 } from "@/lib/enterprise/tenant/selection";
 import type { PluginPackageScope } from "./queries";
@@ -24,7 +24,12 @@ export function usePackageScope(options?: { enabled?: boolean }): {
   listingRefetch: () => void;
 } {
   const me = useQuery(currentUserQueryOptions());
-  const stored = me.data ? readStoredSelection(me.data.id) : null;
+  // The selection comes from the one scope seam (MOD19 / Issue #639, T2), not a private storage
+  // read: `useScopedCache` answers from the same reactive entry every scoped surface reads, so a
+  // switch in this tab or another lands here on the same generation discipline, and the personal
+  // context (selection null) reads exactly as the old direct read did.
+  const cache = useScopedCache();
+  const stored = cache.status === "open" ? cache.selection : null;
   const scope =
     me.data && stored
       ? {

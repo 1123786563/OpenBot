@@ -27,7 +27,7 @@ import {
   scopedApprovalInboxOptions,
   updateApprovalRuleMutationOptions,
 } from "@/lib/approvals";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { hostLabels, LabelSelect, RuleForm, RuleRow } from "./rules";
@@ -45,8 +45,9 @@ export function ApprovalSettings() {
   const scope = useScopedCache();
   const inbox = useQuery(scopedApprovalInboxOptions(queryClient, scope));
   const me = useQuery(currentUserQueryOptions()).data;
-  const agents = useQuery(agentListQueryOptions());
-  const hiddenAgents = useQuery(agentListQueryOptions(true));
+  // The roster reads ride the scope this screen holds (MOD19 / Issue #639, T1b).
+  const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
+  const hiddenAgents = useQuery(scopedAgentListQueryOptions(queryClient, scope, true));
   const preferences = useMutation(
     approvalPreferencesMutationOptions(queryClient, scope),
   );
