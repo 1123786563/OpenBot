@@ -2342,15 +2342,21 @@ export function assembleHttpApp(
      * profile store, and the receipt store arrives on the coworker object beside it.
      */
     if (coworker?.marketplace) {
+      /*
+       * MOD16 (#636): the marketplace's writes go through the owner facades —
+       * coworker.botCatalog wraps the same profile store this layer guards on (one
+       * instance, identity delegation), and the ToolAccess here is built on the same
+       * plugin store, so every write path is byte-for-byte the store call it was.
+       */
       app.route(
         "/api/marketplace",
         createMarketplaceRoutes({
           installs: coworker.marketplace.installs,
-          agents: agentProfileStore,
+          agents: coworker.botCatalog,
           ...(pluginStore
             ? {
-                grants: pluginStore,
-                skillWrites: pluginStore,
+                grants: createToolAccess({ store: pluginStore }),
+                skillWrites: createToolAccess({ store: pluginStore }),
               }
             : {}),
           auditStore,

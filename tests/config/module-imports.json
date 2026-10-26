@@ -1154,34 +1154,34 @@
     {
       "source": "app/src/lib/marketplace/mutations.ts",
       "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "app/src/lib/marketplace/mutations.ts",
       "target": "app/src/lib/plugins/mutations.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD12 (S5 工具审批与恢复)",
-      "exit_condition": "M08 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M08 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M08（M12 与 M08 互相可达）"
+      "exit_condition": "M08 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M08（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "app/src/lib/marketplace/queries.ts",
       "target": "app/src/lib/enterprise/tenant/queries.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "app/src/lib/marketplace/queries.ts",
       "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "app/src/lib/observability/route-guard.ts",
@@ -1202,18 +1202,18 @@
     {
       "source": "app/src/lib/plugin-packages/use-package-scope.ts",
       "target": "app/src/lib/auth/queries.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M01 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M01（M12 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M01（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "app/src/lib/plugin-packages/use-package-scope.ts",
       "target": "app/src/lib/enterprise/tenant/selection.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "app/src/lib/plugins/mutations.ts",
@@ -3426,178 +3426,178 @@
     {
       "source": "server/src/enterprise/plugin-packages/contracts.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/contracts.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/contracts.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/experts.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/experts.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/grants.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/grants.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/install-service.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/tenancy/scope-gate.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/tenancy/store.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/mutation-context.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/routes.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/routes.ts",
       "target": "server/src/enterprise/tenancy/admin-separation.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/routes.ts",
       "target": "server/src/enterprise/tenancy/workspace-admin.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/runtime.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/runtime.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/runtime.ts",
       "target": "server/src/enterprise/tenancy/store.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/store.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/store.ts",
       "target": "server/src/enterprise/tenancy/connections.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/plugin-packages/store.ts",
       "target": "server/src/enterprise/tenancy/store.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/enterprise/runs/events.ts",
@@ -3926,14 +3926,6 @@
       "ticket": "MOD08 (S2 身份与 Access)",
       "exit_condition": "M06 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M06 单向化后移除此例外",
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
-    },
-    {
-      "source": "server/src/enterprise/runs/service.ts",
-      "target": "server/src/enterprise/plugin-packages/runtime.ts",
-      "category": "cycle",
-      "ticket": "MOD16 (S7 插件包)",
-      "exit_condition": "M12 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔M12 单向化后移除此例外",
-      "reason": "模块级环边 M05 -> M12（M05 与 M12 互相可达）"
     },
     {
       "source": "server/src/enterprise/runs/service.ts",
@@ -4361,27 +4353,11 @@
     },
     {
       "source": "server/src/marketplace/routes.ts",
-      "target": "server/src/agents/profile-store.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M03 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M03（M12 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/marketplace/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M01 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M01（M12 与 M01 互相可达）"
-    },
-    {
-      "source": "server/src/marketplace/routes.ts",
-      "target": "server/src/plugins/store.ts",
-      "category": "cycle",
-      "ticket": "MOD12 (S5 工具审批与恢复)",
-      "exit_condition": "M08 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M08 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M08（M12 与 M08 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M01（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/mastra/approvals.ts",
@@ -5114,10 +5090,10 @@
     {
       "source": "server/src/plugin-packages/catalogue.ts",
       "target": "server/src/enterprise/contracts.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/plugins/builtin-routines.ts",
@@ -5890,10 +5866,10 @@
     {
       "source": "app/src/lib/plugin-packages/use-package-scope.ts",
       "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口，使 M12↔M02 单向化后移除此例外",
-      "reason": "模块级环边 M12 -> M02（M12 与 M02 互相可达）"
+      "exit_condition": "M02 建立 public/integration 出口并让 M12 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 M12 -> M02（环已由 MOD16 改道解开：marketplace 经 BotCatalog/ToolAccess 公开门面、runs 经 plugin-packages/public 改道，环边降级为深层引用）"
     }
   ]
 }

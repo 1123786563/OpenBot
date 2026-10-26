@@ -88,14 +88,14 @@ function buildApp(overrides: {
   const routes = createMarketplaceRoutes({
     installs,
     agents: {
-      create: async (_actor, input) => {
+      createBot: async (_actor, input) => {
         createdBots.push({
           name: input.name,
           prompt: input.systemPrompt ?? input.roleDescription,
         });
         return { id: `agent-${createdBots.length}` };
       },
-      softDelete: async (_actor, id) => {
+      softDeleteBot: async (_actor, id) => {
         deletedBots.push(id);
       },
       ...(overrides.agents ?? {}),

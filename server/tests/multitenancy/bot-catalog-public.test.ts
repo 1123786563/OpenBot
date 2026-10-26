@@ -2,7 +2,7 @@
 // MOD05（Issue #625，根 #620）：M03 BotCatalog 门面的委托等价与形状钉。
 //
 // 事实源（Issue #625 验收 + MOD05 Brief §C，逐条对应 describe）：
-//   D1 委托等价：门面四能力 vs 直调内件——同参、同对象、同错误实例透传
+//   D1 委托等价：门面五能力 vs 直调内件——同参、同对象、同错误实例透传
 //      （注入替身证明委托本身）+ 真内件无 DB 反例（真 ExpertVersionCatalog
 //      毒化连接：ref 校验先于触库）+ 路由级双路等价（publication 两 handler
 //      经门面/不经门面行为同形）。
@@ -16,7 +16,8 @@
 //      bots-ownership 复跑钉住（见 reports/MOD05-report.md）。
 //   D4 验收 3：publish 零新增授权分支——门面源零判定/零写面；真
 //      TeamBotForbiddenError 实例经门面原样透传（管理员开关合同留在内件）。
-//   D5 验收 4：门面不暴露整对象——能力面恰四方法、模块值导出恰工厂函数、
+//   D5 验收 4：门面不暴露整对象——能力面恰五方法（MOD16 +softDeleteBot）、
+//      模块值导出恰工厂函数、
 //      import 面全部 M03 组内、构造依赖为 Pick 最小面（本文件以只含单能力
 //      的替身构造成功即为编译级证明）；module-imports.json M03 分组钉死。
 //
@@ -148,6 +149,12 @@ function recordingInternals(options?: {
         calls.push({ capability: "profileStore.create", args: [actor, input] });
         if (options?.createError) throw options.createError;
         return PROFILE_MARKER;
+      },
+      async softDelete(actor: AgentActor, id: string): Promise<void> {
+        calls.push({
+          capability: "profileStore.softDelete",
+          args: [actor, id],
+        });
       },
     },
     teamBots: {
@@ -695,13 +702,14 @@ describe("MOD05 D4: no new authorization branch in the facade", () => {
 // D5：验收 4——门面不暴露整对象、import 面组内、分组钉死
 // ---------------------------------------------------------------------------
 
-describe("MOD05 D5: the facade exposes exactly four capabilities and no whole internals", () => {
-  test("the facade object surface is exactly the four contract capabilities", async () => {
+describe("MOD05 D5: the facade exposes exactly five capabilities and no whole internals", () => {
+  test("the facade object surface is exactly the five contract capabilities", async () => {
     const catalog = createBotCatalog(recordingInternals());
     expect(Object.keys(catalog).sort()).toEqual([
       "createBot",
       "getVersion",
       "publish",
+      "softDeleteBot",
       "withdraw",
     ]);
   });
@@ -750,22 +758,25 @@ describe("MOD05 D5: the facade exposes exactly four capabilities and no whole in
     expect(byPath.get("server/src/enterprise/experts")?.module).toBe("M03");
   });
 
-  test("construction accepts single-capability stubs: deps are Pick-level minimal faces (compile-level proof)", () => {
-    // 若门面依赖的是整内件对象面，本函数体无法通过 typecheck——替身只带单能力。
-    const onlyCreate = {
+  test("construction accepts minimal-capability stubs: deps are Pick-level minimal faces (compile-level proof)", () => {
+    // 若门面依赖的是整内件对象面，本函数体无法通过 typecheck——替身只带
+    // Pick 面能力（profileStore = create+softDelete，MOD16 扩面后）。
+    const createAndSoftDelete = {
       async create() {
         return PROFILE_MARKER;
       },
+      async softDelete() {},
     };
     const onlyPublishWithdraw = {
       async publish() {},
       async unpublish() {},
     };
     const catalog = createBotCatalog({
-      profileStore: onlyCreate,
+      profileStore: createAndSoftDelete,
       teamBots: onlyPublishWithdraw,
     });
     expect(typeof catalog.createBot).toBe("function");
+    expect(typeof catalog.softDeleteBot).toBe("function");
     expect(typeof catalog.publish).toBe("function");
   });
 });

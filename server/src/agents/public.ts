@@ -1,7 +1,7 @@
 // server/src/agents/public.ts
 // MOD05（Issue #625，根 #620）：M03 BotCatalog 的业务门面。
 //
-// 四个能力，全部是**薄委托**——内件（agents/profile-store.ts、
+// 五个能力，全部是**薄委托**——内件（agents/profile-store.ts、
 // team-bots/team-bots.ts、enterprise/experts/version-catalog.ts）零改动，
 // 判定/事务/发布权限合同逐字节不动：
 //
@@ -9,6 +9,10 @@
 //                                       现有创建路径原样——身份/档案字段与运行
 //                                       配置（endpoint/auth/systemPrompt）的现有
 //                                       分离不动；创建不自动授予模型或工具资格。
+//   softDeleteBot(actor, botId)      → AgentProfileStore.softDelete（同上内件）：
+//                                       MOD16（#636）marketplace 卸载改道所驱的
+//                                       恒等委托——撤回语义（purged Bot 不留
+//                                       可解密档案）留在内件逐字节不动。
 //   getVersion(scope, ref)           → ExpertVersionCatalog.resolve
 //                                       （experts/version-catalog.ts）：租户固定
 //                                       专家版本的现有只读解析（受信 Scope + ref
@@ -85,6 +89,8 @@ export type BotCatalogScope = Parameters<ExpertVersionCatalog["resolve"]>[0];
 export interface BotCatalog {
   /** 创建逻辑 Bot：委托 AgentProfileStore.create（现有创建路径，零新策略）。 */
   createBot(actor: AgentActor, input: CreateBotInput): Promise<AgentProfile>;
+  /** 删除 Bot：委托 AgentProfileStore.softDelete（MOD16 marketplace 卸载改道）。 */
+  softDeleteBot(actor: AgentActor, botId: string): Promise<void>;
   /**
    * 读取固定专家版本：委托 ExpertVersionCatalog.resolve（租户固定快照的
    * 现有只读解析）。装配未提供内件时响亮拒绝——缺席不是空结果。
@@ -105,8 +111,8 @@ export interface BotCatalog {
 
 /** 门面构造依赖：全部为 M03 既有内件的最小能力面（装配层构造后注入）。 */
 export interface BotCatalogDeps {
-  /** 档案存储：createAgentProfileStore(...) 的产物，取其 create 能力。 */
-  readonly profileStore: Pick<AgentProfileStore, "create">;
+  /** 档案存储：createAgentProfileStore(...) 的产物，取其 create/softDelete 能力。 */
+  readonly profileStore: Pick<AgentProfileStore, "create" | "softDelete">;
   /** 团队发布：createTeamBots(...) 的产物，取其 publish/unpublish 能力。 */
   readonly teamBots: Pick<TeamBots, "publish" | "unpublish">;
   /**
@@ -126,6 +132,9 @@ export function createBotCatalog(deps: BotCatalogDeps): BotCatalog {
   return {
     createBot(actor, input) {
       return profileStore.create(actor, input);
+    },
+    softDeleteBot(actor, botId) {
+      return profileStore.softDelete(actor, botId);
     },
     async getVersion(scope, ref) {
       const catalog = deps.expertVersions;

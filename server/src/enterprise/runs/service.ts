@@ -24,7 +24,7 @@ import {
   reserveModelBudgetInTransaction,
   runCeilingIdempotencyKey,
 } from "../models/budget";
-import type { PreparePackageRunInput } from "../plugin-packages/runtime";
+import type { PreparePackageRunInput } from "../plugin-packages/public";
 import type { DataDatabase } from "../tenancy/connections";
 import { assertTrustedScope } from "../tenancy/store";
 import { createModelInvocationCapabilityService } from "./model-capability";
