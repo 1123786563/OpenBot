@@ -60,7 +60,6 @@ import type { RunBindingStore } from "./bindings";
 import {
   DEFAULT_RUN_BINDING_TTL_MS,
   materializeRunUpstream,
-  RUN_ROOT_SPAN_NAME,
   runRootCloseSpan,
 } from "./bindings";
 import type { ObservationScope } from "./contracts";

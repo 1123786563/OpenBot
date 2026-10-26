@@ -982,13 +982,23 @@ export function createObserverRunBindingGate(
     })();
     chains.begun.set(traceId, attempt);
     chains.order.push(traceId);
-    // `catch` first: `.finally` alone would re-emit the rejection on a promise
-    // nobody awaits — an unhandled rejection that surfaces between tests/facts
-    // (the gate's own caller below handles `attempt` itself).
+    /*
+     * `catch` first: `.finally` alone would re-emit the rejection on a promise
+     * nobody awaits — an unhandled rejection that surfaces between tests/facts
+     * (the gate's own caller below handles `attempt` itself). The `begun` check
+     * is the R1-A-01 discipline: only the attempt still registered under this
+     * chain may mark it done. A FAILED attempt is unregistered by the catch
+     * below (which also drops the mark, covering the microtask order where this
+     * `then` ran first), so a failure leaves no done entry behind — a stale one
+     * would mark a retried chain as settled and let an eviction retire the
+     * in-flight retry, re-opening the duplicate-materialization door 725 closed.
+     */
     void attempt
       .catch(() => {})
       .then(() => {
-        chains.done.add(traceId);
+        if (chains.begun.get(traceId) === attempt) {
+          chains.done.add(traceId);
+        }
       });
     if (chains.order.length > maxChains) {
       /*
@@ -1019,8 +1029,12 @@ export function createObserverRunBindingGate(
     } catch (error) {
       // A failed establishment is not cached: the database may come back, and
       // the next fact of the run asks again — each failure fails only the
-      // facts whose write it gated.
+      // facts whose write it gated. The done mark goes with it (R1-A-01): the
+      // settlement callback above may already have added it in the other
+      // microtask order, and a left-behind mark is stale by the time a retry
+      // re-registers the chain.
       chains.begun.delete(traceId);
+      chains.done.delete(traceId);
       const at = chains.order.indexOf(traceId);
       if (at >= 0) chains.order.splice(at, 1);
       log.warn(

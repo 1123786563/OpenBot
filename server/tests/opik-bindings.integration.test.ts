@@ -1014,6 +1014,74 @@ describe("the observer gate materializes and reconciles upstream identity (F5E1-
     expect(ref1).toBe(ref2);
   });
 
+  test("a failed chain leaves no done entry: its retry is never retired mid-flight (R1-A-01)", async () => {
+    const chainId = chain();
+    const identity = runUpstreamIdentity(chainId);
+    const created: string[] = [];
+    let releaseRetry!: () => void;
+    const hangRetry = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
+    let passes = 0;
+    const port: OpikPort = {
+      healthCheck: async () => ({
+        outcome: "ok" as const,
+        value: { healthy: true as const },
+      }),
+      createTrace: async (_s, input: { traceId: string }) => {
+        created.push(input.traceId);
+        if (input.traceId === identity.opikTraceId) {
+          passes += 1;
+          if (passes === 1) {
+            // The first pass fails: the gate's catch unregisters the chain —
+            // and must take its done mark with it.
+            return {
+              outcome: "unavailable" as const,
+              operation: "createTrace" as const,
+              code: "OPIK_TIMEOUT" as const,
+            };
+          }
+          await hangRetry; // the retry stays in flight across the eviction pass
+        }
+        return { outcome: "ok" as const, value: { traceId: input.traceId } };
+      },
+      writeSpans: async () => ({
+        outcome: "ok" as const,
+        value: { accepted: true as const },
+      }),
+    } as unknown as OpikPort;
+
+    const gate = createObserverRunBindingGate(store, {
+      port: () => port,
+      maxChainsPerScope: 2, // the third chain forces an eviction
+    });
+
+    await expect(gate.ensure(scope, { traceId: chainId })).rejects.toThrow(
+      RunBindingError,
+    );
+
+    const retry = gate.ensure(scope, { traceId: chainId });
+    for (let i = 0; i < 100 && created.length < 2; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    // The failed pass and the retry: exactly two dials for chain A so far.
+    expect(created.filter((id) => id === identity.opikTraceId)).toHaveLength(2);
+
+    // Two more chains overflow the cap. The eviction must DEFER the in-flight
+    // retry: a stale done mark left by the failed pass would mark it settled
+    // and retire it — re-registering the chain for the concurrent fact below
+    // and dialing the upstream a third time.
+    await gate.ensure(scope, { traceId: chain() });
+    await gate.ensure(scope, { traceId: chain() });
+    const concurrent = gate.ensure(scope, { traceId: chainId });
+    releaseRetry();
+
+    const [refRetry, refConcurrent] = await Promise.all([retry, concurrent]);
+    expect(created.filter((id) => id === identity.opikTraceId)).toHaveLength(2);
+    expect(refRetry).toBe(refConcurrent);
+    expect(refRetry.opikTraceId).toBe(identity.opikTraceId);
+  });
+
   test("a materialization failure leaves the row unreconciled and the retry converges", async () => {
     const chainId = chain();
     let down = true;
