@@ -1,699 +1,485 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openbot.invalid/agent-rules/coordination-v1.schema.json",
+  "title": "OpenBot coordination v1 (local schema; no remote resolution required)",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "kind",
-    "revision",
-    "host_id",
-    "updated_at",
-    "records"
-  ],
+  "required": ["schema_version", "kind", "revision", "host_id", "updated_at", "records"],
   "properties": {
-    "schema_version": {
-      "const": 1
-    },
-    "kind": {
-      "enum": [
-        "claims",
-        "daily"
-      ]
-    },
-    "revision": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "host_id": {
-      "type": "string",
-      "format": "uuid"
-    },
-    "updated_at": {
-      "type": "string",
-      "format": "date-time"
-    },
+    "schema_version": { "const": 1 },
+    "kind": { "enum": ["claims", "daily"] },
+    "revision": { "type": "integer", "minimum": 0 },
+    "host_id": { "type": "string", "format": "uuid" },
+    "updated_at": { "type": "string", "format": "date-time" },
     "records": {
       "type": "array",
-      "items": {
-        "type": "object"
-      }
+      "items": { "type": "object" }
     }
   },
   "allOf": [
     {
       "if": {
-        "properties": {
-          "kind": {
-            "const": "claims"
-          }
-        }
+        "properties": { "kind": { "const": "claims" } }
       },
       "then": {
         "properties": {
           "records": {
-            "items": {
-              "$ref": "#/$defs/claim"
-            }
+            "items": { "$ref": "#/$defs/claim" }
           }
         }
       }
     },
     {
       "if": {
-        "properties": {
-          "kind": {
-            "const": "daily"
-          }
-        }
+        "properties": { "kind": { "const": "daily" } }
       },
       "then": {
         "properties": {
           "records": {
-            "items": {
-              "$ref": "#/$defs/daily"
-            }
+            "maxItems": 1,
+            "items": { "$ref": "#/$defs/daily" }
           }
         }
       }
     }
   ],
   "$defs": {
-    "claim": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "resource_key",
-        "mode",
-        "owner_run",
-        "coordinator",
-        "host",
-        "task",
-        "attempt",
-        "token",
-        "generation",
-        "state",
-        "created_at",
-        "heartbeat_at",
-        "expires_at",
-        "evidence"
-      ],
-      "properties": {
-        "resource_key": {
-          "type": "string"
-        },
-        "mode": {
-          "enum": [
-            "read",
-            "write",
-            "aggregate"
-          ]
-        },
-        "owner_run": {
-          "type": "string"
-        },
-        "coordinator": {
-          "type": "string"
-        },
-        "host": {
-          "type": "string",
-          "format": "uuid"
-        },
-        "task": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "attempt": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "token": {
-          "type": "string",
-          "format": "uuid"
-        },
-        "generation": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "state": {
-          "enum": [
-            "reserved",
-            "running",
-            "settling",
-            "unverifiable"
-          ]
-        },
-        "created_at": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "heartbeat_at": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "expires_at": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "evidence": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/evidence"
-          }
-        }
-      }
+    "sha": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
     },
-    "daily": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "repo_identity",
-        "next_class",
-        "slot_sequence",
-        "consecutive_recovery",
-        "issues"
-      ],
-      "properties": {
-        "repo_identity": {
-          "type": "string"
-        },
-        "next_class": {
-          "enum": [
-            "recovery",
-            "new",
-            "revalidate"
-          ]
-        },
-        "slot_sequence": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "consecutive_recovery": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "issues": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/issue"
-          }
-        }
-      }
+    "nullable_sha": {
+      "anyOf": [
+        { "$ref": "#/$defs/sha" },
+        { "type": "null" }
+      ]
     },
     "evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "path",
-        "sha256",
-        "checkpoint_id",
-        "snapshot_generation",
-        "attempt"
-      ],
+      "required": ["path", "sha256", "content_kind", "checkpoint_id", "snapshot_generation", "attempt"],
       "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "content_kind": { "enum": ["file", "manifest"] },
         "checkpoint_id": {
           "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
           ]
         },
         "snapshot_generation": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "minimum": 0
         },
         "attempt": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "checkpoint_id": { "type": "string" }
+            },
+            "required": ["checkpoint_id"]
+          },
+          "then": {
+            "properties": {
+              "snapshot_generation": { "type": "integer", "minimum": 0 },
+              "attempt": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      ]
+    },
+    "nullable_evidence": {
+      "anyOf": [
+        { "$ref": "#/$defs/evidence" },
+        { "type": "null" }
+      ]
+    },
+    "relation_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["closure", "fingerprint", "observed_at", "source_ref"],
+      "properties": {
+        "closure": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" }
+        },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "source_ref": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_key", "mode", "owner_run", "coordinator", "host", "task", "attempt", "token", "generation", "state", "created_at", "heartbeat_at", "expires_at", "evidence", "relation_snapshot"],
+      "properties": {
+        "resource_key": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["read", "write", "aggregate"] },
+        "owner_run": { "type": "string", "minLength": 1 },
+        "coordinator": { "type": "string", "minLength": 1 },
+        "host": { "type": "string", "format": "uuid" },
+        "task": { "type": ["string", "null"] },
+        "attempt": { "type": "integer", "minimum": 0 },
+        "token": { "type": "string", "format": "uuid" },
+        "generation": { "type": "integer", "minimum": 0 },
+        "state": { "enum": ["reserved", "running", "settling", "unverifiable"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "heartbeat_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "relation_snapshot": {
+          "anyOf": [
+            { "$ref": "#/$defs/relation_snapshot" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "mode": { "const": "aggregate" } },
+            "required": ["mode"]
+          },
+          "then": {
+            "properties": {
+              "relation_snapshot": { "$ref": "#/$defs/relation_snapshot" }
+            }
+          }
+        }
+      ]
+    },
+    "daily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_identity", "next_class", "slot_sequence", "consecutive_recovery", "capacity", "issues"],
+      "properties": {
+        "repo_identity": { "type": "string", "pattern": "^[^/]+/[^/]+/[^/]+$" },
+        "next_class": { "enum": ["recovery", "new", "revalidate"] },
+        "slot_sequence": { "type": "integer", "minimum": 0 },
+        "consecutive_recovery": { "type": "integer", "minimum": 0 },
+        "capacity": { "type": "integer", "minimum": 1 },
+        "issues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/issue" }
         }
       }
     },
     "condition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "kind",
-        "subject",
-        "expected",
-        "observed",
-        "source_ref"
-      ],
+      "required": ["kind", "subject", "expected", "observed", "source_ref"],
       "properties": {
-        "kind": {
-          "enum": [
-            "authorization",
-            "dependency",
-            "environment",
-            "target",
-            "api_retry",
-            "evidence"
-          ]
-        },
-        "subject": {
-          "type": "string",
-          "minLength": 1
-        },
-        "expected": {
-          "type": [
-            "string",
-            "number",
-            "boolean",
-            "null"
-          ]
-        },
-        "observed": {
-          "type": [
-            "string",
-            "number",
-            "boolean",
-            "null"
-          ]
-        },
-        "source_ref": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
+        "kind": { "enum": ["authorization", "dependency", "environment", "target", "api_retry", "evidence"] },
+        "subject": { "type": "string", "minLength": 1 },
+        "expected": { "type": ["string", "number", "boolean", "null"] },
+        "observed": { "type": ["string", "number", "boolean", "null"] },
+        "source_ref": { "$ref": "#/$defs/evidence" }
       }
     },
     "resume": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "all"
-      ],
+      "required": ["all"],
       "properties": {
         "all": {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/condition"
-          }
+          "items": { "$ref": "#/$defs/condition" }
         }
       }
     },
     "requirement_fp": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "algorithm",
-        "sha256",
-        "input_ref"
-      ],
+      "required": ["algorithm", "sha256", "input_ref"],
       "properties": {
-        "algorithm": {
-          "const": "requirements-v1"
-        },
-        "sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "input_ref": {
-          "$ref": "#/$defs/evidence"
-        }
+        "algorithm": { "const": "requirements-v2" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "input_ref": { "$ref": "#/$defs/evidence" }
       }
     },
     "input_fp": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "algorithm",
-        "sha256",
-        "input_ref"
-      ],
+      "required": ["algorithm", "sha256", "input_ref"],
       "properties": {
-        "algorithm": {
-          "const": "daily-input-v1"
-        },
-        "sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "input_ref": {
-          "$ref": "#/$defs/evidence"
-        }
+        "algorithm": { "const": "daily-input-v2" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "input_ref": { "$ref": "#/$defs/evidence" }
       }
+    },
+    "validation_state": {
+      "enum": ["queued", "auditing", "finding_confirmed", "repairing", "revalidating", "verified", "blocked", "failed", "unproven", "intake_incomplete", "aggregate_pending"]
     },
     "child": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "issue",
-        "requirements_fingerprint",
-        "checkpoint",
-        "validation_state"
-      ],
+      "required": ["issue", "target_sha", "requirements_fingerprint", "checkpoint", "validation_state"],
       "properties": {
-        "issue": {
-          "type": "string",
-          "minLength": 1
-        },
+        "issue": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" },
+        "target_sha": { "$ref": "#/$defs/nullable_sha" },
         "requirements_fingerprint": {
           "anyOf": [
-            {
-              "$ref": "#/$defs/requirement_fp"
-            },
-            {
-              "type": "null"
-            }
+            { "$ref": "#/$defs/requirement_fp" },
+            { "type": "null" }
           ]
         },
-        "checkpoint": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
+        "checkpoint": { "$ref": "#/$defs/nullable_evidence" },
+        "validation_state": { "$ref": "#/$defs/validation_state" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "validation_state": { "const": "verified" } },
+            "required": ["validation_state"]
+          },
+          "then": {
+            "properties": {
+              "target_sha": { "$ref": "#/$defs/sha" },
+              "requirements_fingerprint": { "$ref": "#/$defs/requirement_fp" },
+              "checkpoint": { "$ref": "#/$defs/evidence" }
             }
-          ]
-        },
-        "validation_state": {
-          "enum": [
-            "queued",
-            "auditing",
-            "finding_confirmed",
-            "repairing",
-            "revalidating",
-            "verified",
-            "blocked",
-            "failed",
-            "unproven",
-            "intake_incomplete",
-            "aggregate_pending"
-          ]
+          }
         }
-      }
+      ]
     },
     "event": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "slot_sequence",
-        "action",
-        "result",
-        "at",
-        "refs"
-      ],
+      "required": ["event_id", "slot_sequence", "action", "result", "attempt", "at", "refs"],
       "properties": {
-        "slot_sequence": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "action": {
-          "type": "string",
-          "minLength": 1
-        },
-        "result": {
-          "type": "string",
-          "minLength": 1
-        },
-        "at": {
-          "type": "string",
-          "format": "date-time"
-        },
+        "event_id": { "type": "string", "format": "uuid" },
+        "slot_sequence": { "type": "integer", "minimum": 1 },
+        "action": { "enum": ["slot_selected", "dispatch_started", "settled"] },
+        "result": { "enum": ["not_settled", "verified", "failed", "blocked", "unproven", "intake_incomplete", "aggregate_pending", "corrected", "skipped"] },
+        "attempt": { "type": "integer", "minimum": 0 },
+        "at": { "type": "string", "format": "date-time" },
         "refs": {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/evidence"
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "action": { "enum": ["slot_selected", "dispatch_started"] } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": { "result": { "const": "not_settled" } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "action": { "const": "settled" } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": { "result": { "not": { "const": "not_settled" } } }
           }
         }
-      }
+      ]
     },
     "issue": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "issue",
-        "class",
-        "eligible_since",
-        "last_slot",
-        "target_sha",
-        "requirements_fingerprint",
-        "validation_state",
-        "delivery_state",
-        "label_action",
-        "run",
-        "workspace",
-        "checkpoint",
-        "review",
-        "label",
-        "wait_reason",
-        "resume_condition",
-        "input_fingerprint",
-        "retry_after",
-        "next_action",
-        "aggregate_children",
-        "history",
-        "action_reason",
-        "label_intent",
-        "close_action",
-        "close_intent"
-      ],
+      "required": ["issue", "class", "eligible_since", "last_slot", "target_sha", "requirements_fingerprint", "validation_state", "delivery_state", "label_action", "run", "workspace", "checkpoint", "review", "delivery", "label", "close", "wait_reason", "resume_condition", "input_fingerprint", "retry_after", "next_action", "aggregate_children", "history", "action_reason", "label_intent", "close_action", "close_intent"],
       "properties": {
-        "issue": {
-          "type": "string",
-          "pattern": "^[^#]+#[1-9][0-9]*$"
-        },
-        "class": {
-          "enum": [
-            "recovery",
-            "new",
-            "revalidate",
-            null
-          ]
-        },
+        "issue": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" },
+        "class": { "enum": ["recovery", "new", "revalidate", null] },
         "eligible_since": {
           "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time"
-            },
-            {
-              "type": "null"
-            }
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
           ]
         },
         "last_slot": {
           "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 0
-            },
-            {
-              "type": "null"
-            }
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
           ]
         },
-        "target_sha": {
-          "anyOf": [
-            {
-              "type": "string",
-              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
+        "target_sha": { "$ref": "#/$defs/nullable_sha" },
         "requirements_fingerprint": {
           "anyOf": [
-            {
-              "$ref": "#/$defs/requirement_fp"
-            },
-            {
-              "type": "null"
-            }
+            { "$ref": "#/$defs/requirement_fp" },
+            { "type": "null" }
           ]
         },
-        "validation_state": {
-          "enum": [
-            "queued",
-            "auditing",
-            "finding_confirmed",
-            "repairing",
-            "revalidating",
-            "verified",
-            "blocked",
-            "failed",
-            "unproven",
-            "intake_incomplete",
-            "aggregate_pending"
-          ]
-        },
-        "delivery_state": {
-          "enum": [
-            "none",
-            "repair_prepared",
-            "integration_pending",
-            "delivered"
-          ]
-        },
-        "label_action": {
-          "enum": [
-            "none",
-            "label_pending",
-            "applied_valid",
-            "label_correction_pending",
-            "corrected"
-          ]
-        },
-        "run": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "workspace": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "checkpoint": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "review": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "label": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
+        "validation_state": { "$ref": "#/$defs/validation_state" },
+        "delivery_state": { "enum": ["none", "repair_prepared", "integration_pending", "delivered"] },
+        "label_action": { "enum": ["none", "label_pending", "applied_valid", "stale", "label_correction_pending", "corrected"] },
+        "run": { "$ref": "#/$defs/nullable_evidence" },
+        "workspace": { "$ref": "#/$defs/nullable_evidence" },
+        "checkpoint": { "$ref": "#/$defs/nullable_evidence" },
+        "review": { "$ref": "#/$defs/nullable_evidence" },
+        "delivery": { "$ref": "#/$defs/nullable_evidence" },
+        "label": { "$ref": "#/$defs/nullable_evidence" },
+        "close": { "$ref": "#/$defs/nullable_evidence" },
         "wait_reason": {
           "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
           ]
         },
-        "resume_condition": {
-          "$ref": "#/$defs/resume"
-        },
+        "resume_condition": { "$ref": "#/$defs/resume" },
         "input_fingerprint": {
           "anyOf": [
-            {
-              "$ref": "#/$defs/input_fp"
-            },
-            {
-              "type": "null"
-            }
+            { "$ref": "#/$defs/input_fp" },
+            { "type": "null" }
           ]
         },
         "retry_after": {
           "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time"
-            },
-            {
-              "type": "null"
-            }
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
           ]
         },
-        "next_action": {
-          "type": "string",
-          "minLength": 1
-        },
+        "next_action": { "type": "string", "minLength": 1 },
         "aggregate_children": {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/child"
-          }
+          "items": { "$ref": "#/$defs/child" }
         },
         "history": {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/event"
+          "items": { "$ref": "#/$defs/event" }
+        },
+        "action_reason": { "type": ["string", "null"] },
+        "label_intent": { "$ref": "#/$defs/nullable_evidence" },
+        "close_action": { "enum": ["none", "close_pending", "applied_valid", "stale", "close_correction_pending", "corrected"] },
+        "close_intent": { "$ref": "#/$defs/nullable_evidence" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "validation_state": { "const": "verified" } },
+            "required": ["validation_state"]
+          },
+          "then": {
+            "properties": {
+              "target_sha": { "$ref": "#/$defs/sha" },
+              "requirements_fingerprint": { "$ref": "#/$defs/requirement_fp" },
+              "run": { "$ref": "#/$defs/evidence" },
+              "checkpoint": { "$ref": "#/$defs/evidence" },
+              "review": { "$ref": "#/$defs/evidence" }
+            }
           }
         },
-        "action_reason": {
-          "type": [
-            "string",
-            "null"
-          ]
+        {
+          "if": {
+            "properties": { "delivery_state": { "const": "repair_prepared" } },
+            "required": ["delivery_state"]
+          },
+          "then": {
+            "properties": { "checkpoint": { "$ref": "#/$defs/evidence" } }
+          }
         },
-        "label_intent": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
+        {
+          "if": {
+            "properties": { "delivery_state": { "const": "integration_pending" } },
+            "required": ["delivery_state"]
+          },
+          "then": {
+            "properties": {
+              "validation_state": { "const": "verified" },
+              "checkpoint": { "$ref": "#/$defs/evidence" },
+              "review": { "$ref": "#/$defs/evidence" }
             }
-          ]
+          }
         },
-        "close_action": {
-          "enum": [
-            "none",
-            "close_pending",
-            "applied_valid",
-            "close_correction_pending",
-            "corrected"
-          ]
-        },
-        "close_intent": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/evidence"
-            },
-            {
-              "type": "null"
+        {
+          "if": {
+            "properties": { "delivery_state": { "const": "delivered" } },
+            "required": ["delivery_state"]
+          },
+          "then": {
+            "properties": {
+              "target_sha": { "$ref": "#/$defs/sha" },
+              "delivery": { "$ref": "#/$defs/evidence" }
             }
-          ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "label_action": { "const": "applied_valid" } },
+            "required": ["label_action"]
+          },
+          "then": {
+            "properties": {
+              "validation_state": { "const": "verified" },
+              "delivery_state": { "const": "delivered" },
+              "label": { "$ref": "#/$defs/evidence" },
+              "label_intent": { "$ref": "#/$defs/evidence" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "close_action": { "const": "applied_valid" } },
+            "required": ["close_action"]
+          },
+          "then": {
+            "properties": {
+              "validation_state": { "const": "verified" },
+              "delivery_state": { "const": "delivered" },
+              "close": { "$ref": "#/$defs/evidence" },
+              "close_intent": { "$ref": "#/$defs/evidence" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "wait_reason": { "type": "string" } },
+            "required": ["wait_reason"]
+          },
+          "then": {
+            "properties": {
+              "input_fingerprint": { "$ref": "#/$defs/input_fp" },
+              "resume_condition": {
+                "properties": {
+                  "all": { "minItems": 1 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "wait_reason": { "type": "null" } },
+            "required": ["wait_reason"]
+          },
+          "then": {
+            "properties": {
+              "resume_condition": {
+                "properties": {
+                  "all": { "maxItems": 0 }
+                }
+              },
+              "retry_after": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "class": { "enum": ["recovery", "new", "revalidate"] } },
+            "required": ["class"]
+          },
+          "then": {
+            "properties": {
+              "eligible_since": { "type": "string", "format": "date-time" },
+              "input_fingerprint": { "$ref": "#/$defs/input_fp" }
+            }
+          }
         }
-      }
+      ]
     }
-  },
-  "$id": "https://openbot.invalid/agent-rules/coordination-v1.schema.json",
-  "title": "OpenBot coordination v1 (local schema; no remote resolution required)"
+  }
 }
