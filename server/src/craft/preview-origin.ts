@@ -308,16 +308,26 @@ export type PreviewOrigin = {
    */
   verifyPass(sessionId: string, request: Request): { userId: string } | null;
   /**
-   * #427 AC7 — the single-token revocation seam: retire ONE pass token so that
-   * exact cookie 401s on every later HTTP and HMR request, while the session
-   * itself and the holder's other tokens stay open (a re-mint opens again).
+   * #427 AC7 — the single-token revocation seam: retire ONE pass so that exact
+   * cookie 401s on every later HTTP and HMR request, while the session itself
+   * and the holder's other tokens stay open (a re-mint opens again).
    * Server-side callers hold no deployment secret, so the origin re-exposes its
    * codec's revoke under this name — the call surface a session-deletion or
    * forced-sign-out hook would drive; no production caller is wired by this
    * ticket (tests pin the semantics). False when the token is unknown or bound
    * to a different session — never a throw.
+   *
+   * `passValue` is the FULL cookie payload — `v1.<token>.<mac>`, the exact
+   * string the browser sends and `verify` judges — and NOT the bare 22-char
+   * token segment: in this module's vocabulary `token` names that index
+   * middle segment only (the 128-bit CSPRNG value the index is keyed by).
+   * Passing the bare segment silently answers false: `split(".")` finds no
+   * third part, the shape gate returns before any index lookup, and because
+   * the seam is never-throw by contract the caller sees only a boolean —
+   * so the revocation it believed happened did not, with nothing to observe.
+   * The name carries the distinction at every call site for that reason.
    */
-  revokePass(sessionId: string, token: string): boolean;
+  revokePass(sessionId: string, passValue: string): boolean;
 };
 
 /**
@@ -1161,8 +1171,8 @@ export function createPreviewOrigin(deps: {
       return verifyPassWith(previewPass, sessionId, request);
     },
 
-    revokePass(sessionId, token) {
-      return previewPass.revoke(sessionId, token);
+    revokePass(sessionId, passValue) {
+      return previewPass.revoke(sessionId, passValue);
     },
   };
 }
