@@ -1304,7 +1304,7 @@ describe("the legacy billing relations evaluation maps associations from live da
         },
       ],
     };
-    expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
+    await expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
       /no longer exists/,
     );
   });

@@ -37,10 +37,15 @@ import {
  *   are anchors: their rows are pulled from the cleanup set, their cascade subtrees pulled
  *   with them, and each is listed separately for human confirmation. Nothing here cancels,
  *   closes or otherwise disposes of an external association (Q28/Q29).
- * - A payer_accounts mapping row whose key still keeps any protected record is pulled as that
- *   key's attribution evidence (Q29: kept quarantine must stay explicable) — and every kept
- *   row is then protected against OTHER candidates' cascades, which is how a clean key's
- *   customer row gets pulled when its only sin is cascading into the kept mapping.
+ * - A payer_accounts mapping row whose key still keeps any classification-kept or anchored
+ *   record is pulled as that key's attribution evidence (Q29: kept quarantine must stay
+ *   explicable) — and every kept row is then protected against OTHER candidates' cascades,
+ *   which is how a clean key's customer row gets pulled when its only sin is cascading into
+ *   the kept mapping. The R2B-F1 funding shelter is deliberately NOT such a record: money
+ *   rows kept under funding_of_protected_key leave the legacy mapping row cleanable —
+ *   their attribution stays explicable through the key's surviving 0163 rows (the
+ *   protected account or company mapping itself, or the customer row whose own cascade
+ *   would reach the sheltered funding), adjudicated as AC18's correct semantics.
  * - Read-only by construction: one READ ONLY, REPEATABLE READ transaction, like 21.1/21.2 —
  *   persisting the manifest is the operator's act of saving the JSON. The shape is
  *   deterministic (21.2's table order, record-id sorting, timestamps only as metadata), so
@@ -771,6 +776,34 @@ async function scanTableRows(
   return toProbeRows(table, rows);
 }
 
+/**
+ * The rows of `table` whose `whereColumn` is any of `values` — the R2B-F1 funding
+ * shelter's key pushdown, so a pure-legacy evaluation (no owned keys) never touches the
+ * money tables at all. Same fail-closed spec gate as probeRows/scanTableRows: the probe
+ * universe never silently widens. Callers must pass a non-empty list.
+ */
+async function probeRowsWhereIn(
+  tx: Transaction,
+  table: string,
+  whereColumn: string,
+  values: readonly string[],
+): Promise<ProbeRow[]> {
+  const spec = TABLE_SPECS[table];
+  if (!spec) throw new Error(`no probe spec for legacy table ${table}`);
+  const rows = await tx.execute<Record<string, unknown>>(
+    sql`SELECT ${sql.join(
+      spec.columns.map((column) => sql.identifier(column)),
+      sql`, `,
+    )}
+      FROM ${sql.identifier(table)}
+      WHERE ${sql.identifier(whereColumn)} IN (${sql.join(
+        values.map((value) => sql`${value}`),
+        sql`, `,
+      )})`,
+  );
+  return toProbeRows(table, rows);
+}
+
 /** Deterministic sort: 21.2's table order, then record id. */
 function byTableOrderThenId(
   a: { table: string; recordId: string },
@@ -1117,13 +1150,25 @@ export async function evaluateCleanupRelations(
       const customerKey = row.cols.external_customer_id;
       if (customerKey) ownedCustomerKeys.add(customerKey);
     }
-    for (const table of [
-      "credit_grants",
-      "credit_ledger",
-      "credit_reservations",
-    ] as const) {
-      for (const row of await scanReachableTable(table)) {
-        if (ownedCustomerKeys.has(row.cols.external_customer_id ?? "")) {
+    // Empty-set guard plus key pushdown (OCR1-M1): with no owned keys — the pure legacy
+    // estate — the money tables are never touched, and with owned keys the probe fetches
+    // exactly the hit rows instead of scanning each table. scanReachableTable's estate
+    // gate is kept: a table outside the estate is never probed. Falsy keys never entered
+    // the set, and IN excludes NULL columns, so the hit set is byte-identical to the
+    // former full-scan-plus-filter. Serial per table: one drizzle connection.
+    if (ownedCustomerKeys.size > 0) {
+      for (const table of [
+        "credit_grants",
+        "credit_ledger",
+        "credit_reservations",
+      ] as const) {
+        if (!tableTouchesEstate(table)) continue;
+        for (const row of await probeRowsWhereIn(
+          tx,
+          table,
+          "external_customer_id",
+          [...ownedCustomerKeys],
+        )) {
           protect(row, "funding_of_protected_key");
         }
       }
@@ -1294,10 +1339,13 @@ export async function evaluateCleanupRelations(
       }
     }
 
-    // --- The mapping rule: a payer_accounts candidate whose key still keeps any protected
-    // record is that key's attribution evidence (Q29: a kept quarantine must stay
-    // explicable). Pulled before the cascade checks, so the kept mapping then protects
-    // itself against other candidates' cascades (a customer row cascading into it).
+    // --- The mapping rule: a payer_accounts candidate whose key still keeps any
+    // classification-kept or anchored record is that key's attribution evidence (Q29: a
+    // kept quarantine must stay explicable). Funding rows kept by the R2B-F1 shelter do
+    // NOT count here — the legacy mapping row stays cleanable and the key's surviving
+    // 0163 rows carry the attribution. Pulled before the cascade checks, so the kept
+    // mapping then protects itself against other candidates' cascades (a customer row
+    // cascading into it).
     const mappingKeptIds = new Set<string>();
     for (const candidate of candidates) {
       if (candidate.table !== "payer_accounts") continue;

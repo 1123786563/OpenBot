@@ -343,7 +343,9 @@ test("隔离账户的能力徽标是固定句，原始隔离原因不进 DOM", a
 
   const badge = await view.findByTestId("account-capability");
   expect(badge.textContent).toContain("能力暂不可用");
-  expect(document.body.textContent).not.toContain(
+  // innerHTML, not textContent: the raw reason must also be absent from the attribute
+  // channel (title/data-*/aria-label serializations), which textContent cannot see.
+  expect(document.body.innerHTML).not.toContain(
     "legacy key with unknown attribution",
   );
 });

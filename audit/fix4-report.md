@@ -42,12 +42,13 @@ REV-2b 裁决的 R2B-F1（medium）与 R2B-F2（low）均已整改完毕，全�
 
 ### `server/tests/cleanup-relations.integration.test.ts`
 
-新增第四个 describe：「R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdict」（1 个用例，~420 行 fixture/断言）。真实执行全链路：分类 → 21.3 评估 → 21.5 新鲜守卫 → dry-run → 真实授权执行 → 落盘后盘点。
+新增第三个 describe：「R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdict」（1 个用例，~420 行 fixture/断言）。真实执行全链路：分类 → 21.3 评估 → 21.5 新鲜守卫 → dry-run → 真实授权执行 → 落盘后盘点。
 
 四个臂：
 
 1. **公司键**（legacy 证据 + 真实 `bindCompanyCustomer`/`registerCompanyAccount` + 注册后经真实 `createCreditWriter().grantCredits` 写入的无归属 promo grant + settled ledger/hold）：客户/账户/映射/全部资金行存活；
-2. **隔离键**（`quarantineUnknownAccount` + 无归属 grant）：账户与资金行存活；
+2. **隔离键**（`quarantineUnknownAccount` + 无归属 grant）：账户与资金行存活；<br>
+   （注：unknown-shape 与注册外 personal 键的资金跟随本轮无直接用例臂，语义由产品源码审读与既有 R2-F1 用例覆盖，建议后续补臂。）
 3. **registry-personal 臂（防过度保护）**：账户 owner 在 `testUserIds` 注册表内——账户、客户、资金全部真实删除；
 4. **纯 legacy 臂（防过度保护）**：无任何 0163 行——客户、legacy payer/order、grant、settled ledger/hold 全部真实删除。
 
@@ -122,7 +123,7 @@ bunx biome check server/src/billing/cleanup-relations.ts \
 | 产物 | 位置 |
 |---|---|
 | 产品修复 + 注释纠偏 | `server/src/billing/cleanup-relations.ts`（+49/-8 净行，含新 ProtectionKind 与资金庇护段） |
-| 回归测试 | `server/tests/cleanup-relations.integration.test.ts`（+422 行，第四个 describe） |
+| 回归测试 | `server/tests/cleanup-relations.integration.test.ts`（+422 行，第三个 describe） |
 | 本报告 | 本文件 |
 | 提交 | `1123786563/b5r-fix2` 上接续提交，未 push |
 | 测试库 | `openbot_b5r_fix4_red/redcheck/suite/green/final` 于交付后由协调器裁决处置（保留备查） |
