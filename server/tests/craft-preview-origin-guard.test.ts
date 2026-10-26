@@ -32,6 +32,7 @@ import {
 } from "../src/craft/preview-origin";
 import { createPreviewTickets } from "../src/craft/preview-ticket";
 import { createCraftRoutes } from "../src/craft/routes";
+import { createSandboxGateway } from "../src/craft/sandbox-gateway";
 import type { CraftStore } from "../src/craft/store";
 import {
   CRAFT_WRITE_ORIGIN_REFUSAL,
@@ -407,6 +408,13 @@ describe("createCraftRoutes 装配: 门的注册顺序", () => {
           throw new Error("not reached");
         },
         sandboxConnectionFor: () => null,
+        // MOD22 (#642): the gateway arrives bound — the routes tree no longer
+        // builds its own (this suite's requireUser refuses before any gateway
+        // verb could run).
+        gateway: createSandboxGateway({
+          config: loadCraftConfig({}),
+          connectionFor: () => null,
+        }),
         userNameFor: async () => null,
         store: {} as unknown as CraftStore,
         previewWriteTrustedOrigins: ["https://app.test"],

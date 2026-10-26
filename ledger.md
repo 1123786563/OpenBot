@@ -1,0 +1,1 @@
+- **重建配方补步（R1-F2 固化）**：fresh 重建在 `roles.sql` + `enterprise-test-db.ts migrate` 之后必须手工执行 `GRANT CONNECT, CREATE ON DATABASE openbot_enterprise_test TO ob_ent_directory, ob_ent_data, ob_ent_operator, ob_ent_identity_operator, ob_ent_auth_writer`（fixture 经受限 writer CREATE SCHEMA 需库级 CREATE；该步不在任何脚本内，漏做则 6 个 T01.x 组 permission denied）。
