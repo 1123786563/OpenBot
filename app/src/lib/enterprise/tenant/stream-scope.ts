@@ -7,11 +7,12 @@ import { useEffect, useMemo } from "react";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { tenantKeys } from "./queries";
 import {
+  adoptExplicitSelection,
   readStoredSelection,
   type ScopeSelection,
+  scopeAbortSignal,
   selectionKeys,
   selectionStorageKey,
-  selectWorkspaceScope,
 } from "./selection";
 
 /*
@@ -159,14 +160,46 @@ export type StreamScope =
 /** The pending answer, frozen: every unresolved scope is the same answer. */
 const PENDING: StreamScope = { status: "pending" };
 
+/*
+ * The streaming half's abort face (T03.06): one re-export so a stream consumer imports its whole
+ * binding — scope, URL pair and epoch signal — from this module alone.
+ */
+export { scopeAbortSignal };
+
+/**
+ * The cross-tab mirror of the selection (T03.06), as one bindable seam.
+ *
+ * The browser's `storage` event is how another tab's committed switch reaches this session; this
+ * function runs the SAME explicit-act seam here (`adoptExplicitSelection` — the intent freezes
+ * first, then the generation moves, then the old scope's cache goes), so a selection committed in
+ * one tab rebinds the other tab's streams under the rules the caches already follow, not a
+ * parallel mechanism beside them. A person acted — in another tab — so this session's in-flight
+ * intents go stale with it, exactly as they would have had the act landed here. It is bound by
+ * {@link useStreamScope} for the React tree and exported so the discipline is bindable — and
+ * testable — outside a renderer. Idempotent: a second listener hears the same event and the
+ * same-scope switch is a no-op.
+ */
+export function bindScopeStorageMirror(
+  queryClient: QueryClient,
+  userId: string,
+): () => void {
+  const key = selectionStorageKey(userId);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== null && event.key !== key) return;
+    adoptExplicitSelection(queryClient, userId, readStoredSelection(userId));
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
+}
+
 /**
  * The selection every business stream opens against, as one reactive value.
  *
  * Reads the live current-selection entry (seeded from storage, moved by the switch seam) beside
  * the generation the tenant surface already guards its reads with, so a stream and a REST read
  * move on the SAME fact. Cross-tab, the browser's `storage` event runs the SAME switch seam
- * (`selectWorkspaceScope`) in this tab — generation first, then the old scope's cache goes — so a
- * selection committed in one tab rebinds the other tab's streams under the rules the caches
+ * (`bindScopeStorageMirror`) in this tab — generation first, then the old scope's cache goes — so
+ * a selection committed in one tab rebinds the other tab's streams under the rules the caches
  * already follow, not a parallel mechanism beside them.
  */
 export function useStreamScope(): StreamScope {
@@ -205,21 +238,10 @@ export function useStreamScope(): StreamScope {
 
   useEffect(() => {
     if (userId === undefined) return;
-    const key = selectionStorageKey(userId);
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== null && event.key !== key) return;
-      const previous =
-        queryClient.getQueryData<ScopeSelection | null>(
-          selectionKeys.current(userId),
-        ) ?? null;
-      const next = readStoredSelection(userId);
-      // The full discipline, not just the value: the generation advances and the old scope's
-      // entries go, exactly as a switch in THIS tab would do (spec A10: a new tab obeys the same
-      // rules). Idempotent, so a second listener on the same tab is a no-op.
-      selectWorkspaceScope(queryClient, userId, previous, next);
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    // The full cross-tab discipline lives in one seam (T03.06): the generation advances and the
+    // old scope's entries go, exactly as a switch in THIS tab would do (spec A10). Idempotent,
+    // so a second listener on the same tab is a no-op.
+    return bindScopeStorageMirror(queryClient, userId);
   }, [queryClient, userId]);
 
   return useMemo(() => {

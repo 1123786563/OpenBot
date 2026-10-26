@@ -113,6 +113,8 @@ export function scopeRefusalOf(
 const WORKSPACE_SCOPE_LISTING = ":workspace-scope";
 /** Third-level token under a tenant scope; team entries gather under it, per workspace. */
 const WORKSPACE = ":workspace";
+/** The abort controller of the live selection epoch (T03.06): rotated by the switch seam. */
+const SCOPE_ABORT = ":scope-abort";
 /** The live current selection this app session holds (see {@link selectionKeys.current}). */
 const CURRENT_SELECTION = ":current-selection";
 /**
@@ -419,7 +421,9 @@ function sameScope(
  *
  * The live current-selection entry (`selectionKeys.current`, MT082) moves here too: every switch
  * that can change what a stream should carry changes it in this one place, so the streaming half
- * has no second seam to keep in step.
+ * has no second seam to keep in step. So does the selection epoch's abort signal (`scopeAbortSignal`,
+ * T03.06): the switch ends the epoch it replaces, and every stream, request and mutation opened
+ * against the old signal is torn down with the cache it can no longer write into.
  */
 export function selectWorkspaceScope(
   queryClient: QueryClient,
@@ -445,6 +449,9 @@ export function selectWorkspaceScope(
         previous.workspaceId,
       ),
     });
+    // The team epoch ends with its scope: every stream, request and mutation opened against the
+    // old team's generation is torn down with the cache it can no longer write into (T03.06).
+    rotateScopeAbort(queryClient, userId);
     return;
   }
   selectTenant(
@@ -462,6 +469,59 @@ export function selectWorkspaceScope(
       queryKey: selectionKeys.personalScope(userId),
     });
   }
+  // The company epoch ends with its scope, exactly as a team epoch does above (T03.06).
+  rotateScopeAbort(queryClient, userId);
+}
+
+/**
+ * The abort signal of the live selection epoch (T03.06): the signal a long stream, an in-flight
+ * request or a mutation opens against, so the switch can tear down everything bound to the epoch
+ * it replaces. The controller lives beside the generation it is derived from — one cache entry
+ * per user, moved by the switch seam, never read as a selection.
+ */
+export function scopeAbortSignal(
+  queryClient: QueryClient,
+  userId: string,
+): AbortSignal {
+  const key = [...tenantKeys.all, userId, SCOPE_ABORT] as const;
+  const existing = queryClient.getQueryData<AbortController>(key);
+  if (existing !== undefined) return existing.signal;
+  const controller = new AbortController();
+  queryClient.setQueryData(key, controller);
+  return controller.signal;
+}
+
+/**
+ * Ends the live selection epoch: the previous signal aborts — every stream, request and mutation
+ * opened against it is torn down — and a fresh epoch takes its place for the scope that is now in
+ * force. The switch seam calls this exactly when the generation moves; a same-scope switch moves
+ * nothing and ends nothing.
+ */
+function rotateScopeAbort(queryClient: QueryClient, userId: string): void {
+  const key = [...tenantKeys.all, userId, SCOPE_ABORT] as const;
+  const previous = queryClient.getQueryData<AbortController>(key);
+  previous?.abort();
+  queryClient.setQueryData(key, new AbortController());
+}
+
+/**
+ * Another tab's explicit act, landed in this session through the storage mirror (T03.06).
+ *
+ * The order is the coordinator's own: the intent is burned FIRST — a person acted, even though
+ * in another tab, so every in-flight intent this session still holds is stale from that moment —
+ * then the full switch publishes. Without the burn, a validation this tab parked on would pass
+ * its stale check against a counter the other tab's act never moved, and publish over the scope
+ * that tab just put in force.
+ */
+export function adoptExplicitSelection(
+  queryClient: QueryClient,
+  userId: string,
+  next: ScopeSelection | null,
+): void {
+  const previous = readCurrentSelection(queryClient, userId);
+  if (sameScope(previous, next)) return;
+  burnExplicitIntent(queryClient, userId);
+  selectWorkspaceScope(queryClient, userId, previous, next);
 }
 
 // ---------------------------------------------------------------------------
@@ -641,11 +701,15 @@ export async function switchWorkspaceScope(
   next: ScopeSelection | null,
   plan: WorkspaceScopeSwitchPlan = {},
 ): Promise<WorkspaceScopeSwitchOutcome> {
+  // The intent is burned before every early return, an in-place confirmation included
+  // (T03.05 review R1-F2): re-selecting the scope already in force is still a person's act, and
+  // the latest explicit ordinal owns state — a background seed may not outrank it.
+  const intent = burnExplicitIntent(queryClient, userId);
+  const stale = () => explicitIntentsOf(queryClient, userId) !== intent;
+
   if (sameScope(previous, next)) {
     return { kind: "published", selection: next, preferenceRecorded: false };
   }
-  const intent = burnExplicitIntent(queryClient, userId);
-  const stale = () => explicitIntentsOf(queryClient, userId) !== intent;
 
   if (plan.authority !== "ba-v1" || next === null) {
     // The old adapter: legacy authority (or none), and every leave-scope half.
@@ -693,6 +757,16 @@ export async function switchWorkspaceScope(
     } catch {
       /* The validation accepted the scope; a failed preference write grants nothing and costs nothing. */
     }
+  }
+  // The preference write is a real network await, and this is the window the last `stale()` did
+  // not cover (T03.05 review R1-F1): a newer explicit intent can land inside it — the registry
+  // switcher's leave-scope arm publishes synchronously — and this intent must not publish over
+  // what that intent put in force.
+  if (stale()) {
+    return {
+      kind: "superseded",
+      selection: readCurrentSelection(queryClient, userId),
+    };
   }
   selectWorkspaceScope(queryClient, userId, previous, next);
   return { kind: "published", selection: next, preferenceRecorded };
