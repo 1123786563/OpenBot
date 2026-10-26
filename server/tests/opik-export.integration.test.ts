@@ -11,7 +11,7 @@ import {
   type ObservationExportWorker,
 } from "../src/ai-observability/exports";
 import type { OpikPort, OpikTraceRow } from "../src/ai-observability/opik-port";
-import { projectRow } from "../src/ai-observability/queries/runs";
+import { adoptLocalState, projectRow } from "../src/ai-observability/queries/runs";
 import { createExportRoutes } from "../src/ai-observability/routes/exports";
 import {
   resolveObservationScope,
@@ -232,6 +232,46 @@ test("the export artifact joins the binding's capability verdict like the query 
   // Bound trace: the verdict the query surface would have answered. Unbound: honest unknown.
   expect(byTrace.get("trace-bound")).toBe("detailed");
   expect(byTrace.get("trace-unbound")).toBe("unavailable");
+});
+
+test("upstream unknown + local terminal state: the export answers the word the query face answers (OCR R2 #19)", async () => {
+  // m143's same-projection contract, now wired (FREV-R6-01②): the binding's
+  // lifecycle state joins the artifact under the ONE adoption rule the list page
+  // runs — an upstream word the vocabulary does not know ("unknown": evidence
+  // absence, not an observation) yields to the locally observed terminal state,
+  // field for field what the query face answers.
+  const upstreamRow: OpikTraceRow = { id: "trace-adopted", status: "GONE" };
+  await database.insert(aiObservationBindings).values({
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    runId: `t34-run-${randomUUID()}`,
+    attemptId: "attempt-1",
+    traceId: "v".repeat(32),
+    opikTraceId: "trace-adopted",
+    locatorWorkspace: resolveStorageLocator(scopeA).workspace,
+    locatorProject: resolveStorageLocator(scopeA).project,
+    capability: "detailed",
+    state: "completed",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  const upstream = fakePort({ rows: [upstreamRow] });
+  const worker = workerFor(upstream.port);
+  const job = await store.enqueue(scopeA, 10);
+  await worker.sweep();
+  const done = await store.get(scopeA, job.id);
+  const exported = (done?.artifact ?? []).find(
+    (row) => row.opikTraceId === "trace-adopted",
+  );
+  // The query face's own projection of the same two facts — the exact helper
+  // chain queries/runs.ts:565-578 runs per page row.
+  const queryFace = adoptLocalState(projectRow(upstreamRow, "detailed"), "completed");
+  expect(projectRow(upstreamRow).state).toBe("unknown");
+  expect(exported).toEqual(queryFace);
+  expect(exported?.state).toBe("completed");
 });
 
 test("a deletion-in-flight binding lends no capability verdict to the artifact (OCR R4-37)", async () => {

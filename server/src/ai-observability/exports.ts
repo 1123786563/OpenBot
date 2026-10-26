@@ -40,7 +40,11 @@ import { createWorkQueue, type WorkQueue } from "../work/queue";
 import type { OpikConfig } from "./config";
 import type { ObservationScope } from "./contracts";
 import type { OpikPort, OpikPortResult, OpikTraceRow } from "./opik-port";
-import { projectRow, type RunSummary } from "./queries/runs";
+import {
+  adoptLocalState,
+  projectRow,
+  type RunSummary,
+} from "./queries/runs";
 import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
 
@@ -828,13 +832,20 @@ export function createObservationExportWorker(
       // obeys the same reader contract as bindings.ts's capabilitiesByOpikTraceIds
       // (OCR R4-37): a deletion-in-flight binding no longer answers for its
       // trace, so the export never carries a verdict the query surface refuses.
+      // The lifecycle state rides the same join (OCR R2 #19 / FREV-R6-01②,
+      // m143's same-projection contract made real): the batch also reads each
+      // binding's state, and the projection adopts it through the ONE helper the
+      // query face uses — an upstream "unknown" plus a locally observed state
+      // answers the local word, byte-for-byte what the list page answers.
       const ids = rows.map((row) => row.id);
       const verdicts = new Map<string, string>();
+      const localStates = new Map<string, string>();
       for (const batch of chunkTraceIds(ids)) {
         const bound = await deps.database
           .select({
             opikTraceId: aiObservationBindings.opikTraceId,
             capability: aiObservationBindings.capability,
+            state: aiObservationBindings.state,
           })
           .from(aiObservationBindings)
           .where(
@@ -848,16 +859,21 @@ export function createObservationExportWorker(
             ),
           );
         for (const row of bound) {
-          if (row.opikTraceId !== null)
+          if (row.opikTraceId !== null) {
             verdicts.set(row.opikTraceId, row.capability);
+            localStates.set(row.opikTraceId, row.state);
+          }
         }
       }
       const artifact = rows.map((row) =>
-        projectRow(
-          row,
-          (verdicts.get(row.id) ?? "unavailable") as Parameters<
-            typeof projectRow
-          >[1],
+        adoptLocalState(
+          projectRow(
+            row,
+            (verdicts.get(row.id) ?? "unavailable") as Parameters<
+              typeof projectRow
+            >[1],
+          ),
+          localStates.get(row.id),
         ),
       );
       // Null when revocation won the row while the fetch ran: the artifact is
