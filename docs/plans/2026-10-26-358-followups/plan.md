@@ -7,17 +7,17 @@
 
 ## 1. 票群分形与 DAG
 
-| 节点 | 票 | 类型 | 依赖 | 理由 |
+| 节点 | 票 | 类型 | 依赖 | 状态（2026-10-26 收口回填） |
 | --- | --- | --- | --- | --- |
-| T1 | #648 #649 #650 #647 | craft preview 三文件卫生批（无行为变更，#650 择形） | — | 四票同文件族、互不冲突，合批一次审核；逐票独立提交与验收 |
-| T2 | #651 | pass 索引容量/逐出（行为变更） | T1 | 同文件 preview-pass.ts，文件所有权串行 |
-| T3 | #652 | db 迁移语义（评估+实施） | — | 独立目录（server/drizzle） |
-| T4 | #655 | agent-sandbox Dockerfile | — | 独立目录 + docker 资源 |
-| T5 | #659 | DELETE 重试缺陷诊断+修复+真机复跑 | — | 独立文件面（诊断后钉定） |
-| T6 | #654 | same-site/host mint 观察 | — | **blocked(env)**：票面钉 BE-2 环境（同 #416 BE-2 门） |
+| T1 | #648 #649 #650 #647 | craft preview 三文件卫生批（无行为变更，#650 择形） | — | ✅ verified：审核 Spec 4/4 → 集成 `c5fe329b9..5b841df30` |
+| T2 | #651 | pass 索引容量/逐出（行为变更） | T1 | ✅ verified：A 臂 N=8 → 集成 `755a2ae5c` |
+| T3 | #652 | db 迁移语义（评估+实施） | — | ✅ verified：A 臂原位改写 → 集成 `a9ceb630b` |
+| T4 | #655 | agent-sandbox Dockerfile | — | ✅ verified：COPY shared /shared → 集成 `1d4beb954` |
+| T5 | #659 | DELETE 重试缺陷诊断+修复+真机复跑 | — | ✅ verified：204/205 早返回+幂等容忍 → 集成 `b45aacfb3` |
+| T6 | #654 | same-site/host mint 观察 | — | **blocked(env)**：票面钉 BE-2 环境（同 #416 BE-2 门），票保持 OPEN；解除条件=BE-2 可用或用户批准本地 host-form 等价栈 |
 
-- Wave-1 并行：T1/T3/T4/T5（4 任务 Worktree，K=4 依 #358 程序授权）；T2 在 T1 集成后 Wave-2 派发；T6 环境门解除后重估。
-- 每节点门禁：实施（claude）→ 独立行为验证 → 独立审核 r1（claude 异会话，Spec+质量双结论）→ 整改（如需）→ 集成+组合验证 → verified。
+- Wave-1 并行 T1/T3/T4/T5（K=4 依 #358 程序授权）已全部收割；T2 于 T1 集成后 Wave-2 派发并闭环；T6 环境门解除后重估。
+- 每节点门禁全部走完：实施（claude）→ 独立审核 r1（claude 异会话，Spec+质量双结论）→ 集成+组合验证 → verified。终审 R1（final-review-r1.md）：Spec PwF / Quality PASS / **可交付**。
 
 ## 2. 验收映射
 
