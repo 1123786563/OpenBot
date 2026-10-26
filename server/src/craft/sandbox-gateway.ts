@@ -14,12 +14,11 @@
  */
 
 import {
-  EXECUTION_TENANT_HEADER,
-  EXECUTION_WORKSPACE_HEADER,
+  applyExecutionScopeHeaders,
   type ExecutionScope,
 } from "../../../shared/execution-scope";
 import type { CraftConfig } from "./config";
-import { SandboxExecutionScopeUnavailableError } from "./errors";
+import { refuseExecutionScope } from "./errors";
 import { PodEventBus } from "./opencode/event-bus";
 import { OpencodeServeClient } from "./opencode/serve-client";
 import type { WorkspaceApi } from "./workspace";
@@ -171,15 +170,15 @@ export function createSandboxGateway(
       ? options.executionScopeFor()
       : config.sandboxExecutionScope;
 
-  /** The two ownership headers, or the fail-closed refusal — never unattributed headers. */
-  const scopeHeaders = (): Record<string, string> => {
-    const scope = executionScope();
-    if (scope === null) throw new SandboxExecutionScopeUnavailableError();
-    return {
-      [EXECUTION_TENANT_HEADER]: scope.tenantId,
-      [EXECUTION_WORKSPACE_HEADER]: scope.workspaceId,
-    };
-  };
+  /**
+   * The two ownership headers, or the fail-closed refusal — never unattributed
+   * headers. The triple semantics live in the shared helper's JSDoc (#656 D1,
+   * single source): a scope injects, null refuses through the injected
+   * rejector, undefined skips. The craft pair is object-or-null only, so the
+   * undefined arm never occurs on this dial family.
+   */
+  const scopeHeaders = (): Record<string, string> =>
+    applyExecutionScopeHeaders({}, executionScope(), refuseExecutionScope);
 
   const busKey = (botId: string, directory: string) => `${botId}::${directory}`;
 
@@ -249,19 +248,31 @@ export function createSandboxGateway(
             .filter((entry) => entry.length > 0);
         },
         async writeFile(path, content) {
-          await request(`/file?path=${encodeURIComponent(path)}`, {
-            method: "POST",
-            headers: { "content-type": "text/plain" },
-            body: content,
-          });
+          const response = await request(
+            `/file?path=${encodeURIComponent(path)}`,
+            {
+              method: "POST",
+              headers: { "content-type": "text/plain" },
+              body: content,
+            },
+          );
+          // The 201 answer owns a body ({path,size}) this write never reads —
+          // release it, the same undici pin the throw arms below already fix
+          // (#656 OCRfix): the normal path pins a socket per write otherwise.
+          await response.body?.cancel().catch(() => undefined);
         },
         async writeFileBytes(path, bytes) {
           // The raw-bytes twin of writeFile: the body rides as-is (no content-type text
           // coercion), so a binary attachment round-trips exactly.
-          await request(`/file?path=${encodeURIComponent(path)}`, {
-            method: "POST",
-            body: bytes as unknown as BodyInit,
-          });
+          const response = await request(
+            `/file?path=${encodeURIComponent(path)}`,
+            {
+              method: "POST",
+              body: bytes as unknown as BodyInit,
+            },
+          );
+          // Same unread 201 body as the text twin (#656 OCRfix).
+          await response.body?.cancel().catch(() => undefined);
         },
         async deletePath(path) {
           // 404 is the honest "absent" (and the gateway's answer for a directory too —
@@ -276,7 +287,13 @@ export function createSandboxGateway(
               ),
             },
           );
-          if (response.status === 404) return false;
+          if (response.status === 404) {
+            // Release before the early return (#656 D4): the honest degrade is
+            // still a non-consumed body pinning its undici pool socket until
+            // GC — the same pin the throw arms below already fix.
+            await response.body?.cancel().catch(() => undefined);
+            return false;
+          }
           if (!response.ok) {
             // Release before throwing — same undici socket pin as request() (#618 OCR r4).
             await response.body?.cancel().catch(() => undefined);
@@ -284,6 +301,9 @@ export function createSandboxGateway(
               `Sandbox DELETE /file answered ${response.status}.`,
             );
           }
+          // The success answer owns a body ({ok,path}) nobody reads — release
+          // before returning (#656 OCRfix), the same pin the arms above fix.
+          await response.body?.cancel().catch(() => undefined);
           return true;
         },
         async readFile(path) {
@@ -301,7 +321,12 @@ export function createSandboxGateway(
               ),
             },
           );
-          if (response.status === 404) return null;
+          if (response.status === 404) {
+            // Release before the early return (#656 D4) — same undici socket
+            // pin as the throw arm below; "absent" still owns its body.
+            await response.body?.cancel().catch(() => undefined);
+            return null;
+          }
           if (!response.ok) {
             // Release before throwing — same undici socket pin as request() (#618 OCR r4).
             await response.body?.cancel().catch(() => undefined);
@@ -342,7 +367,12 @@ export function createSandboxGateway(
               ),
             },
           );
-          if (response.status === 404) return null;
+          if (response.status === 404) {
+            // Release before the early return (#656 D4) — the bytes twin owes
+            // the same release its text twin pays just above.
+            await response.body?.cancel().catch(() => undefined);
+            return null;
+          }
           if (!response.ok) {
             // Release before throwing — same undici socket pin as request() (#618 OCR r4).
             await response.body?.cancel().catch(() => undefined);
@@ -381,8 +411,13 @@ export function createSandboxGateway(
       headers["x-openbot-bot-id"] = botId;
       Object.assign(headers, scopeHeaders());
       const doFetch = options.fetchImpl ?? fetch;
+      // One name for the endpoint both sides of the dial use (#656 D4, OCR r5):
+      // the error's path field is what the deferred structured dispatch will
+      // match on, and a hand-copied second literal could drift from the dialed
+      // URL with no compiler to notice.
+      const snapshotPath = "/workspace/snapshot";
       const response = await doFetch(
-        `${gatewayUrl(conn).replace(/\/$/, "")}/workspace/snapshot`,
+        `${gatewayUrl(conn).replace(/\/$/, "")}${snapshotPath}`,
         {
           headers,
           signal: AbortSignal.timeout(
@@ -393,14 +428,20 @@ export function createSandboxGateway(
       // #618 (FR-F2): only a 404 is the honest "no snapshot yet". Folding every !ok
       // into null dressed a scope-mismatch 403 up as "nothing to restore" — the
       // mismatch verdict must travel out as the error it is.
-      if (response.status === 404) return null;
+      if (response.status === 404) {
+        // Release before the early return (#656 D4, OCR r5): the "no snapshot
+        // yet" answer still owns a body nobody reads — every first sleep poll
+        // of a not-yet-snapshotted Bot would pin one pool socket until GC.
+        await response.body?.cancel().catch(() => undefined);
+        return null;
+      }
       if (!response.ok) {
         // Release the body before throwing (#618 OCR r4): the verdict this
         // usually is — a scope-mismatch 403 — arrives with a body nobody reads,
         // and an unconsumed body pins its pool socket until GC: one stranded
         // socket per snapshot call in a deployment failing like this every turn.
         await response.body?.cancel().catch(() => undefined);
-        throw new SandboxHttpError("/workspace/snapshot", response.status);
+        throw new SandboxHttpError(snapshotPath, response.status);
       }
       return new Uint8Array(await response.arrayBuffer());
     },
@@ -415,8 +456,10 @@ export function createSandboxGateway(
       headers["content-type"] = "application/gzip";
       Object.assign(headers, scopeHeaders());
       const doFetch = options.fetchImpl ?? fetch;
+      // Same single-name binding as the snapshot half (#656 D4, OCR r5).
+      const restorePath = "/workspace/restore";
       const response = await doFetch(
-        `${gatewayUrl(conn).replace(/\/$/, "")}/workspace/restore`,
+        `${gatewayUrl(conn).replace(/\/$/, "")}${restorePath}`,
         {
           method: "POST",
           headers,
@@ -431,14 +474,24 @@ export function createSandboxGateway(
       // verdict — a scope-mismatch 403 included — travels out as the error it is, mirroring
       // the snapshot half (#618 FR-F2/OCR#5): folding it into false dressed a mismatch up as
       // "nothing to restore" and the wake silently rebuilt the workspace over the mismatch.
-      if (response.status === 409 || response.status === 400) return false;
+      if (response.status === 409 || response.status === 400) {
+        // Release before the early return (#656 D4, OCR r5): 409 is the
+        // high-traffic degrade — every restore poll colliding with a live turn
+        // lands here, each pinning its pool socket until GC without this.
+        await response.body?.cancel().catch(() => undefined);
+        return false;
+      }
       if (!response.ok) {
         // Same release as the snapshot half (#618 OCR r4); the verdict leaves
         // structured — SandboxHttpError carries the path and status the deferred
         // 403 propagation (OCRFX-F4) will dispatch on, message text unchanged.
         await response.body?.cancel().catch(() => undefined);
-        throw new SandboxHttpError("/workspace/restore", response.status);
+        throw new SandboxHttpError(restorePath, response.status);
       }
+      // The success answer owns a body too ({"ok":true,...}) — release before
+      // returning, the same undici pin the 409/400 and throw arms above fix
+      // (#656 OCRfix): every successful restore would pin its socket until GC.
+      await response.body?.cancel().catch(() => undefined);
       return true;
     },
 

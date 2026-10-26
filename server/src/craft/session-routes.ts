@@ -23,7 +23,7 @@ import type { SessionFlowLocks } from "./locks";
 import type { CraftSessionManager } from "./manager";
 import { generateSessionName } from "./naming";
 import type { SandboxGateway } from "./sandbox-gateway";
-import { sandboxScopeRefusalOf, scopeRefusalResponse } from "./scope-refusal";
+import { assertNotScopeRefusal, sandboxScopeRefusalOf } from "./scope-refusal";
 import { sessionRuntimeStale } from "./skills";
 import {
   deleteSnapshots,
@@ -226,8 +226,9 @@ export function createSessionRoutes(
       // #618 (FR-F1): a scopeless deployment is an answerable, admin-fixable condition —
       // the fixed sentence as 503, not the generic 500 T2 saw swallow it. Like the file
       // face, no log line and no echoed value: the sentence IS the reason and names none.
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // The guard's throw is the answer itself (#656 D2) — it outranks the 500 mask
+      // by construction.
+      assertNotScopeRefusal(error);
       logger.error(
         { error: error instanceof Error ? error.stack : String(error) },
         "[craft] session creation failed",
@@ -393,8 +394,9 @@ export function createSessionRoutes(
     } catch (error) {
       // #618 (FR-F1): same recognizer, same 503, before the generic 502 — the snapshot
       // dial is an outbound request like any other and must not wear "Snapshot failed".
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // The guard's throw is the 503 itself (#656 D2), so the ordering below is
+      // structural rather than remembered.
+      assertNotScopeRefusal(error);
       logger.error({ error }, "[craft] snapshot failed");
       return context.json({ error: "Snapshot failed" }, 502);
     }
@@ -421,8 +423,11 @@ export function createSessionRoutes(
         }),
       );
     } catch (error) {
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // The rethrow entrance keeps its shape (#656 D2 hard constraint): the
+      // guard answers a refusal as its own 503; everything else — including the
+      // wrap shapes the wake meets — passes through to the global error face,
+      // untouched, exactly as before.
+      assertNotScopeRefusal(error);
       throw error;
     }
   });
@@ -467,8 +472,8 @@ export function createSessionRoutes(
       // through the gateway — a scopeless deployment answers the fixed 503 sentence
       // BEFORE the generic 502, the same contract create/snapshot/restore already
       // carry (the turn face carries the refusal when the person actually acts).
-      const refusalResponse = scopeRefusalResponse(context, error);
-      if (refusalResponse) return refusalResponse;
+      // The guard's throw makes the precedence structural (#656 D2).
+      assertNotScopeRefusal(error);
       logger.error({ error }, "[craft] skills reload failed");
       return context.json({ error: "Failed to reload session." }, 502);
     }
