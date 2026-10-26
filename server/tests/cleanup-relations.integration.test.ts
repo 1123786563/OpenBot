@@ -19,6 +19,7 @@ import {
   EXTERNAL_LIVE_SUBSCRIPTION_STATUSES,
   evaluateCleanupRelations,
 } from "../src/billing/cleanup-relations";
+import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccountService } from "../src/billing/payer-accounts";
 import { createDatabase } from "../src/db/client";
 import {
@@ -1978,5 +1979,426 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
     // The legacy attribution (payer mapping) and the evidenced order stay cleanable.
     expect(await rowsOf("payer_accounts", "id", [bPayer])).toHaveLength(0);
     expect(await rowsOf("payment_orders", "id", [bOrder])).toHaveLength(0);
+  });
+});
+
+/*
+ * R2B-F1 regression (REV-2b → FIX-4): the ownership verdict travels to the key's money.
+ * A legacy-classified key that carries a protected 0163 row (company account + company
+ * payment mapping, or a quarantined account) keeps its unattributed funding rows — the
+ * REV-2b reproducers showed the company grant deleted while the company survived, because
+ * protection followed the billing_call_attributions chain and attribution can be missing.
+ * The reverse pin: a personal account whose owner IS in the test registry and a key with
+ * no 0163 row at all keep the legacy cleanup semantics — their money is really deleted by
+ * the same authorized execution.
+ */
+describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdict", () => {
+  const fix4 = `fix4-${Math.random().toString(36).slice(2, 10)}`;
+  const actor = `fix4-review-${fix4}`;
+
+  const coTenant = `${fix4}-co-tenant`;
+  const coKey = `${fix4}-co`;
+  const quarKey = `${fix4}-q`;
+  const testOwnedKey = `${fix4}-p2`;
+  const legacyKey = `${fix4}-legacy`;
+  const keys = [coKey, quarKey, testOwnedKey, legacyKey];
+  const payers = keys.map((key) => `${key}-pa`);
+  const deploys = keys.map((key) => `${key}-deploy`);
+  const orders = keys.map((key) => `${key}-order`);
+  const testUser = `${fix4}-user`;
+
+  const evidence = { testOrderIds: orders, testUserIds: [testUser] };
+
+  const coLedgerId = `${fix4}-co-ledger`;
+  const coHoldId = `${fix4}-co-hold`;
+  const legacyLedgerId = `${fix4}-legacy-ledger`;
+  const legacyHoldId = `${fix4}-legacy-hold`;
+
+  let coAccountId = "";
+  let quarAccountId = "";
+  let testOwnedAccountId = "";
+  let coGrantId = "";
+  let quarGrantId = "";
+  let testOwnedGrantId = "";
+  let legacyGrantId = "";
+
+  beforeAll(async () => {
+    await database
+      .insert(users)
+      .values([{ id: testUser, email: `${testUser}@openbot.test` }]);
+    await database
+      .insert(enterpriseTenants)
+      .values([{ id: coTenant, name: `fix4 ${fix4}` }]);
+    await database.insert(billingCustomers).values(
+      keys.map((externalId) => ({
+        externalId,
+        name: `fix4 fixture ${externalId}`,
+      })),
+    );
+    await database.insert(payerAccounts).values(
+      keys.map((key, index) => ({
+        id: payers[index],
+        kind: "legacy_deployment",
+        payerId: deploys[index],
+        externalCustomerId: key,
+      })),
+    );
+    await database.insert(paymentOrders).values(
+      orders.map((id, index) => ({
+        id,
+        deploymentScope: `${fix4}-scope`,
+        planCode: "legacy-test",
+        provider: "alipay" as const,
+        amountCents: 2_000 + index,
+        status: "canceled" as const,
+        activationState: "pending" as const,
+        ownerPayerKind: "legacy_deployment" as const,
+        ownerPayerId: deploys[index],
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        terminalAt: new Date("2026-01-01T00:30:00Z"),
+      })),
+    );
+
+    // The 0163 rows through the REAL service: a company account with its payment mapping,
+    // a quarantined account, and — the estate-semantics boundary — a personal account
+    // whose owner IS in this run's test-user registry. The pure legacy key gets none.
+    const service = createPayerAccountService(database);
+    await service.bindCompanyCustomer({
+      tenantId: coTenant,
+      externalCustomerId: coKey,
+      actor,
+    });
+    const company = await service.registerCompanyAccount({
+      tenantId: coTenant,
+      actor,
+    });
+    coAccountId = company.id;
+    const quarantined = await service.quarantineUnknownAccount({
+      externalCustomerId: quarKey,
+      reason: "ownership unresolved (R2B-F1 regression)",
+      actor,
+    });
+    quarAccountId = quarantined.id;
+    const testOwned = await service.registerPersonalAccount({
+      userId: testUser,
+      externalCustomerId: testOwnedKey,
+      actor,
+    });
+    testOwnedAccountId = testOwned.id;
+
+    // Post-registration money through the REAL writer — no billing_call_attributions row
+    // anywhere in the chain (a plan/promo allowance, not a call).
+    const writer = createCreditWriter(database);
+    const coGrant = await writer.grantCredits({
+      externalCustomerId: coKey,
+      source: "promo",
+      totalCents: 60_000,
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      reason: `FIX-4 company allowance ${fix4}`,
+      idempotencyKey: `${fix4}-co-grant`,
+    });
+    coGrantId = coGrant.grant.id;
+    const quarGrant = await writer.grantCredits({
+      externalCustomerId: quarKey,
+      source: "promo",
+      totalCents: 30_000,
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      reason: `FIX-4 quarantined allowance ${fix4}`,
+      idempotencyKey: `${fix4}-q-grant`,
+    });
+    quarGrantId = quarGrant.grant.id;
+    const testOwnedGrant = await writer.grantCredits({
+      externalCustomerId: testOwnedKey,
+      source: "promo",
+      totalCents: 10_000,
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      reason: `FIX-4 registry-personal allowance ${fix4}`,
+      idempotencyKey: `${fix4}-p2-grant`,
+    });
+    testOwnedGrantId = testOwnedGrant.grant.id;
+    const legacyGrant = await writer.grantCredits({
+      externalCustomerId: legacyKey,
+      source: "promo",
+      totalCents: 20_000,
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      reason: `FIX-4 legacy allowance ${fix4}`,
+      idempotencyKey: `${fix4}-legacy-grant`,
+    });
+    legacyGrantId = legacyGrant.grant.id;
+
+    // The other two funding tables, one settled chain per boundary key: the company key's
+    // chain must shelter with it, the pure legacy key's chain must die with it.
+    await database.insert(creditLedger).values([
+      {
+        id: coLedgerId,
+        externalCustomerId: coKey,
+        title: `fix4 company settlement ${fix4}`,
+        idempotencyKey: `${fix4}-co-ledger`,
+        credits: 100,
+        applied: 100,
+      },
+      {
+        id: legacyLedgerId,
+        externalCustomerId: legacyKey,
+        title: `fix4 legacy settlement ${fix4}`,
+        idempotencyKey: `${fix4}-legacy-ledger`,
+        credits: 100,
+        applied: 100,
+      },
+    ]);
+    await database.insert(creditReservations).values([
+      {
+        id: coHoldId,
+        externalCustomerId: coKey,
+        idempotencyKey: `${fix4}-co-hold`,
+        maximum: 1_000,
+        status: "settled",
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        terminalAt: new Date("2026-01-01T01:00:00Z"),
+        actualNumerator: "10000",
+        actualDenominator: "100",
+        charged: 100,
+        applied: 100,
+        released: 900,
+        ledgerId: coLedgerId,
+      },
+      {
+        id: legacyHoldId,
+        externalCustomerId: legacyKey,
+        idempotencyKey: `${fix4}-legacy-hold`,
+        maximum: 1_000,
+        status: "settled",
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        terminalAt: new Date("2026-01-01T01:00:00Z"),
+        actualNumerator: "10000",
+        actualDenominator: "100",
+        charged: 100,
+        applied: 100,
+        released: 900,
+        ledgerId: legacyLedgerId,
+      },
+    ]);
+  });
+
+  afterAll(async () => {
+    // Children before parents, mirroring the FK graph; rows a successful execution
+    // deleted are no-ops here.
+    await database
+      .delete(billingCreditAccounts)
+      .where(
+        inArray(
+          billingCreditAccounts.id,
+          [coAccountId, quarAccountId, testOwnedAccountId].filter(Boolean),
+        ),
+      );
+    await database
+      .delete(billingCustomerMappings)
+      .where(eq(billingCustomerMappings.tenantId, coTenant));
+    await database
+      .delete(billingAccountAudit)
+      .where(eq(billingAccountAudit.actor, actor));
+    await database
+      .delete(creditReservations)
+      .where(inArray(creditReservations.id, [coHoldId, legacyHoldId]));
+    await database
+      .delete(creditLedger)
+      .where(inArray(creditLedger.id, [coLedgerId, legacyLedgerId]));
+    await database
+      .delete(creditGrants)
+      .where(
+        inArray(
+          creditGrants.id,
+          [coGrantId, quarGrantId, testOwnedGrantId, legacyGrantId].filter(
+            Boolean,
+          ),
+        ),
+      );
+    await database
+      .delete(payerAccounts)
+      .where(inArray(payerAccounts.id, payers));
+    await database
+      .delete(paymentOrders)
+      .where(inArray(paymentOrders.id, orders));
+    await database
+      .delete(billingCustomers)
+      .where(inArray(billingCustomers.externalId, keys));
+    await database
+      .delete(enterpriseTenants)
+      .where(eq(enterpriseTenants.id, coTenant));
+    await database.delete(users).where(eq(users.id, testUser));
+  });
+
+  test("a protected key's unattributed funding rows survive; every legacy arm still cleans", async () => {
+    // 21.2 still classifies all four keys from the legacy mapping alone: every money row
+    // is a candidate — the shelter has to come from 21.3's ownership verification.
+    const classification = await classifyCleanup(database, evidence);
+    for (const key of keys) {
+      const record = classification.records.find(
+        (entry) =>
+          entry.table === "billing_customers" && entry.recordId === key,
+      );
+      expect(record?.class).toBe("confirmed_obsolete_test");
+    }
+
+    // Relations: the company and quarantined keys' money is pulled with the ownership
+    // verdict named on each row — grant, ledger and settled hold alike, no attribution
+    // chain anywhere. The registry-personal key and the pure legacy key keep their money
+    // in the safe set.
+    const evaluated = await evaluateCleanupRelations(database, classification);
+    for (const [table, recordId] of [
+      ["credit_grants", coGrantId],
+      ["credit_ledger", coLedgerId],
+      ["credit_reservations", coHoldId],
+      ["credit_grants", quarGrantId],
+    ] as const) {
+      const evaluation = evaluated.evaluations.find(
+        (entry) => entry.table === table && entry.recordId === recordId,
+      );
+      expect(evaluation).toBeDefined();
+      expect(evaluation!.removed).toBe(true);
+      expect(
+        evaluation!.retainedImpact.some(
+          (impact) => impact.protection === "funding_of_protected_key",
+        ),
+      ).toBe(true);
+      expect(
+        evaluated.safeCandidates.some(
+          (entry) => entry.table === table && entry.recordId === recordId,
+        ),
+      ).toBe(false);
+    }
+    for (const [table, recordId] of [
+      ["credit_grants", testOwnedGrantId],
+      ["credit_grants", legacyGrantId],
+      ["credit_ledger", legacyLedgerId],
+      ["credit_reservations", legacyHoldId],
+    ] as const) {
+      const evaluation = evaluated.evaluations.find(
+        (entry) => entry.table === table && entry.recordId === recordId,
+      );
+      expect(evaluation).toBeDefined();
+      expect(evaluation!.removed).toBe(false);
+      expect(
+        evaluated.safeCandidates.some(
+          (entry) => entry.table === table && entry.recordId === recordId,
+        ),
+      ).toBe(true);
+    }
+
+    // The fresh 21.5 guard refuses the sheltered money with the same reviewable reason.
+    const guard = await guardCleanupDeletion(database, evidence, {
+      targets: [
+        { table: "credit_grants", recordId: coGrantId },
+        { table: "credit_reservations", recordId: coHoldId },
+        { table: "credit_grants", recordId: legacyGrantId },
+      ],
+    });
+    expect(guard.refused).toHaveLength(2);
+    for (const refusal of guard.refused) {
+      expect(refusal.reason).toBe("not_in_verified_deletion_scope");
+    }
+    expect(guard.deletable).toEqual([
+      { table: "credit_grants", recordId: legacyGrantId },
+    ]);
+
+    // The real authorized execution commits its verified scope — the company and
+    // quarantined money is still standing afterwards, the legacy arms are really gone.
+    const dryRun = await buildCleanupDryRun(database, evidence);
+    const report = await executeAuthorizedCleanup(database, evidence, {
+      authorizationVersion: 1,
+      authorizedBy: actor,
+      authorizedAt: new Date().toISOString(),
+      statement: `R2B-F1 regression on ${dryRun.binding.database}: execute the verified scope; protected-key money must survive`,
+      scope: dryRun.binding,
+    });
+    expect(report.transaction.committed).toBe(true);
+    expect(report.postVerification.passed).toBe(true);
+    expect(report.accountingSmoke.passed).toBe(true);
+
+    // The ownership survivors: both keys' customers/accounts, the company mapping, and
+    // every unattributed funding row of both keys.
+    expect(
+      await database
+        .select({ id: billingCustomers.externalId })
+        .from(billingCustomers)
+        .where(inArray(billingCustomers.externalId, [coKey, quarKey])),
+    ).toHaveLength(2);
+    expect(
+      await database
+        .select({ id: billingCreditAccounts.id })
+        .from(billingCreditAccounts)
+        .where(inArray(billingCreditAccounts.id, [coAccountId, quarAccountId])),
+    ).toHaveLength(2);
+    expect(
+      await database
+        .select({ id: billingCustomerMappings.tenantId })
+        .from(billingCustomerMappings)
+        .where(eq(billingCustomerMappings.tenantId, coTenant)),
+    ).toHaveLength(1);
+    expect(
+      await database
+        .select({ id: creditGrants.id })
+        .from(creditGrants)
+        .where(inArray(creditGrants.id, [coGrantId, quarGrantId])),
+    ).toHaveLength(2);
+    expect(
+      await database
+        .select({ id: creditLedger.id })
+        .from(creditLedger)
+        .where(eq(creditLedger.id, coLedgerId)),
+    ).toHaveLength(1);
+    expect(
+      await database
+        .select({ id: creditReservations.id })
+        .from(creditReservations)
+        .where(eq(creditReservations.id, coHoldId)),
+    ).toHaveLength(1);
+
+    // The cleanup line still holds, exactly as AC18's other half demands: the pure
+    // legacy key is fully deleted (customer, payer, order, grant, ledger, settled hold),
+    // and the registry-personal estate arm follows 21.2's semantics — account, customer
+    // and money all really gone.
+    expect(
+      await database
+        .select({ id: billingCustomers.externalId })
+        .from(billingCustomers)
+        .where(inArray(billingCustomers.externalId, [legacyKey, testOwnedKey])),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: billingCreditAccounts.id })
+        .from(billingCreditAccounts)
+        .where(eq(billingCreditAccounts.id, testOwnedAccountId)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: creditGrants.id })
+        .from(creditGrants)
+        .where(inArray(creditGrants.id, [legacyGrantId, testOwnedGrantId])),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: creditLedger.id })
+        .from(creditLedger)
+        .where(eq(creditLedger.id, legacyLedgerId)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: creditReservations.id })
+        .from(creditReservations)
+        .where(eq(creditReservations.id, legacyHoldId)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: payerAccounts.id })
+        .from(payerAccounts)
+        .where(inArray(payerAccounts.id, payers)),
+    ).toHaveLength(0);
+    expect(
+      await database
+        .select({ id: paymentOrders.id })
+        .from(paymentOrders)
+        .where(inArray(paymentOrders.id, orders)),
+    ).toHaveLength(0);
   });
 });

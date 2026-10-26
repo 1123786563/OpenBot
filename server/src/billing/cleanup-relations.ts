@@ -63,10 +63,13 @@ export type RemovalReason =
 
 /**
  * What makes a touched row untouchable: its class, its anchor role, its evidence role — or
- * the ownership it verifiably carries. The last seven are the R2-F1 (REV-2 → FIX-2b)
+ * the ownership it verifiably carries. The last eight are the R2-F1 (REV-2 → FIX-2b)
  * ownership kinds: the first six name a 0163 upstream child row by the ownership its own
- * columns prove (an unrecognized account shape fails closed as unknown-owner), and
- * `protects_owned_record` names a row whose deletion would destroy one of them.
+ * columns prove (an unrecognized account shape fails closed as unknown-owner), the seventh
+ * names a row whose deletion would destroy one of them, and the eighth (R2B-F1, REV-2b)
+ * names a funding row (credit_grants/credit_ledger/credit_reservations) whose customer key
+ * carries a protected 0163 row — the ownership verdict travels to the key's money with or
+ * without an attribution chain.
  */
 export type ProtectionKind =
   | "retained"
@@ -79,7 +82,8 @@ export type ProtectionKind =
   | "unknown_account_shape"
   | "company_payment_mapping"
   | "company_call_attribution"
-  | "protects_owned_record";
+  | "protects_owned_record"
+  | "funding_of_protected_key";
 
 /** How deleting the candidate would touch the row. */
 export type ImpactEffect =
@@ -352,8 +356,9 @@ const TABLE_SPECS: Record<string, TableSpec> = {
   // the catalog's edges out of the estate are edges a candidate's deletion travels, so the
   // probe universe knows each child. But these three are NOT the deleted record's own test
   // data (R2-F1, REV-2): the account's own columns carry its registered ownership verdict
-  // (status/account_type/tenant_id/owner_user_id/quarantine_reason — the 0163 row-shape
-  // CHECKs pin the three legal shapes), the mapping row IS the company payment
+  // (status/account_type/tenant_id/owner_user_id/quarantine_reason — the schema declares
+  // the three legal shapes, but the shipped 0163 migration creates no CHECK, so the
+  // ownership pass below is the runtime enforcement), the mapping row IS the company
   // relationship, and the attribution's NOT NULL tenant/workspace/principal make every row
   // a company call fact. The ownership pass below reads exactly these columns and verifies
   // each row before it may ride a cascade.
@@ -1038,8 +1043,10 @@ export async function evaluateCleanupRelations(
           ? null
           : "personal_account";
       } else {
-        // Current CHECKs reject every other shape. A historical/drifted database may not:
-        // unreadable ownership fails closed instead of inheriting the legacy parent class.
+        // The schema declares row-shape CHECKs for the legal shapes, but the shipped 0163
+        // migration creates none — this unknown_account_shape branch is the runtime
+        // enforcement: unreadable ownership fails closed instead of inheriting the legacy
+        // parent class.
         protection = "unknown_account_shape";
       }
       if (protection) protect(account, protection);
@@ -1092,6 +1099,32 @@ export async function evaluateCleanupRelations(
           if (protect(parentRow, "protects_owned_record")) {
             frontier.push(parentRow);
           }
+        }
+      }
+    }
+
+    // R2B-F1 (REV-2b): the ownership verdict belongs to the customer key, not to the
+    // attribution chain. A protected 0163 row that names a customer key — the account rows
+    // above, or the company payment mapping — proves a current owner for that key; the
+    // funding rows written under it are that owner's financial history whether or not a
+    // billing_call_attributions row exists yet (AC18: company financial history stays
+    // intact). Keys with no protected 0163 row — the pure legacy estate — keep their
+    // funding rows fully cleanable. After the closure, so rows the FK-precise walk already
+    // keeps keep their protects_owned_record naming and only the unattributed rows are
+    // named by the new kind.
+    const ownedCustomerKeys = new Set<string>();
+    for (const row of ownershipRowByKey.values()) {
+      const customerKey = row.cols.external_customer_id;
+      if (customerKey) ownedCustomerKeys.add(customerKey);
+    }
+    for (const table of [
+      "credit_grants",
+      "credit_ledger",
+      "credit_reservations",
+    ] as const) {
+      for (const row of await scanReachableTable(table)) {
+        if (ownedCustomerKeys.has(row.cols.external_customer_id ?? "")) {
+          protect(row, "funding_of_protected_key");
         }
       }
     }
