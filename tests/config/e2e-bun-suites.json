@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T03.03 task registration (server/tests/better-auth:T03.03.01)",
+  "generatedBy": "T03.04 task registration (server/tests/better-auth:T03.04.01)",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1271,6 +1271,12 @@
       "files": [
         "server/tests/better-auth/company-provision.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T03.04.01",
+      "files": [
+        "server/tests/better-auth/company-lifecycle.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1456,6 +1462,7 @@
     "server/tests/batch-reservation.integration.test.ts",
     "server/tests/batch-settlement.integration.test.ts",
     "server/tests/better-auth/authority-and-closed-assurance.test.ts",
+    "server/tests/better-auth/company-lifecycle.test.ts",
     "server/tests/better-auth/company-provision.test.ts",
     "server/tests/better-auth/directory-command.test.ts",
     "server/tests/better-auth/fixture-contract.test.ts",
@@ -2105,6 +2112,7 @@
     "server/tests/better-auth/outbox-fence.test.ts": "T02.12 outbox fence suite: bun:test layer (support/bun-test-compat) over Bun SQL and Bun server surfaces; registration restored from the T02.12 task worktree (integration filelist omission, same incident as the contracts.ts repair)",
     "server/tests/better-auth/migration-verify.test.ts": "runner named it: runs on the five BA_TEST_* island URLs and imports server/src/db/client (bun-sql), the same better-auth island family as T02.13/T02.14",
     "server/tests/better-auth/scope-generations.test.ts": "T03.01 scope-generations suite: runs on the five BA_TEST_* island URLs and exercises server/src/enterprise/tenancy (store/scope-gate/revocation) through Bun SQL; registered by the task through writeManifest with payload.task T03.01",
-    "server/tests/better-auth/company-provision.test.ts": "T03.03 company-provision suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0214 stack through the platform provision service, the directory executor handler and the payer mapping; registered by the task through writeManifest with payload.task T03.03"
+    "server/tests/better-auth/company-provision.test.ts": "T03.03 company-provision suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0214 stack through the platform provision service, the directory executor handler and the payer mapping; registered by the task through writeManifest with payload.task T03.03",
+    "server/tests/better-auth/company-lifecycle.test.ts": "T03.04 company-lifecycle suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0214 stack through the platform lifecycle service, the directory executor handlers and the frozen scope-selection/revocation faces; registered by the task through writeManifest with payload.task T03.04"
   }
 }

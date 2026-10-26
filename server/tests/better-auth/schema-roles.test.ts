@@ -1131,8 +1131,12 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
       ),
     ) as { entries: { idx: number; tag: string }[] };
     const last = journal.entries[journal.entries.length - 1];
-    expect(last?.tag).toBe(MIGRATION_TAG);
     const before = journal.entries[journal.entries.length - 2];
+    // T03.04 (#541) appended 0215 (the guard's company.suspend/restore
+    // admission): this suite's 0214 is now the second-newest entry, still
+    // contiguous, and the newest is that amendment.
+    expect(before?.tag).toBe(MIGRATION_TAG);
+    expect(last?.tag).toBe("0215_better_auth_company_lifecycle");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });

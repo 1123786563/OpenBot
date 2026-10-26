@@ -54,21 +54,21 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import type { PayerAccount } from "../../billing/payer";
 import {
-  PayerBindingConflictError,
-  restorePayerBinding,
   assertSamePayer,
   type PayerBinding,
+  PayerBindingConflictError,
+  restorePayerBinding,
 } from "../../billing/payer-binding";
-import type { PayerAccount } from "../../billing/payer";
 import type { Database } from "../../db/client";
 import {
   authCommandOutbox,
   authMembers,
-  authTeamBindings,
-  authTeams,
-  authTeamMembers,
   authOrganizations,
+  authTeamBindings,
+  authTeamMembers,
+  authTeams,
 } from "../../db/schema/auth-directory";
 import { enterpriseAuditEvents } from "../../db/schema/enterprise-audit";
 import {
@@ -77,7 +77,12 @@ import {
   enterpriseWorkspaceMemberships,
   enterpriseWorkspaces,
 } from "../../db/schema/enterprise-tenancy";
-import type { BaTxOutcome, DirectoryTx, TransactionBoundBa } from "./contracts";
+import type {
+  BaTxOutcome,
+  Directory,
+  DirectoryTx,
+  TransactionBoundBa,
+} from "./contracts";
 import type {
   DirectoryAuthorizeContext,
   DirectoryCommandHandler,
@@ -563,5 +568,698 @@ export async function activateProvisionedCompany(
       });
     }
     return { status: "active" as const };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// T03.04 (#541, original task P06; interfaces §2, spec §4.3): the company
+// suspend / restore / deletion-request half of the lifecycle. The provision
+// half above; this half is the same discipline on a company that already
+// exists: one platform-authorized directory command per transition, the
+// status flip, the applicable version advance and the audit in ONE
+// transaction under the executor's tenant-exclusive lock.
+//
+// The applicable version advances through the SAME change-key channel member
+// commands use (coordinator ruling 2026-10-26, "B-now"): migration 0215
+// admits a self-assigning auth_members UPDATE for company.suspend/company.
+// restore alone, whose per-row trigger registers each member's company
+// change key with spec §4.4's rules — suspend advances the GENERATION (epoch
+// unchanged), restore advances the EPOCH (generation unchanged, so a restored
+// company is a new admission, never a resurrection of pre-suspension
+// abilities). The frozen finalizer then advances every member's eligibility
+// clock and projects the membership rows through its controlled functions,
+// which is what keeps the BA workspace gate's three-way comparison (live row
+// == scope == clock) true: old scopes die on the advanced generation, fresh
+// scopes mint the advanced versions and work again.
+//
+// The deletion request is registration only (spec §4.3: 首期禁止裸物理删除
+// 有业务资产的目录对象): the command verifies the asset/run/billing/retention
+// facts, records them with the platform actor's reason on ONE idempotent
+// outbox intent per company, and deletes nothing.
+//
+// What each export is:
+//
+// - `createCompanySuspendHandler` / `createCompanyRestoreHandler` /
+//   `createCompanyDeletionRequestHandler` — the three DirectoryCommandHandlers
+//   (interfaces §2's payload table: `reason` alone). `authorize` re-verifies
+//   the platform actor's CURRENT global admin role inside the locked
+//   transaction on every call (replay included) and confirms the company
+//   exists before the executor writes its non-deferrable tenant-FK receipt;
+//   `sync` performs the transition.
+// - `createPlatformCompanyLifecycleService` — the orchestrator the platform
+//   routes drive: the fail-fast admin pre-check, then the private command
+//   through the executor (the authority gate, the tenant lock, the receipt,
+//   the finalizer's audit).
+// ---------------------------------------------------------------------------
+
+export const COMPANY_LIFECYCLE_UNIMPLEMENTED =
+  "COMPANY_LIFECYCLE_UNIMPLEMENTED";
+export const COMPANY_LIFECYCLE_INPUT_INVALID =
+  "COMPANY_LIFECYCLE_INPUT_INVALID";
+export const COMPANY_LIFECYCLE_ADMIN_REQUIRED =
+  "COMPANY_LIFECYCLE_ADMIN_REQUIRED";
+export const COMPANY_LIFECYCLE_ACTOR_FORBIDDEN =
+  "COMPANY_LIFECYCLE_ACTOR_FORBIDDEN";
+export const COMPANY_LIFECYCLE_TENANT_MISSING =
+  "COMPANY_LIFECYCLE_TENANT_MISSING";
+export const COMPANY_SUSPEND_REQUIRES_ACTIVE =
+  "COMPANY_SUSPEND_REQUIRES_ACTIVE";
+export const COMPANY_RESTORE_REQUIRES_SUSPENDED =
+  "COMPANY_RESTORE_REQUIRES_SUSPENDED";
+export const COMPANY_DELETION_REQUIRES_OPEN_COMPANY =
+  "COMPANY_DELETION_REQUIRES_OPEN_COMPANY";
+export const COMPANY_DELETION_REQUEST_EXISTS =
+  "COMPANY_DELETION_REQUEST_EXISTS";
+
+/** The lifecycle's one outbox intent kind (a closed value this module owns). */
+export const COMPANY_DELETION_REQUEST_OUTBOX_KIND = "company.deletion.request";
+
+/** The stable id of one company's deletion request: one row per company. */
+export function companyDeletionRequestOutboxId(tenantId: string): string {
+  return `${COMPANY_DELETION_REQUEST_OUTBOX_KIND}:${tenantId}`;
+}
+
+/**
+ * The locked authorization all three lifecycle commands share, re-run on
+ * every replay: a runtime platform actor holding the CURRENT global admin
+ * role, and a company that exists. Company roles never substitute (plan
+ * Task 6: 平台动作授权与公司 role 隔离), and the existence check runs here so
+ * an unknown company is a named 404 BEFORE the executor begins a receipt
+ * whose tenant foreign key would otherwise fail as a raw driver error.
+ */
+async function authorizePlatformLifecycle(
+  context: DirectoryAuthorizeContext,
+  action: string,
+): Promise<void> {
+  const actor = context.actor;
+  if (actor.kind !== "platform") {
+    throw new CompanyLifecycleRefusal(
+      COMPANY_LIFECYCLE_ACTOR_FORBIDDEN,
+      `a ${actor.kind} actor cannot ${action}; the platform actor is issued only after the server verifies a current session, the admin role and the deployment rules`,
+      403,
+    );
+  }
+  const adminRows = rowsOf(
+    await context.tx.execute(
+      sql`SELECT 1 AS ok FROM user_roles WHERE user_id = ${actor.userId} AND role = 'admin' LIMIT 1`,
+    ),
+  );
+  if (adminRows.length === 0) {
+    throw new CompanyLifecycleRefusal(
+      COMPANY_LIFECYCLE_ACTOR_FORBIDDEN,
+      `actor ${actor.userId} holds no current global admin role; the check ran in this transaction under the tenant lock, and a demoted administrator never borrows a receipt`,
+      403,
+    );
+  }
+  const [tenant] = await context.tx
+    .select({ id: enterpriseTenants.id })
+    .from(enterpriseTenants)
+    .where(eq(enterpriseTenants.id, context.command.tenantId))
+    .limit(1);
+  if (!tenant) {
+    throw new CompanyLifecycleRefusal(
+      COMPANY_LIFECYCLE_TENANT_MISSING,
+      `company ${context.command.tenantId} does not exist; a lifecycle command only ever acts on a company this server provisioned`,
+      404,
+    );
+  }
+}
+
+/**
+ * The `company.suspend` handler: `active → suspended` only, every member's
+ * company generation +1 through the 0215 change-key channel (the finalizer
+ * advances clock and projection from the registered keys), and the
+ * suspension reason recorded as the BA organization marker the control plane
+ * can query — one atomic command.
+ */
+export function createCompanySuspendHandler(): DirectoryCommandHandler {
+  return Object.freeze({
+    async authorize(context: DirectoryAuthorizeContext): Promise<void> {
+      await authorizePlatformLifecycle(context, "suspend a company");
+    },
+
+    async sync(context: DirectorySyncContext): Promise<{
+      workspaceId: string | null;
+      resourceId: string | null;
+      grantId: string | null;
+      grantGeneration: null;
+    }> {
+      const { tx, command } = context;
+      const payload = command.payload as { readonly reason: string };
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${command.tenantId}, true)`,
+      );
+      // The guarded flip: only an active company suspends, and the WHERE
+      // re-checks it — a concurrent writer that flipped the status under us
+      // is answered by the refusal below, never a second suspension.
+      const flipped = await tx
+        .update(enterpriseTenants)
+        .set({ status: "suspended" })
+        .where(
+          and(
+            eq(enterpriseTenants.id, command.tenantId),
+            eq(enterpriseTenants.status, "active"),
+          ),
+        )
+        .returning({ id: enterpriseTenants.id });
+      if (flipped.length === 0) {
+        const [current] = await tx
+          .select({ status: enterpriseTenants.status })
+          .from(enterpriseTenants)
+          .where(eq(enterpriseTenants.id, command.tenantId))
+          .limit(1);
+        throw new CompanyLifecycleRefusal(
+          COMPANY_SUSPEND_REQUIRES_ACTIVE,
+          `company ${command.tenantId} is "${current?.status ?? "missing"}"; suspend closes an active company and never re-closes one another lifecycle action owns`,
+          409,
+        );
+      }
+      // The applicable version, through the change-key channel: one
+      // self-assigning UPDATE over every member row. Migration 0215 admits
+      // it for company.suspend alone and its per-row trigger registers each
+      // member's company change key (epoch unchanged, generation +1); the
+      // finalizer advances the clocks and projects the rows from those keys,
+      // so the whole company-level revocation lands as one atomic command.
+      await tx
+        .update(authMembers)
+        .set({ role: sql`${authMembers.role}` })
+        .where(eq(authMembers.organizationId, command.tenantId));
+      await setOrganizationSuspension(
+        tx,
+        command.tenantId,
+        payload.reason,
+        context.commandId,
+      );
+      return {
+        workspaceId: null,
+        resourceId: null,
+        grantId: null,
+        grantGeneration: null,
+      };
+    },
+  });
+}
+
+/**
+ * The `company.restore` handler: `suspended → active` only, and every
+ * member's epoch +1 with the generation kept at its already-advanced value —
+ * the restore is a controlled re-admission that never rewinds the versions
+ * the suspension invalidated, so an old scope stays dead and only freshly
+ * issued ones (reading the live versions) work again.
+ */
+export function createCompanyRestoreHandler(): DirectoryCommandHandler {
+  return Object.freeze({
+    async authorize(context: DirectoryAuthorizeContext): Promise<void> {
+      await authorizePlatformLifecycle(context, "restore a company");
+    },
+
+    async sync(context: DirectorySyncContext): Promise<{
+      workspaceId: string | null;
+      resourceId: string | null;
+      grantId: string | null;
+      grantGeneration: null;
+    }> {
+      const { tx, command } = context;
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${command.tenantId}, true)`,
+      );
+      const flipped = await tx
+        .update(enterpriseTenants)
+        .set({ status: "active" })
+        .where(
+          and(
+            eq(enterpriseTenants.id, command.tenantId),
+            eq(enterpriseTenants.status, "suspended"),
+          ),
+        )
+        .returning({ id: enterpriseTenants.id });
+      if (flipped.length === 0) {
+        const [current] = await tx
+          .select({ status: enterpriseTenants.status })
+          .from(enterpriseTenants)
+          .where(eq(enterpriseTenants.id, command.tenantId))
+          .limit(1);
+        throw new CompanyLifecycleRefusal(
+          COMPANY_RESTORE_REQUIRES_SUSPENDED,
+          `company ${command.tenantId} is "${current?.status ?? "missing"}"; restore reopens a suspended company and never re-opens one that is already open or still provisioning`,
+          409,
+        );
+      }
+      // The same change-key vehicle under restore's rule (epoch +1,
+      // generation unchanged): the finalizer advances every member's clock
+      // epoch and projection, so pre-suspension scopes stay dead on the
+      // already-advanced generation while fresh issuance reads the new epoch.
+      await tx
+        .update(authMembers)
+        .set({ role: sql`${authMembers.role}` })
+        .where(eq(authMembers.organizationId, command.tenantId));
+      await clearOrganizationSuspension(tx, command.tenantId);
+      return {
+        workspaceId: null,
+        resourceId: null,
+        grantId: null,
+        grantGeneration: null,
+      };
+    },
+  });
+}
+
+/** One verification probe: the fact a deletion request must record. */
+interface DeletionProbe {
+  readonly key: string;
+  readonly table: string;
+  /** true → counted WHERE tenant_id; false → the billing external-id probe. */
+  readonly tenantScoped: boolean;
+}
+
+/** The closed probe list (spec §4.3: 资产、Run、费用与保留期). */
+const DELETION_PROBES: readonly DeletionProbe[] = Object.freeze([
+  { key: "assets", table: "enterprise_resources", tenantScoped: true },
+  { key: "runs", table: "enterprise_runs", tenantScoped: true },
+  { key: "billing", table: "billing_customers", tenantScoped: false },
+  { key: "auditEvents", table: "enterprise_audit_events", tenantScoped: true },
+  {
+    key: "securityEvents",
+    table: "enterprise_security_events",
+    tenantScoped: true,
+  },
+] as const);
+
+/**
+ * Reads the deletion-verification facts inside the command's transaction. A
+ * table this deployment does not carry is recorded as `null` (absent, never
+ * a guessed zero); a count is the live number of rows the later deletion
+ * phase would have to answer for. The request registers the facts — it never
+ * acts on them.
+ */
+async function readDeletionVerification(
+  tx: DirectoryTx,
+  tenantId: string,
+): Promise<Record<string, number | null>> {
+  const verification: Record<string, number | null> = {};
+  for (const probe of DELETION_PROBES) {
+    const tableRows = rowsOf(
+      await tx.execute(
+        sql`SELECT 1 AS present FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${probe.table}`,
+      ),
+    );
+    if (tableRows.length === 0) {
+      verification[probe.key] = null;
+      continue;
+    }
+    if (probe.tenantScoped) {
+      const columnRows = rowsOf(
+        await tx.execute(
+          sql`SELECT 1 AS present FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${probe.table} AND column_name = 'tenant_id'`,
+        ),
+      );
+      if (columnRows.length === 0) {
+        verification[probe.key] = null;
+        continue;
+      }
+      const counted = rowsOf(
+        await tx.execute(
+          sql`SELECT count(*)::int AS n FROM ${sql.raw(`public.${probe.table}`)} WHERE tenant_id = ${tenantId}`,
+        ),
+      );
+      verification[probe.key] = Number(counted[0]?.n ?? 0);
+      continue;
+    }
+    const counted = rowsOf(
+      await tx.execute(
+        sql`SELECT count(*)::int AS n FROM ${sql.raw(`public.${probe.table}`)} WHERE external_id = ${`openbot-company-${tenantId}`}`,
+      ),
+    );
+    verification[probe.key] = Number(counted[0]?.n ?? 0);
+  }
+  return verification;
+}
+
+/** The outbox PK's own named refusal: one request row per company. */
+function isOutboxUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 8 && current; depth += 1) {
+    if (String((current as Error).message).includes("auth_command_outbox_pk")) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * The `company.deletion.request` handler: verification plus registration,
+ * never deletion. The request is ONE idempotent outbox intent per company —
+ * the asset/run/billing/retention counts and the platform actor's reason
+ * sealed on the row — and every directory fact stays exactly as it was.
+ */
+export function createCompanyDeletionRequestHandler(): DirectoryCommandHandler {
+  return Object.freeze({
+    async authorize(context: DirectoryAuthorizeContext): Promise<void> {
+      await authorizePlatformLifecycle(
+        context,
+        "request the deletion of a company",
+      );
+    },
+
+    async sync(context: DirectorySyncContext): Promise<{
+      workspaceId: string | null;
+      resourceId: string | null;
+      grantId: string | null;
+      grantGeneration: null;
+    }> {
+      const { tx, command } = context;
+      const payload = command.payload as { readonly reason: string };
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${command.tenantId}, true)`,
+      );
+      const [tenant] = await tx
+        .select({ status: enterpriseTenants.status })
+        .from(enterpriseTenants)
+        .where(eq(enterpriseTenants.id, command.tenantId))
+        .limit(1);
+      if (!tenant) {
+        throw new CompanyLifecycleRefusal(
+          COMPANY_LIFECYCLE_TENANT_MISSING,
+          `company ${command.tenantId} does not exist; a deletion request only ever names a company this server provisioned`,
+          404,
+        );
+      }
+      if (tenant.status === "provisioning") {
+        throw new CompanyLifecycleRefusal(
+          COMPANY_DELETION_REQUIRES_OPEN_COMPANY,
+          `company ${command.tenantId} is still provisioning; a deletion request is registered for an opened company (active or suspended), never one whose provision is still settling`,
+          409,
+        );
+      }
+      const verification = await readDeletionVerification(tx, command.tenantId);
+      const intentPayload = JSON.stringify({
+        tenantId: command.tenantId,
+        reason: payload.reason,
+        verification,
+      });
+      try {
+        await tx.execute(
+          sql`SELECT public.auth_command_append_outbox(${companyDeletionRequestOutboxId(command.tenantId)}, ${context.commandId}, ${COMPANY_DELETION_REQUEST_OUTBOX_KIND}, ${intentPayload})`,
+        );
+      } catch (error) {
+        if (isOutboxUniqueViolation(error)) {
+          throw new CompanyLifecycleRefusal(
+            COMPANY_DELETION_REQUEST_EXISTS,
+            `company ${command.tenantId} already carries a deletion request; the request is one durable row per company and a new key cannot file a second — the existing request stands until its phase disposes of it`,
+            409,
+          );
+        }
+        throw error;
+      }
+      return {
+        workspaceId: null,
+        resourceId: null,
+        grantId: null,
+        grantGeneration: null,
+      };
+    },
+  });
+}
+
+/** The organization's metadata document, tolerating absence and noise. */
+async function readOrganizationMetadata(
+  tx: DirectoryTx,
+  tenantId: string,
+): Promise<Record<string, unknown>> {
+  const [organization] = await tx
+    .select({ metadata: authOrganizations.metadata })
+    .from(authOrganizations)
+    .where(eq(authOrganizations.id, tenantId))
+    .limit(1);
+  const raw = organization?.metadata;
+  if (typeof raw !== "string" || raw.trim() === "") return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+    ) {
+      return parsed as Record<string, unknown>;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The suspension marker on the BA organization (the one auth_organizations
+ * write the 0214 guard admits for company.suspend): the platform actor's
+ * reason, queryable by the independent control plane spec §4.3 names. A
+ * company without a BA organization row updates nothing — the tenant status
+ * and the epoch advance above are the closure facts; the marker is their
+ * readable companion.
+ */
+async function setOrganizationSuspension(
+  tx: DirectoryTx,
+  tenantId: string,
+  reason: string,
+  commandId: string,
+): Promise<void> {
+  const current = await readOrganizationMetadata(tx, tenantId);
+  const next = {
+    ...current,
+    suspended: true,
+    suspensionReason: reason,
+    suspendedByCommand: commandId,
+  };
+  await tx
+    .update(authOrganizations)
+    .set({ metadata: JSON.stringify(next) })
+    .where(eq(authOrganizations.id, tenantId));
+}
+
+/** The restore's counterpart: the marker keys leave with the suspension. */
+async function clearOrganizationSuspension(
+  tx: DirectoryTx,
+  tenantId: string,
+): Promise<void> {
+  const current = await readOrganizationMetadata(tx, tenantId);
+  const {
+    suspended: _suspended,
+    suspensionReason: _suspensionReason,
+    suspendedByCommand: _suspendedByCommand,
+    ...rest
+  } = current;
+  await tx
+    .update(authOrganizations)
+    .set({
+      metadata: Object.keys(rest).length > 0 ? JSON.stringify(rest) : null,
+    })
+    .where(eq(authOrganizations.id, tenantId));
+}
+
+/** One platform lifecycle request: which company, by whom, why, under which key. */
+export interface PlatformCompanyLifecycleInput {
+  readonly actorUserId: string;
+  readonly tenantId: string;
+  readonly reason: string;
+  readonly idempotencyKey: string;
+}
+
+/** What a suspend/restore answers; `replayed` marks the receipt's own replay. */
+export interface PlatformCompanyLifecycleOutcome {
+  readonly tenantId: string;
+  readonly status: "suspended" | "active";
+  readonly commandId: string;
+  readonly replayed: boolean;
+}
+
+/** The asset/run/billing/retention facts a deletion request registers with. */
+export interface CompanyDeletionVerification
+  extends Readonly<Record<string, number | null>> {}
+
+/** What a deletion request answers: the registered request, never a deletion. */
+export interface PlatformCompanyDeletionRequestOutcome {
+  readonly tenantId: string;
+  readonly requestId: string;
+  readonly commandId: string;
+  readonly replayed: boolean;
+  readonly verification: CompanyDeletionVerification;
+}
+
+export interface PlatformCompanyLifecycleService {
+  suspend(
+    input: PlatformCompanyLifecycleInput,
+  ): Promise<PlatformCompanyLifecycleOutcome>;
+  restore(
+    input: PlatformCompanyLifecycleInput,
+  ): Promise<PlatformCompanyLifecycleOutcome>;
+  requestDeletion(
+    input: PlatformCompanyLifecycleInput,
+  ): Promise<PlatformCompanyDeletionRequestOutcome>;
+}
+
+export interface PlatformCompanyLifecycleServiceDeps {
+  /** The single-writer connection the fail-fast admin pre-check reads on. */
+  readonly database: Database;
+  readonly directory: Directory;
+}
+
+/** The input vocabulary the routes and the pre-check share. */
+function assertLifecycleInput(
+  input: PlatformCompanyLifecycleInput,
+): PlatformCompanyLifecycleInput {
+  const reason = input.reason.trim();
+  if (
+    typeof input.tenantId !== "string" ||
+    input.tenantId.trim() === "" ||
+    input.tenantId.length > 128 ||
+    reason === "" ||
+    input.reason.length > 512
+  ) {
+    throw new CompanyLifecycleRefusal(
+      COMPANY_LIFECYCLE_INPUT_INVALID,
+      "a lifecycle command names one existing company and one non-empty reason (bounded), and nothing else; the payload contract is interfaces §2's table",
+      400,
+    );
+  }
+  return input;
+}
+
+/** The fail-fast actor gate the handler re-verifies inside the lock. */
+async function readHoldsAdminRole(
+  database: Database,
+  userId: string,
+): Promise<boolean> {
+  const rows = await database.execute(
+    sql`SELECT 1 AS ok FROM user_roles WHERE user_id = ${userId} AND role = 'admin' LIMIT 1`,
+  );
+  return rowsOf(rows).length > 0;
+}
+
+/** The server-issued platform actor one lifecycle command runs under. */
+function lifecycleActor(actorUserId: string) {
+  return Object.freeze({
+    userId: actorUserId,
+    principalId: null,
+    sessionId: null,
+    kind: "platform" as const,
+    bindingId: null,
+    provisioning: null,
+  });
+}
+
+/**
+ * The platform lifecycle orchestrator: the fail-fast admin pre-check, then
+ * the private directory command through the executor — the authority gate,
+ * the tenant-exclusive lock, the receipt the same key replays and the
+ * finalizer's audit are the executor's, so every transition is one atomic
+ * command that never advances anything twice.
+ */
+export function createPlatformCompanyLifecycleService(
+  deps: PlatformCompanyLifecycleServiceDeps,
+): PlatformCompanyLifecycleService {
+  if (!deps?.database) {
+    throw new Error(
+      "PLATFORM_LIFECYCLE_DEPS_REQUIRED: createPlatformCompanyLifecycleService needs the single-writer database the actor pre-check reads on",
+    );
+  }
+  if (typeof deps?.directory?.execute !== "function") {
+    throw new Error(
+      "PLATFORM_LIFECYCLE_DEPS_REQUIRED: createPlatformCompanyLifecycleService needs the Directory executor; without the command envelope there is no lifecycle transition, and a permissive substitute is the bypass interfaces §3.3 forbids",
+    );
+  }
+
+  /** The shared half: pre-check → command → outcome. */
+  async function runLifecycleCommand(
+    input: PlatformCompanyLifecycleInput,
+    operation: "company.suspend" | "company.restore",
+  ): Promise<PlatformCompanyLifecycleOutcome> {
+    const valid = assertLifecycleInput(input);
+    if (!(await readHoldsAdminRole(deps.database, valid.actorUserId))) {
+      throw new CompanyLifecycleRefusal(
+        COMPANY_LIFECYCLE_ADMIN_REQUIRED,
+        `actor ${valid.actorUserId} holds no current global admin role; company lifecycle transitions are platform actions and company roles never substitute for them`,
+        403,
+      );
+    }
+    const result = await deps.directory.execute(
+      lifecycleActor(valid.actorUserId),
+      {
+        operation,
+        tenantId: valid.tenantId,
+        idempotencyKey: valid.idempotencyKey,
+        payload: { reason: valid.reason },
+      },
+    );
+    return {
+      tenantId: valid.tenantId,
+      status: operation === "company.suspend" ? "suspended" : "active",
+      commandId: result.commandId,
+      replayed: result.replayed,
+    };
+  }
+
+  return Object.freeze({
+    async suspend(input: PlatformCompanyLifecycleInput) {
+      return runLifecycleCommand(input, "company.suspend");
+    },
+    async restore(input: PlatformCompanyLifecycleInput) {
+      return runLifecycleCommand(input, "company.restore");
+    },
+    async requestDeletion(input: PlatformCompanyLifecycleInput) {
+      const valid = assertLifecycleInput(input);
+      if (!(await readHoldsAdminRole(deps.database, valid.actorUserId))) {
+        throw new CompanyLifecycleRefusal(
+          COMPANY_LIFECYCLE_ADMIN_REQUIRED,
+          `actor ${valid.actorUserId} holds no current global admin role; a company deletion request is a platform action and company roles never substitute for it`,
+          403,
+        );
+      }
+      const result = await deps.directory.execute(
+        lifecycleActor(valid.actorUserId),
+        {
+          operation: "company.deletion.request",
+          tenantId: valid.tenantId,
+          idempotencyKey: valid.idempotencyKey,
+          payload: { reason: valid.reason },
+        },
+      );
+      // The verification travels on the one durable request row, so a fresh
+      // command and a replay answer with the same registered facts.
+      const [intent] = await deps.database
+        .select({ payload: authCommandOutbox.payload })
+        .from(authCommandOutbox)
+        .where(
+          eq(
+            authCommandOutbox.id,
+            companyDeletionRequestOutboxId(valid.tenantId),
+          ),
+        )
+        .limit(1);
+      let verification: CompanyDeletionVerification = {};
+      if (typeof intent?.payload === "string") {
+        try {
+          const parsed: unknown = JSON.parse(intent.payload);
+          if (
+            typeof parsed === "object" &&
+            parsed !== null &&
+            typeof (parsed as { verification?: unknown }).verification ===
+              "object"
+          ) {
+            verification = (
+              parsed as { verification: Record<string, number | null> }
+            ).verification;
+          }
+        } catch {
+          verification = {};
+        }
+      }
+      return {
+        tenantId: valid.tenantId,
+        requestId: companyDeletionRequestOutboxId(valid.tenantId),
+        commandId: result.commandId,
+        replayed: result.replayed,
+        verification,
+      };
+    },
   });
 }

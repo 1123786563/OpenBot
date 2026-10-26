@@ -1506,6 +1506,13 @@
       "when": 1792892119284,
       "tag": "0214_better_auth_schema_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1792965326836,
+      "tag": "0215_better_auth_company_lifecycle",
+      "breakpoints": true
     }
   ]
 }

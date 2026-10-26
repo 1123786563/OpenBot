@@ -523,15 +523,15 @@ export function createUnavailableCompanyAdminRoutes(): Hono {
 // T03.03（#540，P06）：平台公司开通入口（platform 面，非 company 面）
 // ---------------------------------------------------------------------------
 
-import { isCompanyLifecycleRefusal } from "../../auth/directory/lifecycle";
-import { isDirectoryCommandRefusal } from "../../auth/directory/executor";
 import { isAuthorityRefusal } from "../../auth/directory/authority";
-import type { AuthenticatedRequestIdentity } from "./store";
+import { isDirectoryCommandRefusal } from "../../auth/directory/executor";
+import { isCompanyLifecycleRefusal } from "../../auth/directory/lifecycle";
 import type {
   PlatformCompanyProvisionInput,
   PlatformCompanyProvisionOutcome,
   PlatformCompanyProvisionService,
 } from "./provision";
+import type { AuthenticatedRequestIdentity } from "./store";
 
 /** The platform face's dependencies: authentication plus the provision service. */
 export interface PlatformCompanyRouteDeps {
@@ -621,9 +621,12 @@ function platformErrorResponse(error: unknown): {
     };
   }
   if (isAuthorityRefusal(error)) {
+    // The refusal's stable code, never its message: the message carries the
+    // detail text (T03.03 review R1-F1, low), and the platform face's error
+    // DTO is a closed vocabulary, not a diagnostic channel.
     return {
       status: 503,
-      body: { error: { code: error.message, message: "Request refused." } },
+      body: { error: { code: error.code, message: "Request refused." } },
     };
   }
   if (error instanceof Error && error.message === "AUTH_REQUIRED") {
@@ -644,4 +647,102 @@ function platformErrorResponse(error: unknown): {
     status: 500,
     body: { error: { code: "internal", message: "Request failed." } },
   };
+}
+
+// ---------------------------------------------------------------------------
+// T03.04（#541，P06）：平台公司生命周期入口（suspend / restore / deletion-request）
+// ---------------------------------------------------------------------------
+
+import type {
+  PlatformCompanyLifecycleInput,
+  PlatformCompanyLifecycleService,
+} from "../../auth/directory/lifecycle";
+
+/** The platform lifecycle face's dependencies: authentication plus the service. */
+export interface PlatformCompanyLifecycleRouteDeps {
+  authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
+  lifecycle: PlatformCompanyLifecycleService;
+}
+
+const COMPANY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+const LIFECYCLE_REASON_MAX = 512;
+
+/**
+ * The platform company-lifecycle surface, mounted beside the provision face at
+ * `/api/enterprise/companies`: `POST /:companyId/suspend`, `POST /:companyId/
+ * restore` and `POST /:companyId/deletion-request`, each with a {reason} body
+ * and the idempotency-key header. The plane is the platform's — the admin gate
+ * lives in the lifecycle service (and is re-verified inside the locked
+ * command), so no company role ever reaches this surface.
+ */
+export function createPlatformCompanyLifecycleRoutes(
+  deps: PlatformCompanyLifecycleRouteDeps,
+): Hono {
+  const routes = new Hono();
+
+  /** One lifecycle route's shared shape: auth → key → body → service call. */
+  const lifecycleRoute = (
+    path: string,
+    createdStatus: 200 | 201,
+    call: (
+      input: PlatformCompanyLifecycleInput,
+    ) => Promise<{ readonly replayed: boolean }>,
+  ) => {
+    routes.post(path, async (context) => {
+      try {
+        const identity = await deps.authenticate(context.req.raw);
+        if (!identity?.actorId) throw new Error("AUTH_REQUIRED");
+        const idempotencyKey = context.req.header(IDEMPOTENCY_HEADER);
+        if (
+          idempotencyKey === undefined ||
+          idempotencyKey.trim() === "" ||
+          idempotencyKey.length > IDEMPOTENCY_KEY_MAX ||
+          !isPrintableText(idempotencyKey)
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const companyId = context.req.param("companyId");
+        if (!companyId || !COMPANY_ID_PATTERN.test(companyId)) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const body = await readJsonObject(context.req.raw);
+        const reason = body.reason;
+        if (
+          typeof reason !== "string" ||
+          reason.trim() === "" ||
+          reason.length > LIFECYCLE_REASON_MAX ||
+          !isPrintableText(reason)
+        ) {
+          throw new Error("INVALID_REQUEST");
+        }
+        const outcome = await call({
+          actorUserId: identity.actorId,
+          tenantId: companyId,
+          reason,
+          idempotencyKey,
+        });
+        return context.json(
+          path.endsWith("/deletion-request")
+            ? { deletionRequest: outcome }
+            : { company: outcome },
+          outcome.replayed ? 200 : createdStatus,
+        );
+      } catch (error) {
+        const response = platformErrorResponse(error);
+        return context.json(response.body, response.status);
+      }
+    });
+  };
+
+  lifecycleRoute("/:companyId/suspend", 200, (input) =>
+    deps.lifecycle.suspend(input),
+  );
+  lifecycleRoute("/:companyId/restore", 200, (input) =>
+    deps.lifecycle.restore(input),
+  );
+  lifecycleRoute("/:companyId/deletion-request", 201, (input) =>
+    deps.lifecycle.requestDeletion(input),
+  );
+
+  return routes;
 }
