@@ -145,8 +145,22 @@ sticky 路由或共享存储，启动日志的 single-replica 通知覆盖这一
 - **生命周期与重启**：索引随进程重启清空，MAC 仍能通过的存量 token 查不到 ⇒ 401。
   恢复与 M-2 相同——经主站重新进入（webapp-info 轮询或新换票都会重新兑换并种下新
   token）。D9 的 cookie 是会话级的：浏览器关闭即丢弃 cookie，但服务端看不到这个
-  事件，索引条目会留到重启或显式作废（与 registry 不做逐出同一取舍，条目数按兑换
-  次数计而非会话数）。
+  事件，索引条目会留到重启、显式作废或**逐出**（见下一条）。
+- **每会话容量上限与逐出（#651，推翻此前的「不做逐出」取舍）**：每个会话最多保留
+  最近 **8** 个通行证（`PREVIEW_PASSES_PER_SESSION`，N 值论证写在该常量注释里）；
+  第 9 次铸出会逐出该会话**最旧**的一条。逐出是**被动**的：被逐 token 只是查不到，
+  兑换时落进与「过期 / 重启清空」完全相同的索引 miss 分支 ⇒ 401，不是错误码，也不
+  存在放行分支。
+  - **不变量**：逐出只取**本会话最旧**的一条，因此会话**当前最新铸出**的通行证永不
+    因自己这次铸出而失效；A 会话的铸出也永不影响 B 会话的队列。这是小 N 之所以安全
+    的前提——常态（每个预览 host/path 只有一个 cookie 槽，每次兑换覆盖前值）远低于
+    8，逐出只约束「循环 mint+redeem」的客户端。
+  - **为何推翻旧取舍**：旧条目接受「按兑换次数增长」，但兑换由客户端驱动——认证
+    客户端循环 mint+redeem 会让进程内存单调增长，且每个被覆盖的旧 token 在作废或
+    重启前一直有效。上限把增长从「每次兑换」换成「每会话」。
+  - **未选方案**：会话删除钩子清扫。它需要生产调用方接上会话删除钩子（`revokePass`
+    目前仍无生产调用方，#649 的接缝），属后续票；容量上限不需要任何调用方，钩子即使
+    永不触发也成立。
 - **单 token 作废（AC7）**：删除一个索引条目即可让**那一个**通行证 401，会话本身与
   同一会话的其他 token 不受影响；再次铸票立即可用。作废按 (sessionId, 候选值) 双重
   校验——传错会话 id 不会误删别人的 token；候选值先过与 verify 相同的**形状**门
@@ -172,11 +186,19 @@ sticky 路由或共享存储，启动日志的 single-replica 通知覆盖这一
  （host 形态按 `<label>.<preview-base>` 子域哈希分发即可，dev 形态按源 IP）。没有
  sticky 的多副本不在支持范围内。
 
-启动检查（#418）：preview origin 开启时，启动日志必打一条
-`single-replica contract: the preview origin's label registry and ticket table are in-process …`
-（info 级）；当检测到 `OPENBOT_REDIS_URL` 已设（部署自己的多副本信号，与 workshop
-域读同一个变量）而 registry 仍是进程内状态时，升为 **warn** 并点名 sticky 路由。
-craft 关闭或 preview origin 关闭时不打——关闭的 origin 没有 preview host 可路由错。
+启动检查（#418，#647 补齐枚举）：preview origin 开启时，启动日志必打一条
+`single-replica contract: the preview origin's in-process registries/indexes …`
+（info 级）；这一条把进程内三族一次性点名——**label registry、ticket table、
+pass index**——因为它们是重启会清空、第二个副本永远看不见的三张表/索引。当检测到
+`OPENBOT_REDIS_URL` 已设（部署自己的多副本信号，与 workshop 域读同一个变量）而
+registry 仍是进程内状态时，升为 **warn** 并点名 sticky 路由。craft 关闭或 preview
+origin 关闭时不打——关闭的 origin 没有 preview host 可路由错。
+
+**pass index 的失败形态（#647 补写）**：索引随进程重启清空，于是**已成功兑换过**
+的存量通行证会出现「MAC 通过、索引 miss」——兑换之后才 401。这是它自己的形状，
+既不落进 label registry 的 404 "Unknown preview host."，也不像认证被篡改：
+看起来像鉴权 bug，实际是索引丢了。恢复与 M-2 相同（经主站重新进入即重新铸票）。
+启动日志一次点名该族，正是为了让这个 401 可被归因。
 
 可观测信号：preview origin 暴露 `registryStats()`（返回
 `{"registeredLabels": N}`，只计数，永不枚举 label 或 session id，AC9）。健康检查/
@@ -257,8 +279,8 @@ site is refused (#404)」；改任一侧的判据必须同时改另一侧。
 这是**全局**层级；#427 的单 token 作废（`revokePass`，删索引条目）是更细的层级——只退掉
 一个通行证而不动会话与其他 token。两层并存：日常轮换用单 token 作废，密钥轮换是全量重置。
 两条派生互不可逆推、不可互相伪造（用途域分离）。
-registry 不做逐出：条目数以会话数为上界，与 M-2 一并接受；pass 索引不做逐出，见
-「通行证索引与单 token 作废」一节。
+registry 不做逐出：条目数以会话数为上界，与 M-2 一并接受；pass 索引**按会话容量上限
+逐出**（每会话最近 8 条，#651），见「通行证索引与单 token 作废」一节。
 
 ### HMR（#363，代码已落地）
 

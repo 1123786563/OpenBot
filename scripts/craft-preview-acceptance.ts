@@ -793,10 +793,23 @@ const api = {
       );
     const first = await attempt();
     // vite 代理偶发截断响应体（json() 失败 → body null；run3 实测，server 侧
-    // 同一请求 200 有体）：harness 层重试一次，不弱化任何断言。
+    // 同一请求 200 有体）：harness 层重试一次，不弱化任何断言。204/205 的无体
+    // 是协议规定的成功形态，不是截断——曾把同 id DELETE 的 204 当截断 1500ms
+    // 后重放成 404 假 FAIL（#659），无体成功状态码直接按完成处理。
+    if (first.status === 204 || first.status === 205) return first;
     if (first.body !== null && first.status < 500) return first;
     await new Promise((r) => setTimeout(r, 1500));
-    return await attempt();
+    const second = await attempt();
+    // 重放臂容忍（#659 辅方向）：首击已 2xx 完成而重放遇 404/410——幂等请求
+    // 重放时资源已不在（RFC 7231 §4.2.2），按首击成功返回，不产假 FAIL。
+    if (
+      first.status >= 200 &&
+      first.status < 300 &&
+      (second.status === 404 || second.status === 410)
+    ) {
+      return first;
+    }
+    return second;
   },
 };
 
