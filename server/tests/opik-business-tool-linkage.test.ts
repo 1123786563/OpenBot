@@ -48,9 +48,9 @@ import { resolveObservationScope } from "../src/ai-observability/scope";
 import { createToolStepRecorder } from "../src/ai-observability/tool-steps";
 import {
   buildAgents,
+  bindRemoteDialChain,
   builtinRunChainCounts,
   resolveRuntimeAgents,
-  builtinRunChainMiddleware,
   derivedBuiltinRunTraceId,
   type BuiltinToolStepFact,
   REMOTE_BUDGET_RECEIPT_EVENT,
@@ -68,6 +68,7 @@ import {
   remoteBudgetCaps,
 } from "../src/ai-observability/remote-run";
 import { type ObserverRunBindingGate } from "../src/ai-observability/bindings";
+import { runRootSpanId } from "@openbot/shared/run-identity";
 import type { AgentFetch } from "../src/channels/stall-guard";
 
 const hereDir = dirname(fileURLToPath(import.meta.url));
@@ -248,6 +249,7 @@ const SURFACE_TOOL = {
 async function driveBuiltinRun(
   facts: BuiltinToolStepFact[],
   input: RunAgentInput,
+  withHandoff = false,
 ): Promise<BaseEvent[]> {
   const events: BaseEvent[] = [];
   setBuiltinToolStepObserver((fact) => {
@@ -262,6 +264,14 @@ async function driveBuiltinRun(
       () => [PROBE_AGENT],
       { provider: "openai", defaultModel: "stub-model" },
       async () => "synthetic-model-key",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      withHandoff ? async () => [] : undefined,
     );
     const runtimeAgent = agents[PROBE_AGENT.id];
     if (!runtimeAgent) throw new Error("resolveRuntimeAgents built no agent");
@@ -331,6 +341,98 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
     expect(fact.trace?.spanId).toBe(runUpstreamIdentity(expectedTrace).rootSpanId);
     expect(builtinRunChainCounts().derived).toBe(countsBefore.derived + 1);
     expect(fact.origin).toBeUndefined(); // the built-in path reads as builtin at the recorder
+  });
+
+  test("production handoff wrapper derives the chain around the inner run", async () => {
+    const { stop } = recordedSpans();
+    const facts: BuiltinToolStepFact[] = [];
+    const before = builtinRunChainCounts();
+    try {
+      await withSseStub(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        await driveBuiltinRun(facts, input("run-handoff"), true);
+      });
+    } finally {
+      await stop();
+    }
+    const traceId = derivedBuiltinRunTraceId(PROBE_AGENT.id, "run-handoff");
+    expect(facts).toHaveLength(1);
+    expect(facts[0]!.trace).toEqual({
+      traceId,
+      spanId: runUpstreamIdentity(traceId).rootSpanId,
+    });
+    expect(builtinRunChainCounts().derived).toBe(before.derived + 1);
+  });
+
+  test("the shared run-root derivation and the binding store's agree — one parent discipline", () => {
+    for (const traceId of [
+      derivedBuiltinRunTraceId(PROBE_AGENT.id, "contract-pin"),
+      "0123456789abcdef0123456789abcdef",
+      "ffffffffffffffffffffffffffffffff",
+    ]) {
+      expect(runRootSpanId(traceId)).toBe(
+        runUpstreamIdentity(traceId).rootSpanId,
+      );
+    }
+  });
+
+  test("the anchor post carries the exporter's auth headers; absent headers change nothing", async () => {
+    const posts: Array<Record<string, string | string[] | undefined>> = [];
+    const server = createHttpServer((req, res) => {
+      posts.push({ ...req.headers });
+      res.writeHead(200).end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1/traces`;
+    const saved = {
+      endpoint: process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+      headers: process.env.OTEL_EXPORTER_OTLP_HEADERS,
+      traces: process.env.OPENBOT_TRACES,
+    };
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = url;
+    process.env.OPENBOT_TRACES = "on";
+    try {
+      process.env.OTEL_EXPORTER_OTLP_HEADERS =
+        "authorization=Bearer anchor-key,x_test=v%202";
+      bindRemoteDialChain(
+        { origin: "derived", traceId: "0123456789abcdef0123456789abcdef" },
+        "risk",
+        "run-anchor",
+      );
+      const deadline = Date.now() + 5_000;
+      while (posts.length === 0 && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(posts.length).toBe(1);
+      expect(posts[0]!.authorization).toBe("Bearer anchor-key");
+      // The SDK's own header grammar: comma-separated key=value, percent-decoded.
+      expect(posts[0]!.x_test).toBe("v 2");
+      expect(posts[0]!["content-type"]).toBe("application/json");
+
+      delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+      posts.length = 0;
+      bindRemoteDialChain(
+        { origin: "derived", traceId: "fedcba9876543210fedcba9876543210" },
+        "risk",
+        "run-anchor-bare",
+      );
+      const bareDeadline = Date.now() + 5_000;
+      while (posts.length === 0 && Date.now() < bareDeadline)
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(posts.length).toBe(1);
+      expect(posts[0]!.authorization).toBeUndefined();
+    } finally {
+      if (saved.endpoint === undefined)
+        delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+      else process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = saved.endpoint;
+      if (saved.headers === undefined)
+        delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+      else process.env.OTEL_EXPORTER_OTLP_HEADERS = saved.headers;
+      if (saved.traces === undefined) delete process.env.OPENBOT_TRACES;
+      else process.env.OPENBOT_TRACES = saved.traces;
+      server.close();
+    }
   });
 
   test("re-driving the same run identity re-derives the same chain; a fresh run derives its own", async () => {
@@ -519,8 +621,10 @@ function scriptedEndpoint(withReceipt: boolean, stateToolToo: boolean, finishThe
 
 /** The budget seams with a recording credit writer (the dial suite's harness shape). */
 function budgetHarness() {
+  const reservedKeys: string[] = [];
   const creditWriter = {
-    async reserveCredits() {
+    async reserveCredits(input: { idempotencyKey: string }) {
+      reservedKeys.push(input.idempotencyKey);
       return { reserved: true as const, reservationId: "reservation-1" };
     },
     async markReservationUnknown() {},
@@ -547,15 +651,18 @@ function budgetHarness() {
     maximumTokens: POLICY_TOKENS,
     maxModelSteps: MAX_MODEL_STEPS,
   });
-  return { gate, resolver };
+  return { gate, resolver, reservedKeys };
 }
 
-async function buildRemoteBot(fetch: AgentFetch, threadingScope: { actorId: string }) {
+async function buildRemoteBot(
+  fetch: AgentFetch,
+  threadingScope: { actorId: string },
+): Promise<{ agents: Awaited<ReturnType<typeof buildAgents>>; reservedKeys: string[] }> {
   const harness = budgetHarness();
   setRemoteRunBudgetGate(harness.gate);
   setRemoteBudgetContractResolver(harness.resolver);
   try {
-    return await buildAgents(
+    const agents = await buildAgents(
       [remoteAgentRow()],
       { provider: "openai", defaultModel: "test" },
       null,
@@ -589,6 +696,7 @@ async function buildRemoteBot(fetch: AgentFetch, threadingScope: { actorId: stri
           ),
       },
     );
+    return { agents, reservedKeys: harness.reservedKeys };
   } finally {
     setRemoteRunBudgetGate(undefined);
     setRemoteBudgetContractResolver(undefined);
@@ -604,7 +712,7 @@ describe("R4-03 remote: the endpoint's business tool calls become governance ste
     });
     const { stop } = recordedSpans();
     try {
-      const agents = await buildRemoteBot(fetch, { actorId: "person-1" });
+      const { agents } = await buildRemoteBot(fetch, { actorId: "person-1" });
       const agent = agents.risk;
       if (!agent) throw new Error("buildAgents returned no remote agent");
       agent.threadId = "remote-thread";
@@ -646,7 +754,7 @@ describe("R4-03 remote: the endpoint's business tool calls become governance ste
     });
     const { stop } = recordedSpans();
     try {
-      const agents = await buildRemoteBot(fetch, { actorId: "person-1" });
+      const { agents } = await buildRemoteBot(fetch, { actorId: "person-1" });
       const agent = agents.risk;
       if (!agent) throw new Error("buildAgents returned no remote agent");
       agent.threadId = "remote-thread";
@@ -662,6 +770,39 @@ describe("R4-03 remote: the endpoint's business tool calls become governance ste
     expect(facts[0]!.output).toBe(null);
     // Still never executed — a proposal is its own fact, not an implied settlement.
     expect(facts[0]!.executionObserved).toBe(false);
+  });
+
+  test("runs reusing a client runId each take their own hold — the key carries a server nonce", async () => {
+    const { fetch } = scriptedEndpoint(true, false);
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => {
+      facts.push(fact);
+    });
+    const { stop } = recordedSpans();
+    try {
+      const { agents, reservedKeys } = await buildRemoteBot(fetch, {
+        actorId: "person-1",
+      });
+      const agent = agents.risk;
+      if (!agent) throw new Error("buildAgents returned no remote agent");
+      agent.threadId = "remote-thread";
+      // The finding's shape: the same client-supplied runId, admission after admission.
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      await agent.runAgent({ runId: "run-reused" }, { onEvent: () => {} });
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      await agent.runAgent({ runId: "run-reused" }, { onEvent: () => {} });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(reservedKeys).toHaveLength(2);
+      for (const key of reservedKeys) {
+        // Server-side nonce after the bot: the client's runId cannot land a second
+        // admission on the first one's reservation.
+        expect(key).toMatch(/^usage:remote-run:risk:[0-9a-f-]{36}$/);
+      }
+      expect(reservedKeys[0]).not.toBe(reservedKeys[1]);
+    } finally {
+      setBuiltinToolStepObserver(undefined);
+      await stop();
+    }
   });
 
   test("the recorder names the origin, links the call id, and binds under the run's identity", async () => {

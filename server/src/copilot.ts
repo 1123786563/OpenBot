@@ -22,6 +22,8 @@ import { PROVENANCE_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
 import { defaultModelFor } from "@openbot/shared/model-providers";
 import { currentTraceContext, injectTraceHeaders } from "@openbot/shared/trace";
+import { runRootSpanId } from "@openbot/shared/run-identity";
+import { parseHeaders } from "./telemetry/otel";
 import {
   BuiltInAgentWithSaneHistory,
   CloningRemoteAgent,
@@ -61,7 +63,6 @@ import {
   planModelForEnvironment,
 } from "./agents/plan-model";
 import type { AgentActor } from "./agents/profile-types";
-import { runUpstreamIdentity } from "./ai-observability/opik-http";
 import type { AuditInitiator } from "./audit";
 import { CreditInsufficientError } from "./billing/payer-binding";
 import {
@@ -1499,8 +1500,6 @@ export type RemoteRunAdmissionInput = Readonly<{
   botId: string;
   runId: string;
   threadId: string;
-  /** Who the run is for (09.1's consumption attribution), as the build knew them. */
-  attribution: { userId: string | null };
 }>;
 
 /** What the run's own event stream could honestly name at its end. */
@@ -3977,7 +3976,6 @@ async function buildAgent(
       handoff,
       initiator,
       observation,
-      attribution,
       budgetGate,
       contract,
     );
@@ -4018,6 +4016,7 @@ async function buildAgent(
         gatewayModel,
       ),
       {
+        wrapChain: (input, run) => builtinRunChainMiddleware(agent.id)(input, run),
         observe: (run) =>
           observeModelConnection(
             observeBuiltinRunLifecycle(observeBuiltinToolSteps(run)),
@@ -4044,7 +4043,7 @@ async function buildAgent(
             }
           : {}),
       },
-    ).use(builtinRunChainMiddleware(agent.id));
+    );
 
   const whole = withTools(granted);
   if (!narrowing && !handoff && !model.plan && !acquireLearnedSkills)
@@ -4423,7 +4422,7 @@ type BoundRemoteDial = Readonly<{
  * as one raw OTLP post at dial-bind time:
  *
  *   * the CHAIN ROOT — trace id = the run's derived trace, span id =
- *     `runUpstreamIdentity(traceId).rootSpanId` (the same root the binding's governance tree
+ *     `runRootSpanId(traceId)` (the same root the binding's governance tree
  *     hangs from), NO parent — the span that roots the chain, so every span under it has a
  *     parent the receiving backend can resolve;
  *   * the DIAL SPAN — the deterministic dial id, parented at the chain root — the span the
@@ -4469,7 +4468,7 @@ function postDialChainAnchors(
   ) {
     return; // nothing exports from this process; the dial carries the header regardless
   }
-  const rootSpanId = runUpstreamIdentity(traceId).rootSpanId;
+  const rootSpanId = runRootSpanId(traceId);
   const startNanos = (BigInt(startedAt.getTime()) * 1_000_000n).toString();
   const span = (
     spanId: string,
@@ -4491,7 +4490,12 @@ function postDialChainAnchors(
   });
   void fetch(tracesEndpoint, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    // The exporter's own auth headers (OTEL_EXPORTER_OTLP_HEADERS) so an
+    // authenticated collector accepts this anchor post like any SDK export.
+    headers: {
+      "content-type": "application/json",
+      ...parseHeaders(process.env.OTEL_EXPORTER_OTLP_HEADERS),
+    },
     body: JSON.stringify({
       resourceSpans: [
         {
@@ -4725,11 +4729,11 @@ export function builtinRunChainCounts(): Readonly<
  */
 export function builtinRunChainMiddleware(
   botId: string,
-): (input: RunAgentInput, next: AbstractAgent) => Observable<BaseEvent> {
-  return (input, next) => {
+): (input: RunAgentInput, run: Observable<BaseEvent>) => Observable<BaseEvent> {
+  return (input, run) => defer(() => {
     if (currentTraceContext() !== undefined) {
       builtinRunChainTally.ambient += 1;
-      return next.run(input);
+      return run;
     }
     const runId = typeof input.runId === "string" ? input.runId.trim() : "";
     if (runId === "") {
@@ -4738,7 +4742,7 @@ export function builtinRunChainMiddleware(
         { type: "builtin-run-chain-unavailable", botId },
         "builtin-run-chain-unavailable: no active span and no run identity; the run's facts stay chain-less and submit nothing upstream",
       );
-      return next.run(input);
+      return run;
     }
     builtinRunChainTally.derived += 1;
     const traceId = derivedBuiltinRunTraceId(botId, runId);
@@ -4756,14 +4760,14 @@ export function builtinRunChainMiddleware(
       context.active(),
       trace.wrapSpanContext({
         traceId,
-        spanId: runUpstreamIdentity(traceId).rootSpanId,
+        spanId: runRootSpanId(traceId),
         traceFlags: TraceFlags.SAMPLED,
         isRemote: false,
         traceState: undefined,
       }),
     );
-    return subscribeWithin(ctx, next.run(input));
-  };
+    return subscribeWithin(ctx, run);
+  });
 }
 
 /**
@@ -4863,7 +4867,6 @@ function governedRemoteRun(
    */
   contract: RemoteBudgetContract,
   threading: BuiltinRunObservationThreading | undefined,
-  attribution: { userId: string | null } | undefined,
   input: RunAgentInput,
   next: AbstractAgent,
 ): Observable<BaseEvent> {
@@ -4883,17 +4886,19 @@ function governedRemoteRun(
       Promise.all([
         gate({
           /*
-           * Deterministic per run: a resubscribed observable replays this same hold instead of
-           * taking a second one, and the writer's idempotency answers the replay with the hold
-           * that already exists — the natural-key discipline the built-in path keeps per model
-           * call, held here per run.
+           * The idempotency key carries a SERVER-side nonce, not the client's runId: AG-UI
+           * runId is wire input, and a key derived from it let a client reusing one runId
+           * land concurrent runs on one shared hold — one reservation, many consumptions,
+           * a ledger that under-counts by design. Each subscription is one admission (the
+           * built-in model-call gate derives its eventId the same way), so each takes its
+           * own hold; a legitimate re-dial pays for its own capacity instead of replaying
+           * another subscription's.
            */
-          eventId: `remote-run:${agent.id}:${runId}`,
+          eventId: `remote-run:${agent.id}:${randomUUID()}`,
           occurredAt,
           botId: agent.id,
           runId,
           threadId: input.threadId,
-          attribution: { userId: attribution?.userId ?? null },
         }),
         threading
           ? resolveObservationScopeBounded(threading, agent.id)
@@ -4961,7 +4966,7 @@ function governedRemoteRun(
           if (scope === null || scope === undefined) return;
           if (traceId === null) return;
           const parentSpanId =
-            chain.parentSpanId ?? runUpstreamIdentity(traceId).rootSpanId;
+            chain.parentSpanId ?? runRootSpanId(traceId);
           for (const cell of toolCells.values()) {
             try {
               stepObserver({
@@ -5026,16 +5031,14 @@ function governedRemoteRun(
             // be executing at the endpoint.
             events.push({ type: "disconnected" });
           }
+          const outcomeByTerminal: Record<string, RemoteRunAdmissionOutcome> = {
+            success: "succeeded",
+            error: "failed",
+            interrupted: "interrupted",
+            canceled: "canceled",
+          };
           const outcome: RemoteRunAdmissionOutcome =
-            terminal?.type === "success"
-              ? "succeeded"
-              : terminal?.type === "error"
-                ? "failed"
-                : terminal?.type === "interrupted"
-                  ? "interrupted"
-                  : terminal?.type === "canceled"
-                    ? "canceled"
-                    : "unknown";
+            outcomeByTerminal[terminal?.type ?? ""] ?? "unknown";
           /*
            * Settlement is CONTAINED: the run's outcome is what the person receives, and a
            * ledger that failed to record an unknown cost must not turn a delivered answer into
@@ -5358,8 +5361,6 @@ function remoteAgentWithStandingRole(
    * the run itself is unaffected.
    */
   observation?: BuiltinRunObservationThreading,
-  /** Who this build's runs are for, so the budget admission names the person it bills. */
-  attribution?: { userId: string | null },
   /**
    * The per-run budget admission (F5E1-F2), required: `buildAgent` refuses to build this
    * wrapper without one, so there is no unbudgeted remote Bot to construct.
@@ -5605,7 +5606,6 @@ function remoteAgentWithStandingRole(
             budgetGate,
             contract,
             observation,
-            attribution,
             input,
             next,
           ),

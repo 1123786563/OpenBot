@@ -518,13 +518,16 @@ test("a supported endpoint dials under its contract, and only a checked receipt 
     expect(delivered.map((event) => event.type)).toContain("RUN_FINISHED");
 
     // The admission ran BEFORE the endpoint was contacted, over the run's identity, and held
-    // the policy's worst case in the same ledger every other paid path uses.
+    // the policy's worst case in the same ledger every other paid path uses. The key carries
+    // a server nonce after the bot (OCR R5): a client's reused runId cannot share a hold.
     expect(harness.reservations).toHaveLength(1);
     expect(harness.reservations[0]).toMatchObject({
       externalCustomerId: "customer-1",
-      idempotencyKey: "usage:remote-run:risk:dial-run",
       maximumCents: 5_000,
     });
+    expect(harness.reservations[0].idempotencyKey).toMatch(
+      /^usage:remote-run:risk:[0-9a-f-]{36}$/,
+    );
 
     // One fact, on the chain the dial propagated, with what the endpoint actually sent.
     expect(facts).toHaveLength(1);
