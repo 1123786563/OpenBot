@@ -905,6 +905,48 @@ describeDb("PKG10 unknown dispatch ledger (real roles)", () => {
   );
 
   itDb(
+    "OCR-fix-B3: an unknown row without a connection fact is never verified on the caller's newer connection",
+    async () => {
+      const { seed, toolCallId } = await arrangeUnknown();
+      protocolSeen = [];
+      protocolAnswers = {
+        found: true,
+        outcome: "succeeded",
+        effectStatus: "confirmed",
+      };
+      // Arrangement stand-in (disclosed): the original operation's row loses
+      // its connection fact — the exact shape a dispatch that dialed WITHOUT
+      // a personal connection leaves behind (connectionId null), while the
+      // caller (the same admin) HAS a live binding by now.
+      await setup.$client.unsafe(
+        `update enterprise_package_dispatches set connection_id = null
+         where run_id = $1 and tool_call_id = $2`,
+        [seed.runId, toolCallId],
+      );
+      const operationId = await operationIdOf(seed, toolCallId);
+      const result = await verifier.verifyDispatch(scopeA1, {
+        installId: seed.installId,
+        operationId,
+      });
+      // null is an explicit no-connection fact: the caller's CURRENT
+      // connection must not be auto-selected for the old operation. The
+      // surface answers account-unavailable and the vendor is never dialed
+      // under another account.
+      expect(result).toEqual({
+        outcome: "refused",
+        code: "DISPATCH_ACCOUNT_UNAVAILABLE",
+      });
+      expect(protocolSeen).toHaveLength(0);
+      const row = await dispatch.readDispatch(scopeA1, {
+        runId: seed.runId,
+        attemptGeneration: 1,
+        toolCallId,
+      });
+      expect(row?.state).toBe("unknown");
+    },
+  );
+
+  itDb(
     "an unresolved protocol match leaves the unknown facts untouched",
     async () => {
       const { seed, toolCallId } = await arrangeUnknown();

@@ -669,33 +669,38 @@ export function createPackageRuntime(
         // by the run writer; a caller naming another Bot is a contract
         // violation, refused loudly. A run that does not exist in THIS scope
         // is indistinguishable from having no pins: the same empty set.
+        // OCR-fix-B (B4): the runs table's data RLS is tenant-level, so the
+        // run read itself binds workspace AND initiator principal to this
+        // scope — another workspace's or another initiator's run id answers
+        // the empty set, never their pins.
         const [run] = await tx
           .select({ expertVersionRef: enterpriseRuns.expertVersionRef })
           .from(enterpriseRuns)
           .where(
             and(
               eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
               eq(enterpriseRuns.id, rawInput.runId),
             ),
           )
           .limit(1);
-        if (run) {
-          const [admitted] = await tx
-            .select({ agentId: enterpriseExpertVersions.agentId })
-            .from(enterpriseExpertVersions)
-            .where(
-              and(
-                eq(enterpriseExpertVersions.tenantId, scope.tenantId),
-                eq(
-                  enterpriseExpertVersions.expertVersionRef,
-                  run.expertVersionRef,
-                ),
+        if (!run) return [];
+        const [admitted] = await tx
+          .select({ agentId: enterpriseExpertVersions.agentId })
+          .from(enterpriseExpertVersions)
+          .where(
+            and(
+              eq(enterpriseExpertVersions.tenantId, scope.tenantId),
+              eq(
+                enterpriseExpertVersions.expertVersionRef,
+                run.expertVersionRef,
               ),
-            )
-            .limit(1);
-          if (admitted?.agentId !== rawInput.botId) {
-            throw packageError("INPUT_INVALID");
-          }
+            ),
+          )
+          .limit(1);
+        if (admitted?.agentId !== rawInput.botId) {
+          throw packageError("INPUT_INVALID");
         }
 
         // Membership revalidation (AC4, every read, zero cache): the run's
@@ -744,8 +749,10 @@ export function createPackageRuntime(
             revision: pinRows.revision,
             releaseDigest: pinRows.releaseDigest,
             allowedResourceIds: pinRows.allowedResourceIds,
+            pinnedGeneration: pinRows.installGeneration,
             packageKey: installRows.packageKey,
             installStatus: installRows.status,
+            liveGeneration: installRows.generation,
           })
           .from(pinRows)
           .innerJoin(
@@ -769,6 +776,11 @@ export function createPackageRuntime(
         const served: PinnedSkillSummary[] = [];
         for (const pin of pinned) {
           if (pin.installStatus !== "enabled") continue;
+          // OCR-fix-B (B6): generation isolation, same as the tool read — a
+          // disable→re-enable→re-grant cycle moved the install's generation,
+          // so an old run's old pin (pinned under the previous lifecycle)
+          // serves nothing until a fresh admission re-pins it.
+          if (pin.pinnedGeneration !== pin.liveGeneration) continue;
           // Still-active grant resources for this Bot (re-read now).
           const active = await tx
             .select({ resourceId: grantRows.resourceId })
@@ -834,34 +846,37 @@ export function createPackageRuntime(
 
         // The admitted-bot binding, exactly like the pinned Skill read (L-3):
         // another Bot naming this run is a contract violation, refused loudly;
-        // a run unknown in this scope answers an empty set.
+        // a run unknown in this scope answers an empty set. OCR-fix-B (B4):
+        // the run read binds workspace AND initiator principal to this scope
+        // (the runs table's own RLS is tenant-level).
         const [run] = await tx
           .select({ expertVersionRef: enterpriseRuns.expertVersionRef })
           .from(enterpriseRuns)
           .where(
             and(
               eq(enterpriseRuns.tenantId, scope.tenantId),
+              eq(enterpriseRuns.workspaceId, scope.workspaceId),
+              eq(enterpriseRuns.principalId, scope.principalId),
               eq(enterpriseRuns.id, rawInput.runId),
             ),
           )
           .limit(1);
-        if (run) {
-          const [admitted] = await tx
-            .select({ agentId: enterpriseExpertVersions.agentId })
-            .from(enterpriseExpertVersions)
-            .where(
-              and(
-                eq(enterpriseExpertVersions.tenantId, scope.tenantId),
-                eq(
-                  enterpriseExpertVersions.expertVersionRef,
-                  run.expertVersionRef,
-                ),
+        if (!run) return [];
+        const [admitted] = await tx
+          .select({ agentId: enterpriseExpertVersions.agentId })
+          .from(enterpriseExpertVersions)
+          .where(
+            and(
+              eq(enterpriseExpertVersions.tenantId, scope.tenantId),
+              eq(
+                enterpriseExpertVersions.expertVersionRef,
+                run.expertVersionRef,
               ),
-            )
-            .limit(1);
-          if (admitted?.agentId !== rawInput.botId) {
-            throw packageError("INPUT_INVALID");
-          }
+            ),
+          )
+          .limit(1);
+        if (admitted?.agentId !== rawInput.botId) {
+          throw packageError("INPUT_INVALID");
         }
 
         // Membership revalidation, same as the Skill read: a revoked

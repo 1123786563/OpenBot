@@ -1508,6 +1508,15 @@ const pluginPackageRoutes = await (async () => {
         // PKG04A: expert templates are read from the same verified,
         // content-addressed artifacts the catalogue resolves.
         artifactRoot: config.pluginArtifactRoot,
+        /*
+         * OCR-fix-B (B2): plan/apply re-read the CURRENT deployment facts at
+         * their write decisions — the same gate/lock the deploy commands and
+         * dispatch already share, so a CLI withdrawal blocks installs on a
+         * live process without a restart.
+         */
+        releaseFacts: createDeployedReleaseFactsGate({
+          indexPath: config.pluginMarketplaceIndexPath,
+        }),
       }),
       resolveScope: (request) => enterpriseCapabilities.scopes.resolve(request),
       /*

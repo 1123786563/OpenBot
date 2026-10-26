@@ -34,6 +34,7 @@ import type {
   PackageCatalogue,
   PackageReleaseFacts,
 } from "../../plugin-packages/catalogue";
+import type { PackageReleaseFactsGate } from "../../plugin-packages/deployment-facts";
 import type { PlatformScope } from "../contracts";
 import type { CompanyAdminContext } from "../tenancy/workspace-admin";
 import {
@@ -109,6 +110,14 @@ export interface CreatePackageServiceInput {
    */
   readonly artifactRoot?: string | null;
   readonly now?: PackageClock;
+  /**
+   * OCR-fix-B (B2): fresh deployment-facts gate. Plan/apply re-read the
+   * CURRENT release state (published/digest) at their write-decision points
+   * so a CLI withdrawal blocks a live process immediately. Null keeps the
+   * boot-snapshot behaviour (existing surfaces); production always injects
+   * the gate — the same one dispatch already linearizes against.
+   */
+  readonly releaseFacts?: PackageReleaseFactsGate | null;
 }
 
 function releaseOrArtifactBlockers(
@@ -364,6 +373,34 @@ export function createPackageService(
 ): PackageService {
   const { catalogue, readStore, mutation } = input;
   const now: PackageClock = input.now ?? (() => new Date());
+  const releaseFacts = input.releaseFacts ?? null;
+
+  /**
+   * OCR-fix-B (B2): the fresh-deployment write gate. A lock-free advisory
+   * read (the gate's own contract allows it outside the release lock): the
+   * index's atomic replace makes each read all-old or all-new, and any
+   * unreadable index, missing entry, non-published state or digest drift
+   * from the boot snapshot answers the install surface's existing
+   * withdrawn-refusal code, fail closed.
+   */
+  const assertFreshReleasePublished = async (release: {
+    packageKey: string;
+    version: string;
+    artifactDigest: string;
+  }): Promise<void> => {
+    if (!releaseFacts) return;
+    const fresh = await releaseFacts
+      .readFreshFacts(release.packageKey, release.version)
+      .catch(() => {
+        throw packageError("PACKAGE_UNSUPPORTED");
+      });
+    if (
+      fresh?.state !== "published" ||
+      fresh.artifactDigest !== release.artifactDigest
+    ) {
+      throw packageError("PACKAGE_UNSUPPORTED");
+    }
+  };
 
   const requireMutation = (): PackageMutationStore => {
     if (!mutation) throw packageError("ADMIN_CHANNEL_UNAVAILABLE");
@@ -506,6 +543,10 @@ export function createPackageService(
           wellFormed.version,
         ),
       );
+      // OCR-fix-B (B2): the boot snapshot stays the manifest/verification
+      // source, but the write decision re-reads the CURRENT deployment
+      // facts — a withdrawn release is not plannable without a restart.
+      await assertFreshReleasePublished(release);
       const manifest = release.manifest as PackageManifestV1;
       const mappings = validateConnectorMappings(manifest, wellFormed);
 
@@ -762,6 +803,11 @@ export function createPackageService(
       if (release.artifactDigest !== plan.artifactDigest) {
         throw packageError("PLAN_CHANGED");
       }
+      // OCR-fix-B (B2): re-read the CURRENT deployment facts at apply's
+      // write decision — a plan made before a withdrawal is not applicable
+      // after it, on the same live process. Lock-free read, taken before the
+      // transaction opens (see the report for the lock-semantics note).
+      await assertFreshReleasePublished(release);
       const requestDigest = applyRequestDigest(plan);
 
       try {
@@ -799,23 +845,30 @@ export function createPackageService(
             );
           }
 
-          const [existing] = await tx.db
-            .select({
-              id: installRows.id,
-              status: installRows.status,
-              revision: installRows.revision,
-              generation: installRows.generation,
-              currentVersion: installRows.currentVersion,
-            })
-            .from(installRows)
-            .where(
-              and(
-                eq(installRows.tenantId, scope.tenantId),
-                eq(installRows.workspaceId, scope.workspaceId),
-                eq(installRows.packageKey, plan.packageKey),
-              ),
-            )
-            .limit(1);
+          const installColumns = {
+            id: installRows.id,
+            status: installRows.status,
+            revision: installRows.revision,
+            generation: installRows.generation,
+            currentVersion: installRows.currentVersion,
+          };
+          const readInstall = async () => {
+            const [row] = await tx.db
+              .select(installColumns)
+              .from(installRows)
+              .where(
+                and(
+                  eq(installRows.tenantId, scope.tenantId),
+                  eq(installRows.workspaceId, scope.workspaceId),
+                  eq(installRows.packageKey, plan.packageKey),
+                ),
+              )
+              .limit(1);
+            return row;
+          };
+          // The pre-lock read only names the install the advisory lock is
+          // taken on.
+          let existing = await readInstall();
           if (existing) {
             const installKey = JSON.stringify([
               "enterprise",
@@ -826,6 +879,11 @@ export function createPackageService(
             await tx.db.execute(
               sql`select pg_advisory_xact_lock(hashtextextended(${installKey}, 0))`,
             );
+            // OCR-fix-B (B5): that advisory lock is the same one a
+            // concurrent disable/uninstall queues on — the pre-lock row may
+            // be a pre-disable snapshot. Re-read under the lock and judge
+            // every later step from what stands NOW.
+            existing = await readInstall();
           }
           const planLockKey = JSON.stringify([
             "enterprise",

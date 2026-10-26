@@ -159,6 +159,11 @@ describeDb(
     let runId = "";
     let runtime: ReturnType<typeof createPackageRuntime>;
     let digest = "";
+    // OCR-fix-B (B2): the LIVE install service (same never-rebuilt rule as
+    // the dispatch service above) plus its connector mapping, reused by the
+    // plan/apply fresh-facts arm.
+    let installService: PackageService;
+    let connectorInstallId = "";
 
     // —— The LIVE service: assembled once against the published snapshot and
     // NEVER rebuilt — exactly the process Codex FC-01 targeted. The boot
@@ -346,12 +351,15 @@ describeDb(
       });
       runtime = createPackageRuntime({ data: fixture.base.data, artifactRoot });
 
-      // Install under the published catalogue (the plan path is snapshot-based).
-      const service: PackageService = createPackageService({
+      // Install under the published catalogue; the boot snapshot stays the
+      // manifest source, but plan/apply now re-read fresh deployment facts
+      // through the SAME gate the dispatch service linearizes against.
+      installService = createPackageService({
         catalogue,
         readStore: fixture.readStore,
         mutation: fixture.mutation,
         artifactRoot,
+        releaseFacts: gate,
       });
       const catalogId = "pkg13-managed-notes";
       await fixture.setup.$client.unsafe(
@@ -360,7 +368,7 @@ describeDb(
        on conflict (id) do nothing`,
         [catalogId],
       );
-      const connectorInstallId = `t13-connector-${randomUUID()}`;
+      connectorInstallId = `t13-connector-${randomUUID()}`;
       const connectionId = `t13-connection-${randomUUID()}`;
       await fixture.operator.transaction(async (tx) => {
         await tx.execute(
@@ -379,7 +387,7 @@ describeDb(
           values (${context.company}, ${connectionId}, ${connectorInstallId}, ${context.principal}, 'acct', 1)`,
         );
       });
-      const plan = await service.plan(
+      const plan = await installService.plan(
         scope,
         await fixture.adminContextOf("company-admin", "company-a"),
         {
@@ -391,7 +399,7 @@ describeDb(
           connectorInstalls: { [CONNECTOR]: connectorInstallId },
         },
       );
-      const applied = await service.apply(
+      const applied = await installService.apply(
         scope,
         await fixture.adminContextOf("company-admin", "company-a"),
         plan.planId,
@@ -500,7 +508,11 @@ describeDb(
           serializeMarketplaceIndex(await readMarketplaceIndex(indexPath)),
         );
         // Arm the fresh-read barrier: the FIRST fresh read (pin arm) parks
-        // INSIDE the lock window with the facts already in hand.
+        // INSIDE the lock window with the facts already in hand. (OCR-fix-B2
+        // note: the install service's own beforeAll plan/apply already read
+        // through the gate — reset the evidence log so "first" means first
+        // of THIS arm again.)
+        readEvents.length = 0;
         blockFirstRead = true;
         let releaseTransport: (() => void) | null = null;
         armedTransport = new Promise<void>((resolve) => {
@@ -653,6 +665,84 @@ describeDb(
         const result = await dispatchP;
         expect(result.outcome).toBe("ok");
         expect(vendorCalls).toBe(before + 1);
+      },
+    );
+
+    itDb(
+      "OCR-fix-B2: a committed CLI withdrawal refuses the live install service's plan and apply without a restart",
+      async () => {
+        const restore = await publishViaCli(true);
+        expect(restore.exitCode).toBe(0);
+
+        const admin = await fixture.adminContextOf(
+          "company-admin",
+          "company-a",
+        );
+        const expectPackageCode = async (
+          promise: Promise<unknown>,
+          code: string,
+        ) => {
+          let caught: unknown;
+          try {
+            await promise;
+          } catch (error) {
+            caught = error;
+          }
+          expect((caught as { code?: string } | undefined)?.code).toBe(code);
+        };
+
+        // A plan under the PUBLISHED release still works (positive control),
+        // and its receipt stays applicable only while the release stands.
+        const facts = await fixture.readStore.getInstall(scope, installId);
+        expect(facts?.status).toBe("enabled");
+        const standingPlan = await installService.plan(scope, admin, {
+          operation: "upgrade",
+          packageKey: PKG,
+          version: V1,
+          expectedRevision: facts?.revision ?? 1,
+          config: {},
+          connectorInstalls: { [CONNECTOR]: connectorInstallId },
+        });
+
+        // The committed withdrawal flips the on-disk state; the boot
+        // catalogue snapshot still says published, but plan and apply must
+        // re-read the CURRENT facts and refuse, on the SAME live service.
+        const withdrawn = await withdrawViaCli();
+        expect(withdrawn.exitCode).toBe(0);
+        await expectPackageCode(
+          installService.plan(scope, admin, {
+            operation: "upgrade",
+            packageKey: PKG,
+            version: V1,
+            expectedRevision: facts?.revision ?? 1,
+            config: {},
+            connectorInstalls: { [CONNECTOR]: connectorInstallId },
+          }),
+          "PACKAGE_UNSUPPORTED",
+        );
+        await expectPackageCode(
+          installService.apply(
+            scope,
+            admin,
+            standingPlan.planId,
+            `t13-b2-apply-${randomUUID()}`,
+          ),
+          "PACKAGE_UNSUPPORTED",
+        );
+
+        // Orthogonal direction: a CLI re-publish makes the very same service
+        // plannable again — the freshness read is live both ways, no restart.
+        const republish = await publishViaCli(true);
+        expect(republish.exitCode).toBe(0);
+        const replan = await installService.plan(scope, admin, {
+          operation: "upgrade",
+          packageKey: PKG,
+          version: V1,
+          expectedRevision: facts?.revision ?? 1,
+          config: {},
+          connectorInstalls: { [CONNECTOR]: connectorInstallId },
+        });
+        expect(replan.operation).toBe("upgrade");
       },
     );
   },

@@ -37,6 +37,7 @@ import {
   test,
 } from "../../../tests/support/bun-test-compat";
 import type { Database } from "../../src/db/client";
+import { createDatabase } from "../../src/db/client";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   createPackageDispatchService,
@@ -1174,6 +1175,141 @@ describeDb("PKG07 package lifecycle: disable / uninstall / reinstall", () => {
       );
       expect(facts?.status).toBe("disabled");
       expect(facts?.generation).toBe(2);
+    },
+  );
+
+  itDb(
+    "OCR-fix-B5: apply re-reads the install under the advisory lock — a racing disable and upgrade never both land",
+    async () => {
+      const installed = await installPackage({
+        packageKey: PKG_A,
+        version: V1,
+      });
+      const admin = await adminOf();
+      const upgradePlan = await service.plan(scopeA1, admin, {
+        operation: "upgrade",
+        packageKey: PKG_A,
+        version: V2,
+        expectedRevision: installed.install.revision,
+        config: {},
+        connectorInstalls: { [CONNECTOR]: connectorA1 },
+      });
+      // Deterministic interleave of the read-to-lock window. The package
+      // mutation store's tenant-exclusive member locks already serialize two
+      // STORED operations (apply vs lifecycle) — the adversary the under-lock
+      // re-read defends against is a writer that takes the canonical install
+      // advisory lock directly (the OCR finding's exact shape; arrangement
+      // stand-in, disclosed). A control connection holds the install lock;
+      // the direct-writer disable queues on it first (no wrapper overhead),
+      // apply's transaction runs up to its pre-lock install read and queues
+      // behind — both positions OBSERVED via pg_locks on the exact lock key —
+      // then the control releases and the disable commits inside apply's
+      // read→lock window.
+      const installLockKey = JSON.stringify([
+        "enterprise",
+        "package-install",
+        companyA,
+        installed.installId,
+      ]);
+      const control = createDatabase(enterpriseTestDatabaseUrlFrom(), {
+        max: 1,
+      });
+      const directWriter = createDatabase(enterpriseTestDatabaseUrlFrom(), {
+        max: 1,
+      });
+      try {
+        await control.$client.unsafe(
+          "select pg_advisory_lock(hashtextextended($1::text, 0))",
+          [installLockKey],
+        );
+        // Direct-writer disable: the install row's canonical lock + the same
+        // status/generation move updateInstallStatus makes, minus the store's
+        // member locks.
+        const disableP = directWriter
+          .transaction(async (tx) => {
+            await tx.execute(
+              sql`select pg_advisory_xact_lock(hashtextextended(${installLockKey}, 0))`,
+            );
+            await tx.execute(
+              sql`update enterprise_package_installs
+                set status = 'disabled', generation = generation + 1, updated_at = now()
+                where tenant_id = ${companyA} and id = ${installed.installId}`,
+            );
+          })
+          .then(
+            () => ({ outcome: "disabled" as const }),
+            (error: Error) => ({ outcome: "failed" as const, error }),
+          );
+        const applyP = service
+          .apply(
+            scopeA1,
+            admin,
+            upgradePlan.planId,
+            `pkg07-race-apply-${randomUUID()}`,
+          )
+          .then(
+            (value) => ({ outcome: "applied" as const, value }),
+            (error: Error) => ({ outcome: "failed" as const, error }),
+          );
+        // Wait until BOTH waiters queue on the EXACT install lock key: apply
+        // can only reach the queue AFTER its pre-lock install read, so this
+        // barrier proves the stale snapshot exists before the disable commits.
+        // (Mutation transactions carry lock_timeout='2s' — never hold longer.)
+        let queuedWaiters = 0;
+        for (let i = 0; i < 30; i += 1) {
+          const rows = (await setup.$client.unsafe(
+            `select count(*)::int as n from pg_locks
+             where locktype = 'advisory' and granted = false
+               and (classid::bigint << 32) | (objid::bigint & 4294967295) =
+                   hashtextextended($1::text, 0)`,
+            [installLockKey],
+          )) as Array<{ n: number }>;
+          queuedWaiters = Number(rows[0]?.n ?? 0);
+          if (queuedWaiters >= 2) break;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(queuedWaiters).toBeGreaterThanOrEqual(2);
+        // Release: the disable (first waiter) commits inside apply's window.
+        await control.$client.unsafe(
+          "select pg_advisory_unlock(hashtextextended($1::text, 0))",
+          [installLockKey],
+        );
+        const [disabled, applied] = await Promise.all([disableP, applyP]);
+
+        const facts = await fixture.readStore.getInstall(
+          scopeA1,
+          installed.installId,
+        );
+        if (disabled.outcome === "disabled") {
+          // The disable committed inside apply's read-to-lock window: the
+          // under-lock re-read refuses the upgrade on the now-disabled row —
+          // a stale pre-lock snapshot must never move a disabled install.
+          expect(applied.outcome).toBe("failed");
+          expect(applied.outcome === "failed" && applied.error).toMatchObject({
+            code: "PACKAGE_UNSUPPORTED",
+          });
+          expect(facts?.status).toBe("disabled");
+          expect(facts?.revision).toBe(1);
+          expect(facts?.generation).toBe(2);
+        } else {
+          // The apply won the lock and moved the revision: the disable's CAS
+          // answers the deterministic conflict instead.
+          expect(applied.outcome).toBe("applied");
+          expect(disabled.outcome === "failed" && disabled.error).toMatchObject(
+            { code: "REVISION_CONFLICT" },
+          );
+          expect(facts?.status).toBe("enabled");
+          expect(facts?.revision).toBe(2);
+        }
+      } finally {
+        await control.$client
+          .unsafe("select pg_advisory_unlock(hashtextextended($1::text, 0))", [
+            installLockKey,
+          ])
+          .catch(() => undefined);
+        await control.$client.close().catch(() => undefined);
+        await directWriter.$client.close().catch(() => undefined);
+      }
     },
   );
 });
