@@ -620,7 +620,15 @@ export function createObservationRetentionWorker(
     }));
   };
 
-  /** The local half: real row deletion through each table's sanctioned channel. */
+  /**
+   * The local half: real row deletion through each table's sanctioned channel.
+   *
+   * Every predicate keys on the record's frozen bot identity (`id` is the PK; `bot_id`
+   * is the trust cross-check), not on `scope_key = record.scopeKey`: since 0209 a Bot
+   * owns TWO key spaces — the stable key and the legacy composite a collision-loser
+   * row keeps (OCR R5) — so a scope_key-equality delete would silently no-op on
+   * legacy-key targets and `markDeleted` would bury them forever.
+   */
   const deleteLocal = async (
     record: typeof aiObservationRetentionDeletions.$inferSelect,
   ): Promise<void> => {
@@ -635,14 +643,14 @@ export function createObservationRetentionWorker(
         await db.transaction(async (tx) => {
           await tx.execute(
             sql`delete from ai_observation_id_links
-                where scope_key = ${record.scopeKey}
+                where bot_id = ${record.botId}
                   and observed_trace_id in (
                     select trace_id from ai_observation_bindings
-                    where id = ${record.targetId} and scope_key = ${record.scopeKey}
+                    where id = ${record.targetId} and bot_id = ${record.botId}
                   )`,
           );
           await tx.execute(
-            sql`delete from ai_observation_bindings where id = ${record.targetId} and scope_key = ${record.scopeKey}`,
+            sql`delete from ai_observation_bindings where id = ${record.targetId} and bot_id = ${record.botId}`,
           );
         });
         return;
@@ -655,7 +663,7 @@ export function createObservationRetentionWorker(
               sql`select set_config('ai_observation.dataset_cleanup', 'on', true)`,
             );
             await tx.execute(
-              sql`delete from ai_observation_datasets where id = ${record.targetId} and scope_key = ${record.scopeKey}`,
+              sql`delete from ai_observation_datasets where id = ${record.targetId} and bot_id = ${record.botId}`,
             );
           });
         } catch (error) {
@@ -687,11 +695,11 @@ export function createObservationRetentionWorker(
           await tx.execute(
             sql`delete from ai_observation_experiment_executions
                 where experiment_id = ${record.targetId}
-                  and scope_key = ${record.scopeKey}
+                  and bot_id = ${record.botId}
                   and state in ('completed', 'failed', 'cancelled')`,
           );
           await tx.execute(
-            sql`delete from ai_observation_experiments where id = ${record.targetId} and scope_key = ${record.scopeKey}`,
+            sql`delete from ai_observation_experiments where id = ${record.targetId} and bot_id = ${record.botId}`,
           );
         });
         return;
@@ -699,7 +707,7 @@ export function createObservationRetentionWorker(
         // The artifact is a column of the job row: deleting the row deletes it, file
         // and canary and all, which is the whole point.
         await db.execute(
-          sql`delete from ai_observation_export_jobs where id = ${record.targetId} and scope_key = ${record.scopeKey}`,
+          sql`delete from ai_observation_export_jobs where id = ${record.targetId} and bot_id = ${record.botId}`,
         );
         return;
     }
@@ -874,7 +882,12 @@ export function createObservationRetentionWorker(
        * A binding row that is already gone can only mean a previous pass ran this record's
        * local half — deletion is the binding rows' only channel, and under this ordering
        * the upstream half ran before it — so the idempotent local delete below finishes
-       * what that pass started.
+       * what that pass started. That inference is keyed on the row's IDENTITY, not its
+       * storage key: 0209 converged the deletion record's scope_key to the stable key
+       * while a collision-loser binding row keeps its legacy composite (OCR R5), so a
+       * (id, scope_key) read would miss a live row and strand it — terminalized, with
+       * its upstream trace unreachable. The read is by id (the PK); the bot check is
+       * the trust cross-check the scope_key equality used to provide.
        */
       let upstreamKind = record.upstreamKind;
       let upstreamId = record.upstreamId;
@@ -883,23 +896,35 @@ export function createObservationRetentionWorker(
           .select({
             opikTraceId: aiObservationBindings.opikTraceId,
             traceId: aiObservationBindings.traceId,
+            botId: aiObservationBindings.botId,
           })
           .from(aiObservationBindings)
-          .where(
-            and(
-              eq(aiObservationBindings.id, record.targetId),
-              eq(aiObservationBindings.scopeKey, record.scopeKey),
-            ),
-          );
-        const row = binding[0];
+          .where(eq(aiObservationBindings.id, record.targetId));
+        const found = binding[0];
+        const row =
+          found !== undefined && found.botId === record.botId
+            ? found
+            : undefined;
         if (row !== undefined && row.opikTraceId !== null) {
-          // The binding records an upstream id the record does not freeze exactly: the
-          // record's view is stale, and deleting underneath it would strand the copy the
-          // binding names — park with the locator, as F5E1-F3 decided.
-          if (
-            record.upstreamKind === null ||
-            record.upstreamId !== row.opikTraceId
-          ) {
+          if (record.upstreamKind === null) {
+            /*
+             * OCR R5 (the F5E1-F3 follow-up): the binding reconciled AFTER discovery
+             * froze null. Parking here parks forever — the reconcile never rewrites
+             * the id, so every sweep re-reads the same row and re-raises. Promote the
+             * binding's authoritative id (R3-05's guarded freeze, persisted before
+             * any upstream I/O) and let the upstream half below verify-delete it;
+             * a retry after the binding row is gone needs nothing but the record.
+             */
+            const promoted = await promoteUpstreamReference(id, row.opikTraceId);
+            // The lease keeps one pass on this record; a concurrent promote could
+            // only have written the same id, and the fallback keeps this pass on it.
+            upstreamKind = promoted?.upstreamKind ?? "trace";
+            upstreamId = promoted?.upstreamId ?? row.opikTraceId;
+          } else if (record.upstreamId !== row.opikTraceId) {
+            // The record froze a different upstream id than the binding now names:
+            // the two facts genuinely disagree, and deleting underneath either
+            // would strand the other's copy — park with the locator, as
+            // F5E1-F3 decided.
             throw new RetentionFailure("OPIK_UPSTREAM_UNLOCATED");
           }
         } else if (row !== undefined && record.upstreamKind === null) {

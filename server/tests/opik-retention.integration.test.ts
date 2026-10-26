@@ -2000,7 +2000,7 @@ test("a missing locator project parks the run deletion with its locator, then re
   expect(await auditRows(binding.id)).toHaveLength(1);
 });
 
-test("a run record frozen upstream-less refuses local-only deletion once its binding reconciled (F5E1-F3)", async () => {
+test("a run record frozen upstream-less adopts its binding's reconciled id and completes (F5E1-F3, OCR R5)", async () => {
   const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
   const upstream = fakePort({ rows: [] });
   const worker = workerFor({ port: upstream.port });
@@ -2018,18 +2018,164 @@ test("a run record frozen upstream-less refuses local-only deletion once its bin
 
   await worker.sweep();
 
+  // OCR R5: the old guard parked this shape forever — the reconcile never
+  // rewrites the id, so every sweep re-read the same row and re-raised. The
+  // record now promotes the binding's authoritative id (R3-05's guarded
+  // freeze) and the upstream half verify-deletes the copy it names.
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("deleted");
+  expect(records[0].upstreamKind).toBe("trace");
+  expect(records[0].upstreamId).toBe(traceId);
+  expect(upstream.calls.deleteTraces).toEqual([
+    { ids: [traceId], project: resolveStorageLocator(scopeA).project },
+  ]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a run record that froze a DIFFERENT upstream id than its binding names still parks (F5E1-F3 core)", async () => {
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: `01a1405b-f832-70cf-b204-f4dd51aaa${randomUUID().slice(0, 3)}`,
+    days: 8,
+  });
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // The frozen reference and the binding's authoritative id genuinely
+  // disagree — deleting underneath either would strand the other's copy.
+  // Direct UPDATE, not reconcile: the disagreement is a data fact, not a
+  // materialization completing.
+  const otherTrace = `01a1405b-f832-70cf-b204-f4dd51bbb${randomUUID().slice(0, 3)}`;
+  await database
+    .update(aiObservationBindings)
+    .set({ opikTraceId: otherTrace })
+    .where(eq(aiObservationBindings.id, binding.id));
+
+  await worker.sweep();
+
   const records = await deletionsFor(scopeA);
   expect(records).toHaveLength(1);
   expect(records[0].state).toBe("failed");
   expect(records[0].lastError).toBe("OPIK_UPSTREAM_UNLOCATED");
-  // The binding row survives: deleting it would strand the upstream trace the
-  // row now names, with no locator left anywhere.
   expect(
     await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
   ).toEqual([{ n: 1 }]);
-  // And no upstream delete was attempted under the record's stale null: the
-  // guard parks before the upstream half, not after a guessed cleanup.
   expect(upstream.calls.deleteTraces).toEqual([]);
+});
+
+test("a collision-loser binding at its legacy key is still found and deleted (0209 two-key-spaces, OCR R5)", async () => {
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51ccc${randomUUID().slice(0, 3)}`;
+  const binding = await expiredBinding(scopeA, { opikTraceId: traceId, days: 8 });
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // The 0209 shape: the deletion record's scope_key converged to the stable
+  // key while the binding row — a collision loser — keeps its legacy
+  // composite. The record and its target now live in two key spaces of one
+  // Bot, and only the frozen bot identity joins them.
+  const legacy = `2:wb|9:mig-actor|${scopeA.botId.length}:${scopeA.botId}|1:1`;
+  await database
+    .update(aiObservationBindings)
+    .set({ scopeKey: legacy, locatorWorkspace: "legacy-ws", locatorProject: "legacy-proj" })
+    .where(eq(aiObservationBindings.id, binding.id));
+
+  await worker.sweep();
+
+  // The identity-keyed read still finds the row; the upstream half deletes
+  // the frozen reference; the bot-keyed local delete reaches the legacy row.
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("deleted");
+  expect(upstream.calls.deleteTraces).toEqual([
+    { ids: [traceId], project: resolveStorageLocator(scopeA).project },
+  ]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a legacy-key binding that reconciled after discovery promotes instead of stranding (OCR R5, the 888 inference)", async () => {
+  const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51ddd${randomUUID().slice(0, 3)}`;
+  await bindingStore.reconcile(
+    scopeA,
+    binding.runId,
+    binding.attemptId,
+    traceId,
+  );
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // Both facts at once: the record froze null AND the binding row sits at a
+  // legacy key (the collision loser). The old (id, scope_key) read missed the
+  // row, inferred "the local half already ran", skipped the upstream half,
+  // and terminalized — stranding the binding row AND the trace it names.
+  const legacy = `2:wb|9:mig-actor|${scopeA.botId.length}:${scopeA.botId}|1:1`;
+  await database
+    .update(aiObservationBindings)
+    .set({ scopeKey: legacy })
+    .where(eq(aiObservationBindings.id, binding.id));
+
+  await worker.sweep();
+
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("deleted");
+  expect(records[0].upstreamKind).toBe("trace");
+  expect(records[0].upstreamId).toBe(traceId);
+  expect(upstream.calls.deleteTraces).toEqual([
+    { ids: [traceId], project: resolveStorageLocator(scopeA).project },
+  ]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a collision-loser dataset at its legacy key is still deleted (OCR R5, deleteLocal recheck)", async () => {
+  const dataset = {
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    name: `t35-r239-${randomUUID()}`,
+    locatorWorkspace: "ws",
+    locatorProject: "proj",
+    syncState: "pending",
+    createdAt: backdate(40),
+    updatedAt: backdate(40),
+  };
+  await database.insert(aiObservationDatasets).values(dataset);
+  const worker = workerFor();
+  await worker.discover();
+
+  // Converge the record's key (what 0209 did to every existing record) while
+  // the dataset row keeps its legacy composite.
+  const legacy = `2:wb|9:mig-actor|${scopeA.botId.length}:${scopeA.botId}|1:1`;
+  await database
+    .update(aiObservationDatasets)
+    .set({ scopeKey: legacy })
+    .where(eq(aiObservationDatasets.id, dataset.id));
+  await database
+    .update(aiObservationRetentionDeletions)
+    .set({ scopeKey: scopeA.key })
+    .where(eq(aiObservationRetentionDeletions.kind, "dataset"));
+
+  await worker.sweep();
+
+  const records = await deletionsFor(scopeA);
+  const record = records.find((r) => r.kind === "dataset");
+  expect(record?.state).toBe("deleted");
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_datasets where id = ${dataset.id}`,
+  ).toEqual([{ n: 0 }]);
 });
 
 test("a materialized-but-unreconciled run is cleaned by its derived identity — parked with its locator first, trace and spans verifiably gone after (R3-05)", async () => {
