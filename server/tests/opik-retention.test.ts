@@ -327,10 +327,14 @@ describe("the port's trace deletion (verified capability: trace-span-physical-de
     // SURVIVE the project delete, and every verified cleanup addresses the
     // project id. A 404 here therefore cannot verify anything — the operation is
     // the retryable failure it is, and the caller keeps its frozen locator.
+    // The code names the fact (OCR R5 handoff from ocrfix-b): deleteTraces has
+    // several 404 sources, and only this one is a missing project — the delete
+    // endpoint itself answering 404 (version/path drift) keeps OPIK_CLIENT_ERROR,
+    // so downstream classification can read the code instead of sniffing status.
     expect(result).toEqual({
       outcome: "upstream_error",
       operation: "deleteTraces",
-      code: "OPIK_CLIENT_ERROR",
+      code: "OPIK_PROJECT_MISSING",
       status: 404,
     });
     expect(calls).toHaveLength(1);

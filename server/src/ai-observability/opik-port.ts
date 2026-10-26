@@ -68,7 +68,17 @@ export type OpikPortResult<T> =
   | {
       outcome: "upstream_error";
       operation: OpikOperation;
-      code: "OPIK_UPSTREAM_ERROR" | "OPIK_CLIENT_ERROR";
+      /**
+       * `OPIK_PROJECT_MISSING` names the ONE verified missing-project fact
+       * (a locator project whose retrieve answered 404) apart from every other
+       * 4xx — deleteTraces has several 404 sources, and downstream
+       * classification must read the code, not sniff the status (OCR R5
+       * handoff from ocrfix-b's retention finding).
+       */
+      code:
+        | "OPIK_UPSTREAM_ERROR"
+        | "OPIK_CLIENT_ERROR"
+        | "OPIK_PROJECT_MISSING";
       status: number;
     }
   | {

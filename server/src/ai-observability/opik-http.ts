@@ -1121,8 +1121,19 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
            * and read-back addresses its `project_id`. Answering ok here would report a
            * physical cleanup nobody performed — so the answer is the failure it is:
            * retryable, with the caller's frozen locator kept for the retry.
+           *
+           * The code names this ONE fact apart (OCR R5 handoff from ocrfix-b): the delete
+           * endpoint itself answering 404 (version/path drift) stays OPIK_CLIENT_ERROR on
+           * the same status, so a caller classifying by code never mistakes "the project
+           * is gone" for "the endpoint moved". Status stays 404 — both are 404s on the
+           * wire; only the meaning differs.
            */
-          return statusFailure("deleteTraces", 404);
+          return {
+            outcome: "upstream_error" as const,
+            operation: "deleteTraces" as const,
+            code: "OPIK_PROJECT_MISSING" as const,
+            status: 404,
+          };
         }
         const payload = JSON.stringify({
           ids: [...input.traceIds],
