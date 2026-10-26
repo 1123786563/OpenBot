@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T04.03 member lifecycle registration (#547)",
+  "generatedBy": "T04.08 registration",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1301,6 +1301,12 @@
       "files": [
         "server/tests/better-auth/team-management-grants.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T04.08.01",
+      "files": [
+        "server/tests/better-auth/scoped-team-admin.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1495,7 +1501,6 @@
     "server/tests/better-auth/invitation-acceptance.test.ts",
     "server/tests/better-auth/invitation-commands.test.ts",
     "server/tests/better-auth/membership-lifecycle.test.ts",
-    "server/tests/better-auth/team-management-grants.test.ts",
     "server/tests/better-auth/migration-expand.test.ts",
     "server/tests/better-auth/migration-inventory.test.ts",
     "server/tests/better-auth/migration-verify.test.ts",
@@ -1510,8 +1515,10 @@
     "server/tests/better-auth/schema-command-authority.test.ts",
     "server/tests/better-auth/schema-roles.test.ts",
     "server/tests/better-auth/scope-generations.test.ts",
+    "server/tests/better-auth/scoped-team-admin.test.ts",
     "server/tests/better-auth/selection-api.test.ts",
     "server/tests/better-auth/team-extension-contract.test.ts",
+    "server/tests/better-auth/team-management-grants.test.ts",
     "server/tests/better-auth/transaction-contract.test.ts",
     "server/tests/better-auth/transaction-hooks.test.ts",
     "server/tests/billing-company-renewal.integration.test.ts",

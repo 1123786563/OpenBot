@@ -428,6 +428,22 @@ export interface AddTeamMembershipResult {
   readonly auditEventId: string | null;
 }
 
+/**
+ * The provenance extension a translated (ba-branch) team-member report
+ * carries (T04.08 / #552, P09): the legacy fields stay the post-command facts,
+ * and these four name the directory transition that produced them — the same
+ * discipline T04.03's DirectoryTransitionReport set for company-member
+ * commands, narrowed to the two team operations this entrance translates
+ * (DirectoryTransitionReport's operation union is the company-member
+ * vocabulary and lives in a file this ticket does not own).
+ */
+export interface TeamDirectoryTransition {
+  readonly via: "directory";
+  readonly operation: "team.member.add" | "team.member.remove";
+  readonly commandId: string;
+  readonly replayed: boolean;
+}
+
 export interface WorkspaceAdminService {
   createTeam(
     context: CompanyAdminContext,
@@ -436,7 +452,7 @@ export interface WorkspaceAdminService {
   addTeamMember(
     context: CompanyAdminContext,
     input: { readonly workspaceId: string; readonly principalId: string },
-  ): Promise<AddTeamMembershipResult>;
+  ): Promise<AddTeamMembershipResult & Partial<TeamDirectoryTransition>>;
   suspendTeamMember(
     context: CompanyAdminContext,
     input: { readonly workspaceId: string; readonly principalId: string },
@@ -456,7 +472,12 @@ export interface WorkspaceAdminService {
   removeTeamMember(
     context: CompanyAdminContext,
     input: { readonly workspaceId: string; readonly principalId: string },
-  ): Promise<{ readonly removed: true; readonly auditEventId: string }>;
+  ): Promise<
+    {
+      readonly removed: true;
+      readonly auditEventId: string;
+    } & Partial<TeamDirectoryTransition>
+  >;
   /** MT007（Issue #50）：公司级停用——该公司全部团队权限级联失效（AC2）。 */
   suspendCompanyMember(
     context: CompanyAdminContext,
@@ -567,6 +588,108 @@ export function createWorkspaceAdminService(
       operation,
       commandId: facts.commandId,
       replayed: facts.replayed,
+    };
+  };
+
+  /**
+   * The T04.08 (#552, P09) authority branch for the team-member pair: legacy
+   * keeps the original operator path below; paused answers the one 503; ba
+   * translates the write into ONE directory command (team.member.add /
+   * team.member.remove) and shapes the legacy report from the committed
+   * facts, extended with the directory provenance. The path/body parameter
+   * stays the OpenBot business principalId — the translation port's
+   * memberOf resolves it through the principal binding to the BA userId the
+   * command payload names (the client never hands a BA member.id/userId);
+   * the command's own locked discrimination re-verifies the caller's
+   * company-role inside the tenant lock, so this entrance never asserts
+   * authority itself. Null means legacy.
+   */
+  const translatedTeamMemberOrNull = async (
+    context: CompanyAdminContext,
+    workspaceId: string,
+    principalId: string,
+    operation: "team.member.add" | "team.member.remove",
+  ): Promise<
+    | ((AddTeamMembershipResult | { removed: true; auditEventId: string }) &
+        TeamDirectoryTransition)
+    | null
+  > => {
+    if (!membership) return null;
+    const mode = await membership.modeOf();
+    if (mode === "legacy") return null;
+    if (mode === "paused") throw new Error(MEMBERSHIP_LIFECYCLE_PAUSED);
+    const target = await membership.memberOf({
+      tenantId: context.tenantId,
+      principalId,
+    });
+    // Invisible not-found, mirroring the legacy entrances: add names the
+    // company-member gate (TEAM_MEMBER_NOT_COMPANY_MEMBER), remove the missing
+    // seat (TEAM_MEMBER_NOT_FOUND); another company's principal answers
+    // exactly like a fabricated id.
+    if (!target) {
+      throw new Error(
+        operation === "team.member.add"
+          ? "TEAM_MEMBER_NOT_COMPANY_MEMBER"
+          : "TEAM_MEMBER_NOT_FOUND",
+      );
+    }
+    if (operation === "team.member.add" && target.status !== "active") {
+      // The legacy add gate: only an active company member takes a seat. The
+      // directory handler re-verifies the same fact inside the lock.
+      throw new Error("TEAM_MEMBER_NOT_COMPANY_MEMBER");
+    }
+    const result = await membership.execute(
+      membership.actorOf(context.actorId),
+      {
+        operation,
+        tenantId: context.tenantId,
+        idempotencyKey: crypto.randomUUID(),
+        payload: { workspaceId, userId: target.userId },
+      },
+    );
+    const auditEventId = await membership.auditEventIdOf({
+      tenantId: context.tenantId,
+      commandId: result.commandId,
+    });
+    if (!auditEventId) {
+      // The finalizer writes the audit fact in the command's own transaction:
+      // a missing row is an invariant break, never a silently skipped trail.
+      throw new Error(
+        "MEMBERSHIP_TRANSLATION_AUDIT_MISSING: the translated team-member command has no directory.command.finalized audit row; the audit write must never fold into success",
+      );
+    }
+    const provenance: TeamDirectoryTransition = {
+      via: "directory",
+      operation,
+      commandId: result.commandId,
+      replayed: result.replayed,
+    };
+    if (operation === "team.member.remove") {
+      return { removed: true as const, auditEventId, ...provenance };
+    }
+    const teamKey = result.versions.find(
+      (version) =>
+        version.key.kind === "team" &&
+        version.key.scopeId === workspaceId &&
+        version.key.principalId === principalId,
+    );
+    if (!teamKey) {
+      throw new Error(
+        "TEAM_MEMBER_TRANSLATION_VERSION_MISSING: the committed team.member.add produced no team change key for the target; the receipt's versions are the report's only honest epoch source",
+      );
+    }
+    return {
+      membership: {
+        workspaceId,
+        principalId,
+        status: "active" as const,
+        epoch: teamKey.value.epoch,
+      },
+      // The BA team pair is existence-only: a fresh seat is always "created";
+      // the legacy "reactivated" shape belongs to the legacy projection row.
+      outcome: "created" as const,
+      auditEventId,
+      ...provenance,
     };
   };
 
@@ -684,6 +807,16 @@ export function createWorkspaceAdminService(
       const principalId = input.principalId?.trim();
       if (!workspaceId || !principalId) {
         throw new Error("INVALID_REQUEST");
+      }
+      const translated = await translatedTeamMemberOrNull(
+        context,
+        workspaceId,
+        principalId,
+        "team.member.add",
+      );
+      if (translated) {
+        return translated as AddTeamMembershipResult &
+          Partial<TeamDirectoryTransition>;
       }
       return operator.transaction(async (tx) => {
         await beginTransaction(tx);
@@ -933,6 +1066,18 @@ export function createWorkspaceAdminService(
       const principalId = input.principalId?.trim();
       if (!workspaceId || !principalId) {
         throw new Error("INVALID_REQUEST");
+      }
+      const translated = await translatedTeamMemberOrNull(
+        context,
+        workspaceId,
+        principalId,
+        "team.member.remove",
+      );
+      if (translated) {
+        return translated as {
+          removed: true;
+          auditEventId: string;
+        } & Partial<TeamDirectoryTransition>;
       }
       return operator.transaction(async (tx) => {
         await beginTransaction(tx);

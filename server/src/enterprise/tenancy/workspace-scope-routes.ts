@@ -15,6 +15,9 @@
 import { Hono } from "hono";
 import { isCompanyAssuranceRefusal } from "../../auth/company-assurance";
 import { isAuthorityRefusal } from "../../auth/directory/authority";
+import { isDirectoryCommandRefusal } from "../../auth/directory/executor";
+import { MEMBERSHIP_LIFECYCLE_PAUSED } from "../../auth/directory/membership";
+import { isTeamMemberRefusal } from "../../auth/directory/team-extension";
 import {
   assertClassifiedCompanyEntrance,
   WORKSPACE_SCOPE_MOUNT_PREFIX,
@@ -67,6 +70,24 @@ function errorResponse(error: unknown): {
   status: number;
   body: { error: { code: string; message: string } };
 } {
+  // T04.08 (#552): the ba branch of the team-member entrances surfaces the
+  // directory refusal family — the command envelope's own codes plus the
+  // team-member handler's — with the refusal's own status, exactly the
+  // projection company-admin-routes already applies; the paused authority
+  // mode answers its one named 503, and a live authority failure projects
+  // as the 503 it is. None of these may collapse into the 500 fall-through.
+  if (isDirectoryCommandRefusal(error) || isTeamMemberRefusal(error)) {
+    return {
+      status: error.status,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  if (isAuthorityRefusal(error)) {
+    return {
+      status: 503,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
   const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
   const mapped: Record<string, number> = {
     AUTH_REQUIRED: 401,
@@ -85,6 +106,7 @@ function errorResponse(error: unknown): {
     TEAM_MEMBER_ALREADY_EXISTS: 409,
     DATA_DATABASE_UNAVAILABLE: 503,
     WORKSPACE_ADMIN_UNAVAILABLE: 503,
+    [MEMBERSHIP_LIFECYCLE_PAUSED]: 503,
     // MT075：管理面分类漂移是服务端装配错误，不是请求方的错。
     MANAGEMENT_ENTRANCE_UNCLASSIFIED: 500,
   };
