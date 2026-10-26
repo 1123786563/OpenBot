@@ -16,6 +16,7 @@ import { listArtifacts, listFiles } from "./artifacts";
 import type { CraftConfig } from "./config";
 import { exportDocx, exportPptx } from "./export";
 import type { SandboxGateway } from "./sandbox-gateway";
+import { assertNotScopeRefusal } from "./scope-refusal";
 import type { CraftStore } from "./store";
 import { sessionDirectory } from "./workspace";
 
@@ -170,7 +171,12 @@ export function createArtifactRoutes(
     let bytes: Uint8Array | null;
     try {
       bytes = await fileApi.readFileBytes(fullPath);
-    } catch {
+    } catch (error) {
+      // #657: a scopeless deployment answers its own 503 here — this face was the
+      // last to fold the refusal into "Artifact not found", an admin's most common
+      // triage entry point. The guard's throw outranks the 404 by construction
+      // (#656 D2); no log line, the fixed sentence IS the reason and names no value.
+      assertNotScopeRefusal(error);
       bytes = null;
     }
     if (bytes === null) {
@@ -220,7 +226,11 @@ export function createArtifactRoutes(
     let markdown: string | null;
     try {
       markdown = await fileApi.readFile(fullPath);
-    } catch {
+    } catch (error) {
+      // #657: the refusal answers as its own 503 before this face's "File not
+      // found" 404 can wear it — same guard, same fixed sentence, same contract
+      // as the download face above (the throw outranks the mask by construction).
+      assertNotScopeRefusal(error);
       markdown = null;
     }
     if (markdown === null)
@@ -266,7 +276,10 @@ export function createArtifactRoutes(
     let markdown: string | null;
     try {
       markdown = await fileApi.readFile(fullPath);
-    } catch {
+    } catch (error) {
+      // #657: same as the two faces above — the refusal's 503 outranks the
+      // "File not found" mask; the 404 stays for real absence only.
+      assertNotScopeRefusal(error);
       markdown = null;
     }
     if (markdown === null)

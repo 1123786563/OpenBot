@@ -1,3 +1,8 @@
+import {
+  applyExecutionScopeHeaders,
+  EXECUTION_TENANT_HEADER,
+  EXECUTION_WORKSPACE_HEADER,
+} from "../../shared/execution-scope";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { loadCraftConfig } from "../src/craft/config";
 import { SandboxExecutionScopeUnavailableError } from "../src/craft/errors";
@@ -439,10 +444,12 @@ describe("#618 fail-closed: no scope, no request, a displayable reason", () => {
           ),
         ),
       ]);
+      // Asserted BEFORE the cleanup close (#656 D7): isClosed must be the bus's
+      // own terminal verdict, not an artifact of the finally that follows.
+      expect(bus.isClosed()).toBe(true);
     } finally {
       bus.close();
     }
-    expect(bus.isClosed()).toBe(true);
     expect(calls).toHaveLength(0);
   });
 
@@ -573,22 +580,26 @@ describe("#618 FR-F2: a scope-mismatch 403 propagates — no retry, no fold, no 
           ),
         ),
       ]);
+      // Asserted BEFORE the cleanup close (#656 D7): terminal means the 403's
+      // own doing — isClosed and the sentinel the subscribers received are the
+      // bus's verdicts, not the finally's echo.
+      // Terminal, not laddered: after ONE refused dial the bus is closed (the
+      // ladder variant would still be "reconnecting" here, silently redialing
+      // the verdict).
+      expect(bus.isClosed()).toBe(true);
+      // The subscriber's signal is the closed sentinel — the thing the turn layer
+      // translates into a transport error, never silence, never success.
+      expect(await sub.queue.shift({ timeoutMs: 100 })).toBe(
+        POD_EVENT_BUS_CLOSED,
+      );
     } finally {
       bus.close();
     }
-    // Terminal, not laddered: after ONE refused dial the bus is closed (the ladder
-    // variant would still be "reconnecting" here, silently redialing the verdict).
-    expect(bus.isClosed()).toBe(true);
     const dials = calls.filter(
       (call) => call.url === "/event" || call.url === "/events",
     );
     expect(dials).toHaveLength(1);
     expectScopeHeaders(dials[0]?.headers ?? {});
-    // The subscriber's signal is the closed sentinel — the thing the turn layer
-    // translates into a transport error, never silence, never success.
-    expect(await sub.queue.shift({ timeoutMs: 100 })).toBe(
-      POD_EVENT_BUS_CLOSED,
-    );
   });
 
   test("snapshot read: a 403 throws — 403-as-null was the fold this closed", async () => {
@@ -672,30 +683,29 @@ describe("#618 OCR#12: the liveness probe surfaces the refusal, not a cold start
   });
 });
 
-describe("#618 OCR r4: an !ok body is released before the throw; the snapshot pair's verdict carries its status", () => {
-  /**
-   * An unconsumed response body pins its pool socket in undici until GC — the
-   * leak the event-bus dial fixed for /event (OCR r2). Every !ok THROW site in
-   * this gateway is the same shape, so the stream below never closes: cancel()
-   * is the only way it settles, which makes the release observable per verb.
-   */
-  const releasingFetch = (
-    status: number,
-    onRelease: () => void,
-  ): typeof fetch =>
-    (async () =>
-      new Response(
-        new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new Uint8Array([1, 2, 3]));
-          },
-          cancel() {
-            onRelease();
-          },
-        }),
-        { status },
-      )) as typeof fetch;
+/**
+ * An unconsumed response body pins its pool socket in undici until GC — the
+ * leak the event-bus dial fixed for /event (OCR r2). Every !ok THROW site in
+ * this gateway is the same shape, so the stream below never closes: cancel()
+ * is the only way it settles, which makes the release observable per verb.
+ * Module-level since #656 D4: the early-return arms answer the same pin and
+ * the D4 suite reuses the probe.
+ */
+const releasingFetch = (status: number, onRelease: () => void): typeof fetch =>
+  (async () =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+        },
+        cancel() {
+          onRelease();
+        },
+      }),
+      { status },
+    )) as typeof fetch;
 
+describe("#618 OCR r4: an !ok body is released before the throw; the snapshot pair's verdict carries its status", () => {
   test("every !ok throw site cancels its response body before throwing", async () => {
     const verbs: {
       verb: string;
@@ -797,5 +807,382 @@ describe("#618 OCR r4: an !ok body is released before the throw; the snapshot pa
     expect((restoreError as Error).message).toBe(
       "Sandbox /workspace/restore answered 403.",
     );
+  });
+});
+
+describe("#656 D1: the shared injection helper applyExecutionScopeHeaders", () => {
+  /** The rejector the three server-side consumers share — fresh refusal per call. */
+  const refuse = (): never => {
+    throw new SandboxExecutionScopeUnavailableError();
+  };
+
+  test("a resolved scope injects both headers, overriding any caller-stated copies", () => {
+    const headers: Record<string, string> = {
+      "x-sandbox-token": "sandbox-secret",
+      "x-openbot-bot-id": "craft",
+      [EXECUTION_TENANT_HEADER]: "caller-lies",
+      [EXECUTION_WORKSPACE_HEADER]: "caller-lies",
+    };
+    applyExecutionScopeHeaders(
+      headers,
+      { tenantId: TENANT, workspaceId: WORKSPACE },
+      refuse,
+    );
+    // LAST means LAST: the deployment's trust facts win over caller-stated copies,
+    // which is the merge order the three consumers pinned individually before.
+    expect(headers[EXECUTION_TENANT_HEADER]).toBe(TENANT);
+    expect(headers[EXECUTION_WORKSPACE_HEADER]).toBe(WORKSPACE);
+    expect(headers["x-sandbox-token"]).toBe("sandbox-secret");
+    expect(headers["x-openbot-bot-id"]).toBe("craft");
+  });
+
+  test("null fails closed through the injected rejector and injects nothing", () => {
+    let refusals = 0;
+    const headers: Record<string, string> = { "x-openbot-bot-id": "craft" };
+    expect(() =>
+      applyExecutionScopeHeaders(headers, null, (): never => {
+        refusals += 1;
+        throw new SandboxExecutionScopeUnavailableError();
+      }),
+    ).toThrow(SandboxExecutionScopeUnavailableError);
+    expect(refusals).toBe(1);
+    expect(EXECUTION_TENANT_HEADER in headers).toBe(false);
+    expect(EXECUTION_WORKSPACE_HEADER in headers).toBe(false);
+  });
+
+  test("undefined skips injection entirely — the unmanaged shape dials on", () => {
+    const headers: Record<string, string> = { "x-openbot-bot-id": "craft" };
+    const returned = applyExecutionScopeHeaders(headers, undefined, refuse);
+    expect(returned).toBe(headers);
+    expect(EXECUTION_TENANT_HEADER in headers).toBe(false);
+    expect(EXECUTION_WORKSPACE_HEADER in headers).toBe(false);
+  });
+});
+
+describe("#656 D4: the early-return arms release their bodies too", () => {
+  /**
+   * The five honest degrades (404 → false/null ×4, 409/400 → false) return
+   * without reading the body — the same undici socket pin the throw arms
+   * already fix (#618 OCR r4). 409 is the high-traffic one: every restore
+   * poll that collides with a live turn hits it, so its pin matters most.
+   */
+  test("every early-return arm cancels its response body before degrading", async () => {
+    const arms: {
+      arm: string;
+      status: number;
+      run: (gateway: SandboxGateway) => Promise<unknown>;
+      degradesTo: unknown;
+    }[] = [
+      {
+        arm: "deletePath 404",
+        status: 404,
+        run: (gateway) => gateway.fileApiFor("craft")!.deletePath("dir/a.txt"),
+        degradesTo: false,
+      },
+      {
+        arm: "readFile 404",
+        status: 404,
+        run: (gateway) => gateway.fileApiFor("craft")!.readFile("dir/a.txt"),
+        degradesTo: null,
+      },
+      {
+        arm: "readFileBytes 404",
+        status: 404,
+        run: (gateway) =>
+          gateway.fileApiFor("craft")!.readFileBytes("dir/a.bin"),
+        degradesTo: null,
+      },
+      {
+        arm: "snapshotArchiveFor 404",
+        status: 404,
+        run: (gateway) => gateway.snapshotArchiveFor("craft"),
+        degradesTo: null,
+      },
+      {
+        arm: "restoreWorkspace 409",
+        status: 409,
+        run: (gateway) =>
+          gateway.restoreWorkspace("craft", new Uint8Array([1])),
+        degradesTo: false,
+      },
+      {
+        arm: "restoreWorkspace 400",
+        status: 400,
+        run: (gateway) =>
+          gateway.restoreWorkspace("craft", new Uint8Array([1])),
+        degradesTo: false,
+      },
+    ];
+    for (const { arm, status, run, degradesTo } of arms) {
+      let released = false;
+      const gateway = scopedGateway(
+        releasingFetch(status, () => {
+          released = true;
+        }),
+      );
+      expect(await run(gateway), `${arm} keeps its honest degrade`).toBe(
+        degradesTo,
+      );
+      expect(released, `${arm} released its response body`).toBe(true);
+    }
+  });
+});
+
+describe("#656 OCRfix: the success paths release their bodies too", () => {
+  /**
+   * The gateway's happy answers are not bodyless: DELETE /file answers
+   * {ok,path}, POST /file answers 201 with {path,size}, and restore answers
+   * {ok,botId} — every one an unconsumed body pinning its undici pool socket
+   * until GC, the same pin the degrade and throw arms already fix (#618 OCR
+   * r4 / #656 D4) now landing on the NORMAL path instead. Same probe: the
+   * stream never closes, so cancel() is the only way it settles.
+   */
+  test("every gateway success arm cancels its response body before answering", async () => {
+    const arms: {
+      arm: string;
+      status: number;
+      run: (gateway: SandboxGateway) => Promise<unknown>;
+      settlesTo: unknown;
+    }[] = [
+      {
+        arm: "deletePath 200",
+        status: 200,
+        run: (gateway) => gateway.fileApiFor("craft")!.deletePath("dir/a.txt"),
+        settlesTo: true,
+      },
+      {
+        arm: "writeFile 201",
+        status: 201,
+        run: (gateway) =>
+          gateway.fileApiFor("craft")!.writeFile("dir/a.txt", "x"),
+        settlesTo: undefined,
+      },
+      {
+        arm: "writeFileBytes 201",
+        status: 201,
+        run: (gateway) =>
+          gateway
+            .fileApiFor("craft")!
+            .writeFileBytes("dir/a.bin", new Uint8Array([1])),
+        settlesTo: undefined,
+      },
+      {
+        arm: "restoreWorkspace 200",
+        status: 200,
+        run: (gateway) =>
+          gateway.restoreWorkspace("craft", new Uint8Array([1])),
+        settlesTo: true,
+      },
+    ];
+    for (const { arm, status, run, settlesTo } of arms) {
+      let released = false;
+      const gateway = scopedGateway(
+        releasingFetch(status, () => {
+          released = true;
+        }),
+      );
+      expect(await run(gateway), `${arm} keeps its answer`).toBe(settlesTo);
+      expect(released, `${arm} released its response body`).toBe(true);
+    }
+  });
+});
+
+describe("#656 OCRfix: serve-client releases the bodies its fast paths never read", () => {
+  /**
+   * The client's quick answers — status probes, idempotent lookups, best-effort
+   * verbs — resolve without ever reading the body, the same undici pin the
+   * gateway's arms fix. One probe shape throughout: a stream that never closes,
+   * so cancel() is the only settlement an assertion can observe.
+   */
+  const scopedClient = (fetchImpl: typeof fetch) =>
+    new OpencodeServeClient({
+      baseUrl: "http://gw.test",
+      config: scopedConfig,
+      token: "sandbox-secret",
+      botId: "craft",
+      executionScope: { tenantId: TENANT, workspaceId: WORKSPACE },
+      fetchImpl,
+    });
+
+  test("healthCheckStatus answers the status and releases the body it never reads", async () => {
+    let released = false;
+    const client = scopedClient(
+      releasingFetch(200, () => {
+        released = true;
+      }),
+    );
+    expect(await client.healthCheckStatus()).toBe(200);
+    expect(released).toBe(true);
+  });
+
+  test("ensureSession's lookup releases both ways: the 200 fast path and the 404 before the mint", async () => {
+    // 200: the id already validates; the session JSON nobody reads still owns a body.
+    let releasedOk = false;
+    const ok = scopedClient(
+      releasingFetch(200, () => {
+        releasedOk = true;
+      }),
+    );
+    expect(await ok.ensureSession("ses_1", { directory: "/w" })).toBe("ses_1");
+    expect(releasedOk).toBe(true);
+
+    // 404: falls through to the mint — but the 404's own body is dropped unread.
+    let released404 = false;
+    const fetchImpl = (async (_input: unknown, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+            cancel() {
+              released404 = true;
+            },
+          }),
+          { status: 404 },
+        );
+      }
+      return Response.json({ id: "ses_new" });
+    }) as typeof fetch;
+    expect(
+      await scopedClient(fetchImpl).ensureSession("ses_gone", {
+        directory: "/w",
+      }),
+    ).toBe("ses_new");
+    expect(released404).toBe(true);
+  });
+
+  test("deleteSession releases on the statuses it settles true (204 is bodyless by wire law)", async () => {
+    for (const status of [200, 404]) {
+      let released = false;
+      const client = scopedClient(
+        releasingFetch(status, () => {
+          released = true;
+        }),
+      );
+      expect(
+        await client.deleteSession("ses_1", { directory: "/w" }),
+        `deleteSession ${status}`,
+      ).toBe(true);
+      expect(released, `deleteSession ${status} released`).toBe(true);
+    }
+    // 204: a null-body status can carry no stream to pin — the behavior pin only.
+    const client204 = scopedClient(
+      (async () => new Response(null, { status: 204 })) as typeof fetch,
+    );
+    expect(await client204.deleteSession("ses_1", { directory: "/w" })).toBe(
+      true,
+    );
+  });
+
+  test("disposeInstance releases the 2xx body its function end never reads", async () => {
+    let released = false;
+    const client = scopedClient(
+      releasingFetch(200, () => {
+        released = true;
+      }),
+    );
+    await client.disposeInstance({ directory: "/w" });
+    expect(released).toBe(true);
+  });
+
+  test("abort is best-effort, not body-leaking — the 2xx answer is released", async () => {
+    let released = false;
+    const client = scopedClient(
+      releasingFetch(200, () => {
+        released = true;
+      }),
+    );
+    await client.abort("ses_1", { directory: "/w" });
+    expect(released).toBe(true);
+  });
+
+  test("getMessage's non-200 arm releases before answering null", async () => {
+    let released = false;
+    const client = scopedClient(
+      releasingFetch(404, () => {
+        released = true;
+      }),
+    );
+    expect(await client.getMessage("ses_1", "msg_1", { directory: "/w" })).toBe(
+      null,
+    );
+    expect(released).toBe(true);
+  });
+
+  test("answerPermission releases on both no-read settles: the 2xx ok and the non-404 failure", async () => {
+    let releasedOk = false;
+    const ok = scopedClient(
+      releasingFetch(200, () => {
+        releasedOk = true;
+      }),
+    );
+    expect(
+      await ok.answerPermission("ses_1", "perm_1", {
+        allow: true,
+        directory: "/w",
+      }),
+    ).toEqual({ ok: true, permissionGone: false });
+    expect(releasedOk).toBe(true);
+
+    let releasedFail = false;
+    const failed = scopedClient(
+      releasingFetch(500, () => {
+        releasedFail = true;
+      }),
+    );
+    expect(
+      await failed.answerPermission("ses_1", "perm_1", {
+        allow: false,
+        directory: "/w",
+      }),
+    ).toEqual({ ok: false, permissionGone: false });
+    expect(releasedFail).toBe(true);
+  });
+
+  test("postPromptAsync releases its fast-settling bodies: prompt_async's 2xx ack and message-mode's fast 2xx", async () => {
+    // The private verb is the only seam that sees the prompt POST's answer
+    // directly; reaching it through sendMessage would need a full bus.
+    type PostPrompt = (
+      sessionId: string,
+      message: string,
+      modelProvider: string | null,
+      modelId: string | null,
+      options: { directory: string },
+    ) => Promise<void>;
+    const promptVia = (client: OpencodeServeClient): PostPrompt =>
+      (
+        client as unknown as { postPromptAsync: PostPrompt }
+      ).postPromptAsync.bind(client);
+
+    // prompt_async (the default endpoint): the ack is 2xx with a body nobody reads.
+    let releasedAck = false;
+    const ack = scopedClient(
+      releasingFetch(200, () => {
+        releasedAck = true;
+      }),
+    );
+    await promptVia(ack)("ses_1", "hi", null, null, { directory: "/w" });
+    expect(releasedAck).toBe(true);
+
+    // message mode: a fast 2xx inside the admission window is the same unread body.
+    const messageConfig = loadCraftConfig({
+      OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID: TENANT,
+      OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID: WORKSPACE,
+      OPENBOT_CRAFT_OPENCODE_PROMPT_ENDPOINT: "message",
+    });
+    let releasedFast = false;
+    const fast = new OpencodeServeClient({
+      baseUrl: "http://gw.test",
+      config: messageConfig,
+      token: "sandbox-secret",
+      botId: "craft",
+      executionScope: { tenantId: TENANT, workspaceId: WORKSPACE },
+      fetchImpl: releasingFetch(200, () => {
+        releasedFast = true;
+      }),
+    });
+    await promptVia(fast)("ses_1", "hi", null, null, { directory: "/w" });
+    expect(releasedFast).toBe(true);
   });
 });

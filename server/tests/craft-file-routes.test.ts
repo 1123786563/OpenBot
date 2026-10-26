@@ -822,3 +822,142 @@ describe("#618 R1-F2: the fail-closed refusal answers as its own 503", () => {
     expect(body.error).toBe(REFUSAL);
   });
 });
+
+describe("#656 D2: the guard shape keeps the 503 body fixed on the direct arm too", () => {
+  test("a directly-thrown refusal with a rewritten message still answers the fixed sentence", async () => {
+    // OCRFX5-F2's pin, landed: the recognizer hands the ORIGINAL instance back
+    // (OCR r4) and an enhancer may have rewritten that instance's message on
+    // the way — the r2 wrap case is pinned, but no face pinned the DIRECT
+    // throw of a rewritten instance. The guard answers the fixed sentence by
+    // construction, so this pins exactly that: delete meets the refusal
+    // directly (no listing wrap), the message is lost, the 503 body is not.
+    const rewritten = new SandboxExecutionScopeUnavailableError();
+    rewritten.message = "rewritten by an error-reporting layer";
+    const { api } = memoryFileApi();
+    const refusingDelete: AgentSandboxFileApi = {
+      ...api,
+      async deletePath() {
+        throw rewritten;
+      },
+    };
+    const response = await routes(refusingDelete).request(
+      `/sessions/${SESSION_ID}/files/attachments/report.txt`,
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(
+      new SandboxExecutionScopeUnavailableError().message,
+    );
+    expect(body.error).not.toContain("rewritten");
+  });
+});
+
+// ── #657: the three 404 read faces answer the refusal as their own 503 ───────
+
+/**
+ * #657 closes the read faces' mask family: download/export/preview folded a
+ * missing scope into "not found", so an admin's most common triage entry point
+ * could not see the missing pair. The gallery and the Files tab keep their
+ * deliberate empty degrade (the ticket verdict: a transient sandbox hiccup
+ * must not 5xx the shell) — pinned below as-is, not changed.
+ */
+const artifactRoutes = (gateway: SandboxGateway) =>
+  createArtifactRoutes(fakeRequireUser(), {
+    config,
+    store: fakeStore(),
+    gateway,
+    botIdFor: async () => "craft",
+  });
+
+describe("#657: the fail-closed refusal outranks the read faces' 404 mask", () => {
+  const REFUSAL = new SandboxExecutionScopeUnavailableError().message;
+
+  test("artifact download (readFileBytes) surfaces the fixed sentence, not 'Artifact not found', zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/artifacts/outputs/report.md`,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    // The configured half must never echo back into an answer people read.
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]); // fail-closed: no request ever left the process
+  });
+
+  test("export-docx (readFile) surfaces the same 503, zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/export-docx/outputs/report.md`,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
+
+  test("pptx-preview (readFile) surfaces the same 503, zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/pptx-preview/outputs/report.md`,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("#657: real absence keeps the honest 404 (regression pins)", () => {
+  test("artifact download of an absent file stays 'Artifact not found'", async () => {
+    const { api } = memoryFileApi();
+    const response = await artifactRoutes(gatewayWith(api)).request(
+      `/sessions/${SESSION_ID}/artifacts/outputs/absent.md`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Artifact not found" });
+  });
+
+  test("export-docx of an absent markdown stays 'File not found'", async () => {
+    const { api } = memoryFileApi();
+    const response = await artifactRoutes(gatewayWith(api)).request(
+      `/sessions/${SESSION_ID}/export-docx/outputs/absent.md`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "File not found" });
+  });
+
+  test("pptx-preview of an absent markdown stays 'File not found'", async () => {
+    const { api } = memoryFileApi();
+    const response = await artifactRoutes(gatewayWith(api)).request(
+      `/sessions/${SESSION_ID}/pptx-preview/outputs/absent.md`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "File not found" });
+  });
+});
+
+describe("#657: the gallery and the Files tab keep their empty degrade (verdict pins)", () => {
+  test("the gallery answers an empty 200 on a scopeless deployment, zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/artifacts`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ artifacts: [] });
+    expect(calls).toEqual([]); // the degrade is fail-closed too: no dial was made
+  });
+
+  test("the Files tab answers an empty 200 on a scopeless deployment, zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/files`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ entries: [] });
+    expect(calls).toEqual([]);
+  });
+});
