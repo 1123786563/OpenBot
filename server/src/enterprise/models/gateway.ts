@@ -50,8 +50,11 @@ type Input = {
   tools?: unknown[];
   toolChoice?: unknown;
 };
-const error = (status: number, code: string) =>
-  Response.json({ error: { code } }, { status });
+const error = (status: number, code: string, message?: string) =>
+  Response.json(
+    message === undefined ? { error: { code } } : { error: { code, message } },
+    { status },
+  );
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
 function sanitizeValue(value: unknown, secret: string): unknown {
@@ -92,6 +95,86 @@ function validName(value: unknown): value is string {
     value.length <= 128 &&
     !/[\s]/.test(value)
   );
+}
+
+/*
+ * F11-1 (#489): the direct-provider tool-name guard, a mount→wire backstop.
+ * VALID_TOOL_NAME admits dots for brokered tool names (OpenConnector action
+ * ids are dotted), and neither public API's charset does — OpenAI's
+ * function names (^a-zA-Z0-9_- up to 64), and, on the record since T26
+ * (#489 R13 F13-1), Anthropic's Messages tool names (^a-zA-Z0-9_- up to
+ * 128) — each rejects the WHOLE request, so one granted dotted name would
+ * 400 every chat the tool set rides. The guard lives at this dial because
+ * it is the only place a run's effective provider, its effective base URL,
+ * and the mounted tool names coexist: the route (and with it the provider)
+ * resolves lazily per dial, so no earlier mount-time layer can know it.
+ * Gateways and OpenAI-compatible endpoints — the entire purpose of
+ * OPENAI_BASE_URL — forward minted names as-is and never see this refusal,
+ * and an ANTHROPIC_BASE_URL gateway is judged the same way: only the
+ * public endpoint itself refuses. The provider-aware alias layer that
+ * would let dotted names ride a public API stays a deliberate transfers
+ * design item (see VALID_TOOL_NAME in mastra/tools.ts), and the code
+ * reuses that layer's MASTRA_TOOL_NAME_INVALID vocabulary so one refusal
+ * family names the same fact at both layers.
+ */
+const DIRECT_OPENAI_CHAT_COMPLETIONS_URL =
+  "https://api.openai.com/v1/chat/completions";
+const DIRECT_ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
+function directDottedToolName(
+  anthropic: boolean,
+  tools: unknown[] | undefined,
+  url: string,
+): string | undefined {
+  if (!tools) return undefined;
+  // The dial never connects to this string as written: fetch normalizes it
+  // first, and new Request(url).url is that same normalization — the one
+  // that drops the HTTPS default port, so https://api.anthropic.com:443/…
+  // dials https://api.anthropic.com/… (F01-R11-M1). Judge directness in the
+  // dial's own terms or the two disagree about which endpoint a request
+  // hits. Each provider's resolver already folds the unset default, the
+  // explicit version segment, and trailing slashes into one URL; host case
+  // folds in here because HTTP hosts are case-insensitive and
+  // https://API.ANTHROPIC.COM dials the same public API. A base URL that
+  // cannot even parse is not the public API — pass it through and let the
+  // dial fail on it as it does today, rather than answer a URL question
+  // with a tool-name refusal. One alias of these hosts survives even that
+  // normalization: a single trailing dot is the legal FQDN terminator, and
+  // https://api.openai.com./v1 dials the public API as surely as the
+  // dotless host (F01-R12-M1) — strip exactly that one dot from the parsed
+  // hostname and judge the URL rebuilt from its parsed parts, so a second
+  // dot, any other hostname, credentials, an explicit port, and the path
+  // all keep the verdicts they had before.
+  let dialed: URL;
+  try {
+    dialed = new URL(new Request(url).url);
+  } catch {
+    return undefined;
+  }
+  const normalized = (
+    `${dialed.protocol}//` +
+    (dialed.username || dialed.password
+      ? `${dialed.username}:${dialed.password}@`
+      : "") +
+    dialed.hostname.replace(/\.$/, "") +
+    (dialed.port ? `:${dialed.port}` : "") +
+    dialed.pathname +
+    dialed.search +
+    dialed.hash
+  ).toLowerCase();
+  if (
+    normalized !==
+    (anthropic
+      ? DIRECT_ANTHROPIC_MESSAGES_URL
+      : DIRECT_OPENAI_CHAT_COMPLETIONS_URL)
+  )
+    return undefined;
+  for (const tool of tools) {
+    if (!object(tool)) continue;
+    const fn = (tool as { function?: unknown }).function;
+    if (!object(fn) || typeof fn.name !== "string") continue;
+    if (fn.name.includes(".")) return fn.name;
+  }
+  return undefined;
 }
 function validId(value: unknown): value is string {
   return (
@@ -1575,6 +1658,24 @@ export function createModelGateway(
         .catch(() => null);
       if (!key) return error(503, "MODEL_CREDENTIAL_UNAVAILABLE");
       const anthropic = model.provider === "anthropic";
+      // F11-1 (#489): refuse a dotted tool name the dial's provider cannot
+      // carry — named, before the wire — instead of losing the whole request
+      // to the upstream charset check.
+      const refusedToolName = directDottedToolName(
+        anthropic,
+        input.tools,
+        anthropic
+          ? anthropicMessagesUrl(environment)
+          : chatCompletionsUrl(environment),
+      );
+      if (refusedToolName !== undefined)
+        return error(
+          400,
+          "MASTRA_TOOL_NAME_INVALID",
+          anthropic
+            ? `${refusedToolName} cannot be mounted on a direct-Anthropic provider (its tool-name charset admits no dot)`
+            : `${refusedToolName} cannot be mounted on a direct-OpenAI provider (its function-name charset admits no dot)`,
+        );
       let payload: Record<string, unknown>;
       if (anthropic) {
         let mapped: ReturnType<typeof anthropicMessages>;

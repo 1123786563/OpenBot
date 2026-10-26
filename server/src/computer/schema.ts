@@ -363,7 +363,14 @@ export type SignInCodeResult = {
   codeFieldVisible: boolean;
   /** Whether the site answered the code with the login page: the person signs in again. */
   passwordFieldVisible: boolean;
-  url: string;
+  /**
+   * The page the browser is on after the attempt, which the caller scrubs before storing or
+   * showing. Optional for the same reason `SignInFillResult.url` is: an agent-computer that has
+   * not been redeployed can report the code step without a url at all, so a required `url` would
+   * have the type promise a page the runtime never received. Treat absent as "the page is
+   * unknown", never as a URL to build on.
+   */
+  url?: string;
   error?: string;
 };
 

@@ -107,24 +107,72 @@ export interface MastraToolGuard {
  * no path (a `/` is still refused) and no prototype (mount records are
  * null-prototype) on this runtime.
  *
- * The dot's provider edge, on the record (#489 F03/C-M1): OpenAI's official
- * function-name charset is `^[a-zA-Z0-9_-]{1,64}$` — it admits no dot — so
- * the "strictest provider" claim above holds for the LENGTH only; on charset
- * this runtime is deliberately looser than OpenAI. That looseness is argued
- * safe for the gateway/OpenAI-compatible endpoints brokered tool calls ride
- * (they forward the minted name as-is and accept dotted names); a deployment
- * pointing an `openai` provider straight at api.openai.com has no such
- * gateway scrub, and a mounted dotted brokered name can 400 the WHOLE chat
- * request at the wire layer — not merely leave one tool uncallable. If
- * direct-OpenAI ever needs first-class support, the shape is a name-alias/
- * scrubbing layer between mount and wire: a follow-up item, deliberately
- * not built here.
+ * The dot's provider edge, on the record (#489 F03/C-M1; the anthropic side
+ * adjudicated by F14 T26 / R13 F13-1): OpenAI's official function-name
+ * charset is `^[a-zA-Z0-9_-]{1,64}$`, and Anthropic's Messages tool-name
+ * charset is the same family at `^[a-zA-Z0-9_-]{1,128}$` — neither admits
+ * a dot — so the "strictest provider" claim above holds for the LENGTH
+ * only; on charset this runtime is deliberately looser than both. That
+ * looseness is argued safe for the gateway/OpenAI-compatible endpoints
+ * brokered tool calls ride (they forward the minted name as-is and accept
+ * dotted names); a deployment pointing an `openai` provider straight at
+ * api.openai.com — or an `anthropic` provider straight at
+ * api.anthropic.com — is caught at the dial itself: the F11-1 guard in
+ * enterprise/models/gateway.ts (directDottedToolName, branch-on-provider
+ * since T26) answers 400 MASTRA_TOOL_NAME_INVALID naming the offending
+ * mount, so the whole chat fails named and at home rather than lost to the
+ * upstream wire charset; an ANTHROPIC_BASE_URL gateway is exempt exactly as
+ * an OpenAI-compatible one is. The guard judges directness on
+ * new Request(url).url — the same normalization the dial itself fetches
+ * through (F01-R11-M1) — so a defaulted port or host case cannot slip a
+ * dotted name past it. If a direct public API ever needs first-class
+ * support — a dotted name that RIDES rather than being refused — the
+ * shape is a name-alias/scrubbing layer between mount and wire: a follow-up
+ * item, deliberately not built here.
  *
  * Exported so the grant write (plugins/store.ts, where `toolNameFor` mints
  * the name) enforces the SAME rule at configuration time; this mount-time
  * check stays as defense in depth for grants written before that gate.
+ *
+ * The stricter charset below is a DELIBERATE second rule, and the split is
+ * the record (F16-2): this constant governs brokered/granted names — admin
+ * configuration, where a dotted name a provider cannot take is a
+ * configuration mistake the F11-1 guard answers once, loudly, for the whole
+ * chat. VALID_BRIDGE_TOOL_NAME governs CLIENT declarations — the AG-UI tool
+ * list is third-party input controllable per request, so a name outside the
+ * wire-safe charset must degrade that ONE tool (dropped at mount,
+ * structured diagnostic, chat continues) instead of costing the whole run.
+ * The observed fail-hard shape is the pinned engine's, not the dial's:
+ * `@mastra/core` 1.64.0 `formatTools` rewrites invalid characters to `_`
+ * before the wire, so a declared `computer.navigate` beside the legal
+ * `computer_navigate` becomes one name and throws
+ * AGENT_TOOL_NAME_COLLISION before any provider request. Do not reuse
+ * VALID_TOOL_NAME for a client-supplied name.
  */
 export const VALID_TOOL_NAME = /^[A-Za-z0-9._-]{1,64}$/;
+
+/**
+ * Client-declared (AG-UI) bridge names stay on the wire-safe charset: a
+ * declaration outside it is DROPPED at mount — fail-soft, one structured
+ * diagnostic, the chat continues (see VALID_TOOL_NAME above for the division
+ * of labour and the engine rewrite that makes a dotted client name fatal).
+ */
+export const VALID_BRIDGE_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * The engine's model-visible spelling of a tool name: the pinned
+ * `@mastra/core` 1.64.0 `formatTools` rewrites every `.` to `_` before the
+ * wire (measured and pinned in mastra-computer-tools.test.ts, F16-2), so two
+ * mounts whose names differ only in dots and underscores are ONE name to the
+ * model. Collision identity is claimed in this spelling (F18-5/T35): an
+ * exact-string check let a `foo.bar` + `foo_bar` grant pair mount and die
+ * whole-run in the engine's AGENT_TOOL_NAME_COLLISION instead of being
+ * refused at mount. Exported so the granted wrapper's claim registry and the
+ * frontend bridge's grantedNames set both judge the same wire.
+ */
+export function wireName(name: string): string {
+  return name.replace(/\./g, "_");
+}
 
 export function isReservedToolName(name: string): boolean {
   // The runtime's own system tools: the learned-skill pair (ME08 mounts them
@@ -215,6 +263,12 @@ export function createMastraTools(
   // never read as an existing mount.
   const record: Record<string, Tool> = Object.create(null);
   const operations = new Map<string, MastraToolOperation>();
+  // F18-5 (T35): claims are keyed by the WIRE name (wireName above — the
+  // engine rewrites `.` to `_` before the wire), so a dotted/underscore twin
+  // pair is refused HERE, at mount, instead of mounting both and dying
+  // whole-run in the engine's AGENT_TOOL_NAME_COLLISION. The map remembers
+  // the first claimant's original spelling so the refusal names both grants.
+  const claimedWireNames = new Map<string, string>();
   for (const [index, granted] of tools.entries()) {
     if (
       !granted ||
@@ -235,11 +289,26 @@ export function createMastraTools(
         `MASTRA_TOOL_NAME_RESERVED: ${granted.name} is a system tool name and cannot be overridden by a grant.`,
       );
     }
-    if (record[granted.name]) {
+    const claimed = wireName(granted.name);
+    // F19-1 (T36): the reserved pair must be refused in its WIRE spelling
+    // too. The learned system tools mount dot-free (`copilotkit_load_skill`,
+    // learning/runtime.ts) and the engine rewrites every `.` to `_` before
+    // the wire, so a dotted grant (`copilotkit.load_skill`) passed the
+    // exact-match check above, claimed this name, and collapsed the run at
+    // the engine's AGENT_TOOL_NAME_COLLISION once the learned pair mounted
+    // beside it. Refusing here makes that death path unreachable at mount.
+    if (isReservedToolName(claimed)) {
       throw new MastraToolRefusal(
-        `MASTRA_TOOL_NAME_COLLISION: two granted tools claim the model name ${granted.name}; refusing to override.`,
+        `MASTRA_TOOL_NAME_RESERVED: ${granted.name} reaches the model as ${claimed}, a system tool name and cannot be overridden by a grant.`,
       );
     }
+    const firstClaim = claimedWireNames.get(claimed);
+    if (firstClaim !== undefined) {
+      throw new MastraToolRefusal(
+        `MASTRA_TOOL_NAME_COLLISION: two granted tools claim the model name ${claimed} (the engine's wire spelling of ${JSON.stringify(firstClaim)} and ${JSON.stringify(granted.name)}); refusing to override.`,
+      );
+    }
+    claimedWireNames.set(claimed, granted.name);
     record[granted.name] = createTool({
       id: granted.name,
       description: granted.description,
@@ -385,7 +454,9 @@ export interface MastraLearnedToolGuard extends MastraToolGuard {
    * Names already mounted as granted (server-executed) tools. A learned
    * surface claiming one refuses — though `createMastraTools` already
    * refuses any grant carrying a reserved name, so this is defense in
-   * depth, not the primary rule.
+   * depth, not the primary rule. Callers may pass raw grant spellings
+   * (execution.ts passes `Object.keys(tools)`): the set is normalized to
+   * the wire spelling here, so a dotted twin cannot slip through.
    */
   readonly grantedNames?: readonly string[];
 }
@@ -409,7 +480,14 @@ export function createMastraLearnedTools(
     );
   }
   const operations = new Map<string, MastraToolOperation>();
-  const granted = new Set(guard.grantedNames ?? []);
+  // F19-2 (T36): the granted set enters in its WIRE spelling, exactly as the
+  // frontend bridge's collision set does (F18-4). A raw-spelling set let the
+  // dotted grant `copilotkit.load_skill` pass this gate and mount beside the
+  // dot-free reserved pair, which the engine then collapses into one name
+  // (AGENT_TOOL_NAME_COLLISION, whole run). The learned names themselves
+  // carry no dot — LEARNED_SKILL_TOOL_NAMES is underscored — so the
+  // comparison below is wire against wire and lossless.
+  const granted = new Set((guard.grantedNames ?? []).map(wireName));
   for (const [index, spec] of surface.tools.entries()) {
     if (!spec || typeof spec.name !== "string") {
       throw new MastraToolRefusal(

@@ -248,6 +248,41 @@ describe("the tab claimed on the click", () => {
     expect(openedTab.opener).toBeNull();
   });
 
+  /*
+   * THE BLANK TAB IS THE PERSON'S TO CLOSE, and the request's round trip is exactly when they
+   * are looking at it. A closed browsing context navigates nothing — and on some runtimes the
+   * attempt throws rather than no-ops — so a dead tab must end into the same place a blocked
+   * one does: the url is still good, and the link is how the person finishes the connection.
+   */
+  test("a blank tab closed before the url arrives ends into the link, not a dead navigation", async () => {
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    // Closed while the request that mints the url is still in flight.
+    openedTab.closed = true;
+    await settle();
+    // Never a navigation into a closed browsing context.
+    expect(openedTab.navigated).toBeUndefined();
+    // The same ending a blocked tab takes: the wait with the url beside it as a link.
+    expect(view.getByText(/Finish in the tab that opened/)).toBeTruthy();
+    const link = view.getByRole("link", { name: "Open GitHub's sign-in" });
+    expect(link.getAttribute("href")).toBe(AUTH_URL);
+  });
+
+  test("a navigation that throws ends into the link the same way", async () => {
+    // A discarded browsing context whose closed flag has not caught up can still make
+    // location.replace throw instead of no-op; the tab handle's replace is the seam for it.
+    openedTab.location.replace = () => {
+      throw new Error("Cannot navigate a discarded browsing context");
+    };
+    const { view } = drawCard();
+    await settle();
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    await settle();
+    const link = view.getByRole("link", { name: "Open GitHub's sign-in" });
+    expect(link.getAttribute("href")).toBe(AUTH_URL);
+  });
+
   test("a blocked tab still hands the person the url as a link", async () => {
     openSpy.mockReturnValue(null);
     const { view } = drawCard();

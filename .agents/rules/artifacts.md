@@ -9,7 +9,7 @@
 | Agent 工作规范、触发目录、技能使用约束 | `.agents/rules/`；根 `AGENTS.md` 只保留入口 | 当前任务命中触发条件 |
 | 需求/范围/验收、架构决策、实施步骤与接口、业务 Ticket | `docs/specs/`、`docs/adr/`、`docs/plans/`、`docs/plans/tickets/` | 设计或实施相关需求 |
 | 支撑方案的研究、原型设计与技术取舍 | 对应方案目录，或 `docs/plans/research/` 并从方案引用 | 方案需要该证据时 |
-| 原始 Issue 快照、执行 DAG 状态、Brief、Ledger、恢复状态、调度数据 | `.archive/runs/<run-key>/` | 当前派发、对账或恢复 |
+| 脱敏 Issue 快照/受控原文引用、执行 DAG 状态、Brief、Ledger、恢复状态、调度数据 | `.archive/runs/<run-key>/` | 当前派发、对账或恢复 |
 | 验证报告、测试结果、Review/OCR、finding 裁决、截图、日志、回执、会话存档 | 同一 Run 的 `.archive/runs/<run-key>/` | 验收、审查或定向诊断 |
 | 测试用例、fixture、CI/测试实际读取的清单与配置 | 对应 `tests/`、`scripts/` 或模块配置目录，进入版本控制 | 开发及运行测试 |
 | 构建缓存、临时 runner 目录 | 工具规定的缓存目录；交付所需结果另归档 | 工具运行时 |
@@ -20,12 +20,12 @@
 
 ## Run 布局
 
-run-key 使用日期加 Issue/任务短名，复用同一次工作的目录，避免每轮重复建树：
+新 run-key 使用日期、Issue/任务短名和不可变 Run ID 的短后缀，例如 `2026-10-25-issue619-a1b2c3d4`。Orca Run 使用实际 Run ID，普通文档等非 Orca 任务生成 UUID。index 记录完整 Run ID、规范仓库、执行主机、工作区、方案身份/哈希、原始 BASE 和交付目标；短后缀碰撞时延长，不能复用别的身份。复用同一次工作的目录；修复轮次在其内部编号。旧目录不强制改名，先补齐并核对身份后才能复用。
 
 ```text
-.archive/runs/<date>-<issue-or-task>/
+.archive/runs/<date>-<issue-or-task>-<run-id-short>/
   index.md              # 方案路径、仓库/工作区、BASE、当前状态及证据索引
-  scope.json / issues/  # 原始需求快照与完整性
+  scope.json / issues/  # 脱敏需求快照/受控原文引用与完整性
   dag.json / state.json / events.jsonl / ledger.md
   briefs/               # 单任务 Brief 与修复 Brief
   checkpoints/          # 前后快照、授权增量、文件清单和哈希
@@ -34,13 +34,34 @@ run-key 使用日期加 Issue/任务短名，复用同一次工作的目录，�
   receipts/ / workers/ / logs/
 ```
 
+所有 Run（含普通 Orca）初始化时选定唯一 `archive_root`：将持久拥有者的 `.archive/runs/<run-key>/` 解析成绝对物理路径，写入 index、Ledger 和每个 Brief 的报告参数。Worker 必须写向该根或由主控显式收取带哈希的报告；不得各自在 Worktree 按相对 `.archive/` 建第二根。远端 Worker 无法共享文件系统时记录其暂存根与唯一权威根之间的传输映射，收取核验后才接受结果。根随 Worktree 清理会消失时，先执行 [coordination-state.md](coordination-state.md)的恢复索引迁移门禁。
+
 这些是按需创建的类别，不强制每次建空目录。方案及修复方案存 `docs/plans/<date>-<issue-or-task>/`，仅引用必要的归档路径。新工具的 runDir、reportPath、OCR output 及测试报告参数按本规则配置；默认写旧目录的工具，在支持时显式指定归档输出，不支持时记录技术债，修改默认值须验证调用方。
+
+测试运行器的原始临时输出使用 `.e2e/<run-key>/<task>-<attempt>/`；`E2E_UNIT_OUTPUT` 等参数按[验证规范](testing.md)指定。Run 的 `verification/` 保存最终证据及原始输出的路径、版本、哈希和归档副本；临时输出不替代交付归档。跨 Run 资源声明与每日共享 Ledger 使用[共享协调状态](coordination-state.md)的持久根，Run 内保存回执和引用。
+
+## SDD 工具目录适配
+
+普通 SDD 启动前按 [execution.md](execution.md)核验能力；仅在 sdd-workspace 实际可用时记录当前技能版本、方案规范路径与哈希、其实际返回的绝对路径及所属 Run ID。已获准手工等价流程时以 Run 下唯一 Ledger 为活动事实源，不捏造工具回执。工具固定使用 `.superpowers/sdd/<plan>/` 时允许保留该活动目录，不盲改工具或以符号链接混用其他计划。
+
+- **单一活动 Ledger**：该计划以工具目录中的 `progress.md` 为唯一可变执行 Ledger；Run 的 index/ledger 只索引它和已归档检查点，不另维护一套独立任务状态。Orca 采用自己的 Task/Dispatch 状态和 Run Ledger，不创建 SDD 的第二派发状态。
+- 每个任务/修复轮次结算、进入 Review 或交付前，以及压缩/交接前，先停止相关写入并取得同一 snapshot_generation/attempt 的冻结回执，再将活动 Ledger、Brief、报告、Review Package 与 plan-path 标记复制成 Run 内 `sdd/<plan-key>/<checkpoint>/` 的不可变快照，记录完整清单、哈希和源/目标映射。逐项记录共同事务序号、检查点/manifest 引用，校验交叉引用与源文件复制前后哈希一致；manifest 最后写入并 fsync，文件和父目录持久化后以提交标记发布。写入未能冻结或代际不一致则快照无效，重采而不恢复混代内容。先核对落盘再推进下一阶段；工具的临时目录例外不豁免归档。
+- 恢复先读 Run 身份与最后归档快照，再核对工具目录、plan-path、Ledger 和 Git。缺目录时仅从匹配身份且核验通过的快照恢复；两份冲突时对账原始事件与代码，不按 mtime 任选，也不重新生成空 Ledger 后重派已完成任务。
+- 技能清理临时目录前，先核对最终快照、全部 Ruling、未提交内容及证据在临时目录外可恢复；这些条件未满足时保留目录。技能目录删除不等于交付证据已持久化。
 
 ## 保留与交付
 
 - `.archive/` 当前被 `.gitignore` 忽略，是本地可恢复证据，不会随普通提交、clone 或新 Worktree 自动传递。需要跨工作区时显式复制并核对清单和哈希；需要共享/交付时经已授权渠道转移脱敏证据，记录接收位置。禁止伪造远程可访问链接。
 - 团队要求长期留存的批准事实和可执行测试保留在版本控制中；本地归档存在不能替代远程交付。提交某项脱敏证据另依明确授权，不能对整个 `.archive/` 强制 add。
-- 归档不含凭据、完整环境变量或无关客户数据。清理工作区前核对原始报告、检查点与索引已转移且可读取。
+- 归档不含凭据、完整环境变量或无关客户数据；全文快照与敏感内容冲突时按[检查点规范](checkpoints.md)的受保护例外处理，不把脱敏副本当成原文。清理工作区前核对原始报告、检查点与索引已转移且可读取。
+
+## 脱敏、外发与可访问证据
+
+“原始证据”指保持来源、时间、版本和裁决可追溯，不要求把敏感原文复制到普通归档。Issue 正文/评论/附件、终端日志、测试输入/输出、OCR 背景/文件及截图均先做敏感信息扫描与人工定向核对，再归档或发送到外部 provider。扫描至少覆盖凭据/token、连接串、完整环境、个人/客户数据；记录扫描范围/工具、脱敏位置与复核结果，不在记录中重泄露原文。不能确认安全则暂停外发，使用已有授权的受控原文存储/引用；无安全方式时保留受保护源并记 protected/unverifiable。禁止为此创建无授权外部副本。
+
+脱敏快照记录来源、原版本、脱敏字段及受控原文引用；全文完整性、精确指纹按 [checkpoints.md](checkpoints.md)敏感例外核验，不以可猜测秘密裸哈希代替保护。OCR 背景和输入清单在发送前同样扫描；脱敏影响审查语义时保留覆盖缺口，不能假称完整。
+
+待人审证据须有接收方实际可读的授权入口、owner、完整性 manifest 和明确 retain_until（至少保留到人工复核结束后 90 天；更长的项目契约优先）。定期核对链接/权限和存储；过期、主机丢失或证据不可恢复即使已贴标也须进入纠正队列。保留期内迁移须更新共享引用并试读；到期删除须有保留责任人决定，不能只因本地 Worktree 收尾而删除证据。
 
 ## 旧目录迁移
 

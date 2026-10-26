@@ -7,7 +7,9 @@ import {
   createMastraTools,
   type MastraToolOperation,
   MastraToolRefusal,
+  VALID_BRIDGE_TOOL_NAME,
   VALID_TOOL_NAME,
+  wireName,
 } from "../src/mastra/tools";
 import { createPluginStore } from "../src/plugins/store";
 import { markUntrusted } from "../src/untrusted-content";
@@ -284,6 +286,76 @@ describe("createMastraTools wrapping", () => {
     ).toThrow(/MASTRA_TOOL_UNKNOWN/);
   });
 
+  it("dotted_underscore_twin_grants_collide_at_mount_on_the_wire_name", () => {
+    // F18-5 (T35): the pinned engine's formatTools rewrites every `.` to
+    // `_` before the wire, so `github.get_current_user` and
+    // `github_get_current_user` are ONE model name. The mount-time claim
+    // registry judges the wire spelling and refuses the twin pair HERE —
+    // named, with both original spellings so the offending grants are
+    // findable — instead of mounting both and letting the run die in the
+    // engine's AGENT_TOOL_NAME_COLLISION.
+    const twinPair = () =>
+      createMastraTools([
+        tool({ name: "github.get_current_user" }),
+        tool({ name: "github_get_current_user" }),
+      ]);
+    expect(twinPair).toThrow(/MASTRA_TOOL_NAME_COLLISION/);
+    expect(twinPair).toThrow(/github\.get_current_user/);
+    expect(twinPair).toThrow("github_get_current_user");
+    // Order-independence: the underscore spelling first is the same claim.
+    expect(() =>
+      createMastraTools([
+        tool({ name: "github_get_current_user" }),
+        tool({ name: "github.get_current_user" }),
+      ]),
+    ).toThrow(/MASTRA_TOOL_NAME_COLLISION/);
+    // The degenerate names ride the same rewrite: `.` claims `_`, which a
+    // bare-underscore grant already owns (F18-5's `.` / `..` note).
+    expect(() =>
+      createMastraTools([tool({ name: "." }), tool({ name: "_" })]),
+    ).toThrow(/MASTRA_TOOL_NAME_COLLISION/);
+    // Zero regression on non-twins: unrelated dotted and underscored grants
+    // whose wire spellings differ still mount side by side.
+    const record = createMastraTools([
+      tool({ name: "github.get_current_user" }),
+      tool({ name: "github_list_repos" }),
+    ]);
+    expect(Object.keys(record)).toEqual([
+      "github.get_current_user",
+      "github_list_repos",
+    ]);
+    // wireName is the one shared rewrite both faces judge by: dotted in,
+    // underscored out; a dot-free name passes through unchanged.
+    expect(wireName("github.get_current_user")).toBe("github_get_current_user");
+    expect(wireName("github_get_current_user")).toBe("github_get_current_user");
+    expect(wireName(".")).toBe("_");
+  });
+
+  it("dotted_reserved_pair_refused_on_the_wire_name", () => {
+    // F19-1 (T36): the reserved-name check above judges the ORIGINAL
+    // spelling, but the learned system tools mount dot-free and the engine
+    // rewrites the dot before the wire — so a grant `copilotkit.load_skill`
+    // passed the exact-match check, claimed the wire name, and collapsed
+    // the run at the engine's AGENT_TOOL_NAME_COLLISION once the learned
+    // pair mounted beside it. The reserved pair is refused in its WIRE
+    // spelling too: named, with both spellings so the grant is findable.
+    const dotted = () =>
+      createMastraTools([tool({ name: "copilotkit.load_skill" })]);
+    expect(dotted).toThrow(/MASTRA_TOOL_NAME_RESERVED/);
+    expect(dotted).toThrow("copilotkit.load_skill");
+    expect(dotted).toThrow("copilotkit_load_skill");
+    // The other member of the reserved pair rides the same refusal.
+    expect(() =>
+      createMastraTools([tool({ name: "copilotkit.read_skill_file" })]),
+    ).toThrow(/MASTRA_TOOL_NAME_RESERVED/);
+    // Zero widening: a dot that lands nowhere near the reserved pair still
+    // mounts — refusing the wire spelling of a reserved name never refuses
+    // plain dotted brokered names (the twin test's positive pin is beside).
+    expect(() =>
+      createMastraTools([tool({ name: "github.get_current_user" })]),
+    ).not.toThrow();
+  });
+
   it("grant_write_refuses_model_unaddressable_tool_names", async () => {
     // OCR fix wave 3 (R3-2): the model tool name is minted at the grant write
     // (toolNameFor, plugins/store.ts). A name no provider can address must
@@ -345,5 +417,17 @@ describe("createMastraTools wrapping", () => {
     ).rejects.toThrow(/gate must refuse before any grant write/);
     // The mount-time check and the grant-time gate enforce the SAME rule.
     expect(VALID_TOOL_NAME.source).toBe("^[A-Za-z0-9._-]{1,64}$");
+    // F16-2: the CLIENT-declared bridge charset is a deliberate SECOND rule.
+    // The AG-UI tool list is per-request third-party input, so a name outside
+    // the wire-safe charset is dropped at mount there (fail-soft) instead of
+    // being mounted and colliding with a legal sibling after the engine's
+    // formatTools rewrite (AGENT_TOOL_NAME_COLLISION kills the whole run).
+    // This pins the split in both directions: what the bridge refuses on the
+    // wire is what the brokered / granted configuration path above still
+    // admits.
+    expect(VALID_BRIDGE_TOOL_NAME.source).toBe("^[A-Za-z0-9_-]{1,64}$");
+    expect(VALID_BRIDGE_TOOL_NAME.test("github.get_current_user")).toBe(false);
+    expect(VALID_BRIDGE_TOOL_NAME.test("mcp__server__echo_tool")).toBe(true);
+    expect(VALID_TOOL_NAME.test("github.get_current_user")).toBe(true);
   });
 });

@@ -3,6 +3,7 @@ import {
   CopilotKitIntelligence,
   LearnedSkillsError,
 } from "@copilotkit/runtime/v2";
+import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import type { LearningSettings, LearningTarget } from "../../shared/learning";
 import { describe, expect, it } from "../../tests/support/bun-test-compat";
@@ -23,7 +24,6 @@ import {
   createMastraLearnedTools,
   type MastraToolOperation,
 } from "../src/mastra/tools";
-import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { skillSnapshot } from "./fixtures/learned-skills";
 import { carrier, sse } from "./support/me04-harness";
 
@@ -642,6 +642,40 @@ describe("ME08 learned-skill controlled wrapper", () => {
         { grantedNames: ["copilotkit_load_skill"] },
       ),
     ).toThrow("MASTRA_TOOL_NAME_COLLISION");
+  });
+
+  it("refuses_a_dotted_grant_twin_on_the_wire_name", () => {
+    // F19-2 (T36): the granted collision set enters in its WIRE spelling,
+    // like the frontend bridge (F18-4) — not by raw spelling. A grant named
+    // `copilotkit.load_skill` (createMastraTools now refuses it at its own
+    // gate; this stays defense in depth) would otherwise pass the
+    // exact-match set, mount beside `copilotkit_load_skill`, and collapse
+    // the run at the engine's AGENT_TOOL_NAME_COLLISION once formatTools
+    // rewrites the dot.
+    const execute = async () => "x";
+    const reservedPair = {
+      catalog: "",
+      tools: [
+        {
+          name: "copilotkit_load_skill",
+          description: "d",
+          parameters: {},
+        },
+      ],
+      execute,
+    };
+    expect(() =>
+      createMastraLearnedTools(reservedPair, {
+        grantedNames: ["copilotkit.load_skill"],
+      }),
+    ).toThrow("MASTRA_TOOL_NAME_COLLISION");
+    // Zero regression: a dotted grant whose wire spelling lands nowhere near
+    // the reserved pair still mounts beside the learned surface untouched.
+    expect(() =>
+      createMastraLearnedTools(reservedPair, {
+        grantedNames: ["github.get_current_user"],
+      }),
+    ).not.toThrow();
   });
 
   it("executes_the_real_sdk_read_and_refuses_a_path_outside_the_skill", async () => {
