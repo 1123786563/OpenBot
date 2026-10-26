@@ -79,8 +79,9 @@ import { createPlatformCompanyProvisionService } from "../../src/enterprise/tena
  *   keeping an audit row for each half, and never touches the pinned build's
  *   native resend branch (crud-invites.mjs:138's direct expiresAt write is
  *   unreachable: `resend:true` is refused by name at the ingress).
- * - the native invitation GETs stay closed (X), accept/reject stay unwired
- *   (T04.02), and a suspended company closes the invitation commands.
+ * - the native invitation GETs stay closed (X); accept/reject are wired by
+ *   T04.02 and refuse an unknown invitation by name (404); a suspended
+ *   company closes the invitation commands.
  *
  * All five BA_TEST_* role URLs are required; a missing one is a blocked
  * suite, never a fallback. No DSN is ever printed.
@@ -1169,25 +1170,40 @@ describe("T04.01 invitation create/cancel/resend and the own narrow read", () =>
     expect(listUserInvitations.status).toBe(403);
   });
 
-  test("accept_and_reject_are_not_wired_yet", async () => {
-    const accept = await harness.app.request(
-      "/api/auth/organization/accept-invitation",
-      {
+  // The premise of this case changed with T04.02: accept/reject are now wired
+  // through the same handler factory, so an unknown invitation is refused by
+  // the acceptance half (404) instead of falling through to "not wired" (503).
+  test("accept_and_reject_are_wired_and_refuse_an_unknown_invitation", async () => {
+    const post = async (path: string, key: string): Promise<Response> =>
+      harness.app.request(path, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           cookie: harness.invitee1.cookie,
-          "idempotency-key": "t0401-key-accept-unwired",
+          "idempotency-key": key,
         },
         body: JSON.stringify({
           organizationId: harness.tenantA,
           invitationId: "t0401-unwired",
         }),
-      },
+      });
+
+    const accept = await post(
+      "/api/auth/organization/accept-invitation",
+      "t0401-key-accept-unwired",
     );
-    expect(accept.status).toBe(503);
+    expect(accept.status).toBe(404);
     expect(await (accept.json() as Promise<{ code: string }>)).toMatchObject({
-      code: "DIRECTORY_OPERATION_NOT_WIRED",
+      code: expect.stringContaining("INVITATION_NOT_FOUND") as string,
+    });
+
+    const reject = await post(
+      "/api/auth/organization/reject-invitation",
+      "t0401-key-reject-unwired",
+    );
+    expect(reject.status).toBe(404);
+    expect(await (reject.json() as Promise<{ code: string }>)).toMatchObject({
+      code: expect.stringContaining("INVITATION_NOT_FOUND") as string,
     });
   });
 

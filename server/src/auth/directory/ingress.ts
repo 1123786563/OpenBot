@@ -72,6 +72,7 @@ import {
 import {
   INVITATION_DELEGABLE_ROLES,
   isDirectoryMembershipRefusal,
+  MEMBERSHIP_INVITATION_NOT_FOUND,
 } from "./membership";
 import {
   assertTeamBelongsToCompany,
@@ -1057,15 +1058,65 @@ export function createDirectoryIngress(
     );
     const fromBody = text(body.organizationId);
     const fromSession = text(view?.session?.activeOrganizationId);
-    const tenantId = fromQuery ?? fromBody ?? fromSession;
-    if (!tenantId) {
+    const explicit = fromQuery ?? fromBody ?? fromSession;
+    if (explicit) return explicit;
+    /*
+     * The invitee's own commands (T04.02) name no company: an invitee is not
+     * a member yet, so they have no active-organization preference, and the
+     * pinned native body carries only the invitation id. The invitation's own
+     * organization is the company — read server-side, never taken from the
+     * client — and the handler still re-proves the record's company, address,
+     * state and recipient inside the locked transaction. An explicit
+     * organizationId, when a caller does send one, still wins and is still
+     * cross-checked, so a spoofed tenant is refused rather than trusted.
+     */
+    if (
+      endpoint.directoryOperation === "invitation.accept" ||
+      endpoint.directoryOperation === "invitation.reject"
+    ) {
+      const invitationId = text(body.invitationId);
+      if (invitationId) {
+        return invitationCompany(invitationId);
+      }
+    }
+    throw new NativeAuthRefusal(
+      NATIVE_AUTH_TENANT_REQUIRED,
+      `${endpoint.nativeOperation} names no company: an explicit organizationId or an active-organization preference is required, and the selection is an intent the gate re-verifies`,
+      400,
+    );
+  }
+
+  /**
+   * The company an invitation belongs to, read from the record itself. This is
+   * the only tenant source the invitee's commands have; a missing record is
+   * answered not-found here rather than surfacing a tenant-shaped 400, and it
+   * leaks nothing (the id is the caller's own input).
+   */
+  async function invitationCompany(invitationId: string): Promise<string> {
+    if (!database) {
       throw new NativeAuthRefusal(
-        NATIVE_AUTH_TENANT_REQUIRED,
-        `${endpoint.nativeOperation} names no company: an explicit organizationId or an active-organization preference is required, and the selection is an intent the gate re-verifies`,
-        400,
+        NATIVE_AUTH_STORAGE_REQUIRED,
+        "the invitation's company cannot be read without the deployment database",
+        503,
       );
     }
-    return tenantId;
+    const organizationId = await database.transaction(async (tx) => {
+      const [row] = rowsOf(
+        await tx.execute(
+          sql`SELECT organization_id FROM auth_invitations
+               WHERE id = ${invitationId} LIMIT 1`,
+        ),
+      );
+      return text(row?.organization_id);
+    });
+    if (!organizationId) {
+      throw new NativeAuthRefusal(
+        MEMBERSHIP_INVITATION_NOT_FOUND,
+        `invitation ${invitationId} does not exist; the answer is not-found rather than inventing a company for it`,
+        404,
+      );
+    }
+    return organizationId;
   }
 
   async function workspaceForTeam(
