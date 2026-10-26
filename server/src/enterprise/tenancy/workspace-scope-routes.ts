@@ -338,6 +338,43 @@ export function createUnavailableWorkspaceScopeRoutes(): Hono {
 export const DIRECTORY_AUTHORITY_ADVERTISEMENT_HEADER =
   "x-openbot-directory-authority";
 
+const refusedBody = (code: string) => ({
+  error: { code, message: "Request refused." },
+});
+
+/*
+ * The BA directory surfaces' shared refusal→status projection (T03.02, and
+ * since T04.01 a module-level export the sibling own-read surface consumes,
+ * so the two adapters cannot drift apart on which refusal answers which
+ * status). Same closed mapping the mount below has always applied.
+ */
+export function directorySurfaceErrorResponse(error: unknown): {
+  status: number;
+  body: { error: { code: string; message: string } };
+} {
+  if (isBaSelectionRefusal(error)) {
+    return { status: error.status, body: refusedBody(error.code) };
+  }
+  if (isAuthorityRefusal(error)) {
+    return { status: 503, body: refusedBody(error.code) };
+  }
+  if (isCompanyAssuranceRefusal(error)) {
+    return { status: 403, body: refusedBody(error.code) };
+  }
+  if (error instanceof Error) {
+    if (error.message === "AUTH_REQUIRED") {
+      return { status: 401, body: refusedBody("AUTH_REQUIRED") };
+    }
+    if (error.message === "INVALID_REQUEST") {
+      return { status: 400, body: refusedBody("INVALID_REQUEST") };
+    }
+  }
+  return {
+    status: 500,
+    body: { error: { code: "internal", message: "Request failed." } },
+  };
+}
+
 export interface BaSelectionRouteDeps {
   authenticate(request: Request): Promise<AuthenticatedRequestIdentity | null>;
   /** The BA selection service; the wrapper exists only where the assembly built one. */
@@ -372,39 +409,6 @@ export function createBaSelectionScopeMount(
     return advertised;
   };
 
-  const refusedBody = (code: string) => ({
-    error: { code, message: "Request refused." },
-  });
-
-  const selectionErrorResponse = (
-    error: unknown,
-  ): {
-    status: number;
-    body: { error: { code: string; message: string } };
-  } => {
-    if (isBaSelectionRefusal(error)) {
-      return { status: error.status, body: refusedBody(error.code) };
-    }
-    if (isAuthorityRefusal(error)) {
-      return { status: 503, body: refusedBody(error.code) };
-    }
-    if (isCompanyAssuranceRefusal(error)) {
-      return { status: 403, body: refusedBody(error.code) };
-    }
-    if (error instanceof Error) {
-      if (error.message === "AUTH_REQUIRED") {
-        return { status: 401, body: refusedBody("AUTH_REQUIRED") };
-      }
-      if (error.message === "INVALID_REQUEST") {
-        return { status: 400, body: refusedBody("INVALID_REQUEST") };
-      }
-    }
-    return {
-      status: 500,
-      body: { error: { code: "internal", message: "Request failed." } },
-    };
-  };
-
   routes.get("/", async (context) => {
     try {
       const identity = await deps.authenticate(context.req.raw);
@@ -420,7 +424,7 @@ export function createBaSelectionScopeMount(
       const delegated = await base.fetch(innerRequestOf(context.req.raw, "/"));
       return withAdvertisement(delegated, "legacy");
     } catch (error) {
-      const response = selectionErrorResponse(error);
+      const response = directorySurfaceErrorResponse(error);
       return context.json(
         response.body,
         response.status as 400 | 401 | 403 | 404 | 500 | 503,
@@ -449,7 +453,7 @@ export function createBaSelectionScopeMount(
       );
       return context.json(validated);
     } catch (error) {
-      const response = selectionErrorResponse(error);
+      const response = directorySurfaceErrorResponse(error);
       return context.json(
         response.body,
         response.status as 400 | 401 | 403 | 404 | 500 | 503,

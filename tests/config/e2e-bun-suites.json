@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T03.04 task registration (server/tests/better-auth:T03.04.01)",
+  "generatedBy": "T04.01 task registration (server/tests/better-auth:T04.01.01)",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1277,6 +1277,12 @@
       "files": [
         "server/tests/better-auth/company-lifecycle.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T04.01.01",
+      "files": [
+        "server/tests/better-auth/invitation-commands.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1468,6 +1474,7 @@
     "server/tests/better-auth/fixture-contract.test.ts",
     "server/tests/better-auth/identity-command.test.ts",
     "server/tests/better-auth/ingress-coverage.test.ts",
+    "server/tests/better-auth/invitation-commands.test.ts",
     "server/tests/better-auth/migration-expand.test.ts",
     "server/tests/better-auth/migration-inventory.test.ts",
     "server/tests/better-auth/migration-verify.test.ts",
@@ -2113,6 +2120,7 @@
     "server/tests/better-auth/migration-verify.test.ts": "runner named it: runs on the five BA_TEST_* island URLs and imports server/src/db/client (bun-sql), the same better-auth island family as T02.13/T02.14",
     "server/tests/better-auth/scope-generations.test.ts": "T03.01 scope-generations suite: runs on the five BA_TEST_* island URLs and exercises server/src/enterprise/tenancy (store/scope-gate/revocation) through Bun SQL; registered by the task through writeManifest with payload.task T03.01",
     "server/tests/better-auth/company-provision.test.ts": "T03.03 company-provision suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0214 stack through the platform provision service, the directory executor handler and the payer mapping; registered by the task through writeManifest with payload.task T03.03",
-    "server/tests/better-auth/company-lifecycle.test.ts": "T03.04 company-lifecycle suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0214 stack through the platform lifecycle service, the directory executor handlers and the frozen scope-selection/revocation faces; registered by the task through writeManifest with payload.task T03.04"
+    "server/tests/better-auth/company-lifecycle.test.ts": "T03.04 company-lifecycle suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0214 stack through the platform lifecycle service, the directory executor handlers and the frozen scope-selection/revocation faces; registered by the task through writeManifest with payload.task T03.04",
+    "server/tests/better-auth/invitation-commands.test.ts": "T04.01 invitation-commands suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0215 stack through the native ingress, the directory executor invitation handlers and the U-class own read adapter; registered by the task through writeManifest with payload.task T04.01"
   }
 }

@@ -70,6 +70,10 @@ import {
   isIdentityCommandRefusal,
 } from "./identity";
 import {
+  INVITATION_DELEGABLE_ROLES,
+  isDirectoryMembershipRefusal,
+} from "./membership";
+import {
   assertTeamBelongsToCompany,
   type DirectoryReadGate,
   isDirectoryReadRefusal,
@@ -125,6 +129,9 @@ export const NATIVE_AUTH_IDEMPOTENCY_KEY_REQUIRED =
   "NATIVE_AUTH_IDEMPOTENCY_KEY_REQUIRED";
 export const NATIVE_AUTH_MEMBER_ID_MUST_BE_USER_ID =
   "NATIVE_AUTH_MEMBER_ID_MUST_BE_USER_ID";
+export const INVITATION_ROLE_NOT_DELEGABLE = "INVITATION_ROLE_NOT_DELEGABLE";
+export const INVITATION_RESEND_IS_CONTROLLED =
+  "INVITATION_RESEND_IS_CONTROLLED";
 
 const X_ORGANIZATION_ENDPOINTS: ReadonlyArray<
   readonly [NativeAuthMethod, string, string]
@@ -909,6 +916,12 @@ function errorResponse(error: unknown): Response {
       { status: error.status },
     );
   }
+  if (isDirectoryMembershipRefusal(error)) {
+    return Response.json(
+      { error: error.message, code: error.code },
+      { status: error.status },
+    );
+  }
   if (isIdentityCommandRefusal(error)) {
     return Response.json(
       { error: error.message, code: error.code },
@@ -1130,11 +1143,30 @@ export function createDirectoryIngress(
         break;
       }
       case "invitation.create": {
+        // The §3.1 direct-write ruling: renewal is the controlled
+        // invitation.resend command's job, so the pinned build's native
+        // resend branch (an in-place expiresAt write outside the executor
+        // transaction) is unreachable here by construction.
+        if (body.resend === true) {
+          throw new NativeAuthRefusal(
+            INVITATION_RESEND_IS_CONTROLLED,
+            "invite-member does not renew an existing invitation; the resend branch would write expiresAt outside the command transaction (interfaces §3.1), so use the controlled invitation.resend command instead",
+            400,
+          );
+        }
+        const role = text(body.role) ?? "member";
+        if (!INVITATION_DELEGABLE_ROLES.includes(role)) {
+          throw new NativeAuthRefusal(
+            INVITATION_ROLE_NOT_DELEGABLE,
+            `an invitation cannot delegate the role "${role}"; only admin, member and auditor are delegable, and owner/finance/platform authority is never granted by an invitation`,
+            403,
+          );
+        }
         const teamId = text(body.teamId);
         const explicit = stringList(body.workspaceIds);
         payload = {
           email: text(body.email) ?? "",
-          role: text(body.role) ?? "member",
+          role,
           workspaceIds:
             explicit.length > 0
               ? explicit

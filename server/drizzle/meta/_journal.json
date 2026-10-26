@@ -1513,6 +1513,13 @@
       "when": 1792965326836,
       "tag": "0215_better_auth_company_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1792992000000,
+      "tag": "0216_better_auth_invitation_resend",
+      "breakpoints": true
     }
   ]
 }
