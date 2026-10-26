@@ -1,4 +1,4 @@
-import type { QueryKey } from "@tanstack/react-query";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import type { Organization } from "better-auth/plugins/organization";
 import type { AuthHooks } from "better-auth-ui";
@@ -20,6 +20,13 @@ import {
   useFixedUi,
 } from "@/components/auth/provider";
 import type { UiSourceManifest } from "@/lib/auth/ui-provider";
+import {
+  companyOfBinding,
+  readCurrentSelection,
+  selectionKeys,
+  switchWorkspaceScope,
+  type WorkspaceScopeListing,
+} from "@/lib/enterprise/tenant/selection";
 import { authClient } from "./client";
 import uiSourceJson from "./ui-source.json";
 
@@ -303,4 +310,70 @@ export function OpenBotOrganizationSlot({
   }, [adapter, fixedUi, name]);
 
   return <FixedUiOrganization name={name} component={component} />;
+}
+
+/*
+ * The scope-bound composition of the adapter above (T03.05, #542): one factory that wires the
+ * pinned organization switcher to the ONE controlled selection source the rest of the app
+ * reads — the tenant selection module's cache (`selectionKeys.current` for what is in force,
+ * `selectionKeys.listing` for eligibility, `switchWorkspaceScope` for every act). A switcher
+ * mounted on this adapter cannot hold a second opinion: its face shows the verified selection,
+ * and its company intents resolve through the listing's binding.
+ */
+
+/** What the scope-bound adapter is composed from. */
+export type OpenBotScopeSelectionAdapterDeps = {
+  /** The signed-in person the selection belongs to; scopes the shared query cache. */
+  userId: string;
+  /** The app's one QueryClient — the controlled selection source lives in its cache. */
+  queryClient: QueryClient;
+  /**
+   * The workspace-scope listing this session holds (the §4 ScopeListing under `ba-v1`, the
+   * legacy DTO otherwise); null while it loads, which answers an empty company list.
+   */
+  listing: WorkspaceScopeListing | null;
+};
+
+/**
+ * An `OrganizationScopeAdapter` bound to the OpenBot selection coordinator.
+ *
+ * Compose it where the switcher mounts, memoized on the deps — `activeCompanyId` is a snapshot
+ * of the verified selection, so the consumer recomposes when that moves (the same discipline
+ * any controlled value follows). What the switcher DOES through it:
+ *
+ * - its company list is the listing's own, on the listing's key — no second eligibility read;
+ * - its active face reads the selection actually in force, never a preference or an intent;
+ * - a company intent resolves through the listing binding (`organizationId` under `ba-v1`,
+ *   `tenantId` otherwise) and hands the act to the coordinator. A company alone is no scope:
+ *   the old team cannot ride along, and no workspace is ever invented from a BA team row — the
+ *   workspace half arrives only with a complete, validated pair, through the selection page's
+ *   own flow. An id the listing does not name — a team row id, a ghost — is no intent at all.
+ */
+export function openBotScopeSelectionAdapter(
+  deps: OpenBotScopeSelectionAdapterDeps,
+): OrganizationScopeAdapter {
+  const { userId, queryClient, listing } = deps;
+  return {
+    userId,
+    listingQueryKey: selectionKeys.listing(userId),
+    listCompanies: async () =>
+      (listing?.companies ?? []).map((company) => ({
+        id: company.tenantId,
+        name: company.name,
+      })),
+    activeCompanyId:
+      readCurrentSelection(queryClient, userId)?.tenantId ?? null,
+    selectCompany: (companyId) => {
+      // null clears the pinned kit's active-preference face; it names no OpenBot company, so
+      // it is no scope act here — the verified selection stays in force.
+      if (companyId === null) return;
+      const company = companyOfBinding(listing, companyId);
+      if (company === null) return;
+      const current = readCurrentSelection(queryClient, userId);
+      if (current !== null && current.tenantId === company.tenantId) return;
+      // The company half of a switch: the coordinator's leave-scope arm — no validation (it
+      // grants nothing), the same generation and cache discipline every switch moves through.
+      void switchWorkspaceScope(queryClient, userId, current, null);
+    },
+  };
 }
