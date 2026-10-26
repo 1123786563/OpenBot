@@ -50,6 +50,23 @@ const need = (a: Args, name: string): string => {
   return value;
 };
 
+// The two markers that discriminate the OpenBot server's contribution to a
+// dial trace: the in-process "remote run" dial span, and the better-auth
+// integration tag on server-exported spans. Deliberately NOT a
+// startsWith("openbot") match: the agent-langgraph process names its own
+// tracer "openbot.agent-langgraph", Opik records that tracer name as
+// metadata.integration, and matching it here would read a langgraph-only
+// trace as joined (R1-E-02; f7e's spanService special-cases that name first).
+// "POST /ag-ui"/"GET /" are likewise the endpoint's own spans — langgraphSide.
+export function isServerSideSpan(sp: {
+  name?: string;
+  metadata?: Record<string, unknown>;
+}): boolean {
+  const integration =
+    (sp.metadata as { integration?: string } | undefined)?.integration ?? "";
+  return String(sp.name ?? "") === "remote run" || integration === "better-auth";
+}
+
 // The F8A derivation, recomputed here independently of the server (the same
 // formula copilot.ts exports; a mismatch is a finding, not a fallback).
 function derivedRemoteRunTraceId(botId: string, runId: string): string {
@@ -231,15 +248,7 @@ async function f8abc(a: Args): Promise<void> {
     const found = await spansAnywhere(dial.traceId);
     if (found) {
       opikPresent += 1;
-      // Server-side markers only: the in-process "remote run" dial span and the
-      // server's integration metadata. "POST /ag-ui"/"GET /" are the agent-
-      // langgraph endpoint's OWN request/health spans (they belong to
-      // langgraphSide below) — counting them here made a langgraph-only trace
-      // read as joined.
-      const serverSide = found.spans.some((sp) => {
-        const integration = (sp.metadata as { integration?: string } | undefined)?.integration ?? "";
-        return String(sp.name ?? "") === "remote run" || integration === "better-auth" || integration.startsWith("openbot");
-      });
+      const serverSide = found.spans.some(isServerSideSpan);
       const langgraphSide = found.spans.some((sp) => String(sp.name ?? "").startsWith("model:") || String(sp.name ?? "").startsWith("chain:") || sp.name === "ag-ui run" || sp.name === "POST /ag-ui");
       if (serverSide && langgraphSide) joinedCross += 1;
       dialRows.push({ runId: dial.runId, origin: dial.origin, dialTraceId: dial.traceId, shaPinned, opikSpans: found.spans.length, project: found.project, serverSide, langgraphSide, joined: serverSide && langgraphSide, bindingTraceId: binding?.opik_trace_id ?? null, bindingTraceEqualsDialTrace: binding ? binding.opik_trace_id?.replaceAll("-", "") === dial.traceId : null });

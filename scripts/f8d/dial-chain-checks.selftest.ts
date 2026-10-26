@@ -6,7 +6,7 @@
  * into the e2e manifest partition, which this fix must not do.
  */
 import { strict as assert } from "node:assert";
-import { dialChainThreeStateLogged } from "./final-evidence";
+import { dialChainThreeStateLogged, isServerSideSpan } from "./final-evidence";
 
 // The r1 evidence shape: 10 derived dials, all sha-pinned → PASS.
 assert.equal(
@@ -37,4 +37,15 @@ assert.equal(
   "GAP",
 );
 
-console.log("dial-chain-checks.selftest: 4/4 ok");
+// R1-E-02: a langgraph-only trace — the endpoint process names its own tracer
+// "openbot.agent-langgraph" (Opik records it as metadata.integration), its
+// spans being "ag-ui run"/"chain:"/"POST /ag-ui" — must NOT read as
+// server-side; catching that shape is the join check's whole job.
+assert.equal(isServerSideSpan({ name: "ag-ui run", metadata: { integration: "openbot.agent-langgraph" } }), false);
+assert.equal(isServerSideSpan({ name: "chain:x", metadata: { integration: "openbot.agent-langgraph" } }), false);
+assert.equal(isServerSideSpan({ name: "POST /ag-ui", metadata: { integration: "openbot.agent-langgraph" } }), false);
+assert.equal(isServerSideSpan({ name: "model:y", metadata: {} }), false);
+assert.equal(isServerSideSpan({ name: "remote run", metadata: {} }), true);
+assert.equal(isServerSideSpan({ name: "model:y", metadata: { integration: "better-auth" } }), true);
+
+console.log("dial-chain-checks.selftest: 5/5 ok");

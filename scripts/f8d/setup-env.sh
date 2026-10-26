@@ -21,7 +21,16 @@ OPENAI_API_KEY=$(pick OPENAI_API_KEY)
 OPENAI_BASE_URL=$(pick OPENAI_BASE_URL)
 [ -n "$OPENAI_API_KEY" ] || { echo "OPENAI_API_KEY missing in main env" >&2; exit 1; }
 [ -n "$OPENAI_BASE_URL" ] || { echo "OPENAI_BASE_URL missing in main env" >&2; exit 1; }
-[ -n "$PG_PASSWORD" ] || { echo "DATABASE_URL missing in main env: the isolated stack's Postgres password is sourced from it" >&2; exit 1; }
+# Shape-check, not just non-empty (R1-E-01): an unparsable DATABASE_URL (no
+# user:pass segment, or the key missing entirely) falls through the sed
+# unchanged, and the whole URL would silently become the password.
+# Any "://", "@", or empty value takes the friendly-error path instead.
+case "$PG_PASSWORD" in
+  *"://"*|*"@"*|"")
+    echo "DATABASE_URL in main env is missing or has no parsable postgres password segment (expected ...://user:pass@host...): the isolated stack's Postgres password is sourced from it" >&2
+    exit 1
+    ;;
+esac
 
 # --- opik compose env ---
 cat > "$ROOT/.env.f8d-opik" <<E1
