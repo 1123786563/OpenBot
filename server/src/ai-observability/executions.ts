@@ -985,8 +985,11 @@ export type ObservationExecutionWorkerDeps = Readonly<{
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_LEASE_MS = 60_000;
 const DEFAULT_POLL_MS = 2_000;
-/** How often a running case's cancel-watch re-reads the execution row (FREV-05). */
-const DEFAULT_CANCEL_WATCH_MS = 250;
+/** How often a running case's cancel-watch re-reads the execution row (FREV-05).
+ * OCR R5: 250ms meant ~4 PK reads/second per running case with no backoff; 1s still
+ * answers a cancel promptly while cutting the idle-load floor 4x (configurable via
+ * `cancelWatchMs` for tests that need it tighter). */
+const DEFAULT_CANCEL_WATCH_MS = 1_000;
 /** Distinct refused tool names the settle audit row carries; enough to steer a review. */
 const MAX_AUDITED_TOOL_NAMES = 32;
 
