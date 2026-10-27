@@ -53,7 +53,7 @@ claims.json 与 daily-ledger.json 共用 v3 schema；适配器须同时验证结
 
 - 进入 verified 必须具备当前完整 target_sha、requirements-v3、run、checkpoint 和 review；进入 not_required 必须具备 requirements-v3、run 和有效 decision，不得要求 target/checkpoint/review，也不得进入贴标或关闭放行。进入 delivered 必须有实际目标交付回执；只读审计已有交付保存目标观察回执，写后树偏离意图时也须如实记录 delivered + revalidating，不以 delivery 字段证明验证通过。目标或需求失效后允许 `delivered + revalidating` 表示已交付但当前结论失效，禁止继续贴标/关闭。
 - repair_prepared 必须有修复 checkpoint；integration_pending 表示仍待目标集成或目标验收，必须保留曾完成本地审查的 checkpoint、review；当前 validation_state 可为 verified、revalidating、blocked、failed、unproven 或 intake_incomplete。失效时保留旧证据与交付状态，不退写 repair_prepared。repair_rounds_total 是同一审计票完整修复范围（含全部 Task/finding）跨 Run 的累计修复启动次数，只能在修复 Dispatch 前随 run_id、Task/finding 和检查点原子加一，不得因失败、换 Run、拆 Task、改 finding ID 或改 Issue 而扣减/重置；达到或超过 5 且未解决时只能 blocked(reason=repair_round_limit)，不得继续修复 recovery；历史值大于 5 时仍按实际次数持久化，不截断或拒绝迁移。label/close 的 applied_valid 只允许 `verified + delivered`，并有对应 intent 和当前回执；label applied_valid 还须 human_review_state=pending。验证失效或出现人审终态时同事务撤销全部依赖旧结论的 applied_valid。
-- human_review_state=approved/rejected 或 validation_state=not_required 的对象 class=null，只有具名遗留动作时为 recovery；不得进入 new/revalidate 或新贴标。需求/交付范围变化先以 scope_changed 使相应人审/取消决定失效，再建立新队列。标签移除本身不改变 human_review_state。
+- human_review_state=approved/rejected 或 validation_state=not_required 的对象 class=null，只有具名遗留动作时为 recovery；不得进入 new/revalidate 或新贴标，not_required 也不得新建 close_pending。recovery 必须绑定至少一个具名遗留 label/close/delivery 动作或 integration_pending；反过来，这些对象存在所属等待字段为空（wait_reason=null、resume_condition.all=[]、retry_after=null）的可行动遗留动作时必须 class=recovery，不得以 class=null 隐藏待办。仍有硬授权/决定等待或有效退避的动作可保持 class=null，待统一唤醒算法判定可行动后同事务转入 recovery。需求/交付范围变化先以 scope_changed 使相应人审/取消决定失效，再建立新队列。标签移除本身不改变 human_review_state。
 - 写后失配先把动作置 stale、验证置 revalidating（摄取不完整则 intake_incomplete）；开始纠正后可置 correction_pending，但不得恢复旧 verified。重新进入 verified 必须走完整重验，applied_valid 必须走新 intent 和写后对账。失配仅由已核实 not_required 或人审终态引起时按 [交付门禁](delivery-gates.md)保留指纹相符的 Agent 验证结论，不转 revalidating；需求或目标失配仍按常规失效路径。
 - 调度器只允许 queued/auditing/finding_confirmed/repairing/revalidating 与对应动作间按 Brief、Dispatch、finding 和结算事件迁移；blocked/failed/unproven/intake_incomplete/aggregate_pending 必须保存原因和恢复条件。任何状态更新不得删除历史有效结论，只能新增失效事件并保留原目标与证据。
 - slot_sequence 在原子选择名额时精确 +1，同时写入该票 `slot_selected` 和 last_slot；启动后追加 `dispatch_started`，结算后追加 `settled`。selected/started 的 result=not_settled；settled 使用标准结果枚举。已选未结算的票恢复时先对账原 Dispatch，不得另占名额。容量 C 是 daily record 中正整数，默认 1；每轮最多原子选择 C 个不同名额。
@@ -98,7 +98,8 @@ revision 是乐观并发版本，每次成功事务精确 +1，比较失配不�
 | 父子两种申请顺序、关系快照变化、contains 对账后登记前变化 | 同快照互斥；过期快照以 stale_relation 拒绝，不启动副作用 |
 | 重复 daily record/Issue/子票/(resource_key,owner_run)/event_id/slot | 全部 validation_failed，无副作用 |
 | 无目标/指纹/checkpoint/review 的 verified，无回执的 delivered/applied_valid | 全部拒绝；合法 stale→revalidating→重验路径可持久化 |
-| 无 decision 的 not_required；无 human_review 的 approved/rejected；人审终态重新贴标 | 全部拒绝；有效取消和人审终态 class=null，仅遗留动作可 recovery |
+| 无 decision 的 not_required；无 human_review 的 approved/rejected；人审终态重新贴标；not_required 新建 label_pending/close_pending | 全部拒绝；有效取消和人审终态 class=null，仅具名遗留动作可 recovery |
+| 终态只有 label/close stale；无等待的 correction_pending/delivery_pending/integration_pending；同类动作仍有等待或退避 | stale 可选择 recovery 先回读；无等待动作必须 recovery；有等待动作可 class=null，唤醒后转 recovery |
 | 已有待人审标签从 v2 迁移；普通 none 发起贴标 | 分别初始化为 pending；贴标意图与 none→pending 同事务，applied_valid 不接受 none |
 | 同一审计票跨 Run 达到第 5 轮仍未解决；v2 历史累计大于 5 | repair_rounds_total 不重置，记 repair_round_limit blocked，不再选择修复 recovery；迁移保留真实次数且同样 blocked |
 | revision=4 的两个并发请求 | 仅一个写成 5，另一个无副作用拒绝 |
