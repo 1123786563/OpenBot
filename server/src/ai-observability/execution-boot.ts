@@ -24,7 +24,7 @@
  * backed wiring stays the T24-named leftover), so the gate's second key refuses and
  * the governance counter records it — the whitelist may narrow, never widen.
  */
-import type { AgentActor } from "../agents/profile-types";
+import type { AgentActor } from "../agents/public";
 import type { AuditStore } from "../audit";
 import type { CreditWriter } from "../billing/credits-writer";
 import type { UsageOutbox } from "../billing/usage-outbox";

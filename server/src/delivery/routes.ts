@@ -3,7 +3,7 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { createOpenTagTransport, type OpenTagTransport } from "./opentag";
 import {
   handleOpenTagRun,

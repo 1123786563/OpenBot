@@ -11,7 +11,7 @@
 
 import { randomUUID } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { CraftConfig } from "./config";
 import type { InterruptFence } from "./interrupt";
 import type { CraftSessionManager } from "./manager";

@@ -10,7 +10,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import type { ApprovalStore } from "../approvals/types";
 import { createAuditStore, recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 import type { RedisPort } from "../redis";
 import { createCraftApprovalSignals } from "./approval-signals";

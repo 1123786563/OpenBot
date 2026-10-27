@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { sameToken } from "../agents/callback-token";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { type HostAccessBroker, HostAccessRefusedError } from "./broker";
 import {
   asHostAccessDesktopResult,

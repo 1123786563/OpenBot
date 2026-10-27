@@ -11,8 +11,8 @@
  * alike. Errors keep the house convention: the code is the contract.
  */
 import { Hono } from "hono";
-import type { AgentActor } from "../../agents/profile-types";
-import type { AppVariables } from "../../auth/guards";
+import type { AgentActor } from "../../agents/public";
+import type { AppVariables } from "../../auth/public";
 import {
   type BotManagementCheck,
   explicitObservationOwnership,

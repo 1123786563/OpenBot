@@ -12,8 +12,8 @@
  * route never reads an actor, scope, epoch or locator from the request.
  */
 import { Hono } from "hono";
-import type { AgentActor, AgentProfile } from "../../agents/profile-types";
-import type { AppVariables } from "../../auth/guards";
+import type { AgentActor, AgentProfile } from "../../agents/public";
+import type { AppVariables } from "../../auth/public";
 import type { AdminSummaryService } from "../admin-summary";
 import {
   type BotManagementCheck,

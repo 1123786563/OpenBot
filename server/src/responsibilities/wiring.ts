@@ -7,15 +7,15 @@ import {
 } from "@openbot/toolkit/run-turn";
 import { z } from "zod";
 import { canUseComputer } from "../agents/computer-access";
-import type { AgentProfileStore } from "../agents/profile-store";
-import type { AgentActor } from "../agents/profile-types";
+import type { AgentProfileStore } from "../agents/public";
+import type { AgentActor } from "../agents/public";
 import { serverTurnAdmission } from "../agents/turn-admission";
 import {
   parseApprovalContinuation,
   parseApprovalResult,
 } from "../approvals/types";
 import type { AuditInitiator, AuditStore } from "../audit";
-import type { ChannelStore } from "../channels/routes";
+import type { ChannelStore } from "../channels/public";
 import type { ComputerGateway } from "../computer/gateway";
 import { createHeadlessComputerTools } from "../computer/headless-tools";
 import type { mountCopilotRuntime } from "../copilot";

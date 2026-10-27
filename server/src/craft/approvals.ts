@@ -29,7 +29,7 @@ import {
   ApprovalNotFoundError,
   ApprovalRefusedError,
 } from "../approvals/types";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { CraftApprovalSignals } from "./approval-signals";
 import type { CraftConfig } from "./config";
 import type { CraftStore } from "./store";

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { eq } from "drizzle-orm";
 import { PERSON_QUESTION_WAITING } from "../approvals/question-resume";
-import type { ApprovalService } from "../approvals/service";
+import type { ApprovalService } from "../approvals/public";
 import { currentApprovalContext } from "../approvals/types";
 import {
   type AuditInitiator,
@@ -10,7 +10,7 @@ import {
   PERSON_INITIATOR,
 } from "../audit";
 import { groupSourceForRun } from "../channels/group";
-import type { ChannelStore } from "../channels/routes";
+import type { ChannelStore } from "../channels/public";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import { channelMemberships } from "../db/schema";

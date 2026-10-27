@@ -27,7 +27,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../../audit";
-import type { AppVariables } from "../../auth/guards";
+import type { AppVariables } from "../../auth/public";
 import { resolvePayerForPersonalUser } from "../payer-personal";
 // MOD10（Issue #630）：组内公开门面的能力面类型（仅类型；运行时零依赖）。
 import type { BillingOrders, BillingResolvePayer } from "../public";

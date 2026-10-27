@@ -1,7 +1,7 @@
 import { getLogger } from "../../../shared/logger";
 import { computerAccessCheck } from "../agents/computer-access";
-import type { AgentProfileStore } from "../agents/profile-store";
-import type { AgentActor } from "../agents/profile-types";
+import type { AgentProfileStore } from "../agents/public";
+import type { AgentActor } from "../agents/public";
 import { ComputerCapacityError } from "./capacity";
 import { streamPathBotId } from "./stream-path";
 

@@ -1,7 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { PlatformScope } from "../enterprise/contracts";
 import { resolveHindsightBankScope } from "../hindsight/bank-scope";
 import type { HindsightPauseControlsService } from "../hindsight/pause-controls";

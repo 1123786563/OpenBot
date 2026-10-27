@@ -20,7 +20,7 @@ import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
 import type { AuditInitiator, AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
-import type { AgentChannel } from "../channels/routes";
+import type { AgentChannel } from "../channels/public";
 import type { Database } from "../db/client";
 import { workItems } from "../db/schema/work";
 import {

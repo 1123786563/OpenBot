@@ -21,9 +21,9 @@
  * call. Errors keep the house convention: the code is the contract.
  */
 import { Hono } from "hono";
-import type { AgentActor } from "../../agents/profile-types";
+import type { AgentActor } from "../../agents/public";
 import type { AuditStore } from "../../audit";
-import type { AppVariables } from "../../auth/guards";
+import type { AppVariables } from "../../auth/public";
 import type { RunBindingStore } from "../bindings";
 import { RunBindingError } from "../bindings";
 import {

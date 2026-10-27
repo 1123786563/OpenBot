@@ -6,7 +6,7 @@ import {
   dictationMediaType,
   MAX_DICTATION_BYTES,
 } from "@openbot/shared/dictation";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { TranscriptionError, type TranscriptionProvider } from "./provider";
 
 export function createDictationRoutes(

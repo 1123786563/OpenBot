@@ -11,7 +11,7 @@
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { listArtifacts, listFiles } from "./artifacts";
 import type { CraftConfig } from "./config";
 import { exportDocx, exportPptx } from "./export";

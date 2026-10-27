@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { BotCatalog } from "../agents/public";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { ToolAccess } from "../plugins/public";
 import {
   CATALOGUE_EXPERTS,

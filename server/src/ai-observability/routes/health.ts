@@ -15,7 +15,7 @@
  * same enumerated `unreachable` shape instead of leaking its error.
  */
 import { Hono } from "hono";
-import type { AppVariables } from "../../auth/guards";
+import type { AppVariables } from "../../auth/public";
 import type { OpikHealthService, OpikHealthSnapshot } from "../health";
 
 export type AiObservabilityHealthDeps = Readonly<{

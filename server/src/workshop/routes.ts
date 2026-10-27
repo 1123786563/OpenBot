@@ -13,7 +13,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import { recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { SandboxClient } from "../codesandbox/client";
 import type { TurnEventBus } from "./bus";
 import { eventsStreamBody, SSE_HEADERS, translate } from "./events";

@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 
 /**
  * The stable code every fenced answer carries, so a client can tell "this

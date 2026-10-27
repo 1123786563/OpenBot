@@ -18,9 +18,9 @@
  */
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { AgentActor, AgentProfile } from "../../agents/profile-types";
+import type { AgentActor, AgentProfile } from "../../agents/public";
 import { createAuditStore } from "../../audit";
-import type { AppVariables } from "../../auth/guards";
+import type { AppVariables } from "../../auth/public";
 import type { Database } from "../../db/client";
 import {
   type AdminSummaryService,

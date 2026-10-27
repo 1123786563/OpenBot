@@ -5,7 +5,7 @@ import { z } from "zod";
 // The ONE canonical JSON: the reply's idempotency id digests the exact
 // payload the client posted, so the same reply replays to the same id.
 import { canonicalJson } from "../ai-observability/datasets";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { PlatformScope } from "../enterprise/contracts";
 import type {
   MastraContinuationInstall,

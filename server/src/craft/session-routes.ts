@@ -13,7 +13,7 @@
 
 import { Hono, type MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 
 const logger = getLogger("server");

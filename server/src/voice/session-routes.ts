@@ -2,9 +2,9 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { VoiceSessionRecord } from "@openbot/shared/voice-session";
 import { getLogger } from "@openbot/shared/logger";
-import type { AgentActor } from "../agents/profile-types";
-import type { AppVariables } from "../auth/guards";
-import type { ChannelStore } from "../channels/routes";
+import type { AgentActor } from "../agents/public";
+import type { AppVariables } from "../auth/public";
+import type { ChannelStore } from "../channels/public";
 import {
   parseVoiceSessionInput,
   VoiceSessionError,

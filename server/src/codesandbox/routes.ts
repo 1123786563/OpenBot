@@ -6,7 +6,7 @@
  */
 import { Hono, type MiddlewareHandler } from "hono";
 import type { BotAccessCheck } from "../agents/profile-policy";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { CodeRunGateway } from "./gateway";
 
 export type CodeRunGatewayFactory = (context: {

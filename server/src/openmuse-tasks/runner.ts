@@ -52,9 +52,9 @@
 import { createHash } from "node:crypto";
 import type { PDFDocument } from "pdf-lib";
 import { getLogger } from "../../../shared/logger";
-import type { AgentActor } from "../agents/profile-types";
+import type { AgentActor } from "../agents/public";
 import type { AuditInitiator } from "../audit";
-import type { AgentChannel } from "../channels/routes";
+import type { AgentChannel } from "../channels/public";
 import {
   applyFill,
   createPdfFillAdapter,

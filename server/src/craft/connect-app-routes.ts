@@ -30,7 +30,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
 import type { AuditStore } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { CraftConfig } from "./config";
 import type {
   CraftConnectAppPending,

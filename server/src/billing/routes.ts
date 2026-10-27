@@ -22,7 +22,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 import { auditEvents, users } from "../db/schema";
 import {

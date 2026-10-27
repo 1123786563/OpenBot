@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { getLogger } from "../../../shared/logger";
 import type { AuditEventType, AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { afterExposureChange } from "../plugins/exposure-change";
 import type { SharedUseStore } from "../plugins/shared-use-store";
 import { testAgentConnection } from "./connection-test";

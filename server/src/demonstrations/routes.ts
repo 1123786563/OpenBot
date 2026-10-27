@@ -1,7 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { DemonstrationRecorder } from "./recording";
 import { parseDemonstrationSchedule } from "./schedule";
 import type { DemonstrationStore } from "./store";
