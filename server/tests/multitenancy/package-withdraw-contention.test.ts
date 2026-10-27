@@ -207,7 +207,10 @@ describeDb(
         "--version",
         V1,
       ]);
-    const publishViaCli = (listed: boolean) =>
+    // H1 withdraw gate: an omitted --state on a re-registration inherits the
+    // recorded state, so reviving a withdrawal goes through the explicit
+    // "published" state (the documented revive path).
+    const publishViaCli = (listed: boolean, state?: "published") =>
       runCli("publish.ts", [
         "--index",
         indexPath,
@@ -223,6 +226,7 @@ describeDb(
         "productivity",
         "--listed",
         listed ? "true" : "false",
+        ...(state ? ["--state", state] : []),
       ]);
 
     const lockDirExists = async () => {
@@ -582,8 +586,9 @@ describeDb(
     itDb(
       "interleaved arm B: a committed CLI withdrawal refuses the live service's next dispatch with no ledger row and transport 0",
       async () => {
-        // Restore published via the real CLI (same digest = metadata update).
-        const restore = await publishViaCli(true);
+        // Restore published via the real CLI (same digest = metadata update);
+        // the explicit state is the withdraw-gate's documented revive path.
+        const restore = await publishViaCli(true, "published");
         expect(restore.exitCode).toBe(0);
         expect(restore.receipt).toMatchObject({ ok: true, state: "published" });
 
@@ -609,10 +614,11 @@ describeDb(
     itDb(
       "live service, no restart: unlisting (listed=false) keeps dispatching; withdrawal blocks it — orthogonal facts on the same instance",
       async () => {
-        const restore = await publishViaCli(true);
+        const restore = await publishViaCli(true, "published");
         expect(restore.exitCode).toBe(0);
 
-        // Unlist via the real CLI: state stays published, discovery-only.
+        // Unlist via the real CLI: omitted --state inherits the standing
+        // published state, so discovery-only unlisting keeps dispatching.
         const unlist = await publishViaCli(false);
         expect(unlist.exitCode).toBe(0);
         expect(unlist.receipt).toMatchObject({
@@ -640,7 +646,7 @@ describeDb(
     itDb(
       "mutual exclusion from the dispatch side: a real acquireIndexLock holder deterministically delays the dispatch",
       async () => {
-        const restore = await publishViaCli(true);
+        const restore = await publishViaCli(true, "published");
         expect(restore.exitCode).toBe(0);
 
         // Hold the EXACT lock primitive the deploy commands take — the same
@@ -671,7 +677,7 @@ describeDb(
     itDb(
       "OCR-fix-B2: a committed CLI withdrawal refuses the live install service's plan and apply without a restart",
       async () => {
-        const restore = await publishViaCli(true);
+        const restore = await publishViaCli(true, "published");
         expect(restore.exitCode).toBe(0);
 
         const admin = await fixture.adminContextOf(
@@ -732,7 +738,7 @@ describeDb(
 
         // Orthogonal direction: a CLI re-publish makes the very same service
         // plannable again — the freshness read is live both ways, no restart.
-        const republish = await publishViaCli(true);
+        const republish = await publishViaCli(true, "published");
         expect(republish.exitCode).toBe(0);
         const replan = await installService.plan(scope, admin, {
           operation: "upgrade",
