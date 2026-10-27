@@ -586,6 +586,18 @@ export function createApp(
        */
       directory?: Directory;
       identity?: Pick<IdentityExecutor, "execute">;
+      /**
+       * The SCIM surface transcription (T05.05 / #561): answers one SCIM
+       * request through the fixed build's own handler with the directory
+       * reactions bound to that request's transaction, or null meaning
+       * "not a SCIM endpoint / a read the plugin answers natively" so the
+       * mount forwards unchanged. Absent keeps today's behaviour — the
+       * closed ingress rows answer their named 501 and no write is served
+       * without its transaction owner.
+       */
+      scim?: {
+        handle(request: Request): Promise<Response | null>;
+      };
     };
     demonstrations?: {
       store: DemonstrationStore;
@@ -1202,6 +1214,38 @@ export function createApp(
     "/api/auth/sso/delete-provider": "identity_provider.removed",
   };
 
+  /*
+   * The SCIM 2.0 surface (T05.05 / #561), mounted before the generic auth
+   * handler so it decides for every SCIM method: with the assembly's
+   * transcription, a write runs inside its directory-command transaction
+   * (the plugin's own handler, the hooks bound to the same transaction) and
+   * a discovery/read returns null to the native contract below. Without the
+   * transcription the request keeps today's classification — the closed
+   * ingress rows answer their named 501 before anything is written.
+   */
+  app.on(
+    ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    "/api/auth/scim/*",
+    async (context) => {
+      if (!auth) {
+        return context.json(
+          { error: "No identity provider is configured." },
+          503,
+        );
+      }
+      const transcription = coworker?.directory?.scim;
+      if (transcription) {
+        const answer = await transcription.handle(context.req.raw);
+        if (answer) return answer;
+        return auth.handler(context.req.raw);
+      }
+      const answer = nativeDirectoryIngress
+        ? await nativeDirectoryIngress.handle(context.req.raw)
+        : null;
+      return answer ?? auth.handler(context.req.raw);
+    },
+  );
+
   app.on(["GET", "POST"], "/api/auth/*", async (context) => {
     if (
       context.req.method === "GET" &&
@@ -1343,25 +1387,6 @@ export function createApp(
       }),
     );
   }
-  app.on(["PUT", "PATCH", "DELETE"], "/api/auth/scim/*", async (context) => {
-    if (!auth) {
-      return context.json(
-        { error: "No identity provider is configured." },
-        503,
-      );
-    }
-    /*
-     * The same closed table classifies the SCIM verbs the GET/POST mount does
-     * not take: an unknown SCIM path is a 404 from the ingress, and the
-     * provisioning verbs the table defers to P12 keep the native contract
-     * (see ingress.ts's header).
-     */
-    const answer = nativeDirectoryIngress
-      ? await nativeDirectoryIngress.handle(context.req.raw)
-      : null;
-    return answer ?? auth.handler(context.req.raw);
-  });
-
   app.route(
     "/api/audio",
     createDictationRoutes(

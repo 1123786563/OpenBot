@@ -534,7 +534,7 @@ function isUniqueViolation(error: unknown): boolean {
  * rethrown untouched — a real fault is never renamed into a refusal.
  */
 const REFUSAL_MARKER =
-  /^(AUTH_[A-Z0-9_]+|PRINCIPAL_REGISTRY_[A-Z0-9_]+|OUTBOX_[A-Z0-9_]+|AUTHORITY_[A-Z0-9_]+|DIRECTORY_[A-Z0-9_]+|TEAM_[A-Z0-9_]+|BA_AUTHORITY_[A-Z0-9_]+|DIRECTORY_[A-Z0-9_]+)/;
+  /^(AUTH_[A-Z0-9_]+|PRINCIPAL_REGISTRY_[A-Z0-9_]+|OUTBOX_[A-Z0-9_]+|AUTHORITY_[A-Z0-9_]+|DIRECTORY_[A-Z0-9_]+|TEAM_[A-Z0-9_]+|BA_AUTHORITY_[A-Z0-9_]+|SCIM_[A-Z0-9_]+)/;
 
 function preferredRefusal(error: unknown): unknown {
   let current: unknown = error;
@@ -896,4 +896,30 @@ export function createDirectoryExecutor(
       }
     },
   });
+}
+
+/*
+ * T05.05 (#561, P12): the reentrant executor over an already-open transaction.
+ *
+ * The SCIM transcription runs inside the fixed build's own request
+ * transaction — the plugin's endpoint opens it (or the executor's bound.run
+ * does, when the ingress drives auth.api) — and the application hooks it
+ * fires must execute their directory commands ON that transaction, or a
+ * later plugin failure could not roll the membership, the clocks and the
+ * audit back with the user row it created. This factory hands the executor a
+ * `database` whose `transaction` simply continues on the given tx: the whole
+ * envelope (locks, authority gate, receipt, finalizer, commit fences) runs
+ * on the caller's transaction and the caller owns the commit. Savepoints,
+ * SET CONSTRAINTS and advisory xact locks are all legal on an open
+ * transaction, so nothing in the envelope needs a second connection.
+ */
+export function createDirectoryExecutorOverTransaction(
+  tx: DirectoryTx,
+  options: Omit<DirectoryExecutorOptions, "database">,
+): Directory {
+  const overOpenTransaction = {
+    transaction: ((run: (open: DirectoryTx) => Promise<unknown>) =>
+      run(tx)) as Pick<Database, "transaction">["transaction"],
+  };
+  return createDirectoryExecutor({ ...options, database: overOpenTransaction });
 }

@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T05.04 registration (#560)",
+  "generatedBy": "T05.05 registration (#561)",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1331,6 +1331,12 @@
       "files": [
         "server/tests/better-auth/company-assurance.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T05.05.01",
+      "files": [
+        "server/tests/better-auth/scim-provisioning.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1542,6 +1548,7 @@
     "server/tests/better-auth/schema-clocks.test.ts",
     "server/tests/better-auth/schema-command-authority.test.ts",
     "server/tests/better-auth/schema-roles.test.ts",
+    "server/tests/better-auth/scim-provisioning.test.ts",
     "server/tests/better-auth/scope-generations.test.ts",
     "server/tests/better-auth/scoped-team-admin.test.ts",
     "server/tests/better-auth/selection-api.test.ts",
@@ -2180,6 +2187,7 @@
     "server/tests/better-auth/invitation-commands.test.ts": "T04.01 invitation-commands suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0215 stack through the native ingress, the directory executor invitation handlers and the U-class own read adapter; registered by the task through writeManifest with payload.task T04.01",
     "server/tests/better-auth/invitation-acceptance.test.ts": "T04.02 invitation-acceptance suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0216 stack through the native ingress and the directory executor invitation handlers (accept/reject in the same command transaction); registered by the task through writeManifest with payload.task T04.02",
     "server/tests/better-auth/membership-lifecycle.test.ts": "T04.03 membership-lifecycle suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0216 stack through the native ingress and the directory executor member lifecycle handlers (role.set/suspend/restore/remove/leave/owner.transfer) with last-owner protection riding the executor's tenant advisory lock; registered by the task through writeManifest with payload.task T04.03",
-    "server/tests/better-auth/team-management-grants.test.ts": "T04.07 team-management-grants suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0217 stack through the directory executor team-management-grant handlers and the directory-backed company-admin port (per-generation revoke idempotency per interfaces §3); registered by the task through writeManifest with payload.task T04.07"
+    "server/tests/better-auth/team-management-grants.test.ts": "T04.07 team-management-grants suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0217 stack through the directory executor team-management-grant handlers and the directory-backed company-admin port (per-generation revoke idempotency per interfaces §3); registered by the task through writeManifest with payload.task T04.07",
+    "server/tests/better-auth/scim-provisioning.test.ts": "runner named it: needs Bun SQL + better-auth/scim plugin over the BA island's five role URLs"
   }
 }

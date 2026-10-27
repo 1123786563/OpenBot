@@ -27,6 +27,7 @@ import {
   users,
   verifications,
 } from "../db/schema";
+import type { Directory, DirectoryTx } from "./directory/contracts";
 import {
   assertBaAuthorityPreconditions,
   BA_AUTHORITY_CONFIG_VIOLATION,
@@ -34,7 +35,12 @@ import {
 import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
 import { applyConfiguredAdmin, isConfiguredAdmin, seedRole } from "./roles";
-import { recordProvisioned, scimOptions } from "./scim";
+import {
+  createScimTransactionCapture,
+  recordProvisioned,
+  type ScimConnectionSpec,
+  scimOptions,
+} from "./scim";
 
 /**
  * Bun fetch 代理豁免（本机/内网上游）：Bun 在进程启动时锁定 HTTP_PROXY 且
@@ -382,6 +388,32 @@ export const DIRECTORY_ORGANIZATION_PLUGIN_OPTIONS = Object.freeze({
   teams: Object.freeze({ enabled: true }),
 });
 
+/**
+ * The SSO factory hard precondition (T05.05's named startup gate, extracted
+ * from createAuth so the missing/false variants are pinnable at unit level):
+ * the sso plugin must run with organizationProvisioning:{disabled:true} — a
+ * provider-carried organizationId may never provision a member (interfaces
+ * §3.2's callback contract). A missing flag or disabled:false is a startup
+ * refusal before any route runs.
+ */
+export function assertSsoOrganizationProvisioningDisabled(
+  plugins: readonly unknown[] | undefined,
+): void {
+  const ssoPlugin = (plugins ?? []).find(
+    (
+      plugin,
+    ): plugin is {
+      id: string;
+      options?: { organizationProvisioning?: { disabled?: boolean } };
+    } => Boolean(plugin) && (plugin as { id?: string }).id === "sso",
+  );
+  if (ssoPlugin?.options?.organizationProvisioning?.disabled !== true) {
+    throw new Error(
+      `${BA_AUTHORITY_CONFIG_VIOLATION}: the SSO plugin must run with organizationProvisioning:{disabled:true} — a provider-carried organizationId may never provision a member (interfaces §3.2's callback contract); refusing before any route runs`,
+    );
+  }
+}
+
 export function createAuth(
   config: AuthBootstrapConfig,
   database: Database,
@@ -405,6 +437,16 @@ export function createAuth(
    * write below is guarded and its failure is logged rather than raised.
    */
   auditStore?: AuditStore,
+  /**
+   * T05.05 (#561 / P12): the SCIM transcription wiring — the per-company
+   * connections and the directory executor seam. Absent keeps the legacy
+   * SCIM reactions exactly as they were (a deployment must not change
+   * behaviour because a new optional parameter exists).
+   */
+  scimWiring?: {
+    readonly connections?: readonly ScimConnectionSpec[];
+    readonly directory?: (tx: DirectoryTx) => Pick<Directory, "execute"> | null;
+  },
 ) {
   const authConfig = config.auth;
   if (!authConfig) {
@@ -434,10 +476,27 @@ export function createAuth(
       : []),
     ...(authConfig.casdoor ? [casdoor(authConfig.casdoor)] : []),
   ];
+  /*
+   * The transaction capture (T05.05): every transaction the fixed build opens
+   * on this database records its open tx, so the SCIM hooks can execute their
+   * directory commands on exactly the transaction the plugin owns. Installed
+   * only when the wiring asks for the transcription — a legacy deployment's
+   * database object is passed to the adapter untouched.
+   */
+  const scimCapture = scimWiring?.directory
+    ? createScimTransactionCapture(database)
+    : null;
   const scimDeps = {
     database,
     initialAdminEmails: authConfig.initialAdminEmails,
     ...(auditStore ? { auditStore } : {}),
+    ...(scimWiring?.connections ? { connections: scimWiring.connections } : {}),
+    ...(scimCapture
+      ? {
+          currentTransaction: scimCapture.currentTransaction,
+          directory: scimWiring?.directory ?? null,
+        }
+      : {}),
   };
   const scimPluginOptions = scimOptions(scimDeps);
   const enterpriseStore = createEnterpriseStore(database);
@@ -575,7 +634,7 @@ export function createAuth(
      * through `KEY_ENCRYPTION_KEY`; these two were the exception. See encrypt-sso-config.ts.
      */
     database: encryptSsoConfig(
-      drizzleAdapter(database, {
+      drizzleAdapter(scimCapture?.database ?? database, {
         provider: "pg",
         usePlural: true,
         schema: {
@@ -844,19 +903,7 @@ export function createAuth(
    * left the transaction.
    */
   assertBaAuthorityPreconditions(options);
-  const ssoPlugin = (options.plugins ?? []).find(
-    (
-      plugin,
-    ): plugin is {
-      id: string;
-      options?: { organizationProvisioning?: { disabled?: boolean } };
-    } => Boolean(plugin) && (plugin as { id?: string }).id === "sso",
-  );
-  if (ssoPlugin?.options?.organizationProvisioning?.disabled !== true) {
-    throw new Error(
-      `${BA_AUTHORITY_CONFIG_VIOLATION}: the SSO plugin must run with organizationProvisioning:{disabled:true} — a provider-carried organizationId may never provision a member (interfaces §3.2's callback contract); refusing before any route runs`,
-    );
-  }
+  assertSsoOrganizationProvisioningDisabled(options.plugins);
   if (options.advanced?.backgroundTasks !== undefined) {
     throw new Error(
       `${BA_AUTHORITY_CONFIG_VIOLATION}: backgroundTasks is configured; the pinned build would run that work outside the directory command transaction, which is the boundary interfaces §3.1 fixes — remove it before booting`,
