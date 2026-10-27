@@ -45,7 +45,10 @@ import { createPackageGrantService } from "../../src/enterprise/plugin-packages/
 import { addedToolsOf } from "../../src/enterprise/plugin-packages/plans";
 import { createPackageRuntime } from "../../src/enterprise/plugin-packages/runtime";
 import type { SecretVault } from "../../src/enterprise/tenancy/credential-ownership";
-import { createPluginCatalogDecisionService } from "../../src/enterprise/tenancy/plugin-catalog";
+import {
+  createPluginCatalogAdminService,
+  createPluginCatalogDecisionService,
+} from "../../src/enterprise/tenancy/plugin-catalog";
 import { createToolInvocationService } from "../../src/enterprise/tenancy/tool-invocation";
 import {
   buildArtifact,
@@ -124,6 +127,8 @@ let teamB1 = "";
 let adminPrincipal = "";
 let catalogue: PackageCatalogue;
 let dispatch: ReturnType<typeof createPackageDispatchService>;
+/** The real operator-channel write path a production re-bind rides (H-B). */
+let catalogAdmin: ReturnType<typeof createPluginCatalogAdminService>;
 /** Every vendor dial the injected transport saw. */
 let vendorCalls: Array<{
   url: string | null;
@@ -486,6 +491,7 @@ describeDb("PKG05 package tool dispatch (real roles)", () => {
       pinnedTools: runtime.readPinnedTools,
       vendorCall,
     });
+    catalogAdmin = createPluginCatalogAdminService(fixture.operator, vault);
   });
 
   afterAll(async () => {
@@ -985,6 +991,143 @@ describeDb("PKG05 package tool dispatch (real roles)", () => {
         code: "CONNECTION_CHANGED",
       });
       expect(vendorCalls).toHaveLength(0);
+    },
+  );
+
+  itDb(
+    "OCR-fix-F2 H-B: a re-bind converges the scope and dispatch resolves the newest binding",
+    async () => {
+      const current = await prepareCase();
+      // Historical residue (superuser stand-in, disclosed): a duplicate
+      // binding for the same (install, boundBy) scope left by a pre-fix
+      // re-bind, ordered OLDER than the live row — the state the write-side
+      // convergence and the deterministic selection must both survive.
+      const residueId = `pkg05-connection-${randomUUID()}`;
+      await setup.$client.unsafe(
+        `insert into enterprise_plugin_connections
+           (tenant_id, id, install_id, bound_by, vendor_ref, generation, created_at)
+         values ($1, $2, $3, $4, 'acct-stale-residue', 1, now() - interval '1 hour')`,
+        [
+          companyA,
+          residueId,
+          current.connector.connectorInstallId,
+          adminPrincipal,
+        ],
+      );
+
+      // Prepare BEFORE the re-bind: the ticket pins the live binding.
+      const before = await dispatch.preparePackageTool(scopeA1, {
+        runId: current.runId,
+        attemptGeneration: 1,
+        toolCallId: `call-${randomUUID()}`,
+        ref: toolRefFor(current.installId, "lookup"),
+        args: { query: "q" },
+        botId: current.botId,
+      });
+      expect(before.outcome).toBe("ticket");
+      if (before.outcome !== "ticket") return;
+      expect(before.ticket.connectionId).toBe(current.connector.connectionId);
+
+      // Re-bind through the real operator write path: the scope converges
+      // to exactly one row — the new binding — residue included in the
+      // sweep, so "the latest binding" always has exactly one answer.
+      const rebound = await catalogAdmin.bindConnection({
+        tenantId: companyA,
+        installId: current.connector.connectorInstallId,
+        boundBy: adminPrincipal,
+        vendorRef: "acct-rebound",
+      });
+      const scopeRows = (await setup.$client.unsafe(
+        `select id, vendor_ref from enterprise_plugin_connections
+         where tenant_id = $1 and install_id = $2 and bound_by = $3`,
+        [companyA, current.connector.connectorInstallId, adminPrincipal],
+      )) as Array<{ id: string; vendor_ref: string }>;
+      expect(scopeRows).toHaveLength(1);
+      expect(scopeRows[0]?.id).toBe(rebound.connectionId);
+      expect(scopeRows[0]?.vendor_ref).toBe("acct-rebound");
+
+      // The proposal approved against the old binding refuses at the CAS:
+      // the connection it described no longer exists.
+      const stale = await dispatch.dispatchPackageTool(scopeA1, before.ticket, {
+        query: "q",
+      });
+      expect(stale).toEqual({ outcome: "refused", code: "CONNECTION_CHANGED" });
+      expect(vendorCalls).toHaveLength(0);
+
+      // A fresh prepare resolves the NEW binding — the newest row with the
+      // new vendor-ref fingerprint — never the stale residue.
+      const after = await dispatch.preparePackageTool(scopeA1, {
+        runId: current.runId,
+        attemptGeneration: 1,
+        toolCallId: `call-${randomUUID()}`,
+        ref: toolRefFor(current.installId, "lookup"),
+        args: { query: "q" },
+        botId: current.botId,
+      });
+      expect(after.outcome).toBe("ticket");
+      if (after.outcome !== "ticket") return;
+      expect(after.ticket.connectionId).toBe(rebound.connectionId);
+      expect(after.ticket.connectionId).not.toBe(residueId);
+
+      // The call carries the new credential fingerprint to the vendor, once.
+      vendorCalls = [];
+      vendorBehaviour = async () => ({ text: "ok", isError: false });
+      const dispatched = await dispatch.dispatchPackageTool(
+        scopeA1,
+        after.ticket,
+        { query: "q" },
+      );
+      expect(dispatched).toEqual({ outcome: "ok", text: "ok", isError: false });
+      expect(vendorCalls).toHaveLength(1);
+      expect(vendorCalls[0]?.accountHandle).toBe("acct-rebound");
+
+      // Determinism under surviving residue (rows a pre-fix bind left
+      // behind and no re-bind ever swept): the resolution must point at the
+      // newest created_at regardless of the rows' physical layout, so the
+      // live row is deleted and re-inserted AFTER the residue — newest by
+      // time, last by physical position.
+      const residueCase = await prepareCase();
+      const liveId = residueCase.connector.connectionId;
+      const survivorId = `pkg05-connection-${randomUUID()}`;
+      await setup.$client.unsafe(
+        `insert into enterprise_plugin_connections
+           (tenant_id, id, install_id, bound_by, vendor_ref, generation, created_at)
+         values ($1, $2, $3, $4, 'acct-older-duplicate', 1, now() - interval '1 hour')`,
+        [
+          companyA,
+          survivorId,
+          residueCase.connector.connectorInstallId,
+          adminPrincipal,
+        ],
+      );
+      await setup.$client.unsafe(
+        `delete from enterprise_plugin_connections
+         where tenant_id = $1 and id = $2`,
+        [companyA, liveId],
+      );
+      await setup.$client.unsafe(
+        `insert into enterprise_plugin_connections
+           (tenant_id, id, install_id, bound_by, vendor_ref, generation, created_at)
+         values ($1, $2, $3, $4, 'acct-admin', 1, now())`,
+        [
+          companyA,
+          liveId,
+          residueCase.connector.connectorInstallId,
+          adminPrincipal,
+        ],
+      );
+      const residueProbe = await dispatch.preparePackageTool(scopeA1, {
+        runId: residueCase.runId,
+        attemptGeneration: 1,
+        toolCallId: `call-${randomUUID()}`,
+        ref: toolRefFor(residueCase.installId, "lookup"),
+        args: { query: "q" },
+        botId: residueCase.botId,
+      });
+      expect(residueProbe.outcome).toBe("ticket");
+      if (residueProbe.outcome !== "ticket") return;
+      expect(residueProbe.ticket.connectionId).toBe(liveId);
+      expect(residueProbe.ticket.connectionId).not.toBe(survivorId);
     },
   );
 

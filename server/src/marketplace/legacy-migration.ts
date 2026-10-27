@@ -35,6 +35,7 @@ import type { PlatformScope } from "../enterprise/contracts";
 import type { PackageMutationStore } from "../enterprise/plugin-packages/contracts";
 import type { CompanyAdminContext } from "../enterprise/tenancy/workspace-admin";
 import { CATALOGUE_EXPERTS, CATALOGUE_SKILLS } from "./catalogue";
+import { builtinExpertInstallInput } from "./expert-content-hash";
 
 /** The built-in package's stable identity; slugs become resource ids 1:1. */
 export const BUILTIN_PACKAGE_KEY = "openbot/legacy-catalogue";
@@ -87,18 +88,27 @@ export function builtinSkillContentHash(skill: {
   });
 }
 
-/** Same-shape hash over the profile fields a legacy expert install writes. */
+/**
+ * Reference hash of one catalogue expert: exactly the profile fields the
+ * legacy install persists (agents.name + agent_profiles.title /
+ * roleDescription), built from the shared install-input constructor so the
+ * two can never drift. `configuration.systemPrompt` is deliberately NOT in
+ * the domain — it is derived from the role description at install time and
+ * absent entirely on deployments with a managed Bot; its consistency with
+ * the stored profile is asserted separately in classifyExpertInstall
+ * (OCR R5-H-C).
+ */
 export function builtinExpertContentHash(expert: {
   slug: string;
   name: string;
   roleDescription: string;
 }): string {
+  const profile = builtinExpertInstallInput(expert);
   return canonicalSha256({
     slug: expert.slug,
-    name: expert.name,
-    title: expert.name,
-    roleDescription: expert.roleDescription,
-    systemPrompt: expert.roleDescription,
+    name: profile.name,
+    title: profile.title,
+    roleDescription: profile.roleDescription,
   });
 }
 
@@ -121,20 +131,18 @@ export function legacySkillRowHash(row: {
   });
 }
 
-/** Hash of one legacy expert-installed Bot's profile (agent + profile rows). */
+/** Hash of one legacy expert-installed Bot's persisted profile fields. */
 export function legacyAgentProfileHash(row: {
   expertSlug: string;
   name: string | null;
   title: string | null;
   roleDescription: string | null;
-  systemPrompt: string | null;
 }): string {
   return canonicalSha256({
     slug: row.expertSlug,
     name: row.name,
     title: row.title,
     roleDescription: row.roleDescription,
-    systemPrompt: row.systemPrompt,
   });
 }
 
@@ -305,15 +313,24 @@ export function classifyExpertInstall(
     name: row.agentName,
     title: row.profileTitle,
     roleDescription: row.profileRoleDescription,
-    systemPrompt: row.systemPrompt,
   });
   const referenceHash = builtin.experts.get(row.expertSlug) ?? null;
   let unresolved: MigrationUnresolvedReason | null = null;
   if (!builtin.present) unresolved = "BUILTIN_MISSING";
   else if (referenceHash === null) unresolved = "EXPERT_UNKNOWN";
   else if (row.agentMissing) unresolved = "AGENT_MISSING";
-  else if (contentHash !== referenceHash) unresolved = "PRIVATE_EDIT";
-  else if (ownership === null) unresolved = "SCOPE_UNPROVEN";
+  else if (
+    contentHash !== referenceHash ||
+    // configuration.systemPrompt ships as the role description and the
+    // profile edit keeps the pair in sync; a persisted prompt that matches
+    // neither the stored nor the trimmed role description was hand-altered
+    // and never migrates. Absent (managed-Bot shape) is the shipped state.
+    (row.systemPrompt !== null &&
+      row.systemPrompt !== row.profileRoleDescription &&
+      row.systemPrompt !== row.profileRoleDescription?.trim())
+  ) {
+    unresolved = "PRIVATE_EDIT";
+  } else if (ownership === null) unresolved = "SCOPE_UNPROVEN";
   return {
     kind: "expertInstall",
     id: row.id,

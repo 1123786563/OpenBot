@@ -829,6 +829,9 @@ export function createPackageDispatchService(
     if (!catalog) return refused("NOT_AVAILABLE");
 
     // 账号臂：本人在原范围的连接。多条时取指定者，否则取本人最近绑定。
+    // 显式 ORDER BY 让选取在历史残留重复行（同作用域多行）下也确定：
+    // 最新 created_at 优先，id 兜底打破平局；写侧 bind 收敛保证新数据
+    // 每作用域只一行（OCR R5-H-B）。
     const connections = await tx
       .select({
         id: enterprisePluginConnections.id,
@@ -845,6 +848,10 @@ export function createPackageDispatchService(
             ? [eq(enterprisePluginConnections.id, requestedConnectionId)]
             : []),
         ),
+      )
+      .orderBy(
+        desc(enterprisePluginConnections.createdAt),
+        desc(enterprisePluginConnections.id),
       );
     const own = connections.find(
       (connection) => connection.boundBy === scope.principalId,

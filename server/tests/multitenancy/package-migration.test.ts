@@ -121,6 +121,10 @@ async function seedLegacyBot(input: {
   ownerUserId: string;
   /** Privatize the profile so the content hash must diverge. */
   edited?: boolean;
+  /** OCR-fix-F2 H-C: managed-Bot shape — the route persists no systemPrompt. */
+  managed?: boolean;
+  /** OCR-fix-F2 H-C: hand-altered systemPrompt, profile fields untouched. */
+  promptEdited?: boolean;
 }): Promise<string> {
   const agentId = `pkg11-bot-${randomUUID()}`;
   const expert = CATALOGUE_EXPERTS.find((e) => e.slug === input.slug);
@@ -130,8 +134,21 @@ async function seedLegacyBot(input: {
     : expert.roleDescription;
   await setup.$client.unsafe(
     `insert into agents (id, name, type, configuration)
-     values ($1, $2, 'built_in', $3::jsonb)`,
-    [agentId, expert.name, JSON.stringify({ systemPrompt: roleDescription })],
+     values ($1, $2, $3, $4::jsonb)`,
+    [
+      agentId,
+      expert.name,
+      input.managed ? "remote_ag_ui" : "built_in",
+      input.managed
+        ? // The managed-Bot shape: configuration = { endpoint }, no prompt —
+          // exactly what the install route writes when a managed Bot exists.
+          JSON.stringify({ endpoint: "https://managed.example.test/ag-ui" })
+        : JSON.stringify({
+            systemPrompt: input.promptEdited
+              ? `${roleDescription}（私改提示词）`
+              : roleDescription,
+          }),
+    ],
   );
   await setup.$client.unsafe(
     `insert into agent_profiles (agent_id, owner_user_id, title, role_description, avatar_seed, visibility)
@@ -259,6 +276,10 @@ let pristineAgentId: string;
 let editedAgentId: string;
 /** Pristine Bot WITHOUT ownership (stays legacy — scope unproven). */
 let unownedAgentId: string;
+/** OCR-fix-F2 H-C: managed-Bot shape fresh install WITH ownership (maps). */
+let managedAgentId: string;
+/** OCR-fix-F2 H-C: hand-edited systemPrompt WITH ownership (stays legacy). */
+let promptEditedAgentId: string;
 
 async function countRows(sqlText: string): Promise<number> {
   const rows = (await setup.$client.unsafe(
@@ -337,8 +358,23 @@ beforeAll(async () => {
     slug: "ui-designer",
     ownerUserId: legacyUserId,
   });
+  // OCR-fix-F2 H-C stock: the managed-Bot shape a deployment with a managed
+  // AG-UI Bot writes on install (same profile, no persisted systemPrompt),
+  // and a hand-altered systemPrompt over a pristine profile.
+  managedAgentId = await seedLegacyBot({
+    slug: "investment-analyst",
+    ownerUserId: legacyUserId,
+    managed: true,
+  });
+  promptEditedAgentId = await seedLegacyBot({
+    slug: "learning-coach",
+    ownerUserId: legacyUserId,
+    promptEdited: true,
+  });
   await seedOwnership(pristineAgentId);
   await seedOwnership(editedAgentId);
+  await seedOwnership(managedAgentId);
+  await seedOwnership(promptEditedAgentId);
   // unownedAgentId deliberately gets NO ownership row.
   // Slug-held stock from before PKG11 (F-T12-1): a deployment-wide row on
   // the pristine skill and another company member's private row on the
@@ -420,6 +456,26 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
     expect(unowned?.unresolved).toBe("SCOPE_UNPROVEN");
     expect(unowned?.mapping).toBeNull();
 
+    // OCR-fix-F2 H-C: the managed-Bot shape persists no configuration
+    // .systemPrompt — the same content must classify as undrifted (the
+    // pre-fix reference hash turned every such install into PRIVATE_EDIT),
+    // and a hand-edited systemPrompt over a pristine profile stays a
+    // private edit.
+    const managed = manifest.sources.expertInstalls.find(
+      (r) => r.agentId === managedAgentId,
+    );
+    expect(managed?.unresolved).toBeNull();
+    expect(managed?.mapping).toEqual({
+      packageKey: BUILTIN_PACKAGE_KEY,
+      resourceId: "investment-analyst",
+    });
+
+    const promptEdited = manifest.sources.expertInstalls.find(
+      (r) => r.agentId === promptEditedAgentId,
+    );
+    expect(promptEdited?.unresolved).toBe("PRIVATE_EDIT");
+    expect(promptEdited?.mapping).toBeNull();
+
     const grants = manifest.sources.grants.filter(
       (r) => r.agentId === pristineAgentId,
     );
@@ -447,7 +503,7 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
       ),
     ).toBe(true);
 
-    expect(manifest.counts.mappedExpertInstalls).toBe(1);
+    expect(manifest.counts.mappedExpertInstalls).toBe(2);
     expect(manifest.counts.mappedGrants).toBe(1);
     expect(manifest.manifestDigest).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -667,10 +723,13 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
     expect(outcome.refused).toBe(false);
     if (outcome.refused) return;
     expect(outcome.install.created).toBe(true);
-    expect(outcome.provenanceWritten).toBe(1);
+    // OCR-fix-F2 H-C: the managed-shape install maps too, so its provenance
+    // row is written alongside the pristine one (botsGranted stays 1 — the
+    // managed Bot carries no legacy skill grants).
+    expect(outcome.provenanceWritten).toBe(2);
     expect(outcome.botsGranted).toBe(1);
 
-    // Exactly one install, one provenance row, one active grant set.
+    // Exactly one install, one provenance row per mapped Bot, one grant set.
     expect(await packageInstallCount()).toBe(1);
     expect(
       await countRows(
@@ -679,7 +738,12 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
     ).toBe(1);
     expect(
       await countRows(
-        `from enterprise_package_experts where agent_id = '${editedAgentId}' or agent_id = '${unownedAgentId}'`,
+        `from enterprise_package_experts where agent_id = '${managedAgentId}'`,
+      ),
+    ).toBe(1);
+    expect(
+      await countRows(
+        `from enterprise_package_experts where agent_id = '${editedAgentId}' or agent_id = '${unownedAgentId}' or agent_id = '${promptEditedAgentId}'`,
       ),
     ).toBe(0);
     // OCR-fix-C (R2-H4): expert provenance records the install's actual
