@@ -19,6 +19,8 @@
  *     的 JOURNAL_TABLE 保持一致（工具未导出该常量，这里是测试侧副本）。
  *   - drop 用 CASCADE 与 drop-0163.sql 配方一致（0163 恢复的表之间存在
  *     外键链）；列用默认 RESTRICT，若有依赖对象则响亮失败而非静默级联。
+ *   - 约束若被同批待重放步骤自己 `drop constraint`（drop→add 同步骤），不预删：
+ *     预删会让该步的 DROP 撞 does not exist，该步永不入账，续跑永久卡死。
  */
 
 import { buildPlan } from "../../../scripts/multitenancy/migrate-test";
@@ -52,16 +54,31 @@ const COLUMN_DDL =
   /^alter table (?:only )?"([^"]+)"\s+add column (?:if not exists )?"([^"]+)"/i;
 const CONSTRAINT_DDL =
   /^alter table (?:only )?"([^"]+)"\s+add constraint "([^"]+)"/i;
+const DROP_CONSTRAINT_DDL =
+  /^alter table (?:only )?"([^"]+)"\s+drop constraint (?:if exists )?"([^"]+)"/i;
+
+interface OwnedObjects {
+  /** 未记 journal 的步骤声明要创建的 表/列/约束（漂移残留的预删候选）。 */
+  readonly objects: readonly OwnedObject[];
+  /** 这些待重放步骤里自己 `drop constraint` 的 `表.约束`：预删它们会让该步 DROP 撞不存在。 */
+  readonly selfDroppedConstraints: ReadonlySet<string>;
+}
 
 function ownedObjectsOf(
   taskId: string,
   pendingNumbers: ReadonlySet<number>,
-): OwnedObject[] {
+): OwnedObjects {
   const objects: OwnedObject[] = [];
+  const selfDroppedConstraints = new Set<string>();
   for (const step of buildPlan(taskId).steps) {
     if (pendingNumbers.has(step.number)) continue;
     for (const raw of step.statements) {
       const statement = raw.trim().replace(/\s+/g, " ");
+      const dropped = DROP_CONSTRAINT_DDL.exec(statement);
+      if (dropped) {
+        selfDroppedConstraints.add(`${dropped[1]}.${dropped[2]}`);
+        continue;
+      }
       const table = TABLE_DDL.exec(statement);
       if (table) {
         objects.push({
@@ -95,7 +112,7 @@ function ownedObjectsOf(
       }
     }
   }
-  return objects;
+  return { objects, selfDroppedConstraints };
 }
 
 async function appliedStepNumbers(
@@ -181,6 +198,7 @@ export async function reconcileTaskDrift(
   const journaledTasks: string[] = [];
 
   const pending: OwnedObject[] = [];
+  const selfDroppedConstraints = new Set<string>();
   for (const taskId of taskIds) {
     const applied = await appliedStepNumbers(client, taskId);
     const plan = buildPlan(taskId);
@@ -188,7 +206,10 @@ export async function reconcileTaskDrift(
       journaledTasks.push(taskId);
       continue;
     }
-    pending.push(...ownedObjectsOf(taskId, applied));
+    const owned = ownedObjectsOf(taskId, applied);
+    pending.push(...owned.objects);
+    for (const key of owned.selfDroppedConstraints)
+      selfDroppedConstraints.add(key);
   }
 
   // 表优先：CASCADE 与 drop-0163 配方一致；同轮内不重复删同一张表。
@@ -209,6 +230,14 @@ export async function reconcileTaskDrift(
   }
   for (const object of pending.filter((entry) => entry.kind === "constraint")) {
     if (droppedTables.has(object.table)) continue;
+    /*
+     * 该约束在同批待重放步骤里被 `drop constraint` 重建（PKG03/PKG04 的动作 CHECK
+     * 与主键都是 drop→add 同步骤）时不得预删：预删成功后重放到那一句 DROP 会报
+     * does not exist，该步永不入账，而下次已无约束可预删、DROP 依旧失败 —— 逐步
+     * 入账的断点续跑就此永久卡死。留着它，重放自己的 DROP 正好删掉漂移残留。
+     */
+    if (selfDroppedConstraints.has(`${object.table}.${object.constraint}`))
+      continue;
     if (
       !(await constraintExists(client, object.table, object.constraint ?? ""))
     )
