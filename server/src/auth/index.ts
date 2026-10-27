@@ -704,6 +704,14 @@ export function createAuth(
             enabled: true,
             minPasswordLength: 8,
             requireEmailVerification: false,
+            // The fixed recovery constants (T04.05 / §5.1): the token lives
+            // one hour, and a reset revokes the fixed build's own sessions.
+            // The revocation is deliberately defensive only — the real
+            // security finalization (generation bump, every session and
+            // proof, audit) is the Identity finalizer's, in the same
+            // transaction the RecoveryIngress runs.
+            resetPasswordTokenExpiresIn: 3600,
+            revokeSessionsOnPasswordReset: true,
             ...(authMail
               ? { sendResetPassword: authMail.sendResetPassword }
               : {}),

@@ -130,6 +130,7 @@ export const NATIVE_AUTH_IDEMPOTENCY_KEY_REQUIRED =
   "NATIVE_AUTH_IDEMPOTENCY_KEY_REQUIRED";
 export const NATIVE_AUTH_MEMBER_ID_MUST_BE_USER_ID =
   "NATIVE_AUTH_MEMBER_ID_MUST_BE_USER_ID";
+export const PASSWORD_RECOVERY_NOT_WIRED = "PASSWORD_RECOVERY_NOT_WIRED";
 export const INVITATION_ROLE_NOT_DELEGABLE = "INVITATION_ROLE_NOT_DELEGABLE";
 export const INVITATION_RESEND_IS_CONTROLLED =
   "INVITATION_RESEND_IS_CONTROLLED";
@@ -742,6 +743,7 @@ const SSO_SIGN_IN_PATH = "/sign-in/sso";
 export type NativeAuthClassification =
   | Readonly<{ kind: "outside" }>
   | Readonly<{ kind: "unknown" }>
+  | Readonly<{ kind: "recovery" }>
   | Readonly<{ kind: "classified"; endpoint: NativeAuthEndpoint }>;
 
 function pathSegments(path: string): string[] {
@@ -792,6 +794,21 @@ export function classifyNativeAuthPath(
     DIRECTORY_SURFACE_PREFIXES.some((prefix) => path.startsWith(prefix))
   ) {
     return { kind: "unknown" };
+  }
+  /*
+   * The password recovery surface (T04.05 / P08): three endpoints the
+   * RecoveryIngress owns exclusively. They carry no directory disposition —
+   * they are not directory endpoints — so they never enter the frozen
+   * table; classifying them here is what closes the bare-handler bypass:
+   * handle() answers them (through the wired seam, or with the honest 503
+   * below) instead of letting the pinned build's own handler serve them.
+   */
+  if (
+    (normalized === "POST" && path === "/request-password-reset") ||
+    (normalized === "POST" && path === "/reset-password") ||
+    (normalized === "GET" && path.startsWith("/reset-password/"))
+  ) {
+    return { kind: "recovery" };
   }
   return { kind: "outside" };
 }
@@ -876,6 +893,15 @@ export interface DirectoryIngressDeps {
   readonly directory?: Directory | null;
   /** The production identity executor, same rule. */
   readonly identity?: Pick<IdentityExecutor, "execute"> | null;
+  /**
+   * The private RecoveryIngress (T04.05 / P08): the password recovery
+   * endpoints are its alone. Absent is an honest 503 — the pinned build's
+   * own handler never serves them, so a reset never happens without its
+   * transaction owner.
+   */
+  readonly passwordRecovery?: {
+    handle(request: Request): Promise<Response | null>;
+  } | null;
   readonly now?: () => Date;
 }
 
@@ -1623,6 +1649,19 @@ export function createDirectoryIngress(
             404,
           ),
         );
+      }
+      if (verdict.kind === "recovery") {
+        const seam = deps.passwordRecovery ?? null;
+        if (!seam) {
+          return errorResponse(
+            new NativeAuthRefusal(
+              PASSWORD_RECOVERY_NOT_WIRED,
+              `${request.method} ${url.pathname} is a password recovery endpoint: the RecoveryIngress owns it exclusively, and without it wired there is no transaction owner for a reset token or a password write — the request is refused rather than forwarded to the fixed build's own handler`,
+              503,
+            ),
+          );
+        }
+        return seam.handle(request);
       }
       try {
         return await answer(verdict.endpoint, request);
