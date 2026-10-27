@@ -41,7 +41,10 @@ import {
 import { opikConfigFromEnv } from "../src/ai-observability/config";
 import { runUpstreamIdentity } from "../src/ai-observability/opik-http";
 import { createOpikHealthService } from "../src/ai-observability/health";
-import type { OpikReadiness } from "../src/ai-observability/health";
+import type {
+  OpikReadiness,
+  OpikWriteStats,
+} from "../src/ai-observability/health";
 import { createModelSpanRecorder } from "../src/ai-observability/model-span";
 import type { OpikTraceRow } from "../src/ai-observability/opik-port";
 import {
@@ -74,6 +77,19 @@ function parseArgs(argv: readonly string[]): Args {
 // collision would merge two runs into one chain and misattribute evidence).
 const hex = (n: number): string =>
   randomBytes(Math.ceil(n / 2)).toString("hex").slice(0, n);
+
+// #40: retry rounds re-submit BOTH observations, so accepted/completed accumulate
+// across rounds and counts alone cannot prove the credential-bearing observation
+// ever landed — any perform failure (stats.failed.*) or readiness refusal must
+// void the gate, or forbiddenCanariesAbsent passes vacuously (safe completed twice
+// while the sensitive write kept failing would still clear the count thresholds).
+// Exported for the standalone gate check next to this script.
+export const writesEstablished = (stats: OpikWriteStats): boolean =>
+  stats.accepted >= 2 &&
+  stats.completed >= 2 &&
+  stats.droppedFull === 0 &&
+  stats.refusedNotReady === 0 &&
+  Object.values(stats.failed).every((count) => count === 0);
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -298,11 +314,18 @@ async function main(): Promise<void> {
   );
 
   // ---- FREV-02: the local authoritative binding, through the real store. ----
-  // The observed run close settles the binding exactly as the boot wiring
-  // forwards the tool-step window; the row is then read back through the
-  // production query seam (latestAttempt) — the same lookup the run detail
-  // route answers with, proving this run's content is locally locatable.
-  observerBindings.settleObservedWindow(scope, runChain, "terminal");
+  // The run's OWN lifecycle observation settles the binding, exactly as the boot
+  // wiring forwards the run's real ending (index.ts setBuiltinRunLifecycleObserver
+  // → settleObservedRun with startedAt/ending/endedAt; settleObservedWindow's
+  // tool-step shape is kept for callers with nothing better, and the production
+  // wiring no longer calls it). The row is then read back through the production
+  // query seam (latestAttempt) — the same lookup the run detail route answers
+  // with, proving this run's content is locally locatable.
+  observerBindings.settleObservedRun(scope, runChain, {
+    startedAt,
+    ending: "success",
+    endedAt: new Date(),
+  });
   let bindingRead: Awaited<ReturnType<typeof bindings.latestAttempt>> = null;
   let bindingReadError: string | null = null;
   try {
@@ -329,7 +352,10 @@ async function main(): Promise<void> {
   // reconciled into the binding. Assert the binding carries a non-null opikTraceId
   // matching runUpstreamIdentity(runChainId).opikTraceId; without it the gate
   // would have taken the binding-only path (the tests' seam), not the production
-  // shape the header claims.
+  // shape the header claims. The settled state is the observed ending's own
+  // terminal state — "success" maps to completed via observerTerminalState; the
+  // window settle's pinned `unknown` was a test-seam shape, not the production
+  // run close (R3-03).
   const expectedOpikTraceId = runUpstreamIdentity(runChainId).opikTraceId;
   const bindingEstablished =
     bindingReadError === null &&
@@ -337,17 +363,19 @@ async function main(): Promise<void> {
     bindingRead.traceId === runChainId &&
     bindingRead.opikTraceId === expectedOpikTraceId &&
     bindingRead.capability === "detailed" &&
-    bindingRead.state === "unknown";
+    bindingRead.state === "completed";
 
   const checks = {
     readinessReady: readiness.ready,
     readinessAtEndReady: readinessAtEnd.ready,
     // `completed` (not `accepted`): accepted only proves the writes were queued;
-    // completed proves they were performed. With accepted == 2 and no drops,
-    // completed >= 2 is exactly "both observations landed", which is what makes
-    // forbiddenCanariesAbsent non-vacuous — if the secret-bearing write failed
-    // at perform time, its absence from storage would prove nothing.
-    writeAccepted: stats.accepted >= 2 && stats.completed >= 2 && stats.droppedFull === 0,
+    // completed proves they were performed. Retry rounds accumulate both counters
+    // (#40), so the count thresholds alone no longer mean "both observations
+    // landed" — writesEstablished also refuses any perform failure or readiness
+    // refusal, which is what makes forbiddenCanariesAbsent non-vacuous: if the
+    // secret-bearing write failed at perform time, its absence from storage
+    // would prove nothing.
+    writeAccepted: writesEstablished(stats),
     readbackSettled: readbackError === null,
     projectResolved: projectId.length > 0,
     safeCanaryInStorage: safeFound,
@@ -432,4 +460,8 @@ async function main(): Promise<void> {
   );
 }
 
-await main();
+// Run only as an entrypoint — the gate predicate is imported by the standalone
+// check next to this script, and an import must not launch an ingest run.
+if (import.meta.main) {
+  await main();
+}
