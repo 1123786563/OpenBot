@@ -39,6 +39,7 @@ import { type ObserverRunBindingGate, observerChainId } from "./bindings";
 import type { ObservationScope } from "./contracts";
 import type { OpikHealthService, OpikObservationWrite } from "./health";
 import type { IdLinkStore } from "./id-links";
+import { runUpstreamIdentity, spanUpstreamId } from "./opik-http";
 import type { OpikOtlpSpan } from "./opik-port";
 import {
   DEFAULT_METADATA_ALLOWLIST,
@@ -620,11 +621,13 @@ export function createToolStepRecorder(
      */
     bindings: Pick<ObserverRunBindingGate, "ensure">;
     /**
-     * The id-mapping store (Issue #23/T17). When present, a tool step whose span
-     * carries an explicit upstream id is linked AFTER the upstream write landed —
-     * the governed write path's ordering: projection, span, then the mapping, so an
-     * id the backend never adopted can never be claimed. Absent means no mapping
-     * happens and the span write is unchanged.
+     * The id-mapping store (Issue #23/T17). When present, a tool step whose
+     * upstream span id is verifiable — the span's explicit override, or the
+     * chain-derived id when it derives to the binding's upstream trace — is
+     * linked AFTER the upstream write landed — the governed write path's
+     * ordering: projection, span, then the mapping, so an id the backend never
+     * adopted can never be claimed. Absent means no mapping happens and the
+     * span write is unchanged.
      */
     idLinks?: Pick<IdLinkStore, "link">;
   }>,
@@ -671,29 +674,46 @@ export function createToolStepRecorder(
             spans: [span],
             binding,
           });
-          if (result.outcome === "ok" && idLinks !== undefined && span.opik) {
-            // The mapping follows the write, never precedes it. A refused verdict
-            // (chain_broken, divergent) is a detected fact, and a link store that
-            // throws must not turn a span that already landed into a counted
-            // failure — both are observations here, swallowed by design, but
-            // never silently: each lands on one governed counter (safe labels,
-            // no ids, no evidence) so a broken chain is observable in operation.
-            try {
-              const verdict = await idLinks.link(scope, {
-                local: { kind: "tool_step", id: bounded.toolCallId },
-                upstream: { kind: "span", id: span.opik.spanId },
-                ...(observation.trace?.runRef !== undefined
-                  ? { runRef: observation.trace.runRef }
-                  : {}),
-                observedTraceId: span.traceId,
-              });
-              if (!verdict.linked) {
-                deps.healthService.countIdLink(verdict.reason);
+          if (result.outcome === "ok" && idLinks !== undefined) {
+            // The mapping follows the write, never precedes it. The upstream id is
+            // the three-state verdict (OCR delta T-J #7): the span's explicit
+            // override when it carries one, else — and only when the chain derives
+            // to the binding's recorded upstream trace, the same derivation the
+            // port's completion adopts — the derived id, so a link never claims an
+            // id the backend did not take. A chain that derives elsewhere names no
+            // verifiable span: nothing to link.
+            const upstreamSpanId =
+              span.opik !== undefined
+                ? span.opik.spanId
+                : binding.opikTraceId !== null &&
+                    runUpstreamIdentity(span.traceId).opikTraceId ===
+                      binding.opikTraceId
+                  ? spanUpstreamId(span.traceId, span.spanId)
+                  : undefined;
+            if (upstreamSpanId !== undefined) {
+              // A refused verdict (chain_broken, divergent) is a detected fact,
+              // and a link store that throws must not turn a span that already
+              // landed into a counted failure — both are observations here,
+              // swallowed by design, but never silently: each lands on one
+              // governed counter (safe labels, no ids, no evidence) so a broken
+              // chain is observable in operation.
+              try {
+                const verdict = await idLinks.link(scope, {
+                  local: { kind: "tool_step", id: bounded.toolCallId },
+                  upstream: { kind: "span", id: upstreamSpanId },
+                  ...(observation.trace?.runRef !== undefined
+                    ? { runRef: observation.trace.runRef }
+                    : {}),
+                  observedTraceId: span.traceId,
+                });
+                if (!verdict.linked) {
+                  deps.healthService.countIdLink(verdict.reason);
+                }
+              } catch {
+                // See above: the span write's own outcome is the queue's truth;
+                // the mapping failure is counted, never propagated.
+                deps.healthService.countIdLink("error");
               }
-            } catch {
-              // See above: the span write's own outcome is the queue's truth;
-              // the mapping failure is counted, never propagated.
-              deps.healthService.countIdLink("error");
             }
           }
           return result;

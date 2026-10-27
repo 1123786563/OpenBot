@@ -27,8 +27,15 @@ import {
   withTraceFetch,
 } from "../../shared/trace";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
-import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
+import {
+  observerBindingRefForTests,
+  observerRunBindingGateForTests,
+} from "../src/ai-observability/bindings";
 import type { OpikObservationWrite } from "../src/ai-observability/health";
+import {
+  runUpstreamIdentity,
+  spanUpstreamId,
+} from "../src/ai-observability/opik-http";
 import type { OpikOtlpSpan, OpikPort } from "../src/ai-observability/opik-port";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import {
@@ -381,12 +388,20 @@ describe("a step observation with the run's trace context", () => {
     });
   });
 
-  test("without an upstream trace id there is nothing honest to link", async () => {
+  test("no override but the chain derives to the binding's trace: the link names the id the port completes with", async () => {
     const queue = fakeQueue();
     const links: unknown[] = [];
+    // The production wiring shape: the observation carries no opikTraceId and
+    // the binding holds the upstream trace the materialization derived from the
+    // chain — the id the port's completion (opik-http) adopts for this span.
     const recorder = createToolStepRecorder({
       healthService: queue.queue,
-      bindings: observerRunBindingGateForTests(),
+      bindings: {
+        ensure: async (scope) =>
+          observerBindingRefForTests(scope, {
+            opikTraceId: runUpstreamIdentity(TRACE_ID).opikTraceId,
+          }),
+      },
       idLinks: {
         link: async (_scope, input) => {
           links.push(input);
@@ -402,7 +417,45 @@ describe("a step observation with the run's trace context", () => {
     const port = okPort();
     for (const write of queue.submitted) await write.perform(port.port);
 
-    expect(port.writes[0].spans[0].opik).toBeUndefined();
+    // No explicit override on the span — the port completes it with the derived
+    // id, and the link claims exactly that id, never a second one.
+    const span = port.writes[0].spans[0];
+    expect(span.opik).toBeUndefined();
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      local: { kind: "tool_step", id: "call-1" },
+      upstream: { kind: "span", id: spanUpstreamId(TRACE_ID, span.spanId) },
+      observedTraceId: TRACE_ID,
+    });
+  });
+
+  test("a binding naming another upstream trace derives nowhere — no link", async () => {
+    const queue = fakeQueue();
+    const links: unknown[] = [];
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: {
+        ensure: async (scope) =>
+          observerBindingRefForTests(scope, { opikTraceId: OPIK_TRACE_ID }),
+      },
+      idLinks: {
+        link: async (_scope, input) => {
+          links.push(input);
+          return { linked: true as const, replayed: false as const };
+        },
+      },
+    });
+    recorder.record(
+      aToolObservation({
+        trace: { traceId: TRACE_ID, parentSpanId: PARENT_SPAN_ID },
+      }),
+    );
+    const port = okPort();
+    for (const write of queue.submitted) await write.perform(port.port);
+
+    // The forged binding names an upstream trace this chain does not derive to;
+    // the span write stands, but nothing may claim an id for it.
+    expect(port.writes).toHaveLength(1);
     expect(links).toHaveLength(0);
   });
 
