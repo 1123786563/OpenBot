@@ -2,7 +2,7 @@
 
 ## 依据
 
-增量终审 OCR（17 触面文件 @7b48a9b72，session f04ba0e5 + resume 在跑）26 findings（0C/0H/7M/19L）经 T-J 独立核验（reviews/ocr-delta-triage-j.md）：**4 CONFIRMED / 0R / 2 DOWNGRADED / 1 DUPLICATE**。另核出协调者派发缺口：首轮 66 候选的 **#10–#13（4 条 docs/plans 面）从未被分配核验**（T-G brief 漏列）——并入本批 H 流补裁。
+增量终审 OCR（17 触面文件 @7b48a9b72，session f04ba0e5 + resume 43228023 已闭合 17/17）26 findings（0C/0H/7M/19L）经 T-J 独立核验（reviews/ocr-delta-triage-j.md）：**4 CONFIRMED / 0R / 2 DOWNGRADED / 1 DUPLICATE**。另核出协调者派发缺口：首轮 66 候选的 **#10–#13（4 条 docs/plans 面）从未被分配核验**（T-G brief 漏列）——并入本批 H 流补裁。
 
 ## 修复项与分流
 
@@ -21,13 +21,13 @@ owned：`server/src/ai-observability/tool-steps.ts`、`server/tests/opik-trace-c
 ### FIX-G — ingest 重提恢复语义（T-J #4，medium；联动 T-J #3 已降级项）
 owned：`server/scripts/opik-e2e-ingest.ts`、`server/scripts/opik-e2e-ingest-gate-check.ts`
 - 择形 (b)：按轮差值判定——每轮开始前快照 stats，writesEstablished 按**最后一轮增量**（本轮无新增 refused/failed 且本轮完成写入达标）判定；:187-190 注释与 :371-377 对齐（重提恢复真实可达，判定反映末轮净态）。
-- gate-check.ts:36-48 两用例同步改写为按轮增量形状（瞬时 refusal → 恢复后 PASS；末轮仍失败 → FAIL）；与 (a) 注释对齐方案二选一，worker 择一并保证两者同波一致。
+- gate-check.ts:36-48 两用例同步改写为按轮增量形状（瞬时 refusal → 恢复后 PASS；末轮仍失败 → FAIL）；与 (a) 注释对齐方案二选一，worker 择一并保证两者同波一致。**〔已裁决：择形 (b)，交付 621317706〕**
 - 集成后主控复跑真实栈（ingest-rerun-r8）。
 
 ### FIX-H — 文档账差 + 4 条漏裁候选（T-J #1 medium + 派发缺口）
 owned：`docs/plans/opik/2026-10-27-opik-issue4-ocr-final-fix-wave.md`（账差行；曾误写 r2-fix-wave.md，H 流交付披露更正）；另有权裁决 #10–#13
 - 行 5 分流账从三份 triage JSON 重算（6R/28D/10dup/6moot），并使 12+6+28+10+6+4(补裁)=66 闭合。
-- **补裁 #10–#13**（final-hm-candidates.md 的 4 条 docs/plans 面 medium：r2-fix-wave.md:9-11、ocrfix-r5-plan.md:24、r2-fix-wave.md:4、ocrfix-r5-plan.md:13）：逐条独立裁决 CONFIRMED/DOWNGRADED/REFUTED，证据进报告；若 CONFIRMED 非文档可即改项，上报主控另立。
+- **补裁 #10–#13**（final-hm-candidates.md 的 4 条 docs/plans 面 medium：r2-fix-wave.md:9-11、ocrfix-r5-plan.md:24、r2-fix-wave.md:4、ocrfix-r5-plan.md:13）：**〔已裁决（H 流，r8fix-h-report）——#11 DUPLICATE-OF-PRIOR（=T-G #16）、#10/#13 DOWNGRADED（→low）、#12 CONFIRMED（上报主控另立：run 归档导出主 checkout 为清理前必办）〕**。
 - 注意 #16（ocrfix-r5-plan.md:24 HIGH）T-G 已裁 DOWNGRADED——#11 若同址则 DUPLICATE。
 
 ## 执行序与门禁
