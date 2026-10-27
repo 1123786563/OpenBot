@@ -54,7 +54,9 @@
     "role": {
       "tenant_admin": "管理员",
       "member": "成员",
-      "auditor": "审计员"
+      "auditor": "审计员",
+      "owner": "所有者",
+      "admin": "管理员"
     },
     "status": {
       "active": "在职",
@@ -67,7 +69,75 @@
       "offboard": "离职处理"
     },
     "refused": "本公司人员由公司管理员管理，你不是其中之一。",
-    "failed": "名册读取失败。"
+    "failed": "名册读取失败。",
+    "directory": {
+      "description": "公司目录名册与邀请——固定角色，动作由服务器授权并留审计。",
+      "column": {
+        "member": "成员",
+        "role": "角色",
+        "joined": "加入时间",
+        "actions": "操作"
+      },
+      "roleOf": "{{id}} 的角色",
+      "setRole": "设置角色",
+      "remove": "移除成员",
+      "removeReason": "移除原因",
+      "removeConfirm": "确认移除",
+      "cancel": "取消",
+      "inviteTitle": "邀请成员",
+      "email": "邮箱",
+      "inviteAs": "邀请为",
+      "invite": "邀请",
+      "invitationsTitle": "邀请",
+      "invitationsColumn": {
+        "email": "邮箱",
+        "role": "角色",
+        "status": "状态",
+        "expires": "到期时间",
+        "actions": "操作"
+      },
+      "invitationStatus": {
+        "pending": "待处理",
+        "accepted": "已接受",
+        "rejected": "已拒绝",
+        "canceled": "已撤销",
+        "expired": "已过期"
+      },
+      "cancelInvitation": "撤销邀请",
+      "noInvitations": "没有待处理的邀请。",
+      "refused": "你不能管理本公司人员。请联系公司所有者或管理员。",
+      "invalid": "请检查表单后重试。",
+      "paused": "公司变更暂时停用，请稍后再试。",
+      "failed": "无法连接 OpenBot，请重试。",
+      "lastOwner": "这是公司最后一位所有者。请先把所有权转移给另一位成员，再更改此角色。",
+      "seats": "公司席位已满。请先释放席位后再邀请。",
+      "invitation": "这个邮箱已有待处理邀请或已是成员。请先处理现有邀请。"
+    },
+    "grants": {
+      "title": "团队管理授权",
+      "description": "所选团队的成员增删授权。资源读取授权不属于这里。",
+      "column": {
+        "user": "用户",
+        "actions": "已授动作",
+        "status": "状态",
+        "generation": "代",
+        "operations": "操作"
+      },
+      "userId": "用户 ID",
+      "actionAdd": "添加成员",
+      "actionRemove": "移除成员",
+      "grant": "授予",
+      "revoke": "撤销",
+      "revokeReason": "撤销原因",
+      "revokeConfirm": "确认撤销",
+      "none": "此团队暂无管理授权。",
+      "statusActive": "生效中",
+      "statusRevoked": "已撤销",
+      "refused": "团队管理授权仅对公司所有者与管理员开放。",
+      "invalid": "请检查授权表单后重试。",
+      "paused": "授权变更暂时停用，请稍后再试。",
+      "failed": "无法连接 OpenBot，请重试。"
+    }
   },
   "credentials": {
     "title": "凭据",
