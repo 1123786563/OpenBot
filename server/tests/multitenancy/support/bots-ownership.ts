@@ -94,7 +94,7 @@ export interface BotsOwnershipFixture {
   readPreferenceRowsAsData(
     tenantId: string,
     principalId: string,
-  ): Promise<readonly Readonly<{ agentId: string; principalId: string }[]>>;
+  ): Promise<readonly Readonly<{ agentId: string; principalId: string }>[]>;
   /** Scaffold probe via the setup channel (superuser, no RLS): full table counts. */
   rawCounts(): Promise<{
     ownership: number;

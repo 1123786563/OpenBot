@@ -749,6 +749,7 @@
         "server/tests/multitenancy/billing-visibility.test.ts",
         "server/tests/multitenancy/bot-lifecycle.test.ts",
         "server/tests/multitenancy/bot-publish.test.ts",
+        "server/tests/multitenancy/bots-ownership.test.ts",
         "server/tests/multitenancy/cache-keys.test.ts",
         "server/tests/multitenancy/child-backfill-kb.test.ts",
         "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -758,14 +759,15 @@
         "server/tests/multitenancy/computer-allocation.test.ts",
         "server/tests/multitenancy/conversation-messages.test.ts",
         "server/tests/multitenancy/conversations-list.test.ts",
-        "server/tests/multitenancy/coverage-billing.test.ts",
-        "server/tests/multitenancy/coverage-bots-conversations.test.ts"
+        "server/tests/multitenancy/coverage-billing.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 2",
       "files": [
+        "server/tests/multitenancy/coverage-bots-conversations.test.ts",
         "server/tests/multitenancy/coverage-craft-openmuse.test.ts",
+        "server/tests/multitenancy/coverage-governance.test.ts",
         "server/tests/multitenancy/coverage-jobs-execution.test.ts",
         "server/tests/multitenancy/coverage-plugins-knowledge.test.ts",
         "server/tests/multitenancy/craft-schedules.test.ts",
@@ -774,6 +776,8 @@
         "server/tests/multitenancy/credentials-ownership.test.ts",
         "server/tests/multitenancy/deletion-semantics.test.ts",
         "server/tests/multitenancy/entry-context.test.ts",
+        "server/tests/multitenancy/execution-artifacts.test.ts",
+        "server/tests/multitenancy/execution-guarantees.test.ts",
         "server/tests/multitenancy/external-files-migration.test.ts",
         "server/tests/multitenancy/fixtures.test.ts",
         "server/tests/multitenancy/full-coverage.test.ts",
@@ -784,16 +788,16 @@
         "server/tests/multitenancy/host-access.test.ts",
         "server/tests/multitenancy/identity-binding.test.ts",
         "server/tests/multitenancy/identity-matrix-runner.test.ts",
-        "server/tests/multitenancy/inbound-attribution.test.ts",
-        "server/tests/multitenancy/integration-evidence.test.ts",
-        "server/tests/multitenancy/inventory.test.ts",
-        "server/tests/multitenancy/job-claim-cancel.test.ts",
-        "server/tests/multitenancy/job-ownership.test.ts"
+        "server/tests/multitenancy/inbound-attribution.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 3",
       "files": [
+        "server/tests/multitenancy/integration-evidence.test.ts",
+        "server/tests/multitenancy/inventory.test.ts",
+        "server/tests/multitenancy/job-claim-cancel.test.ts",
+        "server/tests/multitenancy/job-ownership.test.ts",
         "server/tests/multitenancy/learning-demonstrations.test.ts",
         "server/tests/multitenancy/legacy-anchor.test.ts",
         "server/tests/multitenancy/machine-personal-exceptions.test.ts",
@@ -803,6 +807,7 @@
         "server/tests/multitenancy/native-runtime.test.ts",
         "server/tests/multitenancy/not-found-semantics.test.ts",
         "server/tests/multitenancy/oauth-state.test.ts",
+        "server/tests/multitenancy/observability-authz.test.ts",
         "server/tests/multitenancy/openmuse-activity-notifications.test.ts",
         "server/tests/multitenancy/openmuse-files.test.ts",
         "server/tests/multitenancy/openmuse-personal.test.ts",
@@ -812,17 +817,17 @@
         "server/tests/multitenancy/payer-accounts.test.ts",
         "server/tests/multitenancy/people-lifecycle.test.ts",
         "server/tests/multitenancy/personal-memory.test.ts",
-        "server/tests/multitenancy/personal-share-rules.test.ts",
-        "server/tests/multitenancy/preferences.test.ts",
-        "server/tests/multitenancy/proactive-tx.test.ts",
-        "server/tests/multitenancy/public-bot-profiles.test.ts",
-        "server/tests/multitenancy/public-bot-usage.test.ts",
-        "server/tests/multitenancy/purge-restore.test.ts"
+        "server/tests/multitenancy/personal-share-rules.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 4",
       "files": [
+        "server/tests/multitenancy/preferences.test.ts",
+        "server/tests/multitenancy/proactive-tx.test.ts",
+        "server/tests/multitenancy/public-bot-profiles.test.ts",
+        "server/tests/multitenancy/public-bot-usage.test.ts",
+        "server/tests/multitenancy/purge-restore.test.ts",
         "server/tests/multitenancy/quarantine-list.test.ts",
         "server/tests/multitenancy/readiness-enforcement.test.ts",
         "server/tests/multitenancy/resource-policy.test.ts",
@@ -841,17 +846,17 @@
         "server/tests/multitenancy/shared-approvals.test.ts",
         "server/tests/multitenancy/signed-download.test.ts",
         "server/tests/multitenancy/skills-components.test.ts",
-        "server/tests/multitenancy/sso-scim-config.test.ts",
-        "server/tests/multitenancy/startup-checks.test.ts",
-        "server/tests/multitenancy/startup-defaults.test.ts",
-        "server/tests/multitenancy/streams.test.ts",
-        "server/tests/multitenancy/team-public-rules.test.ts",
-        "server/tests/multitenancy/telemetry-attribution.test.ts"
+        "server/tests/multitenancy/sso-scim-config.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 5",
       "files": [
+        "server/tests/multitenancy/startup-checks.test.ts",
+        "server/tests/multitenancy/startup-defaults.test.ts",
+        "server/tests/multitenancy/streams.test.ts",
+        "server/tests/multitenancy/team-public-rules.test.ts",
+        "server/tests/multitenancy/telemetry-attribution.test.ts",
         "server/tests/multitenancy/telemetry-usage.test.ts",
         "server/tests/multitenancy/vendor-billing.test.ts",
         "server/tests/multitenancy/voice-mobile-bff.test.ts",
@@ -1302,6 +1307,7 @@
     "server/tests/multitenancy/billing-visibility.test.ts",
     "server/tests/multitenancy/bot-lifecycle.test.ts",
     "server/tests/multitenancy/bot-publish.test.ts",
+    "server/tests/multitenancy/bots-ownership.test.ts",
     "server/tests/multitenancy/cache-keys.test.ts",
     "server/tests/multitenancy/child-backfill-kb.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -1314,6 +1320,7 @@
     "server/tests/multitenancy/coverage-billing.test.ts",
     "server/tests/multitenancy/coverage-bots-conversations.test.ts",
     "server/tests/multitenancy/coverage-craft-openmuse.test.ts",
+    "server/tests/multitenancy/coverage-governance.test.ts",
     "server/tests/multitenancy/coverage-jobs-execution.test.ts",
     "server/tests/multitenancy/coverage-plugins-knowledge.test.ts",
     "server/tests/multitenancy/craft-schedules.test.ts",
@@ -1322,6 +1329,8 @@
     "server/tests/multitenancy/credentials-ownership.test.ts",
     "server/tests/multitenancy/deletion-semantics.test.ts",
     "server/tests/multitenancy/entry-context.test.ts",
+    "server/tests/multitenancy/execution-artifacts.test.ts",
+    "server/tests/multitenancy/execution-guarantees.test.ts",
     "server/tests/multitenancy/external-files-migration.test.ts",
     "server/tests/multitenancy/fixtures.test.ts",
     "server/tests/multitenancy/full-coverage.test.ts",
@@ -1346,6 +1355,7 @@
     "server/tests/multitenancy/native-runtime.test.ts",
     "server/tests/multitenancy/not-found-semantics.test.ts",
     "server/tests/multitenancy/oauth-state.test.ts",
+    "server/tests/multitenancy/observability-authz.test.ts",
     "server/tests/multitenancy/openmuse-activity-notifications.test.ts",
     "server/tests/multitenancy/openmuse-files.test.ts",
     "server/tests/multitenancy/openmuse-personal.test.ts",
@@ -1598,23 +1608,18 @@
   ],
   "artifacts": [],
   "causes": {
-    "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-f-manifest-regen/agent-computer/tests/web-bot-auth-brows",
-    "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-f-manifest-regen/agent-computer/tests/web-bot-auth.test.ts; web-",
-    "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/google-oauth-proxy.",
-    "agent-langgraph/tests/governed-tracing.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/governed-tracing.",
-    "agent-langgraph/tests/history.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/history.test.ts: Cannot find package '@langchain/anthropic' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/history.test.ts; @lan",
+    "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-g-testinfra/agent-computer/tests/web-bot-auth-browser.te",
+    "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-g-testinfra/agent-computer/tests/web-bot-auth.test.ts; web-bot-a",
+    "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ocrfix-g-testinfra/agent-langgraph/tests/google-oauth-proxy.test.",
+    "agent-langgraph/tests/governed-tracing.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from ocrfix-g-testinfra/agent-langgraph/tests/governed-tracing.test.",
+    "agent-langgraph/tests/history.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/history.test.ts: Cannot find package '@langchain/anthropic' imported from ocrfix-g-testinfra/agent-langgraph/tests/history.test.ts; @langchai",
     "app/tests/auth-client.test.ts": "COLLECTION_ERROR: failed to collect app/tests/auth-client.test.ts: Invalid base URL: null. Please provide a valid base URL. ",
-    "desktop/src/App.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/App.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/App.test.tsx; @happy-dom/global-reg",
-    "desktop/src/CompanySelection.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/CompanySelection.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/CompanySelection.test.",
-    "desktop/src/LocalStateIsolation.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/LocalStateIsolation",
-    "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/OrgSwitchCleanup.test.",
-    "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/Problem.test.tsx; @happy-dom/gl",
-    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/ProviderPicker.test.tsx;",
-    "server/tests/multitenancy/bots-ownership.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/bots-ownership.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is on",
-    "server/tests/multitenancy/coverage-governance.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/coverage-governance.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
-    "server/tests/multitenancy/execution-artifacts.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-artifacts.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
-    "server/tests/multitenancy/execution-guarantees.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-guarantees.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier",
-    "server/tests/multitenancy/observability-authz.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/observability-authz.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier "
+    "desktop/src/App.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/App.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/App.test.tsx; @happy-dom/global-registra",
+    "desktop/src/CompanySelection.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/CompanySelection.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/CompanySelection.test.tsx; ",
+    "desktop/src/LocalStateIsolation.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/LocalStateIsolation.test",
+    "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/OrgSwitchCleanup.test.tsx; ",
+    "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/Problem.test.tsx; @happy-dom/global-",
+    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/ProviderPicker.test.tsx; @hap"
   },
   "directoryIslands": [
     "server/tests/multitenancy",
