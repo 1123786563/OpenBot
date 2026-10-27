@@ -15,7 +15,7 @@ owned：`server/scripts/opik-e2e-ingest.ts`、`server/scripts/opik-e2e-ingest-ga
 - **门禁**：`bun server/scripts/opik-e2e-ingest-gate-check.ts` 9/9 exit 0（原 6 + 新 3）；变异自证：临时把谓词 `completed>=2` 改 `>=1` 复跑应红（记录变异读数后还原）；`bun build --target bun server/scripts/opik-e2e-ingest.ts --outfile /dev/null` exit 0；tsc 基线差=0。
 - 注意与 R1-G-01（fixture refused 应=2，low，tracking）同文件——**不顺手改**（R1-G-01 已裁决 low 登记，避免混入本波范围；若 worker 判断同 hunk 顺手成本为零可一并改并在报告披露）。
 
-### FIX-J — 锚点 span 闭合（L-H；delta2b 落地后派发）
+### FIX-J — 锚点 span 闭合（L-H；**已被下方终定形「五项合并流」节取代**）
 
 owned：`server/src/copilot.ts`（+ 必要时 remote-dial-chain.test.ts）
 
@@ -25,7 +25,7 @@ owned：`server/src/copilot.ts`（+ 必要时 remote-dial-chain.test.ts）
 
 ## 执行序与门禁
 
-1. FIX-I 先行（owned 与一切在途零交集）；FIX-J 待 delta2b 落地后派发。
+1. FIX-I 先行（owned 与一切在途零交集）；FIX-J 待 delta2b 落地后派发。〔实际执行序=I→K→J，FIX-K 见下；T-O 候选 10 回填〕
 2. 每流独立审核 r1 → 串行集成 → 组合复验（对照 1289 基线对账）。
 3. 终轮微增量 OCR（R9 触面 @最终 HEAD）→ 新 H/M 同纪律 triage → FREV R8 → 合本地 main → 清理 → 终稿。
 
