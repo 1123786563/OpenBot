@@ -3,10 +3,9 @@ import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getLogger } from "../../../shared/logger";
-import type { AgentProfileStore } from "../agents/profile-store";
-import type { AgentActor } from "../agents/profile-types";
-import type { AppVariables } from "../auth/guards";
-import type { ChannelStore } from "../channels/routes";
+import type { AgentActor, AgentProfileStore } from "../agents/public";
+import type { AppVariables } from "../auth/public";
+import type { ChannelStore } from "../channels/public";
 import {
   OpenMuseConnectionRefusedError,
   OpenMuseOwnerDisabledError,

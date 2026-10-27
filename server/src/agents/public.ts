@@ -53,6 +53,18 @@ import type {
 } from "./profile-types";
 
 // ---------------------------------------------------------------------------
+// 跨模块类型面（MOD21 #641）：mobile-bff 冷启动/聚合以这三个具名类型注入
+// 依赖，恒等 re-export（类型面，零逻辑）；BotCatalog 能力面与 value-export
+// 钉（bot-catalog-public.test.ts）不动。
+// ---------------------------------------------------------------------------
+
+/** mobile-bff 冷启动聚合的档案存储类型（源头 ./profile-store，经此出口供跨模块消费）。 */
+export type { AgentProfileStore } from "./profile-store";
+
+/** 会话 actor 与 roster 投影源类型（源头 ./profile-types，经此出口供跨模块消费）。 */
+export type { AgentActor, AgentProfile } from "./profile-types";
+
+// ---------------------------------------------------------------------------
 // 输入/结果形状
 // ---------------------------------------------------------------------------
 

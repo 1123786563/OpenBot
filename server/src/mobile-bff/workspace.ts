@@ -1,6 +1,5 @@
-import type { AgentProfileStore } from "../agents/profile-store";
-import type { AgentActor } from "../agents/profile-types";
-import type { AgentChannel, ChannelStore } from "../channels/routes";
+import type { AgentActor, AgentProfileStore } from "../agents/public";
+import type { AgentChannel, ChannelStore } from "../channels/public";
 
 /**
  * The cold-start answer the mobile roster screen needs: who am I, which Bots

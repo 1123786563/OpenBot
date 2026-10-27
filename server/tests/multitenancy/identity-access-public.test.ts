@@ -715,7 +715,12 @@ describe("MOD04 D5: facades expose a read-only surface (acceptance 4)", () => {
     const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
     expect(specifiers.length).toBeGreaterThan(0);
     for (const spec of specifiers) {
-      expect(/^\.\.\/(auth|identity|people)(\/|$)/.test(spec)).toBe(true);
+      // MOD21（#641）：同目录相对导入（如 ./guards）落在 auth/ 自身——
+      // moduleRoot 即该目录，组内成立；跨目录仍须命中 M01 三组。
+      expect(
+        /^\.\.\/(auth|identity|people)(\/|$)/.test(spec) ||
+          /^\.\//.test(spec),
+      ).toBe(true);
     }
   });
 

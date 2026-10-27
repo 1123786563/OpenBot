@@ -83,7 +83,7 @@ import {
 import type {
   OpenMuseTaskStore,
   StoredOpenMuseTask,
-} from "../../openmuse-tasks/store";
+} from "../../openmuse-tasks/public";
 import type { Access } from "../authz/public";
 import type { PlatformScope } from "../contracts";
 import { assertTrustedMachineIdentity } from "../runs/scan-executor";

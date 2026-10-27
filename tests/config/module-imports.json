@@ -1600,14 +1600,6 @@
       "reason": "模块级环边 M03 -> M01（M03 与 M01 互相可达）"
     },
     {
-      "source": "server/src/agents/openmuse-template-store.ts",
-      "target": "server/src/mobile-bff/openmuse-bot.ts",
-      "category": "cycle",
-      "ticket": "MOD21 (S7 客户端 OpenMuse BFF)",
-      "exit_condition": "OPENMUSE 建立 public/integration 出口并让 M03 改走公开出口，使 M03↔OPENMUSE 单向化后移除此例外",
-      "reason": "模块级环边 M03 -> OPENMUSE（M03 与 OPENMUSE 互相可达）"
-    },
-    {
       "source": "server/src/agents/profile-store.ts",
       "target": "server/src/credentials.ts",
       "category": "cycle",
@@ -4104,14 +4096,6 @@
       "reason": "模块级环边 M02 -> M05（M02 与 M05 互相可达）"
     },
     {
-      "source": "server/src/enterprise/tenancy/openmuse-task-tenancy.ts",
-      "target": "server/src/openmuse-tasks/store.ts",
-      "category": "cycle",
-      "ticket": "MOD21 (S7 客户端 OpenMuse BFF)",
-      "exit_condition": "OPENMUSE 建立 public/integration 出口并让 M02 改走公开出口，使 M02↔OPENMUSE 单向化后移除此例外",
-      "reason": "模块级环边 M02 -> OPENMUSE（M02 与 OPENMUSE 互相可达）"
-    },
-    {
       "source": "server/src/enterprise/tenancy/runs-protocol.ts",
       "target": "server/src/enterprise/runs/store.ts",
       "category": "cycle",
@@ -4664,14 +4648,6 @@
       "reason": "模块级环边 M05 -> M06（M05 与 M06 互相可达）"
     },
     {
-      "source": "server/src/mastra/openmuse-task-entry.ts",
-      "target": "server/src/openmuse-tasks/store.ts",
-      "category": "cycle",
-      "ticket": "MOD21 (S7 客户端 OpenMuse BFF)",
-      "exit_condition": "OPENMUSE 建立 public/integration 出口并让 M05 改走公开出口，使 M05↔OPENMUSE 单向化后移除此例外",
-      "reason": "模块级环边 M05 -> OPENMUSE（M05 与 OPENMUSE 互相可达）"
-    },
-    {
       "source": "server/src/mastra/tenant-storage.ts",
       "target": "server/src/enterprise/contracts.ts",
       "category": "cycle",
@@ -4712,324 +4688,220 @@
       "reason": "模块级环边 M05 -> M08（M05 与 M08 互相可达）"
     },
     {
-      "source": "server/src/mobile-bff/activity.ts",
-      "target": "server/src/agents/profile-types.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/activity.ts",
-      "target": "server/src/approvals/service.ts",
-      "category": "cycle",
-      "ticket": "MOD12 (S5 工具审批与恢复)",
-      "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M08 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/activity.ts",
-      "target": "server/src/routines/store.ts",
-      "category": "cycle",
-      "ticket": "MOD14 (S7 定时职责与 Worker)",
-      "exit_condition": "AUTOMATION 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔AUTOMATION 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> AUTOMATION（OPENMUSE 与 AUTOMATION 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/openmuse-bot.ts",
-      "target": "server/src/agents/profile-store.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/openmuse-bot.ts",
-      "target": "server/src/agents/profile-types.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/openmuse-bot.ts",
-      "target": "server/src/auth/guards.ts",
-      "category": "cycle",
-      "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/routes.ts",
-      "target": "server/src/agents/profile-store.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/routes.ts",
-      "target": "server/src/agents/profile-types.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/routes.ts",
-      "target": "server/src/auth/guards.ts",
-      "category": "cycle",
-      "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/routes.ts",
-      "target": "server/src/channels/routes.ts",
-      "category": "cycle",
-      "ticket": "MOD06 (S2 身份与 Access)",
-      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/workspace.ts",
-      "target": "server/src/agents/profile-store.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/workspace.ts",
-      "target": "server/src/agents/profile-types.ts",
-      "category": "cycle",
-      "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
-    },
-    {
-      "source": "server/src/mobile-bff/workspace.ts",
-      "target": "server/src/channels/routes.ts",
-      "category": "cycle",
-      "ticket": "MOD06 (S2 身份与 Access)",
-      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
-    },
-    {
       "source": "server/src/openmuse-activity/routes.ts",
       "target": "server/src/approvals/types.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD12 (S5 工具审批与恢复)",
-      "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M08 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）"
+      "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M08（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-activity/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-calendar/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-connectors/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-deletion/fence.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-deletion/manifest.ts",
       "target": "server/src/agents/profile-store.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
+      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M03（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-deletion/manifest.ts",
       "target": "server/src/channels/routes.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
-      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
+      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M04（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-deletion/purge-relational.ts",
       "target": "server/src/agents/profile-store.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
+      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M03（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-deletion/purge-relational.ts",
       "target": "server/src/channels/routes.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
-      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
+      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M04（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-deletion/restore.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-deletion/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-documents/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-files/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-files/routes.ts",
       "target": "server/src/channels/attachment-mime.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
-      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
+      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M04（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-mail/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-notifications/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-ops/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-personal/goals.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-personal/ideas.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-personal/memories.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-personal/tools.ts",
       "target": "server/src/plugins/tools.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD12 (S5 工具审批与恢复)",
-      "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M08 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M08（OPENMUSE 与 M08 互相可达）"
+      "exit_condition": "M08 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M08（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-reviewed-actions/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-tasks/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
-      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M01（OPENMUSE 与 M01 互相可达）"
+      "exit_condition": "M01 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M01（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-tasks/runner.ts",
       "target": "server/src/agents/profile-types.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD05 (S2 身份与 Access)",
-      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M03（OPENMUSE 与 M03 互相可达）"
+      "exit_condition": "M03 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M03（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-tasks/runner.ts",
       "target": "server/src/channels/routes.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
-      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> M04（OPENMUSE 与 M04 互相可达）"
+      "exit_condition": "M04 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> M04（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-tasks/runner.ts",
       "target": "server/src/work/queue.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
-      "exit_condition": "AUTOMATION 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔AUTOMATION 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> AUTOMATION（OPENMUSE 与 AUTOMATION 互相可达）"
+      "exit_condition": "AUTOMATION 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> AUTOMATION（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/openmuse-tasks/store.ts",
       "target": "server/src/work/queue.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD14 (S7 定时职责与 Worker)",
-      "exit_condition": "AUTOMATION 建立 public/integration 出口并让 OPENMUSE 改走公开出口，使 OPENMUSE↔AUTOMATION 单向化后移除此例外",
-      "reason": "模块级环边 OPENMUSE -> AUTOMATION（OPENMUSE 与 AUTOMATION 互相可达）"
+      "exit_condition": "AUTOMATION 建立 public/integration 出口并让 OPENMUSE 改走公开出口后移除此例外",
+      "reason": "跨模块深层引用 OPENMUSE -> AUTOMATION（环已由 MOD21 改道解开：mobile-bff 四文件改经各所有者 public 门面取类型、openmuse-template-store/tenancy/mastra 经 OPENMUSE public 出口改道，环边降级为深层引用）"
     },
     {
       "source": "server/src/passwords/resume.ts",
