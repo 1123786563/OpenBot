@@ -16,7 +16,7 @@
 // CI can gate on it.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { LIVE_SUITES, SUITE_DIRS, manifestGaps } from "./lib/e2e-manifest.mjs";
+import { LIVE_SUITES, manifestGaps, SUITE_DIRS } from "./lib/e2e-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -148,7 +148,6 @@ function baForeignAudit() {
   return { gaps, tasks: tasks.length, targets, types: ids };
 }
 
-
 /*
  * The manifest contract gate runs before anything else, and `--manifest=<path>` checks one manifest
  * in isolation (no corpus walk). The isolation mode is how the contract test exercises the refusal:
@@ -234,6 +233,257 @@ const broken = new Set(
     ).entries ?? []
   ).map((entry) => entry.file),
 );
+
+/*
+ * The engine-tier suites (T04.12 / plan F4): the browser corpus is not one collector. The default
+ * config collects tests/e2e/*.e2e.ts against the legacy stack, and every other engine family (BA
+ * Web now; BA Mobile later) gets its own config, its own target, and a preflight that must run
+ * before any engine is created. `--engine-list` audits the committed manifest against the corpus
+ * and the real configs; `--engine-manifest=<path>` checks one manifest in isolation (no corpus
+ * walk), which is how the isolation counterexample exercises the refusal without mutating the
+ * committed config — the same shape as the `--manifest=` mode above. Both modes exit before the
+ * tier walk: an engine-manifest failure must not be readable as this tree's pre-existing tier gaps.
+ */
+const ENGINE_MANIFEST = "tests/config/e2e-engine-suites.json";
+const ENGINE_SUITE_KEYS = [
+  "config",
+  "files",
+  "name",
+  "preflight",
+  "script",
+  "target",
+  "tests",
+];
+
+/*
+ * The two glob shapes these configs use: `dir/*.ext` (one directory level) and a trailing `/**`.
+ * e2e's own globs support `*`, `?`, and a whole `**` segment — no middle `**`, so the matcher
+ * below is exact for every pattern a suite may register, and loudly fails on anything else.
+ */
+function globMatches(pattern, path) {
+  if (pattern.endsWith("/**"))
+    return path.startsWith(`${pattern.slice(0, -3)}/`);
+  if (pattern.split("/").includes("**"))
+    throw new Error(
+      `engine-suite glob uses ** in a position this audit cannot check: ${pattern}`,
+    );
+  const expression = pattern
+    .split("/")
+    .map((segment) =>
+      segment
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, "[^/]*")
+        .replace(/\?/g, "[^/]"),
+    )
+    .join("/");
+  return new RegExp(`^${expression}$`).test(path);
+}
+
+function collects(globs, file) {
+  const positives = globs.filter((glob) => !glob.startsWith("!"));
+  const negatives = globs
+    .filter((glob) => glob.startsWith("!"))
+    .map((glob) => glob.slice(1));
+  return (
+    positives.some((glob) => globMatches(glob, file)) &&
+    !negatives.some((glob) => globMatches(glob, file))
+  );
+}
+
+function engineSuitesGaps(manifest, root) {
+  const gaps = [];
+  if (manifest.version !== 1)
+    gaps.push(
+      `${ENGINE_MANIFEST}: version must be 1 (found ${JSON.stringify(manifest.version)})`,
+    );
+  const suites = Array.isArray(manifest.suites) ? manifest.suites : null;
+  if (!suites?.length) {
+    gaps.push(
+      `${ENGINE_MANIFEST}: no suites — the engine tier is claimed by no collector`,
+    );
+    return { gaps, suites: [] };
+  }
+  const packageJson = JSON.parse(
+    readFileSync(join(root, "package.json"), "utf8"),
+  );
+  const seenNames = new Set();
+  const seenConfigs = new Set();
+  const claims = new Map();
+  for (const suite of suites) {
+    const name = String(suite?.name ?? "");
+    if (!name) gaps.push("a suite has no name");
+    if (seenNames.has(name)) gaps.push(`suite name "${name}" is used twice`);
+    seenNames.add(name);
+    const keys = Object.keys(suite ?? {}).sort();
+    if (keys.join(",") !== ENGINE_SUITE_KEYS.join(","))
+      gaps.push(
+        `suite "${name}" carries ${JSON.stringify(keys)}: an entry is exactly ${ENGINE_SUITE_KEYS.join(", ")}`,
+      );
+    const config = String(suite?.config ?? "");
+    if (seenConfigs.has(config))
+      gaps.push(
+        `config ${config} is shared by two suites — one config is one collector`,
+      );
+    seenConfigs.add(config);
+    if (!existsSync(join(root, config)))
+      gaps.push(`suite "${name}": config ${config} does not exist`);
+    const script = packageJson.scripts?.[suite?.script];
+    // `e2e run` with no --config resolves the nearest e2e.config.ts — that IS the default suite's
+    // collector, exactly what engineEntry() below already credits.
+    const scriptSelectsThisConfig =
+      typeof script === "string" &&
+      /\be2e run\b/.test(script) &&
+      (script.includes(`--config ${config}`) ||
+        (!script.includes("--config") && config === "e2e.config.ts"));
+    if (!scriptSelectsThisConfig)
+      gaps.push(
+        `suite "${name}": package.json script "${suite?.script}" must run this suite's collector (found ${JSON.stringify(script)})`,
+      );
+    const globs = suite?.tests;
+    if (
+      !Array.isArray(globs) ||
+      !globs.length ||
+      !globs.every(
+        (glob) => typeof glob === "string" && glob && !glob.startsWith("/"),
+      ) ||
+      !globs.some((glob) => !glob.startsWith("!"))
+    )
+      gaps.push(
+        `suite "${name}": tests must be a non-empty glob list with at least one positive glob`,
+      );
+    if (typeof suite?.target !== "string" || !suite.target.trim())
+      gaps.push(`suite "${name}": target must say what the collector drives`);
+    if (suite?.preflight !== null) {
+      if (
+        typeof suite.preflight !== "string" ||
+        !suite.preflight.startsWith("tests/support/") ||
+        !existsSync(join(root, suite.preflight))
+      ) {
+        gaps.push(
+          `suite "${name}": preflight must be a tests/support/ file that exists, or null for the pre-contract legacy collector`,
+        );
+      } else {
+        const configSource = readFileSync(join(root, config), "utf8");
+        if (!configSource.includes(suite.preflight))
+          gaps.push(
+            `suite "${name}": ${config} does not load its preflight (${suite.preflight}) — the preflight must run at config load, before any engine`,
+          );
+        for (const file of Array.isArray(suite.files) ? suite.files : []) {
+          // The guard is imported by module path (../../../support/<name>), so the check matches
+          // the preflight's basename without extension, not the manifest's repo-relative string.
+          const guardModule = suite.preflight
+            .replace(/\.ts$/, "")
+            .split("/")
+            .pop();
+          const source = readFileSync(join(root, file), "utf8");
+          if (!source.includes(guardModule))
+            gaps.push(
+              `${file} does not import the ${name} suite guard (${suite.preflight}): collected by any other config, it would run silently`,
+            );
+        }
+      }
+    }
+    for (const file of Array.isArray(suite?.files) ? suite.files : []) {
+      if (
+        typeof file !== "string" ||
+        file.startsWith("/") ||
+        file.split("/").includes("..")
+      ) {
+        gaps.push(`suite "${name}": "${file}" is not a safe relative path`);
+        continue;
+      }
+      if (!existsSync(join(root, file))) {
+        gaps.push(`suite "${name}": ${file} does not exist on disk`);
+        continue;
+      }
+      if (claims.has(file))
+        gaps.push(
+          `${file} is claimed by both "${claims.get(file)}" and "${name}"`,
+        );
+      else claims.set(file, name);
+      try {
+        if (Array.isArray(globs) && !collects(globs, file))
+          gaps.push(
+            `suite "${name}": its collector does not collect ${file} — files and collector disagree`,
+          );
+      } catch (error) {
+        gaps.push(`suite "${name}": ${error.message}`);
+      }
+    }
+  }
+  for (const [file, owner] of claims) {
+    for (const other of suites) {
+      if (other?.name === owner) continue;
+      try {
+        if (Array.isArray(other?.tests) && collects(other.tests, file))
+          gaps.push(
+            `${file} is also collected by "${other.name}" — the engine collectors must be mutually exclusive`,
+          );
+      } catch (error) {
+        gaps.push(`suite "${other?.name}": ${error.message}`);
+      }
+    }
+  }
+  return { gaps, suites, claims };
+}
+
+const engineManifestArg = process.argv.find((argument) =>
+  argument.startsWith("--engine-manifest="),
+);
+if (engineManifestArg || process.argv.includes("--engine-list")) {
+  const manifestFile = engineManifestArg
+    ? resolve(root, engineManifestArg.slice("--engine-manifest=".length))
+    : join(root, ENGINE_MANIFEST);
+  let engineManifest;
+  try {
+    engineManifest = JSON.parse(readFileSync(manifestFile, "utf8"));
+  } catch (error) {
+    console.log(
+      `${manifestFile.replace(`${root}/`, "")} does not parse: ${error.message}`,
+    );
+    process.exit(1);
+  }
+  const { gaps, suites, claims } = engineSuitesGaps(engineManifest, root);
+  if (process.argv.includes("--engine-list")) {
+    // The corpus half of the accounting, using the same classification the tier walk below uses:
+    // a file is engine tier when its extension says so or its source imports an engine package,
+    // and the named exclusions (artifacts, broken, live) stay out of every bucket.
+    const engineTier = [];
+    for (const file of files) {
+      const rel = file.replace(`${root}/`, "");
+      if (artifacts.has(rel) || broken.has(rel) || live.has(rel)) continue;
+      const source = readFileSync(file, "utf8");
+      if (/\.e2e\.tsx?$/.test(rel) || /from "@e2e-dev\//.test(source))
+        engineTier.push(rel);
+    }
+    for (const rel of engineTier)
+      if (!claims.has(rel))
+        gaps.push(
+          `${rel} is an engine-tier file no suite claims — register it in ${ENGINE_MANIFEST} with its own task`,
+        );
+    for (const file of claims.keys())
+      if (!engineTier.includes(file))
+        gaps.push(
+          `${file} is claimed by an engine suite but is not an engine-tier file`,
+        );
+  }
+  console.log(
+    `ENGINE SUITES (${suites.length}) — ${suites
+      .map((suite) => `${suite.name}: ${suite.files?.length ?? 0} file(s)`)
+      .join(" · ")}`,
+  );
+  if (gaps.length) {
+    console.log(
+      `\nENGINE-SUITE GAPS (${gaps.length}) — the browser collectors and their manifest disagree:`,
+    );
+    for (const gap of gaps.slice(0, 40)) console.log(`  ${gap}`);
+    process.exit(1);
+  }
+  console.log(
+    "no gaps: every engine file is claimed by exactly one suite, each collector matches its manifest group, and the preflight/guard wiring is in place.",
+  );
+  process.exit(0);
+}
 
 const buckets = { native: [], driven: [], engine: [], excluded: [], gap: [] };
 for (const file of files) {
