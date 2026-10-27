@@ -415,8 +415,15 @@ function validateConfig(config: CheckConfig): string[] {
         }
       }
       if (e.source === e.target) errors.push(`exception 自引用: ${e.source}`);
-      if (e.category !== undefined && !LEGAL_EXCEPTION_CATEGORIES.includes(e.category as (typeof LEGAL_EXCEPTION_CATEGORIES)[number])) {
-        errors.push(`exception category 非法: ${e.category}（${e.source} -> ${e.target}）`);
+      if (
+        e.category !== undefined &&
+        !LEGAL_EXCEPTION_CATEGORIES.includes(
+          e.category as (typeof LEGAL_EXCEPTION_CATEGORIES)[number],
+        )
+      ) {
+        errors.push(
+          `exception category 非法: ${e.category}（${e.source} -> ${e.target}）`,
+        );
       }
     }
   }
