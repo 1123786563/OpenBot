@@ -4,7 +4,14 @@
 // Only a Bun-runtime dependency belongs in the driven manifest. Anything else — a matcher the compat
 // layer has not grown yet, an alias the runner cannot resolve, a file that registers nothing — is a
 // gap in this repository's harness and must not be hidden by routing it onto another runtime.
-import { readFileSync } from "node:fs";
+// A file that collects nowhere on this machine is also not allowed to vanish: it cannot live in the
+// manifest's files[] (that key is the driven contract — the unit config excludes exactly it from
+// native collection), so it is registered with its reason in tests/config/e2e-known-broken.json,
+// the exclusion surface the unit config honors and the coverage audit counts as named exclusions.
+// That registry is only for repo-level breakage, though: a suite that fails because this checkout
+// has no installed dependency is an environment gap, must not be frozen out of native collection,
+// and is reported separately instead (see ENVIRONMENT_GAP).
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 // The writer is the shared one: writeManifest() applies BOTH island kinds
 // (filename-prefix ISLANDS and DIRECTORY_ISLANDS) and persists the full
@@ -13,10 +20,11 @@ import { resolve } from "node:path";
 // islands into 24-file slices — the exact false-red configuration the
 // directoryIslands contract exists to prevent (the driver keys
 // MT_TEST_DATABASE_URL routing off it).
-import { writeManifest } from "./lib/e2e-manifest.mjs";
+import { sanitizeCauseText, writeManifest } from "./lib/e2e-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const auditPath = process.argv[2] ?? "archive/verification/e2e-file-audit.json";
+const BROKEN_PATH = "tests/config/e2e-known-broken.json";
 
 // The mobile QA deliverable is written against an Appium driver and a device bundle: it is not
 // executable in this repository and never ran under `bun test` either. It is kept out of both the
@@ -64,6 +72,69 @@ const todo = audit.filter(
     !artifacts.includes(entry),
 );
 
+/*
+ * 环境缺口与仓库级不可收集必须分开。缺包/模块解析失败/本机配置缺失说明这台机器没装好
+ * （这些包都写在各 workspace 的 package.json 里），换一个 `bun install` 过的 checkout
+ * 就能收集；真正属于仓库的是语法/类型/夹具自身的错误。环境缺口绝不能进 known-broken：
+ * 那个登记面是 e2e.unit.config.ts 的 native 排除表、也是 coverage-audit 的 named
+ * exclusion，登记即「处处不跑且审计不红」——13 个真套件就这样被一台没装依赖的机器
+ * 永久冻结过。这里单列 environment 桶并逐条告警，让它们留在 native 收集面里红着。
+ */
+const ENVIRONMENT_GAP = [
+  /Cannot find (?:package|module) ['"]/,
+  /Failed to resolve (?:import|entry|module)/,
+  // app/tests/auth-client 读部署 base URL：缺的是本机配置，不是这个仓库的夹具。
+  /Invalid base URL: null/,
+];
+const environment = todo.filter((entry) =>
+  ENVIRONMENT_GAP.some((pattern) => pattern.test(entry.error ?? "")),
+);
+const repoBroken = todo.filter((entry) => !environment.includes(entry));
+
+/*
+ * The named-exclusion surface for suites that collect nowhere on this machine.
+ * This regenerator owns the registry's reconciliation: a hand-written entry for
+ * a file that still fails keeps its reason (curation wins over the machine's),
+ * a file that now collects or is drivable loses its entry (the registry's own
+ * rule — the entry disappears when the suite is repointed), and every reason
+ * the machine writes is sanitized of host paths first. Written only when
+ * something changed, so a regeneration never churns an unchanged registry.
+ */
+function registerKnownBroken(todo) {
+  const existing = existsSync(BROKEN_PATH)
+    ? JSON.parse(readFileSync(BROKEN_PATH, "utf8"))
+    : {};
+  const byFile = new Map(
+    (existing.entries ?? []).map((entry) => [entry.file, entry]),
+  );
+  const failing = new Set(todo.map((entry) => entry.file));
+  const entries = todo.map((entry) => {
+    const hand = byFile.get(entry.file);
+    if (hand) return hand;
+    return {
+      file: entry.file,
+      reason: sanitizeCauseText(
+        entry.error ?? "does not collect in this checkout",
+      ),
+      evidence: `scripts/e2e-file-audit.mjs collection audit, status=${entry.status}`,
+      added: new Date().toISOString().slice(0, 10),
+    };
+  });
+  const dropped = [...byFile.keys()].filter((file) => !failing.has(file));
+  const next = { ...existing, entries };
+  if (JSON.stringify(next) !== JSON.stringify(existing)) {
+    writeFileSync(BROKEN_PATH, `${JSON.stringify(next, null, 1)}\n`);
+  }
+  console.log(
+    `${entries.length} suite(s) registered uncollectable in ${BROKEN_PATH}` +
+      (dropped.length
+        ? ` (${dropped.length} recovered since the last registry, entry dropped)`
+        : ""),
+  );
+  return entries;
+}
+registerKnownBroken(repoBroken);
+
 const groupCount = writeManifest(
   {
     files: driven.map((d) => d.file),
@@ -83,7 +154,7 @@ console.log(
 console.log(
   `${artifacts.length} deliverable artifacts, not executable here: ${artifacts.map((a) => a.file).join(", ")}`,
 );
-console.log(`${todo.length} still ours to fix:`);
+console.log(`${repoBroken.length} still ours to fix:`);
 const causes = new Map();
 for (const entry of todo) {
   const key = (entry.error ?? "")
@@ -96,4 +167,13 @@ for (const [cause, count] of [...causes]
   .sort((a, b) => b[1] - a[1])
   .slice(0, 20)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
+}
+
+if (environment.length) {
+  console.warn(
+    `\nENVIRONMENT GAPS (${environment.length}) — NOT registered as known-broken and NOT excluded from native collection.\n` +
+      "Install the dependencies / set the config, or these stay red in every run:",
+  );
+  for (const entry of environment)
+    console.warn(`  ${entry.file}: ${(entry.error ?? "").slice(0, 140)}`);
 }
