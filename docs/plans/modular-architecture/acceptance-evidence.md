@@ -28,7 +28,7 @@
 
 ## 未迁移 / 不适用 / 真实环境阻塞（票面验收②逐项区分）
 
-- **未迁移（出口未覆盖=收窄不适用）**：148 条可改道集中 42 条符号未被公开出口覆盖（value 33+mixed 5+type-only 4），涉及 `auth/guards(requireAdmin/createRoleRepository)`、`approvals/types(ApprovalGate/ApprovalStore/currentApprovalContext 等)`、`plugins/tools(REFUSAL_MARKER——出口文件具名注释拒绝导出)`、`routines/store(Routine*)`、`channels/routes 1 条`、`agents/profile-store(AgentNotFoundError)`——扩门面=行为合同变化，超本票机械范围（障碍节已登记，等编排者裁决）。VOICE 域：server 侧 8 条 voice 源在改道集中 4 条已收窄、4 条落上述 uncovered；app 侧 7 条存活例外（→stream-scope/auth/channels 出口未覆盖）不收。
+- **未迁移（出口未覆盖=收窄不适用）**：148 条可改道集中 42 条符号未被公开出口覆盖（value 33+mixed 5+type-only 4），涉及 `auth/guards(requireAdmin/createRoleRepository)`、`approvals/types(ApprovalGate/ApprovalStore/currentApprovalContext 等)`、`plugins/tools(REFUSAL_MARKER——出口文件具名注释拒绝导出)`、`routines/store(Routine*)`、`channels/routes 1 条`、`agents/profile-store(AgentNotFoundError)`——扩门面=行为合同变化，超本票机械范围（障碍节已登记，等编排者裁决）。VOICE 域（本票实测口径，与计划 §0.2 的 9+7 略异如实更正）：在改道集中的 voice 源 8 条全部经 B1 收窄、例外簿存活 0；存活 VOICE 相关例外 9 条=app 侧 7 条（archive/outbox/use-voice-call/webrtc/websocket → stream-scope/auth/channels 出口未覆盖）+ `server/src/voice/summary.ts` 2 条（→plan-model/titler，不在改道集=出口未覆盖）——均不收。
 - **不适用**：445 条 partial（所需符号未上公开出口，扩门面不收）+ 36 条目标模块无公开出口（计划 §0.3，维持登记不处置）；旧出口删除候选=0（三门面内件活消费者、plugin-packages ASSEMBLY 保留臂、readPinnedSkills 测试钉）。
 - **真实环境阻塞**：driven/真实 PG 族缺 env 时两侧同形自跳过（MT066 类，G5 对照法）；Bifrost 三门（gateway 装配面）零生产装配=产品设计缺口 G-1，非代码 GAP；`server/src/desktop-telemetry.test.ts` 等桌面联调需 live key，挂 §5 收口后相位。
 - **证据在集成树外**：MOD19「死出口四处」登记项的本 Run 证据仅存主 checkout `.archive/runs/2026-10-23-issue620-orchestration/`（checkpoints/、reviews/），集成树不可验证——事实披露，不伪装已核。
