@@ -84,5 +84,45 @@
   "messageScroller": {
     "scrollToEnd": "滚动到末尾",
     "scrollToStart": "滚动到开头"
+  },
+  "acceptInvitation": {
+    "loading": "正在加载你的邀请…",
+    "linkMissing": "邀请链接不完整。请从邮件里重新打开。",
+    "unavailable": "此邀请不可用。请联系公司重新发送。",
+    "signInTitle": "你被邀请加入一家公司。",
+    "signInHint": "使用受邀邮箱登录后即可查看邀请。",
+    "invitedTo": "{{company}} 邀请你加入。",
+    "company": "公司",
+    "role": "角色",
+    "expires": "有效期至",
+    "roleOf": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "member": "成员",
+      "auditor": "审计员"
+    },
+    "accept": "接受邀请",
+    "decline": "拒绝",
+    "switchAccount": "切换账号",
+    "goToApp": "进入 OpenBot",
+    "joined": "你已加入 {{company}}。",
+    "joinedHint": "下次登录即可看到你的公司与团队。",
+    "declinedNow": "你已拒绝此邀请。",
+    "declined": "此邀请已被拒绝。",
+    "cancelled": "此邀请已被撤销。",
+    "accepted": "此邀请已被接受。",
+    "expired": "此邀请已过期。",
+    "settled": "此邀请已被处理。",
+    "unverified": "请先验证邮箱。打开发送到 {{email}} 的验证邮件后，再回到这里。",
+    "wrongAccount": "你当前登录的是 {{email}}。此邀请发给另一个邮箱。",
+    "wrongAccountHint": "切换账号后即可接受。",
+    "actionUnverified": "请先验证邮箱，再接受邀请。",
+    "actionMismatch": "此邀请发给另一个邮箱地址。切换账号后即可处理。",
+    "seats": "公司席位已满。请联系管理员释放席位。",
+    "closed": "公司暂不接受新成员。",
+    "paused": "暂时无法访问公司，请稍后再试。",
+    "refused": "OpenBot 无法完成该操作。请重试，或联系公司处理。",
+    "invalid": "操作未生效。请刷新页面后重试。",
+    "failed": "无法连接 OpenBot，请重试。"
   }
 }

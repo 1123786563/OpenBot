@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as SignRouteImport } from './routes/sign'
 import { Route as AuthedAppRouteImport } from './routes/_authed/_app'
 import { Route as AuthedAdminRouteRouteImport } from './routes/_authed/admin/route'
@@ -107,6 +108,11 @@ import { Route as AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutio
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
+  id: '/accept-invitation',
+  path: '/accept-invitation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignRoute = SignRouteImport.update({
@@ -620,6 +626,7 @@ const AuthedAppBotsAgentIdEvaluationsExperimentsExperimentIdExecutionIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
+  '/accept-invitation': typeof AcceptInvitationRoute
   '/sign': typeof SignRoute
   '/admin': typeof AuthedAdminRouteRouteWithChildren
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
@@ -715,6 +722,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedAppIndexRoute
+  '/accept-invitation': typeof AcceptInvitationRoute
   '/sign': typeof SignRoute
   '/onboarding': typeof AuthedOnboardingRoute
   '/share/$token': typeof ShareTokenRoute
@@ -808,6 +816,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
+  '/accept-invitation': typeof AcceptInvitationRoute
   '/sign': typeof SignRoute
   '/_authed/admin': typeof AuthedAdminRouteRouteWithChildren
   '/_authed/settings': typeof AuthedSettingsRouteRouteWithChildren
@@ -907,6 +916,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/accept-invitation'
     | '/sign'
     | '/admin'
     | '/settings'
@@ -1002,6 +1012,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/accept-invitation'
     | '/sign'
     | '/onboarding'
     | '/share/$token'
@@ -1094,6 +1105,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authed'
+    | '/accept-invitation'
     | '/sign'
     | '/_authed/admin'
     | '/_authed/settings'
@@ -1192,6 +1204,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
+  AcceptInvitationRoute: typeof AcceptInvitationRoute
   SignRoute: typeof SignRoute
   ShareTokenRoute: typeof ShareTokenRoute
 }
@@ -1203,6 +1216,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accept-invitation': {
+      id: '/accept-invitation'
+      path: '/accept-invitation'
+      fullPath: '/accept-invitation'
+      preLoaderRoute: typeof AcceptInvitationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign': {
@@ -2135,6 +2155,7 @@ const AuthedRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
+  AcceptInvitationRoute: AcceptInvitationRoute,
   SignRoute: SignRoute,
   ShareTokenRoute: ShareTokenRoute,
 }

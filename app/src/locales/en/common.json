@@ -84,5 +84,45 @@
   "messageScroller": {
     "scrollToEnd": "Scroll to end",
     "scrollToStart": "Scroll to start"
+  },
+  "acceptInvitation": {
+    "loading": "Loading your invitation…",
+    "linkMissing": "This invitation link is incomplete. Open it from your email.",
+    "unavailable": "This invitation isn't available. Ask the company to send it again.",
+    "signInTitle": "You've been invited to join a company.",
+    "signInHint": "Sign in with the invited email address to see it.",
+    "invitedTo": "{{company}} has invited you to join.",
+    "company": "Company",
+    "role": "Role",
+    "expires": "Expires",
+    "roleOf": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member",
+      "auditor": "Auditor"
+    },
+    "accept": "Accept invitation",
+    "decline": "Decline",
+    "switchAccount": "Switch account",
+    "goToApp": "Go to OpenBot",
+    "joined": "You've joined {{company}}.",
+    "joinedHint": "Your company and teams are there the next time you sign in.",
+    "declinedNow": "You declined the invitation.",
+    "declined": "This invitation was already declined.",
+    "cancelled": "This invitation was cancelled.",
+    "accepted": "This invitation was already accepted.",
+    "expired": "This invitation has expired.",
+    "settled": "This invitation was already answered.",
+    "unverified": "Verify your email first. Open the email sent to {{email}}, then come back here.",
+    "wrongAccount": "You're signed in as {{email}}. This invitation is for another email address.",
+    "wrongAccountHint": "Switch accounts to accept it.",
+    "actionUnverified": "Verify your email first, then accept the invitation.",
+    "actionMismatch": "This invitation is for another email address. Switch accounts to answer it.",
+    "seats": "The company has no seats left. Ask an admin to free one.",
+    "closed": "The company isn't accepting members right now.",
+    "paused": "The company can't be reached right now. Try again later.",
+    "refused": "OpenBot couldn't do that. Try again, or ask the company for help.",
+    "invalid": "That didn't work. Reload the page and try again.",
+    "failed": "Couldn't reach OpenBot. Try again."
   }
 }

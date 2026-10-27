@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { authKeys } from "@/lib/auth/queries";
 import { ClientResponseError, client, tryClient } from "@/lib/client";
 import type { ScopedCache } from "./scoped-cache";
 import type { WorkspaceScopeCompany } from "./selection";
@@ -495,4 +496,188 @@ export function teamGrantCommandAdapter(scope: DirectoryScope): {
       }
     },
   };
+}
+
+/*
+ * The public invitation landing, T04.11 (#555). The page at /accept-invitation?id=… reads ONE
+ * invitation through the U-class surface T04.01 froze (`GET /api/enterprise/invitations/:id`):
+ * the minimal landing state while nobody is signed in, the caller's own view once they are, and
+ * a 404 that answers every other case exactly like a missing one. The BA native GETs stay
+ * closed (the ingress X rows), so this adapter is the page's only read — no roster, no
+ * directory, no company listing ever loads for a landing.
+ *
+ * The answer the page acts on, and the commands it answers with, both carry the invitation's
+ * own refusals as names: expired, settled (the concurrent double-accept among them), the
+ * unverified mailbox, the wrong account, the seat limit and the closed company each land on
+ * their own sentence, the way the people page's conflicts do.
+ */
+
+/** Who is looking at the invitation: their mailbox, and whether they have verified it. */
+export type InvitationSession = Readonly<{
+  email: string;
+  emailVerified: boolean;
+}>;
+
+/** The narrow invitation read's one answer: the public landing, the caller's own view, or nothing. */
+export type PublicInvitationRead =
+  | Readonly<{ kind: "landing"; status: string; expired: boolean }>
+  | Readonly<{
+      kind: "own";
+      organizationName: string;
+      role: string | null;
+      expiresAt: string;
+    }>
+  | Readonly<{ kind: "unavailable" }>;
+
+/** The invitation commands' failure vocabulary, with the invitation's own refusals named. */
+export type InvitationActionFailure =
+  | DirectoryFailureKind
+  | "expired"
+  | "settled"
+  | "unverified"
+  | "mismatch"
+  | "seats"
+  | "closed";
+
+/** The refused accept/decline, carrying the named outcome the page has words for. */
+export class DirectoryInvitationActionError extends Error {
+  readonly failure: InvitationActionFailure;
+
+  constructor(failure: InvitationActionFailure) {
+    super("The invitation refused that change.");
+    this.name = "DirectoryInvitationActionError";
+    this.failure = failure;
+  }
+}
+
+export const invitationKeys = {
+  root: ["invitation"] as const,
+  landing: (invitationId: string) =>
+    ["invitation", "landing", invitationId] as const,
+};
+
+/** The status-plus-code verdict a refused accept or decline resolves to. */
+async function invitationActionFailure(
+  response: Response,
+): Promise<InvitationActionFailure> {
+  if (response.status === 409) {
+    const code = await refusalCodeOf(response);
+    if (code === "MEMBERSHIP_INVITATION_EXPIRED") return "expired";
+    if (code === "MEMBERSHIP_INVITATION_NOT_PENDING") return "settled";
+    if (code === "MEMBERSHIP_INVITATION_SEATS_EXHAUSTED") return "seats";
+  }
+  if (response.status === 403) {
+    const code = await refusalCodeOf(response);
+    if (code === "MEMBERSHIP_INVITATION_EMAIL_UNVERIFIED") return "unverified";
+    if (code === "MEMBERSHIP_INVITATION_RECIPIENT_MISMATCH") return "mismatch";
+    if (code === "MEMBERSHIP_INVITATION_COMPANY_CLOSED") return "closed";
+  }
+  return directoryFailureKind(
+    new ClientResponseError(response.status, "", null),
+  );
+}
+
+/**
+ * The invitee's two answers. Flat bodies the ingress pins (`{invitationId}` is the whole
+ * command); no membership, company proof or role is asked for first — the invitee's verified
+ * mailbox is the server's whole qualification, and it checks it itself.
+ */
+export function invitationCommandAdapter(): {
+  accept(invitationId: string): Promise<void>;
+  decline(invitationId: string): Promise<void>;
+} {
+  const send = async (path: string, invitationId: string): Promise<void> => {
+    const response = await tryClient(path, {
+      method: "POST",
+      body: { invitationId },
+      fallback: "The invitation could not be answered.",
+    });
+    if (!response.ok) {
+      throw new DirectoryInvitationActionError(
+        await invitationActionFailure(response),
+      );
+    }
+  };
+  return {
+    accept: (invitationId) =>
+      send("/api/auth/organization/accept-invitation", invitationId),
+    decline: (invitationId) =>
+      send("/api/auth/organization/reject-invitation", invitationId),
+  };
+}
+
+/**
+ * The one invitation read the landing page performs. A 404 is an answer, not a failure — the
+ * server's own rule answers a cancelled, expired-for-the-caller, wrong-mailbox or missing
+ * invitation exactly alike — so it resolves to `unavailable` and the page's sentence, while a
+ * transport failure still throws the sentence the page shows for a reach problem.
+ */
+export function invitationLandingQueryOptions(
+  invitationId: string | undefined,
+) {
+  return queryOptions({
+    enabled: invitationId !== undefined,
+    queryKey:
+      invitationId !== undefined
+        ? invitationKeys.landing(invitationId)
+        : [...invitationKeys.root, "landing", ":no-id"],
+    queryFn: async (): Promise<PublicInvitationRead> => {
+      if (invitationId === undefined) {
+        // Unreachable while enabled; the guard keeps the read honest about its own address.
+        throw new Error("The invitation read needs its id.");
+      }
+      const response = await tryClient(
+        `/api/enterprise/invitations/${encodeURIComponent(invitationId)}`,
+        { fallback: "The invitation could not be loaded." },
+      );
+      if (response.status === 404) return { kind: "unavailable" };
+      if (!response.ok) {
+        throw new Error(`Could not read the invitation (${response.status}).`);
+      }
+      const body = (await response.json().catch(() => null)) as {
+        invitation?: Record<string, unknown> | null;
+      } | null;
+      const invitation = body?.invitation ?? null;
+      if (invitation === null) return { kind: "unavailable" };
+      // The caller's own view carries the company; the public landing carries the state alone.
+      const organizationName = textOf(invitation.organizationName);
+      if (organizationName !== null) {
+        return {
+          kind: "own",
+          organizationName,
+          role: textOf(invitation.role),
+          expiresAt: textOf(invitation.expiresAt) ?? "",
+        };
+      }
+      const status = textOf(invitation.status);
+      if (status === null) return { kind: "unavailable" };
+      return { kind: "landing", status, expired: invitation.expired === true };
+    },
+  });
+}
+
+/**
+ * The session half of the landing: the mailbox looking at the invitation and whether it is
+ * verified. Better Auth's own session endpoint, not `/api/me` — the landing needs the
+ * verification flag `/api/me` does not carry, and nobody is authenticated to need more. Keyed
+ * under the auth keys so the sign-out that switches accounts clears it with everything else.
+ */
+export function invitationSessionQueryOptions() {
+  return queryOptions({
+    queryKey: [...authKeys.all, "invitation-session"],
+    queryFn: async (): Promise<InvitationSession | null> => {
+      const response = await tryClient("/api/auth/get-session", {
+        fallback: "The session could not be read.",
+      });
+      if (!response.ok) return null;
+      const body = (await response.json().catch(() => null)) as {
+        user?: { email?: unknown; emailVerified?: unknown } | null;
+      } | null;
+      const user = body?.user ?? null;
+      if (user === null) return null;
+      const email = textOf(user.email);
+      if (email === null) return null;
+      return { email, emailVerified: user.emailVerified === true };
+    },
+  });
 }
