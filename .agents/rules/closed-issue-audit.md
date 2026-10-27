@@ -5,7 +5,7 @@
 ## 1. 冻结范围和代码版本
 
 1. 分开冻结两个原始集合并逐集合分页、排除 PR：新审集合 N 为 `state=closed` 且带 `ready-for-agent` 的全部 Issue（含首次遇到的 completed、not_planned、作废和关闭原因不明票）；标签对账集合 R 为任意状态下带 `agent:ready-for-review` 的全部 Issue，加共享 Ledger 中所有未结算 label/close/delivery 意图及纠正对象（无论当前标签或状态）。R 不以 closed 或 ready-for-agent 为过滤条件，重新打开、移除资格标签的票仍可触达。保存查询起止时间、条件、页数/游标、数量、编号/URL、去重结果和完整性；搜索上限须拆分查询核对，缺页/无权/转移读取不全记 `intake_incomplete`。本轮冻结原始全集为 N∪R；结束前重新对账新增、移除和状态变化，新增项登记下轮队列及发现时间，不暗中扩大本轮容量。
-2. 先对账已有 Run、报告、标签回执、人审决定、Git 和活跃工作区。已有结论只能在其需求、目标代码、环境及证据仍然一致时复用；记录每项“复用、重验、失效”的依据，不重复派发已有效完成的审计。N/R 是原始候选集合，不覆盖有效人审终态：`human_review_state=approved/rejected` 的对象只做决定有效性和遗留标签对账，不重新验收或贴标；人审决定须绑定需求指纹、目标 SHA、决定范围和 `approval_ref`。需求或交付范围变化后以 `scope_changed` 使人审终态失效并进入新结论流程。
+2. 先对账已有 Run、报告、标签回执、人审决定、Git 和活跃工作区。已有结论只能在其需求、目标代码、环境及证据仍然一致时复用；记录每项“复用、重验、失效”的依据，不重复派发已有效完成的审计。N/R 是原始候选集合，不覆盖有效人审终态：`human_review_state=approved/rejected` 的对象只做决定有效性和遗留标签对账，不重新验收或贴标；人审决定须绑定需求指纹、目标 SHA、决定范围和 `approval_ref`。需求或交付范围变化后以 `scope_changed` 使人审终态失效并进入新结论流程；需求不变的实现缺陷型拒绝仅按第 3 节的授权修复迁移恢复。
 3. 按 [delivery-gates.md](delivery-gates.md)固定原 Issue 约定交付目标（默认 origin/main）的完整 SHA、子模块 SHA、环境和工作区基线。审计与测试使用该版本的字节一致隔离树；代码或服务已漂移时重建环境。记录共享数据库、端口、容器和测试产物的归属，按 [验证与测试资源](testing.md)隔离或串行使用。
 
 ## 2. 逐票摄取和验收
@@ -13,7 +13,7 @@
 每票按[Issue 摄取](issue-delivery.md)的只读规则读取正文、验收、评论中的已确认决定、关闭原因、正式子 Issue、依赖和相关 PR/提交；每种集合分别处理分页、去重、读取时间及完整性，递归子项也不能只取首屏。按 [设计与事实源](design.md)核对有效批准版本及 `CONTEXT.md`。区分 `contains` 与 `depends_on`，普通引用需核实关系。建立 `Issue → 每条验收 → 目标 SHA 中的实现/交付物 → 验证方法 → 证据` 映射；只读摄取不授权实施。
 
 - `completed` 票进入交付验收。`not_planned`、作废、撤回或转移票先按 [design.md](design.md)核实有权批准且覆盖当前需求版本的取消/无需交付决定；决定有效时将单票结论记为 `not_required`，保存决定证据和 `approval_ref`，不要求交付完成决定、不贴待人审标签，已有待人审标签进入纠正分支。没有有效决定或关闭原因不明时记 `unproven`，不得把关闭原因枚举本身当作取消批准。
-- 父 Issue 递归读取正式子项，逐项保留独立结论；每日容量及跨日 aggregate_pending 按 [每日规则](closed-issue-daily-run.md)执行；父票另验自身独有要求和组合行为。子票不因父票未通过而自动失败；全部后代均已有有效 `not_required` 决定且父级也无自身交付要求时，父票才可按同一决定链记 `not_required`。
+- 父 Issue 递归读取正式子项，逐项保留独立结论；每日容量及跨日 aggregate_pending 按 [每日规则](closed-issue-daily-run.md)执行；父票另验自身独有要求和组合行为。子票不因父票未通过而自动失败；混合 verified/not_required 子票按 [协调格式](coordination-format.md)逐项核对同 SHA 证据或覆盖父级对应要求的取消决定，再验父级剩余要求。全部后代均已有有效 `not_required` 决定且父级也无自身交付要求时，父票才可按同一决定链记 `not_required`。
 - 需求冲突、子项读取缺失或验收无法定义时保留经脱敏的来源证据、受控原文引用与缺口；不以未知代替“无要求”。
 
 非 Orca 与 Orca 的逐票初审均须由与本票历史实现者及当前主控不同的独立审核者，以新会话/Brief 执行行为验收和代码审查；实际主体、会话谱系与贡献独立性按 [Agent 选择](orchestration-agents.md)核验；Agent 产品相同不自动等于同一主体，单独新开会话也不自动证明独立。历史实现身份不可核实时保留缺口，并按 [Agent 选择](orchestration-agents.md)的历史票替代独立性证明取得有权批准；不得要求恢复过去从未记录的信息。主控只核对证据并裁决，不以自审代替独立性；初审者不得接手本票修复，后续修复复审与终审按 [Agent 选择](orchestration-agents.md)同一独立性判据逐项留证；Orca 场景另核实其候选 ID/Dispatch。
@@ -37,7 +37,12 @@
 3. 对 `not_required / failed / blocked / unproven / intake_incomplete` 不添加标签。重新打开、移除 ready-for-agent、有效取消/无需交付决定、有效人审终态或证据过期等使已有标签无效时，进入 R 的纠正分支；按现有移除授权只移除该待人审标签并复核，不改其他标签。无授权或回执不明保留 `label_correction_pending`，不报告纠正成功。
 4. 验证结论与交付/标签动作分列，状态契约和仅标签恢复见 [每日规则](closed-issue-daily-run.md)。有效证据未变且只剩贴标/回读/移除时，只做标签对账和必要 rescan；不重跑整票验收。若需求、目标树或 CI 失效则转重验，不能用标签重试复活旧 verified。
 
-人审通过或拒绝须有可核实的人工作出者、决定范围、时间、需求指纹、目标 SHA 和证据入口，分别记 `human_review_state=approved/rejected` 并撤销旧 `pending`；标签移除本身不等于人审决定。两种终态都退出新审和重新贴标调度，保留 Agent 验证结论作为历史，不改写为人工批准。遗留待人审标签按现有授权纠正；没有移除授权时保留具名 `label_correction_pending`，不因此重新验收。人审拒绝要求变更时，以有效需求变更另建 revalidate 范围，不在旧决定上直接复活旧 verified。
+人审通过或拒绝须有可核实的人工作出者、决定范围、时间、需求指纹、目标 SHA 和证据入口，分别记 `human_review_state=approved/rejected` 并撤销旧 `pending`；标签移除本身不等于人审决定。两种终态默认退出新审和重新贴标调度，保留 Agent 验证结论作为历史，不改写为人工批准。遗留待人审标签按现有授权纠正；没有移除授权时保留具名 `label_correction_pending`，不因此重新验收。拒绝后的变更按原因处理：
+
+- **需求改变**：按 [design.md](design.md)取得有效范围决定，以 scope_changed 建立 revalidate 范围。
+- **实现不满足原验收**：需求可保持不变。已有覆盖 finding 的修复授权时，先按 [协调格式](coordination-format.md)保存旧拒绝、需求/目标/检查点和完整前后状态，再以 state_changed 建立新 attempt，关联原 finding 与修复授权，将当前 human_review_state 置 none、human_review 置 null，validation_state 置 finding_confirmed，并撤销依赖旧验证的放行。旧决定及证据只进入不可变历史，不能删除或改写。修复、独立验证/复审、完整终审/OCR 及目标验收通过后，才以新检查点和新写入意图转 pending、重新送审；相同旧检查点不得直接重新贴标。
+
+无修复授权或拒绝原因不明时保留 rejected 和等待条件，不自行变更需求或清空拒绝记录。新 attempt 沿用原入队/服务序号及 repair_rounds_total，不能借此重置公平调度或修复上限；原标签、关闭及交付的遗留动作继续分别对账。
 
 R 中只剩 close/delivery 动作的对象，按 [交付门禁](delivery-gates.md)逐项回读原意图与当前远端结果：关闭动作恢复/纠正必须核对授权及后续人工决定；交付动作按 [协调格式](coordination-format.md)的 delivery_action、delivery_intent 和当前回执对账。已进入目标的代码仍记 delivered，树偏离记动作 stale、验证 revalidating，回退/修复另需授权。不因本请求只授权贴标而执行关闭、重开、推送或回退。无授权或回执不明保留对应 pending/correction_pending，报告远端可能仍有错误状态。冻结范围完成还要求每个动作有明确对账结论；未授权动作保持具名待处理。
 

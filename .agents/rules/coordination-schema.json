@@ -354,6 +354,17 @@
               "checkpoint": { "$ref": "#/$defs/evidence" }
             }
           }
+        },
+        {
+          "if": {
+            "properties": { "validation_state": { "const": "not_required" } },
+            "required": ["validation_state"]
+          },
+          "then": {
+            "properties": {
+              "requirements_fingerprint": { "$ref": "#/$defs/requirement_fp" }
+            }
+          }
         }
       ]
     },
@@ -539,7 +550,14 @@
               "requirements_fingerprint": { "$ref": "#/$defs/requirement_fp" },
               "run": { "$ref": "#/$defs/evidence" },
               "checkpoint": { "$ref": "#/$defs/evidence" },
-              "review": { "$ref": "#/$defs/evidence" }
+              "review": { "$ref": "#/$defs/evidence" },
+              "aggregate_children": {
+                "items": {
+                  "properties": {
+                    "validation_state": { "enum": ["verified", "not_required"] }
+                  }
+                }
+              }
             }
           }
         },
@@ -651,7 +669,7 @@
           },
           "then": {
             "properties": {
-              "validation_state": { "enum": ["verified", "revalidating", "blocked", "failed", "unproven", "intake_incomplete"] },
+              "validation_state": { "enum": ["verified", "finding_confirmed", "repairing", "revalidating", "blocked", "failed", "unproven", "intake_incomplete"] },
               "checkpoint": { "$ref": "#/$defs/evidence" },
               "review": { "$ref": "#/$defs/evidence" }
             }
