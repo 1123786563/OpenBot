@@ -602,7 +602,10 @@ function observerChain(
  * but the drop is a fact, never silence: counted here, bounded by construction
  * (one number per reason, no ids, no content). record and recordRetrieval share
  * the one counter, so operation cannot distinguish a dropped tool step from a
- * dropped retrieval by which one was silent.
+ * dropped retrieval by which one was silent. The count has the operator outlet
+ * the id-link counters have (T-M #2): the health service projects it into
+ * writeStats()/snapshot() as `chainGateDrops.steps`, so it reaches the health
+ * route — not only the tests that pin the gate.
  */
 const chainGateDrops = { missingChain: 0 };
 

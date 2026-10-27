@@ -27,6 +27,9 @@ const clean: Stats = {
     unexpected: 0,
   },
   idLinks: { chain_broken: 0, divergent: 0, error: 0 },
+  // Required by the stats shape since r9fix-k (T-M #2); the ingest gate never
+  // reads it — the recorders' pre-submit drops are not its verdict's business.
+  chainGateDrops: { steps: 0, modelSpans: 0 },
 };
 
 const withFailed = (patch: Partial<Stats["failed"]>): Stats => ({

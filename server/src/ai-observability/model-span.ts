@@ -253,7 +253,9 @@ function buildModelSpan(
  * unchanged — but the drop is a fact, never silence: counted here, bounded by
  * construction (one number per reason, no ids, no content). The same footing
  * the remote dial's chain counts have (`remoteDialChainCounts`): the visible
- * half of a degradation contract, read by the tests that pin the gate.
+ * half of a degradation contract, read by the tests that pin the gate — and,
+ * since T-M #2, projected by the health service into writeStats()/snapshot()
+ * as `chainGateDrops.modelSpans`, the operator outlet the steps twin shares.
  */
 const chainGateDrops = { missingChain: 0 };
 

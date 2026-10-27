@@ -123,6 +123,13 @@ const roundDelta = (before: OpikWriteStats, after: OpikWriteStats): OpikWriteSta
     divergent: after.idLinks.divergent - before.idLinks.divergent,
     error: after.idLinks.error - before.idLinks.error,
   },
+  // Counters like the rest (T-M #2 ripple): the round's gate-drop increment;
+  // writesEstablished does not judge it — a pre-submit drop is not a write.
+  chainGateDrops: {
+    steps: after.chainGateDrops.steps - before.chainGateDrops.steps,
+    modelSpans:
+      after.chainGateDrops.modelSpans - before.chainGateDrops.modelSpans,
+  },
 });
 
 async function main(): Promise<void> {
