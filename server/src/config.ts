@@ -8,8 +8,8 @@ function spreadOptional<K extends string, V>(
 // Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
 // without putting it in this module's eager import graph. Node has no such global, so the same
 // laziness needs a handle.
-import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
  * for durable threads and memory. Configuration the product cannot function without belongs at the
@@ -306,6 +306,16 @@ export type DeploymentConfig = {
    * Its presence, not this auth configuration, determines whether a bundled Bot is available.
    */
   managedAgent?: ManagedAgentConfig;
+  /**
+   * Remote endpoints this deployment can hold to an enforceable budget (R3-02).
+   *
+   * Absent means no remote AG-UI Bot may run: the per-run credit hold is not a contract on what
+   * an endpoint SPENDS, so a dial without one of these would put unbounded work behind a bounded
+   * charge. Nothing here is defaulted from `managedAgent` on purpose — the picked harness is
+   * also a managed endpoint and does not speak the contract, so the operator names exactly the
+   * endpoints that do.
+   */
+  remoteBudgetContract?: RemoteBudgetContractConfig;
   /**
    * Private addresses an agent may be registered at, named one at a time.
    *
@@ -859,6 +869,93 @@ function managedAgentConfig(
     token,
     ...(alsoRun ? { alsoRun } : {}),
   };
+}
+
+/**
+ * The endpoints this deployment declares able to enforce the remote budget contract (R3-02).
+ *
+ * Two facts, both explicit:
+ *
+ * - `endpoints`: the exact URLs of AG-UI endpoints that implement the contract openbot's server
+ *   dials them with. Named, not inferred — `managedAgent` also covers the picked harness, which
+ *   is a managed endpoint that does NOT enforce this contract, and treating "we run it" as "it
+ *   is contract-capable" is how a run gets admitted on a promise nobody keeps.
+ * - `maxModelSteps`: the per-run model-step ceiling the contract carries. The token ceiling is
+ *   the billing policy's (`BILLING_CODE_RUN_MAX_RESERVATION_TOKENS`), so the contract and the
+ *   credit hold are derived from the same approved number; steps have no price, so their limit
+ *   is a deployment setting with the same default the built-in runtime loop uses.
+ *
+ * Identities are canonicalised the way `runtime-agents.ts` canonicalises a managed endpoint, so
+ * a trailing slash is the same endpoint on both sides.
+ */
+export type RemoteBudgetContractConfig = {
+  endpoints: ReadonlySet<string>;
+  maxModelSteps: number;
+};
+
+/** The built-in runtime's own loop limit, reused so a remote run is not bounded more loosely. */
+const DEFAULT_REMOTE_BUDGET_MAX_MODEL_STEPS = 8;
+
+/** One endpoint identity, canonicalised exactly as `runtime-agents.ts` does for the managed one. */
+export function canonicalAgentEndpoint(
+  value: string | URL,
+): string | undefined {
+  try {
+    const endpoint = new URL(value);
+    endpoint.pathname = endpoint.pathname.replace(/\/+$/, "");
+    return endpoint.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function remoteBudgetContractConfig(
+  environment: Environment,
+): RemoteBudgetContractConfig | undefined {
+  const raw = optional(environment, "REMOTE_BUDGET_CONTRACT_ENDPOINTS");
+  if (!raw) return undefined;
+  const endpoints = new Set<string>();
+  for (const entry of raw.split(",")) {
+    const name = entry.trim();
+    if (!name) {
+      throw new Error(
+        "REMOTE_BUDGET_CONTRACT_ENDPOINTS must be a comma-separated list of endpoint URLs",
+      );
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(name);
+    } catch {
+      throw new Error(
+        `REMOTE_BUDGET_CONTRACT_ENDPOINTS entry ${JSON.stringify(name)} must be a valid URL`,
+      );
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(
+        `REMOTE_BUDGET_CONTRACT_ENDPOINTS entry ${JSON.stringify(name)} must be an HTTP(S) URL`,
+      );
+    }
+    endpoints.add(canonicalAgentEndpoint(parsed) as string);
+  }
+  const rawSteps = optional(
+    environment,
+    "REMOTE_BUDGET_CONTRACT_MAX_MODEL_STEPS",
+  );
+  let maxModelSteps = DEFAULT_REMOTE_BUDGET_MAX_MODEL_STEPS;
+  if (rawSteps !== undefined) {
+    if (!/^\d+$/.test(rawSteps)) {
+      throw new Error(
+        "REMOTE_BUDGET_CONTRACT_MAX_MODEL_STEPS must be a whole number",
+      );
+    }
+    maxModelSteps = Number.parseInt(rawSteps, 10);
+    if (maxModelSteps < 1 || maxModelSteps > 1_000) {
+      throw new Error(
+        "REMOTE_BUDGET_CONTRACT_MAX_MODEL_STEPS must be between 1 and 1000",
+      );
+    }
+  }
+  return { endpoints, maxModelSteps };
 }
 
 function oauthClient(
@@ -2987,6 +3084,7 @@ export function loadConfig(
     ? organizationAuthority(organizationAuthValue)
     : undefined;
   const managedAgent = managedAgentConfig(environment);
+  const remoteBudgetContract = remoteBudgetContractConfig(environment);
   const githubApp = githubAppConfig(environment);
   const publicUrl = (
     optional(environment, "OPENBOT_PUBLIC_URL") ?? auth?.baseUrl
@@ -3038,6 +3136,7 @@ export function loadConfig(
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),
+    ...(remoteBudgetContract ? { remoteBudgetContract } : {}),
     ...(githubApp ? { githubApp } : {}),
     agentEndpointAllowedHosts: agentEndpointAllowedHosts(environment),
     deploymentId: optional(environment, "DEPLOYMENT_ID"),
@@ -3156,9 +3255,7 @@ function multitenancyConfig(environment: Environment): {
     enabled,
     ...(inventoryPath ? { inventoryPath } : {}),
     ...(waiversPath ? { waiversPath } : {}),
-    ...(quarantineDefaultWorkspaceId
-      ? { quarantineDefaultWorkspaceId }
-      : {}),
+    ...(quarantineDefaultWorkspaceId ? { quarantineDefaultWorkspaceId } : {}),
   };
 }
 

@@ -26,7 +26,9 @@
  */
 
 import type { OpikConfig } from "./config";
+import { modelSpanChainGateDrops } from "./model-span";
 import { type OpikPort, OpikPortError, type OpikPortResult } from "./opik-port";
+import { toolStepChainGateDrops } from "./tool-steps";
 
 /** One enumerated reason per unavailable state. Nothing else is ever exposed. */
 export type OpikReadinessReason =
@@ -66,6 +68,17 @@ export type OpikWriteStats = Readonly<{
     chain_broken: number;
     divergent: number;
     error: number;
+  }>;
+  /**
+   * The FREV-02 chain-gate drops (T-M #2): the recorders refuse a chain-less
+   * observation BEFORE any submit, so those refusals are invisible in the
+   * submit counters above. Steps and model spans land in the same projection —
+   * a twin without an outlet would keep the gap. Counters only, same safety
+   * as `idLinks`: no ids, no content, no chain values.
+   */
+  chainGateDrops: Readonly<{
+    steps: number;
+    modelSpans: number;
   }>;
 }>;
 
@@ -203,6 +216,10 @@ export function createOpikHealthService(
     ...stats,
     failed: { ...stats.failed },
     idLinks: { ...idLinkStats },
+    chainGateDrops: {
+      steps: toolStepChainGateDrops().missingChain,
+      modelSpans: modelSpanChainGateDrops().missingChain,
+    },
   });
 
   const settleIdle = () => {

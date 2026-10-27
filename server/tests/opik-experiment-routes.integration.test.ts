@@ -597,9 +597,11 @@ describe("POST .../experiments/:experimentId/executions/:executionId/cancel — 
     expect(guessed.status).toBe(404);
   });
 
-  test("a bumped ownership epoch makes the execution unreachable", async () => {
+  test("a bumped ownership epoch keeps the execution reachable — the data address is the Bot's (FREV-03 b)", async () => {
     const { experimentId, executionId } = await pendingExecution();
-    // The epoch moved after the submission: the scope key differs, the row is gone.
+    // The epoch moved after the submission (a rename or profile update). FREV-03:
+    // the data address is the Bot's stable key, so the new generation reads the
+    // same row instead of losing history to a rotated key space.
     const scopeB = resolveObservationScope({
       actorId: scopeA.actorId,
       botId: scopeA.botId,
@@ -607,7 +609,7 @@ describe("POST .../experiments/:experimentId/executions/:executionId/cancel — 
       epoch: 2,
     });
     const other = await executions.get(scopeB, executionId);
-    expect(other).toBeNull();
+    expect(other?.id).toBe(executionId);
     expect(experimentId).toBeTruthy();
   });
 });

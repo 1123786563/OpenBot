@@ -11,14 +11,15 @@
  * GET /api/ai-observability/bots/:botId/runs/:runId (detail) behind the root
  * requireUser — coexisting with T10's POST-only reporting route on the same path.
  *
- * Authorization is the management question (resolveObservationBot) and the scope
- * is derived from the authenticated context plus the injected ownership epoch,
- * exactly like the T10 seam: the query string contributes a page size, a cursor
- * and nothing else, so no forged actor, bot, scope, locator or upstream filter
- * can steer a read. Ownership is answered per request — a transfer or revocation
- * is effective on the very next call — and the T07 binding table, never an
- * owner snapshot captured at collection time, decides which runs this scope may
- * see. Errors keep the house convention: the code is the contract.
+ * Authorization is the observation question (resolveObservationBot, backed by
+ * `canObserveAgent` in the wiring) and the scope is derived from the authenticated
+ * context plus the injected ownership epoch, exactly like the T10 seam: the query
+ * string contributes a page size, a cursor and nothing else, so no forged actor,
+ * bot, scope, locator or upstream filter can steer a read. Ownership is answered
+ * per request — a transfer or revocation is effective on the very next call — and
+ * the T07 binding table, never an owner snapshot captured at collection time,
+ * decides which runs this scope may see. Errors keep the house convention: the code
+ * is the contract.
  */
 import { Hono } from "hono";
 import type { AgentActor } from "../../agents/profile-types";
@@ -134,8 +135,15 @@ export function createRunsQueryRoutes(
       return Response.json({ error: access.error }, { status: access.status });
     }
     const actor = context.var.actor;
-    // Explicit, never inferred (OCR h10/m182): a caller the seam refuses to mint
-    // for is answered with the same unified not-found the manage gate uses.
+    /*
+     * Ownership comes off the seam's explicit answer, not this route's own guess —
+     * the inline `owner ? "owner" : "admin"` this block kept was the omission
+     * datasets.ts and admin-summary.ts already shed (R5-33/R4-35): it would mint an
+     * "admin" scope for whoever a future widened gate lets through. R4-02 makes the
+     * seam matter here for real: a system Bot's profile has no owner, so the
+     * administrator the observe policy admits reaches the "admin" arm of this very
+     * answer. A null is refused with the same unified not-found the gate uses.
+     */
     const ownership = explicitObservationOwnership(actor, access.profile);
     if (ownership === null) {
       return Response.json(
@@ -143,7 +151,6 @@ export function createRunsQueryRoutes(
         { status: 404 },
       );
     }
-    // The epoch is injected wiring, never a query value.
     const epoch = await deps.scopeEpoch(actor, access.botId);
     return {
       scope: resolveObservationScope({

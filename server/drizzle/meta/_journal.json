@@ -1534,6 +1534,13 @@
       "when": 1793081097944,
       "tag": "0218_price_status_backfill_repair",
       "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1793081098944,
+      "tag": "0219_opik_stable_resource_scope",
+      "breakpoints": true
     }
   ]
 }

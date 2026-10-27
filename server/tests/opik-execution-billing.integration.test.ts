@@ -1,17 +1,26 @@
-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
 import {
   createBilledEvaluationCaseRunner,
   createExecutionBudgetPrecheck,
+  EvaluationCaseSettlementError,
+  evaluationCaseStepUsageId,
 } from "../src/ai-observability/execution-billing";
-import type { EvaluationModelCall } from "../src/ai-observability/execution-runner";
 import {
+  createGatewayModelCall,
+  type EvaluationModelCall,
+} from "../src/ai-observability/execution-runner";
+import { createPublicExecutionSeamModelCall } from "../src/ai-observability/execution-seam";
+import {
+  createEvaluationToolGate,
   createExperimentExecutionService,
   createObservationExecutionStore,
   createObservationExecutionWorker,
+  type EvaluationCaseContext,
+  type EvaluationToolSurface,
   EXECUTION_WORK_KIND,
 } from "../src/ai-observability/executions";
 import {
@@ -24,6 +33,7 @@ import { createAuditStore } from "../src/audit";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createCreditUsageTarget } from "../src/billing/usage-delivery";
 import { createUsageOutbox } from "../src/billing/usage-outbox";
+import type { UsageOutbox } from "../src/billing/usage-outbox";
 import type { BillingModelCreditPolicyEntry } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
@@ -562,4 +572,735 @@ test("a swept execution runs its cases through the billed runner and a resume sw
   await worker.sweep();
   expect(calls.length).toBe(1);
   expect(await ledgerRowsOf(reservation?.id ?? "")).toHaveLength(1);
+});
+
+/*
+ * FREV-R2-01: one case with a tool surface is up to
+ * `EVALUATION_TOOL_LOOP_MAX_STEPS` provider calls, and a case-level hold priced for a
+ * single call cannot bound that spend. These tests drive the REAL gateway adapter
+ * against a scripted OpenAI-compatible upstream (no mocked fetch, no paid request) and
+ * the REAL credit writer and outbox: every step is admitted before it is dialed, a
+ * step nobody can fund never reaches the wire, and every step that ran settles against
+ * the hold that admitted it.
+ */
+
+/** One scripted upstream round: prompt/completion counts the wire will report. */
+const roundUsage = (usage: { input: number; output: number }) => ({
+  prompt_tokens: usage.input,
+  completion_tokens: usage.output,
+  total_tokens: usage.input + usage.output,
+});
+
+function completion(
+  message: Record<string, unknown>,
+  finish: string,
+  usage: { input: number; output: number },
+) {
+  return Response.json({
+    id: `chatcmpl-${Math.random().toString(36).slice(2)}`,
+    object: "chat.completion",
+    choices: [{ index: 0, message, finish_reason: finish }],
+    usage: roundUsage(usage),
+  });
+}
+
+/** One round that answers with a tool call the model "made". */
+const toolCallRound =
+  (usage: { input: number; output: number }) => (): Response =>
+    completion(
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: { name: "search", arguments: '{"q":"outage"}' },
+          },
+        ],
+      },
+      "tool_calls",
+      usage,
+    );
+
+/** One round that answers with plain text. */
+const answerRound =
+  (text: string, usage: { input: number; output: number }) => (): Response =>
+    completion({ role: "assistant", content: text }, "stop", usage);
+
+/**
+ * A scripted upstream: rounds are consumed in order (the last repeats), every request
+ * body is kept, and `when(n)` resolves once n requests have arrived.
+ */
+function scriptedGateway(rounds: (() => Response | Promise<Response>)[]) {
+  const bodies: Record<string, unknown>[] = [];
+  const waiters: (() => void)[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const body = (await request.json()) as Record<string, unknown>;
+      bodies.push(body);
+      for (const wake of waiters.splice(0)) wake();
+      const round = rounds[Math.min(bodies.length - 1, rounds.length - 1)];
+      return round === undefined
+        ? new Response(null, { status: 500 })
+        : round();
+    },
+  });
+  const when = (count: number) =>
+    new Promise<void>((resolve) => {
+      const check = () => {
+        if (bodies.length >= count) resolve();
+        else waiters.push(check);
+      };
+      check();
+    });
+  return { port: server.port, bodies, when, stop: () => server.stop(true) };
+}
+
+/**
+ * The single-call ceiling the finding's counterexample is written against: N = 1000
+ * output tokens at 2 units each, 1000 input tokens at 1, so one call's worst-case hold
+ * (`maximumReservationUnits`) is 3000 units. Two steps of 0.6N output each (600) are
+ * EACH inside the single call's own ceiling and together are not — exactly the shape
+ * the old one-hold settlement discovered only after both calls had been paid for.
+ */
+const stepPolicy: BillingModelCreditPolicyEntry = {
+  input: {
+    rate: { numerator: 1n, denominator: 1n },
+    maximumTokens: 1000n,
+    maximumCostUnits: 1000n,
+  },
+  output: {
+    rate: { numerator: 2n, denominator: 1n },
+    maximumTokens: 1000n,
+    maximumCostUnits: 2000n,
+  },
+  maximumReservationUnits: 3000n,
+};
+const stepPolicies = new Map([["gateway-model", stepPolicy]]);
+
+/** The same frozen case, with one whitelisted read tool the model can reach for. */
+const toolConfig = freezeExperimentConfig({
+  ...configInput,
+  readOnlyTools: ["search"],
+  toolFixtures: { search: { summary: "three regions of impact" } },
+});
+
+/**
+ * One tool-declaring case context, wired through the real gate so the loop's tool call
+ * answers with the replayed frozen fixture — the same chain the runner suite proves.
+ */
+const toolContextFor = (
+  executionId: string,
+  signal?: AbortSignal,
+): EvaluationCaseContext => {
+  const gate = createEvaluationToolGate(toolConfig, () => "read");
+  return {
+    ...contextFor(executionId, 0, toolConfig),
+    callTool: async (name) =>
+      gate.call(name, [frozenCase.toolFixtures, toolConfig.toolFixtures]),
+    resolveToolSurface: (name): EvaluationToolSurface | undefined =>
+      name === "search"
+        ? {
+            description: "Search the support knowledge base.",
+            parameters: {
+              type: "object",
+              properties: { q: { type: "string" } },
+              required: ["q"],
+            },
+            effect: "read",
+          }
+        : undefined,
+    ...(signal === undefined ? {} : { signal }),
+  };
+};
+
+/** A billed runner over the real gateway adapter pointed at the script. */
+function gatewayRunner(input: {
+  customer: string;
+  baseURL: string;
+  observations?: ModelSpanObservation[];
+  timeoutMs?: number;
+}) {
+  return createBilledEvaluationCaseRunner({
+    callModel: createGatewayModelCall({
+      apiKey: "test-key",
+      baseURL: input.baseURL,
+      ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+    }),
+    ...(input.observations === undefined
+      ? {}
+      : {
+          observe: (fact: ModelSpanObservation) =>
+            input.observations?.push(fact),
+        }),
+    billing: {
+      creditWriter: writer,
+      outbox,
+      policy: stepPolicies,
+      externalCustomerId: input.customer,
+    },
+  });
+}
+
+test("the loop's next step is refused BEFORE its request when its hold is not spendable (FREV-R2-01)", async () => {
+  const customer = `${prefix}-loop-refused`;
+  // Exactly ONE call's worst-case hold: the case may start, and the loop's second
+  // provider call cannot be covered. The old wiring found this out at settlement —
+  // `usage_over_token_max` after both calls had already been paid for.
+  await grant(customer, 3_000);
+  const gateway = scriptedGateway([
+    toolCallRound({ input: 100, output: 600 }),
+    answerRound("the outage reached three regions", {
+      input: 150,
+      output: 600,
+    }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-loop-refused`;
+    const observations: ModelSpanObservation[] = [];
+    const runner = gatewayRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      observations,
+    });
+
+    const outcome = await runner(toolContextFor(executionId));
+
+    // The adversarial core: the second provider request never reached the wire, and
+    // the case says why instead of throwing after the spend.
+    expect(gateway.bodies.length).toBe(1);
+    expect(outcome).toEqual({ status: "failed", reason: "credits_exhausted" });
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "credits_exhausted",
+    });
+
+    // The step that DID run is settled exactly against the hold that admitted it.
+    const eventId = eventIdOf(executionId, 0);
+    const row = await outboxRow(eventId);
+    expect(row).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+      actualCostDenominator: "1",
+    });
+    expect(row?.reservationId).toBe((await reservationOf(eventId))?.id);
+
+    // The refused step left no hold and no fact behind — nothing was spent for it.
+    const refusedStepEvent = evaluationCaseStepUsageId(executionId, 0, 1);
+    expect(await outboxRow(refusedStepEvent)).toBeUndefined();
+    expect(
+      (
+        await database
+          .select()
+          .from(creditReservations)
+          .where(
+            eq(creditReservations.idempotencyKey, `usage:${refusedStepEvent}`),
+          )
+      )[0],
+    ).toBeUndefined();
+
+    // The step's request carried the policy's own output ceiling — the bound the
+    // step's hold prices, applied on the wire before the provider can exceed it.
+    expect(gateway.bodies[0]).toMatchObject({ max_tokens: 1000 });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("a two-step loop admits each step, settles each against its own hold, and charges exactly what it spent (FREV-R2-01)", async () => {
+  const customer = `${prefix}-loop-two`;
+  await grant(customer, 10_000);
+  const gateway = scriptedGateway([
+    toolCallRound({ input: 100, output: 600 }),
+    answerRound("the outage reached three regions", {
+      input: 150,
+      output: 300,
+    }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-loop-two`;
+    const runner = gatewayRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+    });
+
+    const outcome = await runner(toolContextFor(executionId));
+
+    // Both steps were dialed, and the loop's answer is the case's answer.
+    expect(gateway.bodies.length).toBe(2);
+    expect(outcome.status).toBe("completed");
+    expect(outcome.output).toBe("the outage reached three regions");
+    expect(outcome.usage).toEqual({ inputTokens: 250, outputTokens: 900 });
+    // The second request carries the replayed frozen fixture as the tool result.
+    expect(JSON.stringify(gateway.bodies[1])).toContain(
+      "three regions of impact",
+    );
+
+    // One immutable fact per step, each under its own natural key and its own hold.
+    const eventId = eventIdOf(executionId, 0);
+    const secondEventId = evaluationCaseStepUsageId(executionId, 0, 1);
+    const firstFact = await outboxRow(eventId);
+    const secondFact = await outboxRow(secondEventId);
+    expect(firstFact).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+    });
+    expect(secondFact).toMatchObject({
+      inputTokens: 150,
+      outputTokens: 300,
+      actualCostNumerator: "750",
+    });
+    const firstHold = await reservationOf(eventId);
+    const secondHold = await reservationOf(secondEventId);
+    expect(firstFact?.reservationId).toBe(firstHold?.id);
+    expect(secondFact?.reservationId).toBe(secondHold?.id);
+    expect(firstHold?.id).not.toBe(secondHold?.id);
+
+    // Downstream through the same credits target the built-in path settles with:
+    // each hold settles its own step, and the grant pays exactly the sum.
+    await deliverCharges(eventId, secondEventId);
+    expect(await reservationOf(eventId)).toMatchObject({
+      status: "settled",
+      charged: 1300,
+      applied: 1300,
+    });
+    expect(await reservationOf(secondEventId)).toMatchObject({
+      status: "settled",
+      charged: 750,
+      applied: 750,
+    });
+    const [grantRow] = await database
+      .select()
+      .from(creditGrants)
+      .where(eq(creditGrants.externalCustomerId, customer));
+    expect(grantRow.used).toBe(2050);
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("a charging failure for any step writes evidence for that step and continues settling all remaining (OCR R5-517)", async () => {
+  // The counterexample: the first hold is spendable but the outbox write fails on
+  // step 0; without the fix, steps 1..N are never settled and their holds stay
+  // reserved forever — the reconciliation gap this loop's own promise forbids.
+  const customer = `${prefix}-settlement-error`;
+  await grant(customer, 10_000);
+  const gateway = scriptedGateway([
+    toolCallRound({ input: 100, output: 600 }),
+    answerRound("the outage reached three regions", {
+      input: 150,
+      output: 300,
+    }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-settlement-error`;
+    // The outbox refuses exactly ONE write — the first charge fact (a settlement
+    // record carries a reservationId; the evidence recorder's rows carry null, so
+    // the unsettled-fact write for the same step still lands).
+    let failedOnce = false;
+    const failingOutbox: UsageOutbox = {
+      ...outbox,
+      record: async (input) => {
+        if (input.reservationId !== null && !failedOnce) {
+          failedOnce = true;
+          throw new Error("injected usage_outbox_write_failed");
+        }
+        return outbox.record(input);
+      },
+    };
+    const runner = createBilledEvaluationCaseRunner({
+      callModel: createGatewayModelCall({
+        apiKey: "test-key",
+        baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      }),
+      billing: {
+        creditWriter: writer,
+        outbox: failingOutbox,
+        policy: stepPolicies,
+        externalCustomerId: customer,
+      },
+    });
+
+    // The settlement failure surfaces as the case runner's thrown error — the
+    // worker records the execution failed, never a success whose cost vanished.
+    // But the throw happens AFTER the loop: step 1 was settled like any other.
+    await expect(runner(toolContextFor(executionId))).rejects.toThrow(
+      EvaluationCaseSettlementError,
+    );
+    expect(gateway.bodies.length).toBe(2);
+
+    // Step 0: its unsettled fact is on the outbox, naming why — the hold stays
+    // occupied (Pending Settlement), never a confirmed no-cost.
+    const eventId = eventIdOf(executionId, 0);
+    expect(await outboxRow(eventId)).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      status: "usage_outbox_write_failed",
+    });
+    expect(await reservationOf(eventId)).toMatchObject({ status: "reserved" });
+
+    // Step 1 — the assertion the old mid-loop abort could never reach: its hold
+    // was already reserved when step 0 failed, so it settles against its own
+    // hold like any other step, instead of stranding pending forever.
+    const secondEventId = evaluationCaseStepUsageId(executionId, 0, 1);
+    const secondFact = await outboxRow(secondEventId);
+    expect(secondFact).toMatchObject({
+      inputTokens: 150,
+      outputTokens: 300,
+      actualCostNumerator: "750",
+    });
+    expect(secondFact?.reservationId).toBe(
+      (await reservationOf(secondEventId))?.id,
+    );
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("a loop cancelled between steps charges what ran and keeps the interrupted step's hold (FREV-R2-01)", async () => {
+  const customer = `${prefix}-loop-cancel`;
+  await grant(customer, 10_000);
+  const hanging = () => new Promise<Response>(() => {});
+  const gateway = scriptedGateway([
+    toolCallRound({ input: 100, output: 600 }),
+    hanging,
+  ]);
+  try {
+    const executionId = `${prefix}-exec-loop-cancel`;
+    const controller = new AbortController();
+    const runner = gatewayRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      timeoutMs: 5_000,
+    });
+
+    const run = runner(toolContextFor(executionId, controller.signal));
+    await gateway.when(2);
+    controller.abort();
+    const outcome = await run;
+
+    expect(outcome).toEqual({ status: "failed", reason: "cancelled" });
+    expect(gateway.bodies.length).toBe(2);
+
+    // The step that finished is charged against its own hold.
+    const eventId = eventIdOf(executionId, 0);
+    expect(await outboxRow(eventId)).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+    });
+
+    // The step that was away when the task was cancelled is an UNKNOWN outcome, never
+    // a zero: evidence row, hold retained — the existing ledger rule, per step.
+    const interruptedEventId = evaluationCaseStepUsageId(executionId, 0, 1);
+    expect(await outboxRow(interruptedEventId)).toMatchObject({
+      status: "provider_error",
+      reservationId: null,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect((await reservationOf(interruptedEventId))?.status).toBe("reserved");
+  } finally {
+    gateway.stop();
+  }
+});
+
+/*
+ * R3-01: the budget covers the BLANK tool surface too, on the production seam. These
+ * tests drive the same public execution seam (`createPublicExecutionSeamModelCall`)
+ * through the real billed runner, credit writer and outbox, with a case that declares
+ * NO business tools — the engine's own AG-UI state tools still make it a two-request
+ * run — plus the policy's own input bound, refused before the wire.
+ */
+
+/** One round in the wire shape the public seam's streaming dial speaks (SSE). */
+function seamSseRound(chunks: readonly Record<string, unknown>[]): Response {
+  const body =
+    chunks.map((one) => `data: ${JSON.stringify(one)}\n\n`).join("") +
+    "data: [DONE]\n\n";
+  return new Response(body, {
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+function seamChunk(
+  delta: Record<string, unknown>,
+  finish: string | null,
+  usage?: { input: number; output: number },
+): Record<string, unknown> {
+  return {
+    id: "chatcmpl-f7a",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "gateway-model",
+    choices: [{ index: 0, delta, finish_reason: finish }],
+    ...(usage === undefined ? {} : { usage: roundUsage(usage) }),
+  };
+}
+
+/** One round that calls the engine's own state tool — no business whitelist gates it. */
+const seamStateToolRound =
+  (usage: { input: number; output: number }) => (): Response =>
+    seamSseRound([
+      seamChunk(
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_state",
+              type: "function",
+              function: {
+                name: "AGUISendStateSnapshot",
+                arguments: '{"snapshot":{"region":"eu"}}',
+              },
+            },
+          ],
+        },
+        null,
+      ),
+      seamChunk({}, "tool_calls", usage),
+    ]);
+
+/** One round that calls a declared business tool, in the seam's streaming shape. */
+const seamToolCallRound =
+  (name: string, usage: { input: number; output: number }) => (): Response =>
+    seamSseRound([
+      seamChunk(
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              index: 0,
+              id: "call_1",
+              type: "function",
+              function: { name, arguments: '{"q":"outage"}' },
+            },
+          ],
+        },
+        null,
+      ),
+      seamChunk({}, "tool_calls", usage),
+    ]);
+
+/** One round that answers with plain text. */
+const seamAnswerRound =
+  (text: string, usage: { input: number; output: number }) => (): Response =>
+    seamSseRound([
+      seamChunk({ role: "assistant", content: text }, null),
+      seamChunk({}, "stop", usage),
+    ]);
+
+/**
+ * The seam fixture policy: the same rates and step economics as the loop tests, with
+ * the input ceiling raised to the production assembly's own prompt scale — the seam
+ * sends the composed builtin prompt and the state tools' schemas, which the
+ * conservative counter prices far above a bare case — and the hold covering both
+ * maxima, as the invariant requires. The input bound's REFUSAL is exercised below on
+ * the existing 1000-token policy, where the oversized case input cannot fit.
+ */
+const seamPolicy: BillingModelCreditPolicyEntry = {
+  input: {
+    rate: { numerator: 1n, denominator: 1n },
+    maximumTokens: 200_000n,
+    maximumCostUnits: 200_000n,
+  },
+  output: {
+    rate: { numerator: 2n, denominator: 1n },
+    maximumTokens: 1000n,
+    maximumCostUnits: 2000n,
+  },
+  maximumReservationUnits: 202_000n,
+};
+const seamPolicies = new Map([["gateway-model", seamPolicy]]);
+
+/** A billed runner over the PRODUCTION public seam, pointed at the script. */
+function seamRunner(input: {
+  customer: string;
+  baseURL: string;
+  observations?: ModelSpanObservation[];
+  policy?: ReadonlyMap<string, BillingModelCreditPolicyEntry>;
+}) {
+  return createBilledEvaluationCaseRunner({
+    callModel: createPublicExecutionSeamModelCall({
+      apiKey: "test-key",
+      baseURL: input.baseURL,
+    }),
+    ...(input.observations === undefined
+      ? {}
+      : {
+          observe: (fact: ModelSpanObservation) =>
+            input.observations?.push(fact),
+        }),
+    billing: {
+      creditWriter: writer,
+      outbox,
+      policy: input.policy ?? seamPolicies,
+      externalCustomerId: input.customer,
+    },
+  });
+}
+
+test("the public seam's second loop step is refused before the wire and each step settles against its own hold (R3-01)", async () => {
+  const customer = `${prefix}-seam-loop-refused`;
+  // Exactly ONE call's worst-case hold: the case may start; the loop's second
+  // provider request may not. The same-production-seam ledger evidence R3-01 asks
+  // for — the pre-existing runner-dial suite proved this shape on
+  // `createGatewayModelCall`; here the SAME economics run through the seam.
+  await grant(customer, 202_000);
+  const gateway = scriptedGateway([
+    seamToolCallRound("search", { input: 100, output: 600 }),
+    seamAnswerRound("the outage reached three regions", {
+      input: 150,
+      output: 300,
+    }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-seam-loop-refused`;
+    const observations: ModelSpanObservation[] = [];
+    const runner = seamRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      observations,
+    });
+
+    const outcome = await runner(toolContextFor(executionId));
+
+    // The adversarial core: the second provider request never reached the wire, and
+    // the case says why instead of discovering it at settlement.
+    expect(gateway.bodies.length).toBe(1);
+    expect(outcome).toEqual({ status: "failed", reason: "credits_exhausted" });
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "credits_exhausted",
+    });
+
+    // The step that DID run settles exactly against the hold that admitted it.
+    const eventId = eventIdOf(executionId, 0);
+    const row = await outboxRow(eventId);
+    expect(row).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+      actualCostDenominator: "1",
+    });
+    expect(row?.reservationId).toBe((await reservationOf(eventId))?.id);
+    const refusedStepEvent = evaluationCaseStepUsageId(executionId, 0, 1);
+    expect(await outboxRow(refusedStepEvent)).toBeUndefined();
+    expect(await reservationOf(refusedStepEvent)).toBeUndefined();
+
+    // The step's request carried the policy's own output ceiling — applied on the
+    // wire before the provider can exceed it, even though the frozen configuration
+    // names no cap of its own.
+    expect(gateway.bodies[0]).toMatchObject({ max_tokens: 1000 });
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("a blank-whitelist case on the public seam is budgeted, capped and settled — its state-tool request and no other (R3-01)", async () => {
+  const customer = `${prefix}-seam-blank`;
+  await grant(customer, 202_000);
+  const gateway = scriptedGateway([
+    seamStateToolRound({ input: 100, output: 600 }),
+    seamAnswerRound("never reached", { input: 150, output: 300 }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-seam-blank`;
+    const runner = seamRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+    });
+
+    const outcome = await runner(contextFor(executionId));
+
+    // No business tool is declared, and the engine's own AG-UI state tools still
+    // ride the wire (the runtime installs them unconditionally). Today's assembly
+    // grants a toolless run no step loop — one provider request — but the budget no
+    // longer asks the business whitelist whether the case may multi-step (R3-01):
+    // the one request there is is admitted, capped by the policy and settled.
+    expect(gateway.bodies.length).toBe(1);
+    const wireTools = (
+      (gateway.bodies[0]?.tools ?? []) as {
+        function?: { name?: string };
+      }[]
+    )
+      .map((one) => one.function?.name)
+      .filter((name): name is string => typeof name === "string")
+      .sort();
+    expect(wireTools).toEqual(["AGUISendStateDelta", "AGUISendStateSnapshot"]);
+    // The policy's own output ceiling rides the toolless request — not only the
+    // frozen configuration's optional cap.
+    expect(gateway.bodies[0]).toMatchObject({ max_tokens: 1000 });
+    expect(outcome.status).toBe("completed");
+
+    // The single request's exact charge settles against the case's own hold.
+    const eventId = eventIdOf(executionId, 0);
+    expect(await outboxRow(eventId)).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 600,
+      actualCostNumerator: "1300",
+      actualCostDenominator: "1",
+    });
+    expect(await reservationOf(eventId)).toBeDefined();
+    const noSecondStep = evaluationCaseStepUsageId(executionId, 0, 1);
+    expect(await outboxRow(noSecondStep)).toBeUndefined();
+    expect(await reservationOf(noSecondStep)).toBeUndefined();
+  } finally {
+    gateway.stop();
+  }
+});
+
+test("an input the conservative count places over the policy's input ceiling is refused before the provider is dialed (R3-01)", async () => {
+  const customer = `${prefix}-seam-oversize`;
+  await grant(customer, 10_000);
+  const gateway = scriptedGateway([
+    seamAnswerRound("never reached", { input: 5, output: 3 }),
+  ]);
+  try {
+    const executionId = `${prefix}-exec-seam-oversize`;
+    const observations: ModelSpanObservation[] = [];
+    const runner = seamRunner({
+      customer,
+      baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+      observations,
+      // The 1000-token input ceiling: 20,000 ASCII bytes of case input count as at
+      // least 12,500 tokens by the approved conservative counter — it cannot fit.
+      policy: stepPolicies,
+    });
+
+    const outcome = await runner({
+      ...contextFor(executionId),
+      frozenCase: {
+        ...frozenCase,
+        safeInput: { state: "projected", text: "z".repeat(20_000) },
+      },
+    });
+
+    // Never dialed: the count refused the request outright, at step 0.
+    expect(gateway.bodies.length).toBe(0);
+    expect(outcome).toEqual({ status: "failed", reason: "input_over_limit" });
+    expect(observations[0]?.ending).toEqual({
+      kind: "refused",
+      code: "input_over_limit",
+    });
+
+    // The ledger says what actually happened: the case hold stays retained on the
+    // unknown-cost doctrine's evidence row, named with the budget's own word for the
+    // refusal — never a provider error for a request no provider saw.
+    const eventId = eventIdOf(executionId, 0);
+    expect(await outboxRow(eventId)).toMatchObject({
+      status: "input_over_limit",
+      reservationId: null,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect((await reservationOf(eventId))?.status).toBe("reserved");
+  } finally {
+    gateway.stop();
+  }
 });

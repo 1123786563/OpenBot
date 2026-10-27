@@ -35,7 +35,7 @@ import {
   type RunObservationEvent,
   resolveRunCapability,
 } from "../src/ai-observability/run-lifecycle";
-import { scopeKey } from "../src/ai-observability/scope";
+import { resourceScopeKey } from "../src/ai-observability/scope";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 
 const owner = { id: "user-owner", role: "user" } as const;
@@ -178,7 +178,7 @@ const report = (events: RunObservationEvent[], overrides = {}) => ({
 
 function association(overrides: Partial<RunAssociation> = {}): RunAssociation {
   return {
-    scopeKey: scopeKey(owner.id, "agent-1", EPOCH),
+    scopeKey: resourceScopeKey("agent-1"),
     botId: "agent-1",
     threadId: "thread-1",
     runId: "run-1",
@@ -544,7 +544,7 @@ describe("POST / basic run reporting seam", () => {
     // The association the binding received is derived from the authenticated
     // context, never from the report body.
     expect(begins).toHaveLength(1);
-    expect(begins[0].scope.key).toBe(scopeKey(owner.id, "agent-1", EPOCH));
+    expect(begins[0].scope.key).toBe(resourceScopeKey("agent-1"));
     expect(begins[0].scope.botId).toBe("agent-1");
     expect(begins[0].scope.actorId).toBe(owner.id);
     expect(begins[0].input).toMatchObject({
@@ -655,7 +655,7 @@ describe("POST / basic run reporting seam", () => {
       }),
     );
     expect(response.status).toBe(200);
-    expect(begins[0].scope.key).toBe(scopeKey(owner.id, "agent-1", EPOCH));
+    expect(begins[0].scope.key).toBe(resourceScopeKey("agent-1"));
     expect(begins[0].scope.actorId).toBe(owner.id);
     expect(begins[0].scope.botId).toBe("agent-1");
   });
@@ -681,7 +681,7 @@ describe("POST / — the binding terminal state's production writer (G1)", () =>
     expect(finishes).toEqual([
       {
         scope: expect.objectContaining({
-          key: scopeKey(owner.id, "agent-1", EPOCH),
+          key: resourceScopeKey("agent-1"),
         }),
         runId: "run-1",
         attemptId: "attempt-1",
