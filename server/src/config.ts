@@ -22,6 +22,7 @@ import {
 import { getLogger } from "@openbot/shared/logger";
 import { singleUserEnabled } from "./auth/dev-actor";
 import { normalizeDomain } from "./auth/email-domain";
+import type { AuthMailSmtpSettings } from "./auth/mail";
 import { organizationAuthority } from "./auth/organization";
 import type {
   BillingEntitlementEntry,
@@ -174,6 +175,15 @@ export type AuthConfig = {
    * deployments even when this is on.
    */
   emailPassword?: boolean;
+  /**
+   * Standard SMTP settings for the auth mail seam (T04.04 / P08): what the
+   * transactional outbox's post-commit worker delivers through. Absent keeps
+   * the mail callbacks unwired — no verification or reset notification is
+   * enabled and a deployment that never named a receiver changes nothing.
+   * Named entirely by the OPENBOT_AUTH_SMTP_* environment; never defaulted,
+   * because a wrong default would send real mail to the wrong place.
+   */
+  authSmtp?: AuthMailSmtpSettings;
 };
 
 /**
@@ -956,6 +966,7 @@ function authConfig(
 
   const secret = optional(environment, "BETTER_AUTH_SECRET");
   const baseUrl = url(environment, "BETTER_AUTH_URL");
+  const authSmtp = authSmtpSettings(environment);
 
   if (!google && !microsoft && !okta && !casdoor) {
     if (secret || baseUrl) {
@@ -1073,6 +1084,63 @@ function authConfig(
     ...(okta ? { okta } : {}),
     ...(casdoor ? { casdoor } : {}),
     emailPassword: optional(environment, "OPENBOT_EMAIL_PASSWORD") === "true",
+    ...(authSmtp ? { authSmtp } : {}),
+  };
+}
+
+/**
+ * The auth mail SMTP settings (T04.04 / P08). One variable — the host —
+ * turns the surface on, and then the rest must be a complete, sane set:
+ * half-configured mail is a deployment that believes it notifies and
+ * quietly does not. Errors name the variable, never its value: a DSN or a
+ * credential never reaches a message.
+ */
+function authSmtpSettings(
+  environment: Environment,
+): AuthMailSmtpSettings | undefined {
+  const host = optional(environment, "OPENBOT_AUTH_SMTP_HOST")?.trim();
+  if (!host) {
+    for (const stray of [
+      "OPENBOT_AUTH_SMTP_PORT",
+      "OPENBOT_AUTH_SMTP_SECURE",
+      "OPENBOT_AUTH_SMTP_USER",
+      "OPENBOT_AUTH_SMTP_PASSWORD",
+      "OPENBOT_AUTH_SMTP_FROM",
+    ]) {
+      if (optional(environment, stray) !== undefined) {
+        throw new Error(
+          `${stray} is set but OPENBOT_AUTH_SMTP_HOST is not. Configure the full OPENBOT_AUTH_SMTP_* set or unset all of it`,
+        );
+      }
+    }
+    return undefined;
+  }
+  const portText = optional(environment, "OPENBOT_AUTH_SMTP_PORT");
+  const port = portText === undefined ? 587 : Number(portText);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(
+      "OPENBOT_AUTH_SMTP_PORT must be an integer between 1 and 65535",
+    );
+  }
+  const user = optional(environment, "OPENBOT_AUTH_SMTP_USER");
+  const password = optional(environment, "OPENBOT_AUTH_SMTP_PASSWORD");
+  if ((user === undefined) !== (password === undefined)) {
+    throw new Error(
+      "OPENBOT_AUTH_SMTP_USER and OPENBOT_AUTH_SMTP_PASSWORD must be set together: an authenticated relay needs both, an open relay needs neither",
+    );
+  }
+  const from = optional(environment, "OPENBOT_AUTH_SMTP_FROM")?.trim();
+  if (!from?.includes("@")) {
+    throw new Error(
+      "OPENBOT_AUTH_SMTP_FROM must name the sender address the mail goes out as (name@domain)",
+    );
+  }
+  return {
+    host,
+    port,
+    secure: optional(environment, "OPENBOT_AUTH_SMTP_SECURE") === "true",
+    ...(user !== undefined ? { user, password } : {}),
+    from,
   };
 }
 

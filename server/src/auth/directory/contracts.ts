@@ -227,13 +227,18 @@ export interface TransactionBoundBa {
 /**
  * How a deferred hook's registering source is dispositioned (T01.04,
  * interfaces §3.1 hook table). "read-only" and "disabled-cache-noop" are the
- * only classifications a hook may drain under; every other registered source
- * is a named refusal — the classification itself is the evidence, closure
- * text is never inspected to guess side effects.
+ * only classifications a hook may drain under; "notification-outbox-takeover"
+ * (T04.04) is the one conversion class — the registration never drains, it is
+ * executed inside the still-open transaction so the factory-wired controlled
+ * sender translates the notification into an outbox intent + receipt before
+ * the commit fence sees it. Every other registered source is a named refusal
+ * — the classification itself is the evidence, closure text is never
+ * inspected to guess side effects.
  */
 export type HookSourceDisposition =
   | Readonly<{ kind: "read-only" }>
   | Readonly<{ kind: "disabled-cache-noop" }>
+  | Readonly<{ kind: "notification-outbox-takeover" }>
   | Readonly<{
       reason:
         | "unregistered-database-hook"
@@ -276,13 +281,13 @@ export interface BaAuthorityOptionsView {
 /**
  * The notification kinds the transactional outbox carries (T02.12 /
  * #534, original task P04; interfaces §3.1 notification table). The closed
- * vocabulary arrives with the task that owns its converter: T02.12 owns
- * `link-account.verify`, the takeover target the pinned build's
- * dispatchVerificationEmail hook shape translates into. Verification and
- * reset mail kinds belong to the mail wiring task (T04.04/P08) and are added
- * there, never sketched here.
+ * vocabulary arrives with the task that owns its converter: T02.12 named
+ * `link-account.verify` for the pinned build's ONE verification-mail
+ * dispatch (the deferred link-account hook and the signup/resend paths fire
+ * the same callback, so one converter serves them all); T04.04/P08 adds
+ * `password.reset`.
  */
-export type OutboxIntentKind = "link-account.verify";
+export type OutboxIntentKind = "link-account.verify" | "password.reset";
 
 /**
  * One mail notification to register beside its command, in the command's own

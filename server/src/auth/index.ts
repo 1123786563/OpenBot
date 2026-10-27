@@ -28,12 +28,14 @@ import {
   verifications,
 } from "../db/schema";
 import type { Directory, DirectoryTx } from "./directory/contracts";
+import { createAuthMailOutbox } from "./directory/outbox";
 import {
   assertBaAuthorityPreconditions,
   BA_AUTHORITY_CONFIG_VIOLATION,
 } from "./directory/transaction-adapter";
 import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
+import { assertAuthMailTakeover, createAuthMail } from "./mail";
 import { applyConfiguredAdmin, isConfiguredAdmin, seedRole } from "./roles";
 import {
   createScimTransactionCapture,
@@ -454,6 +456,24 @@ export function createAuth(
   }
 
   /*
+   * The mail seam (T04.04 / P08, interfaces §5.1): when the deployment
+   * names an SMTP receiver, the fixed build's verification and reset
+   * callbacks become createAuthMail's converters over the T02.12
+   * transactional outbox — the URL and token are sealed into the stored
+   * intent with the deployment's existing key material, and only the
+   * post-commit worker delivers through standard SMTP. No SMTP
+   * configuration keeps every mail notification off, exactly as before.
+   */
+  const authMail = authConfig.authSmtp
+    ? createAuthMail({
+        smtp: authConfig.authSmtp,
+        outbox: createAuthMailOutbox({
+          payloadSecret: config.keyEncryptionKey,
+        }),
+      })
+    : null;
+
+  /*
    * Okta and Casdoor go through the generic OAuth plugin, the other two do not.
    *
    * Google and Entra are named providers that Better Auth knows the endpoints of. Okta and Casdoor
@@ -674,6 +694,9 @@ export function createAuth(
      * OPENBOT_EMAIL_PASSWORD=true: deployments that authenticate through
      * Casdoor/SSO keep this surface closed, and `decideSignInMethod` above
      * still refuses these requests when a deployment mandates SSO.
+     *
+     * With mail configured, the reset callback is the same outbox converter
+     * (§5.1); the recovery HTTP translation around it is T04.05's.
      */
     ...(authConfig.emailPassword
       ? {
@@ -681,6 +704,26 @@ export function createAuth(
             enabled: true,
             minPasswordLength: 8,
             requireEmailVerification: false,
+            ...(authMail
+              ? { sendResetPassword: authMail.sendResetPassword }
+              : {}),
+          },
+        }
+      : {}),
+    /*
+     * Verification mail (T04.04): signup and every later sign-in of an
+     * unverified address dispatch through the converter, so the intent is
+     * registered in the signing transaction and delivered only after its
+     * commit. The deferred link-account dispatch is taken over the same way
+     * (the hook fence converts it inside the command), which is the
+     * condition interfaces §3.1 sets for enabling these at all.
+     */
+    ...(authMail
+      ? {
+          emailVerification: {
+            sendVerificationEmail: authMail.sendVerificationEmail,
+            sendOnSignUp: true,
+            sendOnSignIn: true,
           },
         }
       : {}),
@@ -904,6 +947,25 @@ export function createAuth(
    */
   assertBaAuthorityPreconditions(options);
   assertSsoOrganizationProvisioningDisabled(options.plugins);
+  /*
+   * §3.1's takeover condition (T04.04): mail may only be enabled with the
+   * outbox conversion installed — the converter callbacks and the hook
+   * fence's notification-outbox disposition. A configuration that enables
+   * mail without either never starts.
+   */
+  assertAuthMailTakeover({
+    emailVerification: options.emailVerification as
+      | {
+          sendOnSignUp?: boolean;
+          sendOnSignIn?: boolean;
+          sendVerificationEmail?: unknown;
+        }
+      | undefined,
+    emailAndPassword: options.emailAndPassword as
+      | { sendResetPassword?: unknown }
+      | undefined,
+    authMail,
+  });
   if (options.advanced?.backgroundTasks !== undefined) {
     throw new Error(
       `${BA_AUTHORITY_CONFIG_VIOLATION}: backgroundTasks is configured; the pinned build would run that work outside the directory command transaction, which is the boundary interfaces §3.1 fixes — remove it before booting`,

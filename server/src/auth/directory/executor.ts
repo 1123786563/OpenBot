@@ -90,6 +90,7 @@ import {
   authCommandChangeKeys,
   authCommandReceipts,
 } from "../../db/schema/auth-directory";
+import { runWithAuthMailCommand } from "../mail";
 import type { DirectoryAuthority } from "./authority";
 import type {
   BaTxOutcome,
@@ -823,20 +824,32 @@ export function createDirectoryExecutor(
           const fenceBound = createMailCallbackFence(tx, commandId);
           fence = fenceBound;
 
+          /*
+           * The command's mail conversion context (T04.04), wrapping the
+           * whole TransactionBoundBa run — the BA operation and the
+           * deferred-hook classification after it (the link-account
+           * takeover converts there): every fixed-package mail callback of
+           * this command finds the live tx/fence/outbox, and one fired
+           * outside finds nothing and is refused unsent.
+           */
           const outcome: BaTxOutcome<DirectoryCommandOutcome> =
-            await options.bound.run(tx, () =>
-              handler.sync({
-                tx,
-                actor,
-                command,
-                principal,
-                commandId,
-                payloadHash,
-                registry: options.registry,
-                bound: options.bound,
-                fence: fenceBound,
-                outbox: options.outbox ?? null,
-              }),
+            await runWithAuthMailCommand(
+              { tx, fence: fenceBound, outbox: options.outbox ?? null },
+              () =>
+                options.bound.run(tx, () =>
+                  handler.sync({
+                    tx,
+                    actor,
+                    command,
+                    principal,
+                    commandId,
+                    payloadHash,
+                    registry: options.registry,
+                    bound: options.bound,
+                    fence: fenceBound,
+                    outbox: options.outbox ?? null,
+                  }),
+                ),
             );
           await assertMailCallbackCompletion(tx, fenceBound);
           const finalized = await options.finalizer.finalize(tx, commandId);

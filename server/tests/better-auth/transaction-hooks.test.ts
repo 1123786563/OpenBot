@@ -1130,12 +1130,14 @@ test("hook_source_registry_pins_the_fixed_build_call_sites", async () => {
       ?.disposition,
   ).toEqual({ reason: "cache-write-with-forbidden-storage" });
 
-  // The notification source: registered, but not as a runnable hook until
-  // the outbox takes its delivery over (F-08).
+  // The notification source: converted, never drained (F-08, T04.04). The
+  // registration executes inside the still-open transaction, where the
+  // factory-wired controlled sender registers the encrypted outbox intent
+  // and its receipt; the closure itself never joins the post-commit drain.
   expect(
     classifyHookRegistration(stackOf("oauth2/link-account.mjs", 304)).entry
       ?.disposition,
-  ).toEqual({ reason: "notification-without-outbox-takeover" });
+  ).toEqual({ kind: "notification-outbox-takeover" });
 
   // databaseHooks: user-declared after-hooks are refused before commit no
   // matter which of the six with-hooks call sites queued them.

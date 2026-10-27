@@ -46,7 +46,10 @@
  *    own call sites, matched on package file and line from the registration
  *    stack, never by inspecting closure text. Sources dispositioned
  *    read-only or disabled-cache-noop return in the outcome for the executor
- *    to drain exactly once after commit; every other source (unregistered
+ *    to drain exactly once after commit; a notification-outbox-takeover
+ *    source (T04.04) is converted — its closure runs inside the still-open
+ *    transaction so the controlled sender registers the outbox intent, and
+ *    never drains post-commit. Every other source (unregistered
  *    databaseHooks, notifications without an outbox takeover, cache writes
  *    that require the forbidden secondaryStorage) and any unregistered site
  *    is refused before commit — silently dropping, or committing without
@@ -119,7 +122,15 @@ export const BA_HOOK_SOURCE_REGISTRY: readonly HookSourceClassification[] = [
     packageFile: "better-auth/dist/oauth2/link-account.mjs",
     line: 304,
     site: "dispatchVerificationEmail → send",
-    disposition: { reason: "notification-without-outbox-takeover" },
+    /*
+     * The outbox takeover (T04.04 / P08, interfaces §3.1): the deferred
+     * send closure is executed inside the still-open command transaction,
+     * where the factory-wired sendVerificationEmail (createAuthMail's
+     * controlled sender) registers the encrypted intent + receipt. The
+     * closure itself never drains post-commit, so a committed command's
+     * mail is always the outbox intent and a rolled-back one leaves none.
+     */
+    disposition: { kind: "notification-outbox-takeover" },
   },
   {
     hookId: "ba-1.7.1/with-hooks.mjs:33:createWithHooks-after",
@@ -477,6 +488,25 @@ export function createTransactionBoundBa(
           throw new Error(
             `${refusal.code}: ${entry.site} (${verdict.frame}) registered a deferred post-commit hook — ${refusal.detail}`,
           );
+        }
+        if (disposition.kind === "notification-outbox-takeover") {
+          /*
+           * The conversion (T04.04): run the deferred notification closure
+           * right here, inside the still-open transaction, so the
+           * factory-wired controlled sender it calls registers the
+           * encrypted outbox intent and its receipt on this command — the
+           * pre-commit completion fence then decides with the real facts.
+           * The closure is never queued for the post-commit drain: a
+           * committed command delivers only through the outbox worker, and
+           * a failure here rolls the command back to this savepoint.
+           */
+          try {
+            await pendingHooks[index]();
+          } catch (error) {
+            await rollbackToSavepoint(tx, savepoint);
+            throw preferFirstSqlState(error, instrumented.firstSqlError());
+          }
+          continue;
         }
         classified.push({
           hookId: `${entry.hookId}#${index + 1}`,

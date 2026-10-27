@@ -49,6 +49,8 @@ export interface OidcTestIdp {
   discoveryUrl: string;
   jwksUri: string;
   tokenEndpoint: string;
+  /** The Bearer userinfo endpoint (the claims of the id_token it rode with). */
+  userInfoEndpoint: string;
   /** Mint a one-time authorization code bound to this nonce and PKCE challenge. */
   authorize(input: OidcAuthorizeInput): string;
   /** How many POSTs the token endpoint has answered, including refused ones. */
@@ -158,6 +160,8 @@ export async function createOidcTestIdp(
   const foreignKid = primaryJwk.kid;
 
   const grants = new Map<string, Grant>();
+  /** access_token -> the id_token claims it rode with (for /userinfo). */
+  const accessTokens = new Map<string, Record<string, unknown>>();
   let tokenRequests = 0;
   let jwksRequests = 0;
 
@@ -187,13 +191,42 @@ export async function createOidcTestIdp(
         jwksRequests += 1;
         return json({ keys: [primaryJwk] });
       }
+      /*
+       * The userinfo endpoint the generic-OAuth client (T04.04's second
+       * link-account branch) requires: Bearer access token in, exactly the
+       * claims of the id_token it was minted with out, the way a real OIDC
+       * provider answers.
+       */
+      if (request.method === "GET" && url.pathname === "/userinfo") {
+        const authorization = request.headers.get("authorization") ?? "";
+        const token = authorization.startsWith("Bearer ")
+          ? authorization.slice(7)
+          : "";
+        const claims = accessTokens.get(token);
+        if (!claims) return json({ error: "invalid_token" }, 401);
+        return json(claims);
+      }
       if (request.method === "POST" && url.pathname === "/token") {
         tokenRequests += 1;
         const form = new URLSearchParams(await request.text());
-        if (
-          form.get("client_id") !== clientId ||
-          form.get("client_secret") !== clientSecret
-        ) {
+        /*
+         * Both standard OAuth client authentications: the body credentials
+         * this IdP was born with, and the HTTP Basic header the SSO plugin
+         * sends (T04.04). Either may carry the pair; a mismatched one is
+         * still an invalid client.
+         */
+        let basicId = "";
+        let basicSecret = "";
+        const authorization = request.headers.get("authorization");
+        if (authorization?.startsWith("Basic ")) {
+          const decoded = atob(authorization.slice(6));
+          const split = decoded.indexOf(":");
+          basicId = decoded.slice(0, split);
+          basicSecret = decoded.slice(split + 1);
+        }
+        const presentedId = form.get("client_id") ?? basicId;
+        const presentedSecret = form.get("client_secret") ?? basicSecret;
+        if (presentedId !== clientId || presentedSecret !== clientSecret) {
           return json({ error: "invalid_client" }, 401);
         }
         if (form.get("grant_type") !== "authorization_code") {
@@ -258,8 +291,10 @@ export async function createOidcTestIdp(
           bytes[bytes.length - 1] ^= 0xff;
           idToken = `${input}.${base64Url(bytes)}`;
         }
+        const accessToken = `at-${crypto.randomUUID()}`;
+        accessTokens.set(accessToken, payload);
         return json({
-          access_token: `at-${crypto.randomUUID()}`,
+          access_token: accessToken,
           token_type: "Bearer",
           expires_in: 300,
           id_token: idToken,

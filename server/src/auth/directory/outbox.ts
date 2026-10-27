@@ -110,8 +110,17 @@ export class OutboxRefusal extends Error {
 const SEALED_MARKER = "obx-aead1";
 /** The scrypt salt label binding the payload key to this envelope version. */
 const KEY_LABEL = "openbot-auth-outbox/aead1";
-/** The closed intent vocabulary this module may seal (contracts own the type). */
-const INTENT_KINDS: readonly OutboxIntentKind[] = ["link-account.verify"];
+/**
+ * The closed intent vocabulary this module may seal (contracts own the type):
+ * `link-account.verify` is the pinned build's ONE verification-mail dispatch
+ * (T02.12's takeover target — both the deferred link-account hook and the
+ * signup/resend paths fire the same callback); `password.reset` is the reset
+ * mail. Both converters arrive with T04.04.
+ */
+const INTENT_KINDS: readonly OutboxIntentKind[] = [
+  "link-account.verify",
+  "password.reset",
+];
 /** The longest event key stored as a row id; longer keys are refused, not truncated. */
 const EVENT_KEY_MAX = 512;
 

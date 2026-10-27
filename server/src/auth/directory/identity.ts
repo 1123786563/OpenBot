@@ -95,6 +95,7 @@ import { z } from "zod";
 import type { Database } from "../../db/client";
 import { authCommandReceipts } from "../../db/schema/auth-directory";
 import { identityUserLock } from "../../identity/store";
+import { runWithAuthMailCommand } from "../mail";
 import type {
   DirectoryTx,
   Identity,
@@ -1246,9 +1247,18 @@ export function createIdentityExecutor(
     const fence = createMailCallbackFence(tx, commandId);
     fenceHolder.fence = fence;
 
-    const outcome = await options.bound.run(tx, async () => {
-      await sync(tx, command, commitment, options.registry);
-    });
+    /*
+     * The command's mail conversion context (T04.04), wrapping the whole
+     * TransactionBoundBa run — operation and deferred-hook classification
+     * — same as the directory executor's.
+     */
+    const outcome = await runWithAuthMailCommand(
+      { tx, fence, outbox: options.outbox ?? null },
+      () =>
+        options.bound.run(tx, async () => {
+          await sync(tx, command, commitment, options.registry);
+        }),
+    );
     await assertMailCallbackCompletion(tx, fence);
     if (commitment) {
       await assertTokenConsumed(tx, commitment.tokenRowId);
