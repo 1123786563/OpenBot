@@ -25,7 +25,7 @@ owned：`server/scripts/opik-e2e-ingest.ts`、`server/scripts/opik-e2e-ingest-ga
 - 集成后主控复跑真实栈（ingest-rerun-r8）。
 
 ### FIX-H — 文档账差 + 4 条漏裁候选（T-J #1 medium + 派发缺口）
-owned：`docs/plans/opik/2026-10-27-opik-issue4-ocr-r2-fix-wave.md`（账差行）；另有权裁决 #10–#13
+owned：`docs/plans/opik/2026-10-27-opik-issue4-ocr-final-fix-wave.md`（账差行；曾误写 r2-fix-wave.md，H 流交付披露更正）；另有权裁决 #10–#13
 - 行 5 分流账从三份 triage JSON 重算（6R/28D/10dup/6moot），并使 12+6+28+10+6+4(补裁)=66 闭合。
 - **补裁 #10–#13**（final-hm-candidates.md 的 4 条 docs/plans 面 medium：r2-fix-wave.md:9-11、ocrfix-r5-plan.md:24、r2-fix-wave.md:4、ocrfix-r5-plan.md:13）：逐条独立裁决 CONFIRMED/DOWNGRADED/REFUTED，证据进报告；若 CONFIRMED 非文档可即改项，上报主控另立。
 - 注意 #16（ocrfix-r5-plan.md:24 HIGH）T-G 已裁 DOWNGRADED——#11 若同址则 DUPLICATE。
