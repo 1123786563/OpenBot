@@ -44,7 +44,12 @@ import {
 } from "../../server/src/marketplace/legacy-migration";
 import { readMarketplaceIndex } from "./index-file";
 
-/** The built-in package's newest index entry (or null when unregistered). */
+/**
+ * The built-in package's newest PUBLISHED index entry (or null when there is
+ * none). OCR-fix-G1 (R6-H2 同族): a withdrawn release is not a migration
+ * baseline — binding new provenance to a release the deployment has pulled is
+ * exactly what the withdrawal was protecting against.
+ */
 export async function builtinIndexEntry(indexPath: string): Promise<{
   packageKey: string;
   version: string;
@@ -52,7 +57,8 @@ export async function builtinIndexEntry(indexPath: string): Promise<{
 } | null> {
   const index = await readMarketplaceIndex(indexPath);
   const entries = index.packages.filter(
-    (entry) => entry.packageKey === BUILTIN_PACKAGE_KEY,
+    (entry) =>
+      entry.packageKey === BUILTIN_PACKAGE_KEY && entry.state === "published",
   );
   if (entries.length === 0) return null;
   const newest = [...entries]

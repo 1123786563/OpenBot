@@ -15,6 +15,7 @@
 //       publish/withdraw 路由（公司管理员无全局撤回入口）。
 //   (6) CLI：spawn 真实命令，stdout/stderr 为可解析 JSON 回执。
 
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -870,6 +871,112 @@ describe("PKG08 index lock and atomic replace", () => {
         () => false,
       ),
     ).toBe(false);
+  });
+  // —— OCR-fix-G1 (R6-H1)：锁必须认持有者身份。release 只删自己那份；
+  // 被判 stale 破除后恢复的持有者，其 release 不得删掉新持有者的锁（该锁
+  // 承载 PKG08 的 withdraw×dispatch 互斥）。 ——
+
+  function lockExists(indexPath: string): Promise<boolean> {
+    return stat(`${indexPath}.lock`).then(
+      () => true,
+      () => false,
+    );
+  }
+
+  test("OCR-fix-G1: a stale-broken holder's release leaves the successor's lock intact", async () => {
+    root = await mkdtemp(join(tmpdir(), "pkg08-owner-"));
+    const indexPath = join(root, "marketplace.json");
+    await writeFile(
+      indexPath,
+      `${JSON.stringify({ schemaVersion: 1, packages: [] }, null, 2)}\n`,
+    );
+    // A holds with a long stale window, then ages past a breaker's threshold.
+    const stalled = await acquireIndexLock(indexPath, { staleMs: 60_000 });
+    const ancient = new Date(Date.now() - 60_000);
+    await utimes(`${indexPath}.lock`, ancient, ancient);
+    const successor = await acquireIndexLock(indexPath, {
+      staleMs: 500,
+      timeoutMs: 3_000,
+    });
+    // A "recovers" and releases: B's live lock must survive.
+    await stalled.release();
+    expect(stalled.releaseOutcome).toEqual({
+      released: false,
+      reason: "NOT_OWNER",
+    });
+    expect(await lockExists(indexPath)).toBe(true);
+    // B's own release still lands, and nothing is left behind.
+    await successor.release();
+    expect(successor.releaseOutcome).toEqual({ released: true });
+    expect(await lockExists(indexPath)).toBe(false);
+  });
+
+  test("OCR-fix-G1: release never deletes a lock whose owner token is not its own", async () => {
+    root = await mkdtemp(join(tmpdir(), "pkg08-token-"));
+    const indexPath = join(root, "marketplace.json");
+    await writeFile(
+      indexPath,
+      `${JSON.stringify({ schemaVersion: 1, packages: [] }, null, 2)}\n`,
+    );
+    const handle = await acquireIndexLock(indexPath, { staleMs: 60_000 });
+    // The lock changes hands under the same name.
+    await writeFile(
+      join(`${indexPath}.lock`, "owner"),
+      `${randomUUID()}\n`,
+      "utf8",
+    );
+    await handle.release();
+    expect(handle.releaseOutcome).toEqual({
+      released: false,
+      reason: "NOT_OWNER",
+    });
+    expect(await lockExists(indexPath)).toBe(true);
+    await rm(`${indexPath}.lock`, { recursive: true, force: true });
+  });
+
+  test("OCR-fix-G1: a heartbeat failing past the threshold gives the lock up instead of silently holding it", async () => {
+    root = await mkdtemp(join(tmpdir(), "pkg08-heartbeat-"));
+    const indexPath = join(root, "marketplace.json");
+    await writeFile(
+      indexPath,
+      `${JSON.stringify({ schemaVersion: 1, packages: [] }, null, 2)}\n`,
+    );
+    const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+    // Transient failure: two bad refreshes then a good one — the holder keeps
+    // the lock (the old code gave up on the FIRST failure).
+    let ticks = 0;
+    const flaky = () => {
+      ticks += 1;
+      return ticks <= 2
+        ? Promise.reject(new Error("transient refresh failure"))
+        : Promise.resolve();
+    };
+    await expect(
+      withIndexLock(indexPath, async () => sleep(200).then(() => "ran"), {
+        staleMs: 90,
+        heartbeat: flaky,
+      }),
+    ).resolves.toBe("ran");
+    expect(await lockExists(indexPath)).toBe(false);
+    // Persistent failure: the handle stops claiming the lock and the critical
+    // section's caller gets a typed error — never a silent "still held".
+    await expectIndexError(
+      withIndexLock(
+        indexPath,
+        async () => {
+          await sleep(300);
+          return "never";
+        },
+        {
+          staleMs: 90,
+          heartbeat: async () => {
+            throw new Error("persistent refresh failure");
+          },
+        },
+      ),
+      "PACKAGE_INDEX_LOCK_LOST",
+    );
+    expect(await lockExists(indexPath)).toBe(false);
   });
 });
 
