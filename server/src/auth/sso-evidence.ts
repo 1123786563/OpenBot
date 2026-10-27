@@ -30,6 +30,10 @@
  * a value the transport form asserts about itself is not evidence.
  */
 
+import { sql as dsql } from "drizzle-orm";
+import { decryptSecret } from "../credentials";
+import type { Database } from "../db/client";
+
 /**
  * Evidence only this module's verifier can construct: the brand symbol is
  * module-private, so nothing outside can forge the type the assurance layer
@@ -229,6 +233,14 @@ const MULTI_FACTOR_METHODS = new Set([
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+
+/** Executed-SQL rows, however the driver surfaces them: an array, or an
+ * object carrying `rows` (the same shape T02.10's adapter normalized). */
+function rowsOf(result: unknown): Record<string, unknown>[] {
+  return Array.isArray(result)
+    ? (result as Record<string, unknown>[])
+    : ((result as { rows?: Record<string, unknown>[] }).rows ?? []);
+}
 
 /** The JWKS key shape this bridge reads: the DOM `JsonWebKey` type has no
  * `kid`, but every IdP that rotates keys publishes one. */
@@ -1703,6 +1715,245 @@ export function createSsoEvidenceBridge(
         protocolRequestId: challenge.protocolRequestId,
         [verifiedSsoEvidence]: true as const,
       });
+    },
+  };
+}
+
+/*
+ * ── The production stores (T05.02 / #558) ─────────────────────────────────
+ *
+ * The bridge above is ports-only by design; these are the SQL-backed
+ * implementations the company-auth completion assembles it with. They read
+ * the 0213 challenge storage and the registered providers exclusively
+ * through the 0219 controlled functions' discipline — the runtime roles
+ * keep zero direct privileges on the assurance tables, so the one-time
+ * consume is the SECURITY DEFINER conditional UPDATE and nothing else.
+ */
+
+/** SHA-256 hex of the correlation token — the only form the challenge row
+ * holds (0218 stored the digest, never the raw state). */
+export async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    textEncoder.encode(value),
+  );
+  return Buffer.from(digest).toString("hex");
+}
+
+/**
+ * The one-time challenge store on the 0213/0219 storage: `consume` is the
+ * controlled function's atomic conditional UPDATE — at most once, and never
+ * a deletion, so the pinnable binding and the audit trail stay intact.
+ * Expired-but-unconsumed challenges are still consumed so the bridge can
+ * answer `SSO_CHALLENGE_EXPIRED` from the returned `expires_at` instead of
+ * mistaking them for unknown states.
+ */
+export function createSsoChallengeStore(deps: {
+  /** The auth-writer pool the controlled function is EXECUTE-granted on. */
+  readonly database: Pick<Database, "execute">;
+  /** The deployment's AES-GCM key (base64, 32 bytes): the envelope opener. */
+  readonly encryptionKey: string;
+}): SsoChallengeStore {
+  if (
+    !deps ||
+    typeof deps.database?.execute !== "function" ||
+    typeof deps.encryptionKey !== "string" ||
+    !deps.encryptionKey
+  ) {
+    throw new SsoEvidenceRefused(
+      "SSO_PROVIDER_UNKNOWN",
+      "createSsoChallengeStore needs its auth-writer database and the deployment encryption key: without them no challenge can be consumed and none may be invented",
+    );
+  }
+  return {
+    async consume(state) {
+      const digest = await sha256Hex(state);
+      const result = await deps.database.execute(
+        dsql`SELECT challenge_id, user_id, session_id, tenant_id, provider_id,
+                    protocol, policy_revision, return_path, secret_envelope,
+                    expires_at
+               FROM public.auth_consume_company_auth_challenge(${digest})`,
+      );
+      const [row] = rowsOf(result);
+      if (!row) return null;
+      let opened: {
+        nonce: string;
+        codeVerifier: string;
+        protocolRequestId: string;
+      };
+      try {
+        opened = JSON.parse(
+          await decryptSecret(deps.encryptionKey, String(row.secret_envelope)),
+        );
+      } catch (cause) {
+        throw new SsoEvidenceRefused(
+          "SSO_TOKEN_EXCHANGE_FAILED",
+          `the challenge's sealed envelope cannot be opened with this deployment key: ${String(cause).slice(0, 120)}`,
+        );
+      }
+      return {
+        challengeId: String(row.challenge_id),
+        providerId: String(row.provider_id),
+        state,
+        nonce: String(opened.nonce),
+        codeVerifier: String(opened.codeVerifier),
+        protocolRequestId: String(opened.protocolRequestId),
+        expiresAt: new Date(row.expires_at as string),
+      };
+    },
+  };
+}
+
+/** The authorization-facing facts of one registered OIDC provider: what the
+ * redirect builder needs to send the user to the IdP. */
+export interface SsoOidcAuthorization {
+  readonly clientId: string;
+  readonly authorizationEndpoint: string;
+  /** The OpenBot callback URL this deployment answers for the provider. */
+  readonly redirectUri: string;
+  /** Space-joined scopes; `openid` at minimum, so the id_token is issued. */
+  readonly scopes: string;
+}
+
+/** The two views one provider registration serves: the bridge's token/JWKS
+ * facts and the redirect builder's authorization facts. */
+export interface SsoOidcProviderSource {
+  readonly registry: SsoProviderRegistry;
+  authorization(providerId: string): Promise<SsoOidcAuthorization | null>;
+}
+
+interface StoredOidcConfig {
+  clientId?: unknown;
+  clientSecret?: unknown;
+  authorizationEndpoint?: unknown;
+  tokenEndpoint?: unknown;
+  jwksEndpoint?: unknown;
+  scopes?: unknown;
+}
+
+/** The Better Auth SSO registration's OIDC half: `sso_providers.oidc_config`
+ * as the plugin wrote it, re-encrypted at rest by the deployment's adapter. */
+function parseStoredOidcConfig(raw: string): StoredOidcConfig | null {
+  try {
+    const config = JSON.parse(raw) as StoredOidcConfig;
+    return config && typeof config === "object" ? config : null;
+  } catch {
+    return null;
+  }
+}
+
+function requireConfigString(
+  config: StoredOidcConfig,
+  field: keyof StoredOidcConfig,
+  providerId: string,
+): string {
+  const value = config[field];
+  if (typeof value !== "string" || !value) {
+    throw new SsoEvidenceRefused(
+      "SSO_PROVIDER_UNKNOWN",
+      `provider ${providerId}'s stored registration carries no usable ${field}: the company-auth surface refuses a provider it cannot fully name`,
+    );
+  }
+  return value;
+}
+
+/**
+ * The provider registry and redirect source over the deployment's own
+ * `sso_providers` registrations. The config column is read through the
+ * deployment's AES-GCM envelope exactly as the sign-in adapter wrote it
+ * (plaintext registrations predating that adapter stay readable); a
+ * registration that cannot be opened or that names no token/JWKS endpoints
+ * refuses `SSO_PROVIDER_UNKNOWN` — an unusable provider is a deployment
+ * fact, not a per-request accident.
+ */
+export function createStoredSsoProviders(deps: {
+  /** Any pool that may read `sso_providers` (the legacy-privileged table). */
+  readonly database: Pick<Database, "execute">;
+  /** The deployment's AES-GCM key (base64, 32 bytes). */
+  readonly encryptionKey: string;
+  /** The origin the callback redirect_uri is built on. */
+  readonly redirectOrigin: string;
+}): SsoOidcProviderSource {
+  if (
+    !deps ||
+    typeof deps.database?.execute !== "function" ||
+    typeof deps.encryptionKey !== "string" ||
+    !deps.encryptionKey ||
+    typeof deps.redirectOrigin !== "string" ||
+    !deps.redirectOrigin
+  ) {
+    throw new SsoEvidenceRefused(
+      "SSO_PROVIDER_UNKNOWN",
+      "createStoredSsoProviders needs its database, encryption key and redirect origin: a half-named provider source cannot be assembled",
+    );
+  }
+  const redirectBase = `${deps.redirectOrigin.replace(/\/+$/, "")}/api/enterprise/company-auth/oidc/callback`;
+
+  const load = async (
+    providerId: string,
+  ): Promise<{
+    provider: SsoOidcProvider;
+    authorization: SsoOidcAuthorization;
+  } | null> => {
+    if (typeof providerId !== "string" || !providerId) return null;
+    const result = await deps.database.execute(
+      dsql`SELECT issuer, oidc_config FROM sso_providers
+            WHERE provider_id = ${providerId} AND oidc_config IS NOT NULL
+            LIMIT 1`,
+    );
+    const [row] = rowsOf(result);
+    if (!row) return null;
+    const stored = String(row.oidc_config);
+    let raw = stored;
+    if (stored.startsWith('{"version":1')) {
+      try {
+        raw = await decryptSecret(deps.encryptionKey, stored);
+      } catch {
+        throw new SsoEvidenceRefused(
+          "SSO_PROVIDER_UNKNOWN",
+          `provider ${providerId}'s stored registration cannot be opened with this deployment key: re-register the provider`,
+        );
+      }
+    }
+    const config = parseStoredOidcConfig(raw);
+    if (!config) return null;
+    const provider: SsoOidcProvider = {
+      providerId,
+      issuer: String(row.issuer ?? ""),
+      clientId: requireConfigString(config, "clientId", providerId),
+      clientSecret: requireConfigString(config, "clientSecret", providerId),
+      redirectUri: `${redirectBase}/${encodeURIComponent(providerId)}`,
+      tokenEndpoint: requireConfigString(config, "tokenEndpoint", providerId),
+      jwksUri: requireConfigString(config, "jwksEndpoint", providerId),
+    };
+    const scopes = Array.isArray(config.scopes)
+      ? config.scopes.filter(
+          (scope): scope is string => typeof scope === "string" && !!scope,
+        )
+      : [];
+    return {
+      provider,
+      authorization: {
+        clientId: provider.clientId,
+        authorizationEndpoint: requireConfigString(
+          config,
+          "authorizationEndpoint",
+          providerId,
+        ),
+        redirectUri: provider.redirectUri,
+        scopes: scopes.length ? scopes.join(" ") : "openid",
+      },
+    };
+  };
+
+  return {
+    registry: {
+      async find(providerId) {
+        return (await load(providerId))?.provider ?? null;
+      },
+    },
+    async authorization(providerId) {
+      return (await load(providerId))?.authorization ?? null;
     },
   };
 }

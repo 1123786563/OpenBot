@@ -13,15 +13,21 @@
  *   middle state and no optional dependency that skips the question: a
  *   consumer that forgets to inject the policy fails at construction, not at
  *   the first sensitive read.
- * - `challenge` and `complete` are the interactive halves. `complete` (the
- *   callback) is still closed — T05.02 owns callback verification — while
- *   `challenge` is live since T05.01 / #557 through
- *   {@link createCompanyAssurance}: a signed-in session actor asking for a
- *   company whose stored challenge policy demands one gets a one-time,
+ * - `challenge` and `complete` are the interactive halves. `challenge` is
+ *   live since T05.01 / #557 and `complete` since T05.02 / #558, both
+ *   through {@link createCompanyAssurance}: a signed-in session actor asking
+ *   for a company whose stored challenge policy demands one gets a one-time,
  *   session-bound challenge row (max 600 seconds, written only by the 0218
- *   SECURITY DEFINER function) and the IdP redirect URL. The closed adapter
- *   keeps answering 503 COMPANY_AUTH_NOT_READY for both halves, so nothing
- *   changes for a deployment that has not assembled the live factory yet.
+ *   SECURITY DEFINER function) and the IdP redirect URL; the callback is
+ *   verified by the assembled `SsoEvidenceBridge` (signature, issuer,
+ *   audience, nonce, PKCE, one-time state consumption, signed auth_time/
+ *   acr/amr) and completed under the tenant lock by the 0219 controlled
+ *   functions — one-time consumption re-checked, original session/membership/
+ *   policy re-verified, and the session-assurance proof written in the same
+ *   transaction as the read gate's facts. The closed adapter keeps answering
+ *   503 COMPANY_AUTH_NOT_READY for both halves when the live factory has not
+ *   assembled the evidence bridge, so nothing changes for a deployment that
+ *   has not wired it yet.
  *
  * Why the closed adapter exists at all: the read gate, the scope resolver and
  * the enterprise assemblers (T02.11/T03/P05) need the required dependency
@@ -44,7 +50,11 @@ import type {
   DirectoryTx,
   Version,
 } from "./directory/contracts";
-import { s256CodeChallenge } from "./sso-evidence";
+import {
+  type SsoEvidenceBridge,
+  type SsoOidcProviderSource,
+  s256CodeChallenge,
+} from "./sso-evidence";
 
 /**
  * What a live, usable company proof looks like to a caller (interfaces §5):
@@ -379,9 +389,14 @@ function rowsOfExecuted(result: unknown): Record<string, unknown>[] {
 /**
  * The live factory (interfaces §5): `require` keeps the closed gate's exact
  * semantics, `challenge` issues real session-bound challenges through the
- * 0218 controlled function, `complete` stays closed until T05.02 wires the
- * callback. Every dependency is required — a missing policy or redirect
- * builder fails at construction, never at the first sensitive request.
+ * 0218 controlled function, and `complete` verifies the callback through the
+ * assembled evidence bridge and writes the proof through 0219 — live when
+ * `evidence` is provided, the closed 503 when not (an absent bridge must
+ * degrade loudly, never silently accept a callback). The optional
+ * `sessions` port resolves the rotation-final session the proof binds;
+ * absent, the challenge's own session is the final one. Every other
+ * dependency is required — a missing policy or redirect builder fails at
+ * construction, never at the first sensitive request.
  */
 export function createCompanyAssurance(deps: {
   readonly policy: CompanyProofPolicyView;
@@ -391,6 +406,22 @@ export function createCompanyAssurance(deps: {
   readonly authority: Pick<DirectoryAuthority, "read" | "requireWrite">;
   /** The deployment's AES-GCM key (base64, 32 bytes) for the secret envelope. */
   readonly encryptionKey: string;
+  /**
+   * The OIDC/SAML evidence bridge (T01.06/T01.07). Absent keeps `complete`
+   * on the closed adapter's controlled 503 — an assembled-without-bridge
+   * factory issues challenges it can never lawfully complete.
+   */
+  readonly evidence?: SsoEvidenceBridge;
+  /**
+   * Resolves the request's current live session — the rotation-FINAL session
+   * a proof binds (§9.1 step 4). Absent binds the challenge's own session,
+   * which is honest only where the deployment performs no session rotation.
+   */
+  readonly sessions?: {
+    resolveCurrent(
+      request: Request,
+    ): Promise<{ userId: string; sessionId: string } | null>;
+  };
   /** Injectable for tests; production uses the wall clock. */
   readonly clock?: () => Date;
 }): CompanyAssurance {
@@ -542,10 +573,263 @@ export function createCompanyAssurance(deps: {
     };
   }
 
+  /**
+   * The completion half (T05.02 / #558): the bridge consumes the challenge
+   * one-time and verifies every protocol fact OUTSIDE any lock (an IdP
+   * round trip never waits inside one), then the tenant lock re-verifies
+   * the original session, membership and live policy and writes the proof
+   * in the same transaction as that re-verification. A failed re-verification
+   * leaves the challenge consumed and no proof written — fail-closed, and
+   * the flow restarts with a fresh challenge.
+   */
+  async function complete(
+    request: Request,
+  ): Promise<{ sessionId: string; tenantId: string; returnPath: string }> {
+    const evidence = deps.evidence;
+    if (!evidence || typeof evidence.verify !== "function") {
+      throw new CompanyAssuranceRefusal(
+        503,
+        COMPANY_AUTH_NOT_READY,
+        "complete is not wired in this deployment: callback verification belongs to the evidence bridge, and no bridge was assembled, so no callback is accepted",
+      );
+    }
+    // Protocol verification + at-most-once consumption, no lock held.
+    const verified = await evidence.verify(request);
+
+    // §9.1 step 4: bind the rotation-FINAL live session when the deployment
+    // can name it; without the port, the challenge's own session is final.
+    let finalSessionId: string | null = null;
+    if (deps.sessions?.resolveCurrent) {
+      const current = await deps.sessions.resolveCurrent(request);
+      if (!current?.sessionId) {
+        throw new CompanyAssuranceRefusal(
+          401,
+          COMPANY_AUTH_SESSION_EXPIRED,
+          "the callback arrived with no live session to bind: a proof only ever binds the challenge's final live session, so the additional authentication must be restarted",
+        );
+      }
+      finalSessionId = current.sessionId;
+    }
+
+    try {
+      return await deps.database.transaction(async (tx) => {
+        // The same authority gate every directory writer passes: legacy and
+        // paused deployments never complete (T02.10's matrix, this surface
+        // included).
+        const authorityState = await deps.authority.read(tx);
+        await deps.authority.requireWrite(
+          tx,
+          authorityState.authorityVersion,
+          "ba",
+        );
+        const result = await tx.execute(dsql`
+          SELECT assurance_id, session_id, tenant_id, return_path
+            FROM public.auth_record_company_session_assurance(
+              ${verified.challengeId}, ${`csa_${randomHex(16)}`},
+              ${finalSessionId}, ${verified.issuer}, ${verified.subject},
+              ${verified.authenticatedAt.toISOString()}::timestamptz,
+              ${verified.strength})`);
+        const [row] = rowsOfExecuted(result);
+        if (!row?.assurance_id) {
+          throw new Error("AUTH_COMPLETE_RECORD_EMPTY");
+        }
+        return {
+          sessionId: String(row.session_id),
+          tenantId: String(row.tenant_id),
+          returnPath: String(row.return_path),
+        };
+      });
+    } catch (error) {
+      throw mapCompletionDatabaseError(error);
+    }
+  }
+
   const assurance: CompanyAssurance = {
     require: closed.require,
     challenge,
-    complete: closed.complete,
+    complete,
   };
   return Object.freeze(assurance);
+}
+
+/**
+ * The named refusal behind a failed completion, mapped without leaking which
+ * company fact failed: session problems are one 401, and every "no proof for
+ * you — restart the additional authentication" answer (unknown/consumed/
+ * expired challenge, policy changed, membership or identity binding gone,
+ * generations missing, replay conflict) is the one 403
+ * COMPANY_REAUTH_REQUIRED. Anything the function raised that is not one of
+ * its markers is a real fault and propagates untouched.
+ */
+function mapCompletionDatabaseError(error: unknown): unknown {
+  const MAPPINGS: readonly (readonly [RegExp, 401 | 403 | 503, string])[] = [
+    [/^AUTH_COMPLETE_SESSION_UNKNOWN/, 401, COMPANY_AUTH_SESSION_EXPIRED],
+    [/^AUTH_COMPLETE_SESSION_MISMATCH/, 401, COMPANY_AUTH_SESSION_EXPIRED],
+    [/^AUTH_COMPLETE_CHALLENGE_UNKNOWN/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_CHALLENGE_NOT_CONSUMED/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_CHALLENGE_EXPIRED/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_POLICY_UNKNOWN/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_POLICY_MISMATCH/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_NOT_A_MEMBER/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_IDENTITY_UNKNOWN/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_NO_PRINCIPAL/, 403, COMPANY_REAUTH_REQUIRED],
+    [
+      /^AUTH_COMPLETE_IDENTITY_GENERATION_MISSING/,
+      403,
+      COMPANY_REAUTH_REQUIRED,
+    ],
+    [/^AUTH_COMPLETE_COMPANY_GENERATION_MISSING/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_PROOF_CONFLICT/, 403, COMPANY_REAUTH_REQUIRED],
+    [/^AUTH_COMPLETE_WRITER_ROLE_REQUIRED/, 503, COMPANY_AUTH_NOT_READY],
+  ];
+  let current: unknown = error;
+  for (let depth = 0; depth < 8 && current; depth += 1) {
+    const message =
+      current instanceof Error ? current.message : String(current);
+    for (const [marker, status, code] of MAPPINGS) {
+      if (marker.test(message)) {
+        return new CompanyAssuranceRefusal(
+          status,
+          code,
+          `the callback completion was refused (${message.slice(0, 120)})`,
+        );
+      }
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return error;
+}
+
+/*
+ * The stored policy model (T05.02 / #558): the production views behind the
+ * T05.01 frozen ports, reading the 0219 policy table through its controlled
+ * read. One row per company, at most; no row means the company runs no
+ * additional challenge and the read gate answers `null`.
+ */
+
+/** One stored company policy row, as the views return it. */
+export type StoredCompanyAuthPolicy = Readonly<{
+  providerId: string;
+  protocol: "oidc" | "saml";
+  policyRevision: number;
+  maxAuthAgeSeconds: number;
+}>;
+
+/**
+ * The stored policy views: `challenge` answers the T05.01 issuance port,
+ * `proof` answers the read gate's port (a stored policy row IS the demand
+ * for an additional proof — an assembly replaces app.ts's no-policy default
+ * with this view). Both fail closed: a malformed stored row is a 503, never
+ * a silent "no policy".
+ */
+export function createStoredCompanyAuthPolicyViews(deps: {
+  /** Any pool EXECUTE-granted on the 0219 policy read. */
+  readonly database: Pick<Database, "execute">;
+}): {
+  readonly proof: CompanyProofPolicyView;
+  readonly challenge: CompanyAuthChallengePolicyView;
+} {
+  if (!deps || typeof deps.database?.execute !== "function") {
+    throw new CompanyAssuranceRefusal(
+      503,
+      COMPANY_ASSURANCE_POLICY_REQUIRED,
+      "createStoredCompanyAuthPolicyViews needs its database: without the policy read no company's challenge demand can be answered honestly",
+    );
+  }
+
+  const storedPolicy = async (
+    tenantId: string,
+  ): Promise<StoredCompanyAuthPolicy | null> => {
+    if (typeof tenantId !== "string" || !tenantId) {
+      throw new CompanyAssuranceRefusal(
+        400,
+        COMPANY_ASSURANCE_TARGET_REQUIRED,
+        "the policy question is per company and cannot be answered for none",
+      );
+    }
+    const result = await deps.database.execute(dsql`
+      SELECT provider_id, protocol, policy_revision, max_auth_age_seconds
+        FROM public.auth_read_company_auth_policy(${tenantId})`);
+    const [row] = rowsOfExecuted(result);
+    if (!row) return null;
+    const protocol = row.protocol;
+    if (
+      typeof row.provider_id !== "string" ||
+      !row.provider_id ||
+      (protocol !== "oidc" && protocol !== "saml") ||
+      !Number.isSafeInteger(Number(row.policy_revision)) ||
+      Number(row.policy_revision) < 0 ||
+      !Number.isSafeInteger(Number(row.max_auth_age_seconds)) ||
+      Number(row.max_auth_age_seconds) <= 0
+    ) {
+      throw new CompanyAssuranceRefusal(
+        503,
+        COMPANY_AUTH_NOT_READY,
+        `company ${tenantId}'s stored challenge policy is malformed: refusing to issue or complete against an unnameable provider, protocol or window`,
+      );
+    }
+    return {
+      providerId: row.provider_id,
+      protocol,
+      policyRevision: Number(row.policy_revision),
+      maxAuthAgeSeconds: Number(row.max_auth_age_seconds),
+    };
+  };
+
+  return {
+    proof: {
+      async requiresProof(tenantId) {
+        return (await storedPolicy(tenantId)) !== null;
+      },
+    },
+    challenge: {
+      async challengePolicy(tenantId) {
+        const policy = await storedPolicy(tenantId);
+        return policy === null
+          ? null
+          : {
+              providerId: policy.providerId,
+              protocol: policy.protocol,
+              policyRevision: policy.policyRevision,
+            };
+      },
+    },
+  };
+}
+
+/**
+ * The production redirect builder (the T05.01 frozen port): turns one
+ * challenge's correlation material into the registered provider's
+ * authorization URL. `null` means this deployment cannot send the user to
+ * that provider — the challenge refuses 503 before any row is written.
+ */
+export function createOidcRedirectBuilder(deps: {
+  readonly providers: SsoOidcProviderSource;
+}): CompanyAuthRedirectBuilder {
+  if (!deps || typeof deps.providers?.authorization !== "function") {
+    throw new CompanyAssuranceRefusal(
+      503,
+      COMPANY_ASSURANCE_POLICY_REQUIRED,
+      "createOidcRedirectBuilder needs its provider source: a builder that cannot name the IdP must refuse before anything is persisted",
+    );
+  }
+  return {
+    async buildRedirect(request) {
+      if (request.protocol !== "oidc") return null;
+      const authorization = await deps.providers.authorization(
+        request.providerId,
+      );
+      if (!authorization) return null;
+      const url = new URL(authorization.authorizationEndpoint);
+      url.searchParams.set("response_type", "code");
+      url.searchParams.set("client_id", authorization.clientId);
+      url.searchParams.set("redirect_uri", authorization.redirectUri);
+      url.searchParams.set("scope", authorization.scopes);
+      url.searchParams.set("state", request.state);
+      url.searchParams.set("nonce", request.nonce);
+      url.searchParams.set("code_challenge", request.codeChallenge);
+      url.searchParams.set("code_challenge_method", "S256");
+      return url.toString();
+    },
+  };
 }

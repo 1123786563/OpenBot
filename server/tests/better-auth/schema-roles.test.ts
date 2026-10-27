@@ -1140,8 +1140,11 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
     // before. T05.01 (#557; coordinator ruling 2026-10-27) appended 0218 the
     // same way — the challenge-issuance controlled function, which leaves the
     // DML-guard branches untouched (the table keeps zero direct privileges).
-    expect(before?.tag).toBe("0217_better_auth_team_management_grants");
-    expect(last?.tag).toBe("0218_better_auth_company_auth_challenge");
+    // T05.02 (#558; coordinator ruling 2026-10-27) appended 0219 likewise:
+    // the callback half's controlled surface (policy read, one-time
+    // challenge consumption, the session-assurance proof write).
+    expect(before?.tag).toBe("0218_better_auth_company_auth_challenge");
+    expect(last?.tag).toBe("0219_better_auth_company_auth_complete");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });

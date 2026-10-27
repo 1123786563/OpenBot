@@ -1534,6 +1534,13 @@
       "when": 1793164800000,
       "tag": "0218_better_auth_company_auth_challenge",
       "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1793251200000,
+      "tag": "0219_better_auth_company_auth_complete",
+      "breakpoints": true
     }
   ]
 }
