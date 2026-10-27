@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T04.06 password-recovery registration",
+  "generatedBy": "T05.06 provisioning-global-admin registration",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1355,6 +1355,12 @@
       "files": [
         "server/tests/better-auth/password-recovery.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T05.06.01",
+      "files": [
+        "server/tests/better-auth/provisioning-global-admin.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1562,6 +1568,7 @@
     "server/tests/better-auth/password-recovery.test.ts",
     "server/tests/better-auth/password-reset-request.test.ts",
     "server/tests/better-auth/principal-registry.test.ts",
+    "server/tests/better-auth/provisioning-global-admin.test.ts",
     "server/tests/better-auth/saml-evidence-contract.test.ts",
     "server/tests/better-auth/schema-assurance.test.ts",
     "server/tests/better-auth/schema-authority-sources.test.ts",
@@ -2212,6 +2219,7 @@
     "server/tests/better-auth/scim-provisioning.test.ts": "runner named it: needs Bun SQL + better-auth/scim plugin over the BA island's five role URLs",
     "server/tests/better-auth/email-verification.test.ts": "T04.04 (#548): needs the five BA_TEST_* role URLs and the pinned build's mail callbacks — Bun-only",
     "server/tests/better-auth/password-reset-request.test.ts": "T04.05 (#549): needs the five BA_TEST_* role URLs, the pinned build's reset mail callback, the identity recovery boundary and the Mailpit sink — Bun-only",
-    "server/tests/better-auth/password-recovery.test.ts": "T04.06 (#550): needs the five BA_TEST_* role URLs, the identity recovery boundary, the assurance read chain (0218-0220) and the pinned build reset callbacks — Bun-only"
+    "server/tests/better-auth/password-recovery.test.ts": "T04.06 (#550): needs the five BA_TEST_* role URLs, the identity recovery boundary, the assurance read chain (0218-0220) and the pinned build reset callbacks — Bun-only",
+    "server/tests/better-auth/provisioning-global-admin.test.ts": "T05.06 (#562) provisioning-global-admin suite: needs the five BA_TEST_* role URLs, the pinned build's SSO/mail callbacks, the directory executor's provisioning-rule handlers and the Mailpit sink — Bun-only"
   }
 }

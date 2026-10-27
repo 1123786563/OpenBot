@@ -1147,8 +1147,12 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
     // 0219's policy read — the read gate's demand question joins the clocks
     // and assurance reads as the data role's controlled reads, and no table
     // or writer privilege moves.
-    expect(before?.tag).toBe("0219_better_auth_company_auth_complete");
-    expect(last?.tag).toBe("0220_better_auth_company_auth_policy_read");
+    // T05.06 (#562) appended 0221 the same way: the provisioning-rule
+    // admission — ob_ent_auth_writer's INSERT/UPDATE on auth_provisioning_rules
+    // (SELECT-only since 0212) plus the DML guard's rule branch, with the
+    // identity columns immutable and the revision advancing by exactly one.
+    expect(before?.tag).toBe("0220_better_auth_company_auth_policy_read");
+    expect(last?.tag).toBe("0221_better_auth_provisioning_rules");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });

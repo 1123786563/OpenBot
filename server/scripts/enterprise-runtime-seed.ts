@@ -15,6 +15,28 @@ import { testDatabaseUrl } from "../tests/support/database";
 
 const url = testDatabaseUrl();
 
+/*
+ * T02.13's static writer list disposes this seed at M4: "the ba branch does
+ * not seed the directory independently" — once the directory write authority
+ * is BA, the identity/membership rows this runbook inserts would bypass the
+ * command model (no envelope, no receipt, no clocks). Refuse before the first
+ * insert in that state; a database with no authority row yet (a fresh island
+ * the runbook is seeding for the first time) keeps the offline behavior.
+ */
+async function assertNotBaAuthority(sql: import("bun").SQL): Promise<void> {
+  const rows =
+    (await sql`SELECT directory_authority FROM auth_authority_states LIMIT 1`) as unknown as {
+      rows?: { directory_authority?: string }[];
+    };
+  const authority = (Array.isArray(rows) ? rows : (rows.rows ?? []))[0]
+    ?.directory_authority;
+  if (authority === "ba") {
+    throw new Error(
+      "ENTERPRISE_RUNTIME_SEED_BA_AUTHORITY: the directory write authority is ba (M4+); the startup seed must be translated into directory commands or retired before it can write the identity/membership rows — see the T02.13 static writer list's disposal phase for this file",
+    );
+  }
+}
+
 const SEED = {
   tenant: "e2e-runtime-tenant",
   user: "e2e-runtime-user",
@@ -34,6 +56,7 @@ const SEED = {
 const sql = new Bun.SQL(url, { max: 1 });
 
 try {
+  await assertNotBaAuthority(sql);
   await sql.begin(async (tx) => {
     await tx`insert into enterprise_tenants (id, name) values (${SEED.tenant}, 'E2E Runtime Tenant')
              on conflict (id) do nothing`;

@@ -56,11 +56,13 @@
  *    spend it through the extension.
  */
 
+import { randomUUID } from "node:crypto";
 import { getCurrentDBAdapterAsyncLocalStorage } from "@better-auth/core/context";
 import { getOrgAdapter } from "better-auth/plugins/organization";
 import { and, eq, sql } from "drizzle-orm";
 import { authTeamManagementGrants } from "../../db/schema/auth-directory";
 import type {
+  Directory,
   DirectoryActor,
   DirectoryOperation,
   DirectoryTx,
@@ -484,9 +486,12 @@ export function createScopedTeamExtension(options: {
  *      (design §4.4: 适用授权保存签发时的代际并在使用时比较) — a suspended
  *      member, a re-keyed identity or an advanced clock makes the grant's
  *      basis stale and the command is refused, never grandfathered.
- *    - provisioning-rule: NOT wired here — P12 owns the provisioning ingress;
- *      a scim/jit actor's team-member command is refused by name in this
- *      deployment rather than approximated (disclosed in the task report).
+ *    - provisioning-rule (T05.06 / P12): the event's ruleId/revision are
+ *      matched against the approved rule row of the actor's verified binding
+ *      inside this same lock — the row's company, binding, approval status
+ *      and fixed workspace targets are the only authority, and the row's
+ *      minimum role stays "member" (a directory group never yields owner/
+ *      admin or a delegable management Grant).
  *
  * 2. The target and state re-verification, in the same lock: the target user
  *    resolves to an active principal with an active company membership and a
@@ -798,8 +803,8 @@ async function teamGrantAuthority(
  * The locked discrimination both phases run: company + team resolution, the
  * actor's unique authority branch, then the target and pair-state
  * re-verification. The actor is the server-issued envelope identity — never a
- * client field — and a scim/jit/migration actor is refused here: the
- * provisioning-rule branch arrives with P12's ingress wiring.
+ * client field — a migration actor is refused here; the scim/jit
+ * provisioning-rule branch is wired (T05.06 / P12).
  */
 async function resolveTeamMemberCommand(
   tx: DirectoryTx,
@@ -812,14 +817,22 @@ async function resolveTeamMemberCommand(
 ): Promise<TeamMemberResolution> {
   const teamId = await resolveBoundTeam(tx, tenantId, workspaceId);
 
+  if (!actor.userId || !principal) {
+    throw memberRefusal(
+      TEAM_MEMBER_ACTOR_FORBIDDEN,
+      `an actor without a verifiable user/principal pair cannot run ${action}; the server-issued identity envelope is the only thing this handler discriminates`,
+      403,
+    );
+  }
   if (
-    (actor.kind !== "session" && actor.kind !== "platform") ||
-    !actor.userId ||
-    !principal
+    actor.kind !== "session" &&
+    actor.kind !== "platform" &&
+    actor.kind !== "scim" &&
+    actor.kind !== "jit"
   ) {
     throw memberRefusal(
       TEAM_MEMBER_ACTOR_FORBIDDEN,
-      `a ${actor.kind} actor cannot run ${action} through this handler; the provisioning-rule branch is P12's wiring, and an actor without a verifiable user/principal pair has no authority to discriminate`,
+      `a ${actor.kind} actor cannot run ${action} through this handler; only a signed-in company identity or a verified directory event holds team-member authority`,
       403,
     );
   }
@@ -838,24 +851,35 @@ async function resolveTeamMemberCommand(
     ),
   );
   const role = actorMember ? String(actorMember.role) : null;
+  /*
+   * The P12 branch (T05.06, design §9's approved-group-rule row): a scim/jit
+   * event actor resolves its authority from the approved rule row its
+   * verified evidence names — binding, rule id/revision, approval status and
+   * the fixed workspace targets are re-verified in this same lock, and the
+   * single-use capability below carries exactly that authority (a company
+   * role is never granted from a directory group, and no team-management
+   * Grant is delegated).
+   */
   const authority =
-    role === "owner" || role === "admin"
-      ? await companyRoleAuthority(
-          tx,
-          actor,
-          principal.principalId,
-          tenantId,
-          role,
-        )
-      : await teamGrantAuthority(
-          tx,
-          actor,
-          principal.principalId,
-          tenantId,
-          workspaceId,
-          teamId,
-          action,
-        );
+    actor.kind === "scim" || actor.kind === "jit"
+      ? await provisioningRuleAuthority(tx, actor, tenantId, workspaceId)
+      : role === "owner" || role === "admin"
+        ? await companyRoleAuthority(
+            tx,
+            actor,
+            principal.principalId,
+            tenantId,
+            role,
+          )
+        : await teamGrantAuthority(
+            tx,
+            actor,
+            principal.principalId,
+            tenantId,
+            workspaceId,
+            teamId,
+            action,
+          );
 
   // The target: an existing active company member — add never creates the
   // company membership, never sets a role, never invites an outsider.
@@ -1028,5 +1052,695 @@ export function createScopedTeamMemberHandlers(deps: {
   return {
     "team.member.add": handlerFor("team.member.add"),
     "team.member.remove": handlerFor("team.member.remove"),
+  };
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * T05.06（#562 / P12）：批准组规则 → 单次团队能力 + 规则命令
+ *
+ * 设计 §9 组规则行的合同：管理员批准的持久规则是已验证 binding 事件的常设
+ * 权威。每个事件在 tenant 锁内重新核验 binding、rule id/revision、批准状态
+ * 与固定目标（provisioningRuleAuthority，上面 resolveTeamMemberCommand 的
+ * scim/jit 分支），然后签发 tx/command/target 绑定的单次能力；规则的批准/
+ * 撤销由公司管理面经受控命令调用（createProvisioningRuleHandlers），固定
+ * binding 属于目标公司，scim/jit actor 无规则批准权。规则变化推进
+ * revision，旧能力和事件重试须重验；撤销阻止后续 provisioning 写，既有成员
+ * 资格的移除走明确受控成员命令（member.remove / team.member.remove）。
+ * ---------------------------------------------------------------------------
+ */
+
+export const PROVISIONING_RULE_ACTOR_FORBIDDEN =
+  "PROVISIONING_RULE_ACTOR_FORBIDDEN";
+export const PROVISIONING_RULE_COMPANY_NOT_FOUND =
+  "PROVISIONING_RULE_COMPANY_NOT_FOUND";
+export const PROVISIONING_RULE_COMPANY_CLOSED =
+  "PROVISIONING_RULE_COMPANY_CLOSED";
+export const PROVISIONING_RULE_BINDING_UNKNOWN =
+  "PROVISIONING_RULE_BINDING_UNKNOWN";
+export const PROVISIONING_RULE_BINDING_FOREIGN =
+  "PROVISIONING_RULE_BINDING_FOREIGN";
+export const PROVISIONING_RULE_WORKSPACE_FOREIGN =
+  "PROVISIONING_RULE_WORKSPACE_FOREIGN";
+export const PROVISIONING_RULE_WORKSPACE_UNBOUND =
+  "PROVISIONING_RULE_WORKSPACE_UNBOUND";
+export const PROVISIONING_RULE_NOT_FOUND = "PROVISIONING_RULE_NOT_FOUND";
+export const PROVISIONING_RULE_NOT_APPROVED = "PROVISIONING_RULE_NOT_APPROVED";
+export const PROVISIONING_RULE_WORKSPACE_NOT_COVERED =
+  "PROVISIONING_RULE_WORKSPACE_NOT_COVERED";
+export const PROVISIONING_RULE_ALREADY_REVOKED =
+  "PROVISIONING_RULE_ALREADY_REVOKED";
+
+/** A rule-command refusal (interfaces §4: refusal → projection). */
+export class ProvisioningRuleRefusal extends Error {
+  readonly status: 400 | 403 | 404 | 409;
+
+  constructor(
+    readonly code: string,
+    detail: string,
+    status: 400 | 403 | 404 | 409,
+  ) {
+    super(`${code}: ${detail}`);
+    this.name = "ProvisioningRuleRefusal";
+    this.status = status;
+  }
+}
+
+export function isProvisioningRuleRefusal(
+  error: unknown,
+): error is ProvisioningRuleRefusal {
+  return error instanceof ProvisioningRuleRefusal;
+}
+
+function ruleRefusal(
+  code: string,
+  detail: string,
+  status: 400 | 403 | 404 | 409,
+): ProvisioningRuleRefusal {
+  return new ProvisioningRuleRefusal(code, detail, status);
+}
+
+/** One live rule row, as the event branch reads it inside the lock. */
+interface ProvisioningRuleRow {
+  readonly ruleId: string;
+  readonly tenantId: string;
+  readonly bindingId: string;
+  readonly externalGroup: string | null;
+  readonly workspaceIds: readonly string[];
+  readonly revision: number;
+  readonly status: string;
+  readonly minimumRole: string;
+}
+
+async function readRuleByEvent(
+  tx: DirectoryTx,
+  ruleId: string,
+): Promise<ProvisioningRuleRow | null> {
+  const [row] = rowsOf<{
+    rule_id: string;
+    tenant_id: string;
+    binding_id: string;
+    external_group: string | null;
+    workspace_ids: string[] | null;
+    revision: number;
+    status: string;
+    minimum_role: string;
+  }>(
+    await tx.execute(
+      sql`SELECT rule_id, tenant_id, binding_id, external_group, workspace_ids,
+                 revision::int AS revision, status, minimum_role
+            FROM auth_provisioning_rules WHERE rule_id = ${ruleId} LIMIT 1`,
+    ),
+  );
+  if (!row) return null;
+  return {
+    ruleId: String(row.rule_id),
+    tenantId: String(row.tenant_id),
+    bindingId: String(row.binding_id),
+    externalGroup:
+      row.external_group === null ? null : String(row.external_group),
+    workspaceIds: (row.workspace_ids ?? []).map(String),
+    revision: Number(row.revision),
+    status: String(row.status),
+    minimumRole: String(row.minimum_role),
+  };
+}
+
+/**
+ * The event authority (interfaces §3's provisioning-rule branch): the actor's
+ * verified evidence names one rule row, and the row must be exactly what the
+ * evidence says — same company, same binding, same revision, approved, and
+ * the minimum member role. Any drift refuses; a revoked or re-approved rule
+ * never lends its old revision to a later event.
+ */
+async function provisioningRuleAuthority(
+  tx: DirectoryTx,
+  actor: DirectoryActor,
+  tenantId: string,
+  workspaceId: string,
+): Promise<TeamCommandAuthority> {
+  const provisioning = actor.provisioning;
+  if (!provisioning || !actor.bindingId) {
+    throw memberRefusal(
+      TEAM_MEMBER_ACTOR_FORBIDDEN,
+      `a ${actor.kind} actor without its verified binding and provisioning event cannot run a team-member command; the evidence is the server's mint, never a client field`,
+      403,
+    );
+  }
+  const rule = await readRuleByEvent(tx, provisioning.ruleId);
+  if (
+    !rule ||
+    rule.tenantId !== tenantId ||
+    rule.bindingId !== actor.bindingId ||
+    rule.revision !== provisioning.ruleRevision ||
+    rule.status !== "approved"
+  ) {
+    throw memberRefusal(
+      PROVISIONING_RULE_NOT_APPROVED,
+      `the event's provisioning evidence names rule ${provisioning.ruleId} revision ${provisioning.ruleRevision} of binding ${actor.bindingId}, and that is not company ${tenantId}'s approved rule at that revision; a revoked or re-approved rule never lends its old authority`,
+      403,
+    );
+  }
+  if (rule.minimumRole !== "member") {
+    throw memberRefusal(
+      PROVISIONING_RULE_NOT_APPROVED,
+      `rule ${rule.ruleId} carries minimum role "${rule.minimumRole}"; an approved group rule holds the minimum member role only, and a directory group never yields a management authority`,
+      403,
+    );
+  }
+  if (!rule.workspaceIds.includes(workspaceId)) {
+    throw memberRefusal(
+      PROVISIONING_RULE_WORKSPACE_NOT_COVERED,
+      `workspace ${workspaceId} is not one of rule ${rule.ruleId}'s fixed targets (${rule.workspaceIds.join(",")}); an approved rule's capability covers exactly the workspaces it names`,
+      403,
+    );
+  }
+  return {
+    kind: "provisioning-rule",
+    bindingId: actor.bindingId,
+    eventId: provisioning.eventId,
+    ruleId: rule.ruleId,
+    ruleRevision: rule.revision,
+  };
+}
+
+/**
+ * The locked owner/admin authorization the two rule commands share (replay
+ * included): the company exists and is active, the caller is a live
+ * owner/admin member with an active principal and business membership. A
+ * scim/jit actor is refused by name — the directory's events consume rules,
+ * they never approve them.
+ */
+async function authorizeRuleCommand(
+  tx: DirectoryTx,
+  actor: DirectoryActor,
+  tenantId: string,
+): Promise<void> {
+  if (
+    (actor.kind !== "session" && actor.kind !== "platform") ||
+    !actor.userId
+  ) {
+    throw ruleRefusal(
+      PROVISIONING_RULE_ACTOR_FORBIDDEN,
+      `a ${actor.kind} actor cannot manage provisioning rules; provisioning.rule.approve/revoke belong to a current owner or admin of the company, and a directory event actor holds no rule approval authority`,
+      403,
+    );
+  }
+  const [tenant] = rowsOf<{ status: string }>(
+    await tx.execute(
+      sql`SELECT status FROM enterprise_tenants WHERE id = ${tenantId} LIMIT 1`,
+    ),
+  );
+  if (!tenant) {
+    throw ruleRefusal(
+      PROVISIONING_RULE_COMPANY_NOT_FOUND,
+      `company ${tenantId} does not exist; the command answers not-found rather than inventing a directory`,
+      404,
+    );
+  }
+  if (String(tenant.status) !== "active") {
+    throw ruleRefusal(
+      PROVISIONING_RULE_COMPANY_CLOSED,
+      `company ${tenantId} is ${String(tenant.status)}; a suspended or provisioning company admits no rule commands`,
+      403,
+    );
+  }
+  const [member] = rowsOf<{ role: string }>(
+    await tx.execute(
+      sql`SELECT role FROM auth_members
+           WHERE organization_id = ${tenantId} AND user_id = ${actor.userId} LIMIT 1`,
+    ),
+  );
+  if (!member || !["owner", "admin"].includes(String(member.role))) {
+    throw ruleRefusal(
+      PROVISIONING_RULE_ACTOR_FORBIDDEN,
+      `user ${actor.userId}'s live role in company ${tenantId} is ${member ? `"${String(member.role)}"` : "not a member"}; approving or revoking provisioning rules needs an owner or admin`,
+      403,
+    );
+  }
+  const [principalRow] = rowsOf<{ id: string; status: string }>(
+    await tx.execute(
+      sql`SELECT id, status FROM enterprise_principals WHERE user_id = ${actor.userId} LIMIT 1`,
+    ),
+  );
+  if (!principalRow || String(principalRow.status) !== "active") {
+    throw ruleRefusal(
+      PROVISIONING_RULE_ACTOR_FORBIDDEN,
+      `the principal behind user ${actor.userId} is ${principalRow ? String(principalRow.status) : "missing"}; a disabled identity's rule commands are closed`,
+      403,
+    );
+  }
+  const [membership] = rowsOf<{ status: string }>(
+    await tx.execute(
+      sql`SELECT status FROM enterprise_memberships
+           WHERE tenant_id = ${tenantId} AND principal_id = ${principalRow.id} LIMIT 1`,
+    ),
+  );
+  if (!membership || String(membership.status) !== "active") {
+    throw ruleRefusal(
+      PROVISIONING_RULE_ACTOR_FORBIDDEN,
+      `the business membership of user ${actor.userId} in company ${tenantId} is ${membership ? String(membership.status) : "missing"}; a suspended member's rule commands are closed`,
+      403,
+    );
+  }
+}
+
+/**
+ * The binding a rule hangs on must be one the SERVER already fixed to this
+ * company: an SSO provider row whose organizationId is the tenant (the JIT
+ * binding) or a SCIM connection binding whose provisioningDomainId is the
+ * tenant (the SCIM binding). A binding of another company is a 403, an
+ * unknown binding a 404 — a rule never invents its binding.
+ */
+async function requireCompanyBinding(
+  tx: DirectoryTx,
+  tenantId: string,
+  bindingId: string,
+): Promise<void> {
+  const [provider] = rowsOf<{ organization_id: string | null }>(
+    await tx.execute(
+      sql`SELECT organization_id FROM sso_providers WHERE provider_id = ${bindingId} LIMIT 1`,
+    ),
+  );
+  if (provider) {
+    if (provider.organization_id !== tenantId) {
+      throw ruleRefusal(
+        PROVISIONING_RULE_BINDING_FOREIGN,
+        `binding ${bindingId} is a provider row fixed to company ${String(provider.organization_id)}, not ${tenantId}; a rule may only hang on this company's own binding`,
+        403,
+      );
+    }
+    return;
+  }
+  const [connection] = rowsOf<{ provisioning_domain_id: string }>(
+    await tx.execute(
+      sql`SELECT provisioning_domain_id FROM scim_connection_bindings
+           WHERE connection_id = ${bindingId} AND decommission_status = 'active' LIMIT 1`,
+    ),
+  );
+  if (connection) {
+    if (String(connection.provisioning_domain_id) !== tenantId) {
+      throw ruleRefusal(
+        PROVISIONING_RULE_BINDING_FOREIGN,
+        `binding ${bindingId} is a SCIM connection fixed to company ${String(connection.provisioning_domain_id)}, not ${tenantId}; a rule may only hang on this company's own binding`,
+        403,
+      );
+    }
+    return;
+  }
+  throw ruleRefusal(
+    PROVISIONING_RULE_BINDING_UNKNOWN,
+    `binding ${bindingId} is not a server-issued binding of company ${tenantId}; the provider↔company binding is the server's fixed row, and a rule never invents one`,
+    404,
+  );
+}
+
+/** One stable rule row by (binding, external group), or null. */
+async function readRuleByIdentity(
+  tx: DirectoryTx,
+  bindingId: string,
+  externalGroup: string | null,
+): Promise<ProvisioningRuleRow | null> {
+  const [row] = rowsOf<{
+    rule_id: string;
+    tenant_id: string;
+    binding_id: string;
+    external_group: string | null;
+    workspace_ids: string[] | null;
+    revision: number;
+    status: string;
+    minimum_role: string;
+  }>(
+    await tx.execute(
+      externalGroup === null
+        ? sql`SELECT rule_id, tenant_id, binding_id, external_group, workspace_ids,
+                     revision::int AS revision, status, minimum_role
+                FROM auth_provisioning_rules
+               WHERE binding_id = ${bindingId} AND external_group IS NULL LIMIT 1`
+        : sql`SELECT rule_id, tenant_id, binding_id, external_group, workspace_ids,
+                     revision::int AS revision, status, minimum_role
+                FROM auth_provisioning_rules
+               WHERE binding_id = ${bindingId} AND external_group = ${externalGroup} LIMIT 1`,
+    ),
+  );
+  if (!row) return null;
+  return {
+    ruleId: String(row.rule_id),
+    tenantId: String(row.tenant_id),
+    bindingId: String(row.binding_id),
+    externalGroup:
+      row.external_group === null ? null : String(row.external_group),
+    workspaceIds: (row.workspace_ids ?? []).map(String),
+    revision: Number(row.revision),
+    status: String(row.status),
+    minimumRole: String(row.minimum_role),
+  };
+}
+
+/** Encodes a string list as a Postgres text[] literal (the SCIM recipe). */
+function rulePgTextArray(values: readonly string[]): string {
+  return `{${values
+    .map((value) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
+    .join(",")}}`;
+}
+
+/**
+ * The T05.06 rule commands: `provisioning.rule.approve` (the first approval
+ * inserts at revision 1; a re-approval re-targets the same stable row and
+ * advances its revision, reviving a revoked one) and
+ * `provisioning.rule.revoke` (a status, never a deletion, revision +1). The
+ * 0221 guard holds the identity columns immutable and the revision step.
+ */
+export function createProvisioningRuleHandlers(): Partial<
+  Record<DirectoryOperation, DirectoryCommandHandler>
+> {
+  const approveAuthorize: DirectoryCommandHandler["authorize"] = async (
+    context,
+  ) => {
+    const payload = context.command.payload as {
+      readonly bindingId?: string;
+      readonly externalGroup?: string | null;
+      readonly workspaceIds?: readonly string[];
+    };
+    if (
+      typeof payload.bindingId !== "string" ||
+      payload.bindingId.trim() === "" ||
+      !Array.isArray(payload.workspaceIds) ||
+      payload.workspaceIds.length === 0 ||
+      !payload.workspaceIds.every(
+        (id) => typeof id === "string" && id.trim() !== "",
+      ) ||
+      new Set(payload.workspaceIds).size !== payload.workspaceIds.length ||
+      (payload.externalGroup !== undefined &&
+        payload.externalGroup !== null &&
+        (typeof payload.externalGroup !== "string" ||
+          payload.externalGroup.trim() === ""))
+    ) {
+      throw ruleRefusal(
+        PROVISIONING_RULE_BINDING_UNKNOWN,
+        "provisioning.rule.approve requires a bindingId and a non-empty unique workspaceIds list (externalGroup optional)",
+        400,
+      );
+    }
+    await authorizeRuleCommand(
+      context.tx,
+      context.actor,
+      context.command.tenantId,
+    );
+    await requireCompanyBinding(
+      context.tx,
+      context.command.tenantId,
+      payload.bindingId,
+    );
+    for (const workspaceId of payload.workspaceIds) {
+      const [workspace] = rowsOf<{ tenant_id: string }>(
+        await context.tx.execute(
+          sql`SELECT tenant_id FROM enterprise_workspaces
+               WHERE tenant_id = ${context.command.tenantId} AND id = ${workspaceId} LIMIT 1`,
+        ),
+      );
+      if (!workspace) {
+        throw ruleRefusal(
+          PROVISIONING_RULE_WORKSPACE_FOREIGN,
+          `workspace ${workspaceId} is not a workspace of company ${context.command.tenantId}; a rule's fixed targets are the company's own`,
+          404,
+        );
+      }
+      const [binding] = rowsOf<{ team_id: string }>(
+        await context.tx.execute(
+          sql`SELECT team_id FROM auth_team_bindings
+               WHERE tenant_id = ${context.command.tenantId}
+                 AND workspace_id = ${workspaceId} LIMIT 1`,
+        ),
+      );
+      if (!binding) {
+        throw ruleRefusal(
+          PROVISIONING_RULE_WORKSPACE_UNBOUND,
+          `workspace ${workspaceId} has no team binding in company ${context.command.tenantId}; the rule's team grant is refused rather than granted narrower`,
+          400,
+        );
+      }
+    }
+  };
+
+  const approveSync: DirectoryCommandHandler["sync"] = async (context) => {
+    const payload = context.command.payload as {
+      readonly bindingId: string;
+      readonly externalGroup?: string | null;
+      readonly workspaceIds: readonly string[];
+    };
+    const externalGroup =
+      payload.externalGroup === undefined ? null : payload.externalGroup;
+    const existing = await readRuleByIdentity(
+      context.tx,
+      payload.bindingId,
+      externalGroup,
+    );
+    const workspaceIds = [...payload.workspaceIds];
+    let ruleId: string;
+    let revision: number;
+    if (existing) {
+      ruleId = existing.ruleId;
+      revision = existing.revision + 1;
+      await context.tx.execute(
+        sql`UPDATE auth_provisioning_rules
+             SET workspace_ids = ${rulePgTextArray(workspaceIds)}::text[],
+                 revision = ${revision},
+                 status = 'approved',
+                 revoked_at = NULL,
+                 updated_at = now()
+           WHERE rule_id = ${ruleId}`,
+      );
+    } else {
+      ruleId = randomUUID();
+      revision = 1;
+      await context.tx.execute(
+        sql`INSERT INTO auth_provisioning_rules
+            (rule_id, tenant_id, binding_id, external_group, workspace_ids,
+             minimum_role, revision, status, created_at, updated_at)
+          VALUES
+            (${ruleId}, ${context.command.tenantId}, ${payload.bindingId}, ${externalGroup},
+             ${rulePgTextArray(workspaceIds)}::text[], 'member', ${revision}, 'approved', now(), now())`,
+      );
+    }
+    return { resourceId: ruleId };
+  };
+
+  const revokeAuthorize: DirectoryCommandHandler["authorize"] = async (
+    context,
+  ) => {
+    const payload = context.command.payload as { readonly ruleId?: string };
+    if (typeof payload.ruleId !== "string" || payload.ruleId.trim() === "") {
+      throw ruleRefusal(
+        PROVISIONING_RULE_NOT_FOUND,
+        "provisioning.rule.revoke requires a ruleId",
+        400,
+      );
+    }
+    await authorizeRuleCommand(
+      context.tx,
+      context.actor,
+      context.command.tenantId,
+    );
+    const rule = await readRuleByEvent(context.tx, payload.ruleId);
+    if (!rule || rule.tenantId !== context.command.tenantId) {
+      throw ruleRefusal(
+        PROVISIONING_RULE_NOT_FOUND,
+        `rule ${payload.ruleId} does not exist in company ${context.command.tenantId}`,
+        404,
+      );
+    }
+    if (rule.status !== "approved") {
+      throw ruleRefusal(
+        PROVISIONING_RULE_ALREADY_REVOKED,
+        `rule ${payload.ruleId} is already revoked; revocation is a status, never a second command`,
+        409,
+      );
+    }
+  };
+
+  const revokeSync: DirectoryCommandHandler["sync"] = async (context) => {
+    const payload = context.command.payload as { readonly ruleId: string };
+    const rule = await readRuleByEvent(context.tx, payload.ruleId);
+    if (!rule || rule.tenantId !== context.command.tenantId) {
+      throw ruleRefusal(
+        PROVISIONING_RULE_NOT_FOUND,
+        `rule ${payload.ruleId} does not exist in company ${context.command.tenantId}`,
+        404,
+      );
+    }
+    const revision = rule.revision + 1;
+    await context.tx.execute(
+      sql`UPDATE auth_provisioning_rules
+           SET revision = ${revision}, status = 'revoked', revoked_at = now(), updated_at = now()
+         WHERE rule_id = ${payload.ruleId}`,
+    );
+    return { resourceId: payload.ruleId };
+  };
+
+  return {
+    "provisioning.rule.approve": Object.freeze({
+      authorize: approveAuthorize,
+      sync: approveSync,
+    }),
+    "provisioning.rule.revoke": Object.freeze({
+      authorize: revokeAuthorize,
+      sync: revokeSync,
+    }),
+  };
+}
+
+/** The read-side view the company admin surface answers with. */
+export type ProvisioningRuleView = Readonly<{
+  ruleId: string;
+  tenantId: string;
+  bindingId: string;
+  externalGroup: string | null;
+  workspaceIds: readonly string[];
+  minimumRole: string;
+  revision: number;
+  status: string;
+}>;
+
+/**
+ * The HTTP port the company admin routes consume (T05.06): it runs the rule
+ * commands inside the administrator's trusted server-issued platform actor.
+ * The owner/admin authorization and the binding/workspace re-verification
+ * live in the directory command the handlers execute (the same lock the
+ * executor replays), so the port only builds the actor and translates
+ * command results.
+ */
+export interface CompanyProvisioningRulePort {
+  approve(input: {
+    readonly tenantId: string;
+    readonly actorUserId: string;
+    readonly actorPrincipalId: string;
+    readonly bindingId: string;
+    readonly externalGroup?: string | null;
+    readonly workspaceIds: readonly string[];
+    readonly idempotencyKey: string;
+  }): Promise<ProvisioningRuleView>;
+  revoke(input: {
+    readonly tenantId: string;
+    readonly actorUserId: string;
+    readonly actorPrincipalId: string;
+    readonly ruleId: string;
+    readonly reason: string;
+  }): Promise<ProvisioningRuleView>;
+}
+
+export function createDirectoryProvisioningRulePort(
+  directory: Directory,
+  db: Pick<DirectoryTx, "execute">,
+): CompanyProvisioningRulePort {
+  const actorOf = (userId: string, principalId: string): DirectoryActor => ({
+    // kind "platform" (the membership translation's precedent): the admin
+    // context seam carries no session id, and the handler re-verifies the
+    // live owner/admin role inside the lock, so no authority is assumed.
+    userId,
+    principalId,
+    sessionId: null,
+    kind: "platform",
+    bindingId: null,
+    provisioning: null,
+  });
+
+  /** The committed rule row after the command, for the route's answer. */
+  const readRule = async (
+    ruleId: string,
+  ): Promise<ProvisioningRuleRow | null> => {
+    const [row] = rowsOf<{
+      rule_id: string;
+      tenant_id: string;
+      binding_id: string;
+      external_group: string | null;
+      workspace_ids: string[] | null;
+      revision: number;
+      status: string;
+      minimum_role: string;
+    }>(
+      await db.execute(
+        sql`SELECT rule_id, tenant_id, binding_id, external_group, workspace_ids,
+                   revision::int AS revision, status, minimum_role
+              FROM auth_provisioning_rules WHERE rule_id = ${ruleId} LIMIT 1`,
+      ),
+    );
+    if (!row) return null;
+    return {
+      ruleId: String(row.rule_id),
+      tenantId: String(row.tenant_id),
+      bindingId: String(row.binding_id),
+      externalGroup:
+        row.external_group === null ? null : String(row.external_group),
+      workspaceIds: (row.workspace_ids ?? []).map(String),
+      revision: Number(row.revision),
+      status: String(row.status),
+      minimumRole: String(row.minimum_role),
+    };
+  };
+
+  const answerOf = async (ruleId: string): Promise<ProvisioningRuleView> => {
+    const row = await readRule(ruleId);
+    if (!row) {
+      throw ruleRefusal(
+        PROVISIONING_RULE_NOT_FOUND,
+        `rule ${ruleId} has no committed row; the command's own refusal is the report`,
+        404,
+      );
+    }
+    return {
+      ruleId: row.ruleId,
+      tenantId: row.tenantId,
+      bindingId: row.bindingId,
+      externalGroup: row.externalGroup,
+      workspaceIds: row.workspaceIds,
+      minimumRole: row.minimumRole,
+      revision: row.revision,
+      status: row.status,
+    };
+  };
+
+  return {
+    async approve(input) {
+      const result = await directory.execute(
+        actorOf(input.actorUserId, input.actorPrincipalId),
+        {
+          operation: "provisioning.rule.approve",
+          tenantId: input.tenantId,
+          idempotencyKey: input.idempotencyKey,
+          payload: {
+            bindingId: input.bindingId,
+            ...(input.externalGroup === undefined
+              ? {}
+              : { externalGroup: input.externalGroup }),
+            workspaceIds: [...input.workspaceIds],
+          },
+        },
+      );
+      return answerOf(result.resourceId ?? "");
+    },
+    async revoke(input) {
+      // The per-revision key (the T04.07 revoke precedent): the pre-read
+      // row's revision pins which revocation this command re-attempts, so a
+      // revoke after a re-approval is a fresh command, never a no-op replay.
+      const row = await readRule(input.ruleId);
+      if (!row || row.tenantId !== input.tenantId) {
+        throw ruleRefusal(
+          PROVISIONING_RULE_NOT_FOUND,
+          `rule ${input.ruleId} does not exist in company ${input.tenantId}`,
+          404,
+        );
+      }
+      await directory.execute(
+        actorOf(input.actorUserId, input.actorPrincipalId),
+        {
+          operation: "provisioning.rule.revoke",
+          tenantId: input.tenantId,
+          idempotencyKey: `revoke-${input.ruleId}-${row.revision}`,
+          payload: { ruleId: input.ruleId, reason: input.reason },
+        },
+      );
+      return answerOf(input.ruleId);
+    },
   };
 }

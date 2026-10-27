@@ -36,7 +36,7 @@ import {
 import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
 import { assertAuthMailTakeover, createAuthMail } from "./mail";
-import { applyConfiguredAdmin, isConfiguredAdmin, seedRole } from "./roles";
+import { isConfiguredAdmin, type RoleDatabase, seedRole } from "./roles";
 import {
   createScimTransactionCapture,
   recordProvisioned,
@@ -255,7 +255,7 @@ async function record(
 }
 
 export async function stampSignIn(
-  database: Database,
+  database: RoleDatabase,
   userId: string,
   at: Date,
 ): Promise<void> {
@@ -506,6 +506,98 @@ export function createAuth(
   const scimCapture = scimWiring?.directory
     ? createScimTransactionCapture(database)
     : null;
+  /*
+   * The writer the sign-in hooks run on (T05.06): the fixed build's open
+   * transaction when the capture seam is assembled — the same commit that
+   * owns the user or session row — and the pool on a legacy deployment,
+   * which keeps its own shape.
+   */
+  const writerOf = (): RoleDatabase =>
+    (scimCapture?.currentTransaction() ?? database) as RoleDatabase;
+
+  /**
+   * The JIT half of an SSO arrival (T05.06 / P12, design §9): eligibility
+   * comes only from the verified issuer+subject/binding. The provider row is
+   * the server's fixed provider↔company binding; an approved wide rule for
+   * that binding is the company's explicit opt-in, and the member it supplies
+   * is the minimum role with the rule's fixed teams, on the callback's own
+   * transaction. No rule, no binding or no subject supplies nothing — the
+   * sign-in itself never depends on company eligibility, and the address a
+   * provider reports is never an authority.
+   */
+  const jitProvisionMember = async (input: {
+    readonly user: { readonly id: string };
+    readonly userInfo: Record<string, unknown> | undefined;
+    readonly provider:
+      | {
+          readonly providerId?: string;
+          readonly organizationId?: string | null;
+        }
+      | undefined;
+  }): Promise<void> => {
+    const bindingId = input.provider?.providerId?.trim();
+    const tenantId = input.provider?.organizationId?.trim();
+    if (!bindingId || !tenantId) return;
+    const subject =
+      typeof input.userInfo?.sub === "string" &&
+      input.userInfo.sub.trim() !== ""
+        ? input.userInfo.sub.trim()
+        : null;
+    if (!subject) return;
+    const tx = scimCapture?.currentTransaction();
+    const directory = tx ? scimWiring?.directory?.(tx) : null;
+    if (!tx || !directory) return;
+    const [rule] =
+      (
+        (await tx.execute(
+          sql`SELECT rule_id, revision::int AS revision FROM auth_provisioning_rules
+             WHERE binding_id = ${bindingId} AND external_group IS NULL
+               AND tenant_id = ${tenantId} AND status = 'approved'
+               AND minimum_role = 'member' LIMIT 1`,
+        )) as unknown as { rows?: { rule_id: string; revision: number }[] }
+      ).rows ?? [];
+    if (!rule) return;
+    try {
+      await directory.execute(
+        {
+          userId: input.user.id,
+          principalId: null,
+          sessionId: null,
+          kind: "jit",
+          bindingId,
+          provisioning: {
+            eventId: `jit:${bindingId}:${subject}`,
+            ruleId: String(rule.rule_id),
+            ruleRevision: Number(rule.revision),
+            sourceSubject: subject,
+          },
+        },
+        {
+          operation: "member.provision",
+          tenantId,
+          idempotencyKey: `jit:${bindingId}:provision:${input.user.id}`,
+          payload: { userId: input.user.id },
+        },
+      );
+    } catch (error) {
+      /*
+       * The identity the SSO callback proved is not the company eligibility:
+       * a rule revoked between the read and the command's own lock, a closed
+       * company or a refused supply leaves the sign-in standing with no
+       * member row. The command's own audit trail keeps the refusal.
+       */
+      log.error(
+        {
+          type: "jit-provision-refused",
+          bindingId,
+          tenantId,
+          error: String(error),
+        },
+        "jit-provision-refused",
+      );
+    }
+  };
+
   const scimDeps = {
     database,
     initialAdminEmails: authConfig.initialAdminEmails,
@@ -561,15 +653,27 @@ export function createAuth(
      * `provisionUser` runs when somebody arrives through one of them. Their role has to be written
      * here or they land with no role at all and the request guard refuses them with a 403, which
      * reads as a broken deployment rather than a first sign-in.
+     *
+     * T05.06 (#562 / P12): the write runs on the fixed build's own open
+     * transaction (the same commit that owns the user row), and the JIT half
+     * derives the person's company eligibility ONLY from the verified
+     * issuer+subject/binding of the provider row — never from the address.
+     * A provider the server fixed to a company, with an approved wide
+     * provisioning rule, supplies the minimum member role and the rule's
+     * fixed teams through the directory command on that same transaction; a
+     * provider without a rule supplies nothing, and the address a provider
+     * reports never grants a role by itself.
      */
     sso({
-      provisionUser: async ({ user }) => {
+      resolveUser: async () => ({ action: "continue" as const }),
+      provisionUser: async ({ user, userInfo, provider }) => {
         await seedRole(
-          database,
+          writerOf(),
           user.id,
           user.email,
           authConfig.initialAdminEmails,
         );
+        await jitProvisionMember({ user, userInfo, provider });
       },
       /*
        * §3.2's SSO callback contract: an organizationId a provider carries
@@ -671,8 +775,14 @@ export function createAuth(
           scimGroups,
           scimGroupMembers,
         },
-        // The SCIM plugin needs interactive transactions; nothing else here asked for them.
-        transaction: Boolean(scimPluginOptions),
+        /*
+         * Interactive transactions: the SCIM plugin's transcription needs
+         * them, and so does the SSO user resolution (T05.06: resolveUser is
+         * what makes the fixed build defer its link-account dispatch inside
+         * a native transaction — the pinned package refuses the callback
+         * without one), so the adapter always offers them.
+         */
+        transaction: true,
       }),
       config.keyEncryptionKey,
     ),
@@ -816,8 +926,10 @@ export function createAuth(
              * deployment mid-migration has the same person arriving through Entra one week and
              * Okta the next, and they are the same person to this list.
              */
+            // On the fixed build's own transaction (T05.06): the one-time
+            // bootstrap shares the commit that owns the user row.
             await seedRole(
-              database,
+              writerOf(),
               user.id,
               user.email,
               authConfig.initialAdminEmails,
@@ -881,19 +993,11 @@ export function createAuth(
             return { data: session };
           },
           after: async (session) => {
-            await stampSignIn(database, session.userId, session.createdAt);
-
             /*
-             * The configured floor, re-applied on every sign-in. Editing the list has to mean
-             * something for people already in the table, or adding yourself after you first signed
-             * in silently does nothing. Only promotes, and only addresses the list names: everybody
-             * else's role belongs to the admin screen.
+             * On the fixed build's own transaction (T05.06): the stamp shares
+             * the commit that owns the session row.
              */
-            const promoted = await applyConfiguredAdmin(
-              database,
-              session.userId,
-              authConfig.initialAdminEmails,
-            );
+            await stampSignIn(writerOf(), session.userId, session.createdAt);
 
             const [user] = await database
               .select({ email: users.email })
@@ -902,26 +1006,12 @@ export function createAuth(
               .limit(1);
 
             /*
-             * The promotion, on the trail.
-             *
-             * The floor is applied silently by design, which meant anybody who could edit
-             * `INITIAL_ADMIN_EMAILS` made themselves an administrator and nothing anywhere said so.
-             * Written only when the role actually changed, so a returning administrator does not
-             * produce one of these on every sign-in.
+             * The configured floor is NOT re-applied here (T05.06 sealed the
+             * bootstrap): it ran once, at the account's creation, so from the
+             * first sign-in on the role belongs to whoever administers the
+             * deployment and a later ordinary login leaves it exactly where
+             * the admin screen put it.
              */
-            if (promoted) {
-              await record(auditStore, {
-                eventType: "person.admin_by_configuration",
-                targetType: "person",
-                targetId: session.userId,
-                actorUserId: session.userId,
-                payload: {
-                  email: user?.email,
-                  reason:
-                    "this address is named in INITIAL_ADMIN_EMAILS, so the configuration granted it",
-                },
-              });
-            }
 
             await record(auditStore, {
               eventType: "session.signed_in",

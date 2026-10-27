@@ -40,7 +40,7 @@ import {
   createScopedTeamExtension,
   createScopedTeamMemberHandlers,
   isTeamMemberRefusal,
-  TEAM_MEMBER_ACTOR_FORBIDDEN,
+  PROVISIONING_RULE_NOT_APPROVED,
   TEAM_MEMBER_ALREADY_MEMBER,
   TEAM_MEMBER_GRANT_NOT_COVERING,
   TEAM_MEMBER_GRANT_REQUIRED,
@@ -1130,9 +1130,11 @@ describe("T04.08 scoped team admin", () => {
 
   test("scim_actor_team_command_is_refused_by_name", async () => {
     // Shape-valid per the envelope (a scim actor carries its binding and the
-    // provisioning event it derives from — P12's ingress verifies those
-    // against real rules); the handler still refuses the KIND, because the
-    // provisioning-rule authority branch is P12's wiring, not this pair's.
+    // provisioning event it derives from). T05.06 wired the
+    // provisioning-rule branch, so the refusal is the rule verification's
+    // own: an event naming a rule that is not this company's approved rule
+    // at that revision never authorizes — a forged or stale event is
+    // refused, never replayed against a real one.
     const scimActor: DirectoryActor = {
       userId: owner.userId,
       principalId: null,
@@ -1156,7 +1158,7 @@ describe("T04.08 scoped team admin", () => {
     );
     expect(isTeamMemberRefusal(refused)).toBe(true);
     expect((refused as TeamMemberRefusal).code).toBe(
-      TEAM_MEMBER_ACTOR_FORBIDDEN,
+      PROVISIONING_RULE_NOT_APPROVED,
     );
     expect((refused as TeamMemberRefusal).status).toBe(403);
   });

@@ -535,7 +535,7 @@ function isUniqueViolation(error: unknown): boolean {
  * rethrown untouched — a real fault is never renamed into a refusal.
  */
 const REFUSAL_MARKER =
-  /^(AUTH_[A-Z0-9_]+|PRINCIPAL_REGISTRY_[A-Z0-9_]+|OUTBOX_[A-Z0-9_]+|AUTHORITY_[A-Z0-9_]+|DIRECTORY_[A-Z0-9_]+|TEAM_[A-Z0-9_]+|BA_AUTHORITY_[A-Z0-9_]+|SCIM_[A-Z0-9_]+)/;
+  /^(AUTH_[A-Z0-9_]+|PRINCIPAL_REGISTRY_[A-Z0-9_]+|OUTBOX_[A-Z0-9_]+|AUTHORITY_[A-Z0-9_]+|DIRECTORY_[A-Z0-9_]+|TEAM_[A-Z0-9_]+|BA_AUTHORITY_[A-Z0-9_]+|SCIM_[A-Z0-9_]+|PROVISIONING_RULE_[A-Z0-9_]+)/;
 
 function preferredRefusal(error: unknown): unknown {
   let current: unknown = error;

@@ -426,7 +426,7 @@ async function authorizeScimMemberCommand(
   if (!provisioning) {
     throw scimRefusal(
       SCIM_PROVISIONING_ACTOR_FORBIDDEN,
-      `a scim actor without its verified provisioning event cannot exercise a member command; the event evidence is the server's mint, never a client field`,
+      `a scim/jit actor without its verified provisioning event cannot exercise a member command; the event evidence is the server's mint, never a client field`,
     );
   }
   if (rule.minimumRole !== "member") {
@@ -576,10 +576,16 @@ export function createScimProvisioningHandlers(
   const provisionAuthorize: DirectoryCommandHandler["authorize"] = async (
     context,
   ) => {
-    if (context.actor.kind !== "scim" || !context.actor.provisioning) {
+    // T05.06: a jit actor carrying the verified issuer+subject/binding event
+    // of an approved rule provisions the same way a scim actor does — the
+    // minimum member role, the rule's fixed teams, never an invitation.
+    if (
+      (context.actor.kind !== "scim" && context.actor.kind !== "jit") ||
+      !context.actor.provisioning
+    ) {
       throw scimRefusal(
         SCIM_PROVISIONING_ACTOR_FORBIDDEN,
-        `a ${context.actor.kind} actor cannot provision a member; member.provision is the directory's own command, exercised by a scim actor carrying its fixed binding and verified provisioning event`,
+        `a ${context.actor.kind} actor cannot provision a member; member.provision is the directory's own command, exercised by a scim or jit actor carrying its fixed binding and verified provisioning event`,
         503,
       );
     }

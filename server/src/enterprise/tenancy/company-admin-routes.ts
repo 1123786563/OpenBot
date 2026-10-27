@@ -20,12 +20,18 @@
 //   GET    /admin/audit-events/export         导出（同判定门 + 导出留审计）
 //   GET    /admin/learning                    本范围学习记录（范围 pin，他范围空页）
 //   GET    /admin/billing/company-books       公司账簿 + 团队用量 + 用量证据行（财务读取授权）
+//   POST   /admin/provisioning-rules          批准供应规则（T05.06，owner/admin，绑定/固定目标受控命令）
+//   DELETE /admin/provisioning-rules/:ruleId  撤销供应规则（T05.06，owner/admin，状态化撤销）
 //
 // 装配契约：管理服务依赖 operator 通道；通道未装配时这些路由整体 503
 // （createUnavailableCompanyAdminRoutes），绝不以宽松替身放行。
 
 import { Hono } from "hono";
 import { isDirectoryMembershipRefusal } from "../../auth/directory/membership";
+import {
+  type CompanyProvisioningRulePort,
+  isProvisioningRuleRefusal,
+} from "../../auth/directory/team-extension";
 import {
   type CompanyTeamGrantPort,
   isTeamGrantRefusal,
@@ -133,6 +139,13 @@ export interface CompanyAdminRouteDeps {
    * stand-in.
    */
   teamGrants?: CompanyTeamGrantPort;
+  /**
+   * The provisioning-rule surface (T05.06 / #562, P12). Optional at the type
+   * level for the same reason teamGrants is: the concrete port needs a
+   * production Directory executor, so the dep is fail-closed — absent, the
+   * two routes answer 503, never a permissive stand-in.
+   */
+  provisioningRules?: CompanyProvisioningRulePort;
   audit: CompanyAuditPort;
   finance: Pick<
     CompanyFinanceVisibilityService,
@@ -169,6 +182,9 @@ const STATUS_BY_CODE: Readonly<
   // T04.07: the management-grant face before its production Directory wiring
   // exists — fail-closed, never a permissive stand-in.
   MANAGEMENT_GRANTS_UNAVAILABLE: 503,
+  // T05.06: the provisioning-rule face before its production Directory
+  // wiring exists — fail-closed, never a permissive stand-in.
+  PROVISIONING_RULES_UNAVAILABLE: 503,
   DATA_DATABASE_UNAVAILABLE: 503,
   WORKSPACE_ADMIN_UNAVAILABLE: 503,
   MANAGEMENT_ENTRANCE_UNCLASSIFIED: 500,
@@ -190,6 +206,16 @@ function errorResponse(error: unknown): {
     };
   }
   if (isTeamGrantRefusal(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      body: { error: { code: error.code, message: "Request refused." } },
+    };
+  }
+  // T05.06: the provisioning-rule commands surface their own refusals (a
+  // foreign binding, a missing rule, an already-revoked one) with their real
+  // HTTP projection, never folded into a 500.
+  if (isProvisioningRuleRefusal(error)) {
     return {
       status: error.status,
       code: error.code,
@@ -289,6 +315,7 @@ async function readJsonObject(
 export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
   const routes = new Hono();
   const teamGrants = deps.teamGrants;
+  const provisioningRules = deps.provisioningRules;
 
   routes.get("/admin/capabilities", async (context) => {
     try {
@@ -609,16 +636,110 @@ export function createCompanyAdminRoutes(deps: CompanyAdminRouteDeps): Hono {
           actions: body.actions,
           idempotencyKey,
         });
-        return context.json(
-          { grant: outcome },
-          outcome.replayed ? 200 : 201,
-        );
+        return context.json({ grant: outcome }, outcome.replayed ? 200 : 201);
       } catch (error) {
         const response = errorResponse(error);
         return context.json(response.body, response.status);
       }
     },
   );
+
+  // T05.06 (#562, P12): the company admin approves and revokes the
+  // provisioning rules of this company. The owner/admin authorization, the
+  // fixed-binding ownership and the workspace re-verification live in the
+  // directory command the port runs.
+  routes.post("/admin/provisioning-rules", async (context) => {
+    try {
+      requireClassifiedCompanyEntrance("POST", "/admin/provisioning-rules");
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
+      if (!provisioningRules) throw new Error("PROVISIONING_RULES_UNAVAILABLE");
+      const idempotencyKey = context.req.header(IDEMPOTENCY_HEADER);
+      if (
+        idempotencyKey === undefined ||
+        idempotencyKey.trim() === "" ||
+        idempotencyKey.length > IDEMPOTENCY_KEY_MAX ||
+        !isPrintableText(idempotencyKey)
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const body = await readJsonObject(context.req.raw);
+      const { bindingId, externalGroup, workspaceIds } = body as {
+        bindingId?: unknown;
+        externalGroup?: unknown;
+        workspaceIds?: unknown;
+      };
+      if (
+        typeof bindingId !== "string" ||
+        bindingId.trim() === "" ||
+        !Array.isArray(workspaceIds) ||
+        workspaceIds.length === 0 ||
+        !workspaceIds.every(
+          (id) => typeof id === "string" && id.trim() !== "",
+        ) ||
+        new Set(workspaceIds).size !== workspaceIds.length ||
+        (externalGroup !== undefined &&
+          externalGroup !== null &&
+          (typeof externalGroup !== "string" || externalGroup.trim() === ""))
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const rule = await provisioningRules.approve({
+        tenantId: adminContext.tenantId,
+        actorUserId: adminContext.actorId,
+        actorPrincipalId: adminContext.principalId,
+        bindingId,
+        ...(externalGroup === undefined
+          ? {}
+          : { externalGroup: externalGroup as string | null }),
+        workspaceIds: workspaceIds as string[],
+        idempotencyKey,
+      });
+      return context.json({ rule }, 201);
+    } catch (error) {
+      const response = errorResponse(error);
+      return context.json(response.body, response.status);
+    }
+  });
+
+  routes.delete("/admin/provisioning-rules/:ruleId", async (context) => {
+    try {
+      requireClassifiedCompanyEntrance(
+        "DELETE",
+        "/admin/provisioning-rules/:ruleId",
+      );
+      const adminContext = await deps.authorizer.resolveAdminContext(
+        context.req.raw,
+      );
+      if (!provisioningRules) throw new Error("PROVISIONING_RULES_UNAVAILABLE");
+      const ruleId = context.req.param("ruleId");
+      if (!ruleId || !GRANT_ID_PATTERN.test(ruleId)) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const body = await readJsonObject(context.req.raw);
+      const { reason } = body as { reason?: unknown };
+      if (
+        typeof reason !== "string" ||
+        reason.trim() === "" ||
+        reason.length > LIFECYCLE_REASON_MAX ||
+        !isPrintableText(reason)
+      ) {
+        throw new Error("INVALID_REQUEST");
+      }
+      const rule = await provisioningRules.revoke({
+        tenantId: adminContext.tenantId,
+        actorUserId: adminContext.actorId,
+        actorPrincipalId: adminContext.principalId,
+        ruleId,
+        reason,
+      });
+      return context.json({ rule });
+    } catch (error) {
+      const response = errorResponse(error);
+      return context.json(response.body, response.status);
+    }
+  });
 
   routes.delete(
     "/admin/teams/:workspaceId/management-grants/:grantId",

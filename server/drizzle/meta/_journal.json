@@ -1548,6 +1548,13 @@
       "when": 1793254800000,
       "tag": "0220_better_auth_company_auth_policy_read",
       "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1793341200000,
+      "tag": "0221_better_auth_provisioning_rules",
+      "breakpoints": true
     }
   ]
 }
