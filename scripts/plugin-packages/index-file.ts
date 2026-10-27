@@ -30,6 +30,9 @@ import {
  *   3. one writer at a time — an exclusive directory lock (mkdir is atomic on
  *      POSIX) serializes read-modify-write cycles across processes; a stale
  *      lock from a crashed holder is broken by age, not by waiting forever.
+ *      Every acquisition stamps its own random owner token, and both release
+ *      and stale-breaking only ever delete the lock whose token they judged —
+ *      a stalled holder that wakes up cannot remove its successor's lock.
  *
  * Nothing here executes package content, dials the network, reads company
  * configuration or touches the database: the deployment channel owns the
@@ -112,6 +115,10 @@ export async function writeMarketplaceIndexAtomic(
 
 const LOCK_STALE_MS = 30_000;
 const LOCK_TIMEOUT_MS = 10_000;
+/** Consecutive failed heartbeats after which a holder stops claiming the lock. */
+const HEARTBEAT_FAILURE_LIMIT = 3;
+/** The lock directory's holder-identity file (one random token per acquire). */
+const LOCK_OWNER_FILE = "owner";
 
 /** Lock tuning (tests shorten the waits instead of sleeping seconds). */
 export interface IndexLockOptions {
@@ -123,6 +130,12 @@ export interface IndexLockOptions {
    * as a barrier inside the break decision window.
    */
   readonly onStaleLockDetected?: () => Promise<void> | void;
+  /**
+   * Test/observation hook: one liveness refresh of the held lock. Defaults to
+   * `utimes(lockPath, now, now)`; a throwing implementation drives the
+   * give-up path.
+   */
+  readonly heartbeat?: (lockPath: string) => Promise<unknown>;
 }
 
 /**
@@ -136,16 +149,93 @@ export async function withIndexLock<T>(
   options: IndexLockOptions = {},
 ): Promise<T> {
   const lock = await acquireIndexLock(indexPath, options);
+  let result: T;
   try {
-    return await work();
-  } finally {
+    result = await work();
+  } catch (error) {
     await lock.release();
+    throw error;
   }
+  await lock.release();
+  // OCR-fix-G1 (R6-H1/M): a lock whose heartbeat could not be refreshed is no
+  // longer proof of exclusivity, so the cycle reports that instead of letting
+  // its caller believe the write was serialized.
+  if (lock.lost) {
+    throw new IndexOperationError(
+      "PACKAGE_INDEX_LOCK_LOST",
+      `the lock on ${indexPath} could not be refreshed while the critical section ran, so its exclusivity is no longer guaranteed — re-read the index and retry`,
+    );
+  }
+  return result;
 }
+
+/** What `release()` did: `released: false` names why nothing was deleted. */
+export type IndexLockReleaseResult =
+  | { readonly released: true }
+  | {
+      readonly released: false;
+      readonly reason: "NOT_OWNER" | "GONE";
+    };
 
 /** A held index lock; `release()` is idempotent-safe to call once. */
 export interface IndexLockHandle {
+  /**
+   * Releases the lock if this handle still owns it. Deliberately `void`: the
+   * dispatch-side `ReleaseLockHandle` seam (server/src) has this shape, and
+   * the outcome is recorded in `releaseOutcome` rather than silently dropped.
+   */
   release(): Promise<void>;
+  /** What the release did; null until `release()` has run. */
+  readonly releaseOutcome: IndexLockReleaseResult | null;
+  /**
+   * True when this handle stopped owning the lock before releasing it: its
+   * heartbeat could not refresh the lock, so the critical section ran without
+   * the exclusivity the acquisition promised.
+   */
+  readonly lost: boolean;
+}
+
+/** The lock's owner token; null when the file (or the whole lock) is absent. */
+async function readLockOwner(lockPath: string): Promise<string | null> {
+  try {
+    return (await readFile(join(lockPath, LOCK_OWNER_FILE), "utf8")).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete the lock ONLY when it is still the one `expected` identified. The
+ * token is read first, so a holder whose lock was judged stale and taken over
+ * never touches its successor's lock; the directory is then detached with an
+ * atomic rename and its token re-read, which catches a hand-over that landed
+ * in the read→delete window.
+ *
+ * Residual window: if the detached lock turns out to be someone else's AND a
+ * third writer has meanwhile taken the canonical name, the restore fails and
+ * only the detached copy is dropped — the third writer's lock is intact, and
+ * the detached holder was already mid-hand-over when it was judged.
+ */
+async function removeLockIfOwned(
+  lockPath: string,
+  expected: string | null,
+): Promise<"removed" | "changed" | "gone"> {
+  if ((await readLockOwner(lockPath)) !== expected) return "changed";
+  const detached = `${lockPath}.release-${randomUUID()}`;
+  try {
+    await rename(lockPath, detached);
+  } catch {
+    return "gone";
+  }
+  if ((await readLockOwner(detached)) !== expected) {
+    await rename(detached, lockPath).catch(() =>
+      rm(detached, { recursive: true, force: true }).catch(() => undefined),
+    );
+    return "changed";
+  }
+  // Rename already freed the name; a failed rm only leaves the detached tree.
+  await rm(detached, { recursive: true, force: true }).catch(() => undefined);
+  return "removed";
 }
 
 /**
@@ -163,7 +253,13 @@ export async function acquireIndexLock(
 ): Promise<IndexLockHandle> {
   const timeoutMs = options.timeoutMs ?? LOCK_TIMEOUT_MS;
   const staleMs = options.staleMs ?? LOCK_STALE_MS;
+  const refresh =
+    options.heartbeat ??
+    ((path: string) => utimes(path, new Date(), new Date()));
   const lockPath = `${indexPath}.lock`;
+  // OCR-fix-G1 (R6-H1): this acquisition's identity. Only a lock carrying
+  // this token is ever released or broken by this handle.
+  const token = randomUUID();
   const deadline = Date.now() + timeoutMs;
   let acquired = false;
   while (!acquired) {
@@ -175,10 +271,12 @@ export async function acquireIndexLock(
       if (!exists) throw error;
       let stale = false;
       let staleMtimeMs = 0;
+      let staleToken: string | null = null;
       try {
         const info = await stat(lockPath);
         staleMtimeMs = info.mtimeMs;
         stale = Date.now() - info.mtimeMs > staleMs;
+        if (stale) staleToken = await readLockOwner(lockPath);
       } catch {
         // The holder released between mkdir and stat: retry immediately.
         stale = false;
@@ -191,19 +289,24 @@ export async function acquireIndexLock(
         // may have released and another writer recreated the lock between
         // the stale stat and this point — a recreated lock has a fresh
         // mtime, so only an UNCHANGED, still-stale lock is broken.
+        // OCR-fix-G1 (R6-H1): the owner token joins that check, so a lock
+        // that changed hands under an unchanged-looking mtime is not ours to
+        // break either.
         let stillStale = false;
         try {
           const recheck = await stat(lockPath);
           stillStale =
             recheck.mtimeMs === staleMtimeMs &&
-            Date.now() - recheck.mtimeMs > staleMs;
+            Date.now() - recheck.mtimeMs > staleMs &&
+            (await readLockOwner(lockPath)) === staleToken;
         } catch {
           stillStale = false;
         }
         if (stillStale) {
           // A crashed holder's lock: break it and try again (best effort; a
-          // live holder's heartbeat keeps the mtime fresh).
-          await rm(lockPath, { recursive: true, force: true });
+          // live holder's heartbeat keeps the mtime fresh). `removeLockIfOwned`
+          // re-checks the token once more before anything is deleted.
+          await removeLockIfOwned(lockPath, staleToken);
         }
         continue;
       }
@@ -217,7 +320,11 @@ export async function acquireIndexLock(
     }
   }
   // Refresh the lock's mtime while held so a long mutation is never
-  // mistaken for a crashed holder.
+  // mistaken for a crashed holder. The owner token is the lock's identity;
+  // `holder` keeps the pid for operators.
+  await writeFile(join(lockPath, LOCK_OWNER_FILE), `${token}\n`, {
+    encoding: "utf8",
+  });
   await writeFile(join(lockPath, "holder"), `${process.pid}\n`, {
     encoding: "utf8",
   });
@@ -225,26 +332,53 @@ export async function acquireIndexLock(
   // transaction plus artifact reads — longer than any single mtime write.
   // A heartbeat under half of staleMs keeps a live holder unbreakable no
   // matter how long it holds; it stops on release and on a vanished lock.
+  // OCR-fix-G1 (R6-H1/M): one failed refresh no longer parks the holder in a
+  // "still holding" pose forever — failures are retried up to a limit, after
+  // which the handle gives the claim up (`lost`) so the caller reports it.
   const heartbeatMs = Math.max(25, Math.floor(staleMs / 3));
+  let failures = 0;
+  let lost = false;
   let heartbeat: ReturnType<typeof setInterval> | null = setInterval(() => {
-    utimes(lockPath, new Date(), new Date()).catch(() => {
-      if (heartbeat) clearInterval(heartbeat);
-      heartbeat = null;
-    });
+    void Promise.resolve()
+      .then(() => refresh(lockPath))
+      .then(
+        () => {
+          failures = 0;
+        },
+        () => {
+          failures += 1;
+          if (failures < HEARTBEAT_FAILURE_LIMIT || !heartbeat) return;
+          lost = true;
+          clearInterval(heartbeat);
+          heartbeat = null;
+        },
+      );
   }, heartbeatMs);
   heartbeat?.unref?.();
   let released = false;
+  let releaseOutcome: IndexLockReleaseResult | null = null;
   return {
+    get lost() {
+      return lost;
+    },
+    get releaseOutcome() {
+      return releaseOutcome;
+    },
     release: async () => {
-      if (released) return;
-      released = true;
       if (heartbeat) {
         clearInterval(heartbeat);
         heartbeat = null;
       }
-      await rm(lockPath, { recursive: true, force: true }).catch(
-        () => undefined,
-      );
+      if (released) return;
+      released = true;
+      const outcome = await removeLockIfOwned(lockPath, token);
+      releaseOutcome =
+        outcome === "removed"
+          ? { released: true }
+          : {
+              released: false,
+              reason: outcome === "changed" ? "NOT_OWNER" : "GONE",
+            };
     },
   };
 }

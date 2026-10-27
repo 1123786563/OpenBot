@@ -20,7 +20,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { createDatabase } from "../../server/src/db/client";
+import { createDatabase, type Database } from "../../server/src/db/client";
 import type { PlatformScope } from "../../server/src/enterprise/contracts";
 import { createPackageService } from "../../server/src/enterprise/plugin-packages/install-service";
 import { createPackageMutationStore } from "../../server/src/enterprise/plugin-packages/mutation-context";
@@ -38,7 +38,6 @@ import {
 import {
   BUILTIN_PACKAGE_KEY,
   buildManifest,
-  findScopeInstall,
   type LegacyInventory,
   type LegacyMigrationManifest,
   manifestDigestOf,
@@ -89,6 +88,42 @@ function idempotencyKey(digest: string, suffix: string): string {
   return `pkg11-m:${digest.slice(0, 32)}:${suffix}`;
 }
 
+/**
+ * The scope's built-in install, including the release it points at. The shared
+ * `findScopeInstall` does not select `current_version`, and OCR-fix-G1 (R6-H2)
+ * needs it to refuse an enabled install of a DIFFERENT release. Raw SQL rather
+ * than drizzle: `scripts/` carries no drizzle dependency of its own.
+ */
+async function findScopeInstallVersioned(
+  setup: Database,
+  scope: { tenantId: string; workspaceId: string },
+): Promise<{
+  id: string;
+  status: string;
+  revision: number;
+  currentVersion: string;
+} | null> {
+  const [row] = (await setup.$client.unsafe(
+    `select id, status, revision, current_version
+       from enterprise_package_installs
+      where tenant_id = $1 and workspace_id = $2 and package_key = $3
+      limit 1`,
+    [scope.tenantId, scope.workspaceId, BUILTIN_PACKAGE_KEY],
+  )) as Array<{
+    id: string;
+    status: string;
+    revision: number;
+    current_version: string;
+  }>;
+  if (!row) return null;
+  return {
+    id: row.id,
+    status: row.status,
+    revision: row.revision,
+    currentVersion: row.current_version,
+  };
+}
+
 export async function runApply(input: {
   manifestPath: string;
   expectedDigest: string;
@@ -135,7 +170,7 @@ export async function runApply(input: {
     return {
       refused: true,
       code: "BUILTIN_MISSING",
-      detail: `${BUILTIN_PACKAGE_KEY} is not registered in the marketplace index`,
+      detail: `${BUILTIN_PACKAGE_KEY} has no published release in the marketplace index`,
     };
   }
   if (
@@ -274,11 +309,25 @@ export async function runApply(input: {
       //    decision the migration must not act out: reusing it lands
       //    provenance ahead of the grant refusal, and replanning over it
       //    dies mid-apply on PACKAGE_UNSUPPORTED. Typed refusal, zero writes.
-      const existingInstall = await findScopeInstall(channels.setup, scopeIds);
+      //    OCR-fix-G1 (R6-H2): "enabled" is not enough either — the install
+      //    must already run the release the manifest bound, or the provenance
+      //    (and the grants that follow) would be written against a release
+      //    the manifest never mapped. Typed refusal, zero writes.
+      const existingInstall = await findScopeInstallVersioned(
+        channels.setup,
+        scopeIds,
+      );
       let installId: string;
       let created: boolean;
       let installRevision: number;
       if (existingInstall && existingInstall.status === "enabled") {
+        if (existingInstall.currentVersion !== manifest.builtin.version) {
+          return {
+            refused: true,
+            code: "BUILTIN_DRIFT",
+            detail: `the scope's ${BUILTIN_PACKAGE_KEY} install (${existingInstall.id}) is enabled at ${existingInstall.currentVersion}, but the manifest bound ${manifest.builtin.version}; refusing to write provenance against a different release — nothing was written`,
+          };
+        }
         installId = existingInstall.id;
         created = false;
         installRevision = existingInstall.revision;

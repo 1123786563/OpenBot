@@ -19,7 +19,8 @@
 // 不是测试私造 fixture。
 
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -399,6 +400,44 @@ afterAll(async () => {
   if (fixture) await fixture.dispose();
 });
 
+// OCR-fix-G1 (R6-H2 同族): the migration's reference release comes from the
+// index alone, so this arm needs no database.
+describe("PKG11 built-in baseline selection (index only)", () => {
+  const release = (version: string, state: "published" | "withdrawn") => ({
+    packageKey: BUILTIN_PACKAGE_KEY,
+    version,
+    artifactDigest: "a".repeat(64),
+    category: "productivity",
+    listed: true,
+    state,
+  });
+
+  async function indexWith(
+    ...packages: ReturnType<typeof release>[]
+  ): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "pkg11-baseline-"));
+    const indexPath = join(root, "marketplace.json");
+    await writeFile(
+      indexPath,
+      `${JSON.stringify({ schemaVersion: 1, packages })}\n`,
+    );
+    return indexPath;
+  }
+
+  test("a withdrawn release is never the baseline, even when it is the newest", async () => {
+    const indexPath = await indexWith(
+      release("1.0.0", "published"),
+      release("2.0.0", "withdrawn"),
+    );
+    expect((await builtinIndexEntry(indexPath))?.version).toBe("1.0.0");
+  });
+
+  test("every release withdrawn leaves no baseline (apply refuses BUILTIN_MISSING)", async () => {
+    const indexPath = await indexWith(release("2.0.0", "withdrawn"));
+    expect(await builtinIndexEntry(indexPath)).toBeNull();
+  });
+});
+
 describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
   test("the built-in package is registered and loadable from the shipped index", async () => {
     const entry = await builtinIndexEntry(INDEX_PATH);
@@ -590,12 +629,19 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
   // the grant step threw: half-applied) and replanned over an uninstalled
   // tombstone (PACKAGE_UNSUPPORTED mid-apply, no receipt at all). Re-enabling
   // is an administrator lifecycle action the migration must not take over.
+  // OCR-fix-G1 (R6-H2): the same refusal covers an ENABLED install that runs
+  // a different release than the manifest bound — reusing it writes
+  // provenance (and would grant) against a release the manifest never mapped.
   // Seeded via the superuser setup channel (the suite's disclosed
   // arrangement); removed in finally so the happy-path drill below still
   // starts from no install even when this arm goes red.
-  async function refuseNonEnabledInstall(
-    status: "disabled" | "uninstalled",
-  ): Promise<void> {
+  async function refuseInstallRow(input: {
+    status: "disabled" | "uninstalled" | "enabled";
+    /** The seeded row's release; defaults to the one the manifest bound. */
+    currentVersion?: string;
+    code: "MIGRATION_INSTALL_NOT_ENABLED" | "BUILTIN_DRIFT";
+  }): Promise<void> {
+    const currentVersion = input.currentVersion;
     const builtin = builtinFacts(await builtinIndexEntry(INDEX_PATH));
     const manifest = buildManifest(
       builtin,
@@ -611,13 +657,13 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
         installId,
         teamA1,
         BUILTIN_PACKAGE_KEY,
-        builtin.version,
-        status,
+        currentVersion ?? builtin.version,
+        input.status,
         fixture.principalOf("a1-member", "company-a"),
       ],
     );
     try {
-      const path = `/tmp/pkg11-arm-${status}-${randomUUID()}.json`;
+      const path = `/tmp/pkg11-arm-${input.status}-${randomUUID()}.json`;
       await writeFile(path, JSON.stringify(manifest));
       const outcome = await runApply({
         manifestPath: path,
@@ -637,11 +683,9 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
         },
       });
       expect(outcome.refused).toBe(true);
-      expect((outcome as { code: string }).code).toBe(
-        "MIGRATION_INSTALL_NOT_ENABLED",
-      );
+      expect((outcome as { code: string }).code).toBe(input.code);
       // Zero partial writes: no expert provenance, no grants, and the
-      // install row itself untouched (status and revision as seeded).
+      // install row itself untouched (status, version and revision as seeded).
       expect(
         await countRows(
           `from enterprise_package_experts where tenant_id = '${tenantA}'`,
@@ -653,12 +697,17 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
         ),
       ).toBe(0);
       const [row] = (await setup.$client.unsafe(
-        `select status, revision from enterprise_package_installs
+        `select status, revision, current_version from enterprise_package_installs
          where tenant_id = $1 and workspace_id = $2 and package_key = $3`,
         [tenantA, teamA1, BUILTIN_PACKAGE_KEY],
-      )) as Array<{ status: string; revision: number }>;
-      expect(row?.status).toBe(status);
+      )) as Array<{
+        status: string;
+        revision: number;
+        current_version: string;
+      }>;
+      expect(row?.status).toBe(input.status);
       expect(row?.revision).toBe(1);
+      expect(row?.current_version).toBe(currentVersion ?? builtin.version);
     } finally {
       await setup.$client.unsafe(
         `delete from enterprise_package_experts where tenant_id = $1`,
@@ -676,11 +725,25 @@ describeDb("PKG11 legacy migration drill (real restricted roles)", () => {
   }
 
   test("apply refuses a disabled install with a typed receipt and zero writes", async () => {
-    await refuseNonEnabledInstall("disabled");
+    await refuseInstallRow({
+      status: "disabled",
+      code: "MIGRATION_INSTALL_NOT_ENABLED",
+    });
   });
 
   test("apply refuses an uninstalled tombstone with a typed receipt and zero writes", async () => {
-    await refuseNonEnabledInstall("uninstalled");
+    await refuseInstallRow({
+      status: "uninstalled",
+      code: "MIGRATION_INSTALL_NOT_ENABLED",
+    });
+  });
+
+  test("apply refuses an enabled install of a different release with a typed receipt and zero writes", async () => {
+    await refuseInstallRow({
+      status: "enabled",
+      currentVersion: "9.9.9",
+      code: "BUILTIN_DRIFT",
+    });
   });
 
   test("apply migrates only proven records and never writes legacy rows", async () => {
