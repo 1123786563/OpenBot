@@ -119,6 +119,21 @@ export const EXPLICIT_GROUPS = {
     "server/tests/package-install.integration.test.ts",
   ],
   /*
+   * T13-fix-1 (#459 A05): the withdraw-vs-dispatch contention suite installs
+   * the same chain through ./support/package-install and shares the family's
+   * enterprise test database, but measured on the integration HEAD it cannot
+   * share the chain's process: with it appended to the chain above,
+   * package-entrypoints' resumed-dispatch case and its own four contention
+   * cases refuse dispatches and go red in the 14-file process while the
+   * 13-file chain stays green on the same fresh database (both directions
+   * re-measured). Like package-migration below, it seeds its own facts and
+   * gets its own group — still named after the multitenancy island so
+   * MT_TEST_DATABASE_URL routing applies — instead of racing the chain.
+   */
+  "server/tests/multitenancy/package-withdraw-contention": [
+    "server/tests/multitenancy/package-withdraw-contention.test.ts",
+  ],
+  /*
    * PKG11 (#470): the legacy-migration drill drives the dry-run→apply CLI
    * against the enterprise test database (same environment as the chain
    * above, reached through server/src/db/client), but it does not join the
@@ -242,6 +257,24 @@ export function groupsOf(files) {
 }
 
 /*
+ * Causes travel in a committed snapshot, so they must not carry the machine.
+ * Collection errors quote absolute paths — this checkout's root, a sibling
+ * worktree's root, the host home — and the c5197e54a regeneration persisted 20
+ * of them verbatim, freezing one workstation's layout into
+ * tests/config/e2e-bun-suites.json. The contract for a persisted cause: zero
+ * `/Users/` occurrences. A path through any `workspaces/OpenBot/` checkout
+ * folds to its repo-relative tail (the worktree name survives as the only hint
+ * of where the error was measured); any other host-absolute path loses its
+ * owner segment. The second replacement is the belt that keeps the contract,
+ * not a claim about the shape of errors.
+ */
+export function sanitizeCauseText(text) {
+  return String(text)
+    .replace(/\/Users\/[^/\s"'`]+\/(?:[^/\s"'`]+\/)*workspaces\/OpenBot\//g, "")
+    .replace(/\/Users\/[^/\s"'`]+/g, "<user>");
+}
+
+/*
  * THE one writer. Every generator records the same payload shape here: the
  * grouping (`groups`), the driven files, the non-executable artifacts, the
  * per-file `causes` evidence, and the `directoryIslands` the driver
@@ -251,7 +284,8 @@ export function groupsOf(files) {
  * `directoryIslands` (51 multitenancy suites aborting on the shared URL) or
  * wipe another writer's `causes`. `audit` is a passthrough for generators
  * that derive the file list from an audit snapshot; writers that don't have
- * one simply omit it (JSON.stringify drops `undefined`).
+ * one simply omit it (JSON.stringify drops `undefined`). Causes are sanitized
+ * of host paths on the way in — see sanitizeCauseText.
  */
 export function writeManifest(
   { files, artifacts, causes, audit },
@@ -270,7 +304,12 @@ export function writeManifest(
     groups: groupsOf(list),
     files: list,
     artifacts: [...artifacts].sort(),
-    causes,
+    causes: Object.fromEntries(
+      Object.entries(causes ?? {}).map(([file, cause]) => [
+        file,
+        sanitizeCauseText(cause),
+      ]),
+    ),
     directoryIslands: [...DIRECTORY_ISLANDS],
   };
   // Two-space indent, matching `biome format` for JSON: a regeneration then

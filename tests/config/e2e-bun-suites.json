@@ -20,7 +20,9 @@
     },
     {
       "name": "agent-mastra/src",
-      "files": ["agent-mastra/src/mastra/index.test.ts"]
+      "files": [
+        "agent-mastra/src/mastra/index.test.ts"
+      ]
     },
     {
       "name": "agent-sandbox/tests",
@@ -32,7 +34,9 @@
     },
     {
       "name": "app/src",
-      "files": ["app/src/lib/i18n/ai-observability.test.ts"]
+      "files": [
+        "app/src/lib/i18n/ai-observability.test.ts"
+      ]
     },
     {
       "name": "app/tests part 1",
@@ -188,23 +192,33 @@
     },
     {
       "name": "desktop/scripts",
-      "files": ["desktop/scripts/desktop-version.test.ts"]
+      "files": [
+        "desktop/scripts/desktop-version.test.ts"
+      ]
     },
     {
       "name": "desktop/src",
-      "files": ["desktop/src/telemetry.test.ts"]
+      "files": [
+        "desktop/src/telemetry.test.ts"
+      ]
     },
     {
       "name": "scripts/processes.test.ts",
-      "files": ["scripts/processes.test.ts"]
+      "files": [
+        "scripts/processes.test.ts"
+      ]
     },
     {
       "name": "scripts/start-restart-guard.test.ts",
-      "files": ["scripts/start-restart-guard.test.ts"]
+      "files": [
+        "scripts/start-restart-guard.test.ts"
+      ]
     },
     {
       "name": "scripts/tls-pipeline.test.ts",
-      "files": ["scripts/tls-pipeline.test.ts"]
+      "files": [
+        "scripts/tls-pipeline.test.ts"
+      ]
     },
     {
       "name": "server/tests part 1",
@@ -708,7 +722,9 @@
     },
     {
       "name": "server/tests/billing-credits-writer",
-      "files": ["server/tests/billing-credits-writer.integration.test.ts"]
+      "files": [
+        "server/tests/billing-credits-writer.integration.test.ts"
+      ]
     },
     {
       "name": "server/tests/gateway-probe",
@@ -846,7 +862,9 @@
     },
     {
       "name": "shared/harnesses.test.ts",
-      "files": ["shared/harnesses.test.ts"]
+      "files": [
+        "shared/harnesses.test.ts"
+      ]
     },
     {
       "name": "server/tests/multitenancy/package chain",
@@ -867,24 +885,40 @@
       ]
     },
     {
+      "name": "server/tests/multitenancy/package-withdraw-contention",
+      "files": [
+        "server/tests/multitenancy/package-withdraw-contention.test.ts"
+      ]
+    },
+    {
       "name": "server/tests/multitenancy/package-migration",
-      "files": ["server/tests/multitenancy/package-migration.test.ts"]
+      "files": [
+        "server/tests/multitenancy/package-migration.test.ts"
+      ]
     },
     {
       "name": "server/tests/multitenancy/tool-invocation",
-      "files": ["server/tests/multitenancy/tool-invocation.test.ts"]
+      "files": [
+        "server/tests/multitenancy/tool-invocation.test.ts"
+      ]
     },
     {
       "name": "server/tests/package-dispatch-call",
-      "files": ["server/tests/package-dispatch-call.test.ts"]
+      "files": [
+        "server/tests/package-dispatch-call.test.ts"
+      ]
     },
     {
       "name": "server/tests/package-index-ops",
-      "files": ["server/tests/package-index-ops.test.ts"]
+      "files": [
+        "server/tests/package-index-ops.test.ts"
+      ]
     },
     {
       "name": "server/tests/package-entrypoints",
-      "files": ["server/tests/package-entrypoints.test.ts"]
+      "files": [
+        "server/tests/package-entrypoints.test.ts"
+      ]
     }
   ],
   "files": [
@@ -1318,18 +1352,19 @@
     "server/tests/multitenancy/openmuse-private-bot.test.ts",
     "server/tests/multitenancy/openmuse-reviewed-actions.test.ts",
     "server/tests/multitenancy/openmuse-tasks.test.ts",
+    "server/tests/multitenancy/package-crash-recovery.test.ts",
+    "server/tests/multitenancy/package-dispatch.test.ts",
     "server/tests/multitenancy/package-entrypoints.test.ts",
     "server/tests/multitenancy/package-expert.test.ts",
     "server/tests/multitenancy/package-grants.test.ts",
+    "server/tests/multitenancy/package-lifecycle.test.ts",
+    "server/tests/multitenancy/package-migration.test.ts",
     "server/tests/multitenancy/package-runtime.test.ts",
     "server/tests/multitenancy/package-storage.test.ts",
     "server/tests/multitenancy/package-unknown.test.ts",
-    "server/tests/multitenancy/package-crash-recovery.test.ts",
-    "server/tests/multitenancy/package-withdraw.test.ts",
-    "server/tests/multitenancy/package-migration.test.ts",
-    "server/tests/multitenancy/package-dispatch.test.ts",
-    "server/tests/multitenancy/package-lifecycle.test.ts",
     "server/tests/multitenancy/package-upgrade.test.ts",
+    "server/tests/multitenancy/package-withdraw-contention.test.ts",
+    "server/tests/multitenancy/package-withdraw.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
     "server/tests/multitenancy/personal-memory.test.ts",
@@ -1563,27 +1598,26 @@
   ],
   "artifacts": [],
   "causes": {
-    "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/agent-computer/tests/web-bot-auth-browser.test.ts; we",
-    "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/agent-computer/tests/web-bot-auth.test.ts; web-bot-auth is de",
-    "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/agent-langgraph/tests/google-oauth-proxy.test.ts; @ag-u",
-    "agent-langgraph/tests/governed-tracing.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/agent-langgraph/tests/governed-tracing.test.ts; @lang",
-    "agent-langgraph/tests/history.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/history.test.ts: Cannot find package '@langchain/anthropic' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/agent-langgraph/tests/history.test.ts; @langchain/anthrop",
+    "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-f-manifest-regen/agent-computer/tests/web-bot-auth-brows",
+    "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-f-manifest-regen/agent-computer/tests/web-bot-auth.test.ts; web-",
+    "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/google-oauth-proxy.",
+    "agent-langgraph/tests/governed-tracing.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/governed-tracing.",
+    "agent-langgraph/tests/history.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/history.test.ts: Cannot find package '@langchain/anthropic' imported from ocrfix-f-manifest-regen/agent-langgraph/tests/history.test.ts; @lan",
     "app/tests/auth-client.test.ts": "COLLECTION_ERROR: failed to collect app/tests/auth-client.test.ts: Invalid base URL: null. Please provide a valid base URL. ",
-    "app/tests/channel-order.test.ts": "COLLECTION_ERROR: failed to collect app/tests/channel-order.test.ts: Cannot find package '@/lib' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/app/src/components/app-sidebar/app-sidebar.tsx; add it to the project: npm ins",
-    "app/tests/channel-search.test.ts": "COLLECTION_ERROR: failed to collect app/tests/channel-search.test.ts: Cannot find package '@/lib' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/app/src/components/app-sidebar/app-sidebar.tsx; add it to the project: npm in",
-    "app/tests/channel-unread.test.ts": "COLLECTION_ERROR: failed to collect app/tests/channel-unread.test.ts: Cannot find package '@/lib' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/app/src/components/app-sidebar/app-sidebar.tsx; add it to the project: npm in",
-    "app/tests/mark-open-channel-read.test.tsx": "COLLECTION_ERROR: failed to collect app/tests/mark-open-channel-read.test.tsx: Cannot find package '@/lib' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/app/src/components/app-sidebar/app-sidebar.tsx; add it to the projec",
-    "desktop/src/App.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/App.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/desktop/src/App.test.tsx; @happy-dom/global-registrator is de",
-    "desktop/src/CompanySelection.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/CompanySelection.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/desktop/src/CompanySelection.test.tsx; @happy-do",
-    "desktop/src/LocalStateIsolation.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/desktop/src/LocalStateIsolation.test.tsx; @ha",
-    "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/desktop/src/OrgSwitchCleanup.test.tsx; @happy-do",
-    "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/desktop/src/Problem.test.tsx; @happy-dom/global-registrat",
-    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/desktop/src/ProviderPicker.test.tsx; @happy-dom/gl",
-    "server/tests/multitenancy/bots-ownership.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/bots-ownership.test.ts: /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is only permitted o",
-    "server/tests/multitenancy/coverage-governance.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/coverage-governance.test.ts: /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is only permit",
-    "server/tests/multitenancy/execution-artifacts.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-artifacts.test.ts: /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is only permit",
-    "server/tests/multitenancy/execution-guarantees.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-guarantees.test.ts: /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is only permi",
-    "server/tests/multitenancy/observability-authz.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/observability-authz.test.ts: /Users/wuyongjun/orca/workspaces/OpenBot/t00-infra/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is only permit"
+    "desktop/src/App.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/App.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/App.test.tsx; @happy-dom/global-reg",
+    "desktop/src/CompanySelection.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/CompanySelection.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/CompanySelection.test.",
+    "desktop/src/LocalStateIsolation.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/LocalStateIsolation",
+    "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/OrgSwitchCleanup.test.",
+    "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/Problem.test.tsx; @happy-dom/gl",
+    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-f-manifest-regen/desktop/src/ProviderPicker.test.tsx;",
+    "server/tests/multitenancy/bots-ownership.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/bots-ownership.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier is on",
+    "server/tests/multitenancy/coverage-governance.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/coverage-governance.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
+    "server/tests/multitenancy/execution-artifacts.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-artifacts.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier ",
+    "server/tests/multitenancy/execution-guarantees.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-guarantees.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier",
+    "server/tests/multitenancy/observability-authz.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/observability-authz.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier "
   },
-  "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"]
+  "directoryIslands": [
+    "server/tests/multitenancy",
+    "app/tests/multitenancy"
+  ]
 }
