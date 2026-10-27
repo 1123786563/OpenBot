@@ -20,7 +20,7 @@
 
 1. 写前完成完整 rescan，在 Run 的 receipts 中持久保存唯一 `intent_id`：Issue、动作、操作者/授权引用、`requirements_fingerprint`、`target`、当前和预期 `eligibility`、验收/CI/终审/OCR/共享证据索引及哈希、逐资源 token/generation、创建时间。保存成功后才发出写入；仅在同一有效版本重试同一意图。已有标签也走同一有效性核验。
 2. 尽量使用 API 条件写；API 不支持对需求和目标 SHA 的联合条件写时，写后必须再次完整 rescan 并读取实际标签、状态和关闭原因。除意图允许差异外，需求/批准权限、关系、目标 SHA、资格及 CI 必须与意图相符，才记 `applied_valid`。不得只凭标签存在或 closed 回读成功确认有效。
-3. 失配立即将本动作记 `label_action=stale` 或 `close_action=stale`，撤销本次放行并保存前后差异；当前验证结论按 [协调格式](coordination-format.md)转为 `revalidating`，需求读取不完整时转 `intake_incomplete`，旧 verified 仅留历史。开始纠正后即使改记 `label_correction_pending` / `close_correction_pending`，也不得恢复旧 verified。按现有授权移除本动作产生的过期标签，或重新打开由本动作错误关闭且未被后续有权决定接管的票，随后同样对账。纠正必须核对归属及最新人工决定，不能覆盖后续授权操作；缺授权、API 失败或无法判定时明确远端可能仍有错误状态，不能报告成功。
+3. 失配立即将本动作记 `label_action=stale` 或 `close_action=stale`，撤销本次放行并保存前后差异；当前验证结论按 [协调格式](coordination-format.md)转为 `revalidating`，需求读取不完整时转 `intake_incomplete`，旧 verified 仅留历史。开始纠正后即使改记 `label_correction_pending` / `close_correction_pending`，也不得恢复旧 verified。唯一例外是失配仅由已核实的 `not_required` 或人审 approved/rejected 终态引起：动作仍 stale 并撤销放行，但保留与其需求/目标指纹相符的 Agent 验证结论，不制造重验循环；需求或目标本身失配不属于例外。按现有授权移除本动作产生的过期标签，或重新打开由本动作错误关闭且未被后续有权决定接管的票，随后同样对账。纠正必须核对归属及最新人工决定，不能覆盖后续授权操作；缺授权、API 失败或无法判定时明确远端可能仍有错误状态，不能报告成功。
 4. 超时或回读不全先记 `label_pending` / `close_pending`，恢复时对账意图与远端，不盲目重复写入。每轮最多三次“读取稳定版本→写入/纠正→复核”；持续变化时保留 pending 和恢复条件。回读只能证明截至记录时的有效性，不保证未来不变化；后续由标签对账集合及恢复 Ledger 再核验。
 
 ## 自动关闭和人审证据

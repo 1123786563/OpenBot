@@ -31,7 +31,12 @@ import {
   CaseReviewError,
   createCaseReviewService,
 } from "../case-review";
-import { type BotManagementCheck, resolveObservationBot } from "../context";
+import {
+  type BotManagementCheck,
+  explicitObservationOwnership,
+  OBSERVATION_BOT_NOT_FOUND,
+  resolveObservationBot,
+} from "../context";
 import { ObservationScopeError } from "../contracts";
 import type { ObservationDatasetStore } from "../datasets";
 import { DatasetStoreError } from "../datasets";
@@ -139,12 +144,16 @@ export function createCaseReviewRoutes(
       return Response.json({ error: access.error }, { status: access.status });
     }
     const actor = context.var.actor;
-    // Ownership is answered from the same row the decision was made on; the
-    // epoch is injected wiring, never a body value.
-    const ownership =
-      access.profile.ownerUserId === actor.id
-        ? ("owner" as const)
-        : ("admin" as const);
+    // Explicit, never inferred (OCR h10/m182): a caller the seam refuses to mint
+    // for is answered with the same unified not-found the manage gate uses.
+    const ownership = explicitObservationOwnership(actor, access.profile);
+    if (ownership === null) {
+      return Response.json(
+        { error: OBSERVATION_BOT_NOT_FOUND },
+        { status: 404 },
+      );
+    }
+    // The epoch is injected wiring, never a body value.
     const epoch = await deps.scopeEpoch(actor, access.botId);
     return {
       scope: resolveObservationScope({

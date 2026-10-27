@@ -37,7 +37,9 @@ def run_soffice(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(["soffice"] + args, env=env, **kwargs)
 
 
-_SHIM_SO = Path(tempfile.gettempdir()) / "lo_socket_shim.so"
+_SHIM_TEMP_DIR = tempfile.TemporaryDirectory(prefix="lo_socket_shim_")
+_SHIM_DIR = Path(_SHIM_TEMP_DIR.name)
+_SHIM_SO = _SHIM_DIR / "lo_socket_shim.so"
 
 
 def _needs_shim() -> bool:
@@ -50,17 +52,27 @@ def _needs_shim() -> bool:
 
 
 def _ensure_shim() -> Path:
-    if _SHIM_SO.exists():
+    if _SHIM_SO.is_file():
         return _SHIM_SO
 
-    src = Path(tempfile.gettempdir()) / "lo_socket_shim.c"
-    src.write_text(_SHIM_SOURCE)
-    subprocess.run(
-        ["gcc", "-shared", "-fPIC", "-o", str(_SHIM_SO), str(src), "-ldl"],
-        check=True,
-        capture_output=True,
-    )
-    src.unlink()
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".c", dir=_SHIM_DIR, delete=False
+    ) as source:
+        source.write(_SHIM_SOURCE)
+    src = Path(source.name)
+    fd, output_name = tempfile.mkstemp(suffix=".so", dir=_SHIM_DIR)
+    os.close(fd)
+    output = Path(output_name)
+    try:
+        subprocess.run(
+            ["gcc", "-shared", "-fPIC", "-o", str(output), str(src), "-ldl"],
+            check=True,
+            capture_output=True,
+        )
+        os.replace(output, _SHIM_SO)
+    finally:
+        src.unlink(missing_ok=True)
+        output.unlink(missing_ok=True)
     return _SHIM_SO
 
 

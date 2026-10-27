@@ -1,4 +1,4 @@
-# 共享协调 v2 数据与适配器契约
+# 共享协调 v3 数据与适配器契约
 
 登记资源、更新跨日队列或恢复索引时，由 [coordination-state.md](coordination-state.md)加载本文件。下述是协议要求，不宣称仓库已有可用实现。启动时须登记唯一公共协调适配器的绝对入口、版本和内容哈希，并让所有参与者使用同一入口；接口逻辑名为 `transaction(request)`，不是可直接执行的 CLI。仓库未提供实现或外部适配器未通过本节样例时，跨 Run 写入保持 blocked，可继续只读检查；禁止各 Agent 临时各写一套不兼容 Ledger。不能以文档协议冒充已部署服务。
 
@@ -23,7 +23,7 @@ service_id、daemon_id、network_namespace_id 从主机统一配置/实际服务
 
 ## 文件 Schema 与记录身份
 
-claims.json 与 daily-ledger.json 共用 v2 schema；适配器须同时验证结构与下述语义，不只验证 JSON 能解析。时间统一为 UTC RFC3339 `Z` 形式，版本/generation 为非负整数，token 使用密码学安全随机生成的 UUID；数组按下述身份键排序。机器 schema 的唯一来源为 [coordination-schema.json](coordination-schema.json)，按本地文件读取，不访问其中的标识 URI。它验证外壳、声明、逐票状态、指纹、恢复引用和历史事件；下文定义身份、跨字段及事务语义约束，二者缺一即拒绝更新。
+claims.json 与 daily-ledger.json 共用 v3 schema；适配器须同时验证结构与下述语义，不只验证 JSON 能解析。时间统一为 UTC RFC3339 `Z` 形式，版本/generation 为非负整数，token 使用密码学安全随机生成的 UUID；数组按下述身份键排序。机器 schema 的唯一来源为 [coordination-schema.json](coordination-schema.json)，按本地文件读取，不访问其中的标识 URI。它验证外壳、声明、逐票状态、指纹、恢复引用和历史事件；下文定义身份、跨字段及事务语义约束，二者缺一即拒绝更新。
 
 适配器必须强制：每个 claims 文件内 `(resource_key, owner_run)` 唯一；每条记录表示一个 holder，同资源仅 read/read 可有多个拥有者；每个 per-repo daily 文件仅有一条与目录 repo-key 相符的 daily record；daily 内规范 Issue、父项 aggregate_children、event_id 全局、每票 slot 事件组合唯一。相同身份但其他字段不同仍是重复，不以 `uniqueItems` 代替。顶层 host_id 须等于本文件所有本地 claim 的 host，目标 repo_identity 须等于文件路径身份。history 只能追加；调度事件序号不得超过已分配值，同一 slot 阶段复用原序号，非调度事件序号为 null；每票 class 非 null 时只有一类，eligible_since 和 input_fingerprint 必填。
 
@@ -32,26 +32,41 @@ claims.json 与 daily-ledger.json 共用 v2 schema；适配器须同时验证结
 - evidence / recovery_ref：`path` 必须是持久绝对路径或已授权证据 URI，指向有确定字节内容的文件、不可变 manifest 或 URI 对象；目录必须通过其 manifest 引用，不定义“目录自身哈希”。`content_kind=file|manifest` 描述该对象；`checkpoint_id / snapshot_generation / attempt` 对检查点证据必须绑定同一代，非检查点证据三者均可为 null，禁止填无意义的 0。URI 的接收权限和可读回执另存；敏感原文仅保留受控引用。
 - daily.issues 的 delivery_intent 引用交付写前意图，delivery_action 表达该动作的结算；delivery 引用当前回执。无动作的只读目标观察可为 delivery_action=none、delivery_state=delivered。新写入先记 delivery_pending，回读实际树符合意图后 applied_valid，偏离记 stale 并使验证失效，归属/回读不明保留 pending。纠正走 delivery_correction_pending→corrected 并另核对回退/修复授权；applied_valid 仅说明树与意图一致，不能代替 verified。非 none 动作必须有 intent，applied_valid/stale/corrected 必须有实际目标回执。恢复集合包含 pending/stale/correction_pending 及 integration_pending，不依赖票当前标签。
 - daily.issues 的 audit_epoch 为父级 epoch 的不可变 manifest 引用；非聚合票可为 null。
-- daily.issues 的 `review` 指向同时索引独立 Review、终审（适用时）和 OCR 的不可变审查 manifest；`label`、`close`、`delivery` 分别指向当前动作回执，不以 history 中某条旧引用代替。run/workspace 也使用上述文件或 manifest 引用。
+- daily.issues 的 `review` 指向同时索引独立 Review、终审（适用时）和 OCR 的不可变审查 manifest；`label`、`close`、`delivery` 分别指向当前动作回执，不以 history 中某条旧引用代替。run/workspace 也使用上述文件或 manifest 引用。`decision` 引用有权取消/无需交付决定，`human_review` 引用人审决定；human_review_state=approved/rejected 必须有后者并绑定当前需求、目标和决定范围。
+- 每个 label/close/delivery 动作分别保存 `<action>_action_reason`、`<action>_next_action`、`<action>_resume_condition`、`<action>_retry_after`；验证级 `next_action` 和等待字段不代替动作级字段。动作原因、下一步、观测和重试时间只更新所属动作，事件回执保留前后完整值。
 - 指纹算法为 `requirements-v3` / `daily-input-v3`，精确输入与迁移按 [指纹合同](fingerprints.md)。保存规范输入对象；旧指纹完整摄取后重建，不直接恢复成有效结论。
-- resume_condition 的每项为 `kind / subject / expected / observed / source_ref`；source_ref 必填。条件仅在 expected 与 observed 按 JCS 值语义完全相等时满足，all 中全部条件满足才允许唤醒。等待票必须 wait_reason 非空、all 非空且 input_fingerprint 非空；无等待时 wait_reason=null、all=[]、retry_after=null。不能只写“稍后重试”。
+- resume_condition 的每项为 `kind / subject / expected / observed / source_ref`；source_ref 必填。条件仅在 expected 与 observed 按 JCS 值语义完全相等时满足。等待记录必须 wait_reason 非空且 input_fingerprint 非空，并采用以下三种形状之一：硬条件等待 all 非空、retry_after=null；探测退避 all=[]、retry_after 非空；组合等待 all 非空且 retry_after 非空。无等待时 wait_reason=null、all=[]、retry_after=null。缺授权、需求/人审决定等硬条件使用第一种，不设置无意义的定时写入重试。
 - relation_snapshot 保存 `closure / fingerprint / observed_at / source_ref`：aggregate 为冻结的完整 contains 后代闭包，Issue write 为自身及全部祖先闭包。 closure 按规范 Issue 排序，fingerprint 对 JCS 编码的闭包和关系版本证据求 SHA-256。aggregate 和 Issue write 声明均必须有此快照，其他资源必须为 null。
+
+验证级和每个动作级等待分别执行同一可行动算法，动作之间不共享结果：
+
+1. 无等待记录时可完整行动。等待中先由主控在候选对账时刷新可只读获取的 observed；到期探测 Worker 在 slot 内刷新 API/环境 observed。每次刷新须有 source_ref 和时间，input_fingerprint 变化只触发重新对账，不直接视为条件满足。
+2. all 非空且所有 expected==observed 时条件满足，清除对应等待并可完整行动；组合等待中即使 retry_after 到期，硬条件仍未满足也只能探测，不能执行交付、标签、关闭或其他副作用。
+3. 条件未满足且 retry_after 已到期时，只允许选择一个 recovery `probe` 用途的对应 audit/动作 slot 做只读或隔离测试探测；slot_kind 仍记录实际工作类型，探测用途写入选择回执。纯探测退避 all=[] 到期同样先探测，成功并刷新环境回执后才可继续原工作。
+4. retry_after 未到期且条件未满足时不可行动、不占名额。探测仍失败则保存新 observed，并按 1、2、4 天、之后每 7 天设置下一次 retry_after；成功或条件满足后清除等待。expected 只能由有权改变等待条件的人或已批准流程修订，执行者不得修改 expected 来制造相等。
+
+例：缺标签写入授权且 retry_after 到期仍不可写；API 故障 all=[] 到期可选 recovery 探测；组合等待中授权未满足但 API 到期只探测 API；主控对账发现授权 observed 已等于 expected 时可提前唤醒，无需等到 retry_after。
 
 ## 状态与调度不变量
 
 适配器在每次 daily 更新时验证合法前态→后态及证据，调用方不得借全量替换绕过：
 
-- 进入 verified 必须具备当前完整 target_sha、requirements-v3、run、checkpoint 和 review；进入 delivered 必须有实际目标交付回执；只读审计已有交付保存目标观察回执，写后树偏离意图时也须如实记录 delivered + revalidating，不以 delivery 字段证明验证通过。目标或需求失效后允许 `delivered + revalidating` 表示已交付但当前结论失效，禁止继续贴标/关闭。
-- repair_prepared 必须有修复 checkpoint；integration_pending 表示仍待目标集成或目标验收，必须保留曾完成本地审查的 checkpoint、review；当前 validation_state 可为 verified、revalidating、blocked、failed、unproven 或 intake_incomplete。失效时保留旧证据与交付状态，不退写 repair_prepared。label/close 的 applied_valid 只允许 `verified + delivered`，并有对应 intent 和当前回执；验证失效时同事务撤销全部依赖旧结论的 applied_valid。
-- 写后失配先把动作置 stale、验证置 revalidating（摄取不完整则 intake_incomplete）；开始纠正后可置 correction_pending，但不得恢复旧 verified。重新进入 verified 必须走完整重验，applied_valid 必须走新 intent 和写后对账。
+- 进入 verified 必须具备当前完整 target_sha、requirements-v3、run、checkpoint 和 review；进入 not_required 必须具备 requirements-v3、run 和有效 decision，不得要求 target/checkpoint/review，也不得进入贴标或关闭放行。进入 delivered 必须有实际目标交付回执；只读审计已有交付保存目标观察回执，写后树偏离意图时也须如实记录 delivered + revalidating，不以 delivery 字段证明验证通过。目标或需求失效后允许 `delivered + revalidating` 表示已交付但当前结论失效，禁止继续贴标/关闭。
+- repair_prepared 必须有修复 checkpoint；integration_pending 表示仍待目标集成或目标验收，必须保留曾完成本地审查的 checkpoint、review；当前 validation_state 可为 verified、revalidating、blocked、failed、unproven 或 intake_incomplete。失效时保留旧证据与交付状态，不退写 repair_prepared。label/close 的 applied_valid 只允许 `verified + delivered`，并有对应 intent 和当前回执；label applied_valid 还须 human_review_state=pending。验证失效或出现人审终态时同事务撤销全部依赖旧结论的 applied_valid。
+- human_review_state=approved/rejected 或 validation_state=not_required 的对象 class=null，只有具名遗留动作时为 recovery；不得进入 new/revalidate 或新贴标。需求/交付范围变化先以 scope_changed 使相应人审/取消决定失效，再建立新队列。标签移除本身不改变 human_review_state。
+- 写后失配先把动作置 stale、验证置 revalidating（摄取不完整则 intake_incomplete）；开始纠正后可置 correction_pending，但不得恢复旧 verified。重新进入 verified 必须走完整重验，applied_valid 必须走新 intent 和写后对账。失配仅由已核实 not_required 或人审终态引起时按 [交付门禁](delivery-gates.md)保留指纹相符的 Agent 验证结论，不转 revalidating；需求或目标失配仍按常规失效路径。
 - 调度器只允许 queued/auditing/finding_confirmed/repairing/revalidating 与对应动作间按 Brief、Dispatch、finding 和结算事件迁移；blocked/failed/unproven/intake_incomplete/aggregate_pending 必须保存原因和恢复条件。任何状态更新不得删除历史有效结论，只能新增失效事件并保留原目标与证据。
 - slot_sequence 在原子选择名额时精确 +1，同时写入该票 `slot_selected` 和 last_slot；启动后追加 `dispatch_started`，结算后追加 `settled`。selected/started 的 result=not_settled；settled 使用标准结果枚举。已选未结算的票恢复时先对账原 Dispatch，不得另占名额。容量 C 是 daily record 中正整数，默认 1；每轮最多原子选择 C 个不同名额。
-- 调度事件记录不可变 `run_id / class_at_selection / capacity_at_selection`，slot 身份为 repo_identity + slot_sequence；同一 slot 各阶段沿用选择时三字段。Run 首次选择时冻结 C，配置变化只作用于新 Run。恢复原 slot 不占新名额，新选择按新 Run ID 计数，不能另造身份突破 C。slot_selected.refs 非空并索引启动/容量回执；journal 保留 request_id→event_id 映射，重放以事件为准。
-- 非调度变更使用 state_changed / evidence_invalidated / scope_changed / policy_changed，result=recorded，slot_sequence/class_at_selection/capacity_at_selection 均为 null，run_id 必填。refs 非空并索引不可变变更回执，含原因、前后完整逐票状态及证据；首次创建的前态可为 null。覆盖当前 target/checkpoint/review 前先保存该回执；不伪造 slot。调度结算同样保存前后状态，所有验证/交付迁移均可重放。
-- next_class、consecutive_recovery、last_slot、eligible_since 只能由适配器按 [每日规则](closed-issue-daily-run.md)从合法前态及追加事件推进。history 只追加、不可替换或截断；启动失败也必须有结算事件。适配器须重放事件核对公平性，不能信任调用方提交的计数结果。
-- 每个 aggregate_child 必须引用同一 daily 内唯一顶层子票，并保存其 target_sha、requirements_fingerprint、checkpoint、validation_state。父票 verified 的每个子项必须 verified 且与父票最终 target_sha 相同；aggregate_pending 可保留具名缺口和旧 SHA 引用，但旧结论不能计入当前通过。父级 epoch 按每日规则固定，由不可变 manifest 引用；内容须通过 coordination-schema.json 的 audit_epoch_manifest 定义及语义校验：contains 为完整后代闭包，children_queue 是其中待逐票验收的唯一 ID 队列，root_issue 不入子队列；policy.manifest.sha256 等于指纹输入的 policy_sha256，revision 仅作序号；Gitlink 路径/仓库/SHA 逐项核实，数组按规范身份排序且拒绝重复身份，不以可变子票字段替代；目标变化使全部旧 SHA 子结论退出当前聚合证据，旧结论只留历史。
+- 调度事件记录不可变 `run_id / class_at_selection / capacity_at_selection / slot_kind`，slot 身份为 repo_identity + slot_sequence；slot_kind=audit 表示一票或一个父聚合验收，label/close/delivery 各只表示一个动作，不得捆绑。同一 slot 各阶段沿用选择时四字段和选择回执中的动作身份。Run 首次选择时冻结 C，配置变化只作用于新 Run。恢复原 slot 不占新名额，新选择按新 Run ID 计数，不能另造身份突破 C。slot_selected.refs 非空并索引启动/容量回执；journal 保留 request_id→event_id 映射，重放以事件为准。
+- 非调度变更使用 state_changed / evidence_invalidated / scope_changed / policy_changed，result=recorded，slot_sequence/class_at_selection/capacity_at_selection/slot_kind 均为 null，run_id 必填。refs 非空并索引不可变变更回执，含原因、前后完整逐票状态及证据；首次创建的前态可为 null。覆盖当前 target/checkpoint/review 前先保存该回执；不伪造 slot。调度结算同样保存前后状态，所有验证/交付迁移均可重放。
+- next_class、consecutive_recovery、last_slot、enqueue_sequence、eligible_since 只能由适配器按 [每日规则](closed-issue-daily-run.md)从合法前态及追加事件推进。首次入队在同一事务将 enqueue_sequence 固定为当前 slot_sequence；排序使用 `last_slot ?? enqueue_sequence`，同键时 last_slot=null 优先。history 只追加、不可替换或截断；启动失败也必须有结算事件。适配器须重放事件核对公平性，包括持续新到票时既有票的服务上界，以及旧票连续动作时新到票的服务上界，不能信任调用方提交的计数结果。
+- 每个 aggregate_child 必须引用同一 daily 内唯一顶层子票，并保存其 target_sha、requirements_fingerprint、checkpoint、validation_state。父票 verified 的每个子项必须 verified 且与父票最终 target_sha 相同；父票 not_required 的每个子项必须 not_required，且父票 decision 覆盖全部后代及自身无交付要求；aggregate_pending 可保留具名缺口和旧 SHA 引用，但旧结论不能计入当前通过。父级 epoch 按每日规则固定，由不可变 manifest 引用；内容须通过 coordination-schema.json 的 audit_epoch_manifest 定义及语义校验：contains 为完整后代闭包，children_queue 是其中待逐票验收的唯一 ID 队列，root_issue 不入子队列；policy.manifest.sha256 等于指纹输入的 policy_sha256，revision 仅作序号；Gitlink 路径/仓库/SHA 逐项核实，数组按规范身份排序且拒绝重复身份，不以可变子票字段替代。目标变化时旧 SHA 子结论退出当前聚合证据并只留历史；按每日规则完成影响分析后，可由新 SHA 的 revalidation manifest 承接未受影响证据，子项 checkpoint 必须指向该 manifest，受影响或无法证明的项补验后才以新 target_sha 进入当前聚合。
 
-v2 严格拒绝未知 schema_version、未知枚举/字段；迁移须在锁内备份旧文件、核对活跃拥有者/事务、生成新版本并验证全体参与者兼容后切换。v1→v2 必须在原持久根及原锁内冻结全部写入、备份旧内容/事件/高水位，保留 claim 的 owner/token/generation，不另建根或重置代次。旧事件保存为 legacy manifest；无法从证据重建 Run/类别/容量时不猜填，先安全结算旧 slot，以具名迁移回执建立新调度基线。旧 verified 按当前指纹和策略重验后才能恢复。revision 是乐观并发版本，每次成功事务精确 +1，比较失配不写入；不能把 schema_version 当 revision。新建空 daily 的 next_class=new、slot_sequence=0、consecutive_recovery=0、capacity=1。
+v3 严格拒绝未知 schema_version、未知枚举/字段；迁移须在锁内备份旧文件、核对活跃拥有者/事务、生成新版本并验证全体参与者兼容后切换。v1→v2 必须在原持久根及原锁内冻结全部写入、备份旧内容/事件/高水位，保留 claim 的 owner/token/generation，不另建根或重置代次。旧事件保存为 legacy manifest；无法从证据重建 Run/类别/容量时不猜填，先安全结算旧 slot，以具名迁移回执建立新调度基线。旧 verified 按当前指纹和策略重验后才能恢复。
+
+v2→v3 同样在原持久根及原锁内冻结并备份，保留 generation 高水位、request 幂等记录和事件顺序。旧 slot 缺少 slot_kind 时先按原 Dispatch 安全结算并存入 legacy manifest，不猜测动作类型；新 slot 必须使用 v3 完整字段。旧 action_reason 仅保留为历史，按各 intent/receipt 重建三个动作的独立原因、下一步和恢复条件，证据不足的对象保持 blocked；decision/human_review 经完整 rescan 后填写，核实无决定时分别使用 null 和 human_review_state=none，发现决定则绑定其指纹和证据，不能批量假定 approved。从未服务票的 enqueue_sequence 固定为迁移时当前 slot_sequence，已有 last_slot 的票保留该服务序号及原入队历史证据；旧等待记录须按统一算法重建成硬条件、探测或组合形状，无法区分时保持 blocked 并人工对账。迁移验收通过前不接受 v3 新写入。
+
+revision 是乐观并发版本，每次成功事务精确 +1，比较失配不写入；不能把 schema_version 当 revision。新建空 daily 的 next_class=new、slot_sequence=0、consecutive_recovery=0、capacity=1。
 
 ## 公共事务入口
 
@@ -83,16 +98,18 @@ v2 严格拒绝未知 schema_version、未知枚举/字段；迁移须在锁内�
 | 父子两种申请顺序、关系快照变化、contains 对账后登记前变化 | 同快照互斥；过期快照以 stale_relation 拒绝，不启动副作用 |
 | 重复 daily record/Issue/子票/(resource_key,owner_run)/event_id/slot | 全部 validation_failed，无副作用 |
 | 无目标/指纹/checkpoint/review 的 verified，无回执的 delivered/applied_valid | 全部拒绝；合法 stale→revalidating→重验路径可持久化 |
+| 无 decision 的 not_required；无 human_review 的 approved/rejected；人审终态重新贴标 | 全部拒绝；有效取消和人审终态 class=null，仅遗留动作可 recovery |
 | revision=4 的两个并发请求 | 仅一个写成 5，另一个无副作用拒绝 |
 | 旧 token/generation；逐项批量 acquire/release | 旧代次拒绝；各资源分别严格递增，不能共享高水位 |
 | 同 request_id 同/异载荷；journal 压缩后重放 | 同载荷返回原回执；异载荷拒绝；去重记录仍有效 |
 | 替换第一个文件后崩溃、journal 或父目录 fsync 失败、内容段丢失 | 恢复为完整旧代或新代；内容不足则 unverifiable，不接受新事务 |
 | 重置 next_class/计数、截断 history、slot 重号、selected 后崩溃 | 任意调度改写拒绝；崩溃后先对账原名额，不重复选择 |
-| recovery/new/revalidate 持续非空、C=1 与 C=2 | 每轮不超过 C 个不同名额，按公平规则轮转且不重复执行未结算票 |
-| 空等待、缺 input_fingerprint/source_ref、expected≠observed | 不唤醒且非法组合拒绝；条件全部相等才唤醒 |
-| 父/子 target_sha 不同、子项缺顶层记录、旧 SHA 证据聚合 | 拒绝父票 verified/贴标 |
+| recovery/new/revalidate 持续非空、C=1 与 C=2；同类持续有新到票或旧票连续动作 | 每轮不超过 C 个不同名额，按 last_slot ?? enqueue_sequence 轮转，同键新票优先，新旧票服务上界均成立，不重复执行未结算票 |
+| 空等待、缺 input_fingerprint/source_ref、expected≠observed | 非法组合拒绝；硬条件不满足不执行副作用，纯/组合退避到期只按算法探测或唤醒 |
+| 同票 label+close+delivery 待办、动作不同恢复原因 | 分别选择 slot 并保存 slot_kind，动作级原因/条件互不覆盖 |
+| 父/子 target_sha 不同、子项缺顶层记录、无新 SHA manifest 的旧 SHA 证据聚合 | 拒绝父票 verified/贴标；有有效影响分析和 revalidation manifest 的承接证据可进入新 SHA 聚合 |
 | read/read、read/write、aggregate/write、migration/database | 按兼容矩阵共享或互斥，不用不同资源键规避 |
 | 特殊平台路径、硬链接/特殊文件、展开资源超限 | 全包预检失败且零部分写入 |
 | 恢复索引迁移中断 | 原或新完整一代可读，未更新引用前禁止删除源 |
 
-新增适配器验收还须覆盖：双读者分别续租/释放后写者才可取得；integration_pending→revalidating/blocked 可落盘；无 slot 的失效事件可重放；跨 Run 恢复不重占名额；同类 A/B 持续可行动时 C 必须获得服务；父级 epoch 跨日完成后目标前移保持历史且不贴标；旧版迁移保留 generation 高水位；关闭 pending 对账不依赖当前标签。
+新增适配器验收还须覆盖：双读者分别续租/释放后写者才可取得；integration_pending→revalidating/blocked 可落盘；无 slot 的失效事件可重放；跨 Run 恢复不重占名额；同类 A/B 持续可行动时 C 必须获得服务；父级 epoch 跨日完成后目标前移保持历史且不贴标，稳定窗口内连续 Run 的容量只在新 Run 生效；v2→v3 迁移保留 generation 高水位且不猜填 slot_kind、人审或动作恢复字段；关闭 pending 对账不依赖当前标签。

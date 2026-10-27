@@ -108,11 +108,13 @@ function unwrap<K extends keyof EnterpriseSettings>(
         : fallback
     ) as EnterpriseSettings[K];
   }
-  const list = value as {
-    enabled?: unknown;
-    models?: unknown;
-    servers?: unknown;
-  };
+  // A stored value that is not an object (a hand-edited scalar, an explicit null) is
+  // a corrupted row, not a list: answer the default the way the boolean and number
+  // branches do, instead of reading properties off a non-object.
+  const list =
+    typeof value === "object" && value !== null
+      ? (value as { enabled?: unknown; models?: unknown; servers?: unknown })
+      : {};
   const items = (
     key === "modelAllowlist" ? list.models : list.servers
   ) as unknown;

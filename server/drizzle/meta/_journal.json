@@ -1520,6 +1520,13 @@
       "when": 1792997459426,
       "tag": "0216_enterprise_package_primary_key_names",
       "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1793081097943,
+      "tag": "0217_enterprise_learning_memory_rls",
+      "breakpoints": true
     }
   ]
 }

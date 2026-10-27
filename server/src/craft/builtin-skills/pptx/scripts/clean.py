@@ -15,7 +15,6 @@ This script removes:
 - Content-Type overrides for deleted files
 """
 
-import re
 import sys
 from pathlib import Path
 
@@ -27,21 +26,39 @@ def get_slides_in_sldidlst(unpacked_dir: Path) -> set[str]:
     pres_rels_path = unpacked_dir / "ppt" / "_rels" / "presentation.xml.rels"
 
     if not pres_path.exists() or not pres_rels_path.exists():
-        return set()
+        raise FileNotFoundError(
+            f"cannot determine referenced slides: missing {pres_path} or {pres_rels_path}"
+        )
+
+    pres_dom = defusedxml.minidom.parse(str(pres_path))
+    slide_lists = pres_dom.getElementsByTagNameNS("*", "sldIdLst")
+    if len(slide_lists) != 1:
+        raise ValueError(f"expected one sldIdLst in {pres_path}")
 
     rels_dom = defusedxml.minidom.parse(str(pres_rels_path))
     rid_to_slide = {}
-    for rel in rels_dom.getElementsByTagName("Relationship"):
+    for rel in rels_dom.getElementsByTagNameNS("*", "Relationship"):
         rid = rel.getAttribute("Id")
         target = rel.getAttribute("Target")
         rel_type = rel.getAttribute("Type")
         if "slide" in rel_type and target.startswith("slides/"):
             rid_to_slide[rid] = target.replace("slides/", "")
 
-    pres_content = pres_path.read_text(encoding="utf-8")
-    referenced_rids = set(re.findall(r'<p:sldId[^>]*r:id="([^"]+)"', pres_content))
+    referenced_rids = set()
+    for slide_id in slide_lists[0].getElementsByTagNameNS("*", "sldId"):
+        rid = slide_id.getAttributeNS(
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+            "id",
+        )
+        if not rid:
+            raise ValueError(f"slide entry without relationship id in {pres_path}")
+        referenced_rids.add(rid)
 
-    return {rid_to_slide[rid] for rid in referenced_rids if rid in rid_to_slide}
+    missing_rids = referenced_rids - rid_to_slide.keys()
+    if missing_rids:
+        raise ValueError(f"unresolved slide relationship ids in {pres_path}: {missing_rids}")
+
+    return {rid_to_slide[rid] for rid in referenced_rids}
 
 
 def remove_orphaned_slides(unpacked_dir: Path) -> list[str]:
@@ -246,8 +263,25 @@ def update_content_types(unpacked_dir: Path, removed_files: list[str]) -> None:
             f.write(dom.toxml(encoding="utf-8"))
 
 
+def validate_xml_before_cleanup(unpacked_dir: Path) -> None:
+    xml_files = list(unpacked_dir.rglob("*.rels"))
+    xml_files.extend(
+        [
+            unpacked_dir / "ppt" / "presentation.xml",
+            unpacked_dir / "[Content_Types].xml",
+        ]
+    )
+    for xml_file in xml_files:
+        if xml_file.is_file():
+            try:
+                defusedxml.minidom.parse(str(xml_file))
+            except Exception as error:
+                raise ValueError(f"invalid package XML {xml_file}: {error}") from error
+
+
 def clean_unused_files(unpacked_dir: Path) -> list[str]:
     all_removed = []
+    validate_xml_before_cleanup(unpacked_dir)
 
     slides_removed = remove_orphaned_slides(unpacked_dir)
     all_removed.extend(slides_removed)

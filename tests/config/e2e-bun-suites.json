@@ -416,7 +416,8 @@
         "server/tests/e2e-strict-billing-text.integration.test.ts",
         "server/tests/embedding-pricing.test.ts",
         "server/tests/embedding-refusal.integration.test.ts",
-        "server/tests/enterprise-controls.integration.test.ts"
+        "server/tests/enterprise-controls.integration.test.ts",
+        "server/tests/enterprise-settings-corrupt-row.test.ts"
       ]
     },
     {
@@ -1429,6 +1430,7 @@
     "server/tests/embedding-pricing.test.ts",
     "server/tests/embedding-refusal.integration.test.ts",
     "server/tests/enterprise-controls.integration.test.ts",
+    "server/tests/enterprise-settings-corrupt-row.test.ts",
     "server/tests/enterprise/ai-sdk-v3-gateway-adapter.test.ts",
     "server/tests/enterprise/conversations.integration.test.ts",
     "server/tests/enterprise/mastra-compatibility.test.ts",

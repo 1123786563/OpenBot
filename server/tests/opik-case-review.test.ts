@@ -666,6 +666,43 @@ describe("case review routes — the mounting contract's authorization shape", (
     expect(auditFake.events).toHaveLength(0);
   });
 
+  test("a gate widened to a non-owner collaborator still mints no scope", async () => {
+    // The seam's reserved widening: a future manage gate lets a plain-role
+    // collaborator through for someone else's Bot. The route must not read that as
+    // "non-owner means admin" — ownership comes off explicitObservationOwnership,
+    // which refuses, and the refusal answers the same unified not-found.
+    const widened = new Hono<{ Variables: AppVariables }>();
+    widened.use("*", (async (context, next) => {
+      context.set("actor", stranger as unknown as AuthenticatedActor);
+      await next();
+    }) satisfies MiddlewareHandler<{ Variables: AppVariables }>);
+    const auditFake = fakeAudit();
+    widened.route(
+      "/bots/:botId/case-review",
+      createCaseReviewRoutes({
+        canManageBot: async (_actor, botId) =>
+          botId === "agent-1"
+            ? profile({ ownerUserId: "someone-else" })
+            : null,
+        scopeEpoch: async () => EPOCH,
+        bindings: fakeBindings([bindingRow(scopeA)]).store,
+        datasets: fakeDatasets({ saved: savedRow }).store,
+        audit: auditFake.store,
+      }),
+    );
+    const response = await widened.request(
+      "http://openbot.test/bots/agent-1/case-review/review",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(reviewBody),
+      },
+    );
+    expect(response.status).toBe(404);
+    expect((await response.json()).error).toBe(OBSERVATION_BOT_NOT_FOUND);
+    expect(auditFake.events).toHaveLength(0);
+  });
+
   test("a manager's review and save answer through the service, code as contract", async () => {
     const { app, auditFake } = appFor();
     const reviewed = await post(app, "review", reviewBody);

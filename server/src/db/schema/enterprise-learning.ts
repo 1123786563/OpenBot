@@ -107,7 +107,7 @@ export const enterpriseLearningContainers = pgTable(
       withCheck: sql`${table.tenantId} = nullif(current_setting('app.tenant_id', true), '')`,
     }),
   ],
-);
+).enableRLS();
 
 export const enterpriseLearningRecords = pgTable(
   "enterprise_learning_records",
@@ -178,4 +178,4 @@ export const enterpriseLearningRecords = pgTable(
       withCheck: sql`${table.tenantId} = nullif(current_setting('app.tenant_id', true), '')`,
     }),
   ],
-);
+).enableRLS();
