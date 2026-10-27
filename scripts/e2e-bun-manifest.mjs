@@ -8,9 +8,6 @@
 // manifest's files[] (that key is the driven contract — the unit config excludes exactly it from
 // native collection), so it is registered with its reason in tests/config/e2e-known-broken.json,
 // the exclusion surface the unit config honors and the coverage audit counts as named exclusions.
-// That registry is only for repo-level breakage, though: a suite that fails because this checkout
-// has no installed dependency is an environment gap, must not be frozen out of native collection,
-// and is reported separately instead (see ENVIRONMENT_GAP).
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 // The writer is the shared one: writeManifest() applies BOTH island kinds
@@ -73,25 +70,6 @@ const todo = audit.filter(
 );
 
 /*
- * 环境缺口与仓库级不可收集必须分开。缺包/模块解析失败/本机配置缺失说明这台机器没装好
- * （这些包都写在各 workspace 的 package.json 里），换一个 `bun install` 过的 checkout
- * 就能收集；真正属于仓库的是语法/类型/夹具自身的错误。环境缺口绝不能进 known-broken：
- * 那个登记面是 e2e.unit.config.ts 的 native 排除表、也是 coverage-audit 的 named
- * exclusion，登记即「处处不跑且审计不红」——13 个真套件就这样被一台没装依赖的机器
- * 永久冻结过。这里单列 environment 桶并逐条告警，让它们留在 native 收集面里红着。
- */
-const ENVIRONMENT_GAP = [
-  /Cannot find (?:package|module) ['"]/,
-  /Failed to resolve (?:import|entry|module)/,
-  // app/tests/auth-client 读部署 base URL：缺的是本机配置，不是这个仓库的夹具。
-  /Invalid base URL: null/,
-];
-const environment = todo.filter((entry) =>
-  ENVIRONMENT_GAP.some((pattern) => pattern.test(entry.error ?? "")),
-);
-const repoBroken = todo.filter((entry) => !environment.includes(entry));
-
-/*
  * The named-exclusion surface for suites that collect nowhere on this machine.
  * This regenerator owns the registry's reconciliation: a hand-written entry for
  * a file that still fails keeps its reason (curation wins over the machine's),
@@ -133,7 +111,7 @@ function registerKnownBroken(todo) {
   );
   return entries;
 }
-registerKnownBroken(repoBroken);
+registerKnownBroken(todo);
 
 const groupCount = writeManifest(
   {
@@ -154,7 +132,7 @@ console.log(
 console.log(
   `${artifacts.length} deliverable artifacts, not executable here: ${artifacts.map((a) => a.file).join(", ")}`,
 );
-console.log(`${repoBroken.length} still ours to fix:`);
+console.log(`${todo.length} still ours to fix:`);
 const causes = new Map();
 for (const entry of todo) {
   const key = (entry.error ?? "")
@@ -167,13 +145,4 @@ for (const [cause, count] of [...causes]
   .sort((a, b) => b[1] - a[1])
   .slice(0, 20)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
-}
-
-if (environment.length) {
-  console.warn(
-    `\nENVIRONMENT GAPS (${environment.length}) — NOT registered as known-broken and NOT excluded from native collection.\n` +
-      "Install the dependencies / set the config, or these stay red in every run:",
-  );
-  for (const entry of environment)
-    console.warn(`  ${entry.file}: ${(entry.error ?? "").slice(0, 140)}`);
 }

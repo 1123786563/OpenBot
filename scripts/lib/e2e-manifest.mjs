@@ -53,6 +53,132 @@ export const ISLANDS = [
 ];
 
 /*
+ * Files that must share one named group regardless of their directory. The name of an entry is the
+ * e2e test title and the E2E_BUN_ONLY filter is a substring match on it, so a member that belongs to
+ * the `server/tests/multitenancy` environment (the MT task chain's dedicated database) while living
+ * in `server/tests/` still needs a name that carries that island. Before this constant was restored,
+ * `groupsOf` threw `ReferenceError: EXPLICIT_GROUPS is not defined` and no writer could regenerate
+ * the manifest at all (the committed snapshot had drifted by hand instead).
+ */
+export const EXPLICIT_GROUPS = {
+  /*
+   * PKG02's end-to-end suite lives in server/tests/ but applies the same MT task chain
+   * (MT004→…→PKG04 through ./multitenancy/support/package-install) against the dedicated
+   * enterprise test database, and plugin-install's fixture builds on MT004/MT008 and applies
+   * MT031 in the same database. Keeping all thirteen in one process is what makes the chain's
+   * reconcile→apply sequential instead of two e2e workers racing one schema, and the name
+   * carries the island so `MT_TEST_DATABASE_URL` routing in tests/bun-suites.test.ts applies.
+   */
+  "server/tests/multitenancy/package chain": [
+    /*
+     * plugin-install first: its AC1 asserts the catalog contains exactly its
+     * three seeded entries, and its dispose truncates the three plugin tables
+     * — running it after package-storage/package-install.integration (both
+     * leave `pkg02-*` catalog rows behind, measured) invents a red that no
+     * single-suite run gives.
+     */
+    "server/tests/multitenancy/plugin-install.test.ts",
+    "server/tests/multitenancy/package-storage.test.ts",
+    "server/tests/multitenancy/package-runtime.test.ts",
+    "server/tests/multitenancy/package-grants.test.ts",
+    "server/tests/multitenancy/package-expert.test.ts",
+    /*
+     * PKG05 (#464): the dispatch suite seeds the same package chain (it calls
+     * `applyPackageTasks` itself) and its concurrency case opens a second data
+     * connection, so it belongs in this one sequential process rather than a
+     * racing sibling group.
+     */
+    "server/tests/multitenancy/package-dispatch.test.ts",
+    /*
+     * PKG10 (#469) and the #459 T13-fix-2 suite: the unknown-effect and
+     * crash-recovery faces read and settle the same dispatched rows the chain
+     * above leaves behind (lease evidence, orphan settlement), so they run in
+     * this sequential process rather than a racing sibling.
+     */
+    "server/tests/multitenancy/package-unknown.test.ts",
+    "server/tests/multitenancy/package-crash-recovery.test.ts",
+    /*
+     * PKG06 (#465): the upgrade/rollback suite seeds the same installed chain
+     * (applyPackageTasks) and its plan-preview reads it, same dedicated
+     * database, same one-sequential-process rule.
+     */
+    "server/tests/multitenancy/package-upgrade.test.ts",
+    /*
+     * PKG09 (#468): the entrypoint suite seeds the same chain (applyPackageTasks)
+     * against the same dedicated database, so it runs in this one sequential
+     * process after the dispatch/upgrade suites rather than as a racing sibling.
+     */
+    "server/tests/multitenancy/package-entrypoints.test.ts",
+    /*
+     * PKG07 (#466) and PKG08 (#467): the lifecycle and withdraw suites install
+     * the chain and then assert on its rows (tombstones, dispatch blocking);
+     * the withdraw fixture also reads the same catalogue index.
+     */
+    "server/tests/multitenancy/package-lifecycle.test.ts",
+    "server/tests/multitenancy/package-withdraw.test.ts",
+    "server/tests/package-install.integration.test.ts",
+  ],
+  /*
+   * T13-fix-1 (#459 A05): the withdraw-vs-dispatch contention suite installs
+   * the same chain through ./support/package-install and shares the family's
+   * enterprise test database, but measured on the integration HEAD it cannot
+   * share the chain's process: with it appended to the chain above,
+   * package-entrypoints' resumed-dispatch case and its own four contention
+   * cases refuse dispatches and go red in the 14-file process while the
+   * 13-file chain stays green on the same fresh database (both directions
+   * re-measured). Like package-migration below, it seeds its own facts and
+   * gets its own group — still named after the multitenancy island so
+   * MT_TEST_DATABASE_URL routing applies — instead of racing the chain.
+   */
+  "server/tests/multitenancy/package-withdraw-contention": [
+    "server/tests/multitenancy/package-withdraw-contention.test.ts",
+  ],
+  /*
+   * PKG11 (#470): the legacy-migration drill drives the dry-run→apply CLI
+   * against the enterprise test database (same environment as the chain
+   * above, reached through server/src/db/client), but it does not join the
+   * chain — it seeds its own pre-migration state. Its own group, still named
+   * after the island so the `MT_TEST_DATABASE_URL` routing applies.
+   */
+  "server/tests/multitenancy/package-migration": [
+    "server/tests/multitenancy/package-migration.test.ts",
+  ],
+  /*
+   * MT032's suite was written against the e2e (Node) layer while its fixture chain reaches
+   * Bun's SQL client through server/src/db/client; both runners rejected it (T00 B-3). It now
+   * imports bun-test-compat like its multitenancy siblings and gets its own group so the
+   * corrected tier can be driven and counted on its own.
+   */
+  "server/tests/multitenancy/tool-invocation": [
+    "server/tests/multitenancy/tool-invocation.test.ts",
+  ],
+  /*
+   * PKG05 (#464): the store-side `pkg:` branch of callTool. It reads the
+   * shared dev test database through server/src/db/client (like the
+   * entrypoints store suite below) and needs no enterprise roles, so it gets
+   * its own group.
+   */
+  "server/tests/package-dispatch-call": [
+    "server/tests/package-dispatch-call.test.ts",
+  ],
+  /*
+   * PKG08 (#467): the native face of deployment-side publish/withdraw —
+   * CLI-level Bun.spawn cases against the on-disk index, its lock and its
+   * artifacts, with no database — so it neither shares the multitenancy
+   * environment nor the chain's database at all.
+   */
+  "server/tests/package-index-ops": ["server/tests/package-index-ops.test.ts"],
+  /*
+   * PKG09 (#468): the store/executor face of the entry support matrix. It reads
+   * the shared dev test database for the audit/plugin tables (like PKG05's call
+   * suite) and needs no enterprise roles, so it gets its own group.
+   */
+  "server/tests/package-entrypoints": [
+    "server/tests/package-entrypoints.test.ts",
+  ],
+};
+
+/*
  * Whole directories that need their own group because their *environment* differs from the rest of
  * the directory: the `multitenancy` suites build their own schema in-process through
  * `server/scripts/multitenancy/migrate-test.ts`, which refuses any `TEST_DATABASE_URL` whose database
@@ -66,38 +192,6 @@ export const DIRECTORY_ISLANDS = [
   "server/tests/multitenancy",
   "app/tests/multitenancy",
 ];
-
-/*
- * Suites that do not live in one directory island but need the same dedicated
- * enterprise database environment. PKG02's install suites are split across
- * `server/tests` and `server/tests/multitenancy`; naming the group with the
- * `server/tests/multitenancy` prefix is what makes `bunEnv()` in
- * tests/bun-suites.test.ts (which matches on the group name) hand it the
- * `MT_TEST_*` overrides. The list is explicit so regeneration keeps the group
- * instead of folding the files back into their directory groups.
- *
- * Restored by FIX-W15 (Run 2026-10-24-hindsight-376, FR3-2): merge 059124069 took this
- * file from a branch that predated the definition, and merge ae8f9c374 brought the two
- * `groupsOf` references back without it — every `groupsOf`/`writeManifest` caller
- * (`e2e-add-driven.mjs`, `e2e-bun-manifest.mjs`, `e2e-driven-file-equality.mjs`) died with
- * `ReferenceError: EXPLICIT_GROUPS is not defined`, which is why suite registration had to
- * be hand-edited into the JSON and could land in `files` without a group.
- */
-export const EXPLICIT_GROUPS = Object.freeze({
-  "server/tests/multitenancy pkg02": [
-    "server/tests/multitenancy/package-storage.test.ts",
-    "server/tests/package-install.integration.test.ts",
-  ],
-  "server/tests/multitenancy pkg03": [
-    "server/tests/multitenancy/package-grants.test.ts",
-  ],
-  "server/tests/multitenancy pkg03b": [
-    "server/tests/multitenancy/package-runtime.test.ts",
-  ],
-  "server/tests/multitenancy pkg04": [
-    "server/tests/multitenancy/package-expert.test.ts",
-  ],
-});
 
 /*
  * Suites that only mean something against a running deployment, so `e2e.unit.config.ts` keeps them out
@@ -163,6 +257,24 @@ export function groupsOf(files) {
 }
 
 /*
+ * Causes travel in a committed snapshot, so they must not carry the machine.
+ * Collection errors quote absolute paths — this checkout's root, a sibling
+ * worktree's root, the host home — and the c5197e54a regeneration persisted 20
+ * of them verbatim, freezing one workstation's layout into
+ * tests/config/e2e-bun-suites.json. The contract for a persisted cause: zero
+ * `/Users/` occurrences. A path through any `workspaces/OpenBot/` checkout
+ * folds to its repo-relative tail (the worktree name survives as the only hint
+ * of where the error was measured); any other host-absolute path loses its
+ * owner segment. The second replacement is the belt that keeps the contract,
+ * not a claim about the shape of errors.
+ */
+export function sanitizeCauseText(text) {
+  return String(text)
+    .replace(/\/Users\/[^/\s"'`]+\/(?:[^/\s"'`]+\/)*workspaces\/OpenBot\//g, "")
+    .replace(/\/Users\/[^/\s"'`]+/g, "<user>");
+}
+
+/*
  * THE one writer. Every generator records the same payload shape here: the
  * grouping (`groups`), the driven files, the non-executable artifacts, the
  * per-file `causes` evidence, and the `directoryIslands` the driver
@@ -172,7 +284,8 @@ export function groupsOf(files) {
  * `directoryIslands` (51 multitenancy suites aborting on the shared URL) or
  * wipe another writer's `causes`. `audit` is a passthrough for generators
  * that derive the file list from an audit snapshot; writers that don't have
- * one simply omit it (JSON.stringify drops `undefined`).
+ * one simply omit it (JSON.stringify drops `undefined`). Causes are sanitized
+ * of host paths on the way in — see sanitizeCauseText.
  */
 export function writeManifest(
   { files, artifacts, causes, audit },
@@ -189,10 +302,14 @@ export function writeManifest(
     generatedBy,
     audit,
     groups: groupsOf(list),
-    directoryIslands: DIRECTORY_ISLANDS,
     files: list,
     artifacts: [...artifacts].sort(),
-    causes,
+    causes: Object.fromEntries(
+      Object.entries(causes ?? {}).map(([file, cause]) => [
+        file,
+        sanitizeCauseText(cause),
+      ]),
+    ),
     directoryIslands: [...DIRECTORY_ISLANDS],
   };
   // Two-space indent, matching `biome format` for JSON: a regeneration then
