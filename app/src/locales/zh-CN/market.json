@@ -184,6 +184,9 @@
         "changed": "已变化"
       },
       "effectChange": "效果 {{from}} → {{to}}",
+      "configHint": "此处不显示已安装的配置。请添加此版本需要的每个键和值。",
+      "configRemovalWarning": "此版本变化会移除以下配置键：{{keys}}。如新版本仍需要，请在下方重新添加。",
+      "configRemovalAcknowledge": "我了解这些配置键将被移除。",
       "reauthorizationNotice": "新增或发生变化的工具只有在重新向 Bot 授权后才会生效；正在运行的会话继续使用其钉住的版本。"
     },
     "lifecycle": {

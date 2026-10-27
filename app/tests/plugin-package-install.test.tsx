@@ -395,6 +395,12 @@ test("an admin preview shows the exact package, digest, team, resources, tools a
     within(dialog).getByText("A required connector is not connected yet."),
   ).toBeDefined();
   expect(within(dialog).getByText(/10 minutes/)).toBeDefined();
+  // A first install has no version diff: the editor keeps its own hint and
+  // offers no removal acknowledgement.
+  expect(
+    within(dialog).getByText(/Flat, non-secret values only/),
+  ).toBeDefined();
+  expect(within(dialog).queryByRole("checkbox")).toBeNull();
 
   expect(planRequests).toHaveLength(1);
   const request = planRequests[0];

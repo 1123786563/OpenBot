@@ -331,7 +331,7 @@ beforeEach(() => {
           operation,
           version: asked.version ?? planAnswer.version,
           diff: {
-            ...UPGRADE_PLAN_DIFF,
+            ...(planAnswer.diff ?? UPGRADE_PLAN_DIFF),
             currentVersion,
           },
         });
@@ -492,6 +492,72 @@ test("confirming an upgrade sends one apply and shows the new install facts", as
       entry.method === "GET",
   );
   expect(listReads.length).toBeGreaterThan(1);
+});
+
+test("a plan whose diff removes config keys blocks confirm until the admin acknowledges", async () => {
+  // V1 plans never echo the installed config, so an untouched (empty) editor
+  // reports every stored key as removed. Confirming that would wipe the live
+  // configuration; the dialog must name the keys and wait for an explicit yes.
+  planAnswer = {
+    ...UPGRADE_PLAN,
+    diff: {
+      ...UPGRADE_PLAN_DIFF,
+      configChanges: [
+        { key: "region", change: "removed" },
+        { key: "endpoint", change: "removed" },
+      ],
+    },
+  };
+  const view = renderPane();
+  await openDetail(view);
+  fireEvent.click(
+    within(view.getByRole("dialog")).getByRole("button", {
+      name: "Review upgrade",
+    }),
+  );
+  await settle(() => {
+    expect(
+      within(view.getByRole("dialog")).getByText("v1.0.0 → v2.0.0"),
+    ).toBeDefined();
+  });
+
+  const dialog = view.getByRole("dialog");
+  expect(
+    within(dialog).getByText(
+      "This version change removes these configuration keys: region, endpoint. Add them below if the new version still needs them.",
+    ),
+  ).toBeDefined();
+  const confirmButton = within(dialog).getByRole("button", {
+    name: "Upgrade to v2.0.0",
+  }) as HTMLButtonElement;
+  expect(confirmButton.disabled).toBe(true);
+
+  fireEvent.click(confirmButton);
+  expect(applyRequests).toHaveLength(0);
+
+  fireEvent.click(
+    within(view.getByRole("dialog")).getByRole("checkbox", {
+      name: "I understand these keys will be removed.",
+    }),
+  );
+  await settle(() => {
+    expect(
+      (
+        within(view.getByRole("dialog")).getByRole("button", {
+          name: "Upgrade to v2.0.0",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
+
+  fireEvent.click(
+    within(view.getByRole("dialog")).getByRole("button", {
+      name: "Upgrade to v2.0.0",
+    }),
+  );
+  await settle(() => {
+    expect(applyRequests).toHaveLength(1);
+  });
 });
 
 test("a 409 at apply discards the plan and offers a fresh preview (revision CAS recovery)", async () => {
