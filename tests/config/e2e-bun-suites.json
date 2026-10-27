@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T05.06 provisioning-global-admin registration",
+  "generatedBy": "T05.07 global-identity-routes registration",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1361,6 +1361,12 @@
       "files": [
         "server/tests/better-auth/provisioning-global-admin.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T05.07.01",
+      "files": [
+        "server/tests/better-auth/global-identity-routes.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1555,6 +1561,7 @@
     "server/tests/better-auth/directory-command.test.ts",
     "server/tests/better-auth/email-verification.test.ts",
     "server/tests/better-auth/fixture-contract.test.ts",
+    "server/tests/better-auth/global-identity-routes.test.ts",
     "server/tests/better-auth/identity-command.test.ts",
     "server/tests/better-auth/ingress-coverage.test.ts",
     "server/tests/better-auth/invitation-acceptance.test.ts",
@@ -2220,6 +2227,7 @@
     "server/tests/better-auth/email-verification.test.ts": "T04.04 (#548): needs the five BA_TEST_* role URLs and the pinned build's mail callbacks — Bun-only",
     "server/tests/better-auth/password-reset-request.test.ts": "T04.05 (#549): needs the five BA_TEST_* role URLs, the pinned build's reset mail callback, the identity recovery boundary and the Mailpit sink — Bun-only",
     "server/tests/better-auth/password-recovery.test.ts": "T04.06 (#550): needs the five BA_TEST_* role URLs, the identity recovery boundary, the assurance read chain (0218-0220) and the pinned build reset callbacks — Bun-only",
-    "server/tests/better-auth/provisioning-global-admin.test.ts": "T05.06 (#562) provisioning-global-admin suite: needs the five BA_TEST_* role URLs, the pinned build's SSO/mail callbacks, the directory executor's provisioning-rule handlers and the Mailpit sink — Bun-only"
+    "server/tests/better-auth/provisioning-global-admin.test.ts": "T05.06 (#562) provisioning-global-admin suite: needs the five BA_TEST_* role URLs, the pinned build's SSO/mail callbacks, the directory executor's provisioning-rule handlers and the Mailpit sink — Bun-only",
+    "server/tests/better-auth/global-identity-routes.test.ts": "T05.07 (#563) global-identity-routes suite: needs the five BA_TEST_* role URLs, the production identity executor behind createApp's coworker.directory seam and real Bun servers — Bun-only"
   }
 }

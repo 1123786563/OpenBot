@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import { getLogger } from "@openbot/shared/logger";
 import { sql } from "drizzle-orm";
-import type { Hono as HonoApp, MiddlewareHandler } from "hono";
+import type { Context, Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
@@ -50,8 +51,15 @@ import {
 import { createCompanyAuthRoutes } from "./auth/company-auth-routes";
 import { createDevRequireUser } from "./auth/dev-actor";
 import { createDirectoryAuthority } from "./auth/directory/authority";
-import type { Directory } from "./auth/directory/contracts";
-import type { IdentityExecutor } from "./auth/directory/identity";
+import type {
+  Directory,
+  IdentityActor,
+  IdentityOperation,
+} from "./auth/directory/contracts";
+import {
+  type IdentityExecutor,
+  isIdentityCommandRefusal,
+} from "./auth/directory/identity";
 import {
   createDirectoryIngress,
   type NativeAuthPort,
@@ -370,6 +378,65 @@ async function recordPersonEvent(
  * and one `/api` prefix guarded by two differently-aged guards is exactly the silent fork this
  * factory exists to prevent.
  */
+/**
+ * One admin-screen security write as an identity command (T05.07): the
+ * deployment's own people screen is the administrator's usual surface, and
+ * when the assembly built the identity executor its role and access changes
+ * are the same five operations the native Admin endpoints translate — one
+ * command, one receipt, the platform actor the executor re-verifies in its
+ * own lock. Absent keeps the legacy write exactly as it was (M0/M1 keep
+ * their DTO and capability; the matrix is the caller's).
+ *
+ * Returns the refusal answer to return, or undefined when the command
+ * committed and the caller's own adjuncts (blocklist row, retirement, audit
+ * event, response) follow as before.
+ */
+async function runIdentityCommand(
+  identity: Pick<IdentityExecutor, "execute">,
+  context: Context<{ Variables: AppVariables }>,
+  action: {
+    operation: IdentityOperation;
+    targetUserId: string;
+    payload: Readonly<Record<string, unknown>>;
+  },
+): Promise<Response | undefined> {
+  /*
+   * The platform actor is the administrator's operator identity, not their
+   * session — the same shape the native ingress issues, with nothing a
+   * session actor carries that the frozen assert would refuse.
+   */
+  const actor: IdentityActor = Object.freeze({
+    userId: context.var.actor.id,
+    principalId: null,
+    sessionId: null,
+    kind: "platform",
+    bindingId: null,
+    provisioning: null,
+  });
+  try {
+    await identity.execute(actor, {
+      operation: action.operation,
+      targetUserId: action.targetUserId,
+      /*
+       * Every screen action is its own command: the receipt is the audit
+       * trail of THIS click, and a screen retry never borrows an earlier
+       * command's committed result.
+       */
+      idempotencyKey: randomUUID(),
+      payload: action.payload,
+    });
+    return undefined;
+  } catch (error) {
+    if (isIdentityCommandRefusal(error)) {
+      return context.json(
+        { error: error.message, code: error.code },
+        error.status,
+      );
+    }
+    throw error;
+  }
+}
+
 export function createDeploymentRequireUser(
   config: Pick<DeploymentConfig, "singleUser">,
   auth?: AuthService,
@@ -1976,7 +2043,22 @@ export function createApp(
     }
 
     if (person.role !== role) {
-      await peopleStore.setRole(userId, role);
+      const identity = coworker?.directory?.identity;
+      if (identity) {
+        // T05.07: the screen's role change is the identity command; without
+        // the executor the legacy write and DTO answer exactly as before.
+        const refusal = await runIdentityCommand(identity, context, {
+          operation: "identity.role.set",
+          targetUserId: userId,
+          payload: {
+            role,
+            reason: `admin screen: role ${person.role} -> ${role}`,
+          },
+        });
+        if (refusal) return refusal;
+      } else {
+        await peopleStore.setRole(userId, role);
+      }
       await recordPersonEvent(
         auditStore,
         context,
@@ -2032,6 +2114,28 @@ export function createApp(
     }
 
     if (person.revoked !== revoked) {
+      const identity = coworker?.directory?.identity;
+      /*
+       * The identity command first (T05.07): the disable/restore is the
+       * disciplined write — one transaction owns the principal's suspension
+       * or revival, the generation advance and every session's death — and
+       * the blocklist half below is the screen's own sign-in block, which
+       * the command adds to rather than replaces. A refused command writes
+       * nothing at all, refusal included. Without the executor the legacy
+       * writes answer exactly as before.
+       */
+      const identityCommand = identity
+        ? await runIdentityCommand(identity, context, {
+            operation: revoked ? "identity.disable" : "identity.restore",
+            targetUserId: userId,
+            payload: {
+              reason: revoked
+                ? "admin screen: access revoked"
+                : "admin screen: access restored",
+            },
+          })
+        : undefined;
+      if (identityCommand) return identityCommand;
       if (revoked) {
         await peopleStore.revoke(userId, context.var.actor.id);
       } else {
