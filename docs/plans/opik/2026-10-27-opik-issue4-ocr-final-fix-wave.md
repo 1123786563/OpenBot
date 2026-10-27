@@ -2,7 +2,7 @@
 
 ## 依据
 
-终轮全范围 OCR（b117c3c3e..6b8a63dfa，session 6ee41328 + resume e80298c7，127/127 覆盖闭合，权威报告 `ocr/final-full-scope.md` sha256 fcd135959d02…）产出 126 findings（0C/13H/53M/60L）。H/M 候选 66 条经三路独立核验（reviews/ocr-final-triage-{g,h,i}.md）：**12 CONFIRMED**（T-I 11 + T-G 1），其余 4 REFUTED / 18 DOWNGRADED / 10 DUPLICATE-OF-PRIOR / 6 MOOT-AT-MERGE。本批按最小形状修复 12 项，不扩大范围。
+终轮全范围 OCR（b117c3c3e..6b8a63dfa，session 6ee41328 + resume e80298c7，127/127 覆盖闭合，权威报告 `ocr/final-full-scope.md` sha256 fcd135959d02…）产出 126 findings（0C/13H/53M/60L）。H/M 候选 66 条经三路独立核验（reviews/ocr-final-triage-{g,h,i}.md）：**12 CONFIRMED**（T-I 11 + T-G 1）/ 6 REFUTED / 28 DOWNGRADED / 10 DUPLICATE-OF-PRIOR / 6 MOOT-AT-MERGE（合计 62，按三报告末行认证 JSON 重算）；余 4 条（final-hm-candidates.md #10–#13，docs/plans 面，首轮派发缺口）由 R8-FIX H 流补裁：#11 DUPLICATE-OF-PRIOR（=T-G #16）、#10/#13 DOWNGRADED（→low）、#12 CONFIRMED（上报主控另立）——12+6+28+10+6+4=66 闭合。本批按最小形状修复 12 项，不扩大范围。
 
 ## 修复项与分流
 
