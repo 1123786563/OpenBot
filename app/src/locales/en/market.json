@@ -184,6 +184,9 @@
         "changed": "changed"
       },
       "effectChange": "effect {{from}} → {{to}}",
+      "configHint": "Installed configuration isn't shown here. Add every key and value this version needs.",
+      "configRemovalWarning": "This version change removes these configuration keys: {{keys}}. Add them below if the new version still needs them.",
+      "configRemovalAcknowledge": "I understand these keys will be removed.",
       "reauthorizationNotice": "New tools and changed tools take effect only after a Bot is granted them again. Running sessions keep the version they were pinned to."
     },
     "lifecycle": {

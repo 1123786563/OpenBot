@@ -13,6 +13,7 @@ import {
   WbTag,
 } from "@/components/market/wb";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogBody,
@@ -144,6 +145,7 @@ export function PackageInstallDialog({
   const [planning, setPlanning] = React.useState(false);
   const [applyError, setApplyError] = React.useState<string | null>(null);
   const [applying, setApplying] = React.useState(false);
+  const [removalAcknowledged, setRemovalAcknowledged] = React.useState(false);
   const [installed, setInstalled] = React.useState<PackageInstallDTO | null>(
     null,
   );
@@ -160,6 +162,7 @@ export function PackageInstallDialog({
     setPlan(null);
     setPlanError(null);
     setApplyError(null);
+    setRemovalAcknowledged(false);
   }, []);
 
   const buildConfig = React.useCallback((): PackageConfig | null => {
@@ -231,6 +234,7 @@ export function PackageInstallDialog({
           if (planToken.current !== token) return;
           setPlanning(false);
           setPlan(answer);
+          setRemovalAcknowledged(false);
         },
         onError: (error) => {
           if (planToken.current !== token) return;
@@ -274,8 +278,21 @@ export function PackageInstallDialog({
     setRows(change);
   };
 
+  /*
+   * A V1 upgrade/rollback plan carries the FULL target config and never echoes
+   * the installed one (plans.ts), and apply overwrites the revision with it. An
+   * empty editor therefore reports every stored key as removed — confirming
+   * that would wipe the live configuration, so the confirmation waits for an
+   * explicit acknowledgement of the exact keys.
+   */
+  const removedConfigKeys =
+    plan?.diff?.configChanges
+      .filter((change) => change.change === "removed")
+      .map((change) => change.key) ?? [];
+  const removalBlocked = removedConfigKeys.length > 0 && !removalAcknowledged;
+
   const confirm = () => {
-    if (plan === null || applyingRef.current) return;
+    if (plan === null || applyingRef.current || removalBlocked) return;
     applyingRef.current = true;
     setApplying(true);
     setApplyError(null);
@@ -326,7 +343,9 @@ export function PackageInstallDialog({
         {t("packages.install.config")}
       </h3>
       <p className="mt-1 text-xs leading-5 text-foreground/50">
-        {t("packages.install.configHint")}
+        {operation === "install"
+          ? t("packages.install.configHint")
+          : t("packages.upgrade.configHint")}
       </p>
       {rows.length > 0 ? (
         <div className="mt-2 flex flex-col gap-2">
@@ -661,6 +680,26 @@ export function PackageInstallDialog({
                 </p>
               ) : null}
 
+              {removedConfigKeys.length > 0 ? (
+                <section
+                  className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2"
+                  role="alert"
+                >
+                  <p className="text-destructive text-xs leading-5">
+                    {t("packages.upgrade.configRemovalWarning", {
+                      keys: removedConfigKeys.join(", "),
+                    })}
+                  </p>
+                  <Checkbox
+                    checked={removalAcknowledged}
+                    className="mt-2"
+                    onCheckedChange={setRemovalAcknowledged}
+                  >
+                    {t("packages.upgrade.configRemovalAcknowledge")}
+                  </Checkbox>
+                </section>
+              ) : null}
+
               {configEditor}
 
               {planError !== null ? (
@@ -698,7 +737,7 @@ export function PackageInstallDialog({
               </WbSecondaryButton>
               {plan !== null ? (
                 <Button
-                  disabled={planning || applying}
+                  disabled={planning || applying || removalBlocked}
                   onClick={confirm}
                   type="button"
                 >
