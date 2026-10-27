@@ -19,8 +19,10 @@
 //
 // Both identity paths are covered — the surface-supplied run id and the AG-UI client's own
 // derived one — and the whole window is asserted at 100%, dial by dial, because a
-// "mostly joined" window is precisely what R4 rejected. The derivation is re-derived
-// hand-written here (as `signReceipt` is in the budget suite): this is the pin.
+// "mostly joined" window is precisely what R4 rejected. Since r8fix-e (T-J #2) the chain is
+// derived from the SERVER-ISSUED attempt id, not the wire runId: the production pins assert
+// distinctness and same-source consistency across dial/anchors/fact/binding, and the
+// derivation formula stays re-derived hand-written (as `signReceipt` is in the budget suite).
 
 import { createHash, createHmac } from "node:crypto";
 import http from "node:http";
@@ -106,21 +108,21 @@ type Dial = {
   body: RunAgentInput;
 };
 
-/** The R4-01 derivation, re-derived by hand: sha256 over the domain-separated identity. */
-function derivedTraceIdOf(botId: string, runId: string): string {
+/** The R4-01 derivation, re-derived by hand: sha256 over the domain-separated ATTEMPT id. */
+function derivedTraceIdOf(botId: string, attemptId: string): string {
   return createHash("sha256")
-    .update(`openbot.remote.run:${botId}:${runId}`)
+    .update(`openbot.remote.run:${botId}:${attemptId}`)
     .digest("hex")
     .slice(0, 32);
 }
 
 /**
  * The F9A dial-span derivation, re-derived by hand the same way: the dial span's OWN id,
- * deterministic per run, so a re-dial names the same span instead of minting a new one.
+ * deterministic per attempt, so a re-dial names the same span instead of minting a new one.
  */
-function derivedDialSpanIdOf(botId: string, runId: string): string {
+function derivedDialSpanIdOf(botId: string, attemptId: string): string {
   return createHash("sha256")
-    .update(`openbot.remote.run.dial:${botId}:${runId}`)
+    .update(`openbot.remote.run.dial:${botId}:${attemptId}`)
     .digest("hex")
     .slice(0, 16);
 }
@@ -330,13 +332,15 @@ function budgetHarness() {
 function fakeBindingStore() {
   const begun: BeginRunBindingInput[] = [];
   const finished: { runId: string; state: string }[] = [];
-  const reconciles: { runId: string; opikTraceId: string }[] = [];
+  const reconciles: { runId: string; attemptId: string; opikTraceId: string }[] =
+    [];
   const rows = new Map<string, RunBinding>();
   return {
     begun,
-    /** The upstream id each run's binding was reconciled to, by run id. */
-    reconciledByRun: (runId: string) =>
-      reconciles.find((entry) => entry.runId === runId)?.opikTraceId ?? null,
+    /** The upstream id one attempt's binding was reconciled to — runs share run ids. */
+    reconciledByAttempt: (attemptId: string) =>
+      reconciles.find((entry) => entry.attemptId === attemptId)?.opikTraceId ??
+      null,
     finished,
     async begin(scope: ObservationScope, input: BeginRunBindingInput) {
       begun.push(input);
@@ -370,7 +374,7 @@ function fakeBindingStore() {
       attemptId: string,
       opikTraceId: string,
     ) {
-      reconciles.push({ runId, opikTraceId });
+      reconciles.push({ runId, attemptId, opikTraceId });
       const row = rows.get(`${scope.key}:${runId}:${attemptId}`);
       if (row) row.opikTraceId = opikTraceId;
       return { binding: row!, adopted: true };
@@ -544,19 +548,18 @@ test("detached scheduling dials under the run's derived chain — every dial, bo
 
     expect(dials).toHaveLength(4);
 
-    // 100% of the dials carry a well-formed traceparent naming the DERIVED trace of THEIR
-    // own run and the run's DETERMINISTIC dial span — both recomputed here from the
-    // identity, not read back from the implementation.
+    // 100% of the dials carry a well-formed traceparent. The chain is now derived from the
+    // SERVER-ISSUED attempt id (T-J #2), which the wire cannot name, so the pin is the
+    // contract itself: four attempts name four DISTINCT traces, and each dial's dial-span
+    // and trace agree with the attempt's observed fact below.
     for (const dial of dials) {
       const parent = traceparentOf(dial.headers.traceparent);
       expect(parent).not.toBeNull();
-      expect(parent!.traceId).toBe(
-        derivedTraceIdOf("risk", dial.body.runId ?? ""),
-      );
-      expect(parent!.spanId).toBe(
-        derivedDialSpanIdOf("risk", dial.body.runId ?? ""),
-      );
     }
+    const dialedTraceIds = dials.map(
+      (dial) => traceparentOf(dial.headers.traceparent)!.traceId,
+    );
+    expect(new Set(dialedTraceIds).size).toBe(dials.length);
 
     // Every derived run id is one of the surface-supplied ids or a client-derived uuid.
     const dialedRunIds = dials.map((dial) => dial.body.runId ?? "");
@@ -573,9 +576,13 @@ test("detached scheduling dials under the run's derived chain — every dial, bo
      */
     const anchorSpans = sink.posted.flatMap((post) => post.spans);
     expect(anchorSpans).toHaveLength(8);
-    for (const dial of dials) {
-      const runId = dial.body.runId ?? "";
-      const traceId = derivedTraceIdOf("risk", runId);
+    const dialSpanIdByTrace = new Map(
+      dials.map((dial) => {
+        const parent = traceparentOf(dial.headers.traceparent)!;
+        return [parent.traceId, parent.spanId];
+      }),
+    );
+    for (const traceId of dialedTraceIds) {
       const root = anchorSpans.find(
         (span) =>
           span.traceId === traceId &&
@@ -584,10 +591,12 @@ test("detached scheduling dials under the run's derived chain — every dial, bo
       expect(root).toBeDefined();
       expect(root!.name).toBe("run");
       expect(root!.parentSpanId).toBeUndefined();
+      // The dial anchor's span id IS the dial's traceparent parent: the one span the
+      // endpoint's continuation names.
       const dialAnchor = anchorSpans.find(
         (span) =>
           span.traceId === traceId &&
-          span.spanId === derivedDialSpanIdOf("risk", runId),
+          span.spanId === dialSpanIdByTrace.get(traceId),
       );
       expect(dialAnchor).toBeDefined();
       expect(dialAnchor!.name).toBe("remote run");
@@ -603,49 +612,56 @@ test("detached scheduling dials under the run's derived chain — every dial, bo
     /*
      * The record and the binding claim the SAME chain the dial carried — the 6/9 gap closed:
      * a detached run no longer records nothing. And the fact carries the dial span (F9A),
-     * with the deterministic id and a real window.
+     * with the attempt-deterministic id and a real window — the dial's traceparent span id,
+     * re-read through the attempt's own fact.
      */
     expect(facts).toHaveLength(4);
     for (const fact of facts) {
-      expect(fact.traceId).toBe(derivedTraceIdOf("risk", fact.runId));
+      expect(fact.traceId).not.toBeNull();
+      expect(dialedTraceIds).toContain(fact.traceId);
       expect(fact.dial).not.toBeNull();
-      expect(fact.dial!.spanId).toBe(derivedDialSpanIdOf("risk", fact.runId));
+      expect(fact.dial!.spanId).toBe(dialSpanIdByTrace.get(fact.traceId!));
       expect(fact.dial!.startedAt.getTime()).toBeLessThanOrEqual(
         fact.dial!.endedAt.getTime(),
       );
     }
+    // One attempt = one nonce: the four runs' attempts are distinct, run ids aside.
+    expect(new Set(facts.map((fact) => fact.attemptId)).size).toBe(4);
     expect(store.begun).toHaveLength(4);
     for (const begun of store.begun) {
-      expect(begun.traceId).toBe(derivedTraceIdOf("risk", begun.runId));
+      const fact = facts.find(
+        (candidate) => candidate.attemptId === begun.attemptId,
+      );
+      expect(fact).toBeDefined();
+      expect(begun.traceId).toBe(fact!.traceId);
     }
     expect(store.finished).toHaveLength(4);
 
     /*
      * THE SAME-SOURCE PIN (F8D-1's "binding.opik_trace_id ≠ 拨号派生 id" as it actually
      * decomposed): the binding's upstream trace, the materialized dial span and the dial's
-     * derived chain are ONE derivation — `runUpstreamIdentity(derivedTraceId)`, recomputed
-     * by hand here. The F8D evidence compared the binding's opik UUID against the dial's
-     * W3C hex and read a divergence; the two id domains are bridged by exactly this
-     * derivation, and these assertions refuse any second one.
+     * derived chain are ONE derivation — `runUpstreamIdentity(traceId)` — and the attempt's
+     * fact, binding and reconcile all name the same attempt id. The F8D evidence compared
+     * the binding's opik UUID against the dial's W3C hex and read a divergence; the two id
+     * domains are bridged by exactly this derivation, and these assertions refuse any
+     * second one.
      */
-    for (const runId of dialedRunIds) {
-      const traceId = derivedTraceIdOf("risk", runId);
+    for (const fact of facts) {
+      const traceId = fact.traceId!;
       const identity = runUpstreamIdentity(traceId);
-      const reconciled = store.reconciledByRun(runId);
+      const reconciled = store.reconciledByAttempt(fact.attemptId);
       expect(reconciled).toBe(identity.opikTraceId);
       const created = createdTraces.find(
         (trace) => trace.traceId === identity.opikTraceId,
       );
       expect(created).toBeDefined();
       const dialWrite = writtenSpans.find((write) =>
-        write.spans.some(
-          (span) => span.spanId === derivedDialSpanIdOf("risk", runId),
-        ),
+        write.spans.some((span) => span.spanId === fact.dial!.spanId),
       );
       expect(dialWrite).toBeDefined();
       expect(dialWrite!.binding?.opikTraceId).toBe(identity.opikTraceId);
       const dialSpan = dialWrite!.spans.find(
-        (span) => span.spanId === derivedDialSpanIdOf("risk", runId),
+        (span) => span.spanId === fact.dial!.spanId,
       )!;
       expect(dialSpan.traceId).toBe(traceId);
       expect(dialSpan.name).toEqual({ state: "projected", text: "remote run" });
@@ -769,6 +785,7 @@ test("a mixed window joins at 100% — ambient and derived dials side by side", 
     await flush();
 
     expect(dials).toHaveLength(4);
+    const derivedChains: { traceId: string; spanId: string }[] = [];
     for (const dial of dials) {
       const parent = traceparentOf(dial.headers.traceparent);
       expect(parent).not.toBeNull();
@@ -776,23 +793,129 @@ test("a mixed window joins at 100% — ambient and derived dials side by side", 
         // The inline half: the ambient parent itself.
         expect(dial.body.runId).toMatch(/^run-in-/);
       } else {
-        // The detached half: the derived chain of its own run, parented by its own
-        // deterministic dial span (F9A) — every dial, whichever half of the window it
-        // came from.
+        // The detached half: the chain of its own attempt, parented by its own
+        // attempt-deterministic dial span (F9A) — distinct per attempt (T-J #2), and
+        // re-asserted below through the attempt's observed fact.
         expect(dial.body.runId).toMatch(/^run-out-/);
-        expect(parent!.traceId).toBe(
-          derivedTraceIdOf("risk", dial.body.runId!),
-        );
-        expect(parent!.spanId).toBe(
-          derivedDialSpanIdOf("risk", dial.body.runId!),
-        );
+        derivedChains.push(parent!);
       }
     }
-    // Every run recorded, every binding begun — no half of the window is dark.
+    expect(derivedChains).toHaveLength(2);
+    expect(derivedChains[0]!.traceId).not.toBe(derivedChains[1]!.traceId);
+    // Every run recorded, every binding begun — no half of the window is dark — and each
+    // detached fact names its attempt's own chain.
     expect(facts).toHaveLength(4);
     expect(store.begun).toHaveLength(4);
+    for (const chain of derivedChains) {
+      const fact = facts.find(
+        (candidate) =>
+          candidate.traceId === chain.traceId &&
+          candidate.dial?.spanId === chain.spanId,
+      );
+      expect(fact).toBeDefined();
+    }
   } finally {
     setRemoteRunObserver(undefined);
+    await stop();
+  }
+});
+
+/*
+ * OCR delta T-J #2 (r8fix-e): the wire runId is INPUT, and two independent runs that reuse
+ * one runId must not merge into one trace tree — the same threat model the budget gate
+ * already answers with a server-side nonce (each subscription its own admission). The
+ * derivation domain is therefore the SERVER-ISSUED attempt identity: two attempts of one
+ * run root separate chains, each complete on its own, while a re-dial of ONE attempt
+ * re-derives that attempt's chain (the nonce is stable per attempt).
+ */
+test("two runs reusing one wire runId root separate chains — one attempt's re-dial keeps its own", async () => {
+  // The pure pin: the attempt identity, not the wire runId, separates chains.
+  const chainA = resolveRemoteDialChain("risk", "run-dup", "attempt-aaa");
+  const chainB = resolveRemoteDialChain("risk", "run-dup", "attempt-bbb");
+  expect(chainA.origin).toBe("derived");
+  expect(chainB.origin).toBe("derived");
+  expect(chainA.traceId).not.toBe(chainB.traceId);
+  // A re-dial of the SAME attempt re-derives the same chain — real re-dial idempotency.
+  expect(resolveRemoteDialChain("risk", "run-dup", "attempt-aaa").traceId).toBe(
+    chainA.traceId,
+  );
+  expect(chainA.traceId).toMatch(/^[0-9a-f]{32}$/);
+
+  // End to end: two subscriptions reusing one runId dial, record and bind SEPARATE chains.
+  const { fetch, dials } = scriptedEndpoint();
+  const facts: RemoteRunFact[] = [];
+  const store = fakeBindingStore();
+  const { port } = fakePort();
+  const recorder = createRemoteRunRecorder({
+    bindings: store,
+    port: () => port,
+  });
+  const { stop } = recordedSpans();
+  const sink = anchorSink();
+  await sink.ready();
+  const envBefore = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = sink.url;
+  setRemoteRunObserver((fact) => {
+    facts.push(fact);
+    recorder.record(fact);
+  });
+  try {
+    const agents = await buildRemoteBot(fetch, scope());
+    const agent = agents.risk;
+    if (!agent) throw new Error("buildAgents returned no remote agent");
+    agent.threadId = "dup-thread";
+    await agent.runAgent({ runId: "run-dup" }, { onEvent: () => {} });
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    await agent.runAgent({ runId: "run-dup" }, { onEvent: () => {} });
+    await flush();
+    await flushedAnchors(sink, 4);
+
+    expect(dials).toHaveLength(2);
+    const dialChains = dials.map((dial) =>
+      traceparentOf(dial.headers.traceparent),
+    );
+    for (const parent of dialChains) expect(parent).not.toBeNull();
+    // The reused runId does not merge the runs: two chains, each its own.
+    expect(dialChains[0]!.traceId).not.toBe(dialChains[1]!.traceId);
+
+    // Each run's whole window — anchors, fact, dial span, binding — names ITS OWN chain.
+    expect(facts).toHaveLength(2);
+    expect(store.begun).toHaveLength(2);
+    const anchorSpans = sink.posted.flatMap((post) => post.spans);
+    for (const fact of facts) {
+      expect(fact.traceId).not.toBeNull();
+      const parent = dialChains.find(
+        (candidate) => candidate!.traceId === fact.traceId,
+      );
+      expect(parent).toBeDefined();
+      expect(parent!.spanId).toBe(fact.dial!.spanId);
+      expect(fact.dial!.startedAt.getTime()).toBeLessThanOrEqual(
+        fact.dial!.endedAt.getTime(),
+      );
+      const root = runUpstreamIdentity(fact.traceId!).rootSpanId;
+      const rootAnchor = anchorSpans.find(
+        (span) => span.traceId === fact.traceId && span.spanId === root,
+      );
+      const dialAnchor = anchorSpans.find(
+        (span) =>
+          span.traceId === fact.traceId && span.spanId === fact.dial!.spanId,
+      );
+      expect(rootAnchor).toBeDefined();
+      expect(dialAnchor).toBeDefined();
+      expect(dialAnchor!.parentSpanId).toBe(root);
+    }
+    // The bindings are two rows — one per attempt — same run, distinct attempts and chains.
+    const begunTraceIds = store.begun.map((begun) => begun.traceId);
+    expect(new Set(begunTraceIds).size).toBe(2);
+    expect(begunTraceIds).toContain(facts[0]!.traceId);
+    expect(begunTraceIds).toContain(facts[1]!.traceId);
+    expect(store.begun[0]!.attemptId).not.toBe(store.begun[1]!.attemptId);
+  } finally {
+    setRemoteRunObserver(undefined);
+    if (envBefore === undefined)
+      delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+    else process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = envBefore;
+    sink.stop();
     await stop();
   }
 });
@@ -800,15 +923,16 @@ test("a mixed window joins at 100% — ambient and derived dials side by side", 
 test("a run with no identity and no context degrades visibly — no header is invented", () => {
   const countsBefore = remoteDialChainCounts();
 
-  // The decision itself: nothing ambient, nothing to derive from.
-  const chain = resolveRemoteDialChain("risk", "");
+  // The decision itself: nothing ambient, nothing to derive from (the wire runId still
+  // GATES the chain — the attempt nonce alone does not rescue an identity-less run).
+  const chain = resolveRemoteDialChain("risk", "", "attempt-noid");
   expect(chain).toEqual({ origin: "unavailable", traceId: null });
 
   // The binding: no context is bound, so the production fetch — which reads whatever is
   // active and synthesizes nothing — carries no `traceparent`, exactly as before this fix.
   // The degradation is COUNTED, so a window that produced it reads off the counters rather
   // than being discovered by finding an orphan trace upstream.
-  const bound = bindRemoteDialChain(chain, "risk", "");
+  const bound = bindRemoteDialChain(chain, "risk", "", "attempt-noid");
   expect(bound.context).toBeUndefined();
   expect(bound.dial).toBeNull();
   expect(injectTraceHeaders({})).toEqual({});
@@ -818,45 +942,54 @@ test("a run with no identity and no context degrades visibly — no header is in
 
 test("with no tracer provider, a derived dial still names the run's chain", () => {
   trace.disable();
-  const chain = resolveRemoteDialChain("risk", "run-untraced");
+  const chain = resolveRemoteDialChain(
+    "risk",
+    "run-untraced",
+    "attempt-untraced",
+  );
   expect(chain.origin).toBe("derived");
 
   /*
    * The provider is gone — and F9A made the dial span independent of one: the context is a
-   * non-recording span with the run's DERIVED trace and DETERMINISTIC dial span id, so the
-   * header cannot vanish with the pipeline (the F8A belt for a no-op SDK span, now the
+   * non-recording span with the attempt's DERIVED trace and DETERMINISTIC dial span id, so
+   * the header cannot vanish with the pipeline (the F8A belt for a no-op SDK span, now the
    * design itself). Nothing anchors and nothing exports; the header still names the chain.
    */
-  const bound = bindRemoteDialChain(chain, "risk", "run-untraced");
+  const bound = bindRemoteDialChain(
+    chain,
+    "risk",
+    "run-untraced",
+    "attempt-untraced",
+  );
   expect(bound.context).toBeDefined();
   const injected = context.with(bound.context!, () => injectTraceHeaders({}));
   const parent = traceparentOf(injected.traceparent);
   expect(parent).not.toBeNull();
-  expect(parent!.traceId).toBe(derivedTraceIdOf("risk", "run-untraced"));
-  expect(parent!.spanId).toBe(derivedDialSpanIdOf("risk", "run-untraced"));
+  expect(parent!.traceId).toBe(derivedTraceIdOf("risk", "attempt-untraced"));
+  expect(parent!.spanId).toBe(derivedDialSpanIdOf("risk", "attempt-untraced"));
   bound.close();
 });
 
-test("the derivation is idempotent per run and distinct across runs", () => {
-  const a = derivedRemoteRunTraceId("risk", "run-same");
-  expect(a).toBe(derivedTraceIdOf("risk", "run-same")); // the pinned formula
-  expect(a).toBe(derivedRemoteRunTraceId("risk", "run-same")); // retry continues one chain
-  expect(a).not.toBe(derivedRemoteRunTraceId("risk", "run-other"));
-  expect(a).not.toBe(derivedRemoteRunTraceId("other", "run-same"));
+test("the derivation is idempotent per attempt and distinct across attempts", () => {
+  const a = derivedRemoteRunTraceId("risk", "attempt-same");
+  expect(a).toBe(derivedTraceIdOf("risk", "attempt-same")); // the pinned formula
+  expect(a).toBe(derivedRemoteRunTraceId("risk", "attempt-same")); // a re-dial continues one chain
+  expect(a).not.toBe(derivedRemoteRunTraceId("risk", "attempt-other"));
+  expect(a).not.toBe(derivedRemoteRunTraceId("other", "attempt-same"));
   expect(a).toMatch(/^[0-9a-f]{32}$/);
   expect(a).not.toBe("0".repeat(32));
 
-  // The dial span's own id (F9A): same discipline, span-id shape — a re-dial re-derives the
-  // SAME span, and no two runs share one.
-  const d = derivedRemoteRunDialSpanId("risk", "run-same");
-  expect(d).toBe(derivedDialSpanIdOf("risk", "run-same"));
-  expect(d).toBe(derivedRemoteRunDialSpanId("risk", "run-same"));
-  expect(d).not.toBe(derivedRemoteRunDialSpanId("risk", "run-other"));
-  expect(d).not.toBe(derivedRemoteRunDialSpanId("other", "run-same"));
+  // The dial span's own id (F9A): same discipline, span-id shape — a re-dial of one attempt
+  // re-derives the SAME span, and no two attempts share one.
+  const d = derivedRemoteRunDialSpanId("risk", "attempt-same");
+  expect(d).toBe(derivedDialSpanIdOf("risk", "attempt-same"));
+  expect(d).toBe(derivedRemoteRunDialSpanId("risk", "attempt-same"));
+  expect(d).not.toBe(derivedRemoteRunDialSpanId("risk", "attempt-other"));
+  expect(d).not.toBe(derivedRemoteRunDialSpanId("other", "attempt-same"));
   expect(d).toMatch(/^[0-9a-f]{16}$/);
   expect(d).not.toBe("0".repeat(16));
-  // And the two derivations of one run stay distinct from each other.
-  expect(d).not.toBe(derivedTraceIdOf("risk", "run-same").slice(0, 16));
+  // And the two derivations of one attempt stay distinct from each other.
+  expect(d).not.toBe(derivedTraceIdOf("risk", "attempt-same").slice(0, 16));
 });
 
 /*
@@ -929,7 +1062,7 @@ test("a materialization that failed keeps the dial span unexported — nothing i
   // begun and finished, the materialization failure logged and swallowed.
   expect(store.begun).toHaveLength(1);
   expect(store.finished).toEqual([{ runId: "run-unconfirmed", state: "completed" }]);
-  expect(store.reconciledByRun("run-unconfirmed")).toBeNull();
+  expect(store.reconciledByAttempt("run-unconfirmed-attempt")).toBeNull();
 
   // But nothing exported: the binding names no upstream trace, so there is no tree to
   // parent a dial span under — writing one would be exactly the unattributed write the

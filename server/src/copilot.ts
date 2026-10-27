@@ -1686,9 +1686,9 @@ export type RemoteRunFact = {
   threadId: string;
   runId: string;
   /**
-   * One middleware execution is one attempt: a retry arrives from the runtime as a new run,
-   * so the run id names the attempt and a replayed report is idempotent against the binding
-   * the recorder began for it.
+   * One middleware execution is one attempt: the attempt is named by the server-issued
+   * nonce the run's chain and budget admission share, never the wire runId, so two runs
+   * reusing one run id settle against separate bindings (OCR delta T-J #2).
    */
   attemptId: string;
   /** The run's W3C chain, captured when the run started; null means nothing provable to join. */
@@ -4322,13 +4322,20 @@ export type RemoteDialChain = Readonly<{
 
 /**
  * The trace id a run with no ambient context runs its chain under: the first 32 hex of a
- * domain-separated digest of the run's own identity. Deterministic on purpose — a re-dial or
- * a re-execution of the same run id continues the same chain instead of rooting a new one —
- * and an all-zero digest (an id the W3C format refuses) is remapped rather than shipped.
+ * domain-separated digest of the run's SERVER-ISSUED attempt identity. Deterministic per
+ * attempt on purpose — a re-dial of one attempt re-derives the chain it bound instead of
+ * rooting a new one — and deliberately NOT deterministic across attempts: AG-UI runId is
+ * wire input, and a chain derived from it let a client reusing one runId merge unrelated
+ * runs into one trace tree, the exact threat the budget gate already answers with a
+ * server-side nonce. Each subscription mints its own attempt id, so each roots its own
+ * chain. An all-zero digest (an id the W3C format refuses) is remapped rather than shipped.
  */
-export function derivedRemoteRunTraceId(botId: string, runId: string): string {
+export function derivedRemoteRunTraceId(
+  botId: string,
+  attemptId: string,
+): string {
   const hex = createHash("sha256")
-    .update(`openbot.remote.run:${botId}:${runId}`)
+    .update(`openbot.remote.run:${botId}:${attemptId}`)
     .digest("hex");
   return /^0+$/.test(hex.slice(0, 32))
     ? `${"0".repeat(31)}1`
@@ -4338,9 +4345,9 @@ export function derivedRemoteRunTraceId(botId: string, runId: string): string {
 /**
  * The dial span's OWN span id (F9A / F8D-1): the first 16 hex of the same
  * domain-separated digest discipline as the trace id, over its own domain. Deterministic for
- * the same reason the trace id is — a re-dial of the same run re-derives the same dial span
+ * the same reason the trace id is — a re-dial of one attempt re-derives the same dial span
  * instead of minting a second one, so the chain's `traceparent` parent id and every upstream
- * copy of the dial span name one span per run.
+ * copy of the dial span name one span per attempt.
  *
  * The dial span is NOT an SDK recording span (see {@link bindRemoteDialChain}): the SDK
  * cannot start a span with a chosen span id, and the F8D evidence proved the backend drops
@@ -4354,22 +4361,27 @@ export function derivedRemoteRunTraceId(botId: string, runId: string): string {
  */
 export function derivedRemoteRunDialSpanId(
   botId: string,
-  runId: string,
+  attemptId: string,
 ): string {
   const hex = createHash("sha256")
-    .update(`openbot.remote.run.dial:${botId}:${runId}`)
+    .update(`openbot.remote.run.dial:${botId}:${attemptId}`)
     .digest("hex");
   return /^0+$/.test(hex.slice(0, 16)) ? "0000000000000001" : hex.slice(0, 16);
 }
 
 /**
- * Decide a run's chain from the authoritative identity, ambient first. Pure: no span is
- * started, nothing counted — the decision is cheap, and a run refused at admission makes it
- * for a dial it never performs.
+ * Decide a run's chain from the authoritative identity, ambient first. The wire runId only
+ * GATES the derived chain — a run the client sent no identity for degrades visibly, as it
+ * always has — while the chain itself is derived from the server-issued attempt identity, so
+ * the client cannot choose two runs' shared coordinates (the runId is never a derivation
+ * domain; the built-in path holds the same discipline). Pure: no span is started, nothing
+ * counted — the decision is cheap, and a run refused at admission makes it for a dial it
+ * never performs.
  */
 export function resolveRemoteDialChain(
   botId: string,
   runId: string,
+  attemptId: string,
 ): RemoteDialChain {
   const ambient = currentTraceContext();
   if (ambient !== undefined) {
@@ -4379,10 +4391,10 @@ export function resolveRemoteDialChain(
       parentSpanId: ambient.spanId,
     };
   }
-  if (runId.trim() !== "") {
+  if (runId.trim() !== "" && attemptId.trim() !== "") {
     return {
       origin: "derived",
-      traceId: derivedRemoteRunTraceId(botId, runId),
+      traceId: derivedRemoteRunTraceId(botId, attemptId),
     };
   }
   return { origin: "unavailable", traceId: null };
@@ -4444,8 +4456,9 @@ type BoundRemoteDial = Readonly<{
  *
  * A chain that cannot resolve (no endpoint configured, tracing off) posts nothing — the
  * same honest nothing `initProcessTracing` exports. A repeat post of the same chain (a
- * re-dial re-derives the same deterministic ids) is a duplicate the backend refuses (409)
- * and this side treats as done, never as a failure — the chain was already anchored. This
+ * re-dial of one attempt re-derives the same deterministic ids) is a duplicate the backend
+ * refuses (409) and this side treats as done, never as a failure — the chain was already
+ * anchored. This
  * is a tracing-channel write, not a governed one: no content rides on either span, only
  * structural ids, and the governed record of the dial (timing, binding attribution) is
  * materialized through the port by the recorder, not here.
@@ -4551,6 +4564,7 @@ export function bindRemoteDialChain(
   chain: RemoteDialChain,
   botId: string,
   runId: string,
+  attemptId: string,
 ): BoundRemoteDial {
   if (chain.origin === "ambient") {
     dialChainCounts.ambient += 1;
@@ -4605,12 +4619,12 @@ export function bindRemoteDialChain(
      *    binding's trace at settle).
      *
      * The context the dial's fetch reads is therefore exactly the dial span: trace id = the
-     * run's derived trace, span id = the deterministic dial id — so the `traceparent` the
-     * endpoint receives names the dial span, whatever the runtime scheduling, and a
-     * re-dial re-derives the same coordinates instead of new ones.
+     * attempt's derived trace, span id = the deterministic dial id — so the `traceparent` the
+     * endpoint receives names the dial span, whatever the runtime scheduling, and a re-dial
+     * of one attempt re-derives the same coordinates instead of new ones.
      */
     const traceId = chain.traceId ?? "";
-    const spanId = derivedRemoteRunDialSpanId(botId, runId);
+    const spanId = derivedRemoteRunDialSpanId(botId, attemptId);
     const startedAt = new Date();
     postDialChainAnchors(traceId, spanId, botId, runId, startedAt);
     log.info(
@@ -4691,9 +4705,18 @@ function subscribeWithin<T>(
  * and the whole subscription: an agent middleware, outside the hooks chain, where `input.runId`
  * is known before any event flows.
  */
-export function derivedBuiltinRunTraceId(botId: string, runId: string): string {
+/**
+ * The builtin run chain's trace id: the same per-attempt derivation discipline the remote
+ * dial holds — the SERVER-ISSUED attempt identity, never the wire runId, is the derivation
+ * domain, so a client reusing one runId cannot merge two runs into one trace tree, while a
+ * re-dial of one attempt re-derives the chain it bound.
+ */
+export function derivedBuiltinRunTraceId(
+  botId: string,
+  attemptId: string,
+): string {
   const hex = createHash("sha256")
-    .update(`openbot.builtin.run:${botId}:${runId}`)
+    .update(`openbot.builtin.run:${botId}:${attemptId}`)
     .digest("hex");
   return /^0+$/.test(hex.slice(0, 32))
     ? `${"0".repeat(31)}1`
@@ -4718,8 +4741,11 @@ export function builtinRunChainCounts(): Readonly<
 
 /**
  * The middleware itself. `ambient` keeps the run exactly as it was — an inline run continues
- * its parent chain and nothing is invented. `derived` names the chain from the run's own
- * identity (idempotent: a re-driven run re-derives the same trace), and the context it binds
+ * its parent chain and nothing is invented. `derived` names the chain from the
+ * subscription's SERVER-ISSUED attempt identity (deterministic per attempt: a re-dial of the
+ * subscription re-derives the same trace, while a re-driven run is a new attempt and roots
+ * its own — the wire runId cannot merge two runs' trees, the same discipline the remote dial
+ * holds), and the context it binds
  * is a NON-RECORDING stand-in for the run root the binding store derives for that trace
  * (`runUpstreamIdentity`, the same parent discipline the derived remote dial holds) — the
  * facts downstream read it as their trace, and the port completes every span's parent from
@@ -4745,7 +4771,11 @@ export function builtinRunChainMiddleware(
       return run;
     }
     builtinRunChainTally.derived += 1;
-    const traceId = derivedBuiltinRunTraceId(botId, runId);
+    // The chain derives from a per-subscription nonce, not the wire runId (OCR delta T-J
+    // #2): the runId is display, and this mint is the one identity two re-driven runs
+    // cannot share.
+    const attemptId = randomUUID();
+    const traceId = derivedBuiltinRunTraceId(botId, attemptId);
     log.info(
       {
         type: "builtin-run-chain",
@@ -4873,14 +4903,26 @@ function governedRemoteRun(
   const observer = remoteRunObserver;
   return defer(() => {
     const occurredAt = new Date();
-    const runId = input.runId;
+    // Hygiene parity with the built-in path: the wire runId is read with the same
+    // typeof+trim discipline everywhere, and from here on it is display and gate input
+    // only — never a derivation domain.
+    const runId = typeof input.runId === "string" ? input.runId.trim() : "";
+    /*
+     * One middleware execution is one attempt, and the attempt's identity is SERVER-ISSUED
+     * (OCR delta T-J #2): this nonce keys the budget admission below AND derives the run's
+     * observation chain, so a client reusing one runId can no longer merge unrelated runs
+     * into one trace tree — the observation domain now holds the discipline the budget
+     * gate's own comment below states. A re-dial of THIS attempt re-derives the chain and
+     * the dial span it bound.
+     */
+    const attemptId = randomUUID();
     /*
      * R4-01: the run's chain is DECIDED here, from the run's own authoritative identity, not
      * read off whatever context the runtime scheduled this subscription in. Captured once so
      * the endpoint's dial, the basic record and the binding all claim ONE chain even when the
      * ambient context differs at each — and by teardown there is no context guaranteed at all.
      */
-    const chain = resolveRemoteDialChain(agent.id, runId);
+    const chain = resolveRemoteDialChain(agent.id, runId, attemptId);
     const traceId = chain.traceId;
     return from(
       Promise.all([
@@ -4892,9 +4934,10 @@ function governedRemoteRun(
            * a ledger that under-counts by design. Each subscription is one admission (the
            * built-in model-call gate derives its eventId the same way), so each takes its
            * own hold; a legitimate re-dial pays for its own capacity instead of replaying
-           * another subscription's.
+           * another subscription's. The nonce is the SAME `attemptId` the run's chain is
+           * derived from, so admission and observation name one attempt with one identity.
            */
-          eventId: `remote-run:${agent.id}:${randomUUID()}`,
+          eventId: `remote-run:${agent.id}:${attemptId}`,
           occurredAt,
           botId: agent.id,
           runId,
@@ -5035,7 +5078,7 @@ function governedRemoteRun(
                 // The run's own binding identity: the recorder's gate must reuse the
                 // binding this run's basic record began, never mint a second row for
                 // the same chain.
-                runRef: { runId, attemptId: runId },
+                runRef: { runId, attemptId },
               });
             } catch {
               // Observation never takes the product path down.
@@ -5117,8 +5160,9 @@ function governedRemoteRun(
                 botId: agent.id,
                 threadId: input.threadId,
                 runId,
-                // One middleware execution is one attempt: a retry arrives as a new run.
-                attemptId: runId,
+                // One middleware execution is one attempt: a retry arrives as a new run,
+                // and the attempt is named by the server nonce, never the wire runId.
+                attemptId,
                 traceId,
                 scope,
                 dial: dial.dial,
@@ -5300,7 +5344,7 @@ function governedRemoteRun(
          * make the binding visible. Bound here rather than at decision time so a run refused
          * at the admission above measures and counts nothing.
          */
-        const dial = bindRemoteDialChain(chain, agent.id, runId);
+        const dial = bindRemoteDialChain(chain, agent.id, runId, attemptId);
         const dialStream =
           dial.context === undefined
             ? next.run(input)

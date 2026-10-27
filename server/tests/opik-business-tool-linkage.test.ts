@@ -303,11 +303,11 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
       forwardedProps: {},
     }) as unknown as RunAgentInput;
 
-  test("the derivation is a pure function of the run identity — idempotent, never all-zero", () => {
-    const first = derivedBuiltinRunTraceId(PROBE_AGENT.id, "run-stable");
-    expect(first).toBe(derivedBuiltinRunTraceId(PROBE_AGENT.id, "run-stable"));
-    expect(first).not.toBe(derivedBuiltinRunTraceId(PROBE_AGENT.id, "run-other"));
-    expect(first).not.toBe(derivedBuiltinRunTraceId("other-bot", "run-stable"));
+  test("the derivation is a pure function of the attempt identity — idempotent, never all-zero", () => {
+    const first = derivedBuiltinRunTraceId(PROBE_AGENT.id, "attempt-stable");
+    expect(first).toBe(derivedBuiltinRunTraceId(PROBE_AGENT.id, "attempt-stable"));
+    expect(first).not.toBe(derivedBuiltinRunTraceId(PROBE_AGENT.id, "attempt-other"));
+    expect(first).not.toBe(derivedBuiltinRunTraceId("other-bot", "attempt-stable"));
     expect(/^[0-9a-f]{32}$/.test(first)).toBe(true);
     expect(/^0+$/.test(first)).toBe(false);
   });
@@ -328,7 +328,11 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
     }
     expect(facts).toHaveLength(1);
     const fact = facts[0]!;
-    const expectedTrace = derivedBuiltinRunTraceId(PROBE_AGENT.id, "run-detached");
+    // The chain derives from the server-issued attempt id (T-J #2), which the test cannot
+    // name from the wire — the pin is the chain's own shape and parent discipline.
+    const expectedTrace = fact.trace?.traceId;
+    expect(expectedTrace).toMatch(/^[0-9a-f]{32}$/);
+    expect(/^0+$/.test(expectedTrace!)).toBe(false);
     expect(fact.toolName).toBe("report_environment");
     expect(fact.proposalObserved).toBe(true);
     // Surface execution: a proposal the model emitted and nothing this process ran.
@@ -338,7 +342,7 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
     expect(fact.trace?.traceId).toBe(expectedTrace);
     // The derived context names the binding's own run root — the parent the port
     // completes every span of the chain with, never an invented ambient.
-    expect(fact.trace?.spanId).toBe(runUpstreamIdentity(expectedTrace).rootSpanId);
+    expect(fact.trace?.spanId).toBe(runUpstreamIdentity(expectedTrace!).rootSpanId);
     expect(builtinRunChainCounts().derived).toBe(countsBefore.derived + 1);
     expect(fact.origin).toBeUndefined(); // the built-in path reads as builtin at the recorder
   });
@@ -355,11 +359,15 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
     } finally {
       await stop();
     }
-    const traceId = derivedBuiltinRunTraceId(PROBE_AGENT.id, "run-handoff");
     expect(facts).toHaveLength(1);
+    // The chain derives from the server-issued attempt id (T-J #2): shape and parent
+    // discipline, recomputed only against the observed trace itself.
+    const traceId = facts[0]!.trace?.traceId;
+    expect(traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(/^0+$/.test(traceId!)).toBe(false);
     expect(facts[0]!.trace).toEqual({
       traceId,
-      spanId: runUpstreamIdentity(traceId).rootSpanId,
+      spanId: runUpstreamIdentity(traceId!).rootSpanId,
     });
     expect(builtinRunChainCounts().derived).toBe(before.derived + 1);
   });
@@ -400,6 +408,7 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
         { origin: "derived", traceId: "0123456789abcdef0123456789abcdef" },
         "risk",
         "run-anchor",
+        "attempt-anchor",
       );
       const deadline = Date.now() + 5_000;
       while (posts.length === 0 && Date.now() < deadline)
@@ -416,6 +425,7 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
         { origin: "derived", traceId: "fedcba9876543210fedcba9876543210" },
         "risk",
         "run-anchor-bare",
+        "attempt-anchor-bare",
       );
       const bareDeadline = Date.now() + 5_000;
       while (posts.length === 0 && Date.now() < bareDeadline)
@@ -435,7 +445,7 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
     }
   });
 
-  test("re-driving the same run identity re-derives the same chain; a fresh run derives its own", async () => {
+  test("re-driving one run id roots each attempt its own chain — the wire runId cannot merge them (T-J #2)", async () => {
     const { spans, stop } = recordedSpans();
     const facts: BuiltinToolStepFact[] = [];
     try {
@@ -452,8 +462,10 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
     }
     expect(facts).toHaveLength(3);
     const traces = facts.map((fact) => fact.trace?.traceId);
-    expect(traces[0]).toBe(traces[1]); // idempotent: the re-driven run continues its chain
-    expect(traces[2]).not.toBe(traces[0]); // a different run is a different chain
+    // Every subscription is its own attempt: the re-driven run id and the fresh run each
+    // root a chain of their own — nothing merges, and each chain is a real W3C id.
+    for (const traceId of traces) expect(traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(new Set(traces).size).toBe(3);
   });
 
   test("an inline run (an active ambient span) keeps exactly that chain — nothing invented", async () => {
@@ -481,7 +493,7 @@ describe("R4-03 built-in: a surface business tool call keeps its identity in gov
     expect(facts[0]!.trace?.spanId).toBe(inline!.spanContext().spanId);
     expect(builtinRunChainCounts().ambient).toBe(countsBefore.ambient + 1);
     // Ambient means ambient: no derived chain was minted for this run.
-    expect(facts[0]!.trace?.traceId).not.toBe(derivedBuiltinRunTraceId(PROBE_AGENT.id, "run-inline"));
+    expect(builtinRunChainCounts().derived).toBe(countsBefore.derived);
   });
 
   test("the engine's state tools leave no business step — a business tool in the same stream still does", async () => {
@@ -716,9 +728,13 @@ describe("R4-03 remote: the endpoint's business tool calls become governance ste
       facts.push(fact);
     });
     const { stop } = recordedSpans();
+    let reservedKeys: string[] = [];
     try {
-      const { agents } = await buildRemoteBot(fetch, { actorId: "person-1" });
-      const agent = agents.risk;
+      const built = await buildRemoteBot(fetch, {
+        actorId: "person-1",
+      });
+      reservedKeys = built.reservedKeys;
+      const agent = built.agents.risk;
       if (!agent) throw new Error("buildAgents returned no remote agent");
       agent.threadId = "remote-thread";
       await new Promise((resolve) => setTimeout(resolve, 1)); // detached, like the runner's callback
@@ -741,13 +757,23 @@ describe("R4-03 remote: the endpoint's business tool calls become governance ste
     expect(fact.execution).toBe(null);
     expect(fact.window).toBe("terminal");
     expect(fact.origin).toBe("remote-agui");
-    expect(fact.runRef).toEqual({ runId: "run-remote-1", attemptId: "run-remote-1" });
+    // T-J #2: the attempt is a server nonce, never the wire runId — and it is the SAME
+    // nonce the budget admission key carried (same-source).
+    expect(fact.runRef?.runId).toBe("run-remote-1");
+    expect(fact.runRef?.attemptId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(fact.runRef?.attemptId).not.toBe("run-remote-1");
+    expect(reservedKeys).toContain(
+      `usage:remote-run:risk:${fact.runRef!.attemptId}`,
+    );
     // The proposal's streamed arguments, joined and bounded — capture, not invention.
     expect(fact.input).toBe('{"scope":"probe"}');
     expect(fact.output).toContain("all systems nominal");
-    // The chain is the run's own dial chain (derived from its identity, R4-01).
-    expect(fact.trace?.traceId).toBe(
-      createHash("sha256").update(`openbot.remote.run:risk:run-remote-1`).digest("hex").slice(0, 32),
+    // The chain is the run's own dial chain — derived from its attempt (R4-01/T-J #2), so
+    // the pin is its shape and parent discipline, read back from the observed fact.
+    expect(fact.trace?.traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(/^0+$/.test(fact.trace!.traceId!)).toBe(false);
+    expect(fact.trace?.spanId).toBe(
+      runUpstreamIdentity(fact.trace!.traceId!).rootSpanId,
     );
   });
 
