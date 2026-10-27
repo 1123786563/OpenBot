@@ -254,7 +254,10 @@ export function requireBotService(
           429,
         );
       }
-      return uniformAuthFailure(context);
+      if (error instanceof BotServiceAuthFailureError) {
+        return uniformAuthFailure(context);
+      }
+      throw error;
     }
     await next();
   };

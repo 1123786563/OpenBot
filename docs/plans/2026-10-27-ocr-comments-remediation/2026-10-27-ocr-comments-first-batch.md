@@ -14,6 +14,7 @@
 1. `server/src/craft/builtin-skills/pptx/scripts/clean.py`: report entries 150, 151, 152 — fail before deletion when reference XML is absent or invalid, parse slide IDs by namespace, and pre-validate every `.rels` file plus the presentation and content-type XML before cleanup.
 2. `server/src/craft/builtin-skills/pptx/scripts/office/pack.py`: entries 121 (explicit missing source path only), 122, 123, 124, 125 — preserve optional CLI behavior when no source is provided; reject a missing explicitly supplied source; preserve default-namespace text; return XML processing errors; classify CLI errors by the error prefix; reject invalid boolean values.
 3. `server/src/craft/builtin-skills/pptx/scripts/office/soffice.py`: entry 128 — put the preload library in a private temporary directory and atomically publish compiled output.
+4. `server/src/bot-services/auth.ts`: entry 1926 (partial) — return only typed credential failures as 401 and rethrow infrastructure errors. The `Retry-After` value remains fixed at the production default; custom limiter windows need an API-compatible design.
 
 ## Verification
 
@@ -30,3 +31,4 @@
 - Entry 121 (high): an explicit nonexistent `--original` is now rejected; whether validation should also require `--original` when omitted remains a product behavior decision.
 - Entry 129 (high): the shim's intentional `_exit(0)` behavior can hide conversion failures; the correct status contract needs investigation.
 - Entry 153 (high): relationship retention across non-slide parts needs a representative Office package fixture before changing cleanup behavior.
+- Entry 1926 (high, partial): infrastructure errors now reach the server error handler; the report's custom-window `Retry-After` mismatch remains and changing the limiter/error contract needs a compatible design.

@@ -2,12 +2,14 @@ import { expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
 import type { AuditEventInput } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
+import { botServiceRoutes } from "../src/bot-services/auth";
 import { botServiceAdminRoutes } from "../src/bot-services/routes";
 import type {
   BotServiceRecord,
   BotServiceStore,
 } from "../src/bot-services/store";
 import {
+  BotServiceAuthFailureError,
   BotServiceConflictError,
   BotServiceInputError,
   BotServiceNotFoundError,
@@ -112,6 +114,36 @@ const registration = {
   kind: "external",
   capabilities: ["chat", "image"],
 };
+
+test("credential infrastructure errors are not returned as invalid credentials", async () => {
+  const app = botServiceRoutes({
+    authenticate: async () => {
+      throw new Error("credential store unavailable");
+    },
+  });
+  const response = await app.request("/", {
+    headers: { authorization: "Bearer obot_bsvc_com.example.bot~secret" },
+  });
+
+  expect(response.status).toBe(500);
+});
+
+test("credential failures still return the uniform authentication refusal", async () => {
+  const app = botServiceRoutes({
+    authenticate: async () => {
+      throw new BotServiceAuthFailureError();
+    },
+  });
+  const response = await app.request("/", {
+    headers: { authorization: "Bearer obot_bsvc_com.example.bot~secret" },
+  });
+
+  expect(response.status).toBe(401);
+  expect(await response.json()).toEqual({
+    error: "Bot service authentication failed.",
+    code: "bot_service_auth_failed",
+  });
+});
 
 test("an administrator registers a bot and the trail names it", async () => {
   const f = fixture(ADMIN);
