@@ -846,6 +846,15 @@ export const RUN_ROOT_SPAN_NAME: SafeText = { state: "projected", text: "run" };
 /** Bounded memory: recent chains per scope, and scopes, before FIFO eviction. */
 const DEFAULT_MAX_CHAINS_PER_SCOPE = 2048;
 const DEFAULT_MAX_SCOPES = 4096;
+/**
+ * The starts map's own cap (OCR T-P#4): starts can outlive the FIFO that
+ * bounds `begun` — a refused establishment retires the chain but keeps its
+ * start, and a start noted for a run that never produces a business fact never
+ * enters `order` at all — so the chains cap does not bound the map. Same
+ * magnitude as the chains cap: one start per chain in healthy operation, so
+ * entries beyond it are exactly the lingering ones this bound retires.
+ */
+const DEFAULT_MAX_RUN_STARTS_PER_SCOPE = DEFAULT_MAX_CHAINS_PER_SCOPE;
 
 type ScopeChains = {
   begun: Map<string, Promise<OpikRunBindingRef>>;
@@ -873,6 +882,8 @@ export function createObserverRunBindingGate(
     ttlMs?: number;
     maxChainsPerScope?: number;
     maxScopes?: number;
+    /** The starts map's own bound (OCR T-P#4); see DEFAULT_MAX_RUN_STARTS_PER_SCOPE. */
+    maxRunStartsPerScope?: number;
     /**
      * F5E1-F3: the verified port behind this deployment, asked for at the moment a
      * chain's upstream objects are materialized. Absent (or answering null — an
@@ -887,6 +898,8 @@ export function createObserverRunBindingGate(
   const ttlMs = options.ttlMs ?? DEFAULT_RUN_BINDING_TTL_MS;
   const maxChains = options.maxChainsPerScope ?? DEFAULT_MAX_CHAINS_PER_SCOPE;
   const maxScopes = options.maxScopes ?? DEFAULT_MAX_SCOPES;
+  const maxRunStarts =
+    options.maxRunStartsPerScope ?? DEFAULT_MAX_RUN_STARTS_PER_SCOPE;
   const scopes = new Map<string, ScopeChains>();
 
   /*
@@ -939,6 +952,26 @@ export function createObserverRunBindingGate(
     };
     scopes.set(scope.key, fresh);
     return fresh;
+  };
+
+  /*
+   * OCR T-P#4: `starts` is written ahead of (and without) the FIFO that bounds
+   * `begun`, so it needs its own bound. Retirement takes the oldest start
+   * whose chain is not registered in `begun` — a registered chain's start is
+   * live data: an in-flight materialization reads it, and a cached-but-
+   * settleable run's root close still does (R5-725's in-flight rule). A
+   * retired start degrades to the materialization clock / the settle's other
+   * window end, never an invented one; silent, like the chains and scopes
+   * bounds beside it — a dropped start is a timing fallback, not a lost write.
+   * If every entry is registered the bound is exceeded temporarily by exactly
+   * that set, which the begun cache's own FIFO cap bounds.
+   */
+  const boundStarts = (chains: ScopeChains): void => {
+    for (const key of chains.starts.keys()) {
+      if (chains.starts.size <= maxRunStarts) return;
+      if (chains.begun.has(key)) continue;
+      chains.starts.delete(key);
+    }
   };
 
   const ensure = async (
@@ -1113,7 +1146,10 @@ export function createObserverRunBindingGate(
       const chains = chainsOf(scope);
       // First observation wins: one chain is one run, and its start is the first
       // moment this side saw it begin.
-      if (!chains.starts.has(traceId)) chains.starts.set(traceId, startedAt);
+      if (!chains.starts.has(traceId)) {
+        chains.starts.set(traceId, startedAt);
+        boundStarts(chains);
+      }
     },
     settleObservedRun(scope, chain, observed) {
       const traceId = observerChainId(chain.traceId);
@@ -1129,6 +1165,7 @@ export function createObserverRunBindingGate(
         !chains.starts.has(traceId)
       ) {
         chains.starts.set(traceId, observed.startedAt);
+        boundStarts(chains);
       }
       if (chains.settled.has(traceId)) return; // first settle wins
       chains.settled.add(traceId);

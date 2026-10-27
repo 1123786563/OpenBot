@@ -16,6 +16,7 @@ import { runUpstreamIdentity } from "../src/ai-observability/opik-http";
 import type { OpikPort } from "../src/ai-observability/opik-port";
 import { reportBasicRun } from "../src/ai-observability/routes/basic-run";
 import { resolveObservationScope } from "../src/ai-observability/scope";
+import { nanos } from "../src/ai-observability/span-support";
 import { aiObservationBindings } from "../src/db/schema/ai-observability-bindings";
 import { aiObservationRetentionDeletions } from "../src/db/schema/ai-observability-retention";
 import {
@@ -1111,5 +1112,132 @@ describe("the observer gate materializes and reconciles upstream identity (F5E1-
     expect(created).toEqual([runUpstreamIdentity(chainId).opikTraceId]);
     expect(ref.opikTraceId).toBe(runUpstreamIdentity(chainId).opikTraceId);
     expect(await store.countUnreconciled(scope)).toBe(0);
+  });
+
+  test("the starts bound retires a refused chain's lingering start (OCR T-P#4)", async () => {
+    const a = chain();
+    const b = chain();
+    const dateA = new Date("2026-10-01T00:00:00.000Z");
+    const dateB = new Date("2026-10-02T00:00:00.000Z");
+    const dials: Array<{ traceId: string; startTime: Date }> = [];
+    let up = false;
+    const port: OpikPort = {
+      healthCheck: async () => ({
+        outcome: "ok" as const,
+        value: { healthy: true as const },
+      }),
+      createTrace: async (_s, input: { traceId: string; startTime: Date }) => {
+        dials.push({ traceId: input.traceId, startTime: input.startTime });
+        return up
+          ? { outcome: "ok" as const, value: { traceId: input.traceId } }
+          : {
+              outcome: "unavailable" as const,
+              operation: "createTrace" as const,
+              code: "OPIK_TIMEOUT" as const,
+            };
+      },
+      writeSpans: async () => ({
+        outcome: "ok" as const,
+        value: { accepted: true as const },
+      }),
+    } as unknown as OpikPort;
+    const gate = createObserverRunBindingGate(store, {
+      port: () => port,
+      maxRunStartsPerScope: 2,
+    });
+
+    // The leak T-P#4 names: an observed start, then an establishment the
+    // upstream refuses — the chain leaves the FIFO (begun and order go) while
+    // its start stays in the map, outside both caps.
+    gate.noteObservedRunStart(scope, { traceId: a }, dateA);
+    await expect(gate.ensure(scope, { traceId: a })).rejects.toThrow(
+      RunBindingError,
+    );
+    gate.noteObservedRunStart(scope, { traceId: b }, dateB);
+    await expect(gate.ensure(scope, { traceId: b })).rejects.toThrow(
+      RunBindingError,
+    );
+
+    // A third start overflows the cap-2 bound and retires the OLDEST lingering
+    // one; nothing here is registered, so nothing defers.
+    gate.noteObservedRunStart(
+      scope,
+      { traceId: chain() },
+      new Date("2026-10-03T00:00:00.000Z"),
+    );
+
+    // Upstream back: A re-establishes with the materialization-clock fallback
+    // (its start was retired); B with its observed start intact.
+    up = true;
+    await gate.ensure(scope, { traceId: a });
+    await gate.ensure(scope, { traceId: b });
+    const lastDialFor = (id: string) =>
+      dials
+        .filter((dial) => dial.traceId === runUpstreamIdentity(id).opikTraceId)
+        .at(-1);
+    expect(lastDialFor(a)?.startTime.getTime()).not.toBe(dateA.getTime());
+    expect(lastDialFor(b)?.startTime.getTime()).toBe(dateB.getTime());
+  });
+
+  test("the starts bound never retires an in-flight run's start (OCR T-P#4)", async () => {
+    const chainId = chain();
+    const startedAt = new Date("2026-10-01T00:00:00.000Z");
+    let release!: () => void;
+    const hang = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let dialed = 0;
+    const written: Array<{ startTimeUnixNano?: string }> = [];
+    const port: OpikPort = {
+      healthCheck: async () => ({
+        outcome: "ok" as const,
+        value: { healthy: true as const },
+      }),
+      createTrace: async () => {
+        dialed += 1;
+        await hang; // the chain stays in flight across the starts-bound pass
+        return { outcome: "ok" as const, value: { traceId: "t" } };
+      },
+      writeSpans: async (
+        _s,
+        input: {
+          spans: Array<{ startTimeUnixNano?: string }>;
+        },
+      ) => {
+        written.push(...input.spans);
+        return { outcome: "ok" as const, value: { accepted: true as const } };
+      },
+    } as unknown as OpikPort;
+    const gate = createObserverRunBindingGate(store, {
+      port: () => port,
+      maxRunStartsPerScope: 1,
+    });
+
+    gate.noteObservedRunStart(scope, { traceId: chainId }, startedAt);
+    const first = gate.ensure(scope, { traceId: chainId });
+    for (let i = 0; i < 100 && dialed === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    // A second start overflows the cap-1 bound while the chain is in flight:
+    // the pass must defer the registered chain and retire only the newcomer's.
+    gate.noteObservedRunStart(scope, { traceId: chain() }, new Date());
+    release();
+    await first;
+
+    // The in-flight chain's start survived the pass: the settle's root close —
+    // whose carried start is unmeasurable — still opens at the observed start.
+    gate.settleObservedRun(
+      scope,
+      { traceId: chainId },
+      {
+        startedAt: new Date(Number.NaN),
+        ending: "success",
+        endedAt: new Date("2026-10-01T00:01:00.000Z"),
+      },
+    );
+    for (let i = 0; i < 100 && written.length < 2; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(written.at(-1)?.startTimeUnixNano).toBe(nanos(startedAt));
   });
 });
