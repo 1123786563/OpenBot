@@ -807,6 +807,21 @@ function carriedRef(value: string | undefined): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+/**
+ * The shared usable-runRef verdict (OCR delta T-O #8): a carried association
+ * names a run only when BOTH halves are carried. One source for the gate's
+ * refusal below and the tool-steps precheck, so the two cannot drift;
+ * carriedRef's own typeof guard is the runtime check, so junk fields arrive
+ * here safely.
+ */
+export function isUsableRunRef(
+  runRef: Readonly<{ runId: string; attemptId: string }>,
+): boolean {
+  return (
+    carriedRef(runRef.runId) !== null && carriedRef(runRef.attemptId) !== null
+  );
+}
+
 /** The safe label a gate failure logs and nothing else — no ids, no content. */
 function gateReason(error: unknown): string {
   return error instanceof RunBindingError ? error.code : "error";
@@ -936,10 +951,7 @@ export function createObserverRunBindingGate(
     }
     const carriedRunId = carriedRef(chain.runRef?.runId);
     const carriedAttemptId = carriedRef(chain.runRef?.attemptId);
-    if (
-      chain.runRef !== undefined &&
-      (carriedRunId === null || carriedAttemptId === null)
-    ) {
+    if (chain.runRef !== undefined && !isUsableRunRef(chain.runRef)) {
       // A runRef was carried but unusable: an association that names the run
       // half-honestly is worse than none — refuse rather than bind the chain
       // under an id the caller thought it had overridden.

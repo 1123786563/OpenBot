@@ -35,7 +35,11 @@
  */
 import { randomBytes } from "node:crypto";
 import type { SafeValue } from "../../../shared/ai-observability";
-import { type ObserverRunBindingGate, observerChainId } from "./bindings";
+import {
+  isUsableRunRef,
+  type ObserverRunBindingGate,
+  observerChainId,
+} from "./bindings";
 import type { ObservationScope } from "./contracts";
 import type { OpikHealthService, OpikObservationWrite } from "./health";
 import type { IdLinkStore } from "./id-links";
@@ -573,9 +577,7 @@ function buildRetrievalStepSpan(
  * only when the association is honestly carried and usable, its runRef. Null —
  * nothing provable — submits nothing upstream.
  */
-function observerChain(
-  trace: StepTraceContext | undefined,
-): {
+function observerChain(trace: StepTraceContext | undefined): {
   traceId: string;
   runRef?: Readonly<{ runId: string; attemptId: string }>;
 } | null {
@@ -583,12 +585,7 @@ function observerChain(
   if (traceId === null) return null;
   const runRef = trace?.runRef;
   if (runRef === undefined) return { traceId };
-  if (
-    typeof runRef.runId !== "string" ||
-    runRef.runId.trim() === "" ||
-    typeof runRef.attemptId !== "string" ||
-    runRef.attemptId.trim() === ""
-  ) {
+  if (!isUsableRunRef(runRef)) {
     // An association that names the run half-honestly is worse than none.
     return null;
   }
