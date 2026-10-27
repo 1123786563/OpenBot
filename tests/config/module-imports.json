@@ -800,14 +800,6 @@
       "reason": "模块级环边 M03 -> M04（M03 与 M04 互相可达）"
     },
     {
-      "source": "app/src/lib/channels/label.ts",
-      "target": "app/src/lib/voice/cut.ts",
-      "category": "cycle",
-      "ticket": "MOD24 (S7 语音听写)",
-      "exit_condition": "VOICE 建立 public/integration 出口并让 M04 改走公开出口，使 M04↔VOICE 单向化后移除此例外",
-      "reason": "模块级环边 M04 -> VOICE（M04 与 VOICE 互相可达）"
-    },
-    {
       "source": "app/src/lib/channels/mark-read.ts",
       "target": "app/src/lib/enterprise/tenant/scoped-cache.ts",
       "category": "cycle",
@@ -1266,42 +1258,42 @@
     {
       "source": "app/src/lib/voice/archive.ts",
       "target": "app/src/lib/channels/queries.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M04（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "app/src/lib/voice/outbox.ts",
       "target": "app/src/lib/auth/queries.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M01（VOICE 与 M01 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M01（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "app/src/lib/voice/use-voice-call.ts",
       "target": "app/src/lib/enterprise/tenant/stream-scope.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M02 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M02（VOICE 与 M02 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M02（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "app/src/lib/voice/webrtc.ts",
       "target": "app/src/lib/enterprise/tenant/stream-scope.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M02 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M02（VOICE 与 M02 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M02（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "app/src/lib/voice/websocket.ts",
       "target": "app/src/lib/enterprise/tenant/stream-scope.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M02 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M02 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M02（VOICE 与 M02 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M02（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "app/src/lib/workshop/queries.ts",
@@ -3170,10 +3162,10 @@
     {
       "source": "server/src/dictation/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M01（VOICE 与 M01 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M01（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/enterprise/contracts.ts",
@@ -5370,82 +5362,82 @@
     {
       "source": "server/src/voice/routes.ts",
       "target": "server/src/agents/profile-store.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M03（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M01（VOICE 与 M01 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M01（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/routes.ts",
       "target": "server/src/channels/routes.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M04（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/session-routes.ts",
       "target": "server/src/agents/profile-types.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M03（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/session-routes.ts",
       "target": "server/src/auth/guards.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD04 (S2 身份与 Access)",
       "exit_condition": "M01 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M01 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M01（VOICE 与 M01 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M01（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/session-routes.ts",
       "target": "server/src/channels/routes.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M04（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/sessions.ts",
       "target": "server/src/agents/profile-types.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M03（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/sessions.ts",
       "target": "server/src/channels/routes.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M04（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/summary.ts",
       "target": "server/src/agents/plan-model.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD05 (S2 身份与 Access)",
       "exit_condition": "M03 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M03 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M03（VOICE 与 M03 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M03（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/voice/summary.ts",
       "target": "server/src/channels/titler.ts",
-      "category": "cycle",
+      "category": "deep-reference",
       "ticket": "MOD06 (S2 身份与 Access)",
       "exit_condition": "M04 建立 public/integration 出口并让 VOICE 改走公开出口，使 VOICE↔M04 单向化后移除此例外",
-      "reason": "模块级环边 VOICE -> M04（VOICE 与 M04 互相可达）"
+      "reason": "跨模块深层引用 VOICE -> M04（环已由 MOD24 出口解开：label.ts 经 voice/public.ts 改道后 VOICE 无业务入边，环边转记，归属票不变）"
     },
     {
       "source": "server/src/work/culler.ts",
