@@ -4,7 +4,11 @@
 // Only a Bun-runtime dependency belongs in the driven manifest. Anything else — a matcher the compat
 // layer has not grown yet, an alias the runner cannot resolve, a file that registers nothing — is a
 // gap in this repository's harness and must not be hidden by routing it onto another runtime.
-import { readFileSync } from "node:fs";
+// A file that collects nowhere on this machine is also not allowed to vanish: it cannot live in the
+// manifest's files[] (that key is the driven contract — the unit config excludes exactly it from
+// native collection), so it is registered with its reason in tests/config/e2e-known-broken.json,
+// the exclusion surface the unit config honors and the coverage audit counts as named exclusions.
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 // The writer is the shared one: writeManifest() applies BOTH island kinds
 // (filename-prefix ISLANDS and DIRECTORY_ISLANDS) and persists the full
@@ -13,10 +17,11 @@ import { resolve } from "node:path";
 // islands into 24-file slices — the exact false-red configuration the
 // directoryIslands contract exists to prevent (the driver keys
 // MT_TEST_DATABASE_URL routing off it).
-import { writeManifest } from "./lib/e2e-manifest.mjs";
+import { sanitizeCauseText, writeManifest } from "./lib/e2e-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const auditPath = process.argv[2] ?? "archive/verification/e2e-file-audit.json";
+const BROKEN_PATH = "tests/config/e2e-known-broken.json";
 
 // The mobile QA deliverable is written against an Appium driver and a device bundle: it is not
 // executable in this repository and never ran under `bun test` either. It is kept out of both the
@@ -63,6 +68,50 @@ const todo = audit.filter(
     !driven.includes(entry) &&
     !artifacts.includes(entry),
 );
+
+/*
+ * The named-exclusion surface for suites that collect nowhere on this machine.
+ * This regenerator owns the registry's reconciliation: a hand-written entry for
+ * a file that still fails keeps its reason (curation wins over the machine's),
+ * a file that now collects or is drivable loses its entry (the registry's own
+ * rule — the entry disappears when the suite is repointed), and every reason
+ * the machine writes is sanitized of host paths first. Written only when
+ * something changed, so a regeneration never churns an unchanged registry.
+ */
+function registerKnownBroken(todo) {
+  const existing = existsSync(BROKEN_PATH)
+    ? JSON.parse(readFileSync(BROKEN_PATH, "utf8"))
+    : {};
+  const byFile = new Map(
+    (existing.entries ?? []).map((entry) => [entry.file, entry]),
+  );
+  const failing = new Set(todo.map((entry) => entry.file));
+  const entries = todo.map((entry) => {
+    const hand = byFile.get(entry.file);
+    if (hand) return hand;
+    return {
+      file: entry.file,
+      reason: sanitizeCauseText(
+        entry.error ?? "does not collect in this checkout",
+      ),
+      evidence: `scripts/e2e-file-audit.mjs collection audit, status=${entry.status}`,
+      added: new Date().toISOString().slice(0, 10),
+    };
+  });
+  const dropped = [...byFile.keys()].filter((file) => !failing.has(file));
+  const next = { ...existing, entries };
+  if (JSON.stringify(next) !== JSON.stringify(existing)) {
+    writeFileSync(BROKEN_PATH, `${JSON.stringify(next, null, 1)}\n`);
+  }
+  console.log(
+    `${entries.length} suite(s) registered uncollectable in ${BROKEN_PATH}` +
+      (dropped.length
+        ? ` (${dropped.length} recovered since the last registry, entry dropped)`
+        : ""),
+  );
+  return entries;
+}
+registerKnownBroken(todo);
 
 const groupCount = writeManifest(
   {
