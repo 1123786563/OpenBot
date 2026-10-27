@@ -7,18 +7,18 @@
 // kept failing proves nothing (the #40 hole, in per-round shape). Not a bun:test
 // suite (plain asserts, nonzero exit on the first failure count), so it enters no
 // test manifest and is driven directly by whoever changes the gate.
-import { writesEstablished } from "./opik-e2e-ingest";
+import { EXPECTED_WRITES_PER_ROUND, writesEstablished } from "./opik-e2e-ingest";
 
 type Stats = Parameters<typeof writesEstablished>[0];
 
 const clean: Stats = {
   capacity: 8,
   depth: 0,
-  submitted: 2,
-  accepted: 2,
+  submitted: EXPECTED_WRITES_PER_ROUND,
+  accepted: EXPECTED_WRITES_PER_ROUND,
   droppedFull: 0,
   refusedNotReady: 0,
-  completed: 2,
+  completed: EXPECTED_WRITES_PER_ROUND,
   failed: {
     unavailable: 0,
     upstream_error: 0,
@@ -37,7 +37,7 @@ const withFailed = (patch: Partial<Stats["failed"]>): Stats => ({
 // One round that refused both submits behind a probe flip (the round's increment).
 const refusedRound: Stats = {
   ...clean,
-  submitted: 2,
+  submitted: EXPECTED_WRITES_PER_ROUND,
   accepted: 0,
   completed: 0,
   refusedNotReady: 1,
@@ -45,14 +45,14 @@ const refusedRound: Stats = {
 
 // The increment of the round that recovered it: both resubmits accepted and
 // completed cleanly — identical in shape to `clean`.
-const recoveredRound: Stats = clean;
+const recoveredRound: Stats = { ...clean };
 
 // The cumulative totals the pre-r8fix-G gate was fed for that same recovered run:
 // round one refused, round two landed. Counts say accepted=2/completed=2, but the
 // round-one refusal stays in the tally — the recovery dead-end this rework removes.
 const cumulativeRecoveredRun: Stats = {
   ...clean,
-  submitted: 4,
+  submitted: EXPECTED_WRITES_PER_ROUND * 2,
   refusedNotReady: 1,
 };
 
@@ -77,6 +77,39 @@ const cases: ReadonlyArray<{ label: string; stats: Stats; expected: boolean }> =
   {
     label: "a readiness refusal in the judged round voids the gate",
     stats: refusedRound,
+    expected: false,
+  },
+  {
+    // L-F clause isolation: each fixture below removes exactly ONE count clause
+    // from `clean`, so that clause alone has to flip the verdict — deleting it
+    // from the predicate turns the matching case green.
+    // The #40 core clause: two writes accepted but only one performed, i.e. the
+    // credential-bearing write queued but never landed.
+    label: "a round with an accepted write left unperformed voids the gate",
+    stats: { ...clean, completed: EXPECTED_WRITES_PER_ROUND - 1 },
+    expected: false,
+  },
+  {
+    // The acceptance clause, on its own: one observation submitted, accepted and
+    // completed — the round is one write short of both observations.
+    label: "a round that accepted fewer writes than the round carries voids the gate",
+    stats: {
+      ...clean,
+      submitted: EXPECTED_WRITES_PER_ROUND - 1,
+      accepted: EXPECTED_WRITES_PER_ROUND - 1,
+      completed: EXPECTED_WRITES_PER_ROUND - 1,
+    },
+    expected: false,
+  },
+  {
+    // The queue-full clause: both writes landed, but a third submit was dropped
+    // on the floor — a dropped write is never an absent write.
+    label: "a dropped-full submit in the judged round voids the gate",
+    stats: {
+      ...clean,
+      submitted: EXPECTED_WRITES_PER_ROUND + 1,
+      droppedFull: 1,
+    },
     expected: false,
   },
   {

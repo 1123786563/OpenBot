@@ -78,6 +78,12 @@ function parseArgs(argv: readonly string[]): Args {
 const hex = (n: number): string =>
   randomBytes(Math.ceil(n / 2)).toString("hex").slice(0, n);
 
+// One retry round submits exactly this many observations (see submitBoth below):
+// the safe one and the credential-bearing one. The acceptance predicate, the retry
+// loop and the standalone gate check all read it, so a third observation added to
+// submitBoth cannot leave the gate satisfied by a subset of the round.
+export const EXPECTED_WRITES_PER_ROUND = 2;
+
 // #40: retry rounds re-submit BOTH observations, so accepted/completed accumulate
 // across rounds and counts alone cannot prove the credential-bearing observation
 // ever landed — any perform failure (stats.failed.*) or readiness refusal in the
@@ -88,8 +94,8 @@ const hex = (n: number): string =>
 // round still voids the run. Exported for the standalone gate check next to this
 // script.
 export const writesEstablished = (stats: OpikWriteStats): boolean =>
-  stats.accepted >= 2 &&
-  stats.completed >= 2 &&
+  stats.accepted >= EXPECTED_WRITES_PER_ROUND &&
+  stats.completed >= EXPECTED_WRITES_PER_ROUND &&
   stats.droppedFull === 0 &&
   stats.refusedNotReady === 0 &&
   Object.values(stats.failed).every((count) => count === 0);
@@ -220,6 +226,8 @@ async function main(): Promise<void> {
   // LAST round's increment, so one clean resubmit round re-establishes what an earlier
   // round lost; a refusal or failure in the final round still fails the run.
   const submitBoth = (): void => {
+    // Exactly EXPECTED_WRITES_PER_ROUND observations — the gate's threshold counts
+    // on it, so a third record here must raise the constant with it.
     // Clean observation: must arrive — body behind the minted approval.
     recorder.record({
       occurredAt: new Date(),
@@ -264,7 +272,13 @@ async function main(): Promise<void> {
   let stats = healthService.writeStats();
   // The first round's increment: this fresh service's counters all start at zero.
   let roundStats = stats;
-  for (let round = 0; round < 3 && (stats.accepted < 2 || stats.completed < 2); round++) {
+  for (
+    let round = 0;
+    round < 3 &&
+    (stats.accepted < EXPECTED_WRITES_PER_ROUND ||
+      stats.completed < EXPECTED_WRITES_PER_ROUND);
+    round++
+  ) {
     const beforeRound = stats;
     readiness = await awaitReady();
     submitBoth();
