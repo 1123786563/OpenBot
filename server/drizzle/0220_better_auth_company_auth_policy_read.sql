@@ -1,0 +1,23 @@
+-- T05.04 (#560, original task P11): the data role's half of the stored
+-- policy read. 0219 created auth_company_auth_policies and its controlled
+-- read auth_read_company_auth_policy(tenant), but granted EXECUTE only to
+-- ob_ent_auth_writer — the completion half's writer. The read gate
+-- (CompanyAssurance.require, interfaces §5 "require 同样可在 data-role 业务
+-- 事务调用：实现仅需要该角色获准的读取/受控查询，不借写角色运行业务") needs
+-- the SAME read from the data role's business transaction, so this migration
+-- grants exactly that one privilege and nothing else:
+--
+--   GRANT EXECUTE ON FUNCTION public.auth_read_company_auth_policy(text)
+--     TO ob_ent_data
+--
+-- The 0214 reader precedent holds: auth_read_eligibility_clocks and
+-- auth_read_session_assurances are the data role's other two controlled
+-- reads, and the policy read joins them with the same discipline — a pure
+-- STABLE SECURITY DEFINER read, PUBLIC revoked (0219), one more grantee, no
+-- table privilege, no writer widening. The writer keeps its own grant; no
+-- other role gains anything.
+--
+-- Registered-debt execution point named in the task dispatch: this grant is
+-- the migration the T05.04 read side requires; journal number 0220 follows
+-- the tail at 0219.
+GRANT EXECUTE ON FUNCTION public.auth_read_company_auth_policy(text) TO ob_ent_data;

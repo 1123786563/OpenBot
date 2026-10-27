@@ -109,8 +109,9 @@ function rowsOf(result: unknown): Record<string, unknown>[] {
  * The server actor the proof question is asked for: the scope's holder. The
  * scope is a server-issued trusted object (WeakSet-proven above), so its
  * actor binding is server knowledge, not a client claim. `platform` because a
- * scope carries no session id — the session-bound actor is the issuance
- * entry's concern (the closed adapter ignores it; P11 owns the binding).
+ * scope carries no session id — the live require (T05.04) answers this actor
+ * from the user's active proof, and the per-session binding tightens when the
+ * scope carries its private session association.
  */
 function scopeActor(
   scope: PlatformScope,

@@ -6,13 +6,15 @@
  * implementation of it:
  *
  * - `CompanyAssurance.require(tx, identity, tenantId)` is the read-gate half a
- *   company-scoped business transaction calls. Companies WITHOUT an additional
- *   proof policy answer `null`; a company that demands one answers a
- *   controlled 403 COMPANY_REAUTH_REQUIRED until the evidence bridge and the
- *   proof store are wired (P11). There is no "proof would have been nice"
- *   middle state and no optional dependency that skips the question: a
- *   consumer that forgets to inject the policy fails at construction, not at
- *   the first sensitive read.
+ *   company-scoped business transaction calls. Since T05.04 / #560 it is LIVE
+ *   in {@link createCompanyAssurance}: the data-role transaction's own
+ *   controlled reads answer it (stored policy, active proof, live identity
+ *   and company generations), a company with no stored policy answers `null`,
+ *   and everything else is the controlled 403 COMPANY_REAUTH_REQUIRED — there
+ *   is no "proof would have been nice" middle state, no optional dependency
+ *   that skips the question, and no break-glass exception without an
+ *   explicitly configured one (a consumer that forgets to inject the policy
+ *   fails at construction, not at the first sensitive read).
  * - `challenge` and `complete` are the interactive halves. `challenge` is
  *   live since T05.01 / #557 and `complete` since T05.02 / #558, both
  *   through {@link createCompanyAssurance}: a signed-in session actor asking
@@ -388,16 +390,20 @@ function rowsOfExecuted(result: unknown): Record<string, unknown>[] {
 }
 
 /**
- * The live factory (interfaces §5): `require` keeps the closed gate's exact
- * semantics, `challenge` issues real session-bound challenges through the
- * 0218 controlled function, and `complete` verifies the callback through the
- * assembled evidence bridge and writes the proof through 0219 — live when
- * `evidence` is provided, the closed 503 when not (an absent bridge must
- * degrade loudly, never silently accept a callback). The optional
- * `sessions` port resolves the rotation-final session the proof binds;
- * absent, the challenge's own session is the final one. Every other
- * dependency is required — a missing policy or redirect builder fails at
- * construction, never at the first sensitive request.
+ * The live factory (interfaces §5): `require` answers from the caller's own
+ * transaction through the data role's controlled reads, `challenge` issues
+ * real session-bound challenges through the 0218 controlled function, and
+ * `complete` verifies the callback through the assembled evidence bridge and
+ * writes the proof through 0219 — live when `evidence` is provided, the
+ * closed 503 when not (an absent bridge must degrade loudly, never silently
+ * accept a callback). The optional `sessions` port resolves the
+ * rotation-final session the proof binds; absent, the challenge's own session
+ * is the final one. Every other dependency is required — a missing policy or
+ * redirect builder fails at construction, never at the first sensitive
+ * request. (`policy` stays a required construction dependency: the demand
+ * question itself is answered by the stored policy read inside `require`, and
+ * the injected view is the construction-time guarantee the question cannot
+ * silently disappear from an assembly.)
  */
 export function createCompanyAssurance(deps: {
   readonly policy: CompanyProofPolicyView;
@@ -426,7 +432,6 @@ export function createCompanyAssurance(deps: {
   /** Injectable for tests; production uses the wall clock. */
   readonly clock?: () => Date;
 }): CompanyAssurance {
-  const closed = createClosedCompanyAssurance({ policy: deps?.policy });
   if (
     !deps ||
     typeof deps.challengePolicy?.challengePolicy !== "function" ||
@@ -444,6 +449,214 @@ export function createCompanyAssurance(deps: {
     );
   }
   const clock = deps.clock ?? (() => new Date());
+
+  /** A `Version` a reader may compare: a non-negative safe integer, never a default. */
+  function isSafeVersion(value: unknown): value is number {
+    return (
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    );
+  }
+
+  /** A timestamp column the driver hands back as a Date or an ISO string. */
+  function dateOf(value: unknown): Date {
+    return value instanceof Date ? value : new Date(String(value));
+  }
+
+  /**
+   * The read half (T05.04 / #560, interfaces §5): one data-role business
+   * transaction's live answer. The stored policy row IS the demand — no row
+   * is the only null — and a demanded company passes only on the user's
+   * ACTIVE proof whose policy revision, identity generation and company
+   * generation still compare live in THIS transaction, whose stored expiry
+   * is still ahead, and (for a session actor) which is bound to the actor's
+   * own session. The returned ref's expiry is the STORED value 0219 computed
+   * as least(session expiry, signed auth time + max age) — never recomputed,
+   * so a later session refresh never extends the authentication age. A
+   * platform actor (the workspace gate's scope holder, no session id of its
+   * own) is answered by the user's freshest active proof — the disclosed
+   * boundary until the scope carries its private session association. There
+   * is no break-glass path here: without an explicitly configured exception
+   * (an assembly surface), a demanded company without a usable proof is
+   * refused, every time.
+   */
+  async function require(
+    tx: DirectoryTx,
+    identity: DirectoryActor,
+    tenantId: string,
+  ): Promise<AssuranceRef | null> {
+    if (typeof tenantId !== "string" || !tenantId.trim()) {
+      throw new CompanyAssuranceRefusal(
+        403,
+        COMPANY_ASSURANCE_TARGET_REQUIRED,
+        "require was called without naming a company; the proof question is per company and cannot be answered for none",
+      );
+    }
+    // The demand question, from the data role's controlled policy read: no
+    // row is the ONLY "no additional proof" answer there is.
+    const [policyRow] = rowsOfExecuted(
+      await tx.execute(dsql`
+        SELECT provider_id, protocol, policy_revision, max_auth_age_seconds
+          FROM public.auth_read_company_auth_policy(${tenantId})`),
+    );
+    if (!policyRow) return null;
+    const protocol = policyRow.protocol;
+    if (
+      typeof policyRow.provider_id !== "string" ||
+      !policyRow.provider_id ||
+      (protocol !== "oidc" && protocol !== "saml") ||
+      !isSafeVersion(Number(policyRow.policy_revision)) ||
+      !Number.isSafeInteger(Number(policyRow.max_auth_age_seconds)) ||
+      Number(policyRow.max_auth_age_seconds) <= 0
+    ) {
+      throw new CompanyAssuranceRefusal(
+        503,
+        COMPANY_AUTH_NOT_READY,
+        `company ${tenantId}'s stored proof policy is malformed: refusing to answer the proof question against an unnameable provider, protocol or window`,
+      );
+    }
+    const policyRevision = Number(policyRow.policy_revision);
+    const userId = identity?.userId;
+    if (typeof userId !== "string" || !userId) {
+      throw new CompanyAssuranceRefusal(
+        403,
+        COMPANY_REAUTH_REQUIRED,
+        `company ${tenantId} requires an additional company proof and this actor carries no user a proof could belong to`,
+      );
+    }
+    // The active proofs first, through the data role's controlled read (only
+    // status='active' rows with no revocation time ever come back). The row
+    // also names the principal the live generation reads key off — the data
+    // role cannot list principals, by RLS design, so the proof hands the
+    // question its own subject.
+    const proofs = rowsOfExecuted(
+      await tx.execute(dsql`
+        SELECT assurance_id, principal_id, session_id, expires_at,
+               policy_revision::text AS policy_revision,
+               identity_generation::text AS identity_generation,
+               company_generation::text AS company_generation
+          FROM public.auth_read_session_assurances(${tenantId}, ${userId})`),
+    );
+    if (!proofs.some((proof) => proof.assurance_id)) {
+      throw new CompanyAssuranceRefusal(
+        403,
+        COMPANY_REAUTH_REQUIRED,
+        `company ${tenantId} requires an additional company proof and no active proof exists for this user — a linked identity provider account is not one`,
+      );
+    }
+    const principalId = String(proofs[0]?.principal_id ?? "");
+    if (!principalId) {
+      throw new CompanyAssuranceRefusal(
+        403,
+        COMPANY_REAUTH_REQUIRED,
+        `the stored proofs behind user ${userId} in company ${tenantId} name no principal; the live generations cannot be read to compare`,
+      );
+    }
+    // The RLS gate the data role's principal read answers to: transaction-
+    // local identity settings, exactly the ones every gate sets before its
+    // own data-role reads. The proof's principal IS the user's principal, so
+    // this only names what the caller's transaction already scopes to.
+    await tx.execute(
+      dsql`select set_config('app.user_id', ${userId}, true), set_config('app.principal_id', ${principalId}, true)`,
+    );
+    // The live identity generation the proof must still match.
+    const [principal] = rowsOfExecuted(
+      await tx.execute(dsql`
+        SELECT identity_generation::text AS identity_generation
+          FROM enterprise_principals WHERE id = ${principalId} LIMIT 1`),
+    );
+    if (!principal || !isSafeVersion(Number(principal.identity_generation))) {
+      throw new CompanyAssuranceRefusal(
+        403,
+        COMPANY_REAUTH_REQUIRED,
+        `user ${userId} has no principal with a comparable identity generation in company ${tenantId}; a proof cannot be compared against a missing version`,
+      );
+    }
+    const identityGeneration = Number(principal.identity_generation);
+    // The live company generation, through the data role's controlled clock
+    // read (the same one the workspace gate stamps its scope from).
+    const clocks = rowsOfExecuted(
+      await tx.execute(dsql`
+        SELECT kind, scope_id, generation::text AS generation, tombstone
+          FROM public.auth_read_eligibility_clocks(${tenantId}, ${principalId})`),
+    );
+    const companyClock = clocks.find(
+      (row) => row.kind === "company" && row.scope_id === tenantId,
+    );
+    if (
+      !companyClock ||
+      companyClock.tombstone === true ||
+      !isSafeVersion(Number(companyClock.generation))
+    ) {
+      throw new CompanyAssuranceRefusal(
+        403,
+        COMPANY_REAUTH_REQUIRED,
+        `the company clock behind user ${userId} in company ${tenantId} is missing, tombstoned or incomparable; the company generation a proof must match cannot be read`,
+      );
+    }
+    const companyGeneration = Number(companyClock.generation);
+    const now = clock();
+    const sessionBound =
+      identity.kind === "session" &&
+      typeof identity.sessionId === "string" &&
+      identity.sessionId
+        ? identity.sessionId
+        : null;
+    let reason = "no active proof exists for this user and company";
+    const usable = proofs
+      .filter((proof) => {
+        if (!proof.assurance_id) return false;
+        if (Number(proof.policy_revision) !== policyRevision) {
+          reason = `the stored proof's policy revision ${String(proof.policy_revision)} no longer matches the company's ${policyRevision}`;
+          return false;
+        }
+        if (Number(proof.identity_generation) !== identityGeneration) {
+          reason = `the identity generation changed since the proof was issued (${String(proof.identity_generation)} → ${identityGeneration})`;
+          return false;
+        }
+        if (Number(proof.company_generation) !== companyGeneration) {
+          reason = `the company generation changed since the proof was issued (${String(proof.company_generation)} → ${companyGeneration})`;
+          return false;
+        }
+        const expiresAt = dateOf(proof.expires_at);
+        if (!(expiresAt.getTime() > now.getTime())) {
+          reason =
+            "the proof's stored expiry (least of session expiry and the signed authentication time plus the policy's max age) has passed";
+          return false;
+        }
+        if (
+          sessionBound !== null &&
+          String(proof.session_id ?? "") !== sessionBound
+        ) {
+          reason = `the proof is bound to session ${String(proof.session_id)}, not this one — only the session a verified callback completed for holds it`;
+          return false;
+        }
+        return true;
+      })
+      // A platform actor may hold several active proofs (one per session);
+      // the freshest expiry is the deterministic answer.
+      .sort(
+        (left, right) =>
+          dateOf(right.expires_at).getTime() -
+          dateOf(left.expires_at).getTime(),
+      );
+    const [proof] = usable;
+    if (!proof) {
+      throw new CompanyAssuranceRefusal(
+        403,
+        COMPANY_REAUTH_REQUIRED,
+        `company ${tenantId} requires an additional company proof and none is usable (${reason}); complete the company authentication and retry`,
+      );
+    }
+    return Object.freeze({
+      assuranceId: String(proof.assurance_id),
+      sessionId: String(proof.session_id),
+      tenantId,
+      policyRevision,
+      identityGeneration,
+      companyGeneration,
+      expiresAt: dateOf(proof.expires_at).toISOString(),
+    });
+  }
 
   async function challenge(
     identity: DirectoryActor,
@@ -646,7 +859,7 @@ export function createCompanyAssurance(deps: {
   }
 
   const assurance: CompanyAssurance = {
-    require: closed.require,
+    require,
     challenge,
     complete,
   };

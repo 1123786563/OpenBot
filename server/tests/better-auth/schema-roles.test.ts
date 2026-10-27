@@ -1143,8 +1143,12 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
     // T05.02 (#558; coordinator ruling 2026-10-27) appended 0219 likewise:
     // the callback half's controlled surface (policy read, one-time
     // challenge consumption, the session-assurance proof write).
-    expect(before?.tag).toBe("0218_better_auth_company_auth_challenge");
-    expect(last?.tag).toBe("0219_better_auth_company_auth_complete");
+    // T05.04 (#560) appended 0220 the same way: the data role's EXECUTE on
+    // 0219's policy read — the read gate's demand question joins the clocks
+    // and assurance reads as the data role's controlled reads, and no table
+    // or writer privilege moves.
+    expect(before?.tag).toBe("0219_better_auth_company_auth_complete");
+    expect(last?.tag).toBe("0220_better_auth_company_auth_policy_read");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });

@@ -155,9 +155,10 @@ function isSafeVersion(value: unknown): value is number {
 
 /**
  * The server actor the proof question is asked for. A scope resolution runs
- * from a verified identity, not a client field; the session-bound actor is
- * the issuance entry's concern (the closed adapter ignores this value; P11
- * owns the real session binding).
+ * from a verified identity, not a client field; the live require (T05.04)
+ * answers this platform actor from the user's active proof, and the
+ * per-session binding tightens when the issuance identity carries its
+ * private session association.
  */
 function identityActor(
   identity: AuthenticatedRequestIdentity,
