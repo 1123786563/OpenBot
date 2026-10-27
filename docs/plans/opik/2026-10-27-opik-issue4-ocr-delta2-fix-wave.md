@@ -28,3 +28,23 @@ owned：`server/src/copilot.ts`（+ 必要时 remote-dial-chain.test.ts）
 1. FIX-I 先行（owned 与一切在途零交集）；FIX-J 待 delta2b 落地后派发。
 2. 每流独立审核 r1 → 串行集成 → 组合复验（对照 1289 基线对账）。
 3. 终轮微增量 OCR（R9 触面 @最终 HEAD）→ 新 H/M 同纪律 triage → FREV R8 → 合本地 main → 清理 → 终稿。
+
+### FIX-J — copilot.ts 锚点域五项合并流（L-H + T-M #3 + T-N #3/#5/#4-sub；终定形于 T-N 落地后）
+
+owned：`server/src/copilot.ts`、`server/src/ai-observability/shared/trace.ts`（helper 收敛）、`server/tests/remote-dial-chain.test.ts`（及受影响 copilot 系测试）
+
+1. **L-H（M）**：settle/finalize 时对同一 OTLP traces 端点补发带 `endTimeUnixNano` 的两根锚点 span（同 traceId/spanId，OTLP upsert 语义；409 视同已闭合，沿 :4538-4540 幂等先例）；remote-dial-chain 补「闭合批带 endTime」钉。
+2. **T-M #3（M）**：`deriveTracesTarget(env)` 共享 helper（trace.ts:115-119 与 copilot.ts:4473-4478 双处收敛）；headers `TRACES_HEADERS ?? HEADERS` 回退（复用 otel.ts:122 parseHeaders）；service.name 与 initProcessTracing 同源（消 openbot-server/server 分裂）；:4504 fetch 加 `AbortSignal.timeout(10_000)`。
+3. **T-N #3（终级 M，波内首位）**：:5545 openbotBudget runId 入口 trim 纪律（内联 :4909 同式表达式——runWith 在中间件作用域不可引局部量，T-N 已纠 T-M 表述）；:5494 signRun 对齐须与验证侧同步，作为披露核对项处理。
+4. **T-N #5（M）**：:5278 `} else {` → `} else if (!toolCells.has(toolCallId)) {`（重复 TOOL_CALL_START 保留累积 cell，builtin 复用语义对齐）；测试钉重复 START 不清空。
+5. **T-N #4-sub（low，顺带）**：锚点 span 工厂 `openbot.run.id` 截断（slice(0,256) 或共享 MAX_RUN_ID_LENGTH）；remote-run.ts:264 同款未截断系范围外登记（主控 tracking）。
+
+门禁：五项各自 RED/GREEN；focused fresh-DB 复跑（copilot 系套件）；tsc 基线差=0；biome 新增=0；`bun build --target bun` 可加载。
+
+### FIX-K — chainGateDrops 运维出口（T-M #2，M）
+
+owned：`server/src/ai-observability/tool-steps.ts`、`server/src/ai-observability/model-span.ts`、`server/src/ai-observability/health.ts`（投影）；受影响测试
+
+- 首选形状：两计数器（toolStepChainGateDrops + modelSpanChainGateDrops）的 missingChain 并入 `writeStats()`/`snapshot()` 投影（镜像 idLinkStats 先例 health.ts:200-206），steps 与 model-span 必须同流落账（否则缺口在孪生处续存）。
+- RED/GREEN：门控丢弃后 writeStats 投影含计数的新钉；路由对外供给（routes/health.ts:33 通道）读数验证。
+- 门禁同上；docblock「counted here is its visibility」措辞随投影落地保持真实。
