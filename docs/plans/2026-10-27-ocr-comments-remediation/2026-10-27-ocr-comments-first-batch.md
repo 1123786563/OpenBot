@@ -1,60 +1,32 @@
-# OCR Comments Remediation — Verified Safe Batch Implementation Plan
+# OCR remediation — verified safe batch
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Goal:** Fix source-confirmed OCR findings that can be corrected without changing public contracts, persistence rules, or unrelated workspace state.
 
-**Goal:** Fix the four source-confirmed critical/high findings in PPTX cleanup and packing without changing the scan report or unrelated workspace edits.
+## Scope
 
-**Architecture:** Keep the current Python script interfaces. Parse the presentation slide list as XML and fail before deletion when its reference metadata is unavailable; preserve SpreadsheetML text nodes during XML condensation and reject an explicitly supplied missing source file.
+- Leave `ocr-comments.json` unchanged and do not run a full-repository OCR scan.
+- Preserve existing user changes and make no commit.
+- Add focused regressions for destructive cleanup, XML packing, CLI validation, and the LibreOffice shim.
+- Defer findings that need a product, migration, or compatibility decision; record every report entry in the run ruling ledger.
 
-**Tech Stack:** Python 3, defusedxml, repository e2e test runner.
+## Completed source fixes
 
-**Spec:** `ocr-comments.json` is an unverified input; implementation behavior is governed by the source and the PPTX skill instructions.
+1. `server/src/craft/builtin-skills/pptx/scripts/clean.py`: report entries 150, 151, 152 — fail before deletion when reference XML is absent or invalid, parse slide IDs by namespace, and pre-validate every `.rels` file plus the presentation and content-type XML before cleanup.
+2. `server/src/craft/builtin-skills/pptx/scripts/office/pack.py`: entries 121 (explicit missing source path only), 122, 123, 124, 125 — preserve optional CLI behavior when no source is provided; reject a missing explicitly supplied source; preserve default-namespace text; return XML processing errors; classify CLI errors by the error prefix; reject invalid boolean values.
+3. `server/src/craft/builtin-skills/pptx/scripts/office/soffice.py`: entry 128 — put the preload library in a private temporary directory and atomically publish compiled output.
 
-## Global Constraints
+## Verification
 
-- Do not modify `ocr-comments.json`.
-- Do not change public APIs, database structures, protocol behavior, or add dependencies.
-- Preserve existing workspace changes; do not commit.
-- Do not run a full-repository OCR scan.
-- Add regression tests for confirmed bugs and run the smallest applicable checks.
+- Focused regression file: `server/tests/craft-pptx-scripts.test.ts` through the repository e2e runner.
+- Preserve red/green evidence and skipped collection notices in `.archive/runs/2026-10-27-ocrfix-1a68e8d2/verification/`.
+- Perform a final scoped diff and report-integrity check; no commit.
 
-## Review Focus
+## Deferred decisions
 
-- Missing slide metadata must fail before any slide is deleted.
-- A valid `sldIdLst` with an alternate XML prefix must preserve referenced slides.
-- An intentionally empty valid `sldIdLst` must continue to remove all slide parts.
-- Whitespace-only SpreadsheetML strings must survive packing.
-- An explicitly supplied but missing `--original` path must fail visibly.
-- A shared temporary directory must not supply a preseeded library to `LD_PRELOAD`.
-
----
-
-### Task 1: Preserve slide and spreadsheet package data
-
-**Files:**
-- Modify: `server/src/craft/builtin-skills/pptx/scripts/clean.py`
-- Modify: `server/src/craft/builtin-skills/pptx/scripts/office/pack.py`
-- Test: `server/tests/craft-pptx-scripts.test.ts`
-
-**Interfaces:** Keep `get_slides_in_sldidlst(Path) -> set[str]`, `remove_orphaned_slides(Path) -> list[str]`, `pack(...)`, and `_condense_xml(Path)` signatures unchanged.
-
-- [ ] Add behavioral tests for missing presentation metadata, alternate XML namespace prefixes, a valid empty slide list, whitespace-only SpreadsheetML text, and a nonexistent explicitly supplied original file.
-- [ ] Run `e2e run --config e2e.unit.config.ts --output .e2e/2026-10-27-ocrfix-1a68e8d2/pptx-red server/tests/craft-pptx-scripts.test.ts`; expect the four reported-defect cases to fail and the valid-empty-list case to pass.
-- [ ] Parse `presentation.xml` with the existing defused XML parser, require its slide list and relationship metadata, and resolve slide IDs without a prefix-sensitive regex.
-- [ ] Preserve SpreadsheetML text elements by local name and return an error when an explicit original path is not a file.
-- [ ] Rerun the focused test file to verify all five cases pass.
-
-No commit step: the user explicitly prohibited commits.
-
-### Task 2: Isolate the LibreOffice preload shim
-
-**Files:**
-- Modify: `server/src/craft/builtin-skills/pptx/scripts/office/soffice.py`
-- Test: `server/tests/craft-pptx-scripts.test.ts`
-
-**Interfaces:** Keep `get_soffice_env()`, `run_soffice(...)`, and `_ensure_shim() -> Path` unchanged.
-
-- [ ] Add a test that pre-seeds the shared temporary path and verifies `_ensure_shim()` returns a different library under a private directory.
-- [ ] Run the focused e2e test and confirm the new test fails by reusing the preseeded library.
-- [ ] Compile into a private per-process temporary directory and atomically publish the shim there.
-- [ ] Rerun the focused e2e test and verify all six tests pass.
+- Entry 704 (critical): migration 0134 backfills append-only price snapshots and omits detail columns for `unknown`; changing the migration requires approval for a one-transaction derived-column backfill exception.
+- Entry 705 (medium): strengthen DB checks to compare missing-dimension details with `dims`; this changes persisted write rules.
+- Entry 924 (critical): the schedule sweep hands off to an orchestrator with a refusing gateway; an effective fix needs a server-owned execution handoff.
+- Entry 937 (critical): staging rollback cannot construct the source through the current CLI state gate; requires a deliberate rollback-path adjustment and regression coverage.
+- Entry 121 (high): an explicit nonexistent `--original` is now rejected; whether validation should also require `--original` when omitted remains a product behavior decision.
+- Entry 129 (high): the shim's intentional `_exit(0)` behavior can hide conversion failures; the correct status contract needs investigation.
+- Entry 153 (high): relationship retention across non-slide parts needs a representative Office package fixture before changing cleanup behavior.
