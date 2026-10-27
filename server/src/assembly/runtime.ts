@@ -1262,18 +1262,21 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
       // window seam — one instance answers both the orders and the anomaly-events reads, and
       // the finance gate inside the visibility service stays ahead of every order row it reads.
       const companyBooksPayments = createPaymentStore(database);
+      // OCR r2 M-9：visibility 两实例提顶部构造一次复用——同 database、同 writer、同
+      // payments 源，与 companyBooksPayments「一实例答两消费面」同一先例，杜绝两套口径漂移。
+      const companyFinanceVisibility = createCompanyFinanceVisibilityService({
+        database,
+        writer: createCreditWriter(database),
+        orders: companyBooksPayments,
+        events: companyBooksPayments,
+      });
       const companyAdminRoutes =
         operator && companyAdminAuthorizer !== null
           ? createCompanyAdminRoutes({
               authorizer: companyAdminAuthorizer,
               capabilities: createCompanyCapabilitiesService({
                 operator,
-                finance: createCompanyFinanceVisibilityService({
-                  database,
-                  writer: createCreditWriter(database),
-                  orders: companyBooksPayments,
-                  events: companyBooksPayments,
-                }),
+                finance: companyFinanceVisibility,
                 billing: createBillingManagementService({
                   database,
                   operator,
@@ -1313,12 +1316,7 @@ const enterpriseWorkspaceScopeRoutes = enterpriseCapabilities
                   });
                 },
               },
-              finance: createCompanyFinanceVisibilityService({
-                database,
-                writer: createCreditWriter(database),
-                orders: companyBooksPayments,
-                events: companyBooksPayments,
-              }),
+              finance: companyFinanceVisibility,
             })
           : createUnavailableCompanyAdminRoutes();
       return createWorkspaceScopeRoutes({

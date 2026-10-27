@@ -280,6 +280,9 @@ export function createBillingCreditRoutes(deps: {
   /** MOD10 C1 双路：Payer 解析经门面 `resolvePayer.personal`。 */
   resolvePayer?: Pick<BillingResolvePayer, "personal">;
 }) {
+  // OCR r2 M-4：门面回退常量在工厂顶解一次，五条路由共用同一解析臂（行为等价）。
+  const resolvePersonalPayer =
+    deps.resolvePayer?.personal ?? resolvePayerForPersonalUser;
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
   routes.use("*", async (context, next) => {
@@ -310,27 +313,21 @@ export function createBillingCreditRoutes(deps: {
   routes.get("/credits/summary", async (context) => {
     // The account is the session's own personal payer, resolved from the authenticated identity —
     // pure, parameter-free, and a read that cannot open a mapping row.
-    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
-      context.var.actor,
-    );
+    const payer = resolvePersonalPayer(context.var.actor);
     return context.json(
       await (deps.accountQuery ?? deps.credits).personalBalance(payer),
     );
   });
 
   routes.get("/credits/grants", async (context) => {
-    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
-      context.var.actor,
-    );
+    const payer = resolvePersonalPayer(context.var.actor);
     return context.json({
       grants: await (deps.accountQuery ?? deps.credits).grants(payer),
     });
   });
 
   routes.get("/credits/consumption", async (context) => {
-    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
-      context.var.actor,
-    );
+    const payer = resolvePersonalPayer(context.var.actor);
     const parsed = statementQueryInput.safeParse({
       from: context.req.query("from"),
       to: context.req.query("to"),
@@ -368,9 +365,7 @@ export function createBillingCreditRoutes(deps: {
         503,
       );
     }
-    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
-      context.var.actor,
-    );
+    const payer = resolvePersonalPayer(context.var.actor);
     return context.json({
       sessions: await (
         deps.accountQuery ?? deps.realtimeUsage
@@ -394,9 +389,7 @@ export function createBillingCreditRoutes(deps: {
         503,
       );
     }
-    const payer = (deps.resolvePayer?.personal ?? resolvePayerForPersonalUser)(
-      context.var.actor,
-    );
+    const payer = resolvePersonalPayer(context.var.actor);
     return context.json({
       jobs: await (
         deps.accountQuery ?? deps.asyncJobsView

@@ -177,6 +177,9 @@ export function createPaymentRoutes(deps: {
   /** MOD10 C1/C9 双路：读作用域与订单 owner 的 Payer 解析经门面 `resolvePayer.personal`。 */
   resolvePayer?: Pick<BillingResolvePayer, "personal">;
 }) {
+  // OCR r2 M-5：门面回退常量在工厂顶解一次，与 billing/routes.ts 同形（行为等价）。
+  const resolvePersonalPayer =
+    deps.resolvePayer?.personal ?? resolvePayerForPersonalUser;
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", deps.requireUser);
   routes.onError((error, context) => {
@@ -268,9 +271,7 @@ export function createPaymentRoutes(deps: {
     // (a strict zod object) carries no ownership field at all, so nothing a caller sends can
     // choose or change who the order belongs to (AC14/Q27). The audit actor rides beside it.
     // MOD10 C9：解析经公开门面 `resolvePayer.personal`（薄委托同一纯函数），缺省直用。
-    const ownerPayerRef = (
-      deps.resolvePayer?.personal ?? resolvePayerForPersonalUser
-    )(context.var.actor);
+    const ownerPayerRef = resolvePersonalPayer(context.var.actor);
     const { order } = await deps.service.createPurchase({
       planCode: input.planCode,
       provider: input.provider,
