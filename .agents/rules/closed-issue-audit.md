@@ -4,7 +4,7 @@
 
 ## 1. 冻结范围和代码版本
 
-1. 分开冻结两个原始集合并逐集合分页、排除 PR：新审集合 N 为 `state=closed` 且带 `ready-for-agent` 的全部 Issue（含首次遇到的 completed、not_planned、作废和关闭原因不明票）；标签对账集合 R 为任意状态下带 `agent:ready-for-review` 的全部 Issue，加共享 Ledger 中所有未结算 label/close/delivery 意图及纠正对象（无论当前标签或状态）。R 不以 closed 或 ready-for-agent 为过滤条件，重新打开、移除资格标签的票仍可触达。保存查询起止时间、条件、页数/游标、数量、编号/URL、去重结果和完整性；搜索上限须拆分查询核对，缺页/无权/转移读取不全记 `intake_incomplete`。本轮冻结原始全集为 N∪R；结束前重新对账新增、移除和状态变化，新增项登记下轮队列及发现时间，不暗中扩大本轮容量。
+1. 分开冻结两个原始集合并逐集合分页、排除 PR：新审集合 N 为 `state=closed` 且带 `ready-for-agent` 的全部 Issue（含首次遇到的 completed、not_planned、作废和关闭原因不明票）；标签对账集合 R 为任意状态下带 `agent:ready-for-review` 的全部 Issue，加共享 Ledger 中所有未结算 label/close/delivery 意图及纠正对象（无论当前标签或状态）。R 不以 closed 或 ready-for-agent 为过滤条件，重新打开、移除资格标签的票仍可触达。保存查询起止时间、条件、页数/游标、数量、编号/URL、去重结果和完整性；搜索上限须拆分查询核对，缺页/无权/转移读取不全记 `intake_incomplete`。本轮冻结原始全集为 N∪R；批量并行审计按 [每日规则](closed-issue-daily-run.md)建立唯一批次 scope 和 C/P 调度记录，静态摄取不启动写入阶段；结束前重新对账新增、移除和状态变化，新增项登记下轮队列及发现时间，不暗中扩大本轮容量。
 2. 先对账已有 Run、报告、标签回执、人审决定、Git 和活跃工作区。已有结论只能在其需求、目标代码、环境及证据仍然一致时复用；记录每项“复用、重验、失效”的依据，不重复派发已有效完成的审计。N/R 是原始候选集合，不覆盖有效人审终态：`human_review_state=approved/rejected` 的对象只做决定有效性和遗留标签对账，不重新验收或贴标；人审决定须绑定需求指纹、目标 SHA、决定范围和 `approval_ref`。需求或交付范围变化后以 `scope_changed` 使人审终态失效并进入新结论流程；需求不变的实现缺陷型拒绝仅按第 3 节的授权修复迁移恢复。
 3. 按 [delivery-gates.md](delivery-gates.md)固定原 Issue 约定交付目标（默认 origin/main）的完整 SHA、子模块 SHA、环境和工作区基线。审计与测试使用该版本的字节一致隔离树；代码或服务已漂移时重建环境。记录共享数据库、端口、容器和测试产物的归属，按 [验证与测试资源](testing.md)隔离或串行使用。
 
@@ -29,6 +29,8 @@
 ## 3. 裁决、贴标和人审收尾
 
 每条验收标记 `verified / failed / blocked / unproven / not_applicable`；`not_applicable` 附事实源依据。单票仅在所有适用条款 `verified`、实际运行所需依赖成立、目标 SHA 的 Required Checks/标准 CI 有效、无有效 critical/high/medium finding、独立审查与完整 OCR 及主控证据对账通过时为 `verified`。父票还须通过聚合验收。环境无法运行记 `blocked`，仅有推断记 `unproven`；任一失败或缺口均不能折算通过。`not_required` 是仅依据有效取消/无需交付决定的单票终态，不是验收条款的通过，也不进入交付验收或贴标。
+
+已进入每日批次时，audit 与 label 分别占名额，按 [协调格式](coordination-format.md)预留后续 label 预算；真正写入前仍须独立选中动作及满足以下门禁，预留不是贴标授权。
 
 当本轮请求授权 GitHub 贴标时，主控仅对 `verified` 且 `human_review_state=none/pending` 的票执行以下写入门禁：
 

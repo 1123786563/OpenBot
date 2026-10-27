@@ -18,7 +18,7 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 
 每 Task 写清依赖、角色、owned_files、Consumes/Produces、具体步骤、适用测试与预期结果、验收和失败处理，不留 TODO/TBD。派发前完成需求覆盖、共享文件/接口和任务内部一致性预检。用户已要求端到端实施时，保存并展示方案后直接执行，常规修复不增加确认门槛。
 
-实施默认沿 DAG 串行派发；并行实现须有已记录且仍有效的明确用户授权，复用本任务既有授权而不重复询问。使用 Orca 或设定 K 上限本身不授予并行权限。已获并行授权时，仍须满足[编排门禁](orchestration.md)、独立 Worktree、不相交写权限、稳定接口、资源容量及集成次序。数据库、端口、缓存和产物目录均属共享状态；跨 Run 声明遵守[共享协调状态](coordination-state.md)。工作区细则见 [worktrees.md](worktrees.md)。
+实施默认沿 DAG 串行派发；每日批次的源文件只读审计/验证按 [每日规则](closed-issue-daily-run.md)的 P 和资源隔离接纳，审计期间的测试写入仍受共享声明约束。并行实现须有已记录且仍有效的明确用户授权，复用本任务既有授权而不重复询问。使用 Orca 或设定 K 上限本身不授予并行权限。已获并行授权时，仍须满足[编排门禁](orchestration.md)、独立 Worktree、不相交写权限、稳定接口、资源容量及集成次序。数据库、端口、缓存和产物目录均属共享状态；跨 Run 声明遵守[共享协调状态](coordination-state.md)。工作区细则见 [worktrees.md](worktrees.md)。
 
 ## 角色与独立性
 
