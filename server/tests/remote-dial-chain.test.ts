@@ -136,11 +136,16 @@ function derivedDialSpanIdOf(botId: string, attemptId: string): string {
  */
 function anchorSink() {
   const posted: Array<{
+    headers: Record<string, string | string[] | undefined>;
+    serviceName: string | undefined;
     spans: Array<{
       traceId: string;
       spanId: string;
       parentSpanId?: string;
       name: string;
+      startTimeUnixNano?: string;
+      endTimeUnixNano?: string;
+      runIdAttribute: string | undefined;
     }>;
   }> = [];
   const server = http.createServer((request, response) => {
@@ -153,20 +158,40 @@ function anchorSink() {
       }
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
         resourceSpans?: Array<{
+          resource?: {
+            attributes?: Array<{ key: string; value?: { stringValue?: string } }>;
+          };
           scopeSpans?: Array<{
             spans?: Array<{
               traceId: string;
               spanId: string;
               parentSpanId?: string;
               name: string;
+              startTimeUnixNano?: string;
+              endTimeUnixNano?: string;
+              attributes?: Array<{
+                key: string;
+                value?: { stringValue?: string };
+              }>;
             }>;
           }>;
         }>;
       };
       posted.push({
+        headers: request.headers,
+        serviceName: (body.resourceSpans ?? []).flatMap((rs) =>
+          (rs.resource?.attributes ?? []).map(
+            (attribute) => attribute.value?.stringValue,
+          ),
+        )[0],
         spans: (body.resourceSpans ?? []).flatMap((rs) =>
           (rs.scopeSpans ?? []).flatMap((ss) => ss.spans ?? []),
-        ),
+        ).map((span) => ({
+          ...span,
+          runIdAttribute: span.attributes?.find(
+            (attribute) => attribute.key === "openbot.run.id",
+          )?.value?.stringValue,
+        })),
       });
       response.writeHead(200).end();
     });
@@ -227,10 +252,19 @@ function scriptedEndpoint() {
     ) as RunAgentInput;
     dials.push({ url: String(url), headers, body });
     const encoder = new TextEncoder();
+    // The receipt reports the BUDGET CONTRACT's run id — exactly what the real endpoint
+    // does (agent-langgraph readBudgetContract → the receipt's echo) — so the MAC covers
+    // the id the contract carried, not the wire's top-level spelling of it.
+    const budgetRunId =
+      (
+        body.forwardedProps as
+          | { openbotBudget?: { runId?: string } }
+          | undefined
+      )?.openbotBudget?.runId ?? body.runId;
     const receipt = {
       kind: REMOTE_BUDGET_RECEIPT_EVENT,
       v: 1,
-      runId: body.runId,
+      runId: budgetRunId,
       caps: CAPS,
       usage: {
         modelSteps: 1,
@@ -250,7 +284,7 @@ function scriptedEndpoint() {
         [
           "openbot-budget-receipt",
           "v=1",
-          `runId=${body.runId}`,
+          `runId=${budgetRunId}`,
           `caps=${CAPS.modelSteps}|${CAPS.inputTokens}|${CAPS.outputTokens}|${CAPS.totalTokens}`,
           `usage=1|400|40|440`,
           `status=ok`,
@@ -544,7 +578,9 @@ test("detached scheduling dials under the run's derived chain — every dial, bo
     await new Promise((resolve) => setTimeout(resolve, 1));
     await agent.runAgent({}, { onEvent: () => {} });
     await flush();
-    await flushedAnchors(sink, 8);
+    // Eight anchors open at bind, the same eight closed at finalize (L-H: the run's
+    // close re-posts its two spans with the window's end).
+    await flushedAnchors(sink, 16);
 
     expect(dials).toHaveLength(4);
 
@@ -575,7 +611,8 @@ test("detached scheduling dials under the run's derived chain — every dial, bo
      * spans appear in the post: root first, then the dial that names it.
      */
     const anchorSpans = sink.posted.flatMap((post) => post.spans);
-    expect(anchorSpans).toHaveLength(8);
+    // Two per dial at bind, the same two again at close (L-H).
+    expect(anchorSpans).toHaveLength(16);
     const dialSpanIdByTrace = new Map(
       dials.map((dial) => {
         const parent = traceparentOf(dial.headers.traceparent)!;
@@ -915,6 +952,196 @@ test("two runs reusing one wire runId root separate chains — one attempt's re-
     if (envBefore === undefined)
       delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
     else process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = envBefore;
+    sink.stop();
+    await stop();
+  }
+});
+
+/*
+ * OCR delta2c T-N#3: the budget contract's run id and the receipt check's expectation
+ * must be ONE id seen the same way on both sides. The governed run normalizes the wire
+ * runId once (the :4909 typeof+trim discipline); the receipt is checked against that
+ * value, but the contract the dial carried used to hold the RAW wire value — so a run id
+ * with surrounding whitespace, echoed back honestly by the endpoint, failed
+ * `value.runId !== expected.runId` and the run was torn down with
+ * REMOTE_RUN_BUDGET_CONTRACT_VIOLATION before its answer landed. A client whose only
+ * fault was padding its own run id lost every run, loudly, pointing the blame at the
+ * endpoint.
+ */
+test("a wire runId with surrounding whitespace runs to completion — the contract and the receipt check share one id", async () => {
+  const { fetch } = scriptedEndpoint();
+  const facts: RemoteRunFact[] = [];
+  const store = fakeBindingStore();
+  const { port } = fakePort();
+  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+  const { stop } = recordedSpans();
+  const events: BaseEvent[] = [];
+  setRemoteRunObserver((fact) => {
+    facts.push(fact);
+    recorder.record(fact);
+  });
+  try {
+    const agents = await buildRemoteBot(fetch, scope());
+    const agent = agents.risk;
+    if (!agent) throw new Error("buildAgents returned no remote agent");
+    agent.threadId = "padded-thread";
+    await agent.runAgent(
+      { runId: "  padded-run  " },
+      { onEvent: ({ event }) => events.push(event) },
+    );
+    await flush();
+
+    // The run reached its terminal: no contract violation tore the stream down.
+    expect(
+      events.filter((event) => event.type === EventType.RUN_FINISHED),
+    ).toHaveLength(1);
+    // The governed record holds the normalized id — display and gate input, trimmed.
+    expect(facts).toHaveLength(1);
+    expect(facts[0]!.runId).toBe("padded-run");
+    expect(store.begun[0]).toMatchObject({ runId: "padded-run" });
+  } finally {
+    setRemoteRunObserver(undefined);
+    await stop();
+  }
+});
+
+/*
+ * OCR delta2 L-H: the anchor pair a derived dial posts is not a pair of forever-open
+ * spans. The bind post carries startTime only — the OTel SDK cannot close what it never
+ * started, and no later batch ever re-sends these chosen ids — so before this fix every
+ * derived dial left two permanently open spans in the default project. The run's
+ * finalize posts the SAME two spans again, now carrying the dial window's end.
+ */
+test("the anchors opened at bind are closed at finalize — same ids, the window's end carried", async () => {
+  const { fetch } = scriptedEndpoint();
+  const facts: RemoteRunFact[] = [];
+  const store = fakeBindingStore();
+  const { port } = fakePort();
+  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+  const { stop } = recordedSpans();
+  const sink = anchorSink();
+  await sink.ready();
+  const envBefore = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = sink.url;
+  setRemoteRunObserver((fact) => {
+    facts.push(fact);
+    recorder.record(fact);
+  });
+  try {
+    const agents = await buildRemoteBot(fetch, scope());
+    const agent = agents.risk;
+    if (!agent) throw new Error("buildAgents returned no remote agent");
+    agent.threadId = "close-thread";
+    await new Promise((resolve) => setTimeout(resolve, 1)); // detached: the chain derives
+    await agent.runAgent({ runId: "run-close" }, { onEvent: () => {} });
+    await flush();
+    // Two anchors at bind, the same two at close — four span bodies in all.
+    await flushedAnchors(sink, 4);
+
+    expect(facts).toHaveLength(1);
+    const traceId = facts[0]!.traceId!;
+    const root = runUpstreamIdentity(traceId).rootSpanId;
+    const dialSpanId = facts[0]!.dial!.spanId;
+    const anchorSpans = sink.posted.flatMap((post) => post.spans);
+    expect(anchorSpans).toHaveLength(4);
+    for (const spanId of [root, dialSpanId]) {
+      const lives = anchorSpans.filter((span) => span.spanId === spanId);
+      expect(lives).toHaveLength(2);
+      const open = lives.find((span) => span.endTimeUnixNano === undefined);
+      const closed = lives.find((span) => span.endTimeUnixNano !== undefined);
+      expect(open).toBeDefined();
+      expect(closed).toBeDefined();
+      // Same span re-sent, not a new one: same trace, same name, same parent discipline.
+      expect(closed!.traceId).toBe(traceId);
+      expect(closed!.name).toBe(open!.name);
+      expect(closed!.parentSpanId).toBe(open!.parentSpanId);
+      // The close is a real close: at or after the start (compared as BigInt in
+      // plain JS — the runner's numeric matchers take numbers only).
+      expect(
+        BigInt(closed!.endTimeUnixNano!) >= BigInt(closed!.startTimeUnixNano!),
+      ).toBe(true);
+    }
+  } finally {
+    setRemoteRunObserver(undefined);
+    if (envBefore === undefined)
+      delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+    else process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = envBefore;
+    sink.stop();
+    await stop();
+  }
+});
+
+/*
+ * OCR delta2b T-M#3 + delta2c T-N#4-sub: the anchor post must speak the exporter's own
+ * dialect, or the anchors never land. Three pins in one post: the signal-level auth
+ * headers the installed exporter reads (OTEL_EXPORTER_OTLP_TRACES_HEADERS, falling back
+ * to OTEL_EXPORTER_OTLP_HEADERS exactly as the SDK does — before this fix the anchor post
+ * read only the generic var, so a traces-authenticated collector refused the anchors and
+ * the endpoint's continuation tree was silently dropped); the service name the SERVER
+ * process registers (initProcessTracing("server") — one name for the whole trace tree,
+ * where "openbot-server" split the run's spans across two services); and a bounded
+ * openbot.run.id attribute (the wire runId is unbounded input; 256 is the same clamp
+ * discipline tool call ids hold).
+ */
+test("the anchor post speaks the exporter's own dialect — traces-level headers, the server's service name, a bounded run id", async () => {
+  const { fetch } = scriptedEndpoint();
+  const store = fakeBindingStore();
+  const { port } = fakePort();
+  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+  const { stop } = recordedSpans();
+  const sink = anchorSink();
+  await sink.ready();
+  const envBefore = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+  const tracesHeadersBefore = process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
+  const headersBefore = process.env.OTEL_EXPORTER_OTLP_HEADERS;
+  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = sink.url;
+  setRemoteRunObserver((fact) => recorder.record(fact));
+  try {
+    const agents = await buildRemoteBot(fetch, scope());
+    const agent = agents.risk;
+    if (!agent) throw new Error("buildAgents returned no remote agent");
+    agent.threadId = "dialect-thread";
+    const longRunId = `r`.repeat(300);
+
+    // Signal-level headers alone: the deployment the exporter itself would authorize.
+    process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS =
+      "authorization=Bearer traces-secret";
+    delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    await agent.runAgent({ runId: longRunId }, { onEvent: () => {} });
+    await flush();
+    await flushedAnchors(sink, 2);
+
+    const firstPost = sink.posted[0]!;
+    expect(firstPost.headers.authorization).toBe("Bearer traces-secret");
+    expect(firstPost.serviceName).toBe("server");
+    for (const span of firstPost.spans) {
+      expect(span.runIdAttribute).toBe("r".repeat(256));
+    }
+
+    // The generic var alone still authorizes — the exporter's own fallback rule.
+    delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
+    process.env.OTEL_EXPORTER_OTLP_HEADERS = "authorization=Bearer generic-secret";
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    await agent.runAgent({ runId: "run-dialect-2" }, { onEvent: () => {} });
+    await flush();
+    await flushedAnchors(sink, 6);
+
+    expect(
+      sink.posted.some(
+        (post) => post.headers.authorization === "Bearer generic-secret",
+      ),
+    ).toBe(true);
+  } finally {
+    setRemoteRunObserver(undefined);
+    if (envBefore === undefined)
+      delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+    else process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = envBefore;
+    if (tracesHeadersBefore === undefined)
+      delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
+    else process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS = tracesHeadersBefore;
+    if (headersBefore === undefined) delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+    else process.env.OTEL_EXPORTER_OTLP_HEADERS = headersBefore;
     sink.stop();
     await stop();
   }

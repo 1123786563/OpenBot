@@ -21,7 +21,12 @@ import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import { PROVENANCE_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
 import { defaultModelFor } from "@openbot/shared/model-providers";
-import { currentTraceContext, injectTraceHeaders } from "@openbot/shared/trace";
+import {
+  currentTraceContext,
+  deriveTracesTarget,
+  injectTraceHeaders,
+  SERVER_TRACING_SERVICE_NAME,
+} from "@openbot/shared/trace";
 import { runRootSpanId } from "@openbot/shared/run-identity";
 import { parseHeaders } from "./telemetry/otel";
 import {
@@ -4462,19 +4467,33 @@ type BoundRemoteDial = Readonly<{
  * is a tracing-channel write, not a governed one: no content rides on either span, only
  * structural ids, and the governed record of the dial (timing, binding attribution) is
  * materialized through the port by the recorder, not here.
+ *
+ * The bind post opens the two spans (startTime only); the run's finalize posts them AGAIN
+ * with `endedAt`, closing them (L-H). No later batch ever re-sends these chosen ids — the
+ * SDK cannot produce either span — so without the close post every derived dial left two
+ * permanently open spans in the default project, growing with the dial count. The close
+ * post re-sends the SAME trace and span ids with the dial window's end, which the backend
+ * reads as the same span now ended; a 409 there is the already-closed answer, the same
+ * idempotence the bind post holds.
  */
+/**
+ * The bound the anchor spans put on the wire runId attribute: the id is unbounded client
+ * input, and an oversized one bloats the OTLP body past what a collector accepts (the
+ * same 256 clamp tool-call ids hold). The governed budget paths carry the full id —
+ * only this display/structure attribute is clamped.
+ */
+const MAX_RUN_ID_LENGTH = 256;
+
 function postDialChainAnchors(
   traceId: string,
   dialSpanId: string,
   botId: string,
   runId: string,
   startedAt: Date,
+  /** The dial window's end: present on the finalize post, which closes the two spans. */
+  endedAt?: Date,
 ): void {
-  const tracesEndpoint =
-    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim() ||
-    (process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-      ? `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT.trim().replace(/\/$/, "")}/v1/traces`
-      : undefined);
+  const tracesEndpoint = deriveTracesTarget(process.env);
   if (
     tracesEndpoint === undefined ||
     process.env.OPENBOT_TRACES?.trim().toLowerCase() === "off"
@@ -4483,6 +4502,10 @@ function postDialChainAnchors(
   }
   const rootSpanId = runRootSpanId(traceId);
   const startNanos = (BigInt(startedAt.getTime()) * 1_000_000n).toString();
+  const endNanos =
+    endedAt === undefined
+      ? undefined
+      : (BigInt(endedAt.getTime()) * 1_000_000n).toString();
   const span = (
     spanId: string,
     name: string,
@@ -4495,26 +4518,46 @@ function postDialChainAnchors(
     name,
     kind: 1,
     startTimeUnixNano: startNanos,
+    ...(endNanos === undefined ? {} : { endTimeUnixNano: endNanos }),
     attributes: [
       { key: "openbot.bot.id", value: { stringValue: botId } },
-      { key: "openbot.run.id", value: { stringValue: runId } },
+      {
+        key: "openbot.run.id",
+        // The wire runId is unbounded input; the attribute carries the same clamp the
+        // tool-call ids hold, so one oversized id cannot bloat the post past what the
+        // collector accepts (T-N#4-sub).
+        value: { stringValue: runId.slice(0, MAX_RUN_ID_LENGTH) },
+      },
       ...extraAttributes,
     ],
   });
   void fetch(tracesEndpoint, {
     method: "POST",
-    // The exporter's own auth headers (OTEL_EXPORTER_OTLP_HEADERS) so an
-    // authenticated collector accepts this anchor post like any SDK export.
+    // The exporter's own auth headers, read the way the installed exporter reads them:
+    // the signal-level OTEL_EXPORTER_OTLP_TRACES_HEADERS first, the generic
+    // OTEL_EXPORTER_OTLP_HEADERS as fallback (T-M#3).
     headers: {
       "content-type": "application/json",
-      ...parseHeaders(process.env.OTEL_EXPORTER_OTLP_HEADERS),
+      ...parseHeaders(
+        process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS ??
+          process.env.OTEL_EXPORTER_OTLP_HEADERS,
+      ),
     },
+    // A collector that accepts the connection and never answers must not hold the post
+    // open forever: the logs exporter's own 10s bound (T-M#3).
+    signal: AbortSignal.timeout(10_000),
     body: JSON.stringify({
       resourceSpans: [
         {
           resource: {
             attributes: [
-              { key: "service.name", value: { stringValue: "openbot-server" } },
+              {
+                key: "service.name",
+                // The name the server process registered its tracer under, from the
+                // same source initProcessTracing's boot call uses (T-M#3): one
+                // service name for the whole trace tree, not a second one here.
+                value: { stringValue: SERVER_TRACING_SERVICE_NAME },
+              },
             ],
           },
           scopeSpans: [
@@ -5275,7 +5318,11 @@ function governedRemoteRun(
                         "remote-tool-cells-capped: the endpoint's proposals exceeded the capture ceiling; further calls are counted as events only",
                       );
                     }
-                  } else {
+                  } else if (!toolCells.has(toolCallId)) {
+                    // A repeated START for a call this run already holds keeps the cell
+                    // it built (the builtin registry's own reuse rule): resetting it
+                    // here would let one duplicate event strip the run's input capture
+                    // and truncation declaration (T-N#5).
                     toolCells.set(toolCallId, {
                       toolCallId,
                       toolName,
@@ -5381,6 +5428,22 @@ function governedRemoteRun(
           finalize(() => {
             dial.close();
             settle();
+            // L-H: the anchors the derived dial opened are CLOSED here, in the same
+            // window the governed record measures — the same two spans re-posted with
+            // the dial's end time, so the default project holds no permanently open
+            // anchor spans. A 409 is the already-closed answer, the same idempotence
+            // the bind post holds.
+            const window = dial.dial;
+            if (window !== null && traceId !== null) {
+              postDialChainAnchors(
+                traceId,
+                window.spanId,
+                agent.id,
+                runId,
+                window.startedAt,
+                window.endedAt,
+              );
+            }
           }),
         );
       }),
@@ -5493,7 +5556,10 @@ function remoteAgentWithStandingRole(
     const runAssertion = signRun
       ? signRun(
           agent.id,
-          input.runId,
+          // The same typeof+trim discipline the governed run reads the wire runId
+          // with (:4909's own invariant): the run the assertion names is the run the
+          // budget contract and the receipt check see (T-N#3).
+          typeof input.runId === "string" ? input.runId.trim() : "",
           input.threadId,
           input.forwardedProps?.openbotRun,
         )
@@ -5542,7 +5608,12 @@ function remoteAgentWithStandingRole(
         : {
             openbotBudget: {
               v: REMOTE_BUDGET_CONTRACT_VERSION,
-              runId: input.runId,
+              // Trimmed like :4909 (inlined — the middleware assembly scope cannot see
+              // the governed run's local): the receipt echoes this id back and is
+              // checked against the trimmed one, so a wire runId with surrounding
+              // whitespace used to fail its own honest endpoint (T-N#3).
+              runId:
+                typeof input.runId === "string" ? input.runId.trim() : "",
               caps: contract.caps,
             },
           }),

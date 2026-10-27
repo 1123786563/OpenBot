@@ -8,7 +8,10 @@ import {
 } from "@copilotkit/runtime/v2";
 import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
-import { initProcessTracing } from "@openbot/shared/trace";
+import {
+  initProcessTracing,
+  SERVER_TRACING_SERVICE_NAME,
+} from "@openbot/shared/trace";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
@@ -5686,7 +5689,7 @@ repeatAfterEach(async () => {
  * Trace context propagation and, when a collector is configured, trace export. Installed
  * beside the audit exporter below so the first request already runs inside a trace.
  */
-initProcessTracing("server", process.env);
+initProcessTracing(SERVER_TRACING_SERVICE_NAME, process.env);
 
 /*
  * Enterprise controls (server/src/admin): capability switches, SSO-required, SCIM offboarding,

@@ -836,6 +836,73 @@ describe("R4-03 remote: the endpoint's business tool calls become governance ste
     }
   });
 
+  /*
+   * OCR delta2c T-N#5: a repeated TOOL_CALL_START for a call this run already holds must
+   * not wipe the cell the first START began building. Duplicate STARTs under one id are
+   * real stream behavior (the mastra seam defends against exactly this), and the
+   * endpoint's stream is the only source here — before this fix the second START reset
+   * args/argsLength/argsTruncated/receiptObserved/output to their opening values, so an
+   * endpoint could strip the governance record of its input capture with one extra event,
+   * silently. The builtin registry's own rule is reuse; the remote path now holds it too.
+   */
+  test("a repeated TOOL_CALL_START keeps the cell it already built — accumulated args and the receipt survive", async () => {
+    // One business call, opened twice by the endpoint: args stream in both windows, the
+    // surface answers once, the receipt and the terminal land as a legal run.
+    const script: BaseEvent[] = [
+      { type: EventType.RUN_STARTED, threadId: "dup-thread", runId: "run-dup" } as BaseEvent,
+      { type: EventType.TOOL_CALL_START, toolCallId: "call_dup", toolCallName: "report_environment" } as BaseEvent,
+      { type: EventType.TOOL_CALL_ARGS, toolCallId: "call_dup", delta: '{"scope":"first' } as BaseEvent,
+      { type: EventType.TOOL_CALL_END, toolCallId: "call_dup" } as BaseEvent,
+      { type: EventType.TOOL_CALL_START, toolCallId: "call_dup", toolCallName: "report_environment" } as BaseEvent,
+      { type: EventType.TOOL_CALL_ARGS, toolCallId: "call_dup", delta: '-window"}' } as BaseEvent,
+      { type: EventType.TOOL_CALL_END, toolCallId: "call_dup" } as BaseEvent,
+      { type: EventType.TOOL_CALL_RESULT, messageId: "msg-dup", toolCallId: "call_dup", content: "{\"ok\":true}" } as BaseEvent,
+      receiptEvent("run-dup"),
+      { type: EventType.RUN_FINISHED, threadId: "dup-thread", runId: "run-dup" } as BaseEvent,
+    ];
+    const fetch: AgentFetch = async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const event of script) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          }
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { "content-type": "text/event-stream" } });
+    };
+
+    const facts: BuiltinToolStepFact[] = [];
+    setBuiltinToolStepObserver((fact) => {
+      facts.push(fact);
+    });
+    const { stop } = recordedSpans();
+    const built = await buildRemoteBot(fetch, { actorId: "person-1" });
+    try {
+      const agent = built.agents.risk;
+      if (!agent) throw new Error("buildAgents returned no remote agent");
+      agent.threadId = "dup-thread";
+      await new Promise((resolve) => setTimeout(resolve, 1)); // detached, like the runner's callback
+      await agent.runAgent({ runId: "run-dup" }, { onEvent: () => {} });
+      await new Promise((resolve) => setTimeout(resolve, 50)); // let the settlement land
+    } finally {
+      setBuiltinToolStepObserver(undefined);
+      await stop();
+    }
+
+    // ONE cell, holding BOTH windows' args and the receipt — the duplicate START
+    // neither opened a second step nor reset the first one's capture.
+    expect(facts).toHaveLength(1);
+    const fact = facts[0]!;
+    expect(fact.toolCallId).toBe("call_dup");
+    expect(fact.input).toBe(`{"scope":"first-window"}`);
+    expect(fact.receiptObserved).toBe(true);
+    expect(fact.output).toBe("{\"ok\":true}");
+    expect(fact.proposalObserved).toBe(true);
+    expect(fact.origin).toBe("remote-agui");
+  });
+
   test("the recorder names the origin, links the call id, and binds under the run's identity", async () => {
     const { submitted, queue } = fakeQueue();
     const { writes, port } = fakePort();
