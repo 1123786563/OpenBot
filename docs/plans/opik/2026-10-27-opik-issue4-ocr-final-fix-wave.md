@@ -45,4 +45,4 @@ owned：`docs/plans/opik/2026-10-24-opik-issue4-acceptance-map.md`
 
 - DOWNGRADED 18 条 + DUPLICATE 10 条按各自既有归属（R5-F2 族 low / 规则资产修订后续票 / Run 资产后续票 / 合并日必办清单）。
 - #41 部署纪律一行文档、#47 运维排序注记、#48 budget_exceeded 硬化、#60 日志卫生——并入终稿 future-ticket 清单。
-- S2-L2（规则快照 main 侧消解）、0209_opik→0216 重编号——合并日 checklist。
+- S2-L2（规则快照 main 侧消解）、0209_opik→合并日现场重推导下一空号（@8aedd5ee8 已占至 0218，当前=0219；main 推进后须重查）重编号——合并日 checklist。
