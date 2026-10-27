@@ -2103,15 +2103,21 @@ test("a collision-loser binding at its legacy key is still found and deleted (02
 test("a legacy-key binding that reconciled after discovery promotes instead of stranding (OCR R5, the 888 inference)", async () => {
   const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
   const traceId = `01a1405b-f832-70cf-b204-f4dd51ddd${randomUUID().slice(0, 3)}`;
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // Reconciled AFTER discovery — the order the name states (OCR 终审 #64): the
+  // record froze null at discovery, so the sweep's promote path
+  // (promoteUpstreamReference in retention.ts) adopts the binding's reconciled
+  // id. Reconciling first would let discovery freeze the trace directly and
+  // the promote branch would never run here.
   await bindingStore.reconcile(
     scopeA,
     binding.runId,
     binding.attemptId,
     traceId,
   );
-  const upstream = fakePort({ rows: [] });
-  const worker = workerFor({ port: upstream.port });
-  await worker.discover();
 
   // Both facts at once: the record froze null AND the binding row sits at a
   // legacy key (the collision loser). The old (id, scope_key) read missed the

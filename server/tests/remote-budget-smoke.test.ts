@@ -297,48 +297,53 @@ test("an in-budget run dials under its contract, delivers, and settles its hold 
     usage: { prompt_tokens: 300, completion_tokens: 30 },
   }));
   const providerUrl = await provider.start();
-  await withEndpoint(providerUrl, async (endpoint) => {
-    const seams = budgetSeams(endpoint);
-    const agents = await buildRemoteBot(seams, endpoint);
-    const agent = agents.risk;
-    if (!agent) throw new Error("buildAgents returned no remote agent");
-    agent.threadId = "smoke-thread";
+  // The provider's HTTP server outlives this test without the finally: an
+  // assertion failure inside withEndpoint leaves it listening (OCR 终审 #45).
+  try {
+    await withEndpoint(providerUrl, async (endpoint) => {
+      const seams = budgetSeams(endpoint);
+      const agents = await buildRemoteBot(seams, endpoint);
+      const agent = agents.risk;
+      if (!agent) throw new Error("buildAgents returned no remote agent");
+      agent.threadId = "smoke-thread";
 
-    const delivered: BaseEvent[] = [];
-    await agent.runAgent(
-      { runId: "smoke-run" },
-      { onEvent: ({ event }) => delivered.push(event) },
-    );
-    await flush();
+      const delivered: BaseEvent[] = [];
+      await agent.runAgent(
+        { runId: "smoke-run" },
+        { onEvent: ({ event }) => delivered.push(event) },
+      );
+      await flush();
 
-    // The run delivered: the person got the answer, and the endpoint's receipt never
-    // reached the surface — it is control-plane, checked by the middleware and swallowed.
-    expect(delivered.map((event) => event.type)).toContain("RUN_FINISHED");
-    expect(delivered.map((event) => event.type)).not.toContain("CUSTOM");
+      // The run delivered: the person got the answer, and the endpoint's receipt never
+      // reached the surface — it is control-plane, checked by the middleware and swallowed.
+      expect(delivered.map((event) => event.type)).toContain("RUN_FINISHED");
+      expect(delivered.map((event) => event.type)).not.toContain("CUSTOM");
 
-    // The model really streamed from the scripted provider, capped on the provider's
-    // side of the call. The cap is the contract's output budget MINUS the projected
-    // input the ledger reserves against the shared total (ocrfix-d addaf7b5d):
-    // totalTokens 8_000 − projectedInput 2_182 = 5_818 for this fixture's first call.
-    expect(provider.calls).toHaveLength(1);
-    expect(provider.calls[0]?.max_tokens).toBe(5_818);
+      // The model really streamed from the scripted provider, capped on the provider's
+      // side of the call. The cap is the contract's output budget MINUS the projected
+      // input the ledger reserves against the shared total (ocrfix-d addaf7b5d):
+      // totalTokens 8_000 − projectedInput 2_182 = 5_818 for this fixture's first call.
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.max_tokens).toBe(5_818);
 
-    // The hold was taken for this run and settles as an unknown cost, as before — the
-    // contract bounds what was spent; it does not price it. The idempotency key carries a
-    // server nonce after the bot (OCR R5): a client's reused runId cannot share a hold.
-    expect(seams.reservations).toHaveLength(1);
-    expect(seams.reservations[0]!.maximumCents).toBe(8_000);
-    expect(seams.reservations[0]!.idempotencyKey).toMatch(
-      /^usage:remote-run:risk:[0-9a-f-]{36}$/,
-    );
-    expect(seams.marks).toEqual([
-      {
-        reservationId: "hold-smoke",
-        reason: "remote_usage_unreported:succeeded",
-      },
-    ]);
-  });
-  await provider.stop();
+      // The hold was taken for this run and settles as an unknown cost, as before — the
+      // contract bounds what was spent; it does not price it. The idempotency key carries a
+      // server nonce after the bot (OCR R5): a client's reused runId cannot share a hold.
+      expect(seams.reservations).toHaveLength(1);
+      expect(seams.reservations[0]!.maximumCents).toBe(8_000);
+      expect(seams.reservations[0]!.idempotencyKey).toMatch(
+        /^usage:remote-run:risk:[0-9a-f-]{36}$/,
+      );
+      expect(seams.marks).toEqual([
+        {
+          reservationId: "hold-smoke",
+          reason: "remote_usage_unreported:succeeded",
+        },
+      ]);
+    });
+  } finally {
+    await provider.stop();
+  }
 }, 30_000);
 
 test("an endpoint that keeps spending is stopped by the contract OpenBot sent it", async () => {
@@ -359,41 +364,46 @@ test("an endpoint that keeps spending is stopped by the contract OpenBot sent it
     usage: { prompt_tokens: 300, completion_tokens: 20 },
   }));
   const providerUrl = await provider.start();
-  await withEndpoint(providerUrl, async (endpoint) => {
-    const seams = budgetSeams(endpoint);
-    const agents = await buildRemoteBot(seams, endpoint);
-    const agent = agents.risk;
-    if (!agent) throw new Error("buildAgents returned no remote agent");
-    agent.threadId = "smoke-loop-thread";
+  // Same finally shape as above: the loop run's failure path must not leak the
+  // provider either (OCR 终审 #45).
+  try {
+    await withEndpoint(providerUrl, async (endpoint) => {
+      const seams = budgetSeams(endpoint);
+      const agents = await buildRemoteBot(seams, endpoint);
+      const agent = agents.risk;
+      if (!agent) throw new Error("buildAgents returned no remote agent");
+      agent.threadId = "smoke-loop-thread";
 
-    const delivered: BaseEvent[] = [];
-    await agent.runAgent(
-      { runId: "smoke-loop-run" },
-      { onEvent: ({ event }) => delivered.push(event) },
-    );
-    await flush();
+      const delivered: BaseEvent[] = [];
+      await agent.runAgent(
+        { runId: "smoke-loop-run" },
+        { onEvent: ({ event }) => delivered.push(event) },
+      );
+      await flush();
 
-    // The caps in force are the RESOLVER's — the endpoint enforces what OpenBot sent, and
-    // two model calls are all this contract allows.
-    expect(provider.calls).toHaveLength(2);
+      // The caps in force are the RESOLVER's — the endpoint enforces what OpenBot sent, and
+      // two model calls are all this contract allows.
+      expect(provider.calls).toHaveLength(2);
 
-    // The person sees the run stop at its budget, by name, and never a CUSTOM event.
-    const error = delivered.find((event) => event.type === "RUN_ERROR");
-    expect(error).toBeDefined();
-    expect(String((error as { message?: unknown }).message)).toContain(
-      "budget",
-    );
-    expect(delivered.map((event) => event.type)).not.toContain("CUSTOM");
+      // The person sees the run stop at its budget, by name, and never a CUSTOM event.
+      const error = delivered.find((event) => event.type === "RUN_ERROR");
+      expect(error).toBeDefined();
+      expect(String((error as { message?: unknown }).message)).toContain(
+        "budget",
+      );
+      expect(delivered.map((event) => event.type)).not.toContain("CUSTOM");
 
-    // A budget stop is still a cost this side cannot price: the hold settles unknown with
-    // the run's failure named, and the receipt that got it delivered was checked, not
-    // trusted — the same resolver verified its caps echo and MAC first.
-    expect(seams.marks).toEqual([
-      {
-        reservationId: "hold-smoke",
-        reason: "remote_usage_unreported:failed",
-      },
-    ]);
-  });
-  await provider.stop();
+      // A budget stop is still a cost this side cannot price: the hold settles unknown with
+      // the run's failure named, and the receipt that got it delivered was checked, not
+      // trusted — the same resolver verified its caps echo and MAC first.
+      expect(seams.marks).toEqual([
+        {
+          reservationId: "hold-smoke",
+          reason: "remote_usage_unreported:failed",
+        },
+      ]);
+    });
+  } finally {
+    await provider.stop();
+  }
 }, 30_000);

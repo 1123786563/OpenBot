@@ -237,10 +237,15 @@ describe("0209 stable resource scope (OCR R5)", () => {
     // with w2 on (scope_key, run_id, attempt_id) while both still sit at the
     // stable key. Three composites across two actors, legacy locator strings;
     // ghost and w1 share trace T9, so they sit on different keys — the
-    // (scope_key, opik_trace_id) index forbids them on one.
+    // (scope_key, opik_trace_id) index forbids them on one. begin/finish never
+    // write opik_trace_id (bindings.ts), so the rewrite carries it too:
+    // without it the migration's nested trace window short-circuits on NULL
+    // and the secondary ranking this scenario exists to pin never executes
+    // (OCR 终审 #52).
     await db.execute(sql`update ai_observation_bindings set
       scope_key = case id when ${w2.id} then ${legacyX2} when ${ghost.id} then ${legacyX1} else ${legacyX3} end,
       actor_id = case id when ${w2.id} then 'actor-2' else 'actor-1' end,
+      opik_trace_id = case id when ${w2.id} then 'mig-trace-2' else 'mig-trace-9' end,
       locator_workspace = 'legacy-ws', locator_project = 'legacy-proj'
       where id in (${w2.id}, ${ghost.id}, ${w1.id})`);
     await db
@@ -408,20 +413,28 @@ describe("0209 stable resource scope (OCR R5)", () => {
       await replay();
 
       // bindings: both subject winners moved; the ghost lost the subject race
-      // and keeps its legacy composite.
+      // and keeps its legacy composite. The traces are pinned with the keys
+      // (OCR 终审 #52): the nested secondary window ranks trace T9 across the
+      // SUBJECT WINNERS only — the ghost never enters it, so w1 claims T9 at
+      // the stable key — while the full-table window it replaced ranked the
+      // ghost (older) first and stranded w1's subject at its legacy key. The
+      // trace pins are the seed's own anchor: with opik_trace_id left NULL in
+      // the rewrite, these fail.
       const rows = await migSql`
-        select id, scope_key from ai_observation_bindings
-        where id in (${scenario.w1.id}, ${scenario.ghost.id})`;
-      expect(rows.find((r) => r.id === scenario.w1.id)?.scope_key).toBe(
-        scenario.scopeX.key,
-      );
-      expect(rows.find((r) => r.id === scenario.ghost.id)?.scope_key).toBe(
-        scenario.legacyX1,
-      );
-      expect(
-        await migSql`
-          select scope_key from ai_observation_bindings where id = ${scenario.w2Id}`,
-      ).toEqual([{ scope_key: scenario.scopeX.key }]);
+        select id, scope_key, opik_trace_id from ai_observation_bindings
+        where id in (${scenario.w1.id}, ${scenario.ghost.id}, ${scenario.w2Id})`;
+      expect(rows.find((r) => r.id === scenario.w1.id)).toMatchObject({
+        scope_key: scenario.scopeX.key,
+        opik_trace_id: "mig-trace-9",
+      });
+      expect(rows.find((r) => r.id === scenario.ghost.id)).toMatchObject({
+        scope_key: scenario.legacyX1,
+        opik_trace_id: "mig-trace-9",
+      });
+      expect(rows.find((r) => r.id === scenario.w2Id)).toMatchObject({
+        scope_key: scenario.scopeX.key,
+        opik_trace_id: "mig-trace-2",
+      });
       const locators = await migSql`
         select locator_workspace, locator_project from ai_observation_bindings where id = ${scenario.w1.id}`;
       expect(locators[0].locator_workspace).toBe(
@@ -499,12 +512,16 @@ describe("0209 stable resource scope (OCR R5)", () => {
 
       expect(
         await migSql`
-          select scope_key from ai_observation_bindings where id = ${scenario.w1.id}`,
-      ).toEqual([{ scope_key: scenario.scopeX.key }]);
+          select scope_key, opik_trace_id from ai_observation_bindings where id = ${scenario.w1.id}`,
+      ).toEqual([
+        { scope_key: scenario.scopeX.key, opik_trace_id: "mig-trace-9" },
+      ]);
       expect(
         await migSql`
-          select scope_key from ai_observation_bindings where id = ${scenario.ghost.id}`,
-      ).toEqual([{ scope_key: scenario.legacyX1 }]);
+          select scope_key, opik_trace_id from ai_observation_bindings where id = ${scenario.ghost.id}`,
+      ).toEqual([
+        { scope_key: scenario.legacyX1, opik_trace_id: "mig-trace-9" },
+      ]);
       expect(
         await migSql`
           select count(*)::int as n from ai_observation_retention_overrides

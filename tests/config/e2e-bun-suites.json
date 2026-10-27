@@ -1148,6 +1148,14 @@
    "files": [
     "shared/harnesses.test.ts"
    ]
+  },
+  {
+   "name": "server/tests part 18",
+   "files": [
+    "server/tests/opik-builtin-terminal-states.test.ts",
+    "server/tests/opik-migration-0209.integration.test.ts",
+    "server/tests/opik-observer-binding.test.ts"
+   ]
   }
  ],
  "directoryIslands": [
@@ -1640,6 +1648,7 @@
   "server/tests/opik-admin-summary.test.ts",
   "server/tests/opik-bindings.integration.test.ts",
   "server/tests/opik-bindings.test.ts",
+  "server/tests/opik-builtin-terminal-states.test.ts",
   "server/tests/opik-business-tool-linkage.test.ts",
   "server/tests/opik-case-review.integration.test.ts",
   "server/tests/opik-case-review.test.ts",
@@ -1668,10 +1677,12 @@
   "server/tests/opik-health.test.ts",
   "server/tests/opik-id-links.integration.test.ts",
   "server/tests/opik-id-links.test.ts",
+  "server/tests/opik-migration-0209.integration.test.ts",
   "server/tests/opik-judge-scoring.integration.test.ts",
   "server/tests/opik-judge-scoring.test.ts",
   "server/tests/opik-model-span.test.ts",
   "server/tests/opik-module-skeleton.test.ts",
+  "server/tests/opik-observer-binding.test.ts",
   "server/tests/opik-port.test.ts",
   "server/tests/opik-redaction.test.ts",
   "server/tests/opik-results.integration.test.ts",
@@ -1954,6 +1965,9 @@
   "server/tests/multitenancy/signed-download.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/multitenancy/workshop-scope.test.ts": "runner named it: wave3 mt28 套件",
   "server/tests/multitenancy/share-tokens.test.ts": "runner named it: wave3 mt28 套件",
-  "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）"
+  "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）",
+  "server/tests/opik-builtin-terminal-states.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
+  "server/tests/opik-migration-0209.integration.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
+  "server/tests/opik-observer-binding.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）"
  }
 }
