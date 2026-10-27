@@ -11,15 +11,18 @@
  * The surface is thin by design — every decision lives in the assurance
  * (company-assurance.ts) — and it keeps the directory-surface error
  * discipline: refusal bodies are `{error:{code, message:"Request refused."}}`
- * and never carry detail to the caller. The SAML ACS half (`complete` over a
- * POST binding) has no route here: T05.03 owns it.
+ * and never carry detail to the caller. The SAML ACS half (T05.03 / #559) is
+ * the same `complete` over the protocol's POST binding: the route accepts the
+ * form POST and leaves every verification to the evidence bridge, which reads
+ * only the signed SAMLResponse/RelayState — a JSON claims body is not a
+ * protocol response and is refused as one.
  *
  * Production mounting arrives through createApp; until the assembly wires
  * `coworker.directory.companyAuth` the routes answer the closed adapter's
  * controlled 503, which is the honest degraded behaviour.
  */
 
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import {
   COMPANY_AUTH_AUTH_REQUIRED,
   COMPANY_AUTH_NOT_READY,
@@ -141,14 +144,16 @@ export function createCompanyAuthRoutes(deps: CompanyAuthRouteDeps): Hono {
   });
 
   /*
-   * The OIDC callback (T05.02 / #558). No session is required to ARRIVE —
-   * the IdP sent the browser here — and the completion itself binds whatever
-   * live session the request still carries to the challenge's original
-   * company. Success continues where the caller left off (303 to the
-   * challenge's site-local returnPath); every refusal is the controlled
-   * body, never a redirect that would silently continue.
+   * The two protocol callbacks (OIDC: T05.02 / #558; SAML ACS: T05.03 /
+   * #559). No session is required to ARRIVE — the IdP sent the browser
+   * here — and the completion itself binds whatever live session the request
+   * still carries to the challenge's original company. Success continues
+   * where the caller left off (303 to the challenge's site-local
+   * returnPath); every refusal is the controlled body, never a redirect that
+   * would silently continue. Which protocol a request speaks is the bridge's
+   * call (it parses the path and payload), so both routes are one handler.
    */
-  routes.get("/oidc/callback/:providerId", async (context) => {
+  const completeCallback = async (context: Context) => {
     const complete = deps.assurance.complete;
     if (!complete) {
       return context.json(refusalBody(COMPANY_AUTH_NOT_READY), 503);
@@ -174,7 +179,9 @@ export function createCompanyAuthRoutes(deps: CompanyAuthRouteDeps): Hono {
         500,
       );
     }
-  });
+  };
+  routes.get("/oidc/callback/:providerId", completeCallback);
+  routes.post("/saml/acs/:providerId", completeCallback);
 
   return routes;
 }

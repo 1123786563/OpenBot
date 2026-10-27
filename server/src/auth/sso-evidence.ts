@@ -30,6 +30,7 @@
  * a value the transport form asserts about itself is not evidence.
  */
 
+import { X509Certificate } from "node:crypto";
 import { sql as dsql } from "drizzle-orm";
 import { decryptSecret } from "../credentials";
 import type { Database } from "../db/client";
@@ -1815,11 +1816,23 @@ export interface SsoOidcAuthorization {
   readonly scopes: string;
 }
 
-/** The two views one provider registration serves: the bridge's token/JWKS
- * facts and the redirect builder's authorization facts. */
+/** The authorization-facing facts of one registered SAML IdP (T05.03): what
+ * the AuthnRequest builder needs to send the browser to the IdP — the IdP's
+ * SSO entry point, and this SP's own entity ID and ACS URL the AuthnRequest
+ * names (and the signed assertion must then answer to). */
+export interface SsoSamlAuthorization {
+  readonly entryPoint: string;
+  readonly spEntityId: string;
+  readonly acsUrl: string;
+}
+
+/** The views one provider registration serves: the bridge's verification
+ * facts (OIDC token/JWKS, SAML issuer/keys/audience) and the redirect
+ * builders' authorization facts. */
 export interface SsoOidcProviderSource {
   readonly registry: SsoProviderRegistry;
   authorization(providerId: string): Promise<SsoOidcAuthorization | null>;
+  samlAuthorization(providerId: string): Promise<SsoSamlAuthorization | null>;
 }
 
 interface StoredOidcConfig {
@@ -1831,6 +1844,19 @@ interface StoredOidcConfig {
   scopes?: unknown;
 }
 
+/** The Better Auth SSO registration's SAML half (T05.03): `sso_providers.
+ * saml_config` as the plugin's registration schema writes it. Every field is
+ * `unknown` because the column is whatever the writer stored — the reader
+ * below narrows or refuses, never coerces. */
+interface StoredSamlConfig {
+  /** The IdP SSO URL (required by the registration schema). */
+  entryPoint?: unknown;
+  /** IdP signing certificate(s), PEM — string or rotation array. */
+  cert?: unknown;
+  idpMetadata?: { entityID?: unknown; cert?: unknown } | unknown;
+  spMetadata?: { entityID?: unknown } | unknown;
+}
+
 /** The Better Auth SSO registration's OIDC half: `sso_providers.oidc_config`
  * as the plugin wrote it, re-encrypted at rest by the deployment's adapter. */
 function parseStoredOidcConfig(raw: string): StoredOidcConfig | null {
@@ -1840,6 +1866,74 @@ function parseStoredOidcConfig(raw: string): StoredOidcConfig | null {
   } catch {
     return null;
   }
+}
+
+/** Same read for the SAML half. */
+function parseStoredSamlConfig(raw: string): StoredSamlConfig | null {
+  try {
+    const config = JSON.parse(raw) as StoredSamlConfig;
+    return config && typeof config === "object" ? config : null;
+  } catch {
+    return null;
+  }
+}
+
+function storedField(container: unknown, field: string): unknown {
+  return container && typeof container === "object"
+    ? (container as Record<string, unknown>)[field]
+    : undefined;
+}
+
+function optionalConfigString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * One registered SAML signing key as the bridge's verifier needs it: PEM
+ * SubjectPublicKeyInfo. Registrations hand over the IdP's X.509 certificate
+ * (the registration schema's `cert` shape), which carries the same public key
+ * — the certificate wrapper is a transport, so it is unwrapped here; a
+ * registration that stored the bare public key reads as-is. Anything else is
+ * not a key this deployment can verify against, and an unusable provider is a
+ * deployment fact (`SSO_PROVIDER_UNKNOWN`), never a per-request accident.
+ */
+function spkiOfRegisteredSigningKey(pem: string, providerId: string): string {
+  if (pem.includes("-----BEGIN PUBLIC KEY-----")) return pem;
+  if (pem.includes("-----BEGIN CERTIFICATE-----")) {
+    try {
+      return new X509Certificate(pem).publicKey.export({
+        type: "spki",
+        format: "pem",
+      }) as string;
+    } catch {
+      // Falls through to the refusal below.
+    }
+  }
+  throw new SsoEvidenceRefused(
+    "SSO_PROVIDER_UNKNOWN",
+    `provider ${providerId}'s stored SAML signing certificate is neither a PEM SubjectPublicKeyInfo nor a readable PEM X.509 certificate: re-register the provider`,
+  );
+}
+
+/** The cert fields the registration schema accepts (`idpMetadata.cert` wins
+ * over the top-level `cert`, the schema's own precedence), normalized to SPKI
+ * PEMs. An IdP-metadata-XML-only registration names no key here and refuses —
+ * parsing the metadata document is a later widening, not a silent default. */
+function samlSigningKeysOf(
+  config: StoredSamlConfig,
+  providerId: string,
+): readonly string[] {
+  const raw = storedField(config.idpMetadata, "cert") ?? config.cert;
+  const pems = (Array.isArray(raw) ? raw : [raw])
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter((value) => value.length > 0);
+  if (pems.length === 0) {
+    throw new SsoEvidenceRefused(
+      "SSO_PROVIDER_UNKNOWN",
+      `provider ${providerId}'s stored SAML registration carries no usable signing certificate: the company-auth surface refuses a provider it cannot verify signatures against`,
+    );
+  }
+  return pems.map((pem) => spkiOfRegisteredSigningKey(pem, providerId));
 }
 
 function requireConfigString(
@@ -1888,6 +1982,10 @@ export function createStoredSsoProviders(deps: {
     );
   }
   const redirectBase = `${deps.redirectOrigin.replace(/\/+$/, "")}/api/enterprise/company-auth/oidc/callback`;
+  /** This deployment's own ACS for the company-auth SAML half (T05.03): the
+   * URL the AuthnRequest names and the signed assertion's Recipient,
+   * Destination and AudienceRestriction must answer to. */
+  const samlAcsBase = `${deps.redirectOrigin.replace(/\/+$/, "")}/api/enterprise/company-auth/saml/acs`;
 
   const load = async (
     providerId: string,
@@ -1946,14 +2044,99 @@ export function createStoredSsoProviders(deps: {
     };
   };
 
+  /**
+   * The SAML read of the same registrations table: one row's sealed
+   * `saml_config` opened with the deployment key, then narrowed into the two
+   * views (the bridge's verification facts and the redirect builder's
+   * authorization facts). A row without `saml_config` is not a SAML provider
+   * (`null`); a SAML row that cannot be opened or that names no entity ID,
+   * entry point or signing certificate refuses `SSO_PROVIDER_UNKNOWN` — the
+   * fail-closed discipline the OIDC read keeps. The IdP's entity ID is the
+   * registration's `idpMetadata.entityID`, falling back to the row's issuer
+   * column exactly as the plugin's own SP side does; this SP's entity ID is
+   * the registration's `spMetadata.entityID` with the same fallback.
+   */
+  const loadSaml = async (
+    providerId: string,
+  ): Promise<{
+    provider: SsoSamlProvider;
+    authorization: SsoSamlAuthorization;
+  } | null> => {
+    if (typeof providerId !== "string" || !providerId) return null;
+    const result = await deps.database.execute(
+      dsql`SELECT issuer, saml_config FROM sso_providers
+            WHERE provider_id = ${providerId} AND saml_config IS NOT NULL
+            LIMIT 1`,
+    );
+    const [row] = rowsOf(result);
+    if (!row) return null;
+    const stored = String(row.saml_config);
+    let raw = stored;
+    if (stored.startsWith('{"version":1')) {
+      try {
+        raw = await decryptSecret(deps.encryptionKey, stored);
+      } catch {
+        throw new SsoEvidenceRefused(
+          "SSO_PROVIDER_UNKNOWN",
+          `provider ${providerId}'s stored registration cannot be opened with this deployment key: re-register the provider`,
+        );
+      }
+    }
+    const config = parseStoredSamlConfig(raw);
+    if (!config) return null;
+    const rowIssuer = typeof row.issuer === "string" ? row.issuer : "";
+    const issuer =
+      optionalConfigString(storedField(config.idpMetadata, "entityID")) ??
+      rowIssuer;
+    if (!issuer) {
+      throw new SsoEvidenceRefused(
+        "SSO_PROVIDER_UNKNOWN",
+        `provider ${providerId}'s stored SAML registration names no IdP entity ID: the company-auth surface refuses a provider whose issuer it cannot pin`,
+      );
+    }
+    const spEntityId =
+      optionalConfigString(storedField(config.spMetadata, "entityID")) ??
+      rowIssuer;
+    if (!spEntityId) {
+      throw new SsoEvidenceRefused(
+        "SSO_PROVIDER_UNKNOWN",
+        `provider ${providerId}'s stored SAML registration names no SP entity ID: the audience the assertion must answer to cannot be invented`,
+      );
+    }
+    const entryPoint = optionalConfigString(config.entryPoint);
+    if (!entryPoint) {
+      throw new SsoEvidenceRefused(
+        "SSO_PROVIDER_UNKNOWN",
+        `provider ${providerId}'s stored SAML registration names no SSO entry point: no AuthnRequest can be addressed to it`,
+      );
+    }
+    const acsUrl = `${samlAcsBase}/${encodeURIComponent(providerId)}`;
+    return {
+      provider: {
+        providerId,
+        issuer,
+        spEntityId,
+        acsUrl,
+        signingKeys: samlSigningKeysOf(config, providerId),
+      },
+      authorization: { entryPoint, spEntityId, acsUrl },
+    };
+  };
+
   return {
     registry: {
       async find(providerId) {
         return (await load(providerId))?.provider ?? null;
       },
+      async findSaml(providerId) {
+        return (await loadSaml(providerId))?.provider ?? null;
+      },
     },
     async authorization(providerId) {
       return (await load(providerId))?.authorization ?? null;
+    },
+    async samlAuthorization(providerId) {
+      return (await loadSaml(providerId))?.authorization ?? null;
     },
   };
 }

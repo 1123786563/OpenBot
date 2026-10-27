@@ -41,6 +41,7 @@
  * generations and policy revision the read gate compares live at use time.
  */
 
+import { deflateRawSync } from "node:zlib";
 import { sql as dsql } from "drizzle-orm";
 import { encryptSecret } from "../credentials";
 import type { Database } from "../db/client";
@@ -829,6 +830,77 @@ export function createOidcRedirectBuilder(deps: {
       url.searchParams.set("nonce", request.nonce);
       url.searchParams.set("code_challenge", request.codeChallenge);
       url.searchParams.set("code_challenge_method", "S256");
+      return url.toString();
+    },
+  };
+}
+
+/*
+ * The SAML half of the redirect builder (T05.03 / #559): SP-initiated SSO
+ * over the HTTP-Redirect binding. The AuthnRequest names the challenge's
+ * persisted `protocolRequestId` as its ID and this SP's entity ID and ACS URL
+ * (the registered facts the signed assertion will be held to), is
+ * raw-DEFLATE-compressed and base64'd into the `SAMLRequest` query parameter,
+ * and the challenge's one-time `state` rides as `RelayState` — the two
+ * correlation tokens the evidence bridge re-binds at the ACS.
+ *
+ * The AuthnRequest itself is unsigned: nothing in the challenge model stores
+ * an SP signing key, and the evidence never trusts the request — only the
+ * signed response, bound by RelayState/InResponseTo to the persisted
+ * challenge. An IdP policy demanding signed AuthnRequests is a deployment
+ * fact this surface cannot meet yet (the challenge refuses 503 before any
+ * row is written when the registration is unusable), not a silent fallback.
+ */
+function escapeSamlAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/\t/g, "&#x9;")
+    .replace(/\n/g, "&#xA;")
+    .replace(/\r/g, "&#xD;");
+}
+
+function escapeSamlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export function createSamlRedirectBuilder(deps: {
+  readonly providers: SsoOidcProviderSource;
+}): CompanyAuthRedirectBuilder {
+  if (!deps || typeof deps.providers?.samlAuthorization !== "function") {
+    throw new CompanyAssuranceRefusal(
+      503,
+      COMPANY_ASSURANCE_POLICY_REQUIRED,
+      "createSamlRedirectBuilder needs its provider source: a builder that cannot name the IdP must refuse before anything is persisted",
+    );
+  }
+  return {
+    async buildRedirect(request) {
+      if (request.protocol !== "saml") return null;
+      const authorization = await deps.providers.samlAuthorization(
+        request.providerId,
+      );
+      if (!authorization) return null;
+      const authnRequest =
+        `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"` +
+        ` ID="${escapeSamlAttribute(request.protocolRequestId)}" Version="2.0"` +
+        ` IssueInstant="${new Date().toISOString().replace(/\.\d{3}Z$/, "Z")}"` +
+        ` Destination="${escapeSamlAttribute(authorization.entryPoint)}"` +
+        ` AssertionConsumerServiceURL="${escapeSamlAttribute(authorization.acsUrl)}"` +
+        ` ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">` +
+        `<saml:Issuer>${escapeSamlText(authorization.spEntityId)}</saml:Issuer>` +
+        `</samlp:AuthnRequest>`;
+      const url = new URL(authorization.entryPoint);
+      url.searchParams.set(
+        "SAMLRequest",
+        deflateRawSync(authnRequest).toString("base64"),
+      );
+      url.searchParams.set("RelayState", request.state);
       return url.toString();
     },
   };
