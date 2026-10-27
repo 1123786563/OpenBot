@@ -4884,7 +4884,7 @@ function governedRemoteRun(
     const traceId = chain.traceId;
     return from(
       Promise.all([
-        gate({
+        admitRemoteRunBounded(gate, {
           /*
            * The idempotency key carries a SERVER-side nonce, not the client's runId: AG-UI
            * runId is wire input, and a key derived from it let a client reusing one runId
@@ -5773,6 +5773,13 @@ export function builtinScopeResolutionTimeoutForTests(ms: number): void {
   builtinScopeResolutionTimeoutMs = ms;
 }
 
+let remoteRunBudgetGateTimeoutMs = 5_000;
+
+/** Test seam for the budget-gate timeout (OCR final #62), on the scope seam's footing. */
+export function remoteRunBudgetGateTimeoutForTests(ms: number): void {
+  remoteRunBudgetGateTimeoutMs = ms;
+}
+
 /**
  * The bounded scope resolution both run paths ask (F5E1-F2 lifted it out of the built-in
  * wrapper unchanged, so the remote path cannot grow a second, different discipline).
@@ -5830,6 +5837,46 @@ async function resolveObservationScopeBounded(
       "builtin-run-scope-resolution-failed",
     );
     return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The gate half of the admission bound (OCR final #62). The scope resolver above
+ * is raced because an unbounded dependency holds the defer pending forever; the
+ * budget gate is the SAME class of dependency — a DB-backed hold reservation —
+ * and it sat in the same Promise.all bare. A gate that never settles would leave
+ * the run pending with no event and no error, so the race bounds the wait and a
+ * timeout FAILS CLOSED: the rejection rides the budget refusal's own path (the
+ * run errors before it dials), never a pass-through. The losing gate promise
+ * stays handled by the race, and the timer is cleared the moment the race
+ * settles. The hold a timed-out gate later takes, if any, is the plain
+ * reservation the 15-minute acceptance matrix already releases.
+ */
+async function admitRemoteRunBounded(
+  gate: (input: RemoteRunAdmissionInput) => Promise<RemoteRunAdmission>,
+  input: RemoteRunAdmissionInput,
+): Promise<RemoteRunAdmission> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(gate(input)),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          log.warn(
+            {
+              type: "remote-run-budget-gate-timeout",
+              botId: input.botId,
+              runId: input.runId,
+              timedOut: true,
+            },
+            "remote-run-budget-gate-timeout",
+          );
+          reject(new Error("REMOTE_RUN_BUDGET_GATE_TIMEOUT"));
+        }, remoteRunBudgetGateTimeoutMs);
+      }),
+    ]);
   } finally {
     clearTimeout(timer);
   }

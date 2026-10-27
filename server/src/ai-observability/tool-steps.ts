@@ -268,6 +268,13 @@ const FRAGMENT_KEYS: readonly string[] = [
 /** Retriever options cap top_k at 10; the cap here is a defensive ceiling, not policy. */
 const MAX_FRAGMENTS = 64;
 
+/**
+ * The tool_call_id bound both faces answer to (OCR final #59): the read side
+ * treats an id past this length as never provided, so the write side clamps to
+ * the same line — one shared constant, never two ceilings that can drift apart.
+ */
+export const MAX_TOOL_CALL_ID_LENGTH = 256;
+
 /** Hyphenated UUIDv7 — the explicit-id shape the verified contract adopts verbatim. */
 const UUID_V7 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -587,6 +594,22 @@ function observerChain(
   return { traceId, runRef };
 }
 
+/**
+ * The counted half of the FREV-02 chain gate for steps (OCR final #49), on the
+ * model-span recorder's footing (OCR R2 C1): a scoped observation whose run
+ * cannot prove a chain exports nothing — the fail-closed verdict is unchanged —
+ * but the drop is a fact, never silence: counted here, bounded by construction
+ * (one number per reason, no ids, no content). record and recordRetrieval share
+ * the one counter, so operation cannot distinguish a dropped tool step from a
+ * dropped retrieval by which one was silent.
+ */
+const chainGateDrops = { missingChain: 0 };
+
+/** Read the step chain-gate drop counts (a copy: readers cannot reset what was counted). */
+export function toolStepChainGateDrops(): Readonly<{ missingChain: number }> {
+  return { ...chainGateDrops };
+}
+
 export function createToolStepRecorder(
   deps: Readonly<{
     healthService: Pick<OpikHealthService, "submit" | "countIdLink">;
@@ -614,8 +637,28 @@ export function createToolStepRecorder(
       // chain-less step has no local authority to export under and submits
       // nothing, rather than rooting a fresh unattributable trace.
       const chain = observerChain(observation.trace);
-      if (chain === null) return;
-      const span = buildToolStepSpan(observation);
+      if (chain === null) {
+        // Counted, never silent (OCR R2 C1 — the model-span gate's discipline,
+        // OCR final #49): the refusal is the FREV-02 verdict; this count is its
+        // visibility.
+        chainGateDrops.missingChain += 1;
+        return;
+      }
+      // One bound on both faces (#59): an id past MAX_TOOL_CALL_ID_LENGTH would
+      // otherwise land in the store only for the read side to judge "never
+      // provided" — the association lost silently. Clamped once here, so the
+      // span's attribute and the id link below carry the SAME readable id.
+      const bounded: ToolStepObservation =
+        observation.toolCallId.length > MAX_TOOL_CALL_ID_LENGTH
+          ? {
+              ...observation,
+              toolCallId: observation.toolCallId.slice(
+                0,
+                MAX_TOOL_CALL_ID_LENGTH,
+              ),
+            }
+          : observation;
+      const span = buildToolStepSpan(bounded);
       const idLinks = deps.idLinks;
       const write: OpikObservationWrite = {
         scopeKey: scope.key,
@@ -637,7 +680,7 @@ export function createToolStepRecorder(
             // no ids, no evidence) so a broken chain is observable in operation.
             try {
               const verdict = await idLinks.link(scope, {
-                local: { kind: "tool_step", id: observation.toolCallId },
+                local: { kind: "tool_step", id: bounded.toolCallId },
                 upstream: { kind: "span", id: span.opik.spanId },
                 ...(observation.trace?.runRef !== undefined
                   ? { runRef: observation.trace.runRef }
@@ -665,7 +708,11 @@ export function createToolStepRecorder(
       // id'd), and a synthesized one would make the mapping ambiguous. Only tool
       // steps — which carry a toolCallId — link.
       const chain = observerChain(observation.trace);
-      if (chain === null) return; // FREV-02: see record above.
+      if (chain === null) {
+        // FREV-02: see record above — same gate, same count (#49).
+        chainGateDrops.missingChain += 1;
+        return;
+      }
       const span = buildRetrievalStepSpan(observation);
       const write: OpikObservationWrite = {
         scopeKey: scope.key,

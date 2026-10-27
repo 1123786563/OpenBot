@@ -46,6 +46,7 @@ import {
 } from "../src/ai-observability/queries/runs";
 import { createRunsQueryRoutes } from "../src/ai-observability/routes/runs";
 import { resolveObservationScope } from "../src/ai-observability/scope";
+import { MAX_TOOL_CALL_ID_LENGTH } from "../src/ai-observability/tool-steps";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 
 const owner = { id: "user-owner", role: "user" } as const;
@@ -1204,5 +1205,76 @@ describe("the upstream status vocabulary is pinned, unknown the only fallback (R
       span_count: 6,
     };
     expect(projectRow(evidenceShape).state).toBe("unknown");
+  });
+});
+
+describe("steps — the tool_call_id bound is the write face's own line (OCR final #59)", () => {
+  /** One span row shaped as the read-back observed it, with a caller-set call id. */
+  function toolSpanRow(toolCallId: string) {
+    return {
+      id: "span-1",
+      trace_id: "trace-1",
+      parent_span_id: null,
+      name: "tool:host_read",
+      start_time: "2026-10-16T09:30:08.000Z",
+      end_time: "2026-10-16T09:30:09.000Z",
+      input: {
+        step_kind: "tool",
+        tool_call_id: toolCallId,
+        execution_state: "unobserved",
+        span_state: "unknown",
+        origin: "builtin",
+      },
+      output: { output: "the projected result text" },
+    };
+  }
+
+  /** A read-only port whose one span page holds exactly the given rows. */
+  function stepsPort(rows: unknown[]): OpikPort {
+    return {
+      healthCheck: async () => ({ outcome: "ok", value: { healthy: true } }),
+      retrieveProject: async () => ({ outcome: "ok", value: { id: "proj-1" } }),
+      listTraces: async () => ({
+        outcome: "ok",
+        value: { page: 1, size: 0, total: 0, content: [] },
+      }),
+      listSpans: async () => ({
+        outcome: "ok",
+        value: {
+          page: 1,
+          size: rows.length,
+          total: rows.length,
+          content: rows as never,
+        },
+      }),
+      createTrace: async () => {
+        throw new Error("the read surface must never write");
+      },
+      writeSpans: async () => {
+        throw new Error("the read surface must never write");
+      },
+    };
+  }
+
+  test("an id at the shared bound reads back provided; one past it stays never provided", async () => {
+    // Exactly at the shared constant — the length the write face clamps to now:
+    // the association survives the round trip instead of vanishing past a
+    // read-side-only ceiling.
+    const atBound = "c".repeat(MAX_TOOL_CALL_ID_LENGTH);
+    const bounded = await createRunsQueryService({
+      bindings: { latestAttempt: async () => bindingRow(scopeA) },
+      config: () => enabledConfig,
+      port: stepsPort([toolSpanRow(atBound)]),
+    }).steps(scopeA, "run-1");
+    expect(bounded.steps[0]?.toolCallId).toBe(atBound);
+
+    // One past the shared line — a row this service's writers can no longer
+    // produce (OTLP-ingested or hand-edited): the fail-closed half is unchanged.
+    const past = await createRunsQueryService({
+      bindings: { latestAttempt: async () => bindingRow(scopeA) },
+      config: () => enabledConfig,
+      port: stepsPort([toolSpanRow("c".repeat(MAX_TOOL_CALL_ID_LENGTH + 1))]),
+    }).steps(scopeA, "run-1");
+    expect(past.steps[0]?.toolCallId).toBeUndefined();
   });
 });

@@ -210,10 +210,34 @@ function attribute(key: string, safe: SafeValue) {
   return { key, value: { stringValue: JSON.stringify(plain) } };
 }
 
-function buildSpan(span: OpikOtlpSpan): Record<string, unknown> {
+/**
+ * The shape half of the span contract the DRIFT determination reads (OCR final
+ * #61): writeSpans runs it BEFORE any drift verdict — the createTrace :826
+ * order, shape first, semantics second — so a malformed span id is refused once
+ * as OPERATION_INPUT_INVALID and can never reach the drift verdict that would
+ * suspend a whole scope's writes behind a shape complaint. Only the fields the
+ * drift comparison and the completion derivation read belong here: the carried
+ * parent and the timestamps are deliberately absent, because the C5 completion
+ * may still legitimately replace an unverifiable parent with the run root, and
+ * buildSpan keeps validating them at wire time.
+ */
+function requireSpanShape(span: OpikOtlpSpan): void {
   if (!HEX32.test(span.traceId) || !HEX16.test(span.spanId)) {
     throw new OpikPortError("OPERATION_INPUT_INVALID");
   }
+  if (span.opik) {
+    const { traceId, spanId, parentSpanId } = span.opik;
+    if (!UUIDV7.test(traceId) || !UUIDV7.test(spanId)) {
+      throw new OpikPortError("OPERATION_INPUT_INVALID");
+    }
+    if (parentSpanId !== undefined && !UUIDV7.test(parentSpanId)) {
+      throw new OpikPortError("OPERATION_INPUT_INVALID");
+    }
+  }
+}
+
+function buildSpan(span: OpikOtlpSpan): Record<string, unknown> {
+  requireSpanShape(span);
   if (span.parentSpanId !== undefined && !HEX16.test(span.parentSpanId)) {
     throw new OpikPortError("OPERATION_INPUT_INVALID");
   }
@@ -242,12 +266,6 @@ function buildSpan(span: OpikOtlpSpan): Record<string, unknown> {
   }
   if (span.opik) {
     const { traceId, spanId, parentSpanId } = span.opik;
-    if (!UUIDV7.test(traceId) || !UUIDV7.test(spanId)) {
-      throw new OpikPortError("OPERATION_INPUT_INVALID");
-    }
-    if (parentSpanId !== undefined && !UUIDV7.test(parentSpanId)) {
-      throw new OpikPortError("OPERATION_INPUT_INVALID");
-    }
     attributes.push({ key: "opik.trace_id", value: { stringValue: traceId } });
     attributes.push({ key: "opik.span_id", value: { stringValue: spanId } });
     if (parentSpanId !== undefined) {
@@ -944,6 +962,12 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
       if (!Array.isArray(input.spans) || input.spans.length === 0) {
         throw new OpikPortError("OPERATION_INPUT_INVALID");
       }
+      // Shape before semantics (OCR final #61, the createTrace :826 order): the
+      // drift comparison below reads span.opik.traceId raw, so a MALFORMED
+      // explicit id would otherwise read as a disagreement with the binding and
+      // suspend this scope's writes — a shape refusal is a single deterministic
+      // OPERATION_INPUT_INVALID instead, never a drift consequence.
+      for (const span of input.spans) requireSpanShape(span);
       // The upstream id coordination at the OTLP half (FREV-02, the createTrace
       // R5-16 precedent): a span adopting an explicit upstream trace id that
       // disagrees with the one this binding already recorded would mint a

@@ -49,6 +49,7 @@ import {
   REMOTE_BUDGET_RECEIPT_EVENT,
   type RemoteBudgetContractCaps,
   type RemoteRunFact,
+  remoteRunBudgetGateTimeoutForTests,
   resolveRuntimeAgents,
   runtimeModelForEnvironment,
   setBuiltinModelSpanObserver,
@@ -941,5 +942,92 @@ describe("remote run facts stay bounded under an event-spamming endpoint (OCR R2
     // cells the cell cap allows — the events cap neither lowered nor raised it — and
     // each stayed a proposal the server never executed.
     expect(steps).toHaveLength(CELL_CAP);
+  });
+});
+
+// OCR final #62 — the budget gate sat in the admission Promise.all bare: the scope
+// half of that same Promise.all is raced (resolveObservationScopeBounded, OCR R5-42)
+// precisely because an unbounded dependency holds the defer pending forever, but a
+// gate that never settles did exactly that — no event, no error, a run pending with
+// nothing to release it. The gate now races the same-shaped timeout and a timeout
+// FAILS CLOSED: the rejection is the budget refusal's own path (the run errors
+// before it dials), on the scope seam's footing.
+describe("the remote budget gate is bounded (OCR final #62)", () => {
+  /** The deployment token both ends hold; the resolver needs a declared endpoint. */
+  const SECRET = `synthetic-${"managed-token"}`;
+  const ENDPOINT = "https://gate.test/ag-ui";
+  const POLICY_TOKENS = 1_000_000;
+
+  test("a gate that never settles refuses the run within the timeout, fail closed before the dial", async () => {
+    // The exact dependency shape the race exists for: a DB-backed hold reservation
+    // that hangs forever. The fetch below throws if reached — a refused admission
+    // must not dial — so the rejection's message proves which path settled.
+    const neverGate = () => new Promise<never>(() => {});
+    const resolver = createRemoteBudgetContractResolver({
+      endpoints: new Set([canonicalRemoteEndpoint(ENDPOINT) as string]),
+      sharedSecret: SECRET,
+      maximumTokens: POLICY_TOKENS,
+      maxModelSteps: 8,
+    });
+    const noDial: AgentFetch = async () => {
+      throw new Error("no dial may happen after a refused admission");
+    };
+
+    setRemoteRunBudgetGate(neverGate);
+    setRemoteBudgetContractResolver(resolver);
+    remoteRunBudgetGateTimeoutForTests(50);
+    try {
+      const agents = await buildAgents(
+        [
+          {
+            id: "risk",
+            name: "Risk",
+            type: "remote_ag_ui" as const,
+            endpoint: ENDPOINT,
+            headers: { "x-openbot-agent-token": SECRET },
+            standingMessage: standingRoleMessage({
+              id: "risk",
+              name: "Risk",
+              type: "remote_ag_ui" as const,
+              title: "Risk & Compliance",
+              roleDescription: "Investigate policies and controls.",
+            }),
+          },
+        ],
+        { provider: "openai", defaultModel: "test" },
+        null,
+        undefined,
+        async () => [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        noDial,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { userId: "person-1" },
+        undefined,
+      );
+      const agent = agents.risk;
+      if (!agent) throw new Error("buildAgents returned no remote agent");
+      agent.threadId = "gate-thread";
+      const began = Date.now();
+      await expect(
+        agent.runAgent({ runId: "gate-run" }, { onEvent: () => {} }),
+      ).rejects.toThrow("REMOTE_RUN_BUDGET_GATE_TIMEOUT");
+      // Settled inside the seam's 50ms window — and by construction inside the
+      // default 5s, which is what the bare (un-raced) call never did at all.
+      expect(Date.now() - began).toBeLessThan(5_000);
+    } finally {
+      setRemoteRunBudgetGate(undefined);
+      setRemoteBudgetContractResolver(undefined);
+      remoteRunBudgetGateTimeoutForTests(5_000);
+    }
   });
 });

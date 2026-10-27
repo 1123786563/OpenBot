@@ -372,7 +372,10 @@ describe("serialization follows the verified T04 contract exactly", () => {
           ...derivedSpan,
           endTimeUnixNano: "1760000000000000001",
           opik: {
-            traceId: "01a1405b-f832-70cf-b204-f4dd5138700",
+            // A WELL-FORMED UUIDv7 that still disagrees with the recorded one —
+            // since #61 shape is refused first, so the drift fixture must carry
+            // a legal id for the semantic disagreement to be what is tested.
+            traceId: "01a1405b-f832-70cf-8204-f4dd5138700f",
             spanId: "01a1405b-f832-7c9a-8e2f-9a6b7c8d9e0f",
           },
         },
@@ -401,6 +404,37 @@ describe("serialization follows the verified T04 contract exactly", () => {
       ],
     });
     expect(replay).toEqual({ outcome: "ok", value: { accepted: true } });
+  });
+
+  test("a malformed explicit upstream id is a shape refusal before any drift verdict (OCR final #61)", async () => {
+    const { calls, transport } = recorder(
+      () => new Response("", { status: 200 }),
+    );
+    const p = port({ fetch: transport });
+    const recorded = {
+      ...ownBinding,
+      opikTraceId: "01a13db5-220b-7681-8026-cdf30cacf2ca",
+    };
+    // An id that is neither the recorded UUIDv7 nor any UUIDv7 at all. Shape
+    // first (the createTrace :826 order): the refusal is the single
+    // deterministic OPERATION_INPUT_INVALID — never a binding_mismatch drift
+    // that would suspend this scope's writes behind a shape complaint.
+    await expect(
+      p.writeSpans(trusted, {
+        binding: recorded,
+        spans: [
+          {
+            ...derivedSpan,
+            endTimeUnixNano: "1760000000000000001",
+            opik: {
+              traceId: "not-a-uuid",
+              spanId: "01a1405b-f832-7c9a-8e2f-9a6b7c8d9e0f",
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow(new OpikPortError("OPERATION_INPUT_INVALID"));
+    expect(calls.length).toBe(0);
   });
 
   test("explicit-path spans carry opik.* overrides as hyphenated UUIDv7 attributes", async () => {

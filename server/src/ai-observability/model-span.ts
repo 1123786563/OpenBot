@@ -44,7 +44,6 @@ import {
   projectApprovedSpanContent,
   type SpanContentApproval,
   W3C_SPAN_ID,
-  W3C_TRACE_ID,
 } from "./span-support";
 
 /**
@@ -95,8 +94,9 @@ export type ModelSpanObservation = Readonly<{
   /**
    * The run's W3C trace context captured when the model call began — the chain this
    * span joins instead of rooting its own (the T15 tool-step precedent, OCR round-1
-   * h6). Absent, malformed, or outside the W3C shapes roots the span's own trace with
-   * no parent, exactly as before: a context the caller cannot prove is never claimed.
+   * h6). Absent or malformed exports nothing at all (FREV-02): the gate counts the
+   * observation and drops the whole span, so no fresh root is ever minted for a
+   * context the caller cannot prove — never claimed, never exported as a new root.
    */
   trace?: Readonly<{ traceId: string; parentSpanId?: string }>;
 }>;
@@ -165,24 +165,22 @@ function usageOf(
     : { state: "unavailable" };
 }
 
-function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
+function buildModelSpan(
+  observation: ModelSpanObservation,
+  chainTraceId: string,
+): OpikOtlpSpan {
   const { ending } = observation;
   const usage = usageOf(ending);
   const spanState = modelSpanTerminalState(ending);
 
   // The run's chain (OCR h6): a provable W3C context joins the run's trace and
   // parents under the run span, so every model call of one run lands in one trace
-  // instead of minting an orphan per call. The context is adopted whole — a
-  // malformed trace id claims nothing, not even a well-formed parent. Same
-  // discipline as the tool-step spanIdentity.
-  const proven =
-    observation.trace !== undefined &&
-    W3C_TRACE_ID.test(observation.trace.traceId);
-  const traceId = proven
-    ? observation.trace.traceId
-    : randomBytes(16).toString("hex");
+  // instead of minting an orphan per call. The trace id is the chain record()
+  // already proved — FREV-02 counts and drops an unprovable observation whole,
+  // so no fresh-root fallback exists here (OCR final #57): a span without a
+  // proven chain never reaches this function. The parent is still adopted whole:
+  // an unprovable parentSpanId claims nothing, not even beside a proven chain.
   const parentSpanId =
-    proven &&
     observation.trace?.parentSpanId !== undefined &&
     W3C_SPAN_ID.test(observation.trace.parentSpanId)
       ? observation.trace.parentSpanId
@@ -237,7 +235,7 @@ function buildModelSpan(observation: ModelSpanObservation): OpikOtlpSpan {
   const startNs =
     nanos(observation.occurredAt) ?? nanos(observation.endedAt) ?? nowNs();
   return {
-    traceId,
+    traceId: chainTraceId,
     ...(parentSpanId !== undefined ? { parentSpanId } : {}),
     spanId: randomBytes(8).toString("hex"),
     // A withheld name would be refused by the port; a known-safe literal stands in.
@@ -292,7 +290,7 @@ export function createModelSpanRecorder(
         chainGateDrops.missingChain += 1;
         return;
       }
-      const span = buildModelSpan(observation);
+      const span = buildModelSpan(observation, chainTraceId);
       const write: OpikObservationWrite = {
         scopeKey: scope.key,
         operation: "writeSpans",

@@ -50,6 +50,7 @@ import { OpikPortError } from "../opik-port";
 import { projectSafeMetadata, projectSafeText } from "../redaction";
 import type { AttemptRunState } from "../run-lifecycle";
 import { bindCursor, cacheKey, readCursor, scopeCacheKey } from "../scope";
+import { MAX_TOOL_CALL_ID_LENGTH } from "../tool-steps";
 
 /** The upstream window this deployment is willing to fetch per read. */
 export const DEFAULT_RUNS_WINDOW = 100;
@@ -396,13 +397,16 @@ function projectStep(row: OpikSpanRow): RunStep | null {
   // read-side ceiling the other projected fields answer to (OCR R5-379): the
   // write-side allowlist binds this service's writers only, so an OTLP-ingested
   // or hand-edited row of unbounded text would ride the wire whole — over-long
-  // ids are treated as never provided, like a withheld projection.
+  // ids are treated as never provided, like a withheld projection. The line
+  // itself is the shared MAX_TOOL_CALL_ID_LENGTH the write face clamps at
+  // (OCR final #59): this side clamps nothing, it only fails closed past the
+  // same line.
   const rawCallId = attributes.tool_call_id;
   const toolCallId =
     kind === "tool" &&
     typeof rawCallId === "string" &&
     rawCallId.length > 0 &&
-    rawCallId.length <= 256
+    rawCallId.length <= MAX_TOOL_CALL_ID_LENGTH
       ? rawCallId
       : undefined;
   return {

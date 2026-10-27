@@ -29,8 +29,10 @@ import { resolveObservationScope } from "../src/ai-observability/scope";
 import { approveSpanContent } from "../src/ai-observability/span-support";
 import {
   createToolStepRecorder,
+  MAX_TOOL_CALL_ID_LENGTH,
   type RetrievalStepObservation,
   type ToolStepObservation,
+  toolStepChainGateDrops,
   toolStepExecutionState,
   toolStepTerminalState,
 } from "../src/ai-observability/tool-steps";
@@ -1869,5 +1871,74 @@ describe("per-run tool-step cell isolation and execute-side discipline (OCR R5-4
     }
     expect(facts).toHaveLength(2);
     expect(facts[1].execution).toEqual({ kind: "succeeded", output: "ok" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The FREV-02 chain gate's counted half (#49) and the shared tool_call_id
+// bound both faces answer to (#59)
+// ---------------------------------------------------------------------------
+
+describe("the step chain gate is counted, never silent (OCR final #49)", () => {
+  test("a scoped step with no provable chain drops once per observation, record and recordRetrieval alike", () => {
+    const before = toolStepChainGateDrops().missingChain;
+    const queue = fakeQueue();
+    const recorder = createToolStepRecorder({
+      healthService: queue.queue,
+      bindings: observerRunBindingGateForTests(),
+    });
+    const toolStep: ToolStepObservation = {
+      toolCallId: "call-gate",
+      endedAt,
+      proposalObserved: true,
+      executionObserved: false,
+      receiptObserved: false,
+      window: "terminal",
+      scope: aScope(),
+    };
+    // No trace at all, and a malformed one: the same counted refusal.
+    recorder.record(toolStep);
+    recorder.record({ ...toolStep, trace: { traceId: "not-a-chain" } });
+    recorder.recordRetrieval({
+      occurredAt: startedAt,
+      endedAt,
+      query: "vacation policy",
+      outcome: { kind: "miss" },
+      scope: aScope(),
+    });
+    // The gate's fail-closed verdict is unchanged: nothing queued, nothing built.
+    expect(queue.submitted).toHaveLength(0);
+    // ...but each drop is an observable fact — one count per refused observation,
+    // shared by both recorders, on the model-span gate's footing (OCR R2 C1).
+    expect(toolStepChainGateDrops().missingChain).toBe(before + 3);
+    // The reader hands out a copy: tests and operators cannot reset the count.
+    (toolStepChainGateDrops() as { missingChain: number }).missingChain = 0;
+    expect(toolStepChainGateDrops().missingChain).toBe(before + 3);
+  });
+});
+
+describe("the tool_call_id bound is one line on both faces (OCR final #59)", () => {
+  test("a pathological over-long call id is clamped at the write face, so the read face no longer judges it never provided", async () => {
+    const longId = `call-${"x".repeat(MAX_TOOL_CALL_ID_LENGTH)}`;
+    expect(longId.length).toBe(MAX_TOOL_CALL_ID_LENGTH + 5);
+    const { writes } = await recordAndCapture({
+      toolCallId: longId,
+      toolName: "host_read",
+      proposedAt: startedAt,
+      endedAt,
+      proposalObserved: true,
+      executionObserved: false,
+      receiptObserved: false,
+      window: "terminal",
+      scope: aScope(),
+    });
+    const span = writes[0].spans[0];
+    // The span attribute carries the clamped id — exactly the length the read
+    // side's shared constant admits, and the true prefix of the raw call id:
+    // through the write face this id reads back as provided, not absent.
+    expect(span.attributes?.tool_call_id).toEqual({
+      state: "projected",
+      value: longId.slice(0, MAX_TOOL_CALL_ID_LENGTH),
+    });
   });
 });
