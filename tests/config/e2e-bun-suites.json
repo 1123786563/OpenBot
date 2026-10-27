@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T04.05 password-recovery registration",
+  "generatedBy": "T04.06 password-recovery registration",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1349,6 +1349,12 @@
       "files": [
         "server/tests/better-auth/password-reset-request.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T04.06.01",
+      "files": [
+        "server/tests/better-auth/password-recovery.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1553,6 +1559,7 @@
     "server/tests/better-auth/migration-verify.test.ts",
     "server/tests/better-auth/oidc-evidence-contract.test.ts",
     "server/tests/better-auth/outbox-fence.test.ts",
+    "server/tests/better-auth/password-recovery.test.ts",
     "server/tests/better-auth/password-reset-request.test.ts",
     "server/tests/better-auth/principal-registry.test.ts",
     "server/tests/better-auth/saml-evidence-contract.test.ts",
@@ -2204,6 +2211,7 @@
     "server/tests/better-auth/team-management-grants.test.ts": "T04.07 team-management-grants suite: runs on the five BA_TEST_* island URLs and drives the real 0209-0217 stack through the directory executor team-management-grant handlers and the directory-backed company-admin port (per-generation revoke idempotency per interfaces §3); registered by the task through writeManifest with payload.task T04.07",
     "server/tests/better-auth/scim-provisioning.test.ts": "runner named it: needs Bun SQL + better-auth/scim plugin over the BA island's five role URLs",
     "server/tests/better-auth/email-verification.test.ts": "T04.04 (#548): needs the five BA_TEST_* role URLs and the pinned build's mail callbacks — Bun-only",
-    "server/tests/better-auth/password-reset-request.test.ts": "T04.05 (#549): needs the five BA_TEST_* role URLs, the pinned build's reset mail callback, the identity recovery boundary and the Mailpit sink — Bun-only"
+    "server/tests/better-auth/password-reset-request.test.ts": "T04.05 (#549): needs the five BA_TEST_* role URLs, the pinned build's reset mail callback, the identity recovery boundary and the Mailpit sink — Bun-only",
+    "server/tests/better-auth/password-recovery.test.ts": "T04.06 (#550): needs the five BA_TEST_* role URLs, the identity recovery boundary, the assurance read chain (0218-0220) and the pinned build reset callbacks — Bun-only"
   }
 }
