@@ -43,9 +43,11 @@ import {
   recordAuditEvent,
 } from "./audit";
 import {
+  type CompanyAssurance,
   type CompanyProofPolicyView,
   createClosedCompanyAssurance,
 } from "./auth/company-assurance";
+import { createCompanyAuthRoutes } from "./auth/company-auth-routes";
 import { createDevRequireUser } from "./auth/dev-actor";
 import { createDirectoryAuthority } from "./auth/directory/authority";
 import type { Directory } from "./auth/directory/contracts";
@@ -568,6 +570,13 @@ export function createApp(
      */
     directory?: {
       proofPolicy?: CompanyProofPolicyView;
+      /**
+       * The live company-auth challenge seam (T05.01 / #557). Absent keeps
+       * the mounted route on the closed adapter, whose controlled 503 is the
+       * honest degraded behaviour until the assembly task wires the live
+       * factory (callback/complete is T05.02's and is not exposed here).
+       */
+      companyAuth?: Pick<CompanyAssurance, "challenge">;
       /**
        * The production directory/identity executors, when the assembly built
        * them (P08/P09/P12 register the operations). A field for the same
@@ -1094,6 +1103,40 @@ export function createApp(
   }
   if (coworker?.pluginPackages) {
     app.route("/api/enterprise/plugin-packages", coworker.pluginPackages);
+  }
+  /*
+   * The company-auth challenge route (T05.01 / #557). Mounted whenever this
+   * process has a session source: unauthenticated callers get 401, and the
+   * challenge itself refuses per its own authority/policy gates. The live
+   * seam is `coworker.directory.companyAuth` when the assembly built one;
+   * absent, the closed adapter answers its controlled 503 — the route exists,
+   * issuance honestly reports not-ready, and no deployment silently grows a
+   * half-wired challenge.
+   */
+  if (auth) {
+    app.route(
+      "/api/enterprise/company-auth",
+      createCompanyAuthRoutes({
+        authenticate: async (request) => {
+          const session = await auth.api
+            .getSession({
+              headers: request.headers,
+              query: { disableCookieCache: true },
+            })
+            .catch(() => null);
+          // The declared type names {user}; the real BA session also carries
+          // its id, which the challenge binds to — narrowed here, not
+          // re-declared in the vendor's types.
+          const sessionId = (
+            session as { session?: { id?: string } } | null
+          )?.session?.id;
+          return session?.user.id && sessionId
+            ? { userId: session.user.id, sessionId }
+            : null;
+        },
+        assurance: coworker?.directory?.companyAuth ?? companyAssurance,
+      }),
+    );
   }
   /*
    * The native directory ingress (T02.11 / P04; interfaces §3.2).

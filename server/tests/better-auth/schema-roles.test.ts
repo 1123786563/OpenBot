@@ -1137,9 +1137,11 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
     // guard's invitation.resend admission) and T04.07 (#551) appended 0217
     // (the guard's team-management-grant admission) the same way: the newest
     // entry is always the latest amendment, still contiguous on the one
-    // before.
-    expect(before?.tag).toBe("0216_better_auth_invitation_resend");
-    expect(last?.tag).toBe("0217_better_auth_team_management_grants");
+    // before. T05.01 (#557; coordinator ruling 2026-10-27) appended 0218 the
+    // same way — the challenge-issuance controlled function, which leaves the
+    // DML-guard branches untouched (the table keeps zero direct privileges).
+    expect(before?.tag).toBe("0217_better_auth_team_management_grants");
+    expect(last?.tag).toBe("0218_better_auth_company_auth_challenge");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });
