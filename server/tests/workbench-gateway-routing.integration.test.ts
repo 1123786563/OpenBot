@@ -199,8 +199,7 @@ describe("the workbench model gateway routing (09.1)", () => {
         undefined,
         undefined,
         undefined,
-        undefined,
-        // tools … attribution are the optional positions between; the dial is the tail.
+        // tools … attribution fill positions 4–11; the dial is the 12th and tail seat.
         { baseURL: gatewayUrl, apiKey: STUB_MODEL_KEY },
       ) as {
         model: {
@@ -370,14 +369,15 @@ describe("the workbench model gateway routing (09.1)", () => {
         });
         throw new CreditGateError();
       });
-      // The attribution rides the resolver's 21st (trailing) position; typed-indexed so a
-      // parameter insertion upstream cannot silently shift it one slot over.
+      // The attribution rides the resolver's 20th position; observation was appended after it
+      // (dd49f2486), so the trailing seat is the observation's now. Typed-indexed so a parameter
+      // insertion upstream cannot silently shift it one slot over.
       const args = [
         () => [builtInRow("general-assistant")],
         model,
         async () => STUB_MODEL_KEY,
       ] as unknown as Parameters<typeof resolveRuntimeAgents>;
-      args[20] = { userId: "user-091" };
+      args[19] = { userId: "user-091" };
       const agents = await resolveRuntimeAgents(...args);
       const agent = agents["general-assistant"]?.clone();
       if (!agent) throw new Error("Expected General Assistant.");
