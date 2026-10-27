@@ -80,16 +80,44 @@ const hex = (n: number): string =>
 
 // #40: retry rounds re-submit BOTH observations, so accepted/completed accumulate
 // across rounds and counts alone cannot prove the credential-bearing observation
-// ever landed — any perform failure (stats.failed.*) or readiness refusal must
-// void the gate, or forbiddenCanariesAbsent passes vacuously (safe completed twice
-// while the sensitive write kept failing would still clear the count thresholds).
-// Exported for the standalone gate check next to this script.
+// ever landed — any perform failure (stats.failed.*) or readiness refusal in the
+// judged round must void the gate, or forbiddenCanariesAbsent passes vacuously.
+// r8fix-G (T-J #4): the caller feeds the LAST retry round's increment (roundDelta
+// below), not the cumulative totals — a refused or failed round recovered by a
+// clean resubmit round is a real pass, while a refusal or failure in the final
+// round still voids the run. Exported for the standalone gate check next to this
+// script.
 export const writesEstablished = (stats: OpikWriteStats): boolean =>
   stats.accepted >= 2 &&
   stats.completed >= 2 &&
   stats.droppedFull === 0 &&
   stats.refusedNotReady === 0 &&
   Object.values(stats.failed).every((count) => count === 0);
+
+// The counter increment between two writeStats snapshots (r8fix-G): the retry
+// loop snapshots before each round and the acceptance gate above judges this
+// delta. capacity/depth are gauges, not counters — they ride along unchanged.
+const roundDelta = (before: OpikWriteStats, after: OpikWriteStats): OpikWriteStats => ({
+  capacity: after.capacity,
+  depth: after.depth,
+  submitted: after.submitted - before.submitted,
+  accepted: after.accepted - before.accepted,
+  droppedFull: after.droppedFull - before.droppedFull,
+  refusedNotReady: after.refusedNotReady - before.refusedNotReady,
+  completed: after.completed - before.completed,
+  failed: {
+    unavailable: after.failed.unavailable - before.failed.unavailable,
+    upstream_error: after.failed.upstream_error - before.failed.upstream_error,
+    malformed: after.failed.malformed - before.failed.malformed,
+    ownership_drift: after.failed.ownership_drift - before.failed.ownership_drift,
+    unexpected: after.failed.unexpected - before.failed.unexpected,
+  },
+  idLinks: {
+    chain_broken: after.idLinks.chain_broken - before.idLinks.chain_broken,
+    divergent: after.idLinks.divergent - before.idLinks.divergent,
+    error: after.idLinks.error - before.idLinks.error,
+  },
+});
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -186,8 +214,11 @@ async function main(): Promise<void> {
 
   // The bounded write entry fails closed until a probe has actually succeeded (T09), and a
   // refused submit is a counter, never a silent retry. So: wait for readiness, submit both
-  // observations, and if the counters show either was refused behind a probe flip, wait out
-  // the re-arm cooldown and resubmit both — up to three rounds, all visible in the counters.
+  // observations, and if a round was refused behind a probe flip or failed at perform time,
+  // wait out the re-arm cooldown and resubmit both — up to three rounds. Recovery is real
+  // (r8fix-G): each round snapshots the counters first and the acceptance gate judges the
+  // LAST round's increment, so one clean resubmit round re-establishes what an earlier
+  // round lost; a refusal or failure in the final round still fails the run.
   const submitBoth = (): void => {
     // Clean observation: must arrive — body behind the minted approval.
     recorder.record({
@@ -231,11 +262,15 @@ async function main(): Promise<void> {
   submitBoth();
   await healthService.drain();
   let stats = healthService.writeStats();
+  // The first round's increment: this fresh service's counters all start at zero.
+  let roundStats = stats;
   for (let round = 0; round < 3 && (stats.accepted < 2 || stats.completed < 2); round++) {
+    const beforeRound = stats;
     readiness = await awaitReady();
     submitBoth();
     await healthService.drain();
     stats = healthService.writeStats();
+    roundStats = roundDelta(beforeRound, stats);
   }
   const readinessAtEnd = await healthService.readiness();
 
@@ -369,13 +404,13 @@ async function main(): Promise<void> {
     readinessReady: readiness.ready,
     readinessAtEndReady: readinessAtEnd.ready,
     // `completed` (not `accepted`): accepted only proves the writes were queued;
-    // completed proves they were performed. Retry rounds accumulate both counters
-    // (#40), so the count thresholds alone no longer mean "both observations
-    // landed" — writesEstablished also refuses any perform failure or readiness
-    // refusal, which is what makes forbiddenCanariesAbsent non-vacuous: if the
-    // secret-bearing write failed at perform time, its absence from storage
-    // would prove nothing.
-    writeAccepted: writesEstablished(stats),
+    // completed proves they were performed. Judged on the LAST retry round's
+    // increment (roundDelta), so an earlier round's transient refusal is recovered
+    // by a clean resubmit round, while any perform failure or readiness refusal in
+    // the judged round voids the gate — which is what makes forbiddenCanariesAbsent
+    // non-vacuous: if the secret-bearing write failed at perform time in the judged
+    // round, its absence from storage would prove nothing.
+    writeAccepted: writesEstablished(roundStats),
     readbackSettled: readbackError === null,
     projectResolved: projectId.length > 0,
     safeCanaryInStorage: safeFound,
@@ -414,6 +449,7 @@ async function main(): Promise<void> {
         readbackError,
         readiness,
         writeStats: stats,
+        writeStatsLastRound: roundStats,
         safeCanary: {
           label: "SAFE_CANARY_T37",
           value: safeCanary,

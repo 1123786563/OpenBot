@@ -1,9 +1,12 @@
-// r7fix-a A1 (#40) standalone gate check — run with `bun server/scripts/opik-e2e-ingest-gate-check.ts`.
-// Asserts the ingest evidence's writeAccepted predicate cannot be passed by the
-// vacuous shape the retry loop makes reachable: the safe observation completing
-// twice while the credential-bearing one kept failing at perform time. Not a
-// bun:test suite (plain asserts, nonzero exit on the first failure count), so it
-// enters no test manifest and is driven directly by whoever changes the gate.
+// r7fix-a A1 (#40) standalone gate check, reworked by r8fix-G (T-J #4) — run with
+// `bun server/scripts/opik-e2e-ingest-gate-check.ts`.
+// Asserts the ingest evidence's writeAccepted predicate judges the LAST retry
+// round's increment: a transient refusal recovered by a clean resubmit round is a
+// real pass, while a refusal or perform failure in the judged round voids the gate
+// — the safe observation completing across rounds while the credential-bearing one
+// kept failing proves nothing (the #40 hole, in per-round shape). Not a bun:test
+// suite (plain asserts, nonzero exit on the first failure count), so it enters no
+// test manifest and is driven directly by whoever changes the gate.
 import { writesEstablished } from "./opik-e2e-ingest";
 
 type Stats = Parameters<typeof writesEstablished>[0];
@@ -31,23 +34,61 @@ const withFailed = (patch: Partial<Stats["failed"]>): Stats => ({
   failed: { ...clean.failed, ...patch },
 });
 
+// One round that refused both submits behind a probe flip (the round's increment).
+const refusedRound: Stats = {
+  ...clean,
+  submitted: 2,
+  accepted: 0,
+  completed: 0,
+  refusedNotReady: 1,
+};
+
+// The increment of the round that recovered it: both resubmits accepted and
+// completed cleanly — identical in shape to `clean`.
+const recoveredRound: Stats = clean;
+
+// The cumulative totals the pre-r8fix-G gate was fed for that same recovered run:
+// round one refused, round two landed. Counts say accepted=2/completed=2, but the
+// round-one refusal stays in the tally — the recovery dead-end this rework removes.
+const cumulativeRecoveredRun: Stats = {
+  ...clean,
+  submitted: 4,
+  refusedNotReady: 1,
+};
+
 const cases: ReadonlyArray<{ label: string; stats: Stats; expected: boolean }> = [
-  { label: "both writes landed cleanly", stats: clean, expected: true },
+  { label: "both writes landed cleanly (the judged round's increment)", stats: clean, expected: true },
   {
-    // The #40 hole: safe completed on two retry rounds (completed >= 2) while
-    // the sensitive write failed at perform — counts alone clear the gate and
-    // forbiddenCanariesAbsent proves nothing.
-    label: "perform failure voids the gate (sensitive write failed twice)",
-    stats: withFailed({ unavailable: 2 }),
+    // r8fix-G: round 1 refused both behind a probe flip, round 2 resubmitted both
+    // cleanly. The gate judges the last round's increment — the recovery path the
+    // retry loop promises is real again.
+    label: "a transient refusal recovers on a clean resubmit round",
+    stats: recoveredRound,
+    expected: true,
+  },
+  {
+    // RED pin: the same recovered run judged on cumulative totals (the pre-r8fix-G
+    // input) stays voided by the round-one refusal — reverting to cumulative
+    // judgment kills the recovery path again.
+    label: "the same run judged cumulatively stays voided by the earlier refusal",
+    stats: cumulativeRecoveredRun,
     expected: false,
   },
   {
-    label: "a readiness refusal behind the probe flip voids the gate",
-    stats: { ...clean, refusedNotReady: 1 },
+    label: "a readiness refusal in the judged round voids the gate",
+    stats: refusedRound,
     expected: false,
   },
   {
-    label: "an ownership drift failure voids the gate",
+    // The #40 hole in per-round shape: the safe observation completed on earlier
+    // rounds while the sensitive write failed at perform time again in the FINAL
+    // round — the judged round's own failure voids the gate.
+    label: "a perform failure in the final round voids the gate",
+    stats: withFailed({ unavailable: 1 }),
+    expected: false,
+  },
+  {
+    label: "an ownership drift failure in the judged round voids the gate",
     stats: withFailed({ ownership_drift: 1 }),
     expected: false,
   },
