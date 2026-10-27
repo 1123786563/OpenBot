@@ -1,5 +1,5 @@
 {
-  "generatedBy": "T04.08 registration",
+  "generatedBy": "T05.01 registration (#557)",
   "groups": [
     {
       "name": "app/tests/multitenancy",
@@ -1307,6 +1307,12 @@
       "files": [
         "server/tests/better-auth/scoped-team-admin.test.ts"
       ]
+    },
+    {
+      "name": "server/tests/better-auth:T05.01.01",
+      "files": [
+        "server/tests/better-auth/company-auth-challenge.test.ts"
+      ]
     }
   ],
   "directoryIslands": [
@@ -1492,6 +1498,7 @@
     "server/tests/batch-reservation.integration.test.ts",
     "server/tests/batch-settlement.integration.test.ts",
     "server/tests/better-auth/authority-and-closed-assurance.test.ts",
+    "server/tests/better-auth/company-auth-challenge.test.ts",
     "server/tests/better-auth/company-lifecycle.test.ts",
     "server/tests/better-auth/company-provision.test.ts",
     "server/tests/better-auth/directory-command.test.ts",
