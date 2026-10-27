@@ -328,7 +328,34 @@ export function createAccountResolutionService(
           amountCents: command.amountCents ?? null,
           detail: command.detail,
         })
+        // The replay read above is not atomic with this insert: two concurrent retries of
+        // one key both miss it and both insert. The unique index decides, and the loser
+        // answers the winner's row — exactly what the replay read would have answered.
+        .onConflictDoNothing({
+          target: billingAccountResolutions.idempotencyKey,
+        })
         .returning();
+
+      if (!row) {
+        const [winner] = await database
+          .select()
+          .from(billingAccountResolutions)
+          .where(
+            eq(
+              billingAccountResolutions.idempotencyKey,
+              command.idempotencyKey,
+            ),
+          )
+          .limit(1);
+        if (!winner) {
+          // Rows under this key are never deleted, so the key cannot be missing unless the
+          // invariant already broke; failing loudly beats answering "nothing happened".
+          throw new Error(
+            `billing account resolution ${command.idempotencyKey} conflicted but is not readable`,
+          );
+        }
+        return { status: "replayed", resolution: winner };
+      }
 
       if (dependencies.audit) {
         await recordAuditEvent(dependencies.audit, {

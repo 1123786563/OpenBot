@@ -167,11 +167,17 @@ def _add_to_presentation_rels(unpacked_dir: Path, dest: str) -> str:
     )
     new_rel = f'<Relationship Id="{rid}" Type="{slide_type}" Target="slides/{dest}"/>'
 
-    if f"slides/{dest}" not in pres_rels:
-        pres_rels = pres_rels.replace(
-            "</Relationships>", f"  {new_rel}\n</Relationships>"
-        )
-        pres_rels_path.write_text(pres_rels, encoding="utf-8")
+    existing_rel = re.search(
+        rf'<Relationship\b(?=[^>]*\bTarget="slides/{re.escape(dest)}")[^>]*\bId="([^"]+)"',
+        pres_rels,
+    )
+    if existing_rel:
+        return existing_rel.group(1)
+
+    pres_rels = pres_rels.replace(
+        "</Relationships>", f"  {new_rel}\n</Relationships>"
+    )
+    pres_rels_path.write_text(pres_rels, encoding="utf-8")
 
     return rid
 

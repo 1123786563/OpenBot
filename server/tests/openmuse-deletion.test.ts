@@ -730,6 +730,32 @@ describe("POST /delete work shutdown (D02)", () => {
     expect(emitted.slice().sort()).toEqual(["task-a", "task-b"]);
   });
 
+  test("a Reviewed cancellation failure still records the landed Task transitions", async () => {
+    // shutdownOwner's rows already landed cancelled; if the Reviewed half then
+    // throws before the record, the retry sees an empty transitions list and
+    // reports ok — the marker loses the evidence permanently.
+    const recorded: string[][] = [];
+    const partial = createOpenMuseWorkShutdown({
+      tasks: {
+        shutdownOwner: async () => ({
+          cancelled: ["task-a"],
+          cancelRequested: [],
+        }),
+      },
+      reviewed: {
+        cancelAwaiting: async () => {
+          throw new Error("reviewed store down");
+        },
+      },
+      record: async (_userId, transitions) => {
+        recorded.push(transitions);
+      },
+    });
+
+    await expect(partial("user-1")).rejects.toThrow(/reviewed store down/);
+    expect(recorded).toEqual([["openmuse-task:task-a:cancelled"]]);
+  });
+
   test("a record failure throws with the landed transitions carried, never silently ok on retry", async () => {
     markers.clear();
     markers.add("user-1");

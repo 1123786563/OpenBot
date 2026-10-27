@@ -56,34 +56,51 @@ def main():
     args = parser.parse_args()
 
     path = Path(args.path)
-    assert path.exists(), f"Error: {path} does not exist"
+    if not path.exists():
+        parser.error(f"Error: {path} does not exist")
 
     original_file = None
     if args.original:
         original_file = Path(args.original)
-        assert original_file.is_file(), f"Error: {original_file} is not a file"
-        assert original_file.suffix.lower() in [
+        if not original_file.is_file():
+            parser.error(f"Error: {original_file} is not a file")
+        if original_file.suffix.lower() not in [
             ".docx",
             ".pptx",
             ".xlsx",
-        ], f"Error: {original_file} must be a .docx, .pptx, or .xlsx file"
+        ]:
+            parser.error(
+                f"Error: {original_file} must be a .docx, .pptx, or .xlsx file"
+            )
 
     file_extension = (original_file or path).suffix.lower()
-    assert file_extension in [
+    if file_extension not in [
         ".docx",
         ".pptx",
         ".xlsx",
-    ], (
-        f"Error: Cannot determine file type from {path}. Use --original or provide a .docx/.pptx/.xlsx file."
-    )
+    ]:
+        parser.error(
+            f"Error: Cannot determine file type from {path}. Use --original or provide a .docx/.pptx/.xlsx file."
+        )
 
-    if path.is_file() and path.suffix.lower() in [".docx", ".pptx", ".xlsx"]:
+    is_packed_file = path.is_file() and path.suffix.lower() in [
+        ".docx",
+        ".pptx",
+        ".xlsx",
+    ]
+    if args.auto_repair and is_packed_file:
+        parser.error(
+            "cannot auto-repair packed Office files; unpack the file before repairing"
+        )
+
+    if is_packed_file:
         temp_dir = tempfile.mkdtemp()
         with zipfile.ZipFile(path, "r") as zf:
             zf.extractall(temp_dir)
         unpacked_dir = Path(temp_dir)
     else:
-        assert path.is_dir(), f"Error: {path} is not a directory or Office file"
+        if not path.is_dir():
+            parser.error(f"Error: {path} is not a directory or Office file")
         unpacked_dir = path
 
     match file_extension:

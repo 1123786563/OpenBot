@@ -418,7 +418,7 @@
     "issue": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["issue", "class", "eligible_since", "last_slot", "enqueue_sequence", "target_sha", "requirements_fingerprint", "validation_state", "delivery_state", "label_action", "run", "workspace", "checkpoint", "review", "decision", "human_review_state", "human_review", "delivery", "label", "close", "wait_reason", "resume_condition", "input_fingerprint", "retry_after", "next_action", "aggregate_children", "history", "label_action_reason", "label_next_action", "label_resume_condition", "label_retry_after", "label_intent", "close_action", "close_action_reason", "close_next_action", "close_resume_condition", "close_retry_after", "close_intent", "audit_epoch", "delivery_action", "delivery_action_reason", "delivery_next_action", "delivery_resume_condition", "delivery_retry_after", "delivery_intent"],
+      "required": ["issue", "class", "eligible_since", "last_slot", "enqueue_sequence", "target_sha", "requirements_fingerprint", "validation_state", "delivery_state", "repair_rounds_total", "label_action", "run", "workspace", "checkpoint", "review", "decision", "human_review_state", "human_review", "delivery", "label", "close", "wait_reason", "resume_condition", "input_fingerprint", "retry_after", "next_action", "aggregate_children", "history", "label_action_reason", "label_next_action", "label_wait_reason", "label_input_fingerprint", "label_resume_condition", "label_retry_after", "label_intent", "close_action", "close_action_reason", "close_next_action", "close_wait_reason", "close_input_fingerprint", "close_resume_condition", "close_retry_after", "close_intent", "audit_epoch", "delivery_action", "delivery_action_reason", "delivery_next_action", "delivery_wait_reason", "delivery_input_fingerprint", "delivery_resume_condition", "delivery_retry_after", "delivery_intent"],
       "properties": {
         "issue": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" },
         "class": { "enum": ["recovery", "new", "revalidate", null] },
@@ -444,6 +444,7 @@
         },
         "validation_state": { "$ref": "#/$defs/validation_state" },
         "delivery_state": { "enum": ["none", "repair_prepared", "integration_pending", "delivered"] },
+        "repair_rounds_total": { "type": "integer", "minimum": 0 },
         "label_action": { "enum": ["none", "label_pending", "applied_valid", "stale", "label_correction_pending", "corrected"] },
         "run": { "$ref": "#/$defs/nullable_evidence" },
         "workspace": { "$ref": "#/$defs/nullable_evidence" },
@@ -485,6 +486,12 @@
         },
         "label_action_reason": { "type": ["string", "null"] },
         "label_next_action": { "type": ["string", "null"] },
+        "label_wait_reason": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "label_input_fingerprint": {
+          "anyOf": [{ "$ref": "#/$defs/input_fp" }, { "type": "null" }]
+        },
         "label_resume_condition": { "$ref": "#/$defs/resume" },
         "label_retry_after": {
           "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
@@ -493,6 +500,12 @@
         "close_action": { "enum": ["none", "close_pending", "applied_valid", "stale", "close_correction_pending", "corrected"] },
         "close_action_reason": { "type": ["string", "null"] },
         "close_next_action": { "type": ["string", "null"] },
+        "close_wait_reason": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "close_input_fingerprint": {
+          "anyOf": [{ "$ref": "#/$defs/input_fp" }, { "type": "null" }]
+        },
         "close_resume_condition": { "$ref": "#/$defs/resume" },
         "close_retry_after": {
           "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
@@ -502,6 +515,12 @@
         "delivery_action": { "enum": ["none", "delivery_pending", "applied_valid", "stale", "delivery_correction_pending", "corrected"] },
         "delivery_action_reason": { "type": ["string", "null"] },
         "delivery_next_action": { "type": ["string", "null"] },
+        "delivery_wait_reason": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "delivery_input_fingerprint": {
+          "anyOf": [{ "$ref": "#/$defs/input_fp" }, { "type": "null" }]
+        },
         "delivery_resume_condition": { "$ref": "#/$defs/resume" },
         "delivery_retry_after": {
           "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
@@ -535,6 +554,8 @@
               "run": { "$ref": "#/$defs/evidence" },
               "decision": { "$ref": "#/$defs/evidence" },
               "class": { "enum": ["recovery", null] },
+              "label_action": { "not": { "const": "label_pending" } },
+              "close_action": { "not": { "const": "close_pending" } },
               "aggregate_children": {
                 "items": {
                   "properties": {
@@ -542,7 +563,23 @@
                   }
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "class": { "const": "recovery" } },
+                  "required": ["class"]
+                },
+                "then": {
+                  "anyOf": [
+                    { "properties": { "label_action": { "enum": ["stale", "label_correction_pending"] } } },
+                    { "properties": { "close_action": { "enum": ["stale", "close_correction_pending"] } } },
+                    { "properties": { "delivery_action": { "enum": ["delivery_pending", "stale", "delivery_correction_pending"] } } },
+                    { "properties": { "delivery_state": { "const": "integration_pending" } } }
+                  ]
+                }
+              }
+            ]
           }
         },
         {
@@ -555,8 +592,25 @@
               "target_sha": { "$ref": "#/$defs/sha" },
               "requirements_fingerprint": { "$ref": "#/$defs/requirement_fp" },
               "human_review": { "$ref": "#/$defs/evidence" },
-              "class": { "enum": ["recovery", null] }
-            }
+              "class": { "enum": ["recovery", null] },
+              "label_action": { "not": { "const": "label_pending" } }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "class": { "const": "recovery" } },
+                  "required": ["class"]
+                },
+                "then": {
+                  "anyOf": [
+                    { "properties": { "label_action": { "enum": ["stale", "label_correction_pending"] } } },
+                    { "properties": { "close_action": { "enum": ["close_pending", "stale", "close_correction_pending"] } } },
+                    { "properties": { "delivery_action": { "enum": ["delivery_pending", "stale", "delivery_correction_pending"] } } },
+                    { "properties": { "delivery_state": { "const": "integration_pending" } } }
+                  ]
+                }
+              }
+            ]
           }
         },
         {
@@ -660,6 +714,81 @@
                 }
               },
               "retry_after": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "label_wait_reason": { "type": "string" } },
+            "required": ["label_wait_reason"]
+          },
+          "then": {
+            "properties": { "label_input_fingerprint": { "$ref": "#/$defs/input_fp" } },
+            "anyOf": [
+              { "properties": { "label_resume_condition": { "properties": { "all": { "minItems": 1 } } } } },
+              { "properties": { "label_retry_after": { "type": "string", "format": "date-time" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "label_wait_reason": { "type": "null" } },
+            "required": ["label_wait_reason"]
+          },
+          "then": {
+            "properties": {
+              "label_resume_condition": { "properties": { "all": { "maxItems": 0 } } },
+              "label_retry_after": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "close_wait_reason": { "type": "string" } },
+            "required": ["close_wait_reason"]
+          },
+          "then": {
+            "properties": { "close_input_fingerprint": { "$ref": "#/$defs/input_fp" } },
+            "anyOf": [
+              { "properties": { "close_resume_condition": { "properties": { "all": { "minItems": 1 } } } } },
+              { "properties": { "close_retry_after": { "type": "string", "format": "date-time" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "close_wait_reason": { "type": "null" } },
+            "required": ["close_wait_reason"]
+          },
+          "then": {
+            "properties": {
+              "close_resume_condition": { "properties": { "all": { "maxItems": 0 } } },
+              "close_retry_after": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "delivery_wait_reason": { "type": "string" } },
+            "required": ["delivery_wait_reason"]
+          },
+          "then": {
+            "properties": { "delivery_input_fingerprint": { "$ref": "#/$defs/input_fp" } },
+            "anyOf": [
+              { "properties": { "delivery_resume_condition": { "properties": { "all": { "minItems": 1 } } } } },
+              { "properties": { "delivery_retry_after": { "type": "string", "format": "date-time" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "delivery_wait_reason": { "type": "null" } },
+            "required": ["delivery_wait_reason"]
+          },
+          "then": {
+            "properties": {
+              "delivery_resume_condition": { "properties": { "all": { "maxItems": 0 } } },
+              "delivery_retry_after": { "type": "null" }
             }
           }
         },

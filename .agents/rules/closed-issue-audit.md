@@ -32,7 +32,7 @@
 
 当本轮请求授权 GitHub 贴标时，主控仅对 `verified` 且 `human_review_state=none/pending` 的票执行以下写入门禁：
 
-1. 按 [delivery-gates.md](delivery-gates.md)核对交付目标、需求批准权限、CI 和人审可访问证据，持久保存含需求指纹、目标 SHA 和预期资格/状态的写入意图。已有标签也须核验。
+1. 按 [delivery-gates.md](delivery-gates.md)核对交付目标、需求批准权限、CI 和人审可访问证据。首次发起贴标或复核已有待人审标签时，若 human_review_state=none，先在保存写入意图的同一事务将其改为 pending；已 pending 则保持，approved/rejected 不进入本流程。随后持久保存含需求指纹、目标 SHA、预期人审状态和资格/状态的写入意图。已有标签也须核验，不得在无有效人审终态决定时把已有待人审标签回写为 none。
 2. 添加标签并保留 `ready-for-agent`；写后按共同协议完整 rescan，只有意图条件仍成立才算有效。API/回读不明为 `label_pending`；失配为 stale，并按授权纠正，否则 `label_correction_pending`。操作者、时间、URL、前后版本、证据索引及回执均留档。
 3. 对 `not_required / failed / blocked / unproven / intake_incomplete` 不添加标签。重新打开、移除 ready-for-agent、有效取消/无需交付决定、有效人审终态或证据过期等使已有标签无效时，进入 R 的纠正分支；按现有移除授权只移除该待人审标签并复核，不改其他标签。无授权或回执不明保留 `label_correction_pending`，不报告纠正成功。
 4. 验证结论与交付/标签动作分列，状态契约和仅标签恢复见 [每日规则](closed-issue-daily-run.md)。有效证据未变且只剩贴标/回读/移除时，只做标签对账和必要 rescan；不重跑整票验收。若需求、目标树或 CI 失效则转重验，不能用标签重试复活旧 verified。

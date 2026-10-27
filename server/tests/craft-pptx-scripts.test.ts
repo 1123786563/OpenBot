@@ -134,6 +134,68 @@ describe("PPTX package scripts preserve source data", () => {
     }
   });
 
+  test("clean.py preserves resources referenced by non-slide parts", () => {
+    const root = temporaryDirectory();
+    const presentationDir = join(root, "ppt");
+    const presentationRelsDir = join(presentationDir, "_rels");
+    const slidesDir = join(presentationDir, "slides");
+    const slidesRelsDir = join(slidesDir, "_rels");
+    const notesRelsDir = join(presentationDir, "notesSlides/_rels");
+    const diagramsRelsDir = join(presentationDir, "diagrams/_rels");
+    const embeddingDir = join(presentationDir, "embeddings");
+    const drawing = join(presentationDir, "diagrams/drawing1.xml");
+    const drawingRels = join(diagramsRelsDir, "drawing1.xml.rels");
+    const embedding = join(embeddingDir, "oleObject1.bin");
+    mkdirSync(presentationRelsDir, { recursive: true });
+    mkdirSync(slidesRelsDir, { recursive: true });
+    mkdirSync(notesRelsDir, { recursive: true });
+    mkdirSync(diagramsRelsDir, { recursive: true });
+    mkdirSync(embeddingDir, { recursive: true });
+    writeFileSync(
+      join(presentationDir, "presentation.xml"),
+      '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>',
+    );
+    writeFileSync(
+      join(presentationRelsDir, "presentation.xml.rels"),
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/></Relationships>',
+    );
+    writeFileSync(
+      join(root, "[Content_Types].xml"),
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    );
+    writeFileSync(join(slidesDir, "slide1.xml"), "<slide />");
+    writeFileSync(
+      join(slidesRelsDir, "slide1.xml.rels"),
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="notesSlide" Target="../notesSlides/notesSlide1.xml"/></Relationships>',
+    );
+    writeFileSync(
+      join(presentationDir, "notesSlides/notesSlide1.xml"),
+      "<notes />",
+    );
+    writeFileSync(
+      join(notesRelsDir, "notesSlide1.xml.rels"),
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="drawing" Target="../diagrams/drawing1.xml"/></Relationships>',
+    );
+    writeFileSync(drawing, "<drawing />");
+    writeFileSync(
+      drawingRels,
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="oleObject" Target="../embeddings/oleObject1.bin"/></Relationships>',
+    );
+    writeFileSync(embedding, "embedded object");
+
+    try {
+      const result = runPython("clean.py", [root]);
+
+      expect(result.error).toBe(undefined);
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(existsSync(drawingRels)).toBe(true);
+      expect(existsSync(drawing)).toBe(true);
+      expect(existsSync(embedding)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("pack.py rejects an explicitly supplied original file that is missing", () => {
     const root = temporaryDirectory();
     const input = join(root, "input");
@@ -297,5 +359,33 @@ describe("PPTX package scripts preserve source data", () => {
 
     expect(result.error).toBe(undefined);
     expect(result.status).toBe(0);
+  });
+
+  test("soffice shim compile errors include gcc stderr and clean temporary files", () => {
+    const scriptPath = join(scriptDir, "office/soffice.py");
+    const failureCheck = [
+      "import importlib.util, pathlib, subprocess, sys",
+      "spec = importlib.util.spec_from_file_location('soffice', sys.argv[1])",
+      "module = importlib.util.module_from_spec(spec)",
+      "spec.loader.exec_module(module)",
+      "def fail_compile(args, **kwargs):",
+      "    raise subprocess.CalledProcessError(1, args, stderr=b'compiler diagnostic')",
+      "module.subprocess.run = fail_compile",
+      "try:",
+      "    module._ensure_shim()",
+      "except RuntimeError as error:",
+      "    assert 'compiler diagnostic' in str(error), str(error)",
+      "else:",
+      "    raise AssertionError('failed gcc invocation was accepted')",
+      "assert not list(module._SHIM_DIR.glob('*.c'))",
+      "assert not list(module._SHIM_DIR.glob('*.so'))",
+      "module._SHIM_TEMP_DIR.cleanup()",
+    ].join("\n");
+    const result = spawnSync("python", ["-c", failureCheck, scriptPath], {
+      encoding: "utf8",
+    });
+
+    expect(result.error).toBe(undefined);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
   });
 });

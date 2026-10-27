@@ -142,6 +142,11 @@ def build_slide_list(
             if visible_idx < len(visible_images):
                 slides.append((visible_images[visible_idx], info["name"]))
                 visible_idx += 1
+            else:
+                print(
+                    f"Warning: no rendered image for {info['name']}; slide omitted",
+                    file=sys.stderr,
+                )
 
     return slides
 

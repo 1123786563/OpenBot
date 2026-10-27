@@ -64,11 +64,20 @@ def _ensure_shim() -> Path:
     os.close(fd)
     output = Path(output_name)
     try:
-        subprocess.run(
-            ["gcc", "-shared", "-fPIC", "-o", str(output), str(src), "-ldl"],
-            check=True,
-            capture_output=True,
-        )
+        try:
+            subprocess.run(
+                ["gcc", "-shared", "-fPIC", "-o", str(output), str(src), "-ldl"],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as error:
+            stderr = error.stderr
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            detail = f": {stderr.strip()}" if stderr else ""
+            raise RuntimeError(
+                f"gcc failed to compile the socket shim (exit {error.returncode}){detail}"
+            ) from error
         os.replace(output, _SHIM_SO)
     finally:
         src.unlink(missing_ok=True)

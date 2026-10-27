@@ -204,7 +204,7 @@ def apply_sql(state: dict, sql: str):
             coldef["notNull"] = action.upper() == "SET NOT NULL"
             continue
 
-        # ADD/DROP CONSTRAINT, triggers, comments, INSERTs: no snapshot effect.
+        sys.exit(f"unhandled SQL statement in migration; aborting snapshot rebuild: {s[:200]}")
 
 
 def names_of(state):

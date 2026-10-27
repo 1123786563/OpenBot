@@ -99,6 +99,8 @@ export type FailureLimiter = {
   record: (hint: string) => void;
 };
 
+const failureLimiterWindows = new WeakMap<FailureLimiter, number>();
+
 export function createFailureLimiter(
   options: {
     windowMs?: number;
@@ -114,7 +116,7 @@ export function createFailureLimiter(
   /** Hard cap, so even per-hint counting cannot grow without bound under a flood. */
   const maxHints = 10_000;
 
-  return {
+  const limiter: FailureLimiter = {
     blocked(hint) {
       const attempts = failures.get(hint);
       if (!attempts) return false;
@@ -138,6 +140,8 @@ export function createFailureLimiter(
       failures.set(hint, attempts);
     },
   };
+  failureLimiterWindows.set(limiter, windowMs);
+  return limiter;
 }
 
 function sha256(value: string): string {
@@ -157,13 +161,18 @@ export type BotServiceAuthenticator = (
   presentedSecret: string,
 ) => Promise<BotServiceIdentity>;
 
+const authenticatorRetryAfterSeconds = new WeakMap<
+  BotServiceAuthenticator,
+  number
+>();
+
 export function createBotServiceAuthenticator(
   dependencies: BotServiceAuthenticatorDependencies,
 ): BotServiceAuthenticator {
   const limiter = dependencies.limiter ?? createFailureLimiter();
   const { credentialStore } = dependencies;
 
-  return async (presentedSecret) => {
+  const authenticate: BotServiceAuthenticator = async (presentedSecret) => {
     const parsed = parseBotServiceSecret(presentedSecret);
     const hint = parsed ? parsed.botId : sha256(String(presentedSecret));
     if (limiter.blocked(hint)) throw new BotServiceRateLimitedError();
@@ -206,6 +215,16 @@ export function createBotServiceAuthenticator(
     }
     return { botId: record.botId, status: record.status };
   };
+  authenticatorRetryAfterSeconds.set(
+    authenticate,
+    Math.max(
+      1,
+      Math.ceil(
+        (failureLimiterWindows.get(limiter) ?? FAILURE_WINDOW_MS) / 1000,
+      ),
+    ),
+  );
+  return authenticate;
 }
 
 /** The Variables the bot-facing routes read after the middleware has answered. */
@@ -248,7 +267,12 @@ export function requireBotService(
       context.set("botService", await dependencies.authenticate(presented));
     } catch (error) {
       if (error instanceof BotServiceRateLimitedError) {
-        context.header("retry-after", "60");
+        context.header(
+          "retry-after",
+          String(
+            authenticatorRetryAfterSeconds.get(dependencies.authenticate) ?? 60,
+          ),
+        );
         return context.json(
           { error: error.message, code: "bot_service_auth_rate_limited" },
           429,

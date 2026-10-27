@@ -422,6 +422,14 @@ export async function createToolFixture(): Promise<ToolFixture> {
         return Object.freeze({ type: "team" as const, tenantId, workspaceId });
       },
 
+      async seedConversation({ tenantId, workspaceId, principalId, threadId }) {
+        // Disclosed stand-in (MT011 precedent): the canonical producer is the
+        // conversations service; here it is bind-arrangement only.
+        await setupDatabase.execute(
+          sql`insert into enterprise_conversations (tenant_id, workspace_id, principal_id, thread_id, title) values (${tenantId}, ${workspaceId}, ${principalId}, ${threadId}, 'MT032 会话') on conflict do nothing`,
+        );
+      },
+
       async seedConnection({ tenantId, ownerPrincipalId, credentialId }) {
         // Disclosed stand-in (MT011 precedent): the canonical producer is the
         // MT027 credential-ownership service (needs a real secret vault);

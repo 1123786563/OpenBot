@@ -1,8 +1,12 @@
-import { expect, test } from "../../tests/support/e2e-compat";
 import type { MiddlewareHandler } from "hono";
+import { expect, test } from "../../tests/support/e2e-compat";
 import type { AuditEventInput } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
-import { botServiceRoutes } from "../src/bot-services/auth";
+import {
+  botServiceRoutes,
+  createBotServiceAuthenticator,
+  createFailureLimiter,
+} from "../src/bot-services/auth";
 import { botServiceAdminRoutes } from "../src/bot-services/routes";
 import type {
   BotServiceRecord,
@@ -143,6 +147,29 @@ test("credential failures still return the uniform authentication refusal", asyn
     error: "Bot service authentication failed.",
     code: "bot_service_auth_failed",
   });
+});
+
+test("rate-limit responses reflect a configured authentication window", async () => {
+  const authenticate = createBotServiceAuthenticator({
+    encryptionKey: "unused",
+    credentialStore: {} as never,
+    botServices: { getBotService: async () => null },
+    limiter: createFailureLimiter({
+      windowMs: 5_000,
+      maxFailures: 1,
+      now: () => 0,
+    }),
+  });
+  const app = botServiceRoutes({ authenticate });
+  const headers = {
+    authorization: "Bearer invalid",
+  };
+
+  expect((await app.request("/", { headers })).status).toBe(401);
+  const rateLimited = await app.request("/", { headers });
+
+  expect(rateLimited.status).toBe(429);
+  expect(rateLimited.headers.get("retry-after")).toBe("5");
 });
 
 test("an administrator registers a bot and the trail names it", async () => {

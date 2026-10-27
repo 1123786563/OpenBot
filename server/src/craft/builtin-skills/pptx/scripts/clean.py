@@ -143,7 +143,7 @@ def get_slide_referenced_files(unpacked_dir: Path) -> set:
 def remove_orphaned_rels_files(unpacked_dir: Path) -> list[str]:
     resource_dirs = ["charts", "diagrams", "drawings"]
     removed = []
-    slide_referenced = get_slide_referenced_files(unpacked_dir)
+    referenced = get_referenced_files(unpacked_dir)
 
     for dir_name in resource_dirs:
         rels_dir = unpacked_dir / "ppt" / dir_name / "_rels"
@@ -159,7 +159,7 @@ def remove_orphaned_rels_files(unpacked_dir: Path) -> list[str]:
             except ValueError:
                 continue
 
-            if not resource_file.exists() or resource_rel_path not in slide_referenced:
+            if not resource_file.exists() or resource_rel_path not in referenced:
                 rels_file.unlink()
                 rel_path = rels_file.relative_to(unpacked_dir)
                 removed.append(str(rel_path))
