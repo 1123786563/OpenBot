@@ -50,7 +50,7 @@ P 默认 2、范围 1–4，是同时占用的 Worker Task/Dispatch 上限，不
 
 修复波次 manifest 使用 [repair_wave_manifest](coordination-schema.json#/$defs/repair_wave_manifest)：固定 kind=repair-wave-v1、wave_id、打开它的 run_id、原审计票 audit_issue、round_number、前波/历史迁移锚点 previous_wave、完整失败或交付基线 baseline、修复授权、scope/DAG、全部 Task/finding/owned_files 和 policy_sha256。baseline 及每个实际 Dispatch 的完整前置树仍按检查点规范核验；同波不表示业务依赖自动满足。Task ID 须唯一，范围必须属于批次及该票的授权 finding；正文和 schema 的引用都不能代替权限、跨记录关联及安全路径校验。
 
-打开新波次前，适配器在同一事务核对不存在该票未结算波次、全局及 Run 剩余额度，令 repair_rounds_total 精确 +1，以 state_changed.refs 保存波次 manifest 和完整前后状态；同 wave_id 的幂等重放不重复计数。每波每个 Task 只允许一次写入 Dispatch；启动意图、实际 Dispatch 和结算逐项绑定波次/Task。改变 Task 身份、finding 别名或修复 Issue 不能规避同一工作尝试的唯一性。新增成员、扩大范围或同一 Task 再次整改/重试须先安全结算当前波次、固定新基线并打开下一波；失败、跨日及部分派发不退款。五个冻结 Task 首次尝试合计一波；审查/只读验证不另计修复波次，但仍占 P 和时间预算。每 Task 的累计整改轮次及第 4–5 轮升级按 review.md 独立执行，不因波次/Task 改名清零。
+打开新波次前，适配器在同一事务核对不存在该票未结算波次、全局及 Run 剩余额度，令 repair_rounds_total 精确 +1，以 state_changed.refs 保存波次 manifest 和完整前后状态；同 wave_id 的幂等重放不重复计数。每波每个 Task 只允许一次写入 Dispatch；启动意图、实际 Dispatch 和结算逐项绑定波次/Task。改变 Task 身份、finding 别名或修复 Issue 不能规避同一工作尝试的唯一性。新增成员、扩大范围或同一 Task 再次整改/重试须先安全结算当前波次、固定新基线并打开下一波；失败、跨日及部分派发不退款。五个冻结 Task 首次尝试合计一波；Run 的波次上限仅限制新开波，已打开波次的剩余成员可在剩余时间/P/资源内执行，时间耗尽仍须安全结算。审查/只读验证不另计修复波次，但仍占 P 和时间预算。每 Task 的累计整改轮次及第 4–5 轮升级按 review.md 独立执行，不因波次/Task 改名清零。
 
 第 5 波可继续完成其已冻结但尚未尝试的成员，恢复同一波不再加一；该波结束仍有 finding 或已无合法剩余尝试时，记 repair_round_limit blocked，不打开第 6 波。其他已完成票的对账动作仍可执行。波次结束回执保存所有 Task 的 Dispatch/检查点/结果及未解决 finding，由 state_changed.refs 索引；缺少前态、未证明旧写者退出或无法重建唯一波次时保持 blocked，不重开同范围任务。
 
@@ -144,6 +144,8 @@ revision 是乐观并发版本，每次成功事务精确 +1，比较失配不�
 | 两张无共同父票的 finding 在同一 daily batch Run | source_issues/scope 和每 Task 归属完整；终审覆盖授权增量并集，未授权票不可写，不制造父票 |
 | P=2 但无并行实现授权；共享数据库/输出资源冲突 | 写代码阶段全局最多一个；只读审计也先隔离资源，冲突任务等待并保存原因，不降低既有授权/独立性门禁 |
 | 五个 Task 的首次修复、同 Task 再试或追加成员 | 首次冻结为一波且只计一次；同 Task 第二次写入/新增成员须下一波，换 Task/finding 别名不能绕过 |
+| max_run_repair_rounds=1，已打开一波且时间/P/资源充足 | 可执行其冻结未尝试成员，只拒绝第二次开波；时间耗尽才安全结算，不在首次开波后立即空转退出 |
+| 不透明非空 Run ID、后续波次缺历史锚点 | Run ID 沿用现有事件的非空字符串契约；空 ID、round_number>1 且 previous_wave=null 拒绝，锚点权限/关联另验 |
 | 同波跨日恢复、第 5 波未尝试成员、波次打开后崩溃 | 同 wave_id 重放不再计次；第 5 波剩余成员可恢复，实际尝试不得重做；未解决不打开第 6 波 |
 | 旧五次 Dispatch 计数迁移，或缺失旧选择顺序 | 旧计数至少仍为 5，不合并降额；缺顺序/身份证据则 blocked，旧容量不自动扩至 4，验收前不接纳新语义 |
 
