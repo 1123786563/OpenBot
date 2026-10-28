@@ -165,5 +165,14 @@
     "alreadyVerified": "Your email is already verified. You can sign in now.",
     "failed": "Couldn’t send the verification email. Try again.",
     "signIn": "Sign in"
+  },
+  "companyReauth": {
+    "pausedTitle": "This company asks for an extra sign-in.",
+    "pausedBody": "Finish it to keep working in that company. Your company and team stay as they are.",
+    "failedTitle": "That extra sign-in didn't work.",
+    "failedBody": "It may have finished with a different account, or the company changed. Try again, or choose another company.",
+    "start": "Sign in again",
+    "escape": "Choose another company",
+    "startError": "Couldn't start the extra sign-in. Try again."
   }
 }

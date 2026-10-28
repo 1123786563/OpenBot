@@ -165,5 +165,14 @@
     "alreadyVerified": "邮箱已验证，现在可以登录。",
     "failed": "无法发送验证邮件，请重试。",
     "signIn": "登录"
+  },
+  "companyReauth": {
+    "pausedTitle": "这家公司需要先完成一次额外登录。",
+    "pausedBody": "完成后才能继续在这家公司工作。你的公司和团队选择保持不变。",
+    "failedTitle": "这次额外登录没有完成。",
+    "failedBody": "可能登录到了其他账号，或公司信息已变更。请重试，或选择其他公司。",
+    "start": "重新登录",
+    "escape": "选择其他公司",
+    "startError": "无法开始额外登录。请重试。"
   }
 }
