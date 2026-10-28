@@ -44,8 +44,14 @@ export type InterruptedSpeechUsage =
       outcome: "confirmed";
       /** The confirmed seconds — an exact decimal string, summed from chunk metadata. */
       actualSeconds: string;
-      /** The buffered-audio evidence, in the settle result's own closed vocabulary. */
-      evidence: { kind: "artifact_metadata"; reference: string };
+      /** The buffered-audio evidence, in the settle result's own closed vocabulary —
+       * carrying each chunk's own container header so the settle surface can RE-MEASURE
+       * the same statements (13.2's tightened evidence rule: measured, not believed). */
+      evidence: {
+        kind: "artifact_metadata";
+        reference: string;
+        metadata: { container: "wav"; bytesBase64: string[] };
+      };
     }
   | {
       outcome: "unconfirmed";
@@ -73,6 +79,7 @@ export function collectInterruptedSpeechUsage(input: {
   // is only as good as every piece of it.
   let numerator = 0n;
   let denominator = 1n;
+  const containerHeaders: string[] = [];
   for (const chunk of input.chunks) {
     const measured = chunkSeconds(chunk);
     if (measured === null) {
@@ -84,6 +91,11 @@ export function collectInterruptedSpeechUsage(input: {
     numerator =
       numerator * measured.denominator + measured.numerator * denominator;
     denominator = denominator * measured.denominator;
+    // The chunk's own container header rides the evidence: the settle surface re-measures
+    // the very statements this sum was built from, never a number it must take on faith.
+    containerHeaders.push(
+      Buffer.from(chunk.subarray(0, measured.headerEnd)).toString("base64"),
+    );
   }
   const reduced = reduce(numerator, denominator);
   return {
@@ -92,6 +104,7 @@ export function collectInterruptedSpeechUsage(input: {
     evidence: {
       kind: "artifact_metadata",
       reference: `interrupted-buffer:${input.chunks.length} chunks`,
+      metadata: { container: "wav", bytesBase64: containerHeaders },
     },
   };
 }
@@ -105,6 +118,9 @@ export function collectInterruptedSpeechUsage(input: {
 function chunkSeconds(bytes: Uint8Array): {
   numerator: bigint;
   denominator: bigint;
+  /** The byte length of the container's header proper — everything up to and including
+   * the `data` chunk's own size word, the slice that states the chunk's duration. */
+  headerEnd: number;
 } | null {
   // The 14.1 meter reads whole-file durations; for exactness the same two integers the
   // parser reads (data size, byte rate) are re-read here as the rational they ARE.
@@ -124,6 +140,7 @@ function chunkSeconds(bytes: Uint8Array): {
   let offset = 12;
   let byteRate: bigint | null = null;
   let dataSize: bigint | null = null;
+  let dataHeaderEnd = 0;
   while (offset + 8 <= bytes.length) {
     const id = tag(offset);
     const size = BigInt(view.getUint32(offset + 4, true));
@@ -132,12 +149,13 @@ function chunkSeconds(bytes: Uint8Array): {
       byteRate = BigInt(view.getUint32(body + 8, true));
     } else if (id === "data") {
       dataSize = size;
+      dataHeaderEnd = offset + 8;
       break;
     }
     offset = body + Number(size) + (Number(size) % 2);
   }
   if (byteRate === null || dataSize === null || byteRate <= 0n) return null;
-  return { numerator: dataSize, denominator: byteRate };
+  return { numerator: dataSize, denominator: byteRate, headerEnd: dataHeaderEnd };
 }
 
 function gcd(a: bigint, b: bigint): bigint {

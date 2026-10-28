@@ -163,6 +163,37 @@ const FROZEN_SPEC = {
   perOutputSecondUsd: "0.0005",
 };
 
+/**
+ * A minimal WAV container header whose own metadata states `seconds` — the `fmt ` byte
+ * rate against the `data` size, the same two integers parseWavDurationSeconds reads. The
+ * audio payload itself is not carried: the header's size word IS the artifact's statement.
+ */
+function wavMetadataBase64(seconds: string, byteRate = 8000): string {
+  const [whole, fraction = ""] = seconds.split(".");
+  const dataSize =
+    Number(whole) * byteRate +
+    (fraction ? Math.round(Number(`0.${fraction}`) * byteRate) : 0);
+  const header = new Uint8Array(44);
+  const view = new DataView(header.buffer);
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i += 1) header[offset + i] = text.charCodeAt(i);
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  ascii(8, "WAVE");
+  ascii(12, "fmt ");
+  view.setUint32(16, 16, true); // the fmt chunk's own size
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, byteRate, true); // sample rate
+  view.setUint32(28, byteRate, true); // byte rate
+  view.setUint16(32, 1, true); // block align
+  view.setUint16(34, 8, true); // bits per sample
+  ascii(36, "data");
+  view.setUint32(40, dataSize, true);
+  return Buffer.from(header).toString("base64");
+}
+
 /** One held speech reservation locked at the cell's current snapshot version. */
 async function holdFor(
   world: SpeechWorld,
@@ -286,7 +317,14 @@ test("fractional seconds price exactly — artifact metadata is a verifiable sou
     result: {
       outcome: "synthesized",
       actualSeconds: "25.5",
-      evidence: { kind: "artifact_metadata" }, // the audio container's own statement
+      // The audio container's own statement, carried for the server to re-measure.
+      evidence: {
+        kind: "artifact_metadata",
+        metadata: {
+          container: "wav",
+          bytesBase64: [wavMetadataBase64("25.5")],
+        },
+      },
     },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-frac`,
@@ -318,7 +356,7 @@ test("the per-request surcharge rides the locked dims into the charge", async ()
     result: {
       outcome: "synthesized",
       actualSeconds: "25",
-      evidence: { kind: "provider_usage_report" },
+      evidence: { kind: "provider_usage_report", reference: "tts-307-sur" },
     },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-sur`,
@@ -355,7 +393,7 @@ test("the user's consumption detail shows the speech characters, seconds and amo
     result: {
       outcome: "synthesized",
       actualSeconds: "25",
-      evidence: { kind: "provider_usage_report" },
+      evidence: { kind: "provider_usage_report", reference: "tts-307-cv" },
     },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-cv`,
@@ -405,7 +443,7 @@ test("a hold locked at v1 prices at v1 even after v2 lands", async () => {
     result: {
       outcome: "synthesized",
       actualSeconds: "25",
-      evidence: { kind: "provider_usage_report" },
+      evidence: { kind: "provider_usage_report", reference: "tts-307-v1" },
     },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-v1`,
@@ -428,7 +466,7 @@ test("a tier the lock cannot corroborate is refused, never priced", async () => 
     result: {
       outcome: "synthesized",
       actualSeconds: "25",
-      evidence: { kind: "provider_usage_report" },
+      evidence: { kind: "provider_usage_report", reference: "tts-307-tamper" },
     },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-tamper`,
@@ -465,7 +503,7 @@ test("an actual beyond the certified cap is a defect, never a bill", async () =>
     result: {
       outcome: "synthesized",
       actualSeconds: "61",
-      evidence: { kind: "provider_usage_report" },
+      evidence: { kind: "provider_usage_report", reference: "tts-307-beyond" },
     },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-beyond`,
@@ -581,6 +619,122 @@ test("a character price the hold did not freeze is refused, never adopted", asyn
       .from(creditReservations)
       .where(eq(creditReservations.id, reservationId)),
   ).toMatchObject([{ status: "reserved" }]);
+});
+
+test("a provider usage report without a reference is no evidence anyone may bill from", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+  const held = await writer.availableBalance(world.customerKey);
+
+  // A usage report nobody can trace is a label, not evidence (AC2): the result claims
+  // synthesized, but nothing verifiable stands under it — the hold goes to unknown
+  // (06.8), settles nothing, releases nothing.
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: { kind: "provider_usage_report" },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-noref`,
+  });
+
+  expect(outcome).toEqual({ status: "unknown", reservationId });
+  const [reservation] = await database
+    .select()
+    .from(creditReservations)
+    .where(eq(creditReservations.id, reservationId));
+  expect(reservation.status).toBe("unknown");
+  expect(await writer.availableBalance(world.customerKey)).toBe(held);
+  expect(
+    await database
+      .select()
+      .from(creditLedger)
+      .where(eq(creditLedger.externalCustomerId, world.customerKey)),
+  ).toHaveLength(0);
+});
+
+test("artifact metadata that disagrees with the reported seconds is a conflict, never a bill", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+
+  // The artifact's own container measures 25.5 seconds; the settle surface claims 30.
+  // The measurement wins and the disagreement is a defect: refused as a conflict, no
+  // rewrite to the measured number, the hold stays reserved for the real trail.
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "30",
+      evidence: {
+        kind: "artifact_metadata",
+        metadata: {
+          container: "wav",
+          bytesBase64: [wavMetadataBase64("25.5")],
+        },
+      },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-wav-mismatch`,
+  });
+
+  expect(outcome).toMatchObject({
+    status: "refused",
+    reasonCode: "settlement_conflict",
+    detail: { stage: "artifact_duration_mismatch" },
+  });
+  expect(
+    await database
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.id, reservationId)),
+  ).toMatchObject([{ status: "reserved" }]);
+  expect(
+    await database
+      .select()
+      .from(creditLedger)
+      .where(eq(creditLedger.externalCustomerId, world.customerKey)),
+  ).toHaveLength(0);
+});
+
+test("artifact metadata that states no readable duration keeps the hold unknown", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+  const held = await writer.availableBalance(world.customerKey);
+
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: { inputCharacters: 100, voiceTier: null, durationCapSeconds: 60 },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: {
+        kind: "artifact_metadata",
+        metadata: {
+          container: "wav",
+          bytesBase64: [
+            Buffer.from("certainly not a riff wave container").toString("base64"),
+          ],
+        },
+      },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-wav-garbage`,
+  });
+
+  expect(outcome).toEqual({ status: "unknown", reservationId });
+  const [reservation] = await database
+    .select()
+    .from(creditReservations)
+    .where(eq(creditReservations.id, reservationId));
+  expect(reservation.status).toBe("unknown");
+  expect(await writer.availableBalance(world.customerKey)).toBe(held);
 });
 
 afterAll(async () => {

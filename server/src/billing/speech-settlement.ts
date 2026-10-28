@@ -17,6 +17,7 @@ import {
   speechSpecOfReservation,
 } from "./reserve-bound";
 import { parseExactDecimal } from "./speech-pricing";
+import { parseWavDurationSeconds } from "./transcription-pricing";
 
 /**
  * The speech-generation settlement path (Bifrost 13.2, #307): what a synthesis dispatch owes
@@ -77,10 +78,20 @@ export type SpeechGenerationResult =
       outcome: "synthesized";
       /** The actual billed seconds — an exact decimal string (e.g. "25.5"). */
       actualSeconds: string;
-      /** What the seconds stand on; a closed vocabulary like every evidence seam here. */
+      /** What the seconds stand on; a closed vocabulary like every evidence seam here.
+       * A provider usage report is billable only with a traceable reference (13.2's
+       * tightened rule); artifact metadata is billable only when THIS server can
+       * re-measure the carried containers to the claimed seconds. */
       evidence:
         | { kind: "provider_usage_report"; reference?: string }
-        | { kind: "artifact_metadata"; reference?: string };
+        | {
+            kind: "artifact_metadata";
+            reference?: string;
+            /** Each carried WAV container's own header — the one artifact's container
+             * header, or the interrupted buffer's chunk headers — what the server
+             * re-measures with the same parser 14.1's meter reads. */
+            metadata?: { container: "wav"; bytesBase64: string[] };
+          };
     }
   | {
       /**
@@ -366,6 +377,33 @@ function validateRequest(input: unknown): RequestValidation {
         outcome: refused("request_invalid", { field: "result.evidence" }),
       };
     }
+    // Shape only — the BILLABILITY of artifact metadata (does it measure, does it agree)
+    // is the service's evidence rule below; a shape-invalid metadata blob is a malformed
+    // request, not absent evidence.
+    const metadata = evidence.metadata as Record<string, unknown> | undefined;
+    if (evidence.kind === "artifact_metadata" && metadata !== undefined) {
+      const containers = metadata.bytesBase64 as unknown;
+      const validShape =
+        metadata.container === "wav" &&
+        Array.isArray(containers) &&
+        containers.length >= 1 &&
+        containers.length <= 64 &&
+        containers.every(
+          (container) =>
+            typeof container === "string" &&
+            container.length >= 1 &&
+            container.length <= 8192,
+        );
+      if (!validShape) {
+        return {
+          ok: false,
+          outcome: refused("request_invalid", {
+            field: "result.evidence",
+            reason: "artifact_metadata_shape",
+          }),
+        };
+      }
+    }
   } else if (result.outcome === "unknown") {
     if (typeof result.reason !== "string" || result.reason.trim() === "") {
       return {
@@ -421,6 +459,26 @@ function gcd(a: bigint, b: bigint): bigint {
     y = next;
   }
   return x;
+}
+
+/**
+ * Σ of every carried container's own stated duration — each read by the same whole-file
+ * meter 14.1 uses, so a carried artifact (one container header) or an interrupted
+ * buffer's chunk headers re-measure exactly the statements they were measured from.
+ * Null when anything is absent or unreadable: the sum is only as good as every container
+ * in it. PCM containers' sizes are byte-rate multiples, so every honest header measures
+ * to an exact double and the sum stays exact with it.
+ */
+function measuredWavContainersSeconds(
+  containersBase64: readonly string[],
+): number | null {
+  let total = 0;
+  for (const base64 of containersBase64) {
+    const measured = parseWavDurationSeconds(Buffer.from(base64, "base64"));
+    if (measured === null) return null;
+    total += measured;
+  }
+  return total;
 }
 
 function reduce(
@@ -535,6 +593,59 @@ export function createSpeechSettlementService(
           rateVersion: basis.rateVersion,
           reason: resolved.reason,
         });
+      }
+
+      // The evidence rules (13.2's tightened AC2): a provider usage report is evidence
+      // only with a reference someone can trace, and artifact metadata is evidence only
+      // when THIS server re-measures the artifact's container to the claimed seconds —
+      // the same parser 14.1's meter reads, never a belief in a label. Neither satisfied:
+      // no evidence anyone may bill from, the hold goes unknown (06.8). A measurement
+      // that DISAGREES with the claim is not absent evidence but a conflict: refused,
+      // never rewritten to the measured number. The input characters are never an
+      // estimate of the duration — that substitution stays the forbidden shortcut.
+      if (req.result.evidence.kind === "provider_usage_report") {
+        const reference = req.result.evidence.reference;
+        if (reference === undefined || reference.trim() === "") {
+          await writer.markReservationUnknown(
+            reservationId,
+            "speech synthesis evidence unusable: provider usage report without a reference",
+          );
+          return { status: "unknown", reservationId };
+        }
+      } else {
+        const metadata = req.result.evidence.metadata;
+        const measuredSeconds = metadata
+          ? measuredWavContainersSeconds(metadata.bytesBase64)
+          : null;
+        if (measuredSeconds === null) {
+          await writer.markReservationUnknown(
+            reservationId,
+            "speech synthesis evidence unusable: artifact metadata states no readable duration",
+          );
+          return { status: "unknown", reservationId };
+        }
+        const claimed = exactDecimal(req.result.actualSeconds);
+        if (claimed === null) {
+          // Unreachable behind the request validation; kept so the comparison below
+          // never divides a number it could not read exactly.
+          return refused("request_invalid", { field: "result.actualSeconds" });
+        }
+        // Exact for every honest report: both sides are the correctly-rounded double of
+        // the SAME rational when the durations are equal, and a measurable duration's
+        // lowest terms always fit the safe-integer guard (byteRate ≤ 2^32). A claimed
+        // decimal too wide for the guard cannot be any container's measurement anyway.
+        const measuredMatches =
+          Number.isSafeInteger(Number(claimed.numerator)) &&
+          Number.isSafeInteger(Number(claimed.denominator)) &&
+          measuredSeconds ===
+            Number(claimed.numerator) / Number(claimed.denominator);
+        if (!measuredMatches) {
+          return refused("settlement_conflict", {
+            stage: "artifact_duration_mismatch",
+            measuredSeconds: String(measuredSeconds),
+            carriedSeconds: req.result.actualSeconds,
+          });
+        }
       }
 
       // The seconds side must be corroborated by the lock: `audio_output` is the

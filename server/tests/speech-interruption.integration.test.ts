@@ -151,6 +151,14 @@ async function holdFor(world: SpeechWorld, maximumCents: number): Promise<string
       snapshotVersion: snapshot!.snapshotVersion,
       rateVersion: 0,
     },
+    // 13.2's frozen spec: the quantities the interruption settle below re-carries.
+    speechSpec: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+      perInputCharacterUsd: "0.000015",
+      perOutputSecondUsd: "0.0005",
+    },
   });
   expect(reserved.reserved).toBe(true);
   return reserved.reserved ? reserved.reservationId : "";
@@ -211,13 +219,20 @@ function interrupt(
 // ── the usage collector: measured, never estimated ──
 
 test("the collector sums the buffered chunks' own stated durations exactly", () => {
-  const usage = collectInterruptedSpeechUsage({
-    chunks: [wavOf(10), wavOf(10), wavOf(5)],
-  });
-  expect(usage).toEqual({
-    outcome: "confirmed",
-    actualSeconds: "25",
-    evidence: { kind: "artifact_metadata", reference: "interrupted-buffer:3 chunks" },
+  const chunks = [wavOf(10), wavOf(10), wavOf(5)];
+  const usage = collectInterruptedSpeechUsage({ chunks });
+  // The evidence carries each chunk's own container header (everything up to and
+  // including the data size word): the settle surface re-measures the very statements
+  // this sum was built from, never a number it must take on faith.
+  expect(usage.outcome).toBe("confirmed");
+  expect(usage.outcome === "confirmed" && usage.actualSeconds).toBe("25");
+  expect(
+    usage.outcome === "confirmed" && usage.evidence.metadata,
+  ).toEqual({
+    container: "wav",
+    bytesBase64: chunks.map((chunk) =>
+      Buffer.from(chunk.subarray(0, 44)).toString("base64"),
+    ),
   });
 
   // Fractional tails stay exact: 10 + 10 + 5.5 = 25.5, never a float.
