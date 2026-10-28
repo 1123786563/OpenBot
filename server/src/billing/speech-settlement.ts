@@ -79,18 +79,21 @@ export type SpeechGenerationResult =
       /** The actual billed seconds — an exact decimal string (e.g. "25.5"). */
       actualSeconds: string;
       /** What the seconds stand on; a closed vocabulary like every evidence seam here.
-       * A provider usage report is billable only with a traceable reference (13.2's
-       * tightened rule); artifact metadata is billable only when THIS server can
-       * re-measure the carried containers to the claimed seconds. */
+       * The tightened rules are part of the shape: a provider usage report is billable
+       * only through a traceable reference, and artifact metadata is billable only when
+       * the reference names a server-side collection record whose carried container
+       * headers THIS server re-measures to the claimed seconds (self-attested bytes are
+       * not evidence). A hostile/legacy caller omitting either lands on unknown (06.8),
+       * never a bill. */
       evidence:
-        | { kind: "provider_usage_report"; reference?: string }
+        | {
+            kind: "provider_usage_report";
+            reference: string;
+          }
         | {
             kind: "artifact_metadata";
-            reference?: string;
-            /** Each carried WAV container's own header — the one artifact's container
-             * header, or the interrupted buffer's chunk headers — what the server
-             * re-measures with the same parser 14.1's meter reads. */
-            metadata?: { container: "wav"; bytesBase64: string[] };
+            reference: string;
+            metadata: { container: "wav"; bytesBase64: string[] };
           };
     }
   | {
@@ -390,12 +393,16 @@ function validateRequest(input: unknown): RequestValidation {
     }
     // Shape only — the BILLABILITY of artifact metadata (does it measure, does it agree)
     // is the service's evidence rule below; a shape-invalid metadata blob is a malformed
-    // request, not absent evidence. The per-header budget is the decoded byte length
-    // against the single-sourced constant, not a base64 char count.
-    const metadata = evidence.metadata as Record<string, unknown> | undefined;
+    // request, not absent evidence. A null (or otherwise non-object) metadata is the
+    // malformed kind — the settle must answer request_invalid, never a TypeError 500.
+    // The per-header budget is the decoded byte length against the single-sourced
+    // constant, not a base64 char count.
+    const metadata = evidence.metadata as Record<string, unknown> | null;
     if (evidence.kind === "artifact_metadata" && metadata !== undefined) {
-      const containers = metadata.bytesBase64 as unknown;
+      const containers = metadata === null ? null : metadata.bytesBase64;
       const validShape =
+        metadata !== null &&
+        typeof metadata === "object" &&
         metadata.container === "wav" &&
         Array.isArray(containers) &&
         containers.length >= 1 &&

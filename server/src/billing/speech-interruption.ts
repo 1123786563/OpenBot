@@ -132,59 +132,6 @@ export function collectInterruptedSpeechUsage(input: {
 }
 
 /**
- * One chunk's own stated duration as an exact rational, or null when unreadable. The
- * same two integers 14.1's whole-file meter reads (`data` size over `fmt ` byte rate),
- * kept as the rational they ARE instead of the float the meter divides into — the sum
- * stays exact chunk over chunk.
- */
-function chunkSeconds(bytes: Uint8Array): {
-  numerator: bigint;
-  denominator: bigint;
-  /** The byte length of the container's header proper — everything up to and including
-   * the `data` chunk's own size word, the slice that states the chunk's duration. */
-  headerEnd: number;
-} | null {
-  // The 14.1 meter reads whole-file durations; for exactness the same two integers the
-  // parser reads (data size, byte rate) are re-read here as the rational they ARE.
-  const view =
-    bytes.byteLength >= bytes.length
-      ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-      : null;
-  if (view === null || bytes.length < 44) return null;
-  const tag = (offset: number) =>
-    String.fromCharCode(
-      bytes[offset],
-      bytes[offset + 1],
-      bytes[offset + 2],
-      bytes[offset + 3],
-    );
-  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return null;
-  let offset = 12;
-  let byteRate: bigint | null = null;
-  let dataSize: bigint | null = null;
-  let dataHeaderEnd = 0;
-  while (offset + 8 <= bytes.length) {
-    const id = tag(offset);
-    const size = BigInt(view.getUint32(offset + 4, true));
-    const body = offset + 8;
-    if (id === "fmt " && size >= 16n && body + 16 <= bytes.length) {
-      byteRate = BigInt(view.getUint32(body + 8, true));
-    } else if (id === "data") {
-      dataSize = size;
-      dataHeaderEnd = offset + 8;
-      break;
-    }
-    offset = body + Number(size) + (Number(size) % 2);
-  }
-  if (byteRate === null || dataSize === null || byteRate <= 0n) return null;
-  return {
-    numerator: dataSize,
-    denominator: byteRate,
-    headerEnd: dataHeaderEnd,
-  };
-}
-
-/**
  * The exact-decimal string of a non-negative rational whose denominator terminates
  * (powers of 2 and 5 only); any other denominator is represented at nine fractional
  * digits rounded UP — the exact-decimal wire shape the settle contract reads, and the
