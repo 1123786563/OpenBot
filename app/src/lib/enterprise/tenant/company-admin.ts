@@ -207,7 +207,8 @@ export const companyAdminKeys = {
   identity: () => [IDENTITY] as const,
   config: () => [CONFIG] as const,
   learning: () => [LEARNING] as const,
-  audit: (eventType?: string) => [AUDIT, { eventType: eventType ?? null }] as const,
+  audit: (eventType?: string) =>
+    [AUDIT, { eventType: eventType ?? null }] as const,
   books: () => [BOOKS] as const,
 };
 
@@ -456,8 +457,10 @@ export function companyPromoteMutationOptions(
         },
       );
       if (!response.ok) {
-        throw refusalOf(response, "admin") ??
-          new Error("That member could not be promoted.");
+        throw (
+          refusalOf(response, "admin") ??
+          new Error("That member could not be promoted.")
+        );
       }
       return (await response.json()) as unknown;
     },
@@ -485,8 +488,10 @@ export function companyDemoteMutationOptions(
         },
       );
       if (!response.ok) {
-        throw refusalOf(response, "admin") ??
-          new Error("That member could not be demoted.");
+        throw (
+          refusalOf(response, "admin") ??
+          new Error("That member could not be demoted.")
+        );
       }
       return (await response.json()) as unknown;
     },
@@ -513,8 +518,10 @@ export function companyOffboardMutationOptions(
         },
       );
       if (!response.ok) {
-        throw refusalOf(response, "admin") ??
-          new Error("That member could not be offboarded.");
+        throw (
+          refusalOf(response, "admin") ??
+          new Error("That member could not be offboarded.")
+        );
       }
       return (await response.json()) as unknown;
     },
@@ -542,8 +549,10 @@ export async function exportCompanyAuditEvents(
       },
     );
     if (!response.ok) {
-      throw refusalOf(response, "audit") ??
-        new Error("That audit export could not be read.");
+      throw (
+        refusalOf(response, "audit") ??
+        new Error("That audit export could not be read.")
+      );
     }
     return response.text();
   });

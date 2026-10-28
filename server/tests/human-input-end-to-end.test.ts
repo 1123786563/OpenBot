@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";

@@ -210,24 +210,28 @@ let recordedWork: {
 }[];
 
 beforeAll(async () => {
-  await database.insert(users).values([
-    { id: `usr_person-${run}`, email: `person-${run}@example.invalid` },
-  ]);
-  await database.insert(enterpriseTenants).values([
-    { id: TENANT, name: `Acme ${run}` },
-  ]);
-  await database.insert(enterprisePrincipals).values([
-    { id: PRINCIPAL, userId: `usr_person-${run}` },
-  ]);
-  await database.insert(enterpriseMemberships).values([
-    { tenantId: TENANT, principalId: PRINCIPAL, role: "member" },
-  ]);
-  await database.insert(enterpriseWorkspaces).values([
-    { tenantId: TENANT, id: WORKSPACE, name: `Team ${run}` },
-  ]);
-  await database.insert(enterpriseWorkspaceMemberships).values([
-    { tenantId: TENANT, workspaceId: WORKSPACE, principalId: PRINCIPAL },
-  ]);
+  await database
+    .insert(users)
+    .values([
+      { id: `usr_person-${run}`, email: `person-${run}@example.invalid` },
+    ]);
+  await database
+    .insert(enterpriseTenants)
+    .values([{ id: TENANT, name: `Acme ${run}` }]);
+  await database
+    .insert(enterprisePrincipals)
+    .values([{ id: PRINCIPAL, userId: `usr_person-${run}` }]);
+  await database
+    .insert(enterpriseMemberships)
+    .values([{ tenantId: TENANT, principalId: PRINCIPAL, role: "member" }]);
+  await database
+    .insert(enterpriseWorkspaces)
+    .values([{ tenantId: TENANT, id: WORKSPACE, name: `Team ${run}` }]);
+  await database
+    .insert(enterpriseWorkspaceMemberships)
+    .values([
+      { tenantId: TENANT, workspaceId: WORKSPACE, principalId: PRINCIPAL },
+    ]);
 
   scripted = await bootScriptedHindsight();
   recordedWork = [];
@@ -464,10 +468,14 @@ describe("Hindsight 09 (#386): a correction whose time cannot be determined", ()
       content: "周报在周五发",
     });
     clock = new Date(T1);
-    const corrected = await service.correctGenericPreference(scope, weekly.record.id, {
-      content: "周报在周一发",
-      // no effectiveFrom: the person cannot say when the change applies
-    });
+    const corrected = await service.correctGenericPreference(
+      scope,
+      weekly.record.id,
+      {
+        content: "周报在周一发",
+        // no effectiveFrom: the person cannot say when the change applies
+      },
+    );
     expect(corrected.record.timeUncertain).toBe(true);
     expect(corrected.record.effectiveFrom).toBeNull();
     expect(corrected.superseded.effectiveUntil).toBeNull();

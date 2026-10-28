@@ -25,12 +25,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -92,7 +87,12 @@ interface CheckResult {
   /** 配置自洽性错误。 */
   configErrors: string[];
   /** 解析/跳过计数，供报告核对。 */
-  skipped: { external: number; asset: number; unresolved: number; outsideRoots: number };
+  skipped: {
+    external: number;
+    asset: number;
+    unresolved: number;
+    outsideRoots: number;
+  };
   /** 未解析的 import 说明符（调试/报告用）。 */
   unresolvedSpecs: string[];
   /** 解析到扫描根之外源文件的 import（调试/报告用）。 */
@@ -152,7 +152,9 @@ function listSourceFiles(cwd: string, roots: string[]): string[] {
     if (!existsSync(rootAbs)) continue;
     walk(rootAbs, cwd, out);
   }
-  return out.filter((rel) => !SCAN_EXCLUDE_PREFIXES.some((p) => rel.startsWith(p))).sort();
+  return out
+    .filter((rel) => !SCAN_EXCLUDE_PREFIXES.some((p) => rel.startsWith(p)))
+    .sort();
 }
 
 function walk(absDir: string, cwd: string, out: string[]): void {
@@ -195,12 +197,16 @@ function walk(absDir: string, cwd: string, out: string[]): void {
 function gitIgnoredPaths(cwd: string, candidates: string[]): Set<string> {
   if (candidates.length === 0) return new Set();
   try {
-    const res = spawnSync("git", ["-c", "core.quotepath=off", "check-ignore", "--stdin"], {
-      cwd,
-      input: candidates.join("\n"),
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-    });
+    const res = spawnSync(
+      "git",
+      ["-c", "core.quotepath=off", "check-ignore", "--stdin"],
+      {
+        cwd,
+        input: candidates.join("\n"),
+        encoding: "utf8",
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
     // status 0 = 存在被忽略路径；1 = 均不忽略；其余（如非 git 仓库）视为无忽略。
     if (res.error || res.status === null || res.status > 1) return new Set();
     return new Set((res.stdout ?? "").split("\n").filter(Boolean));
@@ -301,7 +307,12 @@ function resolveSpecifier(
   // tsconfig alias（仅 app 使用 @/* → app/src/*）
   if (spec.startsWith("@/")) {
     if (fromRel.startsWith("app/")) {
-      return resolveFile(cwd, "app/src/" + spec.slice(2), scanRoots, ignoredPaths);
+      return resolveFile(
+        cwd,
+        `app/src/${spec.slice(2)}`,
+        scanRoots,
+        ignoredPaths,
+      );
     }
     return { kind: "unresolved", spec };
   }
@@ -309,8 +320,13 @@ function resolveSpecifier(
   // workspace 包引用
   for (const [pkg, base] of Object.entries(WORKSPACE_PACKAGES)) {
     if (spec === pkg) return { kind: "unresolved", spec };
-    if (spec.startsWith(pkg + "/")) {
-      return resolveFile(cwd, base + "/" + spec.slice(pkg.length + 1), scanRoots, ignoredPaths);
+    if (spec.startsWith(`${pkg}/`)) {
+      return resolveFile(
+        cwd,
+        `${base}/${spec.slice(pkg.length + 1)}`,
+        scanRoots,
+        ignoredPaths,
+      );
     }
   }
 
@@ -336,10 +352,19 @@ function resolveFile(
   else if (/\.(js|mjs)$/.test(baseRel)) {
     candidates.push(baseRel.replace(/\.(js|mjs)$/, ".ts"));
     candidates.push(baseRel.replace(/\.(js|mjs)$/, ".tsx"));
-  } else if (/\.(json|css|scss|sass|less|html|svg|png|jpg|jpeg|gif|woff2?|ttf)$/.test(baseRel)) {
+  } else if (
+    /\.(json|css|scss|sass|less|html|svg|png|jpg|jpeg|gif|woff2?|ttf)$/.test(
+      baseRel,
+    )
+  ) {
     candidates.push(baseRel);
   } else {
-    candidates.push(baseRel + ".ts", baseRel + ".tsx", baseRel + "/index.ts", baseRel + "/index.tsx");
+    candidates.push(
+      `${baseRel}.ts`,
+      `${baseRel}.tsx`,
+      `${baseRel}/index.ts`,
+      `${baseRel}/index.tsx`,
+    );
   }
 
   for (const cand of candidates) {
@@ -349,7 +374,8 @@ function resolveFile(
         const rel = toRel(cand);
         // gitignored 生成物按不存在处理，保证干净树/脏树两态数字一致。
         if (ignoredPaths.has(rel)) continue;
-        if (isInsideScanRoots(rel, scanRoots)) return { kind: "source", path: rel };
+        if (isInsideScanRoots(rel, scanRoots))
+          return { kind: "source", path: rel };
         return { kind: "outside" };
       }
       return { kind: "asset" };
@@ -361,7 +387,7 @@ function resolveFile(
 const SCAN_ROOTS = ["server", "app", "worker", "toolkit", "shared"];
 
 function isInsideScanRoots(rel: string, scanRoots: string[]): boolean {
-  return scanRoots.some((r) => rel === r || rel.startsWith(r + "/"));
+  return scanRoots.some((r) => rel === r || rel.startsWith(`${r}/`));
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +398,7 @@ function attribute(roots: ModuleRoot[], rel: string): ModuleRoot | null {
   let best: ModuleRoot | null = null;
   for (const root of roots) {
     const rp = toRel(root.path);
-    if (rel === rp || rel.startsWith(rp + "/")) {
+    if (rel === rp || rel.startsWith(`${rp}/`)) {
       if (!best || rp.length > toRel(best.path).length) best = root;
     }
   }
@@ -385,7 +411,8 @@ function attribute(roots: ModuleRoot[], rel: string): ModuleRoot | null {
 
 function validateConfig(config: CheckConfig): string[] {
   const errors: string[] = [];
-  if (typeof config.version !== "number") errors.push("config.version 缺失或非数字");
+  if (typeof config.version !== "number")
+    errors.push("config.version 缺失或非数字");
   if (!Array.isArray(config.moduleRoots) || config.moduleRoots.length === 0) {
     errors.push("config.moduleRoots 为空");
   } else {
@@ -400,7 +427,9 @@ function validateConfig(config: CheckConfig): string[] {
       }
       const prev = seen.get(r.path);
       if (prev && prev !== r.module) {
-        errors.push(`moduleRoot 路径重复且 Module 冲突: ${r.path} -> ${prev} vs ${r.module}`);
+        errors.push(
+          `moduleRoot 路径重复且 Module 冲突: ${r.path} -> ${prev} vs ${r.module}`,
+        );
       }
       seen.set(r.path, r.module);
     }
@@ -409,7 +438,13 @@ function validateConfig(config: CheckConfig): string[] {
     errors.push("config.exceptions 缺失");
   } else {
     for (const e of config.exceptions) {
-      for (const k of ["source", "target", "ticket", "exit_condition", "reason"] as const) {
+      for (const k of [
+        "source",
+        "target",
+        "ticket",
+        "exit_condition",
+        "reason",
+      ] as const) {
         if (typeof e[k] !== "string" || e[k].trim() === "") {
           errors.push(`exception 字段 ${k} 缺失: ${JSON.stringify(e)}`);
         }
@@ -451,7 +486,10 @@ export function runCheck(
   const byModule = new Map<string, ModuleRoot>();
   for (const r of config.moduleRoots) byModule.set(r.module, r);
 
-  const deepEdges = new Map<string, { source: string; target: string; sm: string; tm: string }>();
+  const deepEdges = new Map<
+    string,
+    { source: string; target: string; sm: string; tm: string }
+  >();
   const unknownTargets: { source: string; target: string }[] = [];
   const unmappedSources: string[] = [];
 
@@ -506,9 +544,14 @@ export function runCheck(
       // public/integration 出口（当前 public.ts/integration.ts 均不存在，故存量跨模块引用全部为深层引用）
       if (isPublicExport(targetRel)) continue;
 
-      const key = file + "\u0000" + targetRel;
-      deepEdges.set(key, { source: file, target: targetRel, sm: srcRoot.module, tm: tgtRoot.module });
-      const mkey = srcRoot.module + "\u0000" + tgtRoot.module;
+      const key = `${file}\u0000${targetRel}`;
+      deepEdges.set(key, {
+        source: file,
+        target: targetRel,
+        sm: srcRoot.module,
+        tm: tgtRoot.module,
+      });
+      const mkey = `${srcRoot.module}\u0000${tgtRoot.module}`;
       moduleEdges.set(mkey, { from: srcRoot.module, to: tgtRoot.module });
     }
   }
@@ -533,7 +576,7 @@ export function runCheck(
   };
   const cyclicModuleEdges = new Set<string>();
   for (const { from, to } of moduleEdges.values()) {
-    if (reaches(to, from)) cyclicModuleEdges.add(from + "\u0000" + to);
+    if (reaches(to, from)) cyclicModuleEdges.add(`${from}\u0000${to}`);
   }
 
   // 汇总违规
@@ -543,11 +586,14 @@ export function runCheck(
   // 条目落幻影。
   const baselineEdges = new Map<string, Exception>();
   for (const e of config.exceptions) {
-    baselineEdges.set(`${e.source}\u0000${e.target}\u0000${e.category ?? ""}`, e);
+    baselineEdges.set(
+      `${e.source}\u0000${e.target}\u0000${e.category ?? ""}`,
+      e,
+    );
   }
 
   for (const e of deepEdges.values()) {
-    const mkey = e.sm + "\u0000" + e.tm;
+    const mkey = `${e.sm}\u0000${e.tm}`;
     const isCycle = cyclicModuleEdges.has(mkey);
     const category: ViolationCategory = isCycle ? "cycle" : "deep-reference";
     const key = `${e.source}\u0000${e.target}\u0000${category}`;
@@ -589,7 +635,9 @@ export function runCheck(
   }
 
   // 幻影例外：基线里剩余未消耗的条目 = 范围扩大。ignoreExceptions 模式下不适用。
-  const phantomExceptions = options.ignoreExceptions ? [] : [...baselineEdges.values()];
+  const phantomExceptions = options.ignoreExceptions
+    ? []
+    : [...baselineEdges.values()];
 
   // 环的聚合描述（供报告/人类阅读）
   const cycles: string[][] = [];
@@ -647,7 +695,10 @@ function isPublicExport(targetRel: string): boolean {
 // 基线生成
 // ---------------------------------------------------------------------------
 
-export function generateBaseline(config: CheckConfig, options: { cwd: string; scanRoots?: string[] }): CheckConfig {
+export function generateBaseline(
+  config: CheckConfig,
+  options: { cwd: string; scanRoots?: string[] },
+): CheckConfig {
   // 忽略现有 exceptions，重新收敛全量基线（否则会对已完整基线返回 0 条）。
   const result = runCheck(config, { ...options, ignoreExceptions: true });
   const exceptions: Exception[] = [];
@@ -662,8 +713,15 @@ export function generateBaseline(config: CheckConfig, options: { cwd: string; sc
       reason: v.detail,
     });
   }
-  exceptions.sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
-  return { version: config.version, moduleRoots: config.moduleRoots, exceptions };
+  exceptions.sort(
+    (a, b) =>
+      a.source.localeCompare(b.source) || a.target.localeCompare(b.target),
+  );
+  return {
+    version: config.version,
+    moduleRoots: config.moduleRoots,
+    exceptions,
+  };
 }
 
 /** Module → (消除出口的 MOD 票, migration-plan 阶段名)。标签用阶段名（S2=身份与 Access、
@@ -712,7 +770,9 @@ function main(): number {
   const baseline = args.includes("--baseline");
   const asJson = args.includes("--json");
   const configArg = args.find((a, i) => a === "--config" && args[i + 1]);
-  const configPath = configArg ? args[args.indexOf(configArg) + 1] : "tests/config/module-imports.json";
+  const configPath = configArg
+    ? args[args.indexOf(configArg) + 1]
+    : "tests/config/module-imports.json";
 
   const configAbs = resolve(ROOT, configPath);
   if (!existsSync(configAbs)) {
@@ -755,8 +815,12 @@ function main(): number {
 }
 
 function render(result: CheckResult, config: CheckConfig): void {
-  console.log(`扫描 ${result.scannedFiles} 个源文件，${result.scannedEdges} 条 import（外部 ${result.skipped.external}，资源 ${result.skipped.asset}，未解析 ${result.skipped.unresolved}，根外 ${result.skipped.outsideRoots}）。`);
-  console.log(`基线例外 ${config.exceptions.length} 条；违规 ${result.violations.length} 条；幻影例外 ${result.phantomExceptions.length} 条；模块环 ${result.cycles.length} 个。`);
+  console.log(
+    `扫描 ${result.scannedFiles} 个源文件，${result.scannedEdges} 条 import（外部 ${result.skipped.external}，资源 ${result.skipped.asset}，未解析 ${result.skipped.unresolved}，根外 ${result.skipped.outsideRoots}）。`,
+  );
+  console.log(
+    `基线例外 ${config.exceptions.length} 条；违规 ${result.violations.length} 条；幻影例外 ${result.phantomExceptions.length} 条；模块环 ${result.cycles.length} 个。`,
+  );
 
   if (result.configErrors.length) {
     console.log("\n[配置自洽性错误]");
@@ -765,7 +829,9 @@ function render(result: CheckResult, config: CheckConfig): void {
   if (result.violations.length) {
     console.log("\n[违规]");
     for (const v of result.violations) {
-      console.log(`  - [${v.category}] ${v.source} -> ${v.target}  ${v.detail}`);
+      console.log(
+        `  - [${v.category}] ${v.source} -> ${v.target}  ${v.detail}`,
+      );
     }
   }
   if (result.phantomExceptions.length) {
@@ -778,7 +844,9 @@ function render(result: CheckResult, config: CheckConfig): void {
     console.log("\n[模块环]");
     for (const c of result.cycles) console.log(`  - ${c.join(" -> ")}`);
   }
-  console.log(`\n结论: ${result.ok ? "与基线一致（退出码 0）" : "存在差异（退出码非零）"}`);
+  console.log(
+    `\n结论: ${result.ok ? "与基线一致（退出码 0）" : "存在差异（退出码非零）"}`,
+  );
 }
 
 if (import.meta.main) {

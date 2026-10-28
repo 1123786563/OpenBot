@@ -21,7 +21,9 @@ import {
 } from "./enterprise-test-db-guard";
 
 const requestedMode = process.argv[2] ?? "";
-if (!new Set(["generate", "custom", "migrate", "provision"]).has(requestedMode)) {
+if (
+  !new Set(["generate", "custom", "migrate", "provision"]).has(requestedMode)
+) {
   throw new Error(
     "Use enterprise-test-db.ts generate, custom, migrate, or provision.",
   );
@@ -92,9 +94,7 @@ if (mode === "migrate") {
     "--no-install",
     "drizzle-kit",
     "generate",
-    ...(mode === "custom"
-      ? ["--custom", "--name=enterprise_tenancy_rls"]
-      : []),
+    ...(mode === "custom" ? ["--custom", "--name=enterprise_tenancy_rls"] : []),
     "--config=drizzle.config.ts",
   ];
 }

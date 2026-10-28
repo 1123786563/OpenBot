@@ -309,8 +309,7 @@ export function createSkillComponentService(channels: {
         )
         .limit(1);
       if (
-        !member ||
-        member.companyStatus !== "active" ||
+        member?.companyStatus !== "active" ||
         member.companyEpoch !== scope.memberEpoch ||
         member.teamStatus !== "active"
       ) {
@@ -570,8 +569,7 @@ export function createSkillComponentService(channels: {
           )
           .limit(1);
         if (
-          !member ||
-          member.companyStatus !== "active" ||
+          member?.companyStatus !== "active" ||
           member.companyEpoch !== scope.memberEpoch ||
           member.teamStatus !== "active"
         ) {

@@ -229,7 +229,9 @@ export function assertPriceStatusColumns(
     const { dimension, reason } = entry as Record<string, unknown>;
     if (
       typeof dimension !== "string" ||
-      !WIRE_PRICED_DIMENSIONS.includes(dimension as (typeof WIRE_PRICED_DIMENSIONS)[number])
+      !WIRE_PRICED_DIMENSIONS.includes(
+        dimension as (typeof WIRE_PRICED_DIMENSIONS)[number],
+      )
     ) {
       throw new TypeError(
         `${where}: the missing-dimension list carries dimension ${JSON.stringify(dimension)}, which is outside the necessary dimension set (${WIRE_PRICED_DIMENSIONS.join(", ")}).`,

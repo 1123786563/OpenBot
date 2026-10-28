@@ -15,9 +15,7 @@ import {
 } from "../src/db/schema/enterprise-tenancy";
 import { hindsightControlledBackups } from "../src/db/schema/hindsight-restore";
 import { hindsightRevocations } from "../src/db/schema/hindsight-revocations";
-import {
-  createCleanupEvidenceService,
-} from "../src/hindsight/cleanup-evidence";
+import { createCleanupEvidenceService } from "../src/hindsight/cleanup-evidence";
 import {
   companySchemaFor,
   mintBankScopeAssertion,
@@ -74,7 +72,10 @@ async function live(): Promise<boolean> {
 
 const available = CONTRACT_API_KEY && CONTRACT_SECRET && (await live());
 
-function bankToken(tenantId: string, principalId: string): {
+function bankToken(
+  tenantId: string,
+  principalId: string,
+): {
   bank: string;
   token: string;
 } {
@@ -157,23 +158,24 @@ beforeAll(async () => {
 describe.skipIf(!available)(
   "hindsight purge/restore evidence (#391) on a real instance",
   () => {
-    test(
-      "a deleted document verifies absent: 404 on the document, empty on its memory units",
-      async () => {
+    test("a deleted document verifies absent: 404 on the document, empty on its memory units", async () => {
       const { bank, token } = bankToken(TENANT_A, PRINCIPAL_A);
       const documentId = `purge-ct-absent-${run}`;
       const retain = await hindsight(
-        token, `/v1/default/banks/${bank}/memories`, {
-        method: "POST",
-        body: {
-          items: [
-            {
-              content: `Contract person prefers ct-absent-${run} in the morning`,
-              document_id: documentId,
-            },
-          ],
+        token,
+        `/v1/default/banks/${bank}/memories`,
+        {
+          method: "POST",
+          body: {
+            items: [
+              {
+                content: `Contract person prefers ct-absent-${run} in the morning`,
+                document_id: documentId,
+              },
+            ],
+          },
         },
-      });
+      );
       expect([200, 201, 202]).toContain(retain.status);
       // The extraction pipeline settles; one echo unit should reference the document.
       await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -224,26 +226,26 @@ describe.skipIf(!available)(
         );
       expect(row.verifyState).toBe("absent");
       expect(row.verifiedAt).not.toBeNull();
-    },
-      60_000);
+    }, 60_000);
 
-    test(
-      "a document the service still holds verifies present — one API success is not the proof",
-      async () => {
+    test("a document the service still holds verifies present — one API success is not the proof", async () => {
       const { bank, token } = bankToken(TENANT_B, PRINCIPAL_B);
       const documentId = `purge-ct-present-${run}`;
       const retain = await hindsight(
-        token, `/v1/default/banks/${bank}/memories`, {
-        method: "POST",
-        body: {
-          items: [
-            {
-              content: `Contract person prefers ct-present-${run} at standup`,
-              document_id: documentId,
-            },
-          ],
+        token,
+        `/v1/default/banks/${bank}/memories`,
+        {
+          method: "POST",
+          body: {
+            items: [
+              {
+                content: `Contract person prefers ct-present-${run} at standup`,
+                document_id: documentId,
+              },
+            ],
+          },
         },
-      });
+      );
       expect([200, 201, 202]).toContain(retain.status);
       // No delete: the copy is held. A ledger row claiming confirmed deletion must verify
       // PRESENT against the real service — the exact dishonesty the sweep exists to catch.
@@ -279,12 +281,9 @@ describe.skipIf(!available)(
         );
       expect(row.verifyState).toBe("present");
       expect(row.verifyError).not.toBeNull();
-    },
-      60_000);
+    }, 60_000);
 
-    test(
-      "the composed claim runs its whole chain on the real service",
-      async () => {
+    test("the composed claim runs its whole chain on the real service", async () => {
       const evidence = createCleanupEvidenceService(database, {
         apiUrl: CONTRACT_URL,
         serviceApiKey: CONTRACT_API_KEY ?? "",
@@ -331,7 +330,6 @@ describe.skipIf(!available)(
       expect(claimed.controlledCopiesCleared).toBe(true);
       expect(claimed.summary).toBeTruthy();
       expect(claimed.externalModelLogs.coveredByThisClaim).toBe(false);
-    },
-      60_000);
+    }, 60_000);
   },
 );

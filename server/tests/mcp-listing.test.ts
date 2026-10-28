@@ -1,4 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { MCPMock, type MCPToolDefinition } from "@copilotkit/aimock/mcp";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { catalogueEntry, classifyTool } from "../src/plugins/catalogue";

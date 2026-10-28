@@ -394,9 +394,14 @@ function continuationStoreDouble() {
     row.actorId === scope.actorId;
   const loadRow = (scope: PlatformScope, continuationId: string) =>
     [...rows.values()].find(
-      (row) => row.continuationId === continuationId && sameIdentity(row, scope),
+      (row) =>
+        row.continuationId === continuationId && sameIdentity(row, scope),
     ) ?? null;
-  const loadPendingRow = (scope: PlatformScope, runId: string, toolCallId: string) =>
+  const loadPendingRow = (
+    scope: PlatformScope,
+    runId: string,
+    toolCallId: string,
+  ) =>
     [...rows.values()].find(
       (row) =>
         row.runId === runId &&
@@ -445,7 +450,9 @@ function continuationStoreDouble() {
       operationId: row.operationId,
       status: row.status,
       decisionId: row.decisionId,
-      outcome: (row.outcome as "resumed" | "declined" | "failed_unknown" | null) ?? null,
+      outcome:
+        (row.outcome as "resumed" | "declined" | "failed_unknown" | null) ??
+        null,
       claimExpired,
     };
   };
@@ -472,10 +479,7 @@ function continuationStoreDouble() {
       claimToken: token,
     };
   };
-  const decideFits = (
-    decision: ResumeDecision,
-    payload: ContinuationPayload,
-  ) =>
+  const decideFits = (decision: ResumeDecision, payload: ContinuationPayload) =>
     (payload.kind === "approval" &&
       (decision.kind === "approved" || decision.kind === "declined")) ||
     (payload.kind === "question" && decision.kind === "answered") ||
@@ -489,7 +493,10 @@ function continuationStoreDouble() {
         payload.toolCallId,
         payload.argsDigest,
       );
-      if (expectedOperationId !== undefined && expectedOperationId !== operationId)
+      if (
+        expectedOperationId !== undefined &&
+        expectedOperationId !== operationId
+      )
         throw new MastraContinuationRefusal(
           "MASTRA_CONTINUATION_OPERATION_ID_MISMATCH",
         );
@@ -561,9 +568,7 @@ function continuationStoreDouble() {
       counts.claimContinuation += 1;
       const row = loadRow(scope, ref.continuationId);
       if (!row)
-        throw new MastraContinuationRefusal(
-          "MASTRA_CONTINUATION_NOT_FOUND",
-        );
+        throw new MastraContinuationRefusal("MASTRA_CONTINUATION_NOT_FOUND");
       if (row.revision !== ref.revision) throw conflict();
       const record = recordOf(row);
       if (!decideFits(decision, record.payload))
@@ -571,12 +576,16 @@ function continuationStoreDouble() {
           "MASTRA_CONTINUATION_DECISION_INCOMPATIBLE",
         );
       if (record.status === "finished")
-        throw new MastraContinuationRefusal("MASTRA_CONTINUATION_ALREADY_FINISHED");
+        throw new MastraContinuationRefusal(
+          "MASTRA_CONTINUATION_ALREADY_FINISHED",
+        );
       if (
         decision.kind === "approved" &&
         decision.argsDigest !== record.payload.argsDigest
       )
-        throw new MastraContinuationRefusal("MASTRA_CONTINUATION_ARGS_MISMATCH");
+        throw new MastraContinuationRefusal(
+          "MASTRA_CONTINUATION_ARGS_MISMATCH",
+        );
       // idempotent re-apply 的对账键：真 decisionIdOf（导出的合同面），双亲零镜像零漂移。
       return claimInternal(row, decisionIdOf(decision));
     },
@@ -587,7 +596,9 @@ function continuationStoreDouble() {
         throw new MastraContinuationRefusal("MASTRA_CONTINUATION_NOT_FOUND");
       if (row.revision !== ref.revision) throw conflict();
       if (row.status === "finished")
-        throw new MastraContinuationRefusal("MASTRA_CONTINUATION_ALREADY_FINISHED");
+        throw new MastraContinuationRefusal(
+          "MASTRA_CONTINUATION_ALREADY_FINISHED",
+        );
       return claimInternal(row, decisionId);
     },
     finishContinuation: async (claim, outcome) => {
@@ -688,21 +699,35 @@ function driverDouble(modes: DriveMode[]) {
       decisions.push(decision.kind);
       const mode = modes[calls] ?? "resumed";
       calls += 1;
-      if (mode === "crash-before-started") throw new Error("engine died before start");
+      if (mode === "crash-before-started")
+        throw new Error("engine died before start");
       if (mode === "declined") return "declined";
       await receiptSink.started();
-      if (mode === "crash-after-started") throw new Error("engine died after start");
+      if (mode === "crash-after-started")
+        throw new Error("engine died after start");
       externalEffects.reached += 1;
-      if (mode === "re_suspended") return { outcome: "re_suspended", finishReason: "suspended" };
+      if (mode === "re_suspended")
+        return { outcome: "re_suspended", finishReason: "suspended" };
       if (mode === "crash-after-executed") {
         await receiptSink.executed();
         throw new Error("engine died after executed");
       }
       await receiptSink.executed();
-      return { outcome: "resumed", answer: `turn continued (${decision.kind})` };
+      return {
+        outcome: "resumed",
+        answer: `turn continued (${decision.kind})`,
+      };
     },
   };
-  return { driver, get calls() { return calls; }, sink, externalEffects, decisions };
+  return {
+    driver,
+    get calls() {
+      return calls;
+    },
+    sink,
+    externalEffects,
+    decisions,
+  };
 }
 
 /** M05 侧全套：双亲 store + 真编排器 install + 门面组。 */
@@ -734,7 +759,10 @@ async function parkedRow(deps: {
   );
 }
 
-const approvedDecision = (approvalId: string, digest: string): ResumeDecision => ({
+const approvedDecision = (
+  approvalId: string,
+  digest: string,
+): ResumeDecision => ({
   kind: "approved",
   approvalId,
   argsDigest: digest,
@@ -751,7 +779,10 @@ describe("MOD13 C1: 委托等价——门面成员与直调内件同输入同答
     const access = createApprovalsAccess({ service, store: double.store });
     const action = approvalAction(candidateFixture());
     const rowA = await double.store.open({ ...action });
-    const rowB = await double.store.open({ ...action, toolCallId: "call-b" } as never);
+    const rowB = await double.store.open({
+      ...action,
+      toolCallId: "call-b",
+    } as never);
 
     const viaFacade = await access.decide(OWNER, rowA.id, "allow_once");
     const viaDirect = await service.decide(OWNER, rowB.id, "allow_once");
@@ -765,14 +796,25 @@ describe("MOD13 C1: 委托等价——门面成员与直调内件同输入同答
     const readDirect = await double.store.get(OWNER, rowB.id);
     // 门面读一次、直调读一次：门面没有第三只手。
     expect(double.counts.get - getsBefore).toBe(2);
-    expect({ status: readFacade.status, decision: readFacade.decision }).toEqual({
+    expect({
+      status: readFacade.status,
+      decision: readFacade.decision,
+    }).toEqual({
       status: readDirect.status,
       decision: readDirect.decision,
     });
 
-    const rowC = await double.store.open({ ...action, toolCallId: "call-c" } as never);
-    const rowD = await double.store.open({ ...action, toolCallId: "call-d" } as never);
-    expect(await access.saveReceipt(OWNER, rowC.id, { content: "did it" })).toBe(
+    const rowC = await double.store.open({
+      ...action,
+      toolCallId: "call-c",
+    } as never);
+    const rowD = await double.store.open({
+      ...action,
+      toolCallId: "call-d",
+    } as never);
+    expect(
+      await access.saveReceipt(OWNER, rowC.id, { content: "did it" }),
+    ).toBe(
       await double.store.saveResult(OWNER, rowD.id, { content: "did it" }),
     );
     await access.complete(OWNER, rowC.id);
@@ -807,11 +849,18 @@ describe("MOD13 C1: 委托等价——门面成员与直调内件同输入同答
       skillOwner: async () => null,
       grant: async () => {},
     };
-    const toolAccess = createToolAccess({ store: pluginStore, approvals: access });
+    const toolAccess = createToolAccess({
+      store: pluginStore,
+      approvals: access,
+    });
     expect(toolAccess.approvals).toBe(access);
     const action = approvalAction(candidateFixture());
     const row = await double.store.open(action);
-    const decided = await toolAccess.approvals!.decide(OWNER, row.id, "allow_once");
+    const decided = await toolAccess.approvals!.decide(
+      OWNER,
+      row.id,
+      "allow_once",
+    );
     expect(decided.status).toBe("approved");
   });
 
@@ -832,7 +881,9 @@ describe("MOD13 C1: 委托等价——门面成员与直调内件同输入同答
     );
 
     const getsBefore = ct.counts.getContinuation;
-    expect((await facade.continuationFor(scope, refA.continuationId))?.ref).toEqual(
+    expect(
+      (await facade.continuationFor(scope, refA.continuationId))?.ref,
+    ).toEqual(
       (await ct.store.getContinuation(scope, refA.continuationId))?.ref,
     );
     expect(ct.counts.getContinuation - getsBefore).toBe(2); // 门面一次+直调一次
@@ -904,7 +955,11 @@ describe("MOD13 C2 (验收①): 等价复用/重复批准返回同一决定", ()
       equivalenceOf(candidateFixture({ args: { path: "other.txt" } })),
     ).not.toBe(equivalenceOf(base));
     expect(
-      equivalenceOf(candidateFixture({ target: { ref: "e1", snapshotId: 7, name: "Changed" } })),
+      equivalenceOf(
+        candidateFixture({
+          target: { ref: "e1", snapshotId: 7, name: "Changed" },
+        }),
+      ),
     ).not.toBe(equivalenceOf(base));
     expect(
       equivalenceOf(candidateFixture({ toolRef: "mcp/files/delete" })),
@@ -935,7 +990,11 @@ describe("MOD13 C2 (验收①): 等价复用/重复批准返回同一决定", ()
     const double = approvalStoreDouble();
     // 等价判定需要 policy 面（findEquivalent 是等价复用的读）——内存双亲。
     double.store.policy = {
-      preferences: async () => ({ enabled: true, autoReview: false, hostCommands: "ask" }),
+      preferences: async () => ({
+        enabled: true,
+        autoReview: false,
+        hostCommands: "ask",
+      }),
       setPreferences: async () => {
         throw new Error("not used");
       },
@@ -963,7 +1022,12 @@ describe("MOD13 C2 (验收①): 等价复用/重复批准返回同一决定", ()
       revokeTeamRule: async () => {
         throw new Error("not used");
       },
-      findEquivalent: async ({ ownerUserId, threadId, equivalence, excludeToolCallId }) =>
+      findEquivalent: async ({
+        ownerUserId,
+        threadId,
+        equivalence,
+        excludeToolCallId,
+      }) =>
         [...double.records.values()].find(
           (row) =>
             row.ownerUserId === ownerUserId &&
@@ -1022,16 +1086,28 @@ describe("MOD13 C3 (验收②): CAS 单驱动者——claim 互斥与决定幂�
     const { ct, facade } = continuationStack([]);
     const scope = scopeFixture();
     const ref = await parkedRow({ store: ct.store });
-    await facade.claimContinuation(scope, ref, approvedDecision("ap-1", payloadFixture().argsDigest));
+    await facade.claimContinuation(
+      scope,
+      ref,
+      approvedDecision("ap-1", payloadFixture().argsDigest),
+    );
     const staleRef: ResumeRef = {
       continuationId: ref.continuationId,
       revision: ref.revision - 1,
     };
     await expect(
-      facade.claimContinuation(scope, staleRef, approvedDecision("ap-1", payloadFixture().argsDigest)),
+      facade.claimContinuation(
+        scope,
+        staleRef,
+        approvedDecision("ap-1", payloadFixture().argsDigest),
+      ),
     ).rejects.toThrow("REVISION_CONFLICT");
     await expect(
-      ct.store.claimContinuation(scope, staleRef, approvedDecision("ap-1", payloadFixture().argsDigest)),
+      ct.store.claimContinuation(
+        scope,
+        staleRef,
+        approvedDecision("ap-1", payloadFixture().argsDigest),
+      ),
     ).rejects.toThrow("REVISION_CONFLICT");
   });
 
@@ -1041,7 +1117,10 @@ describe("MOD13 C3 (验收②): CAS 单驱动者——claim 互斥与决定幂�
     const ref = await parkedRow({ store: ct.store });
     const decision = approvedDecision("ap-1", payloadFixture().argsDigest);
     const first = await facade.resumeContinuation({ scope, ref, decision });
-    expect(first).toEqual({ kind: "resumed", answer: "turn continued (approved)" });
+    expect(first).toEqual({
+      kind: "resumed",
+      answer: "turn continued (approved)",
+    });
 
     const claimsBefore = ct.counts.claimContinuation;
     const replay = await facade.resumeContinuation({ scope, ref, decision });
@@ -1071,7 +1150,9 @@ describe("MOD13 C4 (验收③): 重启读原 receipt，不重发外部副作用"
         executed.push(action.toolRef);
         return "the file was saved";
       },
-      continue: async (input: { result: { content: string; error?: string } }) => {
+      continue: async (input: {
+        result: { content: string; error?: string };
+      }) => {
         continued.push({ result: input.result });
       },
     };
@@ -1115,9 +1196,9 @@ describe("MOD13 C4 (验收③): 重启读原 receipt，不重发外部副作用"
     });
     expect(engine.calls).toBe(1);
     expect(engine.externalEffects.reached).toBe(1);
-    expect((await facade.continuationFor(scope, ref.continuationId))?.status).toBe(
-      "finished",
-    );
+    expect(
+      (await facade.continuationFor(scope, ref.continuationId))?.status,
+    ).toBe("finished");
   });
 });
 
@@ -1145,12 +1226,13 @@ describe("MOD13 C5 (验收④): unknown 超时现状——不承诺跨网络 exa
     ).rejects.toThrow("REVISION_CONFLICT");
     ct.advance(CLAIM_TTL_MS + 1);
     const replay = await facade.resumeContinuation({ scope, ref, decision });
-    expect(replay).toEqual({ kind: "pending_unknown", continuationId: ref.continuationId });
+    expect(replay).toEqual({
+      kind: "pending_unknown",
+      continuationId: ref.continuationId,
+    });
     expect(engine.calls).toBe(1); // 待处置不重驱动
     expect(ct.outcomes).toContain("failed_unknown");
-    expect(
-      await facade.receiptEvidence(scope, "op-x"),
-    ).toBeNull(); // 无关 operationId 读作无证据
+    expect(await facade.receiptEvidence(scope, "op-x")).toBeNull(); // 无关 operationId 读作无证据
   });
 
   test("recordOperationStarted 的 F1 栅栏：已有 receipt 的后来者得 started:false", async () => {
@@ -1178,9 +1260,9 @@ describe("MOD13 C5 (验收④): unknown 超时现状——不承诺跨网络 exa
     const evidence = await facade.receiptEvidence(scope, record.operationId);
     expect(evidence).toEqual({ receiptId: "rc-1", status: "unknown" });
     await ct.store.recordOperationExecuted(scope, record.operationId);
-    expect((await facade.receiptEvidence(scope, record.operationId))?.status).toBe(
-      "executed",
-    );
+    expect(
+      (await facade.receiptEvidence(scope, record.operationId))?.status,
+    ).toBe("executed");
   });
 
   test("started 前崩溃（零证据）：接管后安全再驱动恰一次", async () => {
@@ -1196,7 +1278,10 @@ describe("MOD13 C5 (验收④): unknown 超时现状——不承诺跨网络 exa
     ).rejects.toThrow("engine died before start");
     ct.advance(CLAIM_TTL_MS + 1);
     const replay = await facade.resumeContinuation({ scope, ref, decision });
-    expect(replay).toEqual({ kind: "resumed", answer: "turn continued (approved)" });
+    expect(replay).toEqual({
+      kind: "resumed",
+      answer: "turn continued (approved)",
+    });
     expect(engine.calls).toBe(2); // 两次进入驱动
     expect(engine.externalEffects.reached).toBe(1); // 外部效果恰一次
   });
@@ -1238,7 +1323,9 @@ describe("MOD13 C6 (验收⑤): 真实结果——执行错误/未知/拒绝都�
     const row = await double.store.open(action);
     await access.decide(OWNER, row.id, "allow_once");
     // 崩溃窗口：已消费（执行已开始）但结果未写。
-    expect(await double.store.consume(OWNER, row.id, action.actionDigest)).toBe(true);
+    expect(await double.store.consume(OWNER, row.id, action.actionDigest)).toBe(
+      true,
+    );
     const executed: unknown[] = [];
     const continued: { content: string; error?: string }[] = [];
     await service.resume(OWNER, row.id, {
@@ -1314,7 +1401,8 @@ describe("MOD13 C6 (验收⑤): 真实结果——执行错误/未知/拒绝都�
     ))!;
     expect(record.claimExpired).toBe(false);
     expect(
-      (await resusStack.facade.receiptEvidence(scopeR, record.operationId))?.status,
+      (await resusStack.facade.receiptEvidence(scopeR, record.operationId))
+        ?.status,
     ).toBe("unknown"); // 未升级——悬挂中的效果不证明完成
   });
 
@@ -1349,25 +1437,44 @@ function codeOf(relative: string): string {
   return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
-const specifiersOf = (relative: string) => [
-  ...new Set(
-    [...readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf-8").matchAll(/from "([^"]+)"/g)]
-      .map((match) => match[1]),
-  ),
-].sort();
+const specifiersOf = (relative: string) =>
+  [
+    ...new Set(
+      [
+        ...readFileSync(
+          fileURLToPath(new URL(relative, import.meta.url)),
+          "utf-8",
+        ).matchAll(/from "([^"]+)"/g),
+      ].map((match) => match[1]),
+    ),
+  ].sort();
 
 describe("MOD13 源级钉: 能力组边界与迁移完整性", () => {
   test("approvals/public.ts 只 import 组内 service/types，且四成员恒等委托", () => {
     const file = "../../src/approvals/public.ts";
     expect(specifiersOf(file)).toEqual(["./service", "./types"]);
     const code = codeOf(file);
-    for (const banned of ["console.", "getLogger", "recordAuditEvent", "auditStore", "logger"]) {
+    for (const banned of [
+      "console.",
+      "getLogger",
+      "recordAuditEvent",
+      "auditStore",
+      "logger",
+    ]) {
       expect(code.includes(banned), `must not contain ${banned}`).toBe(false);
     }
-    expect(code).toMatch(/decide: \(\.\.\.input\) => service\.decide\(\.\.\.input\)/);
-    expect(code).toMatch(/receiptOf: \(\.\.\.input\) => store\.get\(\.\.\.input\)/);
-    expect(code).toMatch(/saveReceipt: \(\.\.\.input\) => store\.saveResult\(\.\.\.input\)/);
-    expect(code).toMatch(/complete: \(\.\.\.input\) => store\.finish\(\.\.\.input\)/);
+    expect(code).toMatch(
+      /decide: \(\.\.\.input\) => service\.decide\(\.\.\.input\)/,
+    );
+    expect(code).toMatch(
+      /receiptOf: \(\.\.\.input\) => store\.get\(\.\.\.input\)/,
+    );
+    expect(code).toMatch(
+      /saveReceipt: \(\.\.\.input\) => store\.saveResult\(\.\.\.input\)/,
+    );
+    expect(code).toMatch(
+      /complete: \(\.\.\.input\) => store\.finish\(\.\.\.input\)/,
+    );
     // 等价合同是唯一 re-export，不是第二处定义。
     expect(code).toContain('export { equivalenceOf } from "./service"');
   });
@@ -1380,13 +1487,26 @@ describe("MOD13 源级钉: 能力组边界与迁移完整性", () => {
       "../../mastra/execution-contracts",
     ]);
     const code = codeOf(file);
-    for (const banned of [".insert(", ".update(", ".delete(", ".transaction(", "console.", "getLogger"]) {
+    for (const banned of [
+      ".insert(",
+      ".update(",
+      ".delete(",
+      ".transaction(",
+      "console.",
+      "getLogger",
+    ]) {
       expect(code.includes(banned), `must not contain ${banned}`).toBe(false);
     }
     // 注释剥离后，面名单里没有引擎面（finish/release/saveSuspension 不扩面）。
-    expect(code).not.toMatch(/finishContinuation|releaseClaim|saveSuspension|saveContinuation|recordOperationExecuted/);
-    expect(code).toMatch(/continuationFor: \(scope, continuationId\) =>\s*store\.getContinuation\(scope, continuationId\)/);
-    expect(code).toMatch(/claimContinuation: \(scope, ref, decision\) =>\s*store\.claimContinuation\(scope, ref, decision\)/);
+    expect(code).not.toMatch(
+      /finishContinuation|releaseClaim|saveSuspension|saveContinuation|recordOperationExecuted/,
+    );
+    expect(code).toMatch(
+      /continuationFor: \(scope, continuationId\) =>\s*store\.getContinuation\(scope, continuationId\)/,
+    );
+    expect(code).toMatch(
+      /claimContinuation: \(scope, ref, decision\) =>\s*store\.claimContinuation\(scope, ref, decision\)/,
+    );
     expect(code).toMatch(/resumeContinuation: \(input\) => resume\(input\)/);
   });
 
@@ -1396,7 +1516,12 @@ describe("MOD13 源级钉: 能力组边界与迁移完整性", () => {
     expect(code).toContain("readonly approvals?: TApprovals;");
     expect(code).toMatch(/const \{ store, approvals \} = deps;/);
     expect(code.includes("\n    approvals,\n  };")).toBe(true);
-    expect(specifiersOf(file)).toEqual(["../credentials", "./selection", "./store", "./tools"]);
+    expect(specifiersOf(file)).toEqual([
+      "../credentials",
+      "./selection",
+      "./store",
+      "./tools",
+    ]);
   });
 
   test("runtime.ts 迁移面：决定/receipt 与恢复入口经两门面，直调内件清零", () => {
@@ -1420,7 +1545,9 @@ describe("MOD13 源级钉: 能力组边界与迁移完整性", () => {
       "mastraContinuationStore.listContinuations(",
       "mastraContinuationInstall.resume({",
     ]) {
-      expect(code.includes(banned), `leftover direct call ${banned}`).toBe(false);
+      expect(code.includes(banned), `leftover direct call ${banned}`).toBe(
+        false,
+      );
     }
     // MOD12 受管门 census 不变：.callTool( 在 runtime 仍恰一点。
     expect([...code.matchAll(/\.\s*callTool\s*\(/g)].length).toBe(1);

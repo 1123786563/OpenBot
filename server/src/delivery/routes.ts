@@ -406,7 +406,9 @@ export function configuredDeliveryProviders(
   // Origin plus path: a deployment behind a reverse-proxy sub-path
   // (https://example.com/openbot) must hand the provider the /openbot-prefixed
   // webhook URL it actually answers, and sign over exactly that URL.
-  const base = new URL(webhookBase).origin + new URL(webhookBase).pathname.replace(/\/$/, "");
+  const base =
+    new URL(webhookBase).origin +
+    new URL(webhookBase).pathname.replace(/\/$/, "");
   function configured(names: string[]) {
     if (!names.some((name) => env[name]?.trim())) return null;
     const missing = names.filter((name) => !env[name]?.trim());

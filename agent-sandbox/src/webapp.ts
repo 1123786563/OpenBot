@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { join, normalize, extname, resolve } from "node:path";
+import { join, extname, resolve } from "node:path";
 
 /**
  * The static webapp service (S3): a Bot's BUILT artifact, served as files.
@@ -61,9 +61,10 @@ export async function readWebappFile(
   // /var/... — resolved once, the comparison is about the path, not the alias it came by.
   const root = resolve(join(roots.workspaceRoot, botId, "webapp"));
   const target = resolve(join(root, path));
-  if (target !== root && !target.startsWith(root + "/")) return null;
+  if (target !== root && !target.startsWith(`${root}/`)) return null;
 
-  const candidates = path === "" ? [join(root, "index.html"), target] : [target];
+  const candidates =
+    path === "" ? [join(root, "index.html"), target] : [target];
   for (const candidate of candidates) {
     const info = await stat(candidate).catch(() => null);
     if (!info?.isFile()) continue;

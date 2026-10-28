@@ -20,7 +20,13 @@
 // （主体 = 使用者，data 角色 RLS INSERT）；凭据选择只认使用者本人个人凭据
 // （target=ref 精确匹配）；本票零新 schema 对象，既有文件零改动。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {

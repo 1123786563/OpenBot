@@ -41,7 +41,10 @@ import {
   scopedChannelDetailQueryOptions,
   scopedChannelListQueryOptions,
 } from "../../src/lib/channels/queries";
-import { scopedCachePrefix, useScopedCache } from "../../src/lib/enterprise/tenant/scoped-cache";
+import {
+  scopedCachePrefix,
+  useScopedCache,
+} from "../../src/lib/enterprise/tenant/scoped-cache";
 import {
   type ScopeSelection,
   selectionStorageKey,

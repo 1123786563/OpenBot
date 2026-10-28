@@ -516,8 +516,7 @@ export function createPublicBotProfileService(deps: {
           ? dependencyResult
           : ((dependencyResult as { rows?: unknown[] })?.rows ?? [])
       ) as { n: number | string }[];
-      const credentialDependencyCount =
-        Number(dependencyRows[0]?.n ?? 0) || 0;
+      const credentialDependencyCount = Number(dependencyRows[0]?.n ?? 0) || 0;
       return { credentialDependencyCount, requiresLoginState: false };
     });
 

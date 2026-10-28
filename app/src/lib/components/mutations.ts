@@ -1,10 +1,7 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
 import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
-import {
-  componentScopePair,
-  invalidateComponentsInScope,
-} from "./queries";
+import { componentScopePair, invalidateComponentsInScope } from "./queries";
 
 /**
  * Writes against a component's governance: publication, per-Bot grants, per-function grants, and the

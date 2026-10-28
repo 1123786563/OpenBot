@@ -45,11 +45,7 @@ type PersonalGrantResponse = {
 function GrantResult({ result }: { result: PersonalGrantResponse }) {
   const { t } = useTranslation("admin");
   return (
-    <div
-      className="text-sm"
-      data-testid="grant-result"
-      role="status"
-    >
+    <div className="text-sm" data-testid="grant-result" role="status">
       {result.inserted ? (
         <p className="font-medium">
           {t("billingPage.result.granted", {
@@ -99,9 +95,7 @@ export function AdminCreditGrantCard() {
         method: "POST",
         body: input,
         fallbackKey: "billing.grantPersonal",
-      }).then(
-        (response) => response.json() as Promise<PersonalGrantResponse>,
-      );
+      }).then((response) => response.json() as Promise<PersonalGrantResponse>);
     },
     // The credit reads elsewhere are the user page's concern; nothing here caches a balance.
     onSuccess: () => {
@@ -227,8 +221,15 @@ export function AdminCreditGrantCard() {
         />
       </Field>
       <div className="flex items-center gap-3">
-        <Button disabled={grant.isPending} data-testid="grant-submit" onClick={submit} size="sm">
-          {grant.isPending ? t("billingPage.submitting") : t("billingPage.submit")}
+        <Button
+          disabled={grant.isPending}
+          data-testid="grant-submit"
+          onClick={submit}
+          size="sm"
+        >
+          {grant.isPending
+            ? t("billingPage.submitting")
+            : t("billingPage.submit")}
         </Button>
         {problem ? (
           <p className="text-destructive text-sm" role="alert">

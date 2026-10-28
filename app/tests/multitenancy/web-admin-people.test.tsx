@@ -24,9 +24,7 @@ import {
   expect,
   test,
 } from "../../../tests/support/bun-test-compat";
-import {
-  companyAdminSections,
-} from "../../src/components/company-admin/company-admin-area";
+import { companyAdminSections } from "../../src/components/company-admin/company-admin-area";
 import {
   CompanyAdminRefusedError,
   type CompanyCapabilities,
@@ -42,7 +40,10 @@ import {
   selectWorkspaceScope,
   storeSelection,
 } from "../../src/lib/enterprise/tenant/selection";
-import { scopedCachePrefix, useScopedCache } from "../../src/lib/enterprise/tenant/scoped-cache";
+import {
+  scopedCachePrefix,
+  useScopedCache,
+} from "../../src/lib/enterprise/tenant/scoped-cache";
 
 /**
  * MT095 / Issue #138: the company people, identity and credentials surfaces open by SERVER
@@ -163,7 +164,9 @@ function serve(options: { peopleStatus?: number } = {}): void {
     if (path.endsWith("/admin/people")) {
       return jsonResponse(
         options.peopleStatus ?? 200,
-        options.peopleStatus === undefined ? { members: [MEMBER_ROW] } : { error: { code: "TENANT_ADMIN_REQUIRED", message: "refused" } },
+        options.peopleStatus === undefined
+          ? { members: [MEMBER_ROW] }
+          : { error: { code: "TENANT_ADMIN_REQUIRED", message: "refused" } },
       );
     }
     if (path.endsWith("/admin/credentials")) {
@@ -172,14 +175,21 @@ function serve(options: { peopleStatus?: number } = {}): void {
     if (path.endsWith("/admin/identity")) {
       return jsonResponse(200, IDENTITY_ANSWER);
     }
-    if (path.includes("/promote") || path.includes("/demote") || path.includes("/offboard")) {
+    if (
+      path.includes("/promote") ||
+      path.includes("/demote") ||
+      path.includes("/offboard")
+    ) {
       return jsonResponse(200, { report: { outcome: "ok" } });
     }
     return jsonResponse(200, {});
   }) as unknown as typeof fetch;
 }
 
-function headerOf(init: RequestInit | undefined, name: string): string | undefined {
+function headerOf(
+  init: RequestInit | undefined,
+  name: string,
+): string | undefined {
   const headers = init?.headers;
   if (headers === undefined || headers === null) return undefined;
   if (headers instanceof Headers) return headers.get(name) ?? undefined;
@@ -225,9 +235,13 @@ function PeopleProbe() {
     companyCredentialsQueryOptions(queryClient, scope),
   );
   const identity = useQuery(companyIdentityQueryOptions(queryClient, scope));
-  const promote = useMutation(companyPromoteMutationOptions(queryClient, scope));
+  const promote = useMutation(
+    companyPromoteMutationOptions(queryClient, scope),
+  );
   const demote = useMutation(companyDemoteMutationOptions(queryClient, scope));
-  const offboard = useMutation(companyOffboardMutationOptions(queryClient, scope));
+  const offboard = useMutation(
+    companyOffboardMutationOptions(queryClient, scope),
+  );
   return (
     <>
       <span data-testid="people-state">
@@ -263,7 +277,8 @@ function PeopleProbe() {
 }
 
 /** The identity translation: the section list's labels are the keys themselves here. */
-const tIdentity = ((key: string): string => key) as unknown as TFunction<"company-admin">;
+const tIdentity = ((key: string): string =>
+  key) as unknown as TFunction<"company-admin">;
 
 describe("MT095 company people / identity / credentials surfaces (Issue #138)", () => {
   test("AC1: the section list derives from the server's capability bits alone", () => {
@@ -278,7 +293,12 @@ describe("MT095 company people / identity / credentials surfaces (Issue #138)", 
     ]);
     // …an auditor's (no peopleAdmin)…
     const auditorSections = companyAdminSections(
-      { ...FULL_CAPABILITIES, peopleAdmin: false, financeReader: false, billingManager: false },
+      {
+        ...FULL_CAPABILITIES,
+        peopleAdmin: false,
+        financeReader: false,
+        billingManager: false,
+      },
       tIdentity,
     );
     expect(auditorSections.map((section) => section.to)).toEqual([
@@ -311,9 +331,7 @@ describe("MT095 company people / identity / credentials surfaces (Issue #138)", 
     expect(headerOf(roster?.init, "x-openbot-tenant")).toBe("acme");
     expect(headerOf(roster?.init, "x-openbot-workspace")).toBe("acme-finance");
     // The company entrance, never the platform people list.
-    expect(roster?.input).toBe(
-      "/api/enterprise/workspace-scope/admin/people",
-    );
+    expect(roster?.input).toBe("/api/enterprise/workspace-scope/admin/people");
     // The entry lives under the scope's own prefix (a switch drops it wholesale).
     const scopedKey = [
       ...scopedCachePrefix(USER, ACME),
@@ -321,9 +339,9 @@ describe("MT095 company people / identity / credentials surfaces (Issue #138)", 
     ];
     expect(queryClient.getQueryData(scopedKey)).toBeDefined();
     // No read ever left for a platform path.
-    expect(
-      asked.some((entry) => entry.input.startsWith("/api/admin/")),
-    ).toBe(false);
+    expect(asked.some((entry) => entry.input.startsWith("/api/admin/"))).toBe(
+      false,
+    );
   });
 
   test("AC2: the masked credential roster and the company identity answer arrive scoped", async () => {
@@ -415,9 +433,9 @@ describe("MT095 company people / identity / credentials surfaces (Issue #138)", 
       expect(view.getByTestId("people-state").textContent).toBe("refused");
     });
     // The refusal came from the company entrance; nothing was fetched again as a fallback.
-    expect(
-      asked.some((entry) => entry.input.startsWith("/api/admin/")),
-    ).toBe(false);
+    expect(asked.some((entry) => entry.input.startsWith("/api/admin/"))).toBe(
+      false,
+    );
   });
 
   test("AC1: a personal (no-selection) scope renders the gate's own empty state and reads nothing", async () => {
@@ -436,10 +454,7 @@ describe("MT095 company people / identity / credentials surfaces (Issue #138)", 
     const { CompanyAdminArea } = await import(
       "../../src/components/company-admin/company-admin-area"
     );
-    draw(
-      queryClient,
-      <CompanyAdminArea scope={openPersonal} />,
-    );
+    draw(queryClient, <CompanyAdminArea scope={openPersonal} />);
     await settle();
     // The i18n namespace is not initialized in this harness, so the raw keys render — the
     // no-selection branch's own words, and no section link ever mounts.

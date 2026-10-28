@@ -76,7 +76,12 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
   });
 
   const beforeHold = await credits.summary();
-  expect(beforeHold.plan).toEqual({ total: 100, used: 0, remaining: 100, held: 0 });
+  expect(beforeHold.plan).toEqual({
+    total: 100,
+    used: 0,
+    remaining: 100,
+    held: 0,
+  });
   expect(beforeHold.rewards.remaining).toBe(0);
   expect(beforeHold.rewards.grantCount).toBe(0);
   expect(beforeHold.rewards.total).toBe(0);
@@ -102,7 +107,11 @@ test("an expired grant is not part of the balance, and a live hold is", async ()
 
   // The page and the gate agree, to within the one unit a carried remainder occupies.
   const spendable = await writer.availableBalance(customer);
-  expect(released.plan.remaining * 100 + released.rewards.remaining * 100 - spendable).toBeLessThanOrEqual(1);
+  expect(
+    released.plan.remaining * 100 +
+      released.rewards.remaining * 100 -
+      spendable,
+  ).toBeLessThanOrEqual(1);
 });
 
 /*
@@ -133,9 +142,7 @@ test("the personal balance names the account capability status, quarantined reas
   // Customer 必须是 personalBalance 实际解析的键（payerKey 的 personal 派生键），
   // 而不是调用方随手起的客户名——这正是读侧按解析键查账户行的含义。
   const resolvedKey = payerKey({ kind: "personal", id: `${prefix}-user` });
-  await database
-    .insert(billingCustomers)
-    .values({ externalId: resolvedKey });
+  await database.insert(billingCustomers).values({ externalId: resolvedKey });
   await createPayerAccountService(database).quarantineUnknownAccount({
     externalCustomerId: resolvedKey,
     reason: "bp07 fixture: unattributable legacy key",

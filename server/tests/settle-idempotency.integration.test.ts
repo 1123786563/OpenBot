@@ -104,7 +104,11 @@ const V1_AMOUNTS = {
 } as const;
 
 /** Version 2 prices: input and output quadruple (the world changes after the lock). */
-const V2_AMOUNTS = { ...V1_AMOUNTS, input: "0.000004", output: "0.000006" } as const;
+const V2_AMOUNTS = {
+  ...V1_AMOUNTS,
+  input: "0.000004",
+  output: "0.000006",
+} as const;
 
 /** The fully-known dims of one amounts map — the shape appendSnapshots persists. */
 function dimsOf(amounts: Record<string, string>) {
@@ -293,7 +297,10 @@ async function reserveAnother(
   world: SeededWorld,
 ): Promise<{ reservationId: string; idempotencyKey: string }> {
   const idempotencyKey = `${world.request.idempotencyKey}-again-${++seedCounter}`;
-  const outcome = await reserveService.reserve({ ...world.request, idempotencyKey });
+  const outcome = await reserveService.reserve({
+    ...world.request,
+    idempotencyKey,
+  });
   if (outcome.status !== "reserved") {
     throw new Error(`fixture reserve refused: ${JSON.stringify(outcome)}`);
   }
@@ -396,7 +403,9 @@ test("a replay of the identical settle message returns the first result and char
   expect(first.attemptId).toBe(`att-${reservationId.slice("cr-".length)}`);
 
   // The replay is the SAME MESSAGE on the wire — parsed again from JSON, byte-equal facts.
-  const replay = await settleService.settle(JSON.parse(JSON.stringify(request)));
+  const replay = await settleService.settle(
+    JSON.parse(JSON.stringify(request)),
+  );
   expect(replay.status).toBe("settled");
   if (replay.status !== "settled") return;
   // The FIRST result, verbatim — not a recomputed or a second charge.
@@ -446,7 +455,11 @@ test("a settle by attemptId and a settle by reservationId are the same settlemen
   // The attempt id names the same reservation (06.7's identity): a settle message that
   // names it instead is the SAME settlement — the first result, never a second charge.
   const byAttempt = await settleService.settle({
-    ...(settleRequestOf(reservationId, usage, `${prefix}-settle-both-1`) as Record<string, unknown>),
+    ...(settleRequestOf(
+      reservationId,
+      usage,
+      `${prefix}-settle-both-1`,
+    ) as Record<string, unknown>),
     reservationId: undefined,
     attemptId: byReservation.attemptId,
   });
@@ -463,10 +476,14 @@ test("a settle by attemptId and a settle by reservationId are the same settlemen
 test("concurrent replays of the same settle message charge once and both answer the first result", async () => {
   const world = await seedWorld();
   const reservationId = await reserveOrFail(world);
-  const request = settleRequestOf(reservationId, {
-    input: 1_000_000,
-    output: 100_000,
-  }, `${prefix}-settle-race`);
+  const request = settleRequestOf(
+    reservationId,
+    {
+      input: 1_000_000,
+      output: 100_000,
+    },
+    `${prefix}-settle-race`,
+  );
 
   const [a, b] = await Promise.all([
     settleService.settle(JSON.parse(JSON.stringify(request))),
@@ -495,14 +512,22 @@ test("a replay with a different actual usage conflicts and leaves the first char
   const reservationId = await reserveOrFail(world);
 
   const first = await settleService.settle(
-    settleRequestOf(reservationId, { input: 1_000_000, output: 100_000 }, `${prefix}-settle-diff`),
+    settleRequestOf(
+      reservationId,
+      { input: 1_000_000, output: 100_000 },
+      `${prefix}-settle-diff`,
+    ),
   );
   expect(first.status).toBe("settled");
   if (first.status !== "settled") return;
 
   // The same reservation, a different amount: a CONFLICT, never a top-up or a second row.
   const second = await settleService.settle(
-    settleRequestOf(reservationId, { input: 2_000_000, output: 100_000 }, `${prefix}-settle-diff`),
+    settleRequestOf(
+      reservationId,
+      { input: 2_000_000, output: 100_000 },
+      `${prefix}-settle-diff`,
+    ),
   );
   expect(second.status).toBe("refused");
   if (second.status !== "refused") return;
@@ -520,7 +545,10 @@ test("a replay with a different actual usage conflicts and leaves the first char
 test("settling a released hold conflicts: the first terminal fact stands", async () => {
   const world = await seedWorld();
   const reservationId = await reserveOrFail(world);
-  await fixtureCreditWriter.releaseReservation(reservationId, "test: released before settle");
+  await fixtureCreditWriter.releaseReservation(
+    reservationId,
+    "test: released before settle",
+  );
 
   const outcome = await settleService.settle(
     settleRequestOf(reservationId, { input: 1000 }, `${prefix}-settle-rel`),
@@ -534,7 +562,11 @@ test("settling a released hold conflicts: the first terminal fact stands", async
 
 test("settling a reservation that does not exist conflicts without writing anything", async () => {
   const outcome = await settleService.settle(
-    settleRequestOf(`cr-${randomUUID().slice(0, 8).padEnd(16, "0")}`, { input: 1000 }, `${prefix}-settle-missing`),
+    settleRequestOf(
+      `cr-${randomUUID().slice(0, 8).padEnd(16, "0")}`,
+      { input: 1000 },
+      `${prefix}-settle-missing`,
+    ),
   );
   expect(outcome.status).toBe("refused");
   if (outcome.status !== "refused") return;
@@ -560,13 +592,20 @@ test("settlement converts actual usage through the reservation's locked snapshot
       rateVersion: 1,
     },
   ]);
-  const saved = await rateStore.save({ numerator: "200", denominator: "1" }, `${prefix} admin`);
+  const saved = await rateStore.save(
+    { numerator: "200", denominator: "1" },
+    `${prefix} admin`,
+  );
   expect(saved.ok).toBe(true);
 
   // Latest basis would price the same usage at $4.00 + $0.60 = $4.60 → 46 000 units
   // (at the doubled rate: 92 000). The locked version-1 basis prices $1.20 → 12 000.
   const outcome = await settleService.settle(
-    settleRequestOf(reservationId, { input: 1_000_000, output: 100_000 }, `${prefix}-settle-lock`),
+    settleRequestOf(
+      reservationId,
+      { input: 1_000_000, output: 100_000 },
+      `${prefix}-settle-lock`,
+    ),
   );
   expect(outcome.status).toBe("settled");
   if (outcome.status !== "settled") return;
@@ -585,7 +624,11 @@ test("settlement releases the unused hold capacity in the same transaction", asy
 
   // A small actual: 500 000 input tokens → $0.50 → 50 credits → 5 000 units.
   const outcome = await settleService.settle(
-    settleRequestOf(reservationId, { input: 500_000 }, `${prefix}-settle-relcap`),
+    settleRequestOf(
+      reservationId,
+      { input: 500_000 },
+      `${prefix}-settle-relcap`,
+    ),
   );
   expect(outcome.status).toBe("settled");
   if (outcome.status !== "settled") return;
@@ -629,7 +672,11 @@ test("fractional charges settle to exact rationals: the carried remainder comple
   // plus the owed 1/100 → exactly one whole unit charged, nothing left over.
   const second = await reserveAnother(world);
   const secondSettle = await settleService.settle(
-    settleRequestOf(second.reservationId, { input: 99 }, `${prefix}-settle-frac-2`),
+    settleRequestOf(
+      second.reservationId,
+      { input: 99 },
+      `${prefix}-settle-frac-2`,
+    ),
   );
   expect(secondSettle.status).toBe("settled");
   if (secondSettle.status !== "settled") return;
@@ -675,7 +722,9 @@ test("a hold written without a locked basis refuses settlement instead of guessi
   const [row] = await database
     .select()
     .from(creditReservations)
-    .where(eq(creditReservations.idempotencyKey, `${prefix}-nolock-${seedCounter}`))
+    .where(
+      eq(creditReservations.idempotencyKey, `${prefix}-nolock-${seedCounter}`),
+    )
     .limit(1);
   expect(row).toBeDefined();
 
@@ -711,7 +760,9 @@ test("a locked rate version that no longer resolves refuses settlement, never re
   const [row] = await database
     .select()
     .from(creditReservations)
-    .where(eq(creditReservations.idempotencyKey, `${prefix}-badrate-${seedCounter}`))
+    .where(
+      eq(creditReservations.idempotencyKey, `${prefix}-badrate-${seedCounter}`),
+    )
     .limit(1);
   expect(row).toBeDefined();
 
@@ -721,7 +772,9 @@ test("a locked rate version that no longer resolves refuses settlement, never re
   expect(outcome.status).toBe("refused");
   if (outcome.status !== "refused") return;
   expect(outcome.reasonCode).toBe("price_basis_not_found");
-  expect(String((outcome.detail as { reason?: string }).reason)).toContain("rate");
+  expect(String((outcome.detail as { reason?: string }).reason)).toContain(
+    "rate",
+  );
   const ledgerRows = await ledgerRowsOf(world.customerKey);
   expect(ledgerRows.length).toBe(0);
 });
@@ -732,7 +785,11 @@ test("an actual usage whose priced cost exceeds the 32-bit ledger column refuses
   // 10^15 input tokens price $10^9 → 10^13 scaled units — beyond what the ledger column
   // can hold. The settlement refuses with its own code instead of writing a wrong amount.
   const outcome = await settleService.settle(
-    settleRequestOf(reservationId, { input: 10 ** 15 }, `${prefix}-settle-huge`),
+    settleRequestOf(
+      reservationId,
+      { input: 10 ** 15 },
+      `${prefix}-settle-huge`,
+    ),
   );
   expect(outcome.status).toBe("refused");
   if (outcome.status !== "refused") return;
@@ -747,7 +804,11 @@ test("a settle message naming an account refuses as payer_conflict — accounts 
   const world = await seedWorld();
   const reservationId = await reserveOrFail(world);
   const outcome = await settleService.settle({
-    ...settleRequestOf(reservationId, { input: 1000 }, `${prefix}-settle-payer`),
+    ...settleRequestOf(
+      reservationId,
+      { input: 1000 },
+      `${prefix}-settle-payer`,
+    ),
     externalCustomerId: world.customerKey,
   });
   expect(outcome.status).toBe("refused");
@@ -815,33 +876,54 @@ test.each([
   },
   {
     name: "evidence that is not an object",
-    mutate: (request: Record<string, unknown>) => ({ ...request, evidence: "report" }),
+    mutate: (request: Record<string, unknown>) => ({
+      ...request,
+      evidence: "report",
+    }),
   },
   {
     name: "an empty settledBy",
-    mutate: (request: Record<string, unknown>) => ({ ...request, settledBy: "" }),
+    mutate: (request: Record<string, unknown>) => ({
+      ...request,
+      settledBy: "",
+    }),
   },
   {
     name: "an empty idempotencyKey",
-    mutate: (request: Record<string, unknown>) => ({ ...request, idempotencyKey: "" }),
+    mutate: (request: Record<string, unknown>) => ({
+      ...request,
+      idempotencyKey: "",
+    }),
   },
   {
     name: "actualUsage that is not an object",
-    mutate: (request: Record<string, unknown>) => ({ ...request, actualUsage: 42 }),
+    mutate: (request: Record<string, unknown>) => ({
+      ...request,
+      actualUsage: 42,
+    }),
   },
-])("a settle message with $name refuses as request_invalid", async ({ mutate }) => {
-  const world = await seedWorld();
-  const reservationId = await reserveOrFail(world);
-  const outcome = await settleService.settle(
-    mutate(settleRequestOf(reservationId, { input: 10 }, `${prefix}-settle-shape`) as Record<string, unknown>),
-  );
-  expect(outcome.status).toBe("refused");
-  if (outcome.status !== "refused") return;
-  expect(outcome.reasonCode).toBe("request_invalid");
-  // A shape refusal did not touch the hold.
-  const row = await reservationRowOf(world.request.idempotencyKey);
-  expect(row.status).toBe("reserved");
-});
+])(
+  "a settle message with $name refuses as request_invalid",
+  async ({ mutate }) => {
+    const world = await seedWorld();
+    const reservationId = await reserveOrFail(world);
+    const outcome = await settleService.settle(
+      mutate(
+        settleRequestOf(
+          reservationId,
+          { input: 10 },
+          `${prefix}-settle-shape`,
+        ) as Record<string, unknown>,
+      ),
+    );
+    expect(outcome.status).toBe("refused");
+    if (outcome.status !== "refused") return;
+    expect(outcome.reasonCode).toBe("request_invalid");
+    // A shape refusal did not touch the hold.
+    const row = await reservationRowOf(world.request.idempotencyKey);
+    expect(row.status).toBe("reserved");
+  },
+);
 
 // ── The wire: the settle surface lives inside the 06.1 guard ────────────────────────
 
@@ -862,7 +944,10 @@ protocolApp.route(
     auditStore,
     endpoints: (() => {
       const endpoints = new Hono<{ Variables: CreditServiceVariables }>();
-      endpoints.route("/", creditProtocolEndpoints({ service: reserveService }));
+      endpoints.route(
+        "/",
+        creditProtocolEndpoints({ service: reserveService }),
+      );
       endpoints.route("/", creditSettleEndpoints({ service: settleService }));
       return endpoints;
     })(),
@@ -901,48 +986,70 @@ test("the settle route refuses an unauthenticated call with the uniform 401", as
 test("the settle route answers 200 with the first result on replay and 422 with the reason on refusal", async () => {
   const world = await seedWorld();
   const reservationId = await reserveOrFail(world);
-  const request = settleRequestOf(reservationId, { input: 1_000_000, output: 100_000 }, `${prefix}-settle-route`);
+  const request = settleRequestOf(
+    reservationId,
+    { input: 1_000_000, output: 100_000 },
+    `${prefix}-settle-route`,
+  );
 
   const headers = {
     "content-type": "application/json",
     authorization: `Bearer ${gatewaySecret}`,
   };
 
-  const firstResponse = await protocolApp.request("/api/credit-protocol/settle", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(request),
-  });
+  const firstResponse = await protocolApp.request(
+    "/api/credit-protocol/settle",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+    },
+  );
   expect(firstResponse.status).toBe(200);
   const first = (await firstResponse.json()) as Record<string, unknown>;
   expect(first.status).toBe("settled");
   expect(first.chargedCredits).toBe(12_000);
 
-  const replayResponse = await protocolApp.request("/api/credit-protocol/settle", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(request),
-  });
+  const replayResponse = await protocolApp.request(
+    "/api/credit-protocol/settle",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+    },
+  );
   expect(replayResponse.status).toBe(200);
   const replay = (await replayResponse.json()) as Record<string, unknown>;
   expect(replay).toEqual(first);
 
   // A replay with a different amount is one 422 naming the conflict.
-  const conflictResponse = await protocolApp.request("/api/credit-protocol/settle", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ ...request, actualUsage: usageOf({ input: 2_000_000 }) }),
-  });
+  const conflictResponse = await protocolApp.request(
+    "/api/credit-protocol/settle",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...request,
+        actualUsage: usageOf({ input: 2_000_000 }),
+      }),
+    },
+  );
   expect(conflictResponse.status).toBe(422);
   const conflict = (await conflictResponse.json()) as { code?: string };
   expect(conflict.code).toBe("settlement_conflict");
 
   // A self-reported account field is refused at the shape boundary, on the wire too.
-  const payerResponse = await protocolApp.request("/api/credit-protocol/settle", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ ...request, [RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS[0]]: "x" }),
-  });
+  const payerResponse = await protocolApp.request(
+    "/api/credit-protocol/settle",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...request,
+        [RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS[0]]: "x",
+      }),
+    },
+  );
   expect(payerResponse.status).toBe(422);
   const payer = (await payerResponse.json()) as { code?: string };
   expect(payer.code).toBe("payer_conflict");

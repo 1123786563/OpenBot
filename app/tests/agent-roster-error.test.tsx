@@ -1,5 +1,12 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -32,7 +39,10 @@ import { Route as HomeRoute } from "@/routes/_authed/_app/index";
 
 const USER = "user-1";
 /** The personal-context prefix the scoped roster key sits under once `/api/me` answers. */
-const rosterKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
+const rosterKey = [
+  ...selectionKeys.personalScope(USER),
+  ...agentKeys.list(false),
+];
 
 beforeAll(() => GlobalRegistrator.register());
 afterEach(cleanup);
@@ -111,9 +121,7 @@ function agent(
  *  that the seeded data alone (which would render identically before any fetch ran) proves it. */
 async function waitForFailedRefetch(queryClient: QueryClient) {
   await waitFor(() => {
-    expect(queryClient.getQueryState(rosterKey)?.status).toBe(
-      "error",
-    );
+    expect(queryClient.getQueryState(rosterKey)?.status).toBe("error");
   });
 }
 

@@ -64,11 +64,12 @@ function mint(banks: string[]): string {
     schema: companySchemaFor(TENANT),
     banks: banks.map((id) => ({
       id,
-      kind: id === TEAM_BANK_A || id === TEAM_BANK_B
-        ? ("team" as const)
-        : id === SOURCE_BANK
-          ? ("source" as const)
-          : ("bot" as const),
+      kind:
+        id === TEAM_BANK_A || id === TEAM_BANK_B
+          ? ("team" as const)
+          : id === SOURCE_BANK
+            ? ("source" as const)
+            : ("bot" as const),
     })),
     tenantId: TENANT,
     principalId: `prin_scoped-${run}`,
@@ -122,20 +123,17 @@ describe.skipIf(!available)(
       ] as const) {
         const marker = `scoped-${label}-${run}`;
         const document = `doc-scoped-${label}-${run}`;
-        const put = await hindsight(
-          `/v1/default/banks/${bank}/memories`,
-          {
-            token: SCOPED_TOKEN,
-            body: {
-              items: [
-                {
-                  content: `The ${label} fact ${marker} for the source-bound recall`,
-                  document_id: document,
-                },
-              ],
-            },
+        const put = await hindsight(`/v1/default/banks/${bank}/memories`, {
+          token: SCOPED_TOKEN,
+          body: {
+            items: [
+              {
+                content: `The ${label} fact ${marker} for the source-bound recall`,
+                document_id: document,
+              },
+            ],
           },
-        );
+        });
         expect([200, 201, 202]).toContain(put.status);
         const stored = await hindsight(
           `/v1/default/banks/${bank}/documents/${document}`,

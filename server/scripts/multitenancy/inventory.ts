@@ -1517,7 +1517,8 @@ async function enterpriseCapabilityStage(
   const data = environment.ENTERPRISE_DATA_DATABASE_URL?.trim();
   // The config reader (src/config.ts) only ever reads the OPENBOT_-prefixed
   // key; without the prefix this stage was skipped in every environment.
-  const runtime = environment.OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL?.trim();
+  const runtime =
+    environment.OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL?.trim();
   if (!directory || !data || !runtime) {
     return {
       stage: "enterprise-capability-assembly",

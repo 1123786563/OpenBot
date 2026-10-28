@@ -18,9 +18,7 @@
       "kind": "expertTemplate",
       "id": "note-assistant",
       "path": "experts/note-assistant.json",
-      "skills": [
-        "summarize"
-      ]
+      "skills": ["summarize"]
     }
   ],
   "dependencies": []

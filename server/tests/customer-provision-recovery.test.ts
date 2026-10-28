@@ -1,4 +1,10 @@
-import { afterAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
@@ -126,8 +132,7 @@ async function mappingRowFor(payerId: string) {
 function createPosts(gateway: FakeCustomerGateway) {
   return gateway.requests.filter(
     (request) =>
-      request.method === "POST" &&
-      request.path === "/api/governance/customers",
+      request.method === "POST" && request.path === "/api/governance/customers",
   );
 }
 
@@ -403,9 +408,7 @@ describe("recovery changes nothing but the mapping", () => {
       expect(await countRows(gatewayCustomers)).toBe(before.billing + 1);
       expect(await countRows(creditGrants)).toBe(before.grants);
       expect(await countRows(creditLedger)).toBe(before.ledger);
-      expect(await countRows(creditReservations)).toBe(
-        before.reservations,
-      );
+      expect(await countRows(creditReservations)).toBe(before.reservations);
       expect(await countRows(payerAccounts)).toBe(before.payerAccounts);
 
       // The fake exposes no virtual-key surface at all, and every request the
@@ -529,9 +532,9 @@ describe("the readiness gate still fronts every provisioning call", () => {
       caught = error;
     }
     expect(caught).toBeInstanceOf(GatewayNotReadyError);
-    expect((caught as GatewayNotReadyError).readiness.blockingReasons).toContain(
-      "gateway_readiness_gate_unavailable",
-    );
+    expect(
+      (caught as GatewayNotReadyError).readiness.blockingReasons,
+    ).toContain("gateway_readiness_gate_unavailable");
     expect(gateway.requests).toHaveLength(0);
     expect(await mappingRowFor(ref.id)).toBeUndefined();
   });

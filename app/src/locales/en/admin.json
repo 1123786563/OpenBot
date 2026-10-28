@@ -1288,6 +1288,24 @@
       },
       "basisMissingDims": "{{ref}}: unpriced dimensions — {{dimensions}}",
       "basisEnableable": "{{ref}}: priced for this path"
+    },
+    "capabilities": {
+      "title": "Capability billing",
+      "description": "Whether the gateway can bill Embedding, Rerank and OCR strictly, and what prices are missing.",
+      "enabled": "Billed",
+      "free": "Free",
+      "priceUnknown": "Unknown price",
+      "unmapped": "Not mapped",
+      "names": {
+        "embedding": "Embedding",
+        "rerank": "Rerank",
+        "ocr": "OCR"
+      },
+      "freeExplanation": "This capability is free, so no price is needed.",
+      "enabledCells": "{{count}} models can use it, {{freeCount}} of them free.",
+      "missingIntro": "Some prices are missing, so this capability can't be used yet.",
+      "missingDimension": "{{ref}} has no {{dimension}} price yet.",
+      "unmappedExplanation": "No models are mapped to this capability yet."
     }
   },
   "billingPage": {

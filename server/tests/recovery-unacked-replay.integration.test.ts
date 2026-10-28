@@ -7,7 +7,10 @@ import { createCreditWriter } from "../src/billing/credits-writer";
 import { createRecoveryScanner } from "../src/billing/recovery-scan";
 import { createRecoveryReplay } from "../src/billing/recovery-replay";
 import { createUsageDelivery } from "../src/billing/usage-delivery";
-import { createUsageOutbox, type UsageOutboxRecord } from "../src/billing/usage-outbox";
+import {
+  createUsageOutbox,
+  type UsageOutboxRecord,
+} from "../src/billing/usage-outbox";
 import { createDatabase } from "../src/db/client";
 import { accessGrants, botServices, usageOutbox } from "../src/db/schema";
 import {
@@ -203,7 +206,9 @@ async function reservationCount(customerKey: string) {
 function makeReplay(options: { failFirst?: Error } = {}) {
   let settleCalls = 0;
   const productionEffect = async (record: UsageOutboxRecord) => {
-    const { createCreditUsageTarget } = await import("../src/billing/usage-delivery");
+    const { createCreditUsageTarget } = await import(
+      "../src/billing/usage-delivery"
+    );
     await createCreditUsageTarget(writer)(record);
   };
   const replay = createRecoveryReplay({
@@ -264,12 +269,18 @@ afterAll(async () => {
   await database
     .delete(creditRecoveryItems)
     .where(
-      like(creditRecoveryItems.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditRecoveryItems.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -306,9 +317,9 @@ test("a result persisted but never acked is replayed to exactly one settlement a
   // The dead process never marked the hold; recovery names it (the unknown-mark shape).
   await writer.markReservationUnknown(reservationId, "dispatch_result_unknown");
   const scanPass = await scanner.scanOnce();
-  expect(scanPass.items.some((item) => item.reservationId === reservationId)).toBe(
-    true,
-  );
+  expect(
+    scanPass.items.some((item) => item.reservationId === reservationId),
+  ).toBe(true);
 
   const { replay } = makeReplay();
   const batch = await replay.replayUnackedResults("worker-a", 10);
@@ -368,7 +379,9 @@ test("a record already delivered to credits is not re-delivered; the item resolv
     outbox,
     sendToLago: async () => {},
     chargeCredits: async (record) => {
-      const { createCreditUsageTarget } = await import("../src/billing/usage-delivery");
+      const { createCreditUsageTarget } = await import(
+        "../src/billing/usage-delivery"
+      );
       await createCreditUsageTarget(writer)(record);
     },
   });
@@ -444,7 +457,9 @@ test("a transient replay failure is retained, then a later pass converges to one
   await writer.markReservationUnknown(reservationId, "dispatch_result_unknown");
   await scanner.scanOnce();
 
-  const { UsageDeliveryError } = await import("../src/billing/usage-delivery-error");
+  const { UsageDeliveryError } = await import(
+    "../src/billing/usage-delivery-error"
+  );
   const { replay } = makeReplay({
     failFirst: new UsageDeliveryError("transient_test_failure"),
   });
@@ -487,7 +502,9 @@ test("a replay over an already-settled hold converges on the first settlement an
   await scanner.scanOnce();
   const item = await recoveryItemRow(reservationId);
   expect(item?.state).toBe("pending");
-  const { createCreditUsageTarget } = await import("../src/billing/usage-delivery");
+  const { createCreditUsageTarget } = await import(
+    "../src/billing/usage-delivery"
+  );
   const record = await outboxRow(eventId);
   if (!record) throw new Error("fixture outbox row missing");
   await createCreditUsageTarget(writer)(record);
@@ -500,7 +517,11 @@ test("a replay over an already-settled hold converges on the first settlement an
   // 08.3's contract (updated by #278): the settled-but-ack-lost branch NEVER issues a
   // Settle — the settlement is verified read-only against the hold and only the ack is
   // backfilled, so the spy count is ZERO, not the idempotent convergence ride of one.
-  expect(batch).toMatchObject({ claimed: 1, settledAckRecovered: 1, failed: 0 });
+  expect(batch).toMatchObject({
+    claimed: 1,
+    settledAckRecovered: 1,
+    failed: 0,
+  });
   expect(settleCalls()).toBe(0);
   // Same idempotency facts: the first settlement stands untouched — the ledger still
   // holds exactly ONE entry at the original amount.
@@ -555,9 +576,9 @@ test("a fresh process's replay converges the crash shape on the real tables", as
     denominator: "1",
   });
   await writer.markReservationUnknown(reservationId, "dispatch_result_unknown");
-  const scanPass = JSON.parse(
-    await runWorkerInSubprocess("scan"),
-  ) as { itemsGenerated: number };
+  const scanPass = JSON.parse(await runWorkerInSubprocess("scan")) as {
+    itemsGenerated: number;
+  };
   expect(scanPass.itemsGenerated).toBeGreaterThanOrEqual(1);
 
   const batch = JSON.parse(

@@ -7,6 +7,7 @@ import {
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import {
+  comparePackageVersions,
   PackageBlockerList,
   type PackageDetailSubject,
   PackageDetailWb,
@@ -377,7 +378,22 @@ function PackageBrowser({
                     </code>
                   </WbTag>
                   <WbTag>{`v${item.install?.version ?? item.version}`}</WbTag>
-                  <WbTag>{item.category}</WbTag>
+                  {item.category !== undefined ? (
+                    <WbTag>{item.category}</WbTag>
+                  ) : null}
+                  {/*
+                   * PKG06: the shelf states the upgrade fact in the open — the
+                   * list row's published version is newer than the installed
+                   * one. The verb itself lives in the detail dialog; a chip is
+                   * a fact, never an authorization.
+                   */}
+                  {item.install !== null &&
+                  comparePackageVersions(item.install.version, item.version) <
+                    0 ? (
+                    <WbTag className="text-primary">
+                      {t("packages.upgrade.upgradable")}
+                    </WbTag>
+                  ) : null}
                 </div>
                 {item.install ? (
                   <PackageInstallFacts

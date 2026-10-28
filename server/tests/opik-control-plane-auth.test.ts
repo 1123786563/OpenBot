@@ -329,13 +329,7 @@ describe("producer authentication cannot bypass application role checks", () => 
 
 describe("no second Opik user database", () => {
   const source = readFileSync(
-    join(
-      hereDir,
-      "..",
-      "src",
-      "ai-observability",
-      "control-plane-auth.ts",
-    ),
+    join(hereDir, "..", "src", "ai-observability", "control-plane-auth.ts"),
     "utf8",
   );
 

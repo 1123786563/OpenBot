@@ -1,4 +1,11 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { CreditReservationConflictError } from "../src/billing/credits-writer";
 import { startUsageDeliverySweeps } from "../src/billing/maintenance";
 import { createBillingService } from "../src/billing/service";

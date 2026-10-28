@@ -1,7 +1,5 @@
 import { describe, expect, test } from "../../../../tests/support/e2e-compat";
-import {
-  TenantSummarySchema,
-} from "../../../../shared/enterprise/mobile-schemas";
+import { TenantSummarySchema } from "../../../../shared/enterprise/mobile-schemas";
 
 // TenantSummary tests (C02)
 describe("mobile TenantSummary schema (C02)", () => {

@@ -122,7 +122,9 @@ afterAll(async () => {
   await database
     .delete(botBindingOffers)
     .where(like(botBindingOffers.botId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -226,15 +228,17 @@ test("revocation retires every active key version of the grant: the rows flip to
   );
 
   // The admission seam the next request would ride refuses, synchronously, from the row.
-  await expect(
-    service.resolveForBot(grant.grantId, { botId }),
-  ).rejects.toThrow(AccessGrantUseError);
+  await expect(service.resolveForBot(grant.grantId, { botId })).rejects.toThrow(
+    AccessGrantUseError,
+  );
 });
 
 test("a revocation whose gateway disable fails still takes effect: the local invalidation lands, the refusal stays synchronous, and the failure is recorded", async () => {
   // The deployment-composed seam is total on purpose; this is its vocabulary under a
   // gateway that cannot be reached.
-  const { createGrantKeyRevocator } = await import("../src/gateway/key-revocation");
+  const { createGrantKeyRevocator } = await import(
+    "../src/gateway/key-revocation"
+  );
   const failingRevocator = createGrantKeyRevocator({
     deactivationClient: {
       deactivateVirtualKey: async () => {
@@ -260,7 +264,10 @@ test("a revocation whose gateway disable fails still takes effect: the local inv
     `/grants/${grant.grantId}/revoke`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", "x-openbot-test-user": userId },
+      headers: {
+        "content-type": "application/json",
+        "x-openbot-test-user": userId,
+      },
     },
   );
   // The revocation itself succeeds: a dead gateway does not un-revoke the person's grant.
@@ -308,7 +315,10 @@ test("renewal after revocation is refused as the one uniform grant refusal, befo
     resolveForBot: service.resolveForBot,
     provisionCustomer: async () => {
       provisioned += 1;
-      return { customerId: `${prefix}-cust`, provisionState: "existing" as const };
+      return {
+        customerId: `${prefix}-cust`,
+        provisionState: "existing" as const,
+      };
     },
     listSelectableModels: async () => [],
     assertCatalogFresh: async () => ({
@@ -319,13 +329,17 @@ test("renewal after revocation is refused as the one uniform grant refusal, befo
     createClient: {
       createVirtualKey: async () => {
         dialed += 1;
-        throw new Error("the renewal must not dial the gateway for a dead grant");
+        throw new Error(
+          "the renewal must not dial the gateway for a dead grant",
+        );
       },
     },
     deactivationClient: {
       deactivateVirtualKey: async () => {
         dialed += 1;
-        throw new Error("the renewal must not dial the gateway for a dead grant");
+        throw new Error(
+          "the renewal must not dial the gateway for a dead grant",
+        );
       },
     },
     keyTtlMinutes: 15,

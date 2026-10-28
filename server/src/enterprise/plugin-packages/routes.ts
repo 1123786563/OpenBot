@@ -7,6 +7,8 @@ import {
   PackageGrantInputSchema,
   PackageGrantRevokeBodySchema,
   PackageIdempotencyKeySchema,
+  type PackageInstallStatusUpdate,
+  PackageInstallStatusUpdateSchema,
   type PackageListQuery,
   PackageListQuerySchema,
   PackagePlanInputSchema,
@@ -15,15 +17,18 @@ import type { PackageCatalogue } from "../../plugin-packages/catalogue";
 import type { PlatformScope } from "../contracts";
 import { assertClassifiedCompanyEntrance } from "../tenancy/admin-separation";
 import type { CompanyAdminContext } from "../tenancy/workspace-admin";
-import type {
-  PackageInternalErrorCode,
-  PackageService,
-} from "./contracts";
+import type { PackageInternalErrorCode, PackageService } from "./contracts";
 import {
   isPackageStorageFailure,
-  packageErrorCodeOf,
   PACKAGE_INTERNAL_ERROR_CODES,
+  packageError,
+  packageErrorCodeOf,
 } from "./contracts";
+import type {
+  PackageDispatchService,
+  PackageDispatchSurfaceCode,
+} from "./dispatch";
+import type { MarketplaceGate } from "./marketplace-gate";
 
 /**
  * Enterprise plugin-package surface.
@@ -40,6 +45,22 @@ import {
  *   POST /installs/:id/experts/:resourceId    instantiate a Bot from the
  *                                    installed revision's expert template
  *                                    (admin, Idempotency-Key)
+ *   PATCH /installs/:id/status        disable / enable / uninstall an install
+ *                                    under the revision CAS (admin,
+ *                                    Idempotency-Key)
+ *   GET  /installs/:id/dispatches     the install's dispatch ledger, redacted
+ *                                    (PKG10: unknown visibility; any active
+ *                                    member of the scope)
+ *   GET  /installs/:id/dispatches/:operationId
+ *                                    one dispatch's verification view: facts,
+ *                                    evidence binding, related receipts, the
+ *                                    no-auto-resend reason and the recovery
+ *                                    gate (PKG10)
+ *   POST /installs/:id/dispatches/:operationId/verify
+ *                                    protocol-mediated verification by the
+ *                                    ORIGINAL operation identity — refused
+ *                                    with 422 while no verified vendor query
+ *                                    protocol exists; never a resend (PKG10)
  *
  * Every request first establishes a trusted PlatformScope from the signed-in
  * identity plus the tenant/workspace selection headers. Management writes
@@ -68,8 +89,27 @@ export interface PluginPackageRoutesDeps {
    * install/plan paths answer 503.
    */
   service?: PackageService | null;
+  /**
+   * PKG10 (#469): the dispatch ledger surface (unknown visibility, verification,
+   * recovery), supplied lazily because the dispatch service is assembled after
+   * this factory runs. Null/absent → the dispatch paths answer 503, never an
+   * empty success list.
+   */
+  dispatches?: () => Pick<
+    PackageDispatchService,
+    "listDispatches" | "inspectDispatch" | "verifyDispatch"
+  > | null;
   /** Issues a trusted CompanyAdminContext for plan/apply. */
   resolveAdmin?(request: Request): Promise<CompanyAdminContext>;
+  /**
+   * PKG11 (#470, Spec §12.4): the deployment entry switch. Install/upgrade
+   * plans, apply and new Bot grants consult it per scope and answer 503
+   * MARKETPLACE_ENTRY_DISABLED while closed; reads, the dispatch ledger, the
+   * dispatch-verification surface, revoke and the PKG07 lifecycle never do,
+   * so closing the entry during a rollback leaves existing pinned Runs under
+   * their original governance. Required so no assembly can forget to decide.
+   */
+  gate: MarketplaceGate;
 }
 
 const ERROR_STATUS: Record<
@@ -88,9 +128,18 @@ const ERROR_STATUS: Record<
   PLAN_EXPIRED: 410,
   PACKAGE_UNSUPPORTED: 422,
   RESOURCE_KIND_UNSUPPORTED: 422,
+  PACKAGE_BOT_SCOPE_UNAVAILABLE: 422,
+  PACKAGE_RUN_REQUIRED: 422,
   TEMPLATE_FIELD_REJECTED: 400,
+  // PKG10 (#469): dispatch-verification refusals — no auto-resend, ever.
+  VENDOR_QUERY_PROTOCOL_UNAVAILABLE: 422,
+  DISPATCH_NOT_UNKNOWN: 409,
+  DISPATCH_ACCOUNT_UNAVAILABLE: 409,
   PACKAGE_STORAGE_UNAVAILABLE: 503,
   ADMIN_CHANNEL_UNAVAILABLE: 503,
+  // PKG11: same degraded posture as a missing operator channel — 503, not a
+  // permission verdict, because the entry is closed by deployment posture.
+  MARKETPLACE_ENTRY_DISABLED: 503,
   INTERNAL: 500,
 };
 
@@ -109,10 +158,22 @@ const ERROR_MESSAGE: Record<PackageErrorCode, string> = {
   PACKAGE_UNSUPPORTED: "This package operation is not supported.",
   RESOURCE_KIND_UNSUPPORTED:
     "Only skill resources can be granted in this version.",
+  PACKAGE_BOT_SCOPE_UNAVAILABLE:
+    "This Bot's execution scope cannot be resolved for package use in this version.",
+  PACKAGE_RUN_REQUIRED:
+    "Package tools run only inside a managed run; this entry point has none.",
   TEMPLATE_FIELD_REJECTED:
     "The expert template carries fields this version refuses.",
+  VENDOR_QUERY_PROTOCOL_UNAVAILABLE:
+    "No verified vendor query protocol exists for this dispatch; it cannot be auto-verified or resent.",
+  DISPATCH_NOT_UNKNOWN:
+    "Only a dispatch with an undetermined effect can be verified.",
+  DISPATCH_ACCOUNT_UNAVAILABLE:
+    "The original account connection is no longer available; verification cannot reach the vendor on it.",
   PACKAGE_STORAGE_UNAVAILABLE: "Package storage is unavailable.",
   ADMIN_CHANNEL_UNAVAILABLE: "Package administration is unavailable.",
+  MARKETPLACE_ENTRY_DISABLED:
+    "The package marketplace entry is disabled for this team.",
   INTERNAL: "Package request failed.",
 };
 
@@ -297,11 +358,52 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
     return deps.service;
   };
 
+  /**
+   * PKG10 refusal mapping: the dispatch surface's closed codes onto the wire
+   * vocabulary. Cross-scope/unknown keeps the identical 404 shape everywhere;
+   * the two verification refusals carry their own 409/422 bodies so the client
+   * can say WHY no verification is possible without retrying anything.
+   */
+  const SURFACE_ERROR_CODE: Record<
+    PackageDispatchSurfaceCode,
+    PackageErrorCode
+  > = {
+    NOT_AVAILABLE: "RESOURCE_NOT_FOUND",
+    DISPATCH_NOT_UNKNOWN: "DISPATCH_NOT_UNKNOWN",
+    VENDOR_QUERY_PROTOCOL_UNAVAILABLE: "VENDOR_QUERY_PROTOCOL_UNAVAILABLE",
+    DISPATCH_ACCOUNT_UNAVAILABLE: "DISPATCH_ACCOUNT_UNAVAILABLE",
+  };
+
+  const respondSurfaceRefusal = (
+    context: Context,
+    code: PackageDispatchSurfaceCode,
+  ) => respondError(context, packageError(SURFACE_ERROR_CODE[code]));
+
+  const requireDispatches = () => {
+    const dispatches = deps.dispatches?.() ?? null;
+    if (!dispatches) throw new Error("PACKAGE_STORAGE_UNAVAILABLE");
+    return dispatches;
+  };
+
   const resolveAdmin = async (
     request: Request,
   ): Promise<CompanyAdminContext> => {
     if (!deps.resolveAdmin) throw new Error("ADMIN_CHANNEL_UNAVAILABLE");
     return deps.resolveAdmin(request);
+  };
+
+  /*
+   * PKG11 (#470): the entry switch, checked after the scope resolves (the
+   * pilot allowlist is per team) and before anything on the write path runs —
+   * a closed entry exercises neither the admin channel nor the service, and
+   * the 503 names the switch, not a permission or a fault.
+   */
+  const requireEntryOpen = async (request: Request) => {
+    const scope = await deps.resolveScope(request);
+    if (!deps.gate.entryOpenFor(scope)) {
+      throw packageError("MARKETPLACE_ENTRY_DISABLED");
+    }
+    return scope;
   };
 
   routes.get("/", async (context) => {
@@ -357,7 +459,10 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
     );
     if (!deps.catalogue) return unavailable(context);
     try {
-      const scope = await deps.resolveScope(context.req.raw);
+      // PKG11: plan creation is a write entry — install/upgrade/rollback all
+      // start here, so the switch refuses the whole family before the body
+      // is even read.
+      const scope = await requireEntryOpen(context.req.raw);
       const body = await parseJsonBody(context);
       const parsed = PackagePlanInputSchema.safeParse(body);
       if (!parsed.success) throw new Error("INPUT_INVALID");
@@ -377,7 +482,10 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
     );
     if (!deps.catalogue) return unavailable(context);
     try {
-      const scope = await deps.resolveScope(context.req.raw);
+      // PKG11: a plan created while the entry was open does not survive the
+      // switch being closed — apply re-checks, so closing the entry also
+      // cancels pending confirms.
+      const scope = await requireEntryOpen(context.req.raw);
       const idempotency = PackageIdempotencyKeySchema.safeParse(
         context.req.header("idempotency-key"),
       );
@@ -404,7 +512,9 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
     );
     if (!deps.catalogue) return unavailable(context);
     try {
-      const scope = await deps.resolveScope(context.req.raw);
+      // PKG11: a NEW grant is an authorization entry and follows the switch;
+      // revoke below stays open so governance keeps working while closed.
+      const scope = await requireEntryOpen(context.req.raw);
       const body = await parseJsonBody(context);
       const parsed = PackageGrantInputSchema.safeParse(body);
       if (!parsed.success) throw new Error("INPUT_INVALID");
@@ -505,6 +615,101 @@ export function createPluginPackageRoutes(deps: PluginPackageRoutesDeps): Hono {
       return respondError(context, error);
     }
   });
+
+  routes.patch("/installs/:id/status", async (context) => {
+    // Fail-closed classification guard, same as plan/apply/grants/experts
+    // (PKG07).
+    assertClassifiedCompanyEntrance(
+      "PATCH",
+      "/api/enterprise/plugin-packages/installs/:id/status",
+    );
+    if (!deps.catalogue) return unavailable(context);
+    try {
+      const scope = await deps.resolveScope(context.req.raw);
+      const body = await parseJsonBody(context);
+      const parsed = PackageInstallStatusUpdateSchema.safeParse(body);
+      if (!parsed.success) throw new Error("INPUT_INVALID");
+      const idempotency = PackageIdempotencyKeySchema.safeParse(
+        context.req.header("idempotency-key"),
+      );
+      if (!idempotency.success) throw new Error("INPUT_INVALID");
+      const admin = await resolveAdmin(context.req.raw);
+      const input: PackageInstallStatusUpdate = parsed.data;
+      const result = await requireService().updateInstallStatus(
+        scope,
+        admin,
+        context.req.param("id"),
+        input,
+        idempotency.data,
+      );
+      /*
+       * PATCH answers 200 in every accepted case: an effective transition, a
+       * same-status idempotent no-op and an idempotency-key replay all return
+       * the install as it stands (status + generation say which happened).
+       * A stale revision is 409, an impossible transition 422, another scope
+       * 404 — one identical shape to an unknown id.
+       */
+      return context.json(result.install, 200);
+    } catch (error) {
+      return respondError(context, error);
+    }
+  });
+
+  // PKG10 (#469): the dispatch ledger — unknown visibility, verification and
+  // recovery. Reads are any active member of the selected scope (the trusted
+  // scope itself is the eligibility); verification is the dispatch's own run
+  // initiator (the original account is theirs — enforced in the service, same
+  // canonical 404 as everything cross-scope). These paths never reach a
+  // vendor: no resend exists anywhere on this surface.
+  routes.get("/installs/:id/dispatches", async (context) => {
+    try {
+      const scope = await deps.resolveScope(context.req.raw);
+      const result = await requireDispatches().listDispatches(scope, {
+        installId: context.req.param("id"),
+      });
+      if (result.outcome === "refused") {
+        return respondSurfaceRefusal(context, result.code);
+      }
+      return context.json({ dispatches: result.value });
+    } catch (error) {
+      return respondError(context, error);
+    }
+  });
+
+  routes.get("/installs/:id/dispatches/:operationId", async (context) => {
+    try {
+      const scope = await deps.resolveScope(context.req.raw);
+      const result = await requireDispatches().inspectDispatch(scope, {
+        installId: context.req.param("id"),
+        operationId: context.req.param("operationId"),
+      });
+      if (result.outcome === "refused") {
+        return respondSurfaceRefusal(context, result.code);
+      }
+      return context.json(result.value);
+    } catch (error) {
+      return respondError(context, error);
+    }
+  });
+
+  routes.post(
+    "/installs/:id/dispatches/:operationId/verify",
+    async (context) => {
+      try {
+        const scope = await deps.resolveScope(context.req.raw);
+        const result = await requireDispatches().verifyDispatch(scope, {
+          installId: context.req.param("id"),
+          operationId: context.req.param("operationId"),
+        });
+        if (result.outcome === "refused") {
+          return respondSurfaceRefusal(context, result.code);
+        }
+        return context.json(result.value);
+      } catch (error) {
+        return respondError(context, error);
+      }
+    },
+  );
 
   return routes;
 }

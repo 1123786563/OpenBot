@@ -5,6 +5,7 @@ import type {
 } from "../../shared/enterprise/plugin-package-contracts";
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { PlatformScope } from "../src/enterprise/contracts";
+import { createMarketplaceGate } from "../src/enterprise/plugin-packages/marketplace-gate";
 import {
   createPluginPackageRoutes,
   createUnavailablePluginPackageRoutes,
@@ -70,6 +71,10 @@ function appWith(catalogue: PackageCatalogue | null) {
   app.route(
     "/api/enterprise/plugin-packages",
     createPluginPackageRoutes({
+      gate: createMarketplaceGate({
+        enabled: true,
+        pilotWorkspaces: [{ tenantId: "tenant-1", workspaceId: "workspace-1" }],
+      }),
       catalogue,
       resolveScope: async () => scope,
     }),
@@ -197,6 +202,12 @@ describe("plugin package read routes", () => {
     app.route(
       "/api/enterprise/plugin-packages",
       createPluginPackageRoutes({
+        gate: createMarketplaceGate({
+          enabled: true,
+          pilotWorkspaces: [
+            { tenantId: "tenant-1", workspaceId: "workspace-1" },
+          ],
+        }),
         catalogue: fakeCatalogue(),
         resolveScope: async () => {
           throw new Error("AUTH_REQUIRED");
@@ -215,6 +226,12 @@ describe("plugin package read routes", () => {
     app.route(
       "/api/enterprise/plugin-packages",
       createPluginPackageRoutes({
+        gate: createMarketplaceGate({
+          enabled: true,
+          pilotWorkspaces: [
+            { tenantId: "tenant-1", workspaceId: "workspace-1" },
+          ],
+        }),
         catalogue: fakeCatalogue(),
         resolveScope: async () => {
           throw new Error("TENANT_FORBIDDEN");
@@ -233,6 +250,12 @@ describe("plugin package read routes", () => {
     app.route(
       "/api/enterprise/plugin-packages",
       createPluginPackageRoutes({
+        gate: createMarketplaceGate({
+          enabled: true,
+          pilotWorkspaces: [
+            { tenantId: "tenant-1", workspaceId: "workspace-1" },
+          ],
+        }),
         catalogue: fakeCatalogue(),
         resolveScope: async () => {
           throw new Error("WORKSPACE_REQUIRED");

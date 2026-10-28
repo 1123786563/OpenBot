@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -109,7 +109,7 @@ function PaginationEllipsis({
       data-slot="pagination-ellipsis"
       className={cn(
         "size-8 items-center justify-center [&_svg:not([class*='size-'])]:size-4 flex items-center justify-center",
-        className
+        className,
       )}
       {...props}
     >

@@ -20,7 +20,13 @@
 // 冻结面：bots-ownership.ts 与 runtime-config.ts 只消费、零改动（MT016
 // 团队面服务仅用于 AC4 的对照断言）。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import {

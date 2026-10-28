@@ -24,7 +24,11 @@ export async function rejectionOf(
     await run();
   } catch (error) {
     let candidate = error as Record<string, unknown> | undefined;
-    for (let depth = 0; candidate !== undefined && depth < MAX_CAUSE_DEPTH; depth += 1) {
+    for (
+      let depth = 0;
+      candidate !== undefined && depth < MAX_CAUSE_DEPTH;
+      depth += 1
+    ) {
       const sqlstate = [candidate.errno, candidate.code].find(
         (value) => typeof value === "string" && SQLSTATE.test(value as string),
       );

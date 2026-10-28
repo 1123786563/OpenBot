@@ -1,5 +1,11 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -190,12 +196,14 @@ const state: { invoices: BillingInvoicePage } = { invoices: PENDING_INVOICES };
 /** Every URL the page asked for, for the no-account-identifier assertion. */
 let requestedUrls: string[] = [];
 
-function installFetchStub(overrides: {
-  invoices?: Stub;
-  summary?: Stub;
-  entitlements?: Stub;
-  catalog?: Stub;
-} = {}) {
+function installFetchStub(
+  overrides: {
+    invoices?: Stub;
+    summary?: Stub;
+    entitlements?: Stub;
+    catalog?: Stub;
+  } = {},
+) {
   requestedUrls = [];
   state.invoices = PENDING_INVOICES;
   globalThis.fetch = (async (

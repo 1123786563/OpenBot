@@ -13,6 +13,7 @@ import {
   WbTag,
 } from "@/components/market/wb";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogBody,
@@ -93,7 +94,27 @@ export type PackageInstallSubject = {
   packageKey: string;
   version: string;
   displayName: string;
+  /**
+   * PKG06 (#465): absent means a first install. An upgrade/rollback names the
+   * exact target version and the install revision the caller read — the plan
+   * body carries both, and the server refuses a stale revision with a 409 the
+   * dialog can recover from.
+   */
+  operation?: "install" | "upgrade" | "rollback";
+  expectedRevision?: number | null;
 };
+
+/** One line of the PKG06 version diff: a label and the fact it names. */
+function DiffRow({ label, value }: { label: string; value: string }) {
+  return (
+    <li className="flex flex-wrap items-baseline gap-2 rounded-lg bg-foreground/[0.03] px-3 py-2">
+      <span className="text-xs text-foreground/60">{label}</span>
+      <code className="min-w-0 truncate font-mono text-xs text-foreground/70">
+        {value}
+      </code>
+    </li>
+  );
+}
 
 export function PackageInstallDialog({
   scope,
@@ -109,6 +130,13 @@ export function PackageInstallDialog({
   const queryClient = useQueryClient();
   const planMutation = useMutation(packagePlanMutationOptions());
   const applyMutation = useMutation(packageApplyMutationOptions(queryClient));
+  /*
+   * PKG06: the same dialog carries install, upgrade and rollback — the labels
+   * alone differ. The operation is the caller's intent as read from the
+   * detail screen's version picker; the server re-decides everything and a
+   * refused plan (stale revision, withdrawn target) lands in planError.
+   */
+  const operation = subject.operation ?? "install";
 
   const [rows, setRows] = React.useState<ConfigRow[]>([]);
   const [configError, setConfigError] = React.useState<string | null>(null);
@@ -117,6 +145,7 @@ export function PackageInstallDialog({
   const [planning, setPlanning] = React.useState(false);
   const [applyError, setApplyError] = React.useState<string | null>(null);
   const [applying, setApplying] = React.useState(false);
+  const [removalAcknowledged, setRemovalAcknowledged] = React.useState(false);
   const [installed, setInstalled] = React.useState<PackageInstallDTO | null>(
     null,
   );
@@ -133,6 +162,7 @@ export function PackageInstallDialog({
     setPlan(null);
     setPlanError(null);
     setApplyError(null);
+    setRemovalAcknowledged(false);
   }, []);
 
   const buildConfig = React.useCallback((): PackageConfig | null => {
@@ -196,12 +226,15 @@ export function PackageInstallDialog({
         packageKey: subject.packageKey,
         version: subject.version,
         config,
+        operation: subject.operation ?? "install",
+        expectedRevision: subject.expectedRevision ?? null,
       },
       {
         onSuccess: (answer) => {
           if (planToken.current !== token) return;
           setPlanning(false);
           setPlan(answer);
+          setRemovalAcknowledged(false);
         },
         onError: (error) => {
           if (planToken.current !== token) return;
@@ -227,6 +260,8 @@ export function PackageInstallDialog({
     scope,
     subject.packageKey,
     subject.version,
+    subject.operation,
+    subject.expectedRevision,
     t,
   ]);
 
@@ -243,8 +278,21 @@ export function PackageInstallDialog({
     setRows(change);
   };
 
+  /*
+   * A V1 upgrade/rollback plan carries the FULL target config and never echoes
+   * the installed one (plans.ts), and apply overwrites the revision with it. An
+   * empty editor therefore reports every stored key as removed — confirming
+   * that would wipe the live configuration, so the confirmation waits for an
+   * explicit acknowledgement of the exact keys.
+   */
+  const removedConfigKeys =
+    plan?.diff?.configChanges
+      .filter((change) => change.change === "removed")
+      .map((change) => change.key) ?? [];
+  const removalBlocked = removedConfigKeys.length > 0 && !removalAcknowledged;
+
   const confirm = () => {
-    if (plan === null || applyingRef.current) return;
+    if (plan === null || applyingRef.current || removalBlocked) return;
     applyingRef.current = true;
     setApplying(true);
     setApplyError(null);
@@ -295,7 +343,9 @@ export function PackageInstallDialog({
         {t("packages.install.config")}
       </h3>
       <p className="mt-1 text-xs leading-5 text-foreground/50">
-        {t("packages.install.configHint")}
+        {operation === "install"
+          ? t("packages.install.configHint")
+          : t("packages.upgrade.configHint")}
       </p>
       {rows.length > 0 ? (
         <div className="mt-2 flex flex-col gap-2">
@@ -433,7 +483,17 @@ export function PackageInstallDialog({
       <DialogContent className="max-w-[680px] gap-0 rounded-2xl p-6">
         <DialogHeader>
           <DialogTitle>
-            {t("packages.install.title", { name: subject.displayName })}
+            {operation === "upgrade"
+              ? t("packages.upgrade.titleUpgrade", {
+                  name: subject.displayName,
+                })
+              : operation === "rollback"
+                ? t("packages.upgrade.titleRollback", {
+                    name: subject.displayName,
+                  })
+                : t("packages.install.title", {
+                    name: subject.displayName,
+                  })}
           </DialogTitle>
           <DialogDescription>
             {t("packages.install.description", { team: scope.workspaceId })}
@@ -525,6 +585,81 @@ export function PackageInstallDialog({
                       </ul>
                     )}
                   </section>
+                  {/*
+                   * PKG06: the version-change facts the plan preview carries —
+                   * resources added/removed, the permission increment (new
+                   * tools plus read→write / digest changes), removed tools,
+                   * config changes and connection-requirement changes. Drawn
+                   * only when the server sent a diff (install plans have none).
+                   */}
+                  {plan.diff ? (
+                    <section>
+                      <h3 className="text-sm font-medium text-foreground">
+                        {t("packages.upgrade.diffTitle")}
+                      </h3>
+                      <p className="mt-1 text-xs leading-5 text-foreground/70">
+                        {t("packages.upgrade.fromTo", {
+                          from: plan.diff.currentVersion,
+                          to: plan.version,
+                        })}
+                      </p>
+                      <ul className="mt-2 flex flex-col gap-2">
+                        {plan.diff.addedResources.map((resource) => (
+                          <DiffRow
+                            key={`add:${resource.id}`}
+                            label={t("packages.upgrade.resourceAdded")}
+                            value={`${t(packageResourceKindKey(resource.kind))} ${resource.id}`}
+                          />
+                        ))}
+                        {plan.diff.removedResources.map((resource) => (
+                          <DiffRow
+                            key={`remove:${resource.id}`}
+                            label={t("packages.upgrade.resourceRemoved")}
+                            value={`${t(packageResourceKindKey(resource.kind))} ${resource.id}`}
+                          />
+                        ))}
+                        {plan.diff.changedTools.map((tool) => (
+                          <DiffRow
+                            key={`changed:${tool.ref}`}
+                            label={t("packages.upgrade.toolChanged")}
+                            value={`${tool.ref} — ${t(
+                              "packages.upgrade.effectChange",
+                              {
+                                from: tool.previousEffect,
+                                to: tool.effect,
+                              },
+                            )}`}
+                          />
+                        ))}
+                        {plan.removedTools.map((ref) => (
+                          <DiffRow
+                            key={`tool-remove:${ref}`}
+                            label={t("packages.upgrade.toolRemoved")}
+                            value={ref}
+                          />
+                        ))}
+                        {plan.diff.configChanges.map((change) => (
+                          <DiffRow
+                            key={`config:${change.key}`}
+                            label={t("packages.upgrade.configChange")}
+                            value={`${change.key} (${t(`packages.upgrade.changeKind.${change.change}`)})`}
+                          />
+                        ))}
+                        {plan.diff.connectionChanges.map((change) => (
+                          <DiffRow
+                            key={`conn:${change.resourceId}`}
+                            label={t("packages.upgrade.connectionChange")}
+                            value={`${change.resourceId} (${t(`packages.upgrade.changeKind.${change.change}`)})`}
+                          />
+                        ))}
+                      </ul>
+                      {plan.addedTools.length > 0 ? (
+                        <p className="mt-2 text-xs leading-5 text-foreground/60">
+                          {t("packages.upgrade.reauthorizationNotice")}
+                        </p>
+                      ) : null}
+                    </section>
+                  ) : null}
                   {plan.blockers.length > 0 ? (
                     <section>
                       <h3 className="text-sm font-medium text-foreground">
@@ -543,6 +678,26 @@ export function PackageInstallDialog({
                 <p className="text-sm text-foreground/50">
                   {t("packages.install.creating")}
                 </p>
+              ) : null}
+
+              {removedConfigKeys.length > 0 ? (
+                <section
+                  className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2"
+                  role="alert"
+                >
+                  <p className="text-destructive text-xs leading-5">
+                    {t("packages.upgrade.configRemovalWarning", {
+                      keys: removedConfigKeys.join(", "),
+                    })}
+                  </p>
+                  <Checkbox
+                    checked={removalAcknowledged}
+                    className="mt-2"
+                    onCheckedChange={setRemovalAcknowledged}
+                  >
+                    {t("packages.upgrade.configRemovalAcknowledge")}
+                  </Checkbox>
+                </section>
               ) : null}
 
               {configEditor}
@@ -582,13 +737,21 @@ export function PackageInstallDialog({
               </WbSecondaryButton>
               {plan !== null ? (
                 <Button
-                  disabled={planning || applying}
+                  disabled={planning || applying || removalBlocked}
                   onClick={confirm}
                   type="button"
                 >
                   {applying
                     ? t("packages.install.confirming")
-                    : t("packages.install.confirm")}
+                    : operation === "upgrade"
+                      ? t("packages.upgrade.confirmUpgrade", {
+                          version: plan.version,
+                        })
+                      : operation === "rollback"
+                        ? t("packages.upgrade.confirmRollback", {
+                            version: plan.version,
+                          })
+                        : t("packages.install.confirm")}
                 </Button>
               ) : null}
             </>

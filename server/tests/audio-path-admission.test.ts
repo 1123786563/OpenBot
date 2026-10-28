@@ -133,7 +133,11 @@ function admissionInput(overrides: Record<string, unknown> = {}) {
   return {
     path: "/v1/audio/transcriptions",
     stream: false,
-    model: { provider: "openai", model: "whisper-1", capability: "transcription" },
+    model: {
+      provider: "openai",
+      model: "whisper-1",
+      capability: "transcription",
+    },
     quantities: transcriptionQuantities(),
     grantId: "grant-1",
     payer: { kind: "personal", id: "user-1" },
@@ -234,7 +238,9 @@ describe("Bifrost 14.4 (#313): unverified paths refuse at the evidence stage", (
       stage: "enablement",
       reasonCode: "price_unknown",
       detail: {
-        dimensions: [{ dimension: "audio_input", reason: "price_dim_no_source" }],
+        dimensions: [
+          { dimension: "audio_input", reason: "price_dim_no_source" },
+        ],
       },
     });
     expect(calls.reserve).toBe(0);

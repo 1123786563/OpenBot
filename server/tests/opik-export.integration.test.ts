@@ -1,4 +1,9 @@
-import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -11,7 +16,10 @@ import {
   type ObservationExportWorker,
 } from "../src/ai-observability/exports";
 import type { OpikPort, OpikTraceRow } from "../src/ai-observability/opik-port";
-import { adoptLocalState, projectRow } from "../src/ai-observability/queries/runs";
+import {
+  adoptLocalState,
+  projectRow,
+} from "../src/ai-observability/queries/runs";
 import { createExportRoutes } from "../src/ai-observability/routes/exports";
 import {
   resolveObservationScope,
@@ -268,7 +276,10 @@ test("upstream unknown + local terminal state: the export answers the word the q
   );
   // The query face's own projection of the same two facts — the exact helper
   // chain queries/runs.ts:565-578 runs per page row.
-  const queryFace = adoptLocalState(projectRow(upstreamRow, "detailed"), "completed");
+  const queryFace = adoptLocalState(
+    projectRow(upstreamRow, "detailed"),
+    "completed",
+  );
   expect(projectRow(upstreamRow).state).toBe("unknown");
   expect(exported).toEqual(queryFace);
   expect(exported?.state).toBe("completed");
@@ -625,9 +636,7 @@ test("an administrator's scope reads the creator's export jobs of the same Bot (
   expect(adminOfSameBot.key).toBe(scopeA.key);
   const job = await store.enqueue(scopeA, 10);
   expect((await store.get(adminOfSameBot, job.id))?.id).toBe(job.id);
-  expect((await store.list(adminOfSameBot)).map((j) => j.id)).toContain(
-    job.id,
-  );
+  expect((await store.list(adminOfSameBot)).map((j) => j.id)).toContain(job.id);
 });
 
 test("the export list paginates and never inlines the artifact (R2-40)", async () => {

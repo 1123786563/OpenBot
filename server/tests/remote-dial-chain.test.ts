@@ -159,7 +159,10 @@ function anchorSink() {
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
         resourceSpans?: Array<{
           resource?: {
-            attributes?: Array<{ key: string; value?: { stringValue?: string } }>;
+            attributes?: Array<{
+              key: string;
+              value?: { stringValue?: string };
+            }>;
           };
           scopeSpans?: Array<{
             spans?: Array<{
@@ -184,14 +187,16 @@ function anchorSink() {
             (attribute) => attribute.value?.stringValue,
           ),
         )[0],
-        spans: (body.resourceSpans ?? []).flatMap((rs) =>
-          (rs.scopeSpans ?? []).flatMap((ss) => ss.spans ?? []),
-        ).map((span) => ({
-          ...span,
-          runIdAttribute: span.attributes?.find(
-            (attribute) => attribute.key === "openbot.run.id",
-          )?.value?.stringValue,
-        })),
+        spans: (body.resourceSpans ?? [])
+          .flatMap((rs) =>
+            (rs.scopeSpans ?? []).flatMap((ss) => ss.spans ?? []),
+          )
+          .map((span) => ({
+            ...span,
+            runIdAttribute: span.attributes?.find(
+              (attribute) => attribute.key === "openbot.run.id",
+            )?.value?.stringValue,
+          })),
       });
       response.writeHead(200).end();
     });
@@ -366,8 +371,11 @@ function budgetHarness() {
 function fakeBindingStore() {
   const begun: BeginRunBindingInput[] = [];
   const finished: { runId: string; state: string }[] = [];
-  const reconciles: { runId: string; attemptId: string; opikTraceId: string }[] =
-    [];
+  const reconciles: {
+    runId: string;
+    attemptId: string;
+    opikTraceId: string;
+  }[] = [];
   const rows = new Map<string, RunBinding>();
   return {
     begun,
@@ -973,7 +981,10 @@ test("a wire runId with surrounding whitespace runs to completion — the contra
   const facts: RemoteRunFact[] = [];
   const store = fakeBindingStore();
   const { port } = fakePort();
-  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+  const recorder = createRemoteRunRecorder({
+    bindings: store,
+    port: () => port,
+  });
   const { stop } = recordedSpans();
   const events: BaseEvent[] = [];
   setRemoteRunObserver((fact) => {
@@ -1017,7 +1028,10 @@ test("the anchors opened at bind are closed at finalize — same ids, the window
   const facts: RemoteRunFact[] = [];
   const store = fakeBindingStore();
   const { port } = fakePort();
-  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+  const recorder = createRemoteRunRecorder({
+    bindings: store,
+    port: () => port,
+  });
   const { stop } = recordedSpans();
   const sink = anchorSink();
   await sink.ready();
@@ -1087,7 +1101,10 @@ test("the anchor post speaks the exporter's own dialect — traces-level headers
   const { fetch } = scriptedEndpoint();
   const store = fakeBindingStore();
   const { port } = fakePort();
-  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+  const recorder = createRemoteRunRecorder({
+    bindings: store,
+    port: () => port,
+  });
   const { stop } = recordedSpans();
   const sink = anchorSink();
   await sink.ready();
@@ -1121,7 +1138,8 @@ test("the anchor post speaks the exporter's own dialect — traces-level headers
 
     // The generic var alone still authorizes — the exporter's own fallback rule.
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
-    process.env.OTEL_EXPORTER_OTLP_HEADERS = "authorization=Bearer generic-secret";
+    process.env.OTEL_EXPORTER_OTLP_HEADERS =
+      "authorization=Bearer generic-secret";
     await new Promise((resolve) => setTimeout(resolve, 1));
     await agent.runAgent({ runId: "run-dialect-2" }, { onEvent: () => {} });
     await flush();
@@ -1140,7 +1158,8 @@ test("the anchor post speaks the exporter's own dialect — traces-level headers
     if (tracesHeadersBefore === undefined)
       delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
     else process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS = tracesHeadersBefore;
-    if (headersBefore === undefined) delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+    if (headersBefore === undefined)
+      delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
     else process.env.OTEL_EXPORTER_OTLP_HEADERS = headersBefore;
     sink.stop();
     await stop();
@@ -1254,7 +1273,8 @@ function refusingTracePort() {
 async function until(probe: () => boolean): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (!probe()) {
-    if (Date.now() > deadline) throw new Error("condition not reached in window");
+    if (Date.now() > deadline)
+      throw new Error("condition not reached in window");
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }
@@ -1280,7 +1300,10 @@ function aDerivedFact(runId: string): RemoteRunRecordInput {
 test("a materialization that failed keeps the dial span unexported — nothing is written to an unconfirmed upstream", async () => {
   const store = fakeBindingStore();
   const { port, writtenSpans } = refusingTracePort();
-  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+  const recorder = createRemoteRunRecorder({
+    bindings: store,
+    port: () => port,
+  });
 
   recorder.record(aDerivedFact("run-unconfirmed"));
   await until(() => store.finished.length === 1);
@@ -1288,7 +1311,9 @@ test("a materialization that failed keeps the dial span unexported — nothing i
   // The local record is complete exactly as the settlement-divergence docblock promises:
   // begun and finished, the materialization failure logged and swallowed.
   expect(store.begun).toHaveLength(1);
-  expect(store.finished).toEqual([{ runId: "run-unconfirmed", state: "completed" }]);
+  expect(store.finished).toEqual([
+    { runId: "run-unconfirmed", state: "completed" },
+  ]);
   expect(store.reconciledByAttempt("run-unconfirmed-attempt")).toBeNull();
 
   // But nothing exported: the binding names no upstream trace, so there is no tree to
@@ -1300,7 +1325,10 @@ test("a materialization that failed keeps the dial span unexported — nothing i
 test("a terminal remote run closes its upstream root with the observed window", async () => {
   const store = fakeBindingStore();
   const { port, createdTraces, writtenSpans } = fakePort();
-  const recorder = createRemoteRunRecorder({ bindings: store, port: () => port });
+  const recorder = createRemoteRunRecorder({
+    bindings: store,
+    port: () => port,
+  });
 
   const fact = aDerivedFact("run-closed");
   recorder.record(fact);
@@ -1328,7 +1356,9 @@ test("a terminal remote run closes its upstream root with the observed window", 
     ),
   );
   expect(rootClose).toBeDefined();
-  const closed = rootClose!.spans.find((span) => span.spanId === identity.rootSpanId)!;
+  const closed = rootClose!.spans.find(
+    (span) => span.spanId === identity.rootSpanId,
+  )!;
   expect(closed.endTimeUnixNano).toBe(nanos(fact.endedAt));
   expect(closed.startTimeUnixNano).toBe(nanos(fact.dial!.startedAt));
   expect(

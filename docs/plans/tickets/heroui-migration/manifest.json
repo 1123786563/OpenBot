@@ -38,17 +38,8 @@
       "verification": [
         "隔离 fixture 的 build/typecheck 与浏览器场景；现有代表测试的同版本基线"
       ],
-      "source_acceptance": [
-        "A01",
-        "A02",
-        "A04",
-        "A05",
-        "A09"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
+      "source_acceptance": ["A01", "A02", "A04", "A05", "A09"],
+      "estimate": [1, 2],
       "routes": [],
       "ui": [],
       "owner_role": "researcher；隔离 spike 由 frontend_implementer 承接",
@@ -74,9 +65,7 @@
     {
       "id": "H02",
       "title": "让现有页面通过 HeroUI 基础控件保持主题与表单行为",
-      "depends_on": [
-        "H01"
-      ],
+      "depends_on": ["H01"],
       "goal": "应用亮暗主题、链接按钮和基础表单改用 HeroUI，现有页面继续可用。",
       "owned_files": [
         "app/package.json 与实际 Bun lockfile",
@@ -102,20 +91,9 @@
       "verification": [
         "theme-preference / sidebar-preference 及基础控件行为测试；app typecheck/build；亮暗首屏浏览器检查"
       ],
-      "source_acceptance": [
-        "A01",
-        "A02",
-        "A05",
-        "A08",
-        "A09"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
-      "routes": [
-        "app/src/routes/__root.tsx"
-      ],
+      "source_acceptance": ["A01", "A02", "A05", "A08", "A09"],
+      "estimate": [1, 2],
+      "routes": ["app/src/routes/__root.tsx"],
       "ui": [
         "app/src/components/ui/button.tsx",
         "app/src/components/ui/checkbox.tsx",
@@ -140,9 +118,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRpU7g",
       "url": "https://github.com/1123786563/OpenBot/issues/445",
       "native_contains": true,
-      "native_blocked_by": [
-        "H01"
-      ],
+      "native_blocked_by": ["H01"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -156,9 +132,7 @@
     {
       "id": "H03",
       "title": "完成模型访问授权与撤销的 HeroUI 业务试点",
-      "depends_on": [
-        "H02"
-      ],
+      "depends_on": ["H02"],
       "goal": "用户能在 HeroUI 页面选择模型、核验绑定码、明确确认授权并撤销授权。",
       "owned_files": [
         "app/src/components/settings/model-picker.tsx、model-access-authorizations.tsx",
@@ -182,19 +156,9 @@
       "verification": [
         "模型访问相关现有测试；真实浏览器授权/撤销与焦点；app typecheck/build"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A05",
-        "A07"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
-      "routes": [
-        "app/src/routes/_authed/settings/model-access.tsx"
-      ],
+      "source_acceptance": ["A03", "A04", "A05", "A07"],
+      "estimate": [1, 2],
+      "routes": ["app/src/routes/_authed/settings/model-access.tsx"],
       "ui": [
         "app/src/components/ui/combobox.tsx",
         "app/src/components/ui/dialog.tsx",
@@ -212,9 +176,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRpdpg",
       "url": "https://github.com/1123786563/OpenBot/issues/446",
       "native_contains": true,
-      "native_blocked_by": [
-        "H02"
-      ],
+      "native_blocked_by": ["H02"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -228,9 +190,7 @@
     {
       "id": "H04",
       "title": "迁移个人设置、连接管理与记忆维护流程",
-      "depends_on": [
-        "H03"
-      ],
+      "depends_on": ["H03"],
       "goal": "用户可以用统一控件维护个人偏好、已连接账号与记忆，保持原有授权范围。",
       "owned_files": [
         "app/src/components/settings/*（不含 H03 的两个文件及 settings-sidebar）",
@@ -249,23 +209,12 @@
         "覆盖连接模式弹窗、共享授权和记忆操作；共享模块在本任务集中改写。",
         "回归现有链接账号/记忆测试和真实浏览器取消/失败分支。"
       ],
-      "produces": [
-        "个人设置、连接与记忆的验收包；供其他页面复用的连接控件"
-      ],
+      "produces": ["个人设置、连接与记忆的验收包；供其他页面复用的连接控件"],
       "verification": [
         "account-mode-dialog / shared-grant-dialog / memory-settings / bot-memory / linked-accounts；代表浏览器流程"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A05",
-        "A07",
-        "A08"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
+      "source_acceptance": ["A03", "A04", "A05", "A07", "A08"],
+      "estimate": [1, 2],
       "routes": [
         "app/src/routes/_authed/_app/bots.$agentId.memory.tsx",
         "app/src/routes/_authed/_app/bots.$agentId.reach.tsx",
@@ -295,9 +244,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRpkBA",
       "url": "https://github.com/1123786563/OpenBot/issues/447",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03"
-      ],
+      "native_blocked_by": ["H03"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -311,9 +258,7 @@
     {
       "id": "H05",
       "title": "迁移模型目录、网关与凭据管理流程",
-      "depends_on": [
-        "H03"
-      ],
+      "depends_on": ["H03"],
       "goal": "管理员能配置开放模型与服务凭据，并清楚看到可用、拒绝和失败状态。",
       "owned_files": [
         "模型目录、gateway、credentials、bot-services 对应管理视图与 app/src/components/admin/model-billing-paths.tsx"
@@ -329,22 +274,12 @@
         "复核危险操作确认和焦点返回。",
         "用允许/拒绝账号验证敏感配置及失败重试。"
       ],
-      "produces": [
-        "管理员模型与凭据业务迁移检查点"
-      ],
+      "produces": ["管理员模型与凭据业务迁移检查点"],
       "verification": [
         "model-billing-paths 及已有管理测试；模型/凭据代表流程；app typecheck/build"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A05",
-        "A07"
-      ],
-      "estimate": [
-        0.5,
-        1
-      ],
+      "source_acceptance": ["A03", "A04", "A05", "A07"],
+      "estimate": [0.5, 1],
       "routes": [
         "app/src/routes/_authed/admin/bot-services.tsx",
         "app/src/routes/_authed/admin/credentials.tsx",
@@ -362,9 +297,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRpsfA",
       "url": "https://github.com/1123786563/OpenBot/issues/448",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03"
-      ],
+      "native_blocked_by": ["H03"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -378,9 +311,7 @@
     {
       "id": "H06",
       "title": "迁移 Bot、技能、知识库与日常任务管理流程",
-      "depends_on": [
-        "H03"
-      ],
+      "depends_on": ["H03"],
       "goal": "用户和管理员能创建配置 Bot、维护技能与知识库，并管理已有职责和定时任务。",
       "owned_files": [
         "app/src/components/agents/*、bots/*、skills/*、knowledge/*（存在者按 H01 清单）",
@@ -405,17 +336,8 @@
       "verification": [
         "现有 Bot/技能/知识库/职责相关测试；真实浏览器一条完整创建编辑路径和拒绝路径"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A05",
-        "A07",
-        "A08"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
+      "source_acceptance": ["A03", "A04", "A05", "A07", "A08"],
+      "estimate": [1, 2],
       "routes": [
         "app/src/routes/_authed/_app/agents/index.tsx",
         "app/src/routes/_authed/_app/bot.tsx",
@@ -444,9 +366,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRp0-A",
       "url": "https://github.com/1123786563/OpenBot/issues/449",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03"
-      ],
+      "native_blocked_by": ["H03"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -460,11 +380,7 @@
     {
       "id": "H07",
       "title": "迁移公司成员、权限分享、审批与审计流程",
-      "depends_on": [
-        "H03",
-        "H04",
-        "H06"
-      ],
+      "depends_on": ["H03", "H04", "H06"],
       "goal": "管理员和成员能在原有权限范围内管理成员、分享 Bot、处理审批和查看审计。",
       "owned_files": [
         "enterprise/people/identity-providers/boundaries/approvals/audit 相关视图",
@@ -483,23 +399,12 @@
         "迁移公司治理及审批/审计，复用已审查连接或确认控件。",
         "分别用允许和拒绝身份验证动作及列表范围。"
       ],
-      "produces": [
-        "公司治理、权限、审批与审计业务检查点"
-      ],
+      "produces": ["公司治理、权限、审批与审计业务检查点"],
       "verification": [
         "multitenancy/selection / shared-grant-dialog 及已有审批测试；跨范围与撤权浏览器检查"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A05",
-        "A07",
-        "A08"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
+      "source_acceptance": ["A03", "A04", "A05", "A07", "A08"],
+      "estimate": [1, 2],
       "routes": [
         "app/src/routes/_authed/_app/approvals.tsx",
         "app/src/routes/_authed/_app/bots.$agentId.access.tsx",
@@ -524,11 +429,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRp6CQ",
       "url": "https://github.com/1123786563/OpenBot/issues/450",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03",
-        "H04",
-        "H06"
-      ],
+      "native_blocked_by": ["H03", "H04", "H06"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -542,9 +443,7 @@
     {
       "id": "H08",
       "title": "迁移个人与公司积分、购买和订单记录流程",
-      "depends_on": [
-        "H03"
-      ],
+      "depends_on": ["H03"],
       "goal": "用户清楚看到付款账户、余额和订单状态，并能完成现有购买与记录查询流程。",
       "owned_files": [
         "app/src/components/billing/*、admin/billing-cleanup-execution-card.tsx；相关 settings/admin 计费路由"
@@ -561,23 +460,12 @@
         "覆盖购买确认、扫码、到账状态和管理员动作。",
         "核验付款账户与状态语义，执行现有计费 UI/浏览器回归。"
       ],
-      "produces": [
-        "付款账户与计费 UI 验收记录"
-      ],
+      "produces": ["付款账户与计费 UI 验收记录"],
       "verification": [
         "billing-credits-ui / billing-format / billing-invoice-shared / billing-payments；tests/e2e/billing.e2e.ts"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A05",
-        "A07",
-        "A08"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
+      "source_acceptance": ["A03", "A04", "A05", "A07", "A08"],
+      "estimate": [1, 2],
       "routes": [
         "app/src/routes/_authed/admin/billing.tsx",
         "app/src/routes/_authed/settings/invoices.tsx",
@@ -595,9 +483,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRp_Fg",
       "url": "https://github.com/1123786563/OpenBot/issues/451",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03"
-      ],
+      "native_blocked_by": ["H03"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -611,9 +497,7 @@
     {
       "id": "H09",
       "title": "迁移登录、工作台导航和窄屏侧栏流程",
-      "depends_on": [
-        "H03"
-      ],
+      "depends_on": ["H03"],
       "goal": "用户能登录并通过桌面或窄屏导航到工作页面，保持偏好、焦点和路由行为。",
       "owned_files": [
         "app/src/components/app-sidebar/*、layout/*、settings/settings-sidebar.tsx、admin/admin-sidebar.tsx",
@@ -631,24 +515,12 @@
         "更新布局和认证入口消费新控件，保持偏好与首屏主题。",
         "验证深链接、Tab 顺序、短屏滚动和主题切换。"
       ],
-      "produces": [
-        "稳定导航/布局 Interface、窄屏与桌面承载验证入口"
-      ],
+      "produces": ["稳定导航/布局 Interface、窄屏与桌面承载验证入口"],
       "verification": [
         "sidebar-preference / sidebar-shortcut-layouts / sign-in-card / root-drop-guard / multitenancy/selection；浏览器导航"
       ],
-      "source_acceptance": [
-        "A02",
-        "A03",
-        "A04",
-        "A05",
-        "A07",
-        "A08"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
+      "source_acceptance": ["A02", "A03", "A04", "A05", "A07", "A08"],
+      "estimate": [1, 2],
       "routes": [
         "app/src/routes/_authed/_app/index.tsx",
         "app/src/routes/_authed/_app.tsx",
@@ -676,9 +548,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRqEmQ",
       "url": "https://github.com/1123786563/OpenBot/issues/452",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03"
-      ],
+      "native_blocked_by": ["H03"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -692,10 +562,7 @@
     {
       "id": "H10",
       "title": "迁移聊天输入、消息动作与实时屏幕交互",
-      "depends_on": [
-        "H03",
-        "H09"
-      ],
+      "depends_on": ["H03", "H09"],
       "goal": "用户在新控件下继续可靠输入、发送附件、阅读流式消息和接管 Bot 屏幕。",
       "owned_files": [
         "app/src/components/channels/*、computer/*、suggestions/*（包含 composer、chat-transcript、实时屏幕和消息工具卡；workshop-* 如存在归 H11）",
@@ -714,24 +581,12 @@
         "将旧 render 适配限制在动作入口，不重写整个问卷或 scroller。",
         "跑附件、IME、流式滚动和屏幕键盘真实浏览器场景。"
       ],
-      "produces": [
-        "聊天与实时屏幕迁移检查点、专用引擎保留与兼容证据"
-      ],
+      "produces": ["聊天与实时屏幕迁移检查点、专用引擎保留与兼容证据"],
       "verification": [
         "app/tests/composer-* / live-screen-keyboard / carousel-keyboard；tests/e2e/bot-chat.e2e.ts；真实 IME/滚动"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A05",
-        "A06",
-        "A07",
-        "A08"
-      ],
-      "estimate": [
-        2,
-        3
-      ],
+      "source_acceptance": ["A03", "A04", "A05", "A06", "A07", "A08"],
+      "estimate": [2, 3],
       "routes": [
         "app/src/routes/_authed/_app/channel/$channelId.tsx",
         "app/src/routes/_authed/_app/channel/new.tsx",
@@ -758,10 +613,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRqo5A",
       "url": "https://github.com/1123786563/OpenBot/issues/453",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03",
-        "H09"
-      ],
+      "native_blocked_by": ["H03", "H09"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -775,9 +627,7 @@
     {
       "id": "H11",
       "title": "迁移 Craft 工作区、预览和产物操作流程",
-      "depends_on": [
-        "H10"
-      ],
+      "depends_on": ["H10"],
       "goal": "用户能在 Craft 中查看任务、操作产物和交互预览，保持会话与 iframe 生命周期。",
       "owned_files": [
         "app/src/routes/_authed/_app/craft/**、app/src/components/craft/**，channels/workshop-* 如存在归本任务",
@@ -794,23 +644,12 @@
         "回归产物、预览放大还原和会话切换。",
         "验证纯前端改动未影响 iframe origin 与会话身份合同。"
       ],
-      "produces": [
-        "Craft 专用交互验收记录"
-      ],
+      "produces": ["Craft 专用交互验收记录"],
       "verification": [
         "已有 Craft 前端/预览回归；真实浏览器交互预览与放大还原"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A06",
-        "A07",
-        "A08"
-      ],
-      "estimate": [
-        0.5,
-        1
-      ],
+      "source_acceptance": ["A03", "A04", "A06", "A07", "A08"],
+      "estimate": [0.5, 1],
       "routes": [
         "app/src/routes/_authed/_app/craft/$sessionId.tsx",
         "app/src/routes/_authed/_app/craft/index.tsx",
@@ -827,9 +666,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRqsIw",
       "url": "https://github.com/1123786563/OpenBot/issues/454",
       "native_contains": true,
-      "native_blocked_by": [
-        "H10"
-      ],
+      "native_blocked_by": ["H10"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -843,10 +680,7 @@
     {
       "id": "H12",
       "title": "迁移运行记录、评估对比与运维观测流程",
-      "depends_on": [
-        "H03",
-        "H06"
-      ],
+      "depends_on": ["H03", "H06"],
       "goal": "用户能查询运行与评估，管理员能查看计算机和观测状态，保留列表与图表语义。",
       "owned_files": [
         "Bot runs/datasets/evaluations/exports 模块；app/src/components/evaluations/*（存在者）",
@@ -864,24 +698,12 @@
         "迁移观测与计算机运维动作，不改流和工具执行协议。",
         "用长数据、空数据和失败状态检验表格/图表和路由。"
       ],
-      "produces": [
-        "运行/评估/运维业务迁移检查点"
-      ],
+      "produces": ["运行/评估/运维业务迁移检查点"],
       "verification": [
         "已有运行评估和 ai-observability 测试；列表/图表/拒绝状态浏览器检查"
       ],
-      "source_acceptance": [
-        "A03",
-        "A04",
-        "A05",
-        "A07",
-        "A08",
-        "A09"
-      ],
-      "estimate": [
-        1,
-        2
-      ],
+      "source_acceptance": ["A03", "A04", "A05", "A07", "A08", "A09"],
+      "estimate": [1, 2],
       "routes": [
         "app/src/routes/_authed/_app/bots.$agentId.datasets.tsx",
         "app/src/routes/_authed/_app/bots.$agentId.evaluations.$datasetId.tsx",
@@ -907,10 +729,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRqvfg",
       "url": "https://github.com/1123786563/OpenBot/issues/455",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03",
-        "H06"
-      ],
+      "native_blocked_by": ["H03", "H06"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -924,9 +743,7 @@
     {
       "id": "H13",
       "title": "迁移组件画廊与市场交互并保持生成内容适配",
-      "depends_on": [
-        "H03"
-      ],
+      "depends_on": ["H03"],
       "goal": "用户在画廊和市场中能预览组件并完成既有动作，生成内容遵循当前设计能力边界。",
       "owned_files": [
         "app/src/components/gallery/*、settings/components-gallery 与 admin/components 路由、admin/market.tsx",
@@ -944,23 +761,12 @@
         "覆盖市场现有可用行为、空态、拒绝和失败。",
         "检查生成内容指导中与迁移直接冲突的描述，按范围记录或修正。"
       ],
-      "produces": [
-        "画廊/市场迁移验收与生成内容能力说明"
-      ],
+      "produces": ["画廊/市场迁移验收与生成内容能力说明"],
       "verification": [
         "已有 gallery/market/generative UI 测试；画廊表单与独立 iframe 浏览器检查"
       ],
-      "source_acceptance": [
-        "A02",
-        "A03",
-        "A05",
-        "A07",
-        "A08"
-      ],
-      "estimate": [
-        0.5,
-        1
-      ],
+      "source_acceptance": ["A02", "A03", "A05", "A07", "A08"],
+      "estimate": [0.5, 1],
       "routes": [
         "app/src/routes/_authed/admin/components/$name.tsx",
         "app/src/routes/_authed/admin/components/index.tsx",
@@ -979,9 +785,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRqzcw",
       "url": "https://github.com/1123786563/OpenBot/issues/456",
       "native_contains": true,
-      "native_blocked_by": [
-        "H03"
-      ],
+      "native_blocked_by": ["H03"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",
@@ -1023,22 +827,12 @@
         "按证据删除依赖和过渡适配，不删除仍被保留引擎使用的 token。",
         "更新覆盖表和恢复说明，提交最终验收输入检查点。"
       ],
-      "produces": [
-        "完整交付范围、删除证明、残留例外、最终性能测量"
-      ],
+      "produces": ["完整交付范围、删除证明、残留例外、最终性能测量"],
       "verification": [
         "全量 import/type/CSS 扫描；app typecheck/build；覆盖与包体对账"
       ],
-      "source_acceptance": [
-        "A01",
-        "A02",
-        "A06",
-        "A09"
-      ],
-      "estimate": [
-        0.5,
-        1
-      ],
+      "source_acceptance": ["A01", "A02", "A06", "A09"],
+      "estimate": [0.5, 1],
       "routes": [],
       "ui": [],
       "owner_role": "frontend_implementer",
@@ -1076,9 +870,7 @@
     {
       "id": "H15",
       "title": "完成全流程、可访问性与独立审查交付验收",
-      "depends_on": [
-        "H14"
-      ],
+      "depends_on": ["H14"],
       "goal": "用同一代码检查点的测试、浏览器、Review 与 OCR 证明迁移完整可交付。",
       "owned_files": [
         ".archive/runs/heroui-migration/ 下本计划报告、截图、Review/OCR 与覆盖证据；验收人员不修改生产/测试源文件"
@@ -1097,9 +889,7 @@
         "按实际快照派发只读 reviewer 并执行 OCR，核实发现后走独立修复与复审。",
         "核对最终 diff、例外、性能与恢复记录，形成交付报告。"
       ],
-      "produces": [
-        "完整验收、Review/OCR、差异与回退报告"
-      ],
+      "produces": ["完整验收、Review/OCR、差异与回退报告"],
       "verification": [
         "ADR 0008 native/driven/engine 命令及 test:ci；app typecheck/build 与变更 lint；完整范围 OCR"
       ],
@@ -1115,10 +905,7 @@
         "A09",
         "A10"
       ],
-      "estimate": [
-        1,
-        2
-      ],
+      "estimate": [1, 2],
       "routes": [],
       "ui": [],
       "owner_role": "frontend_validator（只读验证）；主控编排 Review/OCR",
@@ -1131,9 +918,7 @@
       "node_id": "I_kwDOVCA0Ss8AAAABYRq6iQ",
       "url": "https://github.com/1123786563/OpenBot/issues/458",
       "native_contains": true,
-      "native_blocked_by": [
-        "H14"
-      ],
+      "native_blocked_by": ["H14"],
       "source_issues": [
         {
           "repository": "1123786563/OpenBot",

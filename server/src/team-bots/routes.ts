@@ -75,7 +75,10 @@ export function createTeamBotRoutes(
       },
       "team-bot-route-error",
     );
-    return context.json({ error: "The Team Bot request failed. Try again." }, 500);
+    return context.json(
+      { error: "The Team Bot request failed. Try again." },
+      500,
+    );
   });
   routes.get("/", async (context) =>
     context.json({

@@ -70,11 +70,13 @@ describe("Bifrost 14.4 (#313): capability availability rows", () => {
             missingItems: [
               {
                 code: "no_input_meter_wired",
-                detail: "14.1's duration meter is wired to the transcription path only",
+                detail:
+                  "14.1's duration meter is wired to the transcription path only",
               },
               {
                 code: "no_admission_wiring",
-                detail: "the gateway carries this path as a passthrough billing reference only",
+                detail:
+                  "the gateway carries this path as a passthrough billing reference only",
               },
               {
                 code: "no_wire_price_source",
@@ -128,7 +130,13 @@ describe("Bifrost 14.4 (#313): capability availability rows", () => {
             path: "/v1/audio/transcriptions",
             family: "recognition",
             missingItems: [],
-            bases: [{ ref: "openai|whisper-1|transcription", enableable: true, missingDimensions: [] }],
+            bases: [
+              {
+                ref: "openai|whisper-1|transcription",
+                enableable: true,
+                missingDimensions: [],
+              },
+            ],
           }),
         ]}
       />,
@@ -169,7 +177,9 @@ describe("Bifrost 14.4 (#313): capability availability rows", () => {
   });
 
   test("a stream variant carries its marker — the entrance's identity, with the path", () => {
-    const view = render(<AudioPathAvailability paths={[row({ stream: true })]} />);
+    const view = render(
+      <AudioPathAvailability paths={[row({ stream: true })]} />,
+    );
     expect(
       view.getByTestId("audio-path-/v1/audio/translations-stream").textContent,
     ).toContain("流式");

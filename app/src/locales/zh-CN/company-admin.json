@@ -3,11 +3,11 @@
   "description": "本公司的人员、身份、审计与计费——每一项入口都以服务端给出的能力为准。",
   "nav": {
     "people": "人员与凭据",
-    "organization": "组织",
     "audit": "审计",
     "enterprise": "企业设置",
     "learning": "学习",
-    "billing": "计费与用量"
+    "billing": "计费与用量",
+    "organization": "组织"
   },
   "gate": {
     "pending": "正在读取你的公司…",
@@ -23,23 +23,6 @@
       "title": "公司管理暂不可用",
       "description": "公司管理面未响应，请稍后重试。"
     }
-  },
-  "shell": {
-    "noCompany": {
-      "title": "你还不属于任何公司",
-      "description": "需要管理员邀请你加入。加入后，你的公司与团队会显示在这里。"
-    },
-    "noTeam": {
-      "title": "还没有团队",
-      "description": "需要管理员把你加入一个团队。公司设置仍可打开。"
-    },
-    "revoked": {
-      "title": "你对这家公司的访问已结束",
-      "description": "请选择其他公司，或请管理员重新把你加入。"
-    },
-    "companySettings": "公司设置",
-    "chooseScope": "选择公司或团队",
-    "reauth": "这家公司需要先完成一次额外登录。OpenBot 暂未提供这个步骤。"
   },
   "people": {
     "title": "人员",
@@ -259,7 +242,37 @@
     },
     "refused": "公司账簿仅对获显式授权的财务读取者开放——管理员身份本身并不足够。",
     "failed": "公司账簿读取失败。",
-    "entryRefused": "计费管理入口仅对获显式授权的主体开放。"
+    "entryRefused": "计费管理入口仅对获显式授权的主体开放。",
+    "payments": {
+      "title": "付款记录",
+      "description": "公司的每笔付款，最新的在前。",
+      "empty": "还没有付款。首笔订单后会出现在这里。",
+      "column": {
+        "plan": "套餐",
+        "amount": "金额",
+        "payer": "付款方",
+        "status": "状态",
+        "fulfillment": "履约",
+        "paidAt": "支付时间"
+      }
+    }
+  },
+  "shell": {
+    "noCompany": {
+      "title": "你还不属于任何公司",
+      "description": "需要管理员邀请你加入。加入后，你的公司与团队会显示在这里。"
+    },
+    "noTeam": {
+      "title": "还没有团队",
+      "description": "需要管理员把你加入一个团队。公司设置仍可打开。"
+    },
+    "revoked": {
+      "title": "你对这家公司的访问已结束",
+      "description": "请选择其他公司，或请管理员重新把你加入。"
+    },
+    "companySettings": "公司设置",
+    "chooseScope": "选择公司或团队",
+    "reauth": "这家公司需要先完成一次额外登录。OpenBot 暂未提供这个步骤。"
   },
   "organization": {
     "title": "组织",

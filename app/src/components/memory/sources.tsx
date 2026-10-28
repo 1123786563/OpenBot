@@ -101,9 +101,7 @@ export function MemorySources({ agentId: fixedBot }: { agentId?: string }) {
   const required = Array.isArray(chosen?.inputSchema.required)
     ? chosen.inputSchema.required
     : [];
-  const add = useMutation(
-    addMemorySourceMutationOptions(queryClient, scope),
-  );
+  const add = useMutation(addMemorySourceMutationOptions(queryClient, scope));
   const action = useMutation(
     memorySourceActionMutationOptions(queryClient, scope),
   );

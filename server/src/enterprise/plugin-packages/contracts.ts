@@ -8,6 +8,7 @@ import type {
   PackageGrantRevokeInput,
   PackageInstallDetailDTO,
   PackageInstallDTO,
+  PackageInstallStatusUpdate,
   PackageListQuery,
   PackageOperation,
   PackagePage,
@@ -143,6 +144,15 @@ export interface PackageInstallFacts {
   readonly status: PackageInstallDTO["status"];
   readonly links: readonly PackageResourceLinkFact[];
   readonly grants: readonly PackageGrantFact[];
+  /**
+   * PKG06 (#465): the caller's company role, joined on the same membership
+   * row that proves eligibility. `allowedActions` is computed from it — a
+   * list/detail read answers what THIS caller may do, never a global claim.
+   * The field is only absent on facts built inside a write path whose actor
+   * the mutation store already revalidated as `tenant_admin`; writers pass
+   * the role explicitly there.
+   */
+  readonly callerCompanyRole: string;
 }
 
 export interface PackageReadStore {
@@ -153,6 +163,14 @@ export interface PackageReadStore {
     scope: PlatformScope,
     installId: string,
   ): Promise<PackageInstallFacts | null>;
+  /**
+   * PKG10 (#469): dispatches of this install still in the `unknown` state
+   * (the detail view's redacted badge). Cross-scope/unknown installs count 0.
+   */
+  countUnknownDispatches(
+    scope: PlatformScope,
+    installId: string,
+  ): Promise<number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +266,19 @@ export interface PackageExpertMutationResult {
   readonly created: boolean;
 }
 
+/**
+ * PKG07 (#466) lifecycle result. `changed: false` means the install already
+ * stood in the requested status (or this idempotency key replayed an earlier
+ * answer): no generation bump, no second revocation. Both cases answer the
+ * install as it now stands, with readiness/allowedActions computed from live
+ * facts — a disabled or uninstalled install reads `unavailable` and offers only
+ * the actions its state permits.
+ */
+export interface PackageInstallStatusResult {
+  readonly install: PackageInstallDTO;
+  readonly changed: boolean;
+}
+
 export interface PackageService {
   list(scope: PlatformScope, query: PackageListQuery): Promise<PackagePage>;
   get(
@@ -292,6 +323,21 @@ export interface PackageService {
     input: PackageExpertCreateInput,
     idempotencyKey: string,
   ): Promise<PackageExpertMutationResult>;
+  /**
+   * PATCH /installs/:id/status (tenant_admin, Idempotency-Key).
+   *
+   * Moves one install to `enabled` / `disabled` / `uninstalled` under the
+   * revision CAS. Disable and uninstall bump the generation and revoke the
+   * install's active grants; enable (including reinstall from the tombstone)
+   * bumps the generation and never revives a grant. Nothing is deleted.
+   */
+  updateInstallStatus(
+    scope: PlatformScope,
+    admin: CompanyAdminContext,
+    installId: string,
+    input: PackageInstallStatusUpdate,
+    idempotencyKey: string,
+  ): Promise<PackageInstallStatusResult>;
 }
 
 /** Injected clock; tests advance it to exercise the 10-minute expiry. */

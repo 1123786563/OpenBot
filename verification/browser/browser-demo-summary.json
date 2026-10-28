@@ -1,0 +1,30 @@
+{
+  "summary": [
+    {
+      "step": "PKG01-packages-catalogue",
+      "chars": 439,
+      "url": "http://localhost:3322/packages"
+    },
+    {
+      "step": "PKG02-package-detail-installed",
+      "chars": 623,
+      "url": "http://localhost:3322/packages"
+    },
+    {
+      "step": "PKG06-upgrade-preview",
+      "chars": 419,
+      "url": "http://localhost:3322/packages"
+    },
+    {
+      "step": "PKG06-upgrade-applied",
+      "chars": 594,
+      "url": "http://localhost:3322/packages"
+    },
+    {
+      "step": "error-state",
+      "chars": 594,
+      "url": "http://localhost:3322/packages"
+    }
+  ],
+  "buttons": {}
+}

@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createApp } from "../src/app";

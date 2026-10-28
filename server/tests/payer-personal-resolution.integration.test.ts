@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
@@ -63,7 +68,9 @@ describe("resolvePersonalPayerAccount is idempotent per authenticated user", () 
     const user = { id: `user-pers-1-${run}` };
     const first = await resolvePersonalPayerAccount(database, user);
     track(first.externalCustomerId);
-    expect(first.externalCustomerId).toBe(payerKey({ kind: "personal", id: user.id }));
+    expect(first.externalCustomerId).toBe(
+      payerKey({ kind: "personal", id: user.id }),
+    );
 
     const again = await resolvePersonalPayerAccount(database, user);
     expect(again.id).toBe(first.id);
@@ -71,7 +78,12 @@ describe("resolvePersonalPayerAccount is idempotent per authenticated user", () 
     const rows = await database
       .select({ id: payerAccounts.id })
       .from(payerAccounts)
-      .where(and(eq(payerAccounts.kind, "personal"), eq(payerAccounts.payerId, user.id)));
+      .where(
+        and(
+          eq(payerAccounts.kind, "personal"),
+          eq(payerAccounts.payerId, user.id),
+        ),
+      );
     expect(rows).toHaveLength(1);
     expect(
       await readPayerAccount(database, resolvePayerForPersonalUser(user)),
@@ -167,7 +179,10 @@ describe("the credit read routes refuse requests that name an account", () => {
     // The foreign account exists and even holds a balance — the refusal must not depend on the
     // named account being empty; the request shape itself is the forgery.
     const stranger = { id: `user-stranger-${run}` };
-    const strangerAccount = await resolvePersonalPayerAccount(database, stranger);
+    const strangerAccount = await resolvePersonalPayerAccount(
+      database,
+      stranger,
+    );
     track(strangerAccount.externalCustomerId);
     await writer.grantCredits({
       externalCustomerId: strangerAccount.externalCustomerId,

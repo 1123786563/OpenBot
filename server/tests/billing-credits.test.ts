@@ -57,7 +57,10 @@ describe("credit routes", () => {
 
   // BP07/#375：账户级能力状态（隔离=能力不可用+原因）随余额一并作答；默认普通账户，
   // 隔离变体由用例翻转。
-  let accountStatus: { status: "active" | "quarantined"; quarantineReason: string | null } = {
+  let accountStatus: {
+    status: "active" | "quarantined";
+    quarantineReason: string | null;
+  } = {
     status: "active",
     quarantineReason: null,
   };

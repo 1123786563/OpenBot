@@ -2011,32 +2011,36 @@ describe("the operator restore routes (#391)", () => {
 
       // A DECLARED probe configuration runs the health check: this deployment's "service"
       // is the scripted stand-in, whose /health answers 404 — an honest service_down.
-      const probedApp = await harnessFor(PRINCIPAL_ADMIN, "admin", WORKSPACE_A, {
-        opsEnv: {
-          HINDSIGHT_API_URL: scripted.url,
-          HINDSIGHT_API_TOKEN: SERVICE_KEY,
-          HINDSIGHT_MODEL_GATEWAY_URL: "http://127.0.0.1:9",
-          HINDSIGHT_MODEL_GATEWAY_API_KEY: "unused-in-test",
-          HINDSIGHT_PRIVACY_LLM_TRACE_ENABLED: "false",
-          HINDSIGHT_PRIVACY_OPERATION_RETENTION_DAYS: "1",
-          HINDSIGHT_PRIVACY_BACKUP_RETENTION_DAYS: "30",
+      const probedApp = await harnessFor(
+        PRINCIPAL_ADMIN,
+        "admin",
+        WORKSPACE_A,
+        {
+          opsEnv: {
+            HINDSIGHT_API_URL: scripted.url,
+            HINDSIGHT_API_TOKEN: SERVICE_KEY,
+            HINDSIGHT_MODEL_GATEWAY_URL: "http://127.0.0.1:9",
+            HINDSIGHT_MODEL_GATEWAY_API_KEY: "unused-in-test",
+            HINDSIGHT_PRIVACY_LLM_TRACE_ENABLED: "false",
+            HINDSIGHT_PRIVACY_OPERATION_RETENTION_DAYS: "1",
+            HINDSIGHT_PRIVACY_BACKUP_RETENTION_DAYS: "30",
+          },
         },
-      });
+      );
       const probed = await call(probedApp, {
         method: "GET",
         path: "/api/hindsight/ops/health",
       });
       expect(probed.status).toBe(200);
-      expect(((await probed.json()) as { service: { state: string } }).service.state).toBe(
-        "service_down",
-      );
+      expect(
+        ((await probed.json()) as { service: { state: string } }).service.state,
+      ).toBe("service_down");
 
       // A deployment that wired no view leaves the route itself away.
       const scopes = await resolverFor(PRINCIPAL_ADMIN, WORKSPACE_A);
-      const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
-        context,
-        next,
-      ) => {
+      const requireUser: MiddlewareHandler<{
+        Variables: AppVariables;
+      }> = async (context, next) => {
         context.set("actor", {
           id: PRINCIPAL_ADMIN,
           email: `admin-${run}@example.invalid`,

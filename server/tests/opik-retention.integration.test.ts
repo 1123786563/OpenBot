@@ -2069,7 +2069,10 @@ test("a run record that froze a DIFFERENT upstream id than its binding names sti
 
 test("a collision-loser binding at its legacy key is still found and deleted (0209 two-key-spaces, OCR R5)", async () => {
   const traceId = `01a1405b-f832-70cf-b204-f4dd51ccc${randomUUID().slice(0, 3)}`;
-  const binding = await expiredBinding(scopeA, { opikTraceId: traceId, days: 8 });
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: traceId,
+    days: 8,
+  });
   const upstream = fakePort({ rows: [] });
   const worker = workerFor({ port: upstream.port });
   await worker.discover();
@@ -2081,7 +2084,11 @@ test("a collision-loser binding at its legacy key is still found and deleted (02
   const legacy = `2:wb|9:mig-actor|${scopeA.botId.length}:${scopeA.botId}|1:1`;
   await database
     .update(aiObservationBindings)
-    .set({ scopeKey: legacy, locatorWorkspace: "legacy-ws", locatorProject: "legacy-proj" })
+    .set({
+      scopeKey: legacy,
+      locatorWorkspace: "legacy-ws",
+      locatorProject: "legacy-proj",
+    })
     .where(eq(aiObservationBindings.id, binding.id));
 
   await worker.sweep();

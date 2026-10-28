@@ -17,7 +17,7 @@ import {
   describe,
   expect,
   test,
-} from "../../../tests/support/e2e-compat";
+} from "../../../tests/support/bun-test-compat";
 import {
   AUDIT_SCOPE_FORBIDDEN,
   BILLING_MANAGE_REQUIRED,

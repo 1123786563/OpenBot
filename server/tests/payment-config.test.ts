@@ -30,7 +30,9 @@ const DUMMY = {
   oauthSecret: ["dummy", "oauth", "value"].join("-"),
   tenantToken: ["dummy", "tenant", "token"].join("-"),
   providerBearer: ["dummy", "lago", "bearer"].join("-"),
-  authSecret: ["dummy", "auth", "secret", "long", "enough", "for", "boot"].join("-"),
+  authSecret: ["dummy", "auth", "secret", "long", "enough", "for", "boot"].join(
+    "-",
+  ),
   license: ["dummy", "license"].join("-"),
   agentToken: ["dummy", "agent", "token"].join("-"),
   wechatApiv3: "dummy-wechat-apiv3-key-000000032",
@@ -103,8 +105,13 @@ describe("payments configuration", () => {
 
   test("an Alipay app id alone stops the server", () => {
     expect(() =>
-      loadConfig({ ...baseEnvironment, [VARS.alipayAppId]: "2021000100000000" }),
-    ).toThrow(/ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY and ALIPAY_PUBLIC_KEY must all be set/);
+      loadConfig({
+        ...baseEnvironment,
+        [VARS.alipayAppId]: "2021000100000000",
+      }),
+    ).toThrow(
+      /ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY and ALIPAY_PUBLIC_KEY must all be set/,
+    );
   });
 
   test("a WeChat merchant id alone stops the server", () => {
@@ -136,7 +143,9 @@ describe("payments configuration", () => {
   test("an empty catalog stops the server too", () => {
     expect(() =>
       loadConfig({ ...baseEnvironment, ...alipay, PAYMENT_PLAN_CATALOG: " " }),
-    ).toThrow(/PAYMENT_PLAN_CATALOG is required when a payment channel is configured/);
+    ).toThrow(
+      /PAYMENT_PLAN_CATALOG is required when a payment channel is configured/,
+    );
   });
 
   test("a catalog plan outside LAGO_PLAN_ENTITLEMENTS stops the server", () => {
@@ -251,7 +260,9 @@ describe("payments configuration", () => {
       ...alipay,
       OPENBOT_PUBLIC_URL: "https://public.openbot.example",
     });
-    expect(config.payments?.notifyBaseUrl).toBe("https://public.openbot.example");
+    expect(config.payments?.notifyBaseUrl).toBe(
+      "https://public.openbot.example",
+    );
   });
 
   test("no reachable notify base at all stops the server", () => {
@@ -304,7 +315,9 @@ describe("payments configuration", () => {
       gatewayUrl: "https://api.mch.weixin.qq.com",
     });
     expect(config.payments?.wechat?.platformCertificates).toHaveLength(1);
-    expect(config.payments?.wechat?.platformCertificates[0]).toContain("-----BEGIN");
+    expect(config.payments?.wechat?.platformCertificates[0]).toContain(
+      "-----BEGIN",
+    );
   });
 
   test("both channels may be configured at once", () => {
@@ -352,8 +365,14 @@ describe("payments configuration", () => {
     expect(defaults.payments?.latePaymentWindowHours).toBe(24);
 
     expect(() =>
-      loadConfig({ ...baseEnvironment, ...alipay, PAYMENT_ORDER_TTL_MINUTES: "0" }),
-    ).toThrow(/PAYMENT_ORDER_TTL_MINUTES must be a whole number greater than zero/);
+      loadConfig({
+        ...baseEnvironment,
+        ...alipay,
+        PAYMENT_ORDER_TTL_MINUTES: "0",
+      }),
+    ).toThrow(
+      /PAYMENT_ORDER_TTL_MINUTES must be a whole number greater than zero/,
+    );
   });
 
   test("the foreign-currency override reads as a flag", () => {

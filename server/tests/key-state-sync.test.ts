@@ -1,4 +1,10 @@
-import { afterAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
@@ -93,9 +99,7 @@ async function sweepOwnPrefix() {
   await database
     .delete(auditEvents)
     .where(like(auditEvents.targetId, `gvk-b5-249-%`));
-  await database
-    .delete(botServices)
-    .where(like(botServices.botId, `b5-249-%`));
+  await database.delete(botServices).where(like(botServices.botId, `b5-249-%`));
 }
 
 await sweepOwnPrefix();
@@ -230,7 +234,9 @@ function serviceFor(overrides?: {
 }
 
 /** The drift records one successful outcome carried, unwrapped for the assertions below. */
-function driftsOf(outcome: Awaited<ReturnType<GatewayKeyStateSyncService["runSync"]>>) {
+function driftsOf(
+  outcome: Awaited<ReturnType<GatewayKeyStateSyncService["runSync"]>>,
+) {
   if (outcome.status !== "ok") {
     throw new Error(`expected a successful sync, got ${outcome.status}`);
   }
@@ -569,7 +575,9 @@ describe("05.8 key state sync", () => {
     // Six refusals — the 500, the non-JSON body, the hang past the deadline, the
     // unresolvable credential, the unconfigured endpoint and the 401 — each counted.
     expect(state.consecutiveFailures).toBe(6);
-    expect(state.lastFailureReasonCode).toBe("gateway_key_sync_unauthenticated");
+    expect(state.lastFailureReasonCode).toBe(
+      "gateway_key_sync_unauthenticated",
+    );
     expect(state.lastFailureAt).not.toBeNull();
     expect(state.lastAttemptStatus).toBe("failed");
 
@@ -606,7 +614,9 @@ describe("05.8 key state sync", () => {
     expect(state.lastFailureReasonCode).toBeNull();
     expect(state.lastAttemptStatus).toBe("ok");
     expect(state.lastSuccessfulSyncAt).not.toBeNull();
-    expect(state.lastSuccessfulSyncAt).not.toBe(afterFailure.lastSuccessfulSyncAt);
+    expect(state.lastSuccessfulSyncAt).not.toBe(
+      afterFailure.lastSuccessfulSyncAt,
+    );
   }, 30_000);
 
   test("concurrent syncs share one run: the gateway is dialed once per key", async () => {
@@ -694,13 +704,16 @@ function startFakeBifrost() {
         return json(401, { error: "unauthorized" });
       }
       const url = new URL(request.url);
-      const match = url.pathname.match(/^\/api\/governance\/virtual-keys\/([^/]+)$/);
+      const match = url.pathname.match(
+        /^\/api\/governance\/virtual-keys\/([^/]+)$/,
+      );
       if (request.method !== "GET" || !match) {
         return json(404, { error: "not found" });
       }
       const id = decodeURIComponent(match[1]!);
       reads.set(id, (reads.get(id) ?? 0) + 1);
-      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      if (delayMs > 0)
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       if (mode === "hang") await new Promise(() => {});
       if (mode === "status-500") {
         return json(500, { error: "failed to retrieve virtual key" });
@@ -716,7 +729,8 @@ function startFakeBifrost() {
       const virtualKey: Record<string, unknown> = { id };
       // A Go *bool with omitempty: absent means true, explicit false means disabled.
       if (state.isActive !== undefined) virtualKey.is_active = state.isActive;
-      if (state.expiresAt !== undefined) virtualKey.expires_at = state.expiresAt;
+      if (state.expiresAt !== undefined)
+        virtualKey.expires_at = state.expiresAt;
       return json(200, { virtual_key: virtualKey });
     },
   });

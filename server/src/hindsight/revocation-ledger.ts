@@ -89,60 +89,60 @@ export function createDrizzleRevocationLedger(
   // A module-level closure, not a `this` method: this module's contract is to hand the
   // recorder around, and a destructured `recordBlock` must keep working.
   async function recordBlocks(inputs: readonly RevocationBlockInput[]) {
-      if (!inputs.length) return;
-      const at = now();
-      // One write for the whole block set: the drain's contract is "exactly the documents
-      // the block named", so a mid-set failure must leave none of it behind.
-      await database.transaction(async (tx) => {
-        for (const input of inputs) {
-          await tx
-            .insert(hindsightRevocations)
-            .values({
-              tenantId: input.tenantId,
-              id: randomUUID(),
-              principalId: input.principalId,
+    if (!inputs.length) return;
+    const at = now();
+    // One write for the whole block set: the drain's contract is "exactly the documents
+    // the block named", so a mid-set failure must leave none of it behind.
+    await database.transaction(async (tx) => {
+      for (const input of inputs) {
+        await tx
+          .insert(hindsightRevocations)
+          .values({
+            tenantId: input.tenantId,
+            id: randomUUID(),
+            principalId: input.principalId,
+            kind: input.kind,
+            subjectType: input.subjectType ?? null,
+            targetId: input.targetId,
+            documentId: input.documentId,
+            bankId: input.bankId,
+            bankKind: input.bankKind,
+            blockedAt: input.blockedAt,
+            deletionState: "pending",
+            createdAt: at,
+            updatedAt: at,
+          })
+          .onConflictDoUpdate({
+            target: [
+              hindsightRevocations.tenantId,
+              hindsightRevocations.documentId,
+            ],
+            set: {
               kind: input.kind,
               subjectType: input.subjectType ?? null,
               targetId: input.targetId,
-              documentId: input.documentId,
               bankId: input.bankId,
               bankKind: input.bankKind,
               blockedAt: input.blockedAt,
-              deletionState: "pending",
-              createdAt: at,
+              // A re-block of a document whose deletion already confirmed keeps that
+              // confirmation — the service did delete it once; only the block is refreshed.
+              deletionState: sql`case when ${hindsightRevocations.deletionState} = 'confirmed' then 'confirmed' else 'pending' end`,
+              // A re-block that regresses failed/pending must not carry the previous
+              // round's error and stamp into its fresh "pending" state.
+              deletionError: sql`case when ${hindsightRevocations.deletionState} = 'confirmed' then ${hindsightRevocations.deletionError} else null end`,
+              deletionAttemptedAt: sql`case when ${hindsightRevocations.deletionState} = 'confirmed' then ${hindsightRevocations.deletionAttemptedAt} else null end`,
               updatedAt: at,
-            })
-            .onConflictDoUpdate({
-              target: [
-                hindsightRevocations.tenantId,
-                hindsightRevocations.documentId,
-              ],
-              set: {
-                kind: input.kind,
-                subjectType: input.subjectType ?? null,
-                targetId: input.targetId,
-                bankId: input.bankId,
-                bankKind: input.bankKind,
-                blockedAt: input.blockedAt,
-                // A re-block of a document whose deletion already confirmed keeps that
-                // confirmation — the service did delete it once; only the block is refreshed.
-                deletionState: sql`case when ${hindsightRevocations.deletionState} = 'confirmed' then 'confirmed' else 'pending' end`,
-                // A re-block that regresses failed/pending must not carry the previous
-                // round's error and stamp into its fresh "pending" state.
-                deletionError: sql`case when ${hindsightRevocations.deletionState} = 'confirmed' then ${hindsightRevocations.deletionError} else null end`,
-                deletionAttemptedAt: sql`case when ${hindsightRevocations.deletionState} = 'confirmed' then ${hindsightRevocations.deletionAttemptedAt} else null end`,
-                updatedAt: at,
-              },
-            });
-        }
-      });
-    }
-    return {
-      async recordBlock(input) {
-        await recordBlocks([input]);
-      },
-      recordBlocks,
-      async noteDeletionOutcome(input) {
+            },
+          });
+      }
+    });
+  }
+  return {
+    async recordBlock(input) {
+      await recordBlocks([input]);
+    },
+    recordBlocks,
+    async noteDeletionOutcome(input) {
       await database
         .update(hindsightRevocations)
         .set({

@@ -113,12 +113,7 @@
         "按 Spec §2 映射完整 HeroUI 原生变量，包括 background/foreground/border/radius/success/field 与 soft/hover；legacy input 改为 control-border。",
         "在 DESIGN.md 记录待审阅稿获授权后的实际采用值；用真实 input/button/原生控件与 portal computed style 对照两主题，修复任何 fallback 默认值。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "主题切换、首绘与portal配对；变量循环/未覆盖原生字段是阻塞问题",
       "status": "pending",
       "checkpoint": null,
@@ -212,12 +207,8 @@
       ],
       "task_kind": "foundation",
       "source_issues": [],
-      "acceptance": [
-        "表单/ref/原生事件、anchor、portal焦点和嵌套ESC"
-      ],
-      "depends_on": [
-        "T01"
-      ],
+      "acceptance": ["表单/ref/原生事件、anchor、portal焦点和嵌套ESC"],
+      "depends_on": ["T01"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B1",
       "owner_role": "frontend_implementer",
@@ -268,12 +259,7 @@
         "Input/Textarea/Select/Combobox 去掉抵消 field fill 的中性化类，设置 1px control boundary、8px radius、2px focus；不动 identity/null/onChange。",
         "Dialog/Sheet scrim 归 --ob-backdrop；菜单/tooltip surface 与 layer 保持；粗指针命中44px，disabled说明保持可读。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "表单/ref/原生事件、anchor、portal焦点和嵌套ESC",
       "status": "pending",
       "checkpoint": null,
@@ -370,9 +356,7 @@
       "acceptance": [
         "响应式不污染偏好；所有DetailPanel消费者，含Skills/Craft tasks"
       ],
-      "depends_on": [
-        "T02"
-      ],
+      "depends_on": ["T02"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B1",
       "owner_role": "frontend_implementer",
@@ -418,12 +402,7 @@
         "DetailPanel MIN_MAIN_WIDTH=480，默认右栏400，保留调用方宽度；处理跨分支同一打开详情的本地输入状态保留，关闭后仍沿用原卸载策略。",
         "遍历全部DetailPanel调用者，C=879/880、959/960处校验Sheet/并排；测试高度受限与底部可达。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "响应式不污染偏好；所有DetailPanel消费者，含Skills/Craft tasks",
       "status": "pending",
       "checkpoint": null,
@@ -437,20 +416,14 @@
     {
       "id": "T04",
       "title": "Bots 名册与工作详情",
-      "source_pages": [
-        "P06",
-        "P07"
-      ],
+      "source_pages": ["P06", "P07"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
         "P06: 创建 Bot；打开 Bot 详情；展开隐藏项",
         "P07: 打开对话；处理待办；启用/暂停；进入配置"
       ],
-      "depends_on": [
-        "T03",
-        "T02"
-      ],
+      "depends_on": ["T03", "T02"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B1",
       "owner_role": "frontend_implementer",
@@ -494,12 +467,7 @@
         "32px头像、64px最小行、名称和摘要两层；操作独立44px空间；隐藏区默认折叠，键盘可展开。",
         "Bot详情身份→待办建议→启用通知→活动→配置→管理，全部配置/管理组展开；保留建议、审批与危险确认。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "成员/管理员/本人/共享只读，长名称与部分请求失败",
       "status": "pending",
       "checkpoint": null,
@@ -513,16 +481,7 @@
     {
       "id": "T05",
       "title": "Bot 配置完整路径",
-      "source_pages": [
-        "P08",
-        "P09",
-        "P10",
-        "P11",
-        "P12",
-        "P13",
-        "P14",
-        "P15"
-      ],
+      "source_pages": ["P08", "P09", "P10", "P11", "P12", "P13", "P14", "P15"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -535,11 +494,7 @@
         "P14: 修改共享范围；管理发布",
         "P15: 编辑身份；修改连接；管理回调凭据"
       ],
-      "depends_on": [
-        "T04",
-        "T02",
-        "T03"
-      ],
+      "depends_on": ["T04", "T02", "T03"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B1",
       "owner_role": "frontend_implementer",
@@ -590,12 +545,7 @@
         "职责/投递/记忆/审批/例行/能力/共享/基础设置分别保持当前对象与能力门禁；只修改布局和通用样式override。",
         "打开每页的编辑弹窗/授权菜单，在窄屏校验长说明、敏感值掩码、保存失败不丢输入；不扩展模型授权或共享范围。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "资源归属/可管理能力、保存失败、Dialog内Select与键盘",
       "status": "pending",
       "checkpoint": null,
@@ -609,16 +559,7 @@
     {
       "id": "T06",
       "title": "Bot 运行、评估与导出链",
-      "source_pages": [
-        "P16",
-        "P17",
-        "P18",
-        "P19",
-        "P20",
-        "P21",
-        "P22",
-        "P23"
-      ],
+      "source_pages": ["P16", "P17", "P18", "P19", "P20", "P21", "P22", "P23"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -631,11 +572,7 @@
         "P22: 选择比较对象；执行比较；查看差异",
         "P23: 查看任务；下载可用导出"
       ],
-      "depends_on": [
-        "T05",
-        "T02",
-        "T03"
-      ],
+      "depends_on": ["T05", "T02", "T03"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B1",
       "owner_role": "frontend_implementer",
@@ -688,12 +625,7 @@
         "runs/detail/datasets/evaluations/results/comparison/exports按各页源字段调整层次；先显示可用性再显示数据。",
         "比较窄屏上下排且单位/方向/缺失相邻；同步中不当故障、未知不当0；不新增I-01入口组。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "父子路由链、canManage拒绝、缺失/禁用/上游故障与下载可用性",
       "status": "pending",
       "checkpoint": null,
@@ -707,13 +639,7 @@
     {
       "id": "T07",
       "title": "首页、新会话、单聊与群聊",
-      "source_pages": [
-        "P01",
-        "P02",
-        "P03",
-        "P04",
-        "P05"
-      ],
+      "source_pages": ["P01", "P02", "P03", "P04", "P05"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -723,12 +649,7 @@
         "P04: 查看成员；发送消息",
         "P05: 开始新对话；打开电脑"
       ],
-      "depends_on": [
-        "T06",
-        "T02",
-        "T03",
-        "T04"
-      ],
+      "depends_on": ["T06", "T02", "T03", "T04"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B1",
       "owner_role": "frontend_implementer",
@@ -836,12 +757,7 @@
         "保持settings/watch/workshop互斥与show()和URL/Back；电脑400/工作坊480、容器门槛880/960；不复制任务状态或添加API。",
         "保留群聊成员身份；/bot独立入口保留；校验首条失败草稿/附件、IME、stop/retry、上下文切换与电脑控制。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "输入/流式/滚动/附件、URL与控制释放；真实runtime缺失不得假称通过",
       "status": "pending",
       "checkpoint": null,
@@ -907,9 +823,7 @@
         "P22: 选择比较对象；执行比较；查看差异",
         "P23: 查看任务；下载可用导出"
       ],
-      "depends_on": [
-        "T07"
-      ],
+      "depends_on": ["T07"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B1",
       "owner_role": "frontend_validator",
@@ -927,12 +841,7 @@
         "按verification-plan执行B1全矩阵与受影响页面冒烟，证据绑定B1检查点。",
         "独立reviewer分别出Spec compliance/quality结论，再主控按OCR skill覆盖真实增量与完整交付；有效中高问题进入修复计划。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "T01–T07增量+首批完整交付；不签收未实施的后续页面",
       "status": "pending",
       "checkpoint": null,
@@ -946,11 +855,7 @@
     {
       "id": "T09",
       "title": "Craft 多面板会话与计划任务",
-      "source_pages": [
-        "P26",
-        "P27",
-        "P28"
-      ],
+      "source_pages": ["P26", "P27", "P28"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -958,11 +863,7 @@
         "P27: 发送/停止；切换输出；管理会话",
         "P28: 新建任务；编辑任务"
       ],
-      "depends_on": [
-        "T08",
-        "T02",
-        "T03"
-      ],
+      "depends_on": ["T08", "T02", "T03"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B2",
       "owner_role": "frontend_implementer",
@@ -1009,12 +910,7 @@
         "保持draft/attachments/selected session/subagent/stream；输出tab首次挂载后保留实例，隐藏区inert；保持preview同一iframe及fullscreen定位前提。",
         "index不自动建session；tasks编辑沿用DetailPanel；逐项验证390→1440→390切换、Sheet互斥、关闭/重开与后台运行。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "iframe实例/草稿附件不丢、预览隔离与ticket不变",
       "status": "pending",
       "checkpoint": null,
@@ -1054,12 +950,7 @@
         "P37: 打开组件预览",
         "P38: 查看组件"
       ],
-      "depends_on": [
-        "T03",
-        "T08",
-        "T02",
-        "T05"
-      ],
+      "depends_on": ["T03", "T08", "T02", "T05"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B3",
       "owner_role": "frontend_implementer",
@@ -1117,12 +1008,7 @@
         "设置导航256，窄屏标签在前；连接账号保留已有搜索、个人/共享/关联分组；gallery两列到单列。",
         "验证绑定码预览再确认、无权限/过期、撤销、密码掩码；不改付款/公司归属或凭空授权。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "个人/共享身份、授权预览确认、保存失败与主题存储",
       "status": "pending",
       "checkpoint": null,
@@ -1136,11 +1022,7 @@
     {
       "id": "T11",
       "title": "个人账务与账户归属",
-      "source_pages": [
-        "P39",
-        "P40",
-        "P41"
-      ],
+      "source_pages": ["P39", "P40", "P41"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -1148,11 +1030,7 @@
         "P40: 翻页/查看现有订单信息",
         "P41: 筛选账单；打开详情；下载"
       ],
-      "depends_on": [
-        "T10",
-        "T02",
-        "T03"
-      ],
+      "depends_on": ["T10", "T02", "T03"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B3",
       "owner_role": "frontend_implementer",
@@ -1194,12 +1072,7 @@
         "订单/账单/下载弹窗保持确认与分页；窄屏摘要/具名表格内部横滚，不删金额或状态。",
         "测试未启用/无消费/读取异常/支付中与下载不可用，视觉不触发真实扣款。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "个人与公司账户不得合并；金额/有效期/幂等与错误态",
       "status": "pending",
       "checkpoint": null,
@@ -1213,23 +1086,11 @@
     {
       "id": "T12",
       "title": "个人技能与跨Bot例行",
-      "source_pages": [
-        "P24",
-        "P25"
-      ],
+      "source_pages": ["P24", "P25"],
       "task_kind": "page_delivery",
       "source_issues": [],
-      "acceptance": [
-        "P24: 新建技能；编辑技能",
-        "P25: 管理任务；查看现有运行"
-      ],
-      "depends_on": [
-        "T08",
-        "T02",
-        "T03",
-        "T05",
-        "T07"
-      ],
+      "acceptance": ["P24: 新建技能；编辑技能", "P25: 管理任务；查看现有运行"],
+      "depends_on": ["T08", "T02", "T03", "T05", "T07"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B4",
       "owner_role": "frontend_implementer",
@@ -1253,20 +1114,13 @@
         "T05 verified checkpoint 中已审查的 token/公共props/业务组件",
         "T07 verified checkpoint 中已审查的 token/公共props/业务组件"
       ],
-      "Produces": [
-        "长编辑区、保存失败与领域范围；不改变现有数据与事件公共API"
-      ],
+      "Produces": ["长编辑区、保存失败与领域范围；不改变现有数据与事件公共API"],
       "steps": [
         "保持技能个人/工作区分组与选中编辑，新建/保存/取消在DetailPanel内，C门槛沿用T03。",
         "例行任务显示所属Bot/调度/最近运行；与Craft任务和workshop schedules独立。",
         "对长指令/编辑失败/无技能与只读进行表单和窄屏复核。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "长编辑区、保存失败与领域范围",
       "status": "pending",
       "checkpoint": null,
@@ -1280,13 +1134,7 @@
     {
       "id": "T13",
       "title": "管理目录与模型配置",
-      "source_pages": [
-        "P42",
-        "P43",
-        "P44",
-        "P45",
-        "P46"
-      ],
+      "source_pages": ["P42", "P43", "P44", "P45", "P46"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -1296,11 +1144,7 @@
         "P45: 保存现有配置；执行已有检查",
         "P46: 同步模型；修改已支持配置"
       ],
-      "depends_on": [
-        "T08",
-        "T02",
-        "T03"
-      ],
+      "depends_on": ["T08", "T02", "T03"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B4",
       "owner_role": "frontend_implementer",
@@ -1331,12 +1175,7 @@
         "凭据/服务/网关/目录使用672px表单或1024px记录列，status先于配置，所有弹窗同主题。",
         "验证敏感值掩码、网关未配置/连接或认证失败、模型同步异常，不改变注册和开放权限。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "admin guard、敏感字段、失败不当空数据",
       "status": "pending",
       "checkpoint": null,
@@ -1350,16 +1189,7 @@
     {
       "id": "T14",
       "title": "治理、电脑、人员与计费管理",
-      "source_pages": [
-        "P47",
-        "P48",
-        "P49",
-        "P64",
-        "P65",
-        "P66",
-        "P67",
-        "P68"
-      ],
+      "source_pages": ["P47", "P48", "P49", "P64", "P65", "P66", "P67", "P68"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -1372,12 +1202,7 @@
         "P67: 翻页；查看已有事件信息",
         "P68: 修改现有策略；执行现有维护操作"
       ],
-      "depends_on": [
-        "T13",
-        "T02",
-        "T03",
-        "T05"
-      ],
+      "depends_on": ["T13", "T02", "T03", "T05"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B4",
       "owner_role": "frontend_implementer",
@@ -1424,12 +1249,7 @@
         "人员与身份提供方保留角色/访问/删除确认；admin billing保留发放对象和清理执行状态。",
         "审计1024px具名横滚；enterprise保留既有直达URL，I-02入口不新增；不改变策略锁定和付款主体。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "试运行/策略只读、真实维护动作不可因视觉验收触发",
       "status": "pending",
       "checkpoint": null,
@@ -1443,14 +1263,7 @@
     {
       "id": "T15",
       "title": "连接器和工具授权",
-      "source_pages": [
-        "P50",
-        "P51",
-        "P52",
-        "P53",
-        "P54",
-        "P55"
-      ],
+      "source_pages": ["P50", "P51", "P52", "P53", "P54", "P55"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -1461,12 +1274,7 @@
         "P54: 保存现有接入配置；管理集成",
         "P55: 保存现有接入配置；管理连接器"
       ],
-      "depends_on": [
-        "T14",
-        "T02",
-        "T03",
-        "T10"
-      ],
+      "depends_on": ["T14", "T02", "T03", "T10"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B4",
       "owner_role": "frontend_implementer",
@@ -1506,12 +1314,7 @@
         "Composio/Open Connector保留各自字段、已有搜索、配置及添加操作；异步busy按条目保留。",
         "验证共享账号模式影响确认、错误与禁用、普通成员拒绝；不把可连接等同本人已授权。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "账号模式/服务身份/Bot身份、异步逐项状态",
       "status": "pending",
       "checkpoint": null,
@@ -1525,21 +1328,14 @@
     {
       "id": "T16",
       "title": "知识库创建与文档检索",
-      "source_pages": [
-        "P58",
-        "P59"
-      ],
+      "source_pages": ["P58", "P59"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
         "P58: 新建知识库；打开知识库；删除",
         "P59: 添加文档；管理文档；测试检索"
       ],
-      "depends_on": [
-        "T08",
-        "T02",
-        "T03"
-      ],
+      "depends_on": ["T08", "T02", "T03"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B5",
       "owner_role": "frontend_implementer",
@@ -1550,9 +1346,7 @@
         "app/src/routes/_authed/admin/knowledge.$kbId.tsx",
         "app/src/routes/_authed/admin/knowledge.index.tsx"
       ],
-      "test_files": [
-        "app/tests/composer-upload-group.test.tsx"
-      ],
+      "test_files": ["app/tests/composer-upload-group.test.tsx"],
       "Consumes": [
         "T08 verified checkpoint 中已审查的 token/公共props/业务组件",
         "T02 verified checkpoint 中已审查的 token/公共props/业务组件",
@@ -1566,12 +1360,7 @@
         "按Spec §7宽屏C≥1000/viewport≥1280时检索辅助320px，其他单列；文档既有筛选/排序/批删保留。",
         "验证上传/处理/失败/空文档/无检索结果分别显示；选择跨行与批量删除确认保持，390px发送/上传可达。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "上传任务/文档/检索各自状态，不新增切片/命中指标",
       "status": "pending",
       "checkpoint": null,
@@ -1586,11 +1375,7 @@
     {
       "id": "T17",
       "title": "部署技能、市场与学习配置",
-      "source_pages": [
-        "P56",
-        "P57",
-        "P60"
-      ],
+      "source_pages": ["P56", "P57", "P60"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -1598,13 +1383,7 @@
         "P57: 切换分类；查看资源；执行已有安装/创建入口",
         "P60: 保存现有学习参数"
       ],
-      "depends_on": [
-        "T15",
-        "T02",
-        "T03",
-        "T04",
-        "T10"
-      ],
+      "depends_on": ["T15", "T02", "T03", "T04", "T10"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B4",
       "owner_role": "frontend_implementer",
@@ -1641,12 +1420,7 @@
         "统一market wb组件视觉override；宽屏三列/中两列/窄单列，保留admin能力控制。",
         "学习配置按真实设置/目标/容器与投递状态排列；测试字段无效/容器未就绪/保存失败。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "部署与个人范围、市场现有操作与容器异常",
       "status": "pending",
       "checkpoint": null,
@@ -1660,11 +1434,7 @@
     {
       "id": "T18",
       "title": "组件管理与Playground",
-      "source_pages": [
-        "P61",
-        "P62",
-        "P63"
-      ],
+      "source_pages": ["P61", "P62", "P63"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -1672,12 +1442,7 @@
         "P62: 打开配置；修改现有组件配置",
         "P63: 编辑输入；运行预览"
       ],
-      "depends_on": [
-        "T17",
-        "T02",
-        "T03",
-        "T10"
-      ],
+      "depends_on": ["T17", "T02", "T03", "T10"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B4",
       "owner_role": "frontend_implementer",
@@ -1699,20 +1464,13 @@
         "T03 verified checkpoint 中已审查的 token/公共props/业务组件",
         "T10 verified checkpoint 中已审查的 token/公共props/业务组件"
       ],
-      "Produces": [
-        "代码/预览隔离、切换不丢草稿；不改变现有数据与事件公共API"
-      ],
+      "Produces": ["代码/预览隔离、切换不丢草稿；不改变现有数据与事件公共API"],
       "steps": [
         "组件目录/详情统一表面，配置Sheet保持原表单与预览实例。",
         "Playground按C≥960且viewport≥1280双列，否则编辑/预览切换；稳定挂载保留draft，代码区域内部横滚。",
         "验证非法输入、渲染失败、readonly/配置错误；不扩大执行或网络权限。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "代码/预览隔离、切换不丢草稿",
       "status": "pending",
       "checkpoint": null,
@@ -1726,22 +1484,14 @@
     {
       "id": "T19",
       "title": "管理可观测性双地址",
-      "source_pages": [
-        "P69",
-        "P70"
-      ],
+      "source_pages": ["P69", "P70"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
         "P69: 切换时间范围；使用已有明细入口",
         "P70: 切换时间范围；使用已有明细入口"
       ],
-      "depends_on": [
-        "T06",
-        "T14",
-        "T02",
-        "T03"
-      ],
+      "depends_on": ["T06", "T14", "T02", "T03"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B4",
       "owner_role": "frontend_implementer",
@@ -1770,12 +1520,7 @@
         "窄屏逐行展开，未知数量不归零；保持非管理员拒绝与原时间范围。",
         "分别直达两地址及刷新返回，不能只测其中一个；I-02不改。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "同组件双地址、能力缺失/同步/上游故障",
       "status": "pending",
       "checkpoint": null,
@@ -1789,14 +1534,7 @@
     {
       "id": "T20",
       "title": "认证、引导、租户与公开分享",
-      "source_pages": [
-        "P71",
-        "P72",
-        "P73",
-        "P74",
-        "P75",
-        "P76"
-      ],
+      "source_pages": ["P71", "P72", "P73", "P74", "P75", "P76"],
       "task_kind": "page_delivery",
       "source_issues": [],
       "acceptance": [
@@ -1807,12 +1545,7 @@
         "P75: 选择范围；查看频道",
         "P76: 浏览分享；举报"
       ],
-      "depends_on": [
-        "T08",
-        "T02",
-        "T03",
-        "T07"
-      ],
+      "depends_on": ["T08", "T02", "T03", "T07"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B6",
       "owner_role": "frontend_implementer",
@@ -1851,12 +1584,7 @@
         "平台登录和为Bot登录服务明确来源；租户公司/团队两层不合并；分享不显示内部导航。",
         "验证无提供方/请求过期/成员撤销/分享失效、长内容和200%缩放，不修改授权或执行维护动作。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "重定向/登录目标/租户隔离/公共分享泄露",
       "status": "pending",
       "checkpoint": null,
@@ -2028,15 +1756,7 @@
         "P75: 选择范围；查看频道",
         "P76: 浏览分享；举报"
       ],
-      "depends_on": [
-        "T09",
-        "T11",
-        "T12",
-        "T16",
-        "T18",
-        "T19",
-        "T20"
-      ],
+      "depends_on": ["T09", "T11", "T12", "T16", "T18", "T19", "T20"],
       "dependency_basis": "公共主题→wrapper→骨架；业务组件import共享依赖按唯一写入者自动补边；批次gate为验收前置，非contains推断",
       "batch": "B7",
       "owner_role": "frontend_validator",
@@ -2061,12 +1781,7 @@
         "按独立检查点执行全站测试/类型/构建/静态检查/浏览器证据；逐页签收，不能以代表页签76页。",
         "独立Spec/quality review与完整OCR，真实中高问题修复复审；记录低风险延期、环境阻塞及所有权范围后再收尾。"
       ],
-      "verification": [
-        "V-STATIC",
-        "V-NATIVE",
-        "V-DRIVEN",
-        "V-BROWSER"
-      ],
+      "verification": ["V-STATIC", "V-NATIVE", "V-DRIVEN", "V-BROWSER"],
       "review_scope": "原始交付全范围与本次相对脏基线真实增量，全部有效中高finding清零",
       "status": "pending",
       "checkpoint": null,

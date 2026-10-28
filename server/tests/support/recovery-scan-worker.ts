@@ -20,11 +20,7 @@ import { createDatabase } from "../../src/db/client";
 import { TEST_POOL, testDatabaseUrl } from "./database";
 
 const [, , operation, primary, secondary] = process.argv;
-if (
-  operation !== "scan" &&
-  operation !== "claim" &&
-  operation !== "claim-id"
-) {
+if (operation !== "scan" && operation !== "claim" && operation !== "claim-id") {
   throw new Error(
     `usage: recovery-scan-worker.ts <scan|claim|claim-id> [arg] [arg] — got ${operation}`,
   );

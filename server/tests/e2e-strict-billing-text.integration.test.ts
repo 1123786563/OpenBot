@@ -36,9 +36,7 @@ import {
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../src/db/schema";
-import {
-  creditReservations,
-} from "../src/db/schema/credit-reservations";
+import { creditReservations } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -330,7 +328,10 @@ protocolApp.route(
     auditStore,
     endpoints: (() => {
       const endpoints = new Hono<{ Variables: CreditServiceVariables }>();
-      endpoints.route("/", creditProtocolEndpoints({ service: reserveService }));
+      endpoints.route(
+        "/",
+        creditProtocolEndpoints({ service: reserveService }),
+      );
       endpoints.route("/", creditSettleEndpoints({ service: settleService }));
       return endpoints;
     })(),
@@ -453,7 +454,9 @@ test("an admitted call settles at its exact actual and leaves no dangling hold",
   expect(page.pagination.totalCount).toBe(1);
   expect(page.entries[0]?.credits).toBe(3);
   expect(page.entries[0]?.botId).toBe(world.botId);
-  expect(page.entries[0]?.botName).toBe(`Strict billing e2e Bot ${seedCounter}`);
+  expect(page.entries[0]?.botName).toBe(
+    `Strict billing e2e Bot ${seedCounter}`,
+  );
   expect(page.entries[0]?.model).toBe(world.model);
 });
 
@@ -629,8 +632,12 @@ test("another account's view shows nothing of this one's consumption", async () 
   );
   expect(page.pagination.totalCount).toBe(0);
   expect(page.entries).toHaveLength(0);
-  expect(await bystanderCredits.personalBalance({
-    kind: "personal",
-    id: bystander.userId,
-  }).then((balance) => balance.available)).toBe(10);
+  expect(
+    await bystanderCredits
+      .personalBalance({
+        kind: "personal",
+        id: bystander.userId,
+      })
+      .then((balance) => balance.available),
+  ).toBe(10);
 });

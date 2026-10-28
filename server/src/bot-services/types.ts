@@ -20,7 +20,8 @@ export const BOT_SERVICE_CAPABILITY_ORDER = [
 
 /** The union derives from the array, so the compile-time set and the runtime order are one fact:
  * a member added to the union alone cannot typecheck against the registry's closed-set check. */
-export type BotServiceCapability = (typeof BOT_SERVICE_CAPABILITY_ORDER)[number];
+export type BotServiceCapability =
+  (typeof BOT_SERVICE_CAPABILITY_ORDER)[number];
 
 /**
  * A botId is a stable service identity, not a display string: lowercase letters, digits and the

@@ -218,7 +218,9 @@ function RouteComponent() {
   const connections = useQuery(
     scopedConnectionsQueryOptions(queryClient, scope),
   );
-  const { data: agents } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
+  const { data: agents } = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope),
+  );
   /* The ones this person has hidden, so a grant one of them holds is still on this page. */
   const { data: hiddenAgents } = useQuery(
     scopedAgentListQueryOptions(queryClient, scope, true),

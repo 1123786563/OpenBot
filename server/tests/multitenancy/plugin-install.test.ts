@@ -29,7 +29,13 @@
 // 最小授权）经 MT003 工具（migrate-test.ts）三步配方真实执行：套件内
 // dry-run → manifest → --apply，本文件不自己 DDL。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { sql } from "drizzle-orm";
@@ -836,6 +842,46 @@ describeDb(
         );
       },
     );
+
+    // -----------------------------------------------------------------
+    // OCR-fix-F2 (R5-H-B)：重绑收敛——同 (install, boundBy) 作用域
+    // 恒一行，二次绑定替换旧行（幂等 bind），凭据指纹随新行走。
+    // -----------------------------------------------------------------
+    describeDb("H-B a re-bind converges the scope to one connection", () => {
+      itDb(
+        "binding twice for the same scope replaces the prior row (idempotent bind)",
+        async () => {
+          const target = await fixture.provisionInstall({
+            identity: "a1-member",
+            teamKey: "team-a1",
+            catalogId: catOpenConnector.catalogId,
+            config: {},
+          });
+          const first = await fixture.bindConnection({
+            identity: "a1-member",
+            teamKey: "team-a1",
+            install: target,
+            vendorRef: "alias-a1-rebind-old",
+          });
+          const second = await fixture.bindConnection({
+            identity: "a1-member",
+            teamKey: "team-a1",
+            install: target,
+            vendorRef: "alias-a1-rebind-new",
+          });
+          expect(second.connectionId).not.toBe(first.connectionId);
+          // 作用域收敛：旧行不在，唯一一行携带新凭据指纹。
+          const scopeA = await scopeOf(fixture, "a1-member", "team-a1");
+          const rows = await fixture.decisions.listConnections(
+            scopeA,
+            target.installId,
+          );
+          expect(rows).toHaveLength(1);
+          expect(rows[0]?.connectionId).toBe(second.connectionId);
+          expect(rows[0]?.vendorRef).toBe("alias-a1-rebind-new");
+        },
+      );
+    });
 
     // -----------------------------------------------------------------
     // AC4：安装配置中的秘密脱敏保存与展示

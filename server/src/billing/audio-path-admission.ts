@@ -204,7 +204,10 @@ export function assessAudioPathAvailability(input: {
         | "price_unknown"
         | "speech_tail_unconstrainable";
       missingItems: readonly AudioPathMissingItem[];
-      missingDimensions: readonly { dimension: PriceDimension; reason: string }[];
+      missingDimensions: readonly {
+        dimension: PriceDimension;
+        reason: string;
+      }[];
       /** The tail verdict that refused a synthesis call mode, when it did. */
       tail?: SpeechTailVerdict;
     } {
@@ -240,7 +243,9 @@ export function assessAudioPathAvailability(input: {
       };
     }
   }
-  if (enableableAudioPaths(input.dims).some((enableable) => enableable === record)) {
+  if (
+    enableableAudioPaths(input.dims).some((enableable) => enableable === record)
+  ) {
     return { available: true, record };
   }
   // Not enableable on this basis: derive the gaps the way the gap report does, so the

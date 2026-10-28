@@ -606,7 +606,11 @@ describe("the admin routes", () => {
 
   test("a credit grant lands on the deployment's customer and leaves an audit row", async () => {
     const recording = recordingCreditWriter();
-    const { app, audit } = billingApp(ADMIN, countingClient().client, recording.writer as CreditWriter);
+    const { app, audit } = billingApp(
+      ADMIN,
+      countingClient().client,
+      recording.writer as CreditWriter,
+    );
     const response = await app.request("/api/admin/billing/credits/grants", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -628,12 +632,18 @@ describe("the admin routes", () => {
       reason: "官方活动发放",
     });
     expect(audit.events).toHaveLength(1);
-    expect(audit.events[0]).toMatchObject({ eventType: "billing.credits.granted" });
+    expect(audit.events[0]).toMatchObject({
+      eventType: "billing.credits.granted",
+    });
   });
 
   test("a grant refuses `plan` as a source and a non-administrator outright", async () => {
     const recording = recordingCreditWriter();
-    const { app } = billingApp(ADMIN, countingClient().client, recording.writer as CreditWriter);
+    const { app } = billingApp(
+      ADMIN,
+      countingClient().client,
+      recording.writer as CreditWriter,
+    );
     const planSource = await app.request("/api/admin/billing/credits/grants", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -642,12 +652,19 @@ describe("the admin routes", () => {
     expect(planSource.status).toBe(400);
     expect(recording.grants).toHaveLength(0);
 
-    const memberApp = billingApp(MEMBER, countingClient().client, recording.writer as CreditWriter);
-    const denied = await memberApp.app.request("/api/admin/billing/credits/grants", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source: "promo", totalCents: 100 }),
-    });
+    const memberApp = billingApp(
+      MEMBER,
+      countingClient().client,
+      recording.writer as CreditWriter,
+    );
+    const denied = await memberApp.app.request(
+      "/api/admin/billing/credits/grants",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: "promo", totalCents: 100 }),
+      },
+    );
     expect(denied.status).toBe(403);
     expect(recording.grants).toHaveLength(0);
   });
@@ -657,9 +674,17 @@ describe("the admin routes", () => {
     // body that carries an account identity (someone else's userId or a bare externalCustomerId)
     // is a shape error answered 400, never a grant onto the named account.
     const recording = recordingCreditWriter();
-    const { app } = billingApp(ADMIN, countingClient().client, recording.writer as CreditWriter);
+    const { app } = billingApp(
+      ADMIN,
+      countingClient().client,
+      recording.writer as CreditWriter,
+    );
     for (const foreign of [
-      { source: "promo", totalCents: 100, externalCustomerId: "openbot-personal-someone-else" },
+      {
+        source: "promo",
+        totalCents: 100,
+        externalCustomerId: "openbot-personal-someone-else",
+      },
       { source: "promo", totalCents: 100, userId: "user-someone-else" },
     ]) {
       const response = await app.request("/api/admin/billing/credits/grants", {

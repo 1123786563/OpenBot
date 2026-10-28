@@ -47,7 +47,10 @@ function EnterprisePage() {
       ) : (
         <>
           <SectionTable
-            head={[t("enterprise.company.title"), t("enterprise.company.status")]}
+            head={[
+              t("enterprise.company.title"),
+              t("enterprise.company.status"),
+            ]}
             label={t("enterprise.company.title")}
           >
             <tr className="border-border border-t">
@@ -59,18 +62,18 @@ function EnterprisePage() {
             head={[t("enterprise.company.teams")]}
             label={t("enterprise.company.teams")}
           >
-            {config.data.teams.length === 0 ? null : (
-              config.data.teams.map((team) => (
-                <tr className="border-border border-t" key={team.workspaceId}>
-                  <td className="px-4 py-2">
-                    {team.name}
-                    <span className="text-muted-foreground ml-2 font-mono text-xs">
-                      {team.workspaceId}
-                    </span>
-                  </td>
-                </tr>
-              ))
-            )}
+            {config.data.teams.length === 0
+              ? null
+              : config.data.teams.map((team) => (
+                  <tr className="border-border border-t" key={team.workspaceId}>
+                    <td className="px-4 py-2">
+                      {team.name}
+                      <span className="text-muted-foreground ml-2 font-mono text-xs">
+                        {team.workspaceId}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
           </SectionTable>
           <SectionTable
             head={[t("enterprise.members.title"), t("people.column.status")]}
@@ -83,7 +86,9 @@ function EnterprisePage() {
               </tr>
             ))}
             <tr className="border-border border-t">
-              <td className="px-4 py-2">{t("enterprise.members.offboarded")}</td>
+              <td className="px-4 py-2">
+                {t("enterprise.members.offboarded")}
+              </td>
               <td className="px-4 py-2 tabular-nums">
                 {config.data.offboardedCount}
               </td>

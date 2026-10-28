@@ -3,11 +3,11 @@
   "description": "Your company's people, identity, audit and billing — what the server says you may manage here.",
   "nav": {
     "people": "People & credentials",
-    "organization": "Organization",
     "audit": "Audit",
     "enterprise": "Enterprise settings",
     "learning": "Learning",
-    "billing": "Billing & usage"
+    "billing": "Billing & usage",
+    "organization": "Organization"
   },
   "gate": {
     "pending": "Reading your company…",
@@ -23,23 +23,6 @@
       "title": "Company admin unavailable",
       "description": "The company admin surface did not answer. Try again in a moment."
     }
-  },
-  "shell": {
-    "noCompany": {
-      "title": "You're not in a company yet",
-      "description": "An admin has to invite you. Your company and its teams show up here after you join."
-    },
-    "noTeam": {
-      "title": "No team yet",
-      "description": "An admin has to add you to a team. You can still open company settings."
-    },
-    "revoked": {
-      "title": "Your access to that company ended",
-      "description": "Choose another company, or ask an admin to add you back."
-    },
-    "companySettings": "Company settings",
-    "chooseScope": "Choose a company or team",
-    "reauth": "This company asks for an extra sign-in first. That isn't available in OpenBot yet."
   },
   "people": {
     "title": "People",
@@ -259,7 +242,37 @@
     },
     "refused": "The company books are open to an explicitly authorized finance reader only — being an administrator is not enough.",
     "failed": "The company books could not be read.",
-    "entryRefused": "Billing management is open to explicitly authorized subjects only."
+    "entryRefused": "Billing management is open to explicitly authorized subjects only.",
+    "payments": {
+      "title": "Payments",
+      "description": "Payments this company made, newest first.",
+      "empty": "No payments yet. The first order will appear here.",
+      "column": {
+        "plan": "Plan",
+        "amount": "Amount",
+        "payer": "Payer",
+        "status": "Status",
+        "fulfillment": "Fulfillment",
+        "paidAt": "Paid at"
+      }
+    }
+  },
+  "shell": {
+    "noCompany": {
+      "title": "You're not in a company yet",
+      "description": "An admin has to invite you. Your company and its teams show up here after you join."
+    },
+    "noTeam": {
+      "title": "No team yet",
+      "description": "An admin has to add you to a team. You can still open company settings."
+    },
+    "revoked": {
+      "title": "Your access to that company ended",
+      "description": "Choose another company, or ask an admin to add you back."
+    },
+    "companySettings": "Company settings",
+    "chooseScope": "Choose a company or team",
+    "reauth": "This company asks for an extra sign-in first. That isn't available in OpenBot yet."
   },
   "organization": {
     "title": "Organization",

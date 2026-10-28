@@ -208,7 +208,19 @@ describe("exact decimal amounts", () => {
   });
 
   test("values that could not be read exactly are refused, not coerced", () => {
-    for (const value of ["", " 1", "+1", "-1", "1e-5", "0x10", "1.2.3", NaN, null, undefined, {}]) {
+    for (const value of [
+      "",
+      " 1",
+      "+1",
+      "-1",
+      "1e-5",
+      "0x10",
+      "1.2.3",
+      NaN,
+      null,
+      undefined,
+      {},
+    ]) {
       expect(canonicalPriceAmount(value)).toEqual({ ok: false });
     }
   });

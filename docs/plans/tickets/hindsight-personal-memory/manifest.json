@@ -124,9 +124,7 @@
     },
     "2": {
       "sub_issue": true,
-      "blocked_by": [
-        377
-      ]
+      "blocked_by": [377]
     },
     "3": {
       "sub_issue": true,
@@ -134,120 +132,67 @@
     },
     "4": {
       "sub_issue": true,
-      "blocked_by": [
-        380,
-        82
-      ]
+      "blocked_by": [380, 82]
     },
     "5": {
       "sub_issue": true,
-      "blocked_by": [
-        377,
-        381
-      ]
+      "blocked_by": [377, 381]
     },
     "6": {
       "sub_issue": true,
-      "blocked_by": [
-        382,
-        82
-      ]
+      "blocked_by": [382, 82]
     },
     "7": {
       "sub_issue": true,
-      "blocked_by": [
-        382
-      ]
+      "blocked_by": [382]
     },
     "8": {
       "sub_issue": true,
-      "blocked_by": [
-        383,
-        384
-      ]
+      "blocked_by": [383, 384]
     },
     "9": {
       "sub_issue": true,
-      "blocked_by": [
-        382
-      ]
+      "blocked_by": [382]
     },
     "10": {
       "sub_issue": true,
-      "blocked_by": [
-        383,
-        386
-      ]
+      "blocked_by": [383, 386]
     },
     "11": {
       "sub_issue": true,
-      "blocked_by": [
-        378,
-        383,
-        387
-      ]
+      "blocked_by": [378, 383, 387]
     },
     "12": {
       "sub_issue": true,
-      "blocked_by": [
-        388
-      ]
+      "blocked_by": [388]
     },
     "13": {
       "sub_issue": true,
-      "blocked_by": [
-        383,
-        389
-      ]
+      "blocked_by": [383, 389]
     },
     "14": {
       "sub_issue": true,
-      "blocked_by": [
-        384,
-        390
-      ]
+      "blocked_by": [384, 390]
     },
     "15": {
       "sub_issue": true,
-      "blocked_by": [
-        377,
-        382
-      ]
+      "blocked_by": [377, 382]
     },
     "16": {
       "sub_issue": true,
-      "blocked_by": [
-        380,
-        384
-      ]
+      "blocked_by": [380, 384]
     },
     "17": {
       "sub_issue": true,
-      "blocked_by": [
-        384,
-        385,
-        82
-      ]
+      "blocked_by": [384, 385, 82]
     },
     "18": {
       "sub_issue": true,
-      "blocked_by": [
-        389,
-        391,
-        394
-      ]
+      "blocked_by": [389, 391, 394]
     },
     "19": {
       "sub_issue": true,
-      "blocked_by": [
-        387,
-        389,
-        391,
-        392,
-        393,
-        395,
-        6
-      ]
+      "blocked_by": [387, 389, 391, 392, 393, 395, 6]
     }
   },
   "verified_native_relations": true,

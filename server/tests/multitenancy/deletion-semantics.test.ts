@@ -23,7 +23,13 @@
 // 环境契约：同 people-lifecycle.test.ts——缺显式 env 整套显式 skip，绝不回
 // 退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import {
   type CompanyCleanupReport,
   createCompanyMemberCleanupService,

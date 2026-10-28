@@ -18,23 +18,23 @@
 import { sql } from "drizzle-orm";
 import { createDatabase, type Database } from "../../../src/db/client";
 import {
-  createBotOwnershipService,
   type BotOwnershipService,
+  createBotOwnershipService,
 } from "../../../src/enterprise/tenancy/bots-ownership";
 import {
-  verifyOperatorDatabase,
   type OperatorDatabase,
+  verifyOperatorDatabase,
 } from "../../../src/enterprise/tenancy/connections";
 import {
   createJobOwnershipService,
   type JobOwnershipService,
   type JobRef,
 } from "../../../src/enterprise/tenancy/job-ownership";
+import { enterpriseRuntimeDatabaseUrlFrom } from "../../support/enterprise-database";
 import {
   createJobOwnershipFixture,
   type JobOwnershipFixture,
 } from "./job-ownership";
-import { enterpriseRuntimeDatabaseUrlFrom } from "../../support/enterprise-database";
 
 export interface JobClaimCancelFixture {
   readonly jobs: JobOwnershipFixture;
@@ -49,9 +49,7 @@ export interface JobClaimCancelFixture {
   /** Backdates a job's live lease so the next claim race is a reclaim race. */
   backdateLease(ref: JobRef, ms: number): Promise<void>;
   /** Raw lease row (superuser; state the services must not misreport). */
-  readLeaseRaw(
-    ref: JobRef,
-  ): Promise<{
+  readLeaseRaw(ref: JobRef): Promise<{
     claimedByKind: string | null;
     claimedBy: string | null;
     leaseUntil: Date | null;
@@ -60,9 +58,7 @@ export interface JobClaimCancelFixture {
     attempts: number;
   } | null>;
   /** Raw ownership row (superuser; the three invariants of AC2). */
-  readOwnershipRaw(
-    ref: JobRef,
-  ): Promise<{
+  readOwnershipRaw(ref: JobRef): Promise<{
     tenantId: string;
     workspaceId: string;
     principalId: string;
@@ -94,9 +90,7 @@ export async function createJobClaimCancelFixture(): Promise<JobClaimCancelFixtu
   const raceCloseables: Array<{ close(): void | Promise<void> }> = [];
 
   /** execute() result rows: drizzle returns either a row array or { rows }. */
-  const rowsOf = (
-    result: unknown,
-  ): readonly Record<string, unknown>[] => {
+  const rowsOf = (result: unknown): readonly Record<string, unknown>[] => {
     if (Array.isArray(result)) return result as Record<string, unknown>[];
     const rows = (result as { rows?: Record<string, unknown>[] }).rows;
     // An unrecognised driver shape must not masquerade as "no rows".
@@ -113,11 +107,15 @@ export async function createJobClaimCancelFixture(): Promise<JobClaimCancelFixtu
     setup,
     async raceServices(width: number) {
       const pool = (await verifyOperatorDatabase(
-        createDatabase(enterpriseRuntimeDatabaseUrlFrom("operator", process.env), {
-          max: width,
-        }),
+        createDatabase(
+          enterpriseRuntimeDatabaseUrlFrom("operator", process.env),
+          {
+            max: width,
+          },
+        ),
       )) as unknown as OperatorDatabase;
-      const client = (pool as unknown as { $client: { close(): void } }).$client;
+      const client = (pool as unknown as { $client: { close(): void } })
+        .$client;
       raceCloseables.push(client);
       return Array.from({ length: width }, () =>
         createJobOwnershipService(pool, jobs.data),
@@ -189,9 +187,7 @@ export async function createJobClaimCancelFixture(): Promise<JobClaimCancelFixtu
         purpose: String(row.purpose),
         companyRevision: Number(row.company_revision),
         overrideRevision:
-          row.override_revision === null
-            ? null
-            : Number(row.override_revision),
+          row.override_revision === null ? null : Number(row.override_revision),
         basisDigest: String(row.basis_digest),
       }));
       const creation = list.find((row) => row.purpose === "creation") ?? null;

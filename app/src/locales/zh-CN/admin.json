@@ -1288,6 +1288,24 @@
       },
       "basisMissingDims": "{{ref}}：未定价维度 — {{dimensions}}",
       "basisEnableable": "{{ref}}：已为该路径定价"
+    },
+    "capabilities": {
+      "title": "能力计费",
+      "description": "网关能否对 Embedding、Rerank 和 OCR 严格计费，以及还缺哪些价格。",
+      "enabled": "已计费",
+      "free": "免费",
+      "priceUnknown": "价格未知",
+      "unmapped": "未映射",
+      "names": {
+        "embedding": "Embedding",
+        "rerank": "Rerank",
+        "ocr": "OCR"
+      },
+      "freeExplanation": "该能力免费，无需价格。",
+      "enabledCells": "{{count}} 个模型可用，其中 {{freeCount}} 个免费。",
+      "missingIntro": "部分价格缺失，该能力暂不可用。",
+      "missingDimension": "{{ref}} 还没有 {{dimension}} 的价格。",
+      "unmappedExplanation": "还没有模型映射到该能力。"
     }
   },
   "billingPage": {

@@ -39,13 +39,17 @@ describe("Bifrost 22.5 (#356): the AC acceptance matrix", () => {
       // Every command runs a suite that exists, against the dedicated test database
       // where the suite needs one.
       for (const command of row.commands) {
-        const match = command.match(/(server\/tests\/[A-Za-z0-9_./-]+\.test\.ts[ex]*)/);
+        const match = command.match(
+          /(server\/tests\/[A-Za-z0-9_./-]+\.test\.ts[ex]*)/,
+        );
         expect(match, `${row.ac}: ${command}`).not.toBeNull();
-        if (match) expect(existsSync(join(repoRoot, match[1])), match[1]).toBe(true);
+        if (match)
+          expect(existsSync(join(repoRoot, match[1])), match[1]).toBe(true);
         if (/integration\.test\.ts$/.test(match?.[1] ?? "")) {
-          expect(command.startsWith("TEST_DATABASE_URL=<test-db> "), `${row.ac}: ${command}`).toBe(
-            true,
-          );
+          expect(
+            command.startsWith("TEST_DATABASE_URL=<test-db> "),
+            `${row.ac}: ${command}`,
+          ).toBe(true);
         }
       }
     }
@@ -60,7 +64,9 @@ describe("Bifrost 22.5 (#356): the AC acceptance matrix", () => {
     }
     // And the concrete claims: restart/replay on the recovery rows, concurrency on the
     // reserve row, clock on the expiry rows, disconnect on the realtime recovery world.
-    const restartRows = ACCEPTANCE_MATRIX.filter((row) => row.crossProcess?.includes("restart"));
+    const restartRows = ACCEPTANCE_MATRIX.filter((row) =>
+      row.crossProcess?.includes("restart"),
+    );
     expect(restartRows.map((row) => row.ac)).toContain("AC07");
     expect(restartRows.map((row) => row.ac)).toContain("AC17");
     expect(
@@ -75,7 +81,9 @@ describe("Bifrost 22.5 (#356): the AC acceptance matrix", () => {
   });
 
   test("skip 不计为通过 — the accounting rule refuses to fold skips and failures into passes", () => {
-    expect(countsAsPassed({ passed: 5, failed: 0, skipped: 0 })).toEqual({ passed: true });
+    expect(countsAsPassed({ passed: 5, failed: 0, skipped: 0 })).toEqual({
+      passed: true,
+    });
     expect(countsAsPassed({ passed: 5, failed: 0, skipped: 2 })).toEqual({
       passed: false,
       reason: "2 skipped — skip 不计为通过",
@@ -101,7 +109,9 @@ describe("Bifrost 22.5 (#356): the AC acceptance matrix", () => {
     const failed = Number(/(\d+) fail/.exec(output)?.[1] ?? 0);
     const skipped = /(\d+) skip/.exec(output)?.[1] ?? "0";
     expect(passed).toBeGreaterThan(0);
-    expect(countsAsPassed({ passed, failed, skipped: Number(skipped) })).toEqual({
+    expect(
+      countsAsPassed({ passed, failed, skipped: Number(skipped) }),
+    ).toEqual({
       passed: true,
     });
   });
@@ -117,6 +127,10 @@ describe("Bifrost 22.5 (#356): the AC acceptance matrix", () => {
     // And the executability check keeps that world from arising silently: every suite
     // path the matrix names exists on disk (pinned above), so a vanished suite fails
     // before any executor could report an empty green.
-    expect(existsSync(join(repoRoot, "server/tests/audio-capability-evidence.test.ts"))).toBe(true);
+    expect(
+      existsSync(
+        join(repoRoot, "server/tests/audio-capability-evidence.test.ts"),
+      ),
+    ).toBe(true);
   });
 });

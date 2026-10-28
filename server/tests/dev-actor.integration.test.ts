@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { DEV_ACTOR, initializeDevActorUser } from "../src/auth/dev-actor";

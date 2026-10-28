@@ -84,7 +84,8 @@ async function runTerminationCleanup(options: {
   };
 
   const unlocked = await attempt("barrier unlock", async () => {
-    if (!(await options.unlock())) throw new Error("advisory unlock returned false");
+    if (!(await options.unlock()))
+      throw new Error("advisory unlock returned false");
   });
   if (!unlocked) await closeRunnerPools();
 
@@ -169,7 +170,13 @@ test("termination cleanup treats a false advisory unlock as failure", async () =
 });
 
 test("migration lock timeout options validate before reserving a connection", async () => {
-  for (const lockTimeoutMs of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+  for (const lockTimeoutMs of [
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
     let reserveCalls = 0;
     const client = {
       reserve: async () => {
@@ -204,7 +211,9 @@ test("SQLSTATE extraction and cause containment handle nested and cyclic errors"
     ),
   ).toBe("55P03");
   expect(sqlStateFromError({ code: 55_503 })).toBeUndefined();
-  expect(errorChainContains(wrapped, new Error("not in the chain"))).toBe(false);
+  expect(errorChainContains(wrapped, new Error("not in the chain"))).toBe(
+    false,
+  );
 
   const first: { cause?: unknown } = {};
   const second: { cause?: unknown } = { cause: first };
@@ -328,9 +337,7 @@ test("failed cleanup retry keeps the barrier held and reports the failure", asyn
 
     await expect(bodyResult).rejects.toMatchObject({
       message: bodyError.message,
-      cleanupFailures: [
-        { step: "barrier unlock" },
-      ],
+      cleanupFailures: [{ step: "barrier unlock" }],
     });
     expect(held).toBe(true);
   }
@@ -404,8 +411,9 @@ test("body failure remains primary when cleanup also fails", async () => {
   );
 
   await expect(result).rejects.toBe(bodyError);
-  expect((bodyError as Error & { cleanupFailures?: unknown[] }).cleanupFailures)
-    .toEqual([{ step: "cleanup", error: cleanupError }]);
+  expect(
+    (bodyError as Error & { cleanupFailures?: unknown[] }).cleanupFailures,
+  ).toEqual([{ step: "cleanup", error: cleanupError }]);
 });
 
 test("cleanup failure fails a successful test body", async () => {
@@ -796,7 +804,10 @@ async function migrationFolderWithLifetimeBarriers(
     join(directory, "meta/_journal.json"),
   );
 
-  const prefixPath = join(directory, "0066_restore_schema_invariant_guards.sql");
+  const prefixPath = join(
+    directory,
+    "0066_restore_schema_invariant_guards.sql",
+  );
   const prefixSource = await readFile(prefixPath, "utf8");
   const finalPrefixTarget = prefixSource.trimEnd();
   await writeFile(
@@ -1657,7 +1668,10 @@ test.skipIf(!enabled)(
       },
     });
     try {
-      const setError = await migrateWithValidationBoundary(setClient, folder).then(
+      const setError = await migrateWithValidationBoundary(
+        setClient,
+        folder,
+      ).then(
         () => undefined,
         (error: unknown) => error,
       );
@@ -1803,9 +1817,7 @@ test.skipIf(!enabled)(
       expect((failure as Error).message).toContain("180ms");
       expect((failure as Error).cause).toBeInstanceOf(Error);
       expect(sqlStateFromError(failure, "55P03")).toBe("55P03");
-      expect(
-        errorChainContains(failure, (failure as Error).cause),
-      ).toBe(true);
+      expect(errorChainContains(failure, (failure as Error).cause)).toBe(true);
       await expect(runner`SELECT 1`).rejects.toThrow();
       const [migration] = await control<{ exists: string | null }[]>`
         SELECT to_regclass(${`public.${tableName}`}) AS exists
@@ -2326,7 +2338,9 @@ test.skipIf(!enabled)(
           runnerBStillWaiting: runnerBStillWaiting?.pid === runnerBWait.pid,
         };
 
-        const [beforeWrite] = await lifetimeControl<{ lease_expires_at: Date }[]>`
+        const [beforeWrite] = await lifetimeControl<
+          { lease_expires_at: Date }[]
+        >`
           SELECT lease_expires_at FROM enterprise_runs WHERE id = ${lifetimeRun.runId}
         `;
         await lifetimeWriter.begin(async (transaction) => {
@@ -2337,7 +2351,9 @@ test.skipIf(!enabled)(
             WHERE id = ${lifetimeRun.runId}
           `;
         });
-        const [afterWrite] = await lifetimeControl<{ lease_expires_at: Date }[]>`
+        const [afterWrite] = await lifetimeControl<
+          { lease_expires_at: Date }[]
+        >`
           SELECT lease_expires_at FROM enterprise_runs WHERE id = ${lifetimeRun.runId}
         `;
         expect(afterWrite?.lease_expires_at).not.toEqual(
@@ -2370,7 +2386,10 @@ test.skipIf(!enabled)(
         ]);
         await Promise.all(
           [lifetimeA, lifetimeB].map((promise) =>
-            promise?.then(() => undefined, () => undefined),
+            promise?.then(
+              () => undefined,
+              () => undefined,
+            ),
           ),
         );
       }
@@ -2500,134 +2519,149 @@ test.skipIf(!enabled)(
       });
       let terminationBarrierHeld = false;
       let terminationA:
-        | Promise<{ status: "fulfilled" } | { status: "rejected"; error: unknown }>
+        | Promise<
+            { status: "fulfilled" } | { status: "rejected"; error: unknown }
+          >
         | undefined;
       let terminationB:
-        | Promise<{ status: "fulfilled" } | { status: "rejected"; error: unknown }>
+        | Promise<
+            { status: "fulfilled" } | { status: "rejected"; error: unknown }
+          >
         | undefined;
       await runBodyWithCleanup(
         async () => {
-        const [controlPid] = await terminationControl<{ pid: number }[]>`
+          const [controlPid] = await terminationControl<{ pid: number }[]>`
           SELECT pg_backend_pid() AS pid
         `;
-        await terminationControl`SELECT pg_advisory_lock(${terminationBarrier}, 66)`;
-        terminationBarrierHeld = true;
-        terminationA = migrateWithValidationBoundary(
-          terminationRunnerA,
-          terminationFolder,
-        ).then(
-          () => ({ status: "fulfilled" as const }),
-          (error: unknown) => ({ status: "rejected" as const, error }),
-        );
-        const aAtBarrier = await waitForActivity(async () => {
-          const [activity] = await terminationControl<{ pid: number }[]>`
+          await terminationControl`SELECT pg_advisory_lock(${terminationBarrier}, 66)`;
+          terminationBarrierHeld = true;
+          terminationA = migrateWithValidationBoundary(
+            terminationRunnerA,
+            terminationFolder,
+          ).then(
+            () => ({ status: "fulfilled" as const }),
+            (error: unknown) => ({ status: "rejected" as const, error }),
+          );
+          const aAtBarrier = await waitForActivity(async () => {
+            const [activity] = await terminationControl<{ pid: number }[]>`
             SELECT pid FROM pg_stat_activity
             WHERE datname = current_database()
               AND pid <> ${controlPid?.pid}
               AND wait_event_type = 'Lock' AND wait_event = 'advisory'
               AND query ILIKE ${`%pg_advisory_lock(${terminationBarrier}, 66)%`}
           `;
-          return activity;
-        }, "runner A paused inside 0066");
+            return activity;
+          }, "runner A paused inside 0066");
 
-        terminationB = migrateWithValidationBoundary(
-          terminationRunnerB,
-          terminationFolder,
-        ).then(
-          () => ({ status: "fulfilled" as const }),
-          (error: unknown) => ({ status: "rejected" as const, error }),
-        );
-        const bWaitingForRunner = await waitForAdvisoryWaiter(
-          terminationControl,
-          1330795348,
-          1296641874,
-          aAtBarrier.pid,
-        );
-        expect(bWaitingForRunner.pid).not.toBe(aAtBarrier.pid);
+          terminationB = migrateWithValidationBoundary(
+            terminationRunnerB,
+            terminationFolder,
+          ).then(
+            () => ({ status: "fulfilled" as const }),
+            (error: unknown) => ({ status: "rejected" as const, error }),
+          );
+          const bWaitingForRunner = await waitForAdvisoryWaiter(
+            terminationControl,
+            1330795348,
+            1296641874,
+            aAtBarrier.pid,
+          );
+          expect(bWaitingForRunner.pid).not.toBe(aAtBarrier.pid);
 
-        const [termination] = await terminationControl<{ terminated: boolean }[]>`
+          const [termination] = await terminationControl<
+            { terminated: boolean }[]
+          >`
           SELECT pg_terminate_backend(${aAtBarrier.pid}) AS terminated
         `;
-        expect(termination?.terminated).toBe(true);
-        await waitForActivity(async () => {
-          const [activity] = await terminationControl<{ pid: number }[]>`
+          expect(termination?.terminated).toBe(true);
+          await waitForActivity(async () => {
+            const [activity] = await terminationControl<{ pid: number }[]>`
             SELECT pid FROM pg_stat_activity WHERE pid = ${aAtBarrier.pid}
           `;
-          return activity ? undefined : { pid: aAtBarrier.pid };
-        }, "runner A backend termination");
-        const aOutcome = await Promise.race([
-          terminationA,
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error("runner A did not reject after termination")),
-              5_000,
+            return activity ? undefined : { pid: aAtBarrier.pid };
+          }, "runner A backend termination");
+          const aOutcome = await Promise.race([
+            terminationA,
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () =>
+                  reject(
+                    new Error("runner A did not reject after termination"),
+                  ),
+                5_000,
+              ),
             ),
-          ),
-        ]);
-        expect(aOutcome.status).toBe("rejected");
-        if (aOutcome.status === "rejected") {
-          expect(aOutcome.error).not.toBeInstanceOf(AggregateError);
-          expect(isConnectionFailure(aOutcome.error)).toBe(true);
-        }
-        const aPoolResult = await Promise.race([
-          terminationRunnerA`SELECT 1`.then(
-            () => "resolved" as const,
-            () => "rejected" as const,
-          ),
-          new Promise<"timeout">((resolve) =>
-            setTimeout(() => resolve("timeout"), 3_000),
-          ),
-        ]);
-        expect(aPoolResult).toBe("rejected");
+          ]);
+          expect(aOutcome.status).toBe("rejected");
+          if (aOutcome.status === "rejected") {
+            expect(aOutcome.error).not.toBeInstanceOf(AggregateError);
+            expect(isConnectionFailure(aOutcome.error)).toBe(true);
+          }
+          const aPoolResult = await Promise.race([
+            terminationRunnerA`SELECT 1`.then(
+              () => "resolved" as const,
+              () => "rejected" as const,
+            ),
+            new Promise<"timeout">((resolve) =>
+              setTimeout(() => resolve("timeout"), 3_000),
+            ),
+          ]);
+          expect(aPoolResult).toBe("rejected");
 
-        const bAtBarrier = await waitForActivity(async () => {
-          const [activity] = await terminationControl<{ pid: number }[]>`
+          const bAtBarrier = await waitForActivity(async () => {
+            const [activity] = await terminationControl<{ pid: number }[]>`
             SELECT pid FROM pg_stat_activity
             WHERE datname = current_database()
               AND pid <> ${controlPid?.pid}
               AND wait_event_type = 'Lock' AND wait_event = 'advisory'
               AND query ILIKE ${`%pg_advisory_lock(${terminationBarrier}, 66)%`}
           `;
-          return activity;
-        }, "runner B entered 0066 after runner A stopped");
-        expect(bAtBarrier.pid).toBe(bWaitingForRunner.pid);
-        const terminationHashes = await migrationBoundaryHashes(terminationFolder);
-        const [journalBeforeRelease] = await terminationControl<
-          { count: number }[]
-        >`
+            return activity;
+          }, "runner B entered 0066 after runner A stopped");
+          expect(bAtBarrier.pid).toBe(bWaitingForRunner.pid);
+          const terminationHashes =
+            await migrationBoundaryHashes(terminationFolder);
+          const [journalBeforeRelease] = await terminationControl<
+            { count: number }[]
+          >`
           SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations
           WHERE hash = ${terminationHashes[1]}
         `;
-        expect(journalBeforeRelease?.count).toBe(0);
+          expect(journalBeforeRelease?.count).toBe(0);
 
-        await releaseTerminationBarrier({
-          unlock: async () => {
-            const [result] = await terminationControl<{ released: boolean }[]>`
+          await releaseTerminationBarrier({
+            unlock: async () => {
+              const [result] = await terminationControl<
+                { released: boolean }[]
+              >`
               SELECT pg_advisory_unlock(${terminationBarrier}, 66) AS released
             `;
-            return result?.released === true;
-          },
-          markReleased: () => {
-            terminationBarrierHeld = false;
-          },
-        });
-        const bOutcome = await Promise.race([
-          terminationB,
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error("runner B did not finish after barrier release")),
-              15_000,
+              return result?.released === true;
+            },
+            markReleased: () => {
+              terminationBarrierHeld = false;
+            },
+          });
+          const bOutcome = await Promise.race([
+            terminationB,
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () =>
+                  reject(
+                    new Error("runner B did not finish after barrier release"),
+                  ),
+                15_000,
+              ),
             ),
-          ),
-        ]);
-        expect(bOutcome.status).toBe("fulfilled");
-        const [journalAfterRelease] = await terminationControl<
-          { count: number }[]
-        >`
+          ]);
+          expect(bOutcome.status).toBe("fulfilled");
+          const [journalAfterRelease] = await terminationControl<
+            { count: number }[]
+          >`
           SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations
           WHERE hash = ${terminationHashes[1]}
         `;
-        expect(journalAfterRelease?.count).toBe(1);
+          expect(journalAfterRelease?.count).toBe(1);
         },
         () =>
           runTerminationCleanup({
@@ -2681,7 +2715,9 @@ test.skipIf(!enabled)(
           failedHashes[0],
         ]);
         const boundedPoolQuery = await Promise.race([
-          retryBaseClient`SELECT 1 AS reusable`.then((rows) => rows[0]?.reusable),
+          retryBaseClient`SELECT 1 AS reusable`.then(
+            (rows) => rows[0]?.reusable,
+          ),
           new Promise<never>((_, reject) =>
             setTimeout(
               () => reject(new Error("original max:1 pool was not reusable")),

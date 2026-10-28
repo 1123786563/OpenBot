@@ -3,7 +3,13 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { and, eq, like, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createAuditStore } from "../src/audit";
 import {
   createCreditServiceAuthenticator,
@@ -16,12 +22,15 @@ import {
   createCreditReserveService,
   creditProtocolEndpoints,
 } from "../src/billing/credit-reserve";
-import { createCreditReleaseService, creditReleaseEndpoints } from "../src/billing/credit-release";
-import { createCreditSettleService, creditSettleEndpoints } from "../src/billing/credit-settle";
 import {
-  createReservationStatusService,
-  reservationStatusEndpoints,
-} from "../src/billing/reservation-status";
+  createCreditReleaseService,
+  creditReleaseEndpoints,
+} from "../src/billing/credit-release";
+import {
+  createCreditSettleService,
+  creditSettleEndpoints,
+} from "../src/billing/credit-settle";
+import { createReservationStatusService } from "../src/billing/reservation-status";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
 import {
@@ -41,7 +50,6 @@ import {
   gatewayCatalogSyncState,
   gatewayModelCatalogRefs,
   gatewayModelOpenScopes,
-  billingCustomers,
   payerAccounts,
 } from "../src/db/schema";
 import { creditGrants, creditLedger } from "../src/db/schema/credits";
@@ -100,7 +108,10 @@ protocolEndpoints.route(
   creditProtocolEndpoints({ service: reserveService, statusService }),
 );
 protocolEndpoints.route("/", creditSettleEndpoints({ service: settleService }));
-protocolEndpoints.route("/", creditReleaseEndpoints({ service: releaseService }));
+protocolEndpoints.route(
+  "/",
+  creditReleaseEndpoints({ service: releaseService }),
+);
 const protocolApp = new Hono<{ Variables: CreditServiceVariables }>();
 protocolApp.route(
   "/api/credit-protocol",
@@ -358,7 +369,11 @@ afterAll(async () => {
 async function post(
   path: string,
   body: unknown,
-): Promise<{ status: number; text: string; json: Record<string, unknown> | null }> {
+): Promise<{
+  status: number;
+  text: string;
+  json: Record<string, unknown> | null;
+}> {
   const response = await protocolApp.request(`/api/credit-protocol${path}`, {
     method: "POST",
     headers: {
@@ -382,7 +397,12 @@ async function protocolWriteCount() {
   const [row] = await database
     .select({ count: sql<number>`count(*)::int` })
     .from(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   return row.count;
 }
 
@@ -395,7 +415,9 @@ describe("09.3 AC-2 — no company scope through request parameters", () => {
       expect(RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS).toContain(field);
     }
     // The helper finds them in any casing — WORKSPACEID rides the same refusal as workspaceId.
-    expect(findCompanyScopeIdentityField({ WorkspaceId: "w1" })).toBe("WorkspaceId");
+    expect(findCompanyScopeIdentityField({ WorkspaceId: "w1" })).toBe(
+      "WorkspaceId",
+    );
     expect(findCompanyScopeIdentityField({ ORGID: "o1" })).toBe("ORGID");
     expect(findCompanyScopeIdentityField({ team_id: "t1" })).toBeNull();
   });
@@ -479,7 +501,10 @@ describe("09.3 AC-3 — a personal key's calls touch only the personal account",
     const settled = await post("/settle", {
       reservationId,
       actualUsage: usageOf({ input: 100_000 }), // $0.10 → 10.00 credits
-      evidence: { kind: "provider_usage_report", reference: `${prefix}-usage-1` },
+      evidence: {
+        kind: "provider_usage_report",
+        reference: `${prefix}-usage-1`,
+      },
       settledBy: `${prefix}-bifrost-admission`,
       idempotencyKey: `${prefix}-settle-1`,
     });
@@ -580,9 +605,9 @@ describe("09.3 AC-4 — refusals do not leak company content existence", () => {
       "obot_csvc_gateway-secret",
       "",
     ]) {
-      expect(() =>
-        requireAuthenticatedIdentity(null as never),
-      ).toThrow("AUTH_REQUIRED");
+      expect(() => requireAuthenticatedIdentity(null as never)).toThrow(
+        "AUTH_REQUIRED",
+      );
       // The presented secret never reaches the gate at all: it is not an input to it.
       expect(typeof presented).toBe("string");
     }
@@ -595,9 +620,11 @@ describe("09.3 Produces — the rejection-path list for 22.1", () => {
   test("every entrypoint's anchor names a real module in this repository", () => {
     for (const entry of PERSONAL_KEY_ENTRYPOINTS) {
       const modulePath = entry.anchor.split(" (")[0];
-      expect(existsSync(join(import.meta.dir, "..", modulePath.replace(/^server\//, "")))).toBe(
-        true,
-      );
+      expect(
+        existsSync(
+          join(import.meta.dir, "..", modulePath.replace(/^server\//, "")),
+        ),
+      ).toBe(true);
     }
   });
 
@@ -606,7 +633,10 @@ describe("09.3 Produces — the rejection-path list for 22.1", () => {
     for (const entry of PERSONAL_KEY_ENTRYPOINTS) {
       const [modulePath, symbol] = entry.anchor.split(" (");
       const read = (path: string) =>
-        readFileSync(join(import.meta.dir, "..", path.replace(/^server\//, "")), "utf8");
+        readFileSync(
+          join(import.meta.dir, "..", path.replace(/^server\//, "")),
+          "utf8",
+        );
       const source = read(modulePath);
       for (const refusal of entry.refusals) {
         // The code must be written where the registry says it is: the anchor itself, or the

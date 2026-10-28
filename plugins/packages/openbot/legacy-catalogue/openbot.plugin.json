@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "platformApi": 1,
+  "publisher": "openbot",
+  "name": "legacy-catalogue",
+  "version": "1.0.0",
+  "display": {
+    "name": "OpenBot 内置目录",
+    "summary": "由旧市场目录导出的内置专家与技能（PKG11 迁移基线）。"
+  },
+  "resources": [
+    {
+      "kind": "skill",
+      "id": "code-review",
+      "path": "skills/code-review/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "api-design",
+      "path": "skills/api-design/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "incident-runbook",
+      "path": "skills/incident-runbook/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "prd-writing",
+      "path": "skills/prd-writing/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "design-critique",
+      "path": "skills/design-critique/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "sql-analysis",
+      "path": "skills/sql-analysis/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "chart-reading",
+      "path": "skills/chart-reading/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "doc-style",
+      "path": "skills/doc-style/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "market-brief",
+      "path": "skills/market-brief/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "contract-review",
+      "path": "skills/contract-review/SKILL.md"
+    },
+    {
+      "kind": "skill",
+      "id": "study-plan",
+      "path": "skills/study-plan/SKILL.md"
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "fullstack-engineer",
+      "path": "experts/fullstack-engineer.json",
+      "skills": [
+        "code-review",
+        "api-design"
+      ]
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "ui-designer",
+      "path": "experts/ui-designer.json",
+      "skills": [
+        "design-critique"
+      ]
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "data-analyst",
+      "path": "experts/data-analyst.json",
+      "skills": [
+        "sql-analysis",
+        "chart-reading"
+      ]
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "product-manager",
+      "path": "experts/product-manager.json",
+      "skills": [
+        "prd-writing"
+      ]
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "tech-writer",
+      "path": "experts/tech-writer.json",
+      "skills": [
+        "doc-style"
+      ]
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "investment-analyst",
+      "path": "experts/investment-analyst.json",
+      "skills": [
+        "market-brief"
+      ]
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "legal-advisor",
+      "path": "experts/legal-advisor.json",
+      "skills": [
+        "contract-review"
+      ]
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "learning-coach",
+      "path": "experts/learning-coach.json",
+      "skills": [
+        "study-plan"
+      ]
+    },
+    {
+      "kind": "expertTemplate",
+      "id": "sre-engineer",
+      "path": "experts/sre-engineer.json",
+      "skills": [
+        "incident-runbook"
+      ]
+    }
+  ],
+  "dependencies": []
+}

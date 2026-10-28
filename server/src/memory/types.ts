@@ -38,17 +38,14 @@ export const memorySourceInputSchema = z
     args: z.record(z.string(), z.unknown()).default({}),
   })
   .strict()
-  .refine(
-    (input) => {
-      // An unserializable args object (circular, BigInt) is invalid input, not a crash.
-      try {
-        return JSON.stringify(input.args).length <= 8192;
-      } catch {
-        return false;
-      }
-    },
-    "Source settings are too large.",
-  );
+  .refine((input) => {
+    // An unserializable args object (circular, BigInt) is invalid input, not a crash.
+    try {
+      return JSON.stringify(input.args).length <= 8192;
+    } catch {
+      return false;
+    }
+  }, "Source settings are too large.");
 export class MemoryRefusedError extends Error {
   constructor(message: string) {
     super(message);

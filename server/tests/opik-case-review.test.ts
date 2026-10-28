@@ -681,9 +681,7 @@ describe("case review routes — the mounting contract's authorization shape", (
       "/bots/:botId/case-review",
       createCaseReviewRoutes({
         canManageBot: async (_actor, botId) =>
-          botId === "agent-1"
-            ? profile({ ownerUserId: "someone-else" })
-            : null,
+          botId === "agent-1" ? profile({ ownerUserId: "someone-else" }) : null,
         scopeEpoch: async () => EPOCH,
         bindings: fakeBindings([bindingRow(scopeA)]).store,
         datasets: fakeDatasets({ saved: savedRow }).store,

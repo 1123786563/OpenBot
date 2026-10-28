@@ -1,4 +1,9 @@
-import { afterEach, beforeEach, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { EventType } from "@ag-ui/client";
 import { Hono } from "hono";
 import { firstValueFrom, of, throwError } from "rxjs";

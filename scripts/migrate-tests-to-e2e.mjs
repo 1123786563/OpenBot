@@ -145,7 +145,6 @@ function withDomPreload(source, file) {
   return `import "${specifier}";\n${source}`;
 }
 
-
 /**
  * Bun gives ESM files a `require`; Node does not. Rewrite it to a createRequire handle so the same
  * file loads under either runner.
@@ -176,7 +175,10 @@ function rewriteBunRequire(source, file, notes) {
   for (const match of next.matchAll(/^import[\s\S]*?;\n/gm))
     end = match.index + match[0].length;
   next = `${next.slice(0, end)}${injected}\n${next.slice(end)}`;
-  notes.push([relative(root, file), "rewrote Bun's ESM require() to createRequire"]);
+  notes.push([
+    relative(root, file),
+    "rewrote Bun's ESM require() to createRequire",
+  ]);
   return next;
 }
 
@@ -200,7 +202,7 @@ for (const file of files) {
       continue;
     }
     // Already on the compat layer: still port `from "bun"` value imports and the DOM preload.
-    let ported = withDomPreload(
+    const ported = withDomPreload(
       rewriteBunRequire(portBunValueImport(source, file), file, notes),
       file,
     );

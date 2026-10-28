@@ -6,9 +6,22 @@
 // organization is an empty state rather than a default, and the workbench URL
 // carries the frozen pair under the same names the web selection reads.
 
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import { within } from "@testing-library/react";
 
 import {
@@ -23,13 +36,8 @@ import {
 type Recorded = { command: string; args?: unknown };
 
 let invokeCalls: Recorded[] = [];
-let statusAnswer:
-  | { __error: string }
-  | OrgContextStatus
-  | null = null;
-let establishAnswers: Array<
-  { __error: string } | OrgContextStatus
-> = [];
+let statusAnswer: { __error: string } | OrgContextStatus | null = null;
+let establishAnswers: Array<{ __error: string } | OrgContextStatus> = [];
 
 mock.module("@tauri-apps/api/core", () => ({
   invoke: async (command: string, args?: unknown) => {
@@ -181,7 +189,9 @@ test("the chooser lists exactly the catalog's companies and teams, and commits i
   });
   const team = within(document.body!).getByLabelText("Team");
   expect(
-    Array.from(team.querySelectorAll("option")).map((option) => option.textContent),
+    Array.from(team.querySelectorAll("option")).map(
+      (option) => option.textContent,
+    ),
   ).toEqual(["Choose a team…", "Finance", "Ops"]);
   expect(commit.hasAttribute("disabled")).toBe(true);
 
@@ -249,9 +259,9 @@ test("a refused choice is shown with its code and the frozen selection is not re
     );
   });
   await waitFor(() =>
-    expect(
-      within(document.body!).getByRole("alert").textContent,
-    ).toContain("ORG_CONTEXT_SELECTION_UNKNOWN"),
+    expect(within(document.body!).getByRole("alert").textContent).toContain(
+      "ORG_CONTEXT_SELECTION_UNKNOWN",
+    ),
   );
   // The refused choice did not become anything: the frozen selection is still what it was.
   expect(
@@ -291,7 +301,9 @@ test("an empty catalog is the empty state: no company is invented to choose", as
 });
 
 test("a status read failure is a connection problem with a retry, never an eligibility answer", async () => {
-  statusAnswer = { __error: "OpenBot could not read its organization context." };
+  statusAnswer = {
+    __error: "OpenBot could not read its organization context.",
+  };
   render(
     <CompanySelection
       root={ROOT}
@@ -306,7 +318,9 @@ test("a status read failure is a connection problem with a retry, never an eligi
   );
   statusAnswer = ACME_STATUS;
   await act(async () => {
-    fireEvent.click(within(document.body!).getByRole("button", { name: "Try again" }));
+    fireEvent.click(
+      within(document.body!).getByRole("button", { name: "Try again" }),
+    );
   });
   await waitFor(() =>
     expect(
@@ -327,9 +341,13 @@ test("the screen never offers a credential field, and the personal-models note s
   await waitFor(() =>
     expect(within(document.body!).getByLabelText("Company")).toBeTruthy(),
   );
-  expect(document.body!.querySelectorAll("input[type=password]").length).toBe(0);
+  expect(document.body!.querySelectorAll("input[type=password]").length).toBe(
+    0,
+  );
   expect(
-    within(document.body!).getByText(/personal model connections stay personal/i),
+    within(document.body!).getByText(
+      /personal model connections stay personal/i,
+    ),
   ).toBeTruthy();
 });
 
@@ -367,7 +385,9 @@ test("withWorkbenchSelection carries the pair under the web's own names, and not
 });
 
 test("the state machine maps the frozen world onto the same refusal kinds as the web", () => {
-  expect(companyChoiceState({ status: "pending" })).toEqual({ kind: "loading" });
+  expect(companyChoiceState({ status: "pending" })).toEqual({
+    kind: "loading",
+  });
   expect(
     companyChoiceState({
       status: "error",
@@ -377,7 +397,9 @@ test("the state machine maps the frozen world onto the same refusal kinds as the
   expect(companyChoiceState({ status: "answered", frozen: null })).toEqual({
     kind: "no-organization",
   });
-  expect(companyChoiceState({ status: "answered", frozen: ORG_ONLY_STATUS })).toEqual({
+  expect(
+    companyChoiceState({ status: "answered", frozen: ORG_ONLY_STATUS }),
+  ).toEqual({
     kind: "choosing",
     frozen: ORG_ONLY_STATUS,
   });
@@ -388,7 +410,9 @@ test("the state machine maps the frozen world onto the same refusal kinds as the
   expect(
     companyChoiceState({ status: "answered", frozen: incomplete }),
   ).toEqual({ kind: "incomplete", frozen: incomplete });
-  expect(companyChoiceState({ status: "answered", frozen: ACME_STATUS })).toEqual({
+  expect(
+    companyChoiceState({ status: "answered", frozen: ACME_STATUS }),
+  ).toEqual({
     kind: "chosen",
     frozen: ACME_STATUS,
   });

@@ -1,5 +1,11 @@
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import {
   mkdir,
   mkdtemp,

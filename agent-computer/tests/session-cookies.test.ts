@@ -1,7 +1,12 @@
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import type { Cookie } from "playwright";
 import {
   cookiesToRestore,

@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import { createAsyncDispatchRecoveryService } from "../src/billing/async-job-recovery";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
-import {
-  createVideoSubmitService,
-} from "../src/billing/video-submit";
+import { createVideoSubmitService } from "../src/billing/video-submit";
 import {
   createVideoSettlementService,
   createVideoArtifactQueryService,
@@ -23,7 +26,10 @@ import {
   gatewayModelCatalogRefs,
   gatewayModelOpenScopes,
 } from "../src/db/schema";
-import { asyncJobs, creditReservations } from "../src/db/schema/credit-reservations";
+import {
+  asyncJobs,
+  creditReservations,
+} from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import {
   GATEWAY_PRICE_SNAPSHOT_SOURCE,
@@ -91,7 +97,9 @@ type World = {
 
 let seedCounter = 0;
 
-async function seedWorld(options: { balanceCents?: number } = {}): Promise<World> {
+async function seedWorld(
+  options: { balanceCents?: number } = {},
+): Promise<World> {
   const n = ++seedCounter;
   const userId = `${prefix}-user-${n}`;
   const botId = `${prefix}-bot-${n}`;
@@ -230,7 +238,11 @@ function makeVideoSubmit(world: World, behavior: "answer" | "lose") {
         submitIdempotencyKey,
         grantId: world.grantId,
         payer: { kind: "personal", id: world.userId },
-        model: { provider: world.provider, model: world.model, capability: "video" },
+        model: {
+          provider: world.provider,
+          model: world.model,
+          capability: "video",
+        },
         snapshotVersion: 1,
         rateVersion: 0,
         request,
@@ -302,7 +314,10 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
       {
         seconds: 8,
         n: 2,
-        input: [{ video: "a", seconds: 10 }, { video: "b", seconds: 4 }],
+        input: [
+          { video: "a", seconds: 10 },
+          { video: "b", seconds: 4 },
+        ],
       },
       "edit",
     );
@@ -315,11 +330,19 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
       .where(eq(creditReservations.id, submitted.reservationId));
     expect(hold0.status).toBe("reserved");
 
-    const settlement = createVideoSettlementService({ database, environmentRate: ENVIRONMENT_RATE });
+    const settlement = createVideoSettlementService({
+      database,
+      environmentRate: ENVIRONMENT_RATE,
+    });
     const settled = await settlement.submitVideoTerminal({
       jobId: submitted.jobId,
       // The real terminal: the provider clamped to 6s and delivered 2 clips.
-      report: { state: "completed", seconds: 6, outputCount: 2, inputSeconds: 14 },
+      report: {
+        state: "completed",
+        seconds: 6,
+        outputCount: 2,
+        inputSeconds: 14,
+      },
       source: "poll",
     });
     if (settled.status !== "settled") throw new Error("must settle");
@@ -372,10 +395,18 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
     expect(retrieverCalls).toBe(3);
 
     const before = await ledgerRowsOf(submitted.reservationId);
-    const settlement = createVideoSettlementService({ database, environmentRate: ENVIRONMENT_RATE });
+    const settlement = createVideoSettlementService({
+      database,
+      environmentRate: ENVIRONMENT_RATE,
+    });
     await settlement.submitVideoTerminal({
       jobId: submitted.jobId,
-      report: { state: "completed", seconds: 8, outputCount: 1, inputSeconds: 10 },
+      report: {
+        state: "completed",
+        seconds: 8,
+        outputCount: 1,
+        inputSeconds: 10,
+      },
       source: "notification",
     });
 
@@ -397,7 +428,10 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
 
     const settledCount = afterFirst.length;
     for (let i = 0; i < 2; i += 1) {
-      await query.queryArtifacts({ grantId: world.grantId, jobId: submitted.jobId });
+      await query.queryArtifacts({
+        grantId: world.grantId,
+        jobId: submitted.jobId,
+      });
     }
     const afterMore = await ledgerRowsOf(submitted.reservationId);
     expect(afterMore).toHaveLength(settledCount);
@@ -405,7 +439,12 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
     // The replayed terminal converges on the first settlement — the reservation fence.
     const replay = await settlement.submitVideoTerminal({
       jobId: submitted.jobId,
-      report: { state: "completed", seconds: 8, outputCount: 1, inputSeconds: 10 },
+      report: {
+        state: "completed",
+        seconds: 8,
+        outputCount: 1,
+        inputSeconds: 10,
+      },
       source: "poll",
     });
     if (replay.status !== "settled") throw new Error("replay must converge");
@@ -424,7 +463,10 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
     });
     if (submitted.status !== "submitted") throw new Error("must submit");
 
-    const settlement = createVideoSettlementService({ database, environmentRate: ENVIRONMENT_RATE });
+    const settlement = createVideoSettlementService({
+      database,
+      environmentRate: ENVIRONMENT_RATE,
+    });
     const refused = await settlement.submitVideoTerminal({
       jobId: submitted.jobId,
       report: { state: "completed", outputCount: 1, inputSeconds: 10 }, // seconds unreadable
@@ -498,10 +540,18 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
 
     // The terminal settles ONCE under the recovered provider identity; the replay via
     // the notification lane (providerJobId) converges without a second charge.
-    const settlement = createVideoSettlementService({ database, environmentRate: ENVIRONMENT_RATE });
+    const settlement = createVideoSettlementService({
+      database,
+      environmentRate: ENVIRONMENT_RATE,
+    });
     const settled = await settlement.submitVideoTerminal({
       providerJobId: `${prefix}-prov-recovered-1`,
-      report: { state: "completed", seconds: 8, outputCount: 1, inputSeconds: 10 },
+      report: {
+        state: "completed",
+        seconds: 8,
+        outputCount: 1,
+        inputSeconds: 10,
+      },
       source: "notification",
     });
     if (settled.status !== "settled") throw new Error("must settle");
@@ -509,7 +559,12 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
 
     const convergent = await settlement.submitVideoTerminal({
       providerJobId: `${prefix}-prov-recovered-1`,
-      report: { state: "completed", seconds: 8, outputCount: 1, inputSeconds: 10 },
+      report: {
+        state: "completed",
+        seconds: 8,
+        outputCount: 1,
+        inputSeconds: 10,
+      },
       source: "poll",
     });
     if (convergent.status !== "settled") throw new Error("must converge");
@@ -539,7 +594,10 @@ describe("Bifrost 19.4 (#340): terminal settlement, artifact query, recovery (in
     });
     if (submitted.status !== "submitted") throw new Error("must submit");
 
-    const settlement = createVideoSettlementService({ database, environmentRate: ENVIRONMENT_RATE });
+    const settlement = createVideoSettlementService({
+      database,
+      environmentRate: ENVIRONMENT_RATE,
+    });
     const settled = await settlement.submitVideoTerminal({
       jobId: submitted.jobId,
       report: { state: "failed" },

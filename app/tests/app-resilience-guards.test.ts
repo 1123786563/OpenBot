@@ -1,5 +1,10 @@
 import "./preload";
-import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { socketUrl } from "../src/lib/socket-url";
 import { relativeTime } from "../src/lib/relative-time";
 

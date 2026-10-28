@@ -1,5 +1,9 @@
 import "../../../../tests/preload";
-import { describe, expect, test } from "../../../../../tests/support/e2e-compat";
+import {
+  describe,
+  expect,
+  test,
+} from "../../../../../tests/support/e2e-compat";
 import type { Attachment } from "@copilotkit/react-core/v2";
 import { chip, type Segment, text } from "prompt-area/helpers";
 import {

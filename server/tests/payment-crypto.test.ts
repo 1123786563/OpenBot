@@ -16,7 +16,6 @@ import { createRequire } from "node:module";
 
 const nodeRequire = createRequire(import.meta.url);
 
-
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
@@ -31,7 +30,10 @@ const fixtureCertificate = readFileSync(
   join(fixtureDir, "payment-test-certificate.pem"),
   "utf8",
 );
-const fixtureKey = readFileSync(join(fixtureDir, "payment-test-key.pem"), "utf8");
+const fixtureKey = readFileSync(
+  join(fixtureDir, "payment-test-key.pem"),
+  "utf8",
+);
 /** `openssl x509 -serial` at fixture-creation time; see ./fixtures/README.md. */
 const FIXTURE_CERT_SERIAL = "4473fb87fb910b2526b2c61c3768cc8c3fad5c09";
 
@@ -47,9 +49,15 @@ describe("RSA-SHA256 signing and verification", () => {
     const canonical =
       "app_id=demo&method=alipay.trade.precreate&total_amount=88.00";
     const signature = rsaSign(fixtureKey, canonical);
-    expect(rsaVerify(fixtureCertificate, `${canonical}x`, signature)).toBe(false);
+    expect(rsaVerify(fixtureCertificate, `${canonical}x`, signature)).toBe(
+      false,
+    );
     expect(
-      rsaVerify(fixtureCertificate, canonical.replace("88.00", "99.00"), signature),
+      rsaVerify(
+        fixtureCertificate,
+        canonical.replace("88.00", "99.00"),
+        signature,
+      ),
     ).toBe(false);
   });
 
@@ -60,9 +68,9 @@ describe("RSA-SHA256 signing and verification", () => {
       privateKey.export({ type: "pkcs8", format: "pem" }) as string,
       "app_id=demo&amount=1.00",
     );
-    expect(rsaVerify(fixtureCertificate, "app_id=demo&amount=1.00", foreign)).toBe(
-      false,
-    );
+    expect(
+      rsaVerify(fixtureCertificate, "app_id=demo&amount=1.00", foreign),
+    ).toBe(false);
   });
 
   test("signing is deterministic over the same canonical string", () => {
@@ -94,12 +102,16 @@ describe("AES-256-GCM callback decryption", () => {
 
   test("roundtrip: WeChat's wire shape (tag appended) decrypts", () => {
     const plain = '{"out_trade_no":"po-abc","trade_state":"SUCCESS"}';
-    expect(aesGcmDecrypt(key, nonce, aad, encrypt(plain, aad, key))).toBe(plain);
+    expect(aesGcmDecrypt(key, nonce, aad, encrypt(plain, aad, key))).toBe(
+      plain,
+    );
   });
 
   test("a wrong key fails authentication", () => {
     const ciphertext = encrypt("secret", aad, key);
-    expect(aesGcmDecrypt(Buffer.alloc(32, 8), nonce, aad, ciphertext)).toBeNull();
+    expect(
+      aesGcmDecrypt(Buffer.alloc(32, 8), nonce, aad, ciphertext),
+    ).toBeNull();
   });
 
   test("tampered ciphertext fails authentication", () => {
@@ -114,9 +126,9 @@ describe("AES-256-GCM callback decryption", () => {
   });
 
   test("a truncated ciphertext is refused, not crashed on", () => {
-    expect(aesGcmDecrypt(key, nonce, aad, Buffer.from([1, 2, 3]).toString("base64"))).toBe(
-      null,
-    );
+    expect(
+      aesGcmDecrypt(key, nonce, aad, Buffer.from([1, 2, 3]).toString("base64")),
+    ).toBe(null);
   });
 });
 
@@ -164,9 +176,9 @@ describe("X.509 serial derivation", () => {
 
   test("the certificate's public key verifies a signature its key made", () => {
     const signature = rsaSign(fixtureKey, "payload");
-    expect(rsaVerify(certificatePublicKey(fixtureCertificate), "payload", signature)).toBe(
-      true,
-    );
+    expect(
+      rsaVerify(certificatePublicKey(fixtureCertificate), "payload", signature),
+    ).toBe(true);
   });
 
   test("a malformed PEM maps to the unconfigured sentinel", () => {

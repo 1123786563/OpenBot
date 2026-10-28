@@ -308,9 +308,13 @@ function fakeRows(
       // cancel too — a waiting row holds an active quota slot and its owner
       // needs the exit.
       if (
-        ["queued", "scheduled", "paused", "waiting_input", "waiting_review"].includes(
-          row.status,
-        )
+        [
+          "queued",
+          "scheduled",
+          "paused",
+          "waiting_input",
+          "waiting_review",
+        ].includes(row.status)
       ) {
         row.status = "cancelled";
         row.updatedAt = new Date();

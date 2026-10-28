@@ -1,5 +1,8 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
-import { compactionPacket, contextUsagePacket } from "../src/craft/events/packets";
+import {
+  compactionPacket,
+  contextUsagePacket,
+} from "../src/craft/events/packets";
 import { SSEKeepalive } from "../src/craft/events/types";
 import {
   BuildStreamingState,
@@ -196,8 +199,18 @@ describe("persistSandboxEvent — chunk flush", () => {
   test("finalize on clean stream end flushes pending chunks as one row", async () => {
     const harness = fakeStore();
     const state = new BuildStreamingState(0);
-    await persistSandboxEvent(harness.store, SESSION, state, textChunk("part one. "));
-    await persistSandboxEvent(harness.store, SESSION, state, textChunk("part two."));
+    await persistSandboxEvent(
+      harness.store,
+      SESSION,
+      state,
+      textChunk("part one. "),
+    );
+    await persistSandboxEvent(
+      harness.store,
+      SESSION,
+      state,
+      textChunk("part two."),
+    );
     expect(harness.rows()).toHaveLength(0); // nothing mid-stream
     await finalizePersist(harness.store, SESSION, state);
     expect(harness.rows()).toHaveLength(1);
@@ -232,9 +245,19 @@ describe("persistSandboxEvent — chunk flush", () => {
   test("keepalives persist nothing; a type change flushes pending chunks even to a non-persisted type", async () => {
     const harness = fakeStore();
     const state = new BuildStreamingState(0);
-    await persistSandboxEvent(harness.store, SESSION, state, textChunk("streaming"));
+    await persistSandboxEvent(
+      harness.store,
+      SESSION,
+      state,
+      textChunk("streaming"),
+    );
     // Keepalive: complete no-op — chunks stay pending.
-    await persistSandboxEvent(harness.store, SESSION, state, new SSEKeepalive());
+    await persistSandboxEvent(
+      harness.store,
+      SESSION,
+      state,
+      new SSEKeepalive(),
+    );
     expect(harness.rows()).toHaveLength(0);
     // current_mode_update is not persisted itself, but it IS a type change, so the
     // pending burst flushes first (onyx parity — documented "subtle" in craft-risks §3.4).
@@ -270,7 +293,9 @@ describe("persistSandboxEvent — tool persistence gating", () => {
       }),
       { stopReason: "end_turn" },
     ]);
-    const rows = harness.rows().filter((row) => row.messageMetadata.type === "tool_call_progress");
+    const rows = harness
+      .rows()
+      .filter((row) => row.messageMetadata.type === "tool_call_progress");
     expect(rows).toHaveLength(1);
     expect(rows[0].messageMetadata).toMatchObject({
       toolCallId: "tc-1",
@@ -286,9 +311,14 @@ describe("persistSandboxEvent — tool persistence gating", () => {
       }),
       { stopReason: "end_turn" },
     ]);
-    const rows = harness.rows().filter((row) => row.messageMetadata.type === "tool_call_progress");
+    const rows = harness
+      .rows()
+      .filter((row) => row.messageMetadata.type === "tool_call_progress");
     expect(rows).toHaveLength(1);
-    expect(rows[0].messageMetadata).toMatchObject({ toolCallId: "tc-1", status: "failed" });
+    expect(rows[0].messageMetadata).toMatchObject({
+      toolCallId: "tc-1",
+      status: "failed",
+    });
   });
 
   test("in-progress tool progress does not persist — except TodoWrite", async () => {
@@ -297,7 +327,9 @@ describe("persistSandboxEvent — tool persistence gating", () => {
       { stopReason: "end_turn" },
     ]);
     expect(
-      harness.rows().filter((row) => row.messageMetadata.type === "tool_call_progress"),
+      harness
+        .rows()
+        .filter((row) => row.messageMetadata.type === "tool_call_progress"),
     ).toEqual([]);
   });
 
@@ -308,11 +340,13 @@ describe("persistSandboxEvent — tool persistence gating", () => {
       toolProgress("tw-1", "Updating todos", "completed"),
       { stopReason: "end_turn" },
     ]);
-    const rows = harness.rows().filter(
-      (row) =>
-        row.messageMetadata.type === "tool_call_progress" &&
-        row.messageMetadata.title === "Updating todos",
-    );
+    const rows = harness
+      .rows()
+      .filter(
+        (row) =>
+          row.messageMetadata.type === "tool_call_progress" &&
+          row.messageMetadata.title === "Updating todos",
+      );
     expect(rows).toHaveLength(3);
     expect(rows.map((row) => row.messageMetadata.status)).toEqual([
       "in_progress",
@@ -338,18 +372,22 @@ describe("persistSandboxEvent — task_output synthesis", () => {
       taskCompleted(`${taskOutputText}<task_metadata>internal</task_metadata>`),
       { stopReason: "end_turn" },
     ]);
-    const toolRows = harness.rows().filter(
-      (row) =>
-        row.messageMetadata.type === "tool_call_progress" &&
-        row.messageMetadata.title === "Running task",
-    );
+    const toolRows = harness
+      .rows()
+      .filter(
+        (row) =>
+          row.messageMetadata.type === "tool_call_progress" &&
+          row.messageMetadata.title === "Running task",
+      );
     expect(toolRows).toHaveLength(1);
 
-    const synth = harness.rows().filter(
-      (row) =>
-        row.messageMetadata.type === "agent_message" &&
-        row.messageMetadata.source === "task_output",
-    );
+    const synth = harness
+      .rows()
+      .filter(
+        (row) =>
+          row.messageMetadata.type === "agent_message" &&
+          row.messageMetadata.source === "task_output",
+      );
     expect(synth).toHaveLength(1);
     expect(synth[0].messageMetadata).toMatchObject({
       content: { text: taskOutputText },
@@ -365,7 +403,9 @@ describe("persistSandboxEvent — task_output synthesis", () => {
       { stopReason: "end_turn" },
     ]);
     expect(
-      noOutput.harness.rows().filter((row) => row.messageMetadata.source === "task_output"),
+      noOutput.harness
+        .rows()
+        .filter((row) => row.messageMetadata.source === "task_output"),
     ).toEqual([]);
 
     const onlyMetadata = await drive([
@@ -387,7 +427,9 @@ describe("persistSandboxEvent — task_output synthesis", () => {
       { stopReason: "end_turn" },
     ]);
     expect(
-      harness.rows().filter((row) => row.messageMetadata.source === "task_output"),
+      harness
+        .rows()
+        .filter((row) => row.messageMetadata.source === "task_output"),
     ).toEqual([]);
   });
 });
@@ -410,9 +452,9 @@ describe("persistSandboxEvent — agent_plan_update upsert", () => {
       },
       { stopReason: "end_turn" },
     ]);
-    const plans = harness.rows().filter(
-      (row) => row.messageMetadata.type === "agent_plan_update",
-    );
+    const plans = harness
+      .rows()
+      .filter((row) => row.messageMetadata.type === "agent_plan_update");
     expect(plans).toHaveLength(1);
     expect(plans[0].messageMetadata.entries).toEqual([
       { id: "1", status: "completed", content: "Step 1" },
@@ -437,9 +479,9 @@ describe("persistSandboxEvent — agent_plan_update upsert", () => {
       sessionUpdate: "agent_plan_update",
       entries: [{ id: "1", status: "completed", content: "A" }],
     });
-    const plans = harness.rows().filter(
-      (row) => row.messageMetadata.type === "agent_plan_update",
-    );
+    const plans = harness
+      .rows()
+      .filter((row) => row.messageMetadata.type === "agent_plan_update");
     expect(plans).toHaveLength(2);
     expect(plans.map((row) => row.turnIndex)).toEqual([0, 1]);
   });
@@ -451,14 +493,24 @@ describe("persistSandboxEvent — context_usage and compaction", () => {
   test("usage is captured (not persisted per event), never fragments text; finalize writes one row", async () => {
     const harness = fakeStore();
     const state = new BuildStreamingState(0);
-    await persistSandboxEvent(harness.store, SESSION, state, textChunk("hello "));
+    await persistSandboxEvent(
+      harness.store,
+      SESSION,
+      state,
+      textChunk("hello "),
+    );
     await persistSandboxEvent(
       harness.store,
       SESSION,
       state,
       contextUsagePacket(100, 0.5),
     );
-    await persistSandboxEvent(harness.store, SESSION, state, textChunk("world"));
+    await persistSandboxEvent(
+      harness.store,
+      SESSION,
+      state,
+      textChunk("world"),
+    );
     await finalizePersist(harness.store, SESSION, state);
 
     const types = harness.rows().map((row) => row.messageMetadata.type);
@@ -495,31 +547,49 @@ describe("persistSandboxEvent — context_usage and compaction", () => {
       contextUsagePacket(250, 0.75),
     );
     await finalizePersist(harness.store, SESSION, state);
-    const usage = harness.rows().filter(
-      (row) => row.messageMetadata.type === "context_usage",
-    );
+    const usage = harness
+      .rows()
+      .filter((row) => row.messageMetadata.type === "context_usage");
     expect(usage).toHaveLength(1);
-    expect(usage[0].messageMetadata).toMatchObject({ used_tokens: 250, cost: 0.75 });
+    expect(usage[0].messageMetadata).toMatchObject({
+      used_tokens: 250,
+      cost: 0.75,
+    });
   });
 
   test("a turn with no usage writes no usage row at finalize", async () => {
-    const { harness } = await drive([textChunk("only text"), { stopReason: "end_turn" }]);
+    const { harness } = await drive([
+      textChunk("only text"),
+      { stopReason: "end_turn" },
+    ]);
     expect(
-      harness.rows().filter((row) => row.messageMetadata.type === "context_usage"),
+      harness
+        .rows()
+        .filter((row) => row.messageMetadata.type === "context_usage"),
     ).toEqual([]);
   });
 
   test("compaction flushes pending text first, then persists the marker row", async () => {
     const harness = fakeStore();
     const state = new BuildStreamingState(0);
-    await persistSandboxEvent(harness.store, SESSION, state, textChunk("hello "));
+    await persistSandboxEvent(
+      harness.store,
+      SESSION,
+      state,
+      textChunk("hello "),
+    );
     await persistSandboxEvent(
       harness.store,
       SESSION,
       state,
       contextUsagePacket(100, null),
     );
-    await persistSandboxEvent(harness.store, SESSION, state, textChunk("world"));
+    await persistSandboxEvent(
+      harness.store,
+      SESSION,
+      state,
+      textChunk("world"),
+    );
     await persistSandboxEvent(
       harness.store,
       SESSION,
@@ -533,8 +603,12 @@ describe("persistSandboxEvent — context_usage and compaction", () => {
     expect(harness.rows()[0].messageMetadata).toMatchObject({
       content: { text: "hello world" },
     });
-    expect(harness.rows()[1].messageMetadata).toMatchObject({ summary: "recap" });
-    expect(harness.rows()[2].messageMetadata).toMatchObject({ used_tokens: 100 });
+    expect(harness.rows()[1].messageMetadata).toMatchObject({
+      summary: "recap",
+    });
+    expect(harness.rows()[2].messageMetadata).toMatchObject({
+      used_tokens: 100,
+    });
   });
 });
 

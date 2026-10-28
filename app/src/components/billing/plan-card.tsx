@@ -86,13 +86,11 @@ export function PlanCard({
             </p>
           ) : null}
         </div>
-      ) : (
-        resetsAt ? (
-          <p className="text-muted-foreground mt-4 text-xs tabular-nums">
-            {t("planCard.resetsAt", { time: dateTime(resetsAt) })}
-          </p>
-        ) : null
-      )}
+      ) : resetsAt ? (
+        <p className="text-muted-foreground mt-4 text-xs tabular-nums">
+          {t("planCard.resetsAt", { time: dateTime(resetsAt) })}
+        </p>
+      ) : null}
     </div>
   );
 }

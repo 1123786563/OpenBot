@@ -40,14 +40,21 @@ export const expect = Object.assign(() => expectation(), {
 
 function register(kind) {
   return (title, second, third) => {
-    registrations.push({ kind, title: String(title), options: second, fn: third ?? second });
+    registrations.push({
+      kind,
+      title: String(title),
+      options: second,
+      fn: third ?? second,
+    });
     return { title };
   };
 }
 
 const testFn = register("test");
 Object.assign(testFn, {
-  skip: Object.assign(register("skip"), { each: (table) => () => table.forEach(() => register("skip")) }),
+  skip: Object.assign(register("skip"), {
+    each: (table) => () => table.forEach(() => register("skip")),
+  }),
   only: register("only"),
   todo: noop,
   each: () => (title, second, third) => register("test")(title, second, third),
@@ -64,7 +71,8 @@ Object.assign(describeFn, {
   only: describeFn,
   concurrent: describeFn,
   serial: describeFn,
-  each: () => (title, body) => body && typeof body === "function" ? describeFn(title, body) : noop,
+  each: () => (title, body) =>
+    body && typeof body === "function" ? describeFn(title, body) : noop,
 });
 
 export { testFn as test, describeFn as describe };
@@ -73,7 +81,9 @@ export const beforeEach = noop;
 export const afterEach = noop;
 export const beforeAll = noop;
 export const afterAll = noop;
-export const credentials = { user: () => ({ username: "", password: async () => "" }) };
+export const credentials = {
+  user: () => ({ username: "", password: async () => "" }),
+};
 export const secrets = { get: () => "" };
 export const unique = (value) => String(value);
 
@@ -86,7 +96,12 @@ export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith(".") && context.parentURL?.startsWith("file:")) {
     const base = dirname(fileURLToPath(context.parentURL));
     const target = join(base, specifier);
-    for (const candidate of [`${target}.ts`, `${target}.tsx`, `${target}/index.ts`, target]) {
+    for (const candidate of [
+      `${target}.ts`,
+      `${target}.tsx`,
+      `${target}/index.ts`,
+      target,
+    ]) {
       if (existsSync(candidate) && !candidate.endsWith("/")) {
         return { url: pathToFileURL(candidate).href, shortCircuit: true };
       }

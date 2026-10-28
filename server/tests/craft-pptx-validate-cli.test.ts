@@ -41,7 +41,10 @@ describe("Office validation CLI", () => {
           args: [join(root, "missing-input.docx")],
           error: "does not exist",
         },
-        { args: [input, "--original", missingOriginal], error: "is not a file" },
+        {
+          args: [input, "--original", missingOriginal],
+          error: "is not a file",
+        },
         {
           args: [input, "--original", invalidOriginal],
           error: "must be a .docx, .pptx, or .xlsx file",
@@ -80,9 +83,10 @@ describe("Office validation CLI", () => {
     );
 
     try {
-      expect(createArchive.status, createArchive.stdout + createArchive.stderr).toBe(
-        0,
-      );
+      expect(
+        createArchive.status,
+        createArchive.stdout + createArchive.stderr,
+      ).toBe(0);
       const before = readFileSync(archive).toString("base64");
       const result = runValidate([archive, "--auto-repair"]);
       const output = result.stdout + result.stderr;

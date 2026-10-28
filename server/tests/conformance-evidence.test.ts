@@ -35,10 +35,14 @@ import {
 
 const repoRoot = join(import.meta.dirname, "../..");
 
-const readRepoFile = (modulePath: string) => readFileSync(join(repoRoot, modulePath), "utf8");
-const repoFileExists = (modulePath: string) => existsSync(join(repoRoot, modulePath));
+const readRepoFile = (modulePath: string) =>
+  readFileSync(join(repoRoot, modulePath), "utf8");
+const repoFileExists = (modulePath: string) =>
+  existsSync(join(repoRoot, modulePath));
 
-const GROUP_RECORDS = CONFORMANCE_EVIDENCE.filter((record) => record.group === "22.3");
+const GROUP_RECORDS = CONFORMANCE_EVIDENCE.filter(
+  (record) => record.group === "22.3",
+);
 const GROUP_FAMILIES = ["text", "image", "audio", "runtime"];
 
 describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", () => {
@@ -48,7 +52,8 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
     expect(admittedEntrypointsWithoutEvidence()).toEqual([]);
     const admitted223 = MODEL_ENTRYPOINTS.filter(
       (row) =>
-        row.admission.status === "admitted" && CONFORMANCE_GROUP_22_3.includes(row.family),
+        row.admission.status === "admitted" &&
+        CONFORMANCE_GROUP_22_3.includes(row.family),
     );
     expect(admitted223.length).toBeGreaterThanOrEqual(15);
     const covered = new Set(
@@ -64,9 +69,14 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
   test("every record carries constraints, environment, re-runnable commands and a version binding", () => {
     for (const record of GROUP_RECORDS) {
       expect(record.constraints.length, record.id).toBeGreaterThan(0);
-      expect(["local-deterministic", "provider-real"]).toContain(record.verification.environment);
+      expect(["local-deterministic", "provider-real"]).toContain(
+        record.verification.environment,
+      );
       expect(record.verification.commands.length, record.id).toBeGreaterThan(0);
-      expect(record.verification.resultSummary.length, record.id).toBeGreaterThan(0);
+      expect(
+        record.verification.resultSummary.length,
+        record.id,
+      ).toBeGreaterThan(0);
       expect(record.versionBinding.length, record.id).toBeGreaterThan(0);
       for (const constraint of record.constraints) {
         expect(constraint.fact.claim.length, record.id).toBeGreaterThan(0);
@@ -79,7 +89,9 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
   test("every command's suite file exists in this repository — the evidence is reproducible", () => {
     for (const record of GROUP_RECORDS) {
       for (const command of record.verification.commands) {
-        const match = command.match(/(server\/tests\/[A-Za-z0-9_./-]+\.test\.ts[ex]*)/);
+        const match = command.match(
+          /(server\/tests\/[A-Za-z0-9_./-]+\.test\.ts[ex]*)/,
+        );
         expect(match, `${record.id}: ${command}`).not.toBeNull();
         if (!match) continue;
         expect(existsSync(join(repoRoot, match[1])), match[1]).toBe(true);
@@ -90,7 +102,9 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
   test("every version-bound module exists on disk — the binding binds real code", () => {
     for (const record of GROUP_RECORDS) {
       for (const modulePath of record.versionBinding) {
-        expect(repoFileExists(modulePath), `${record.id}: ${modulePath}`).toBe(true);
+        expect(repoFileExists(modulePath), `${record.id}: ${modulePath}`).toBe(
+          true,
+        );
       }
     }
   });
@@ -117,7 +131,9 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
     // contents it shipped. Asserting staleness EMPTY binds the evidence to the code:
     // edit any bound module afterwards and THIS test fails with the record named stale,
     // until the evidence is re-verified and the fingerprint re-recorded.
-    expect(staleEvidence(DELIVERED_FINGERPRINTS, readRepoFile, repoFileExists)).toEqual([]);
+    expect(
+      staleEvidence(DELIVERED_FINGERPRINTS, readRepoFile, repoFileExists),
+    ).toEqual([]);
     // Every record has a delivered fingerprint — none silently skipped.
     for (const record of CONFORMANCE_EVIDENCE) {
       expect(DELIVERED_FINGERPRINTS[record.id], record.id).toBeDefined();
@@ -133,7 +149,9 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
       ]),
     );
     // Nothing changed: nothing is stale.
-    expect(staleEvidence(fingerprints, readRepoFile, repoFileExists)).toEqual([]);
+    expect(staleEvidence(fingerprints, readRepoFile, repoFileExists)).toEqual(
+      [],
+    );
 
     // One module changed (the pricing table edited, the stage reordered): every record
     // bound to it goes stale, by name, with its reason.
@@ -147,9 +165,16 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
 
     // A bound module that vanished is stale the loudest way.
     const vanishedExists = (modulePath: string) =>
-      !modulePath.endsWith("speech-settlement.ts") && repoFileExists(modulePath);
-    const vanishedStale = staleEvidence(fingerprints, readRepoFile, vanishedExists);
-    expect(vanishedStale.map((entry) => entry.id)).toContain("conformance.audio");
+      !modulePath.endsWith("speech-settlement.ts") &&
+      repoFileExists(modulePath);
+    const vanishedStale = staleEvidence(
+      fingerprints,
+      readRepoFile,
+      vanishedExists,
+    );
+    expect(vanishedStale.map((entry) => entry.id)).toContain(
+      "conformance.audio",
+    );
     expect(
       vanishedStale.find((entry) => entry.id === "conformance.audio")?.reason,
     ).toBe("bound-file-missing");
@@ -158,7 +183,9 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
   test("an admitted capability without evidence stays out of the enableable projection", () => {
     // The honest world: every admitted row is enableable with its family's fresh record.
     const enableable = enableableWithEvidence({});
-    const admitted = MODEL_ENTRYPOINTS.filter((row) => row.admission.status === "admitted");
+    const admitted = MODEL_ENTRYPOINTS.filter(
+      (row) => row.admission.status === "admitted",
+    );
     expect(enableable).toEqual(admitted.map((row) => row.id));
 
     // The regression world: someone wires a new entrance (a fresh admitted row) and no
@@ -193,13 +220,18 @@ describe("Bifrost 22.3 (#354): conformance evidence — 文本/图像/音频", (
       if (record.verification.environment === "local-deterministic") {
         // A record that needs a provider environment names exactly what it needs.
         if (record.needsProviderEnvironment) {
-          expect(record.needsProviderEnvironment.length, record.id).toBeGreaterThan(0);
+          expect(
+            record.needsProviderEnvironment.length,
+            record.id,
+          ).toBeGreaterThan(0);
         }
       } else {
         expect(record.needsProviderEnvironment, record.id).toBeUndefined();
       }
     }
-    const withProviderNeeds = GROUP_RECORDS.filter((r) => r.needsProviderEnvironment);
+    const withProviderNeeds = GROUP_RECORDS.filter(
+      (r) => r.needsProviderEnvironment,
+    );
     expect(withProviderNeeds.length).toBeGreaterThan(0);
   });
 

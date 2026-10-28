@@ -61,8 +61,7 @@ export function createIdentityProviderStore(
           domain: ssoProviders.domain,
           // Only whether a SAML config exists — the column carries the signing certificate,
           // and this module never needs the material itself, so it never reads it.
-          hasSaml:
-            sql<boolean>`(${ssoProviders.samlConfig} is not null and ${ssoProviders.samlConfig} <> '')`,
+          hasSaml: sql<boolean>`(${ssoProviders.samlConfig} is not null and ${ssoProviders.samlConfig} <> '')`,
           userId: ssoProviders.userId,
         })
         .from(ssoProviders)

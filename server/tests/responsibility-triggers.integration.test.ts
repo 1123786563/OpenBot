@@ -3,7 +3,12 @@
  * trigger-targeted matching, per-trigger delivery dedup and paused-never-runs, end to end through
  * the public ingress route. Needs a database with `responsibility_triggers` (parity_dev today).
  */
-import { afterAll, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createHmac, randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { createCredentialStore } from "../src/credentials";

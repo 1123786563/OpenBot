@@ -71,9 +71,9 @@ export function createResponsibilityEngine(options: {
         }
       }
       return report;
-      async function dispatchOne(item: Awaited<
-        ReturnType<typeof queue.claim>
-      >[number]): Promise<void> {
+      async function dispatchOne(
+        item: Awaited<ReturnType<typeof queue.claim>>[number],
+      ): Promise<void> {
         const runId = item.payload.runId;
         if (typeof runId !== "string" || !runId)
           throw new Error("Responsibility work item has no run ID.");

@@ -34,7 +34,10 @@ import {
   selectWorkspaceScope,
   storeSelection,
 } from "../../src/lib/enterprise/tenant/selection";
-import { scopedCachePrefix, useScopedCache } from "../../src/lib/enterprise/tenant/scoped-cache";
+import {
+  scopedCachePrefix,
+  useScopedCache,
+} from "../../src/lib/enterprise/tenant/scoped-cache";
 
 /**
  * MT097 / Issue #140: the billing surfaces bind to the selection. The orders/usage pages read
@@ -218,7 +221,10 @@ function serve(
       return jsonResponse(200, { grants: [] });
     }
     if (path === "/api/billing/credits/consumption") {
-      return jsonResponse(200, { entries: [], pagination: { totalCount: 0, pageCount: 1, page: 1 } });
+      return jsonResponse(200, {
+        entries: [],
+        pagination: { totalCount: 0, pageCount: 1, page: 1 },
+      });
     }
     if (path === "/api/billing/catalog") {
       return jsonResponse(200, {});
@@ -227,7 +233,10 @@ function serve(
   }) as unknown as typeof fetch;
 }
 
-function headerOf(init: RequestInit | undefined, name: string): string | undefined {
+function headerOf(
+  init: RequestInit | undefined,
+  name: string,
+): string | undefined {
   const headers = init?.headers;
   if (headers === undefined || headers === null) return undefined;
   if (headers instanceof Headers) return headers.get(name) ?? undefined;
@@ -275,7 +284,9 @@ function BooksProbe() {
         tenantId,
         balanceUnits,
         usage.companyTotal.chargedUnits,
-        usage.byTeam.map((row) => `${row.workspaceId}:${row.chargedUnits}`).join("+"),
+        usage.byTeam
+          .map((row) => `${row.workspaceId}:${row.chargedUnits}`)
+          .join("+"),
         books.data.recentUsage.map((line) => line.eventId).join(","),
       ].join("/")}
     </span>
@@ -286,7 +297,9 @@ function BooksProbe() {
 function SummaryProbe() {
   const queryClient = useQueryClient();
   const scope = useScopedCache();
-  const summary = useQuery(scopedCreditsSummaryQueryOptions(queryClient, scope));
+  const summary = useQuery(
+    scopedCreditsSummaryQueryOptions(queryClient, scope),
+  );
   return (
     <span data-testid="summary-amount">
       {summary.data ? summary.data.available : "pending"}
@@ -301,7 +314,20 @@ describe("MT097 billing surfaces bind to the selection (Issue #140)", () => {
     openScope(queryClient, ACME);
     const view = draw(
       queryClient,
-      <OrdersGrantsView page={1} onPage={() => {}} scope={{ status: "open", userId: USER, selection: ACME, generation: 1, prefix: scopedCachePrefix(USER, ACME), key: "k" } as never} />,
+      <OrdersGrantsView
+        page={1}
+        onPage={() => {}}
+        scope={
+          {
+            status: "open",
+            userId: USER,
+            selection: ACME,
+            generation: 1,
+            prefix: scopedCachePrefix(USER, ACME),
+            key: "k",
+          } as never
+        }
+      />,
     );
     await waitFor(() => {
       expect(view.getByText("po_acme_1")).toBeTruthy();
@@ -346,7 +372,9 @@ describe("MT097 billing surfaces bind to the selection (Issue #140)", () => {
       (sum, row) => sum + row.chargedUnits,
       0,
     );
-    expect(byTeamCharged).toBe(BOOKS_ACME.books.usage.companyTotal.chargedUnits);
+    expect(byTeamCharged).toBe(
+      BOOKS_ACME.books.usage.companyTotal.chargedUnits,
+    );
   });
 
   test("AC2: without the finance grant the books render the ONE typed refusal state", async () => {
@@ -473,14 +501,32 @@ describe("MT097 billing surfaces bind to the selection (Issue #140)", () => {
             ],
           },
         ],
-        pagination: { totalCount: 2, totalPages: 1, currentPage: 1, nextPage: null },
+        pagination: {
+          totalCount: 2,
+          totalPages: 1,
+          currentPage: 1,
+          nextPage: null,
+        },
       },
     });
     const queryClient = freshClient();
     openScope(queryClient, ACME);
     const view = draw(
       queryClient,
-      <OrdersGrantsView page={1} onPage={() => {}} scope={{ status: "open", userId: USER, selection: ACME, generation: 1, prefix: scopedCachePrefix(USER, ACME), key: "k" } as never} />,
+      <OrdersGrantsView
+        page={1}
+        onPage={() => {}}
+        scope={
+          {
+            status: "open",
+            userId: USER,
+            selection: ACME,
+            generation: 1,
+            prefix: scopedCachePrefix(USER, ACME),
+            key: "k",
+          } as never
+        }
+      />,
     );
     // Shape 1 renders its row at all (the pre-fix behavior was a crash), with no anomaly block.
     await waitFor(() => {

@@ -48,8 +48,7 @@ export function oneLine(text: string, maxGraphemes: number): string {
   // megabytes, and only the first maxGraphemes clusters are ever used.
   const parts: string[] = [];
   for (const { segment } of GRAPHEMES.segment(collapsed)) {
-    if (parts.length === maxGraphemes)
-      return `${parts.slice(0, -1).join("")}…`;
+    if (parts.length === maxGraphemes) return `${parts.slice(0, -1).join("")}…`;
     parts.push(segment);
   }
   return collapsed;

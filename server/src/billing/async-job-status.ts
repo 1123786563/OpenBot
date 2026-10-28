@@ -239,13 +239,15 @@ export function createAsyncJobStatusService(
       const [jobRow] = await database
         .select()
         .from(asyncJobs)
-        .where((() => {
-          if (jobId !== undefined) return eq(asyncJobs.jobId, jobId);
-          if (submitIdempotencyKey !== undefined) {
-            return eq(asyncJobs.submitIdempotencyKey, submitIdempotencyKey);
-          }
-          return eq(asyncJobs.providerJobId, providerJobId as string);
-        })())
+        .where(
+          (() => {
+            if (jobId !== undefined) return eq(asyncJobs.jobId, jobId);
+            if (submitIdempotencyKey !== undefined) {
+              return eq(asyncJobs.submitIdempotencyKey, submitIdempotencyKey);
+            }
+            return eq(asyncJobs.providerJobId, providerJobId as string);
+          })(),
+        )
         .limit(1);
 
       // The ownership check the whole door exists for: the job's frozen payer must be

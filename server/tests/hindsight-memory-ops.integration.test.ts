@@ -445,16 +445,16 @@ beforeAll(async () => {
       requireUser,
       {
         hindsight: createHindsightMemoryRoutes({
-        preferences,
-        sourceBound: scoped,
-        syncQueue: queue,
-        resolveScope: () => makeTrustedScope(currentPrincipal),
-        audit: {
-          record: async (event) => {
-            auditTrail.push(event);
+          preferences,
+          sourceBound: scoped,
+          syncQueue: queue,
+          resolveScope: () => makeTrustedScope(currentPrincipal),
+          audit: {
+            record: async (event) => {
+              auditTrail.push(event);
+            },
           },
-        },
-      }),
+        }),
       },
     ),
   );

@@ -1,4 +1,10 @@
-import { afterAll, afterEach, expect, spyOn, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  expect,
+  spyOn,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
 import * as paymentCrypto from "../src/billing/payments/crypto";
@@ -203,7 +209,9 @@ test("a paid fact claims its channel transaction exactly once (the race)", async
 
 test("only a paid transition writes paidAt, in the same CAS move", async () => {
   const { order } = await store.insertOrder(orderInput());
-  expect(((await store.readOrder(order.id)) as { paidAt?: Date | null })?.paidAt).toBeNull();
+  expect(
+    ((await store.readOrder(order.id)) as { paidAt?: Date | null })?.paidAt,
+  ).toBeNull();
 
   expect(
     await store.confirmPaid({
@@ -229,7 +237,9 @@ test("only a paid transition writes paidAt, in the same CAS move", async () => {
 
   const { order: expired } = await store.insertOrder(orderInput());
   expect(await store.expireOrder(expired.id, expired.version)).toBe(true);
-  const expiredRow = (await store.readOrder(expired.id)) as { paidAt?: Date | null } | null;
+  const expiredRow = (await store.readOrder(expired.id)) as {
+    paidAt?: Date | null;
+  } | null;
   expect(expiredRow?.paidAt).toBeNull();
 });
 
@@ -277,7 +287,9 @@ test("resolveActivationOwnership serializes overlapping paid orders to one entit
     planCode: sharedPlan,
   });
   const firstPeriodStart = new Date();
-  const firstPeriodEnd = new Date(firstPeriodStart.getTime() + 30 * 24 * 3600_000);
+  const firstPeriodEnd = new Date(
+    firstPeriodStart.getTime() + 30 * 24 * 3600_000,
+  );
   expect(
     await store.confirmPaid({
       id: first.order.id,
@@ -296,7 +308,9 @@ test("resolveActivationOwnership serializes overlapping paid orders to one entit
     provider: "wechat",
   });
   const secondPeriodStart = new Date(firstPeriodStart.getTime() + 5 * 60_000);
-  const secondPeriodEnd = new Date(secondPeriodStart.getTime() + 30 * 24 * 3600_000);
+  const secondPeriodEnd = new Date(
+    secondPeriodStart.getTime() + 30 * 24 * 3600_000,
+  );
   expect(
     await store.confirmPaid({
       id: second.order.id,
@@ -335,7 +349,9 @@ test("an already-applied owner stays the owner when a later overlapping paid ord
     planCode: sharedPlan,
   });
   const laterPeriodStart = new Date(Date.now() + 10 * 60_000);
-  const laterPeriodEnd = new Date(laterPeriodStart.getTime() + 30 * 24 * 3600_000);
+  const laterPeriodEnd = new Date(
+    laterPeriodStart.getTime() + 30 * 24 * 3600_000,
+  );
   expect(
     await store.confirmPaid({
       id: owner.order.id,
@@ -355,7 +371,9 @@ test("an already-applied owner stays the owner when a later overlapping paid ord
     provider: "wechat",
   });
   const earlierOverlapStart = new Date(laterPeriodStart.getTime() - 5 * 60_000);
-  const earlierOverlapEnd = new Date(earlierOverlapStart.getTime() + 30 * 24 * 3600_000);
+  const earlierOverlapEnd = new Date(
+    earlierOverlapStart.getTime() + 30 * 24 * 3600_000,
+  );
   expect(
     await store.confirmPaid({
       id: duplicate.order.id,
@@ -368,11 +386,15 @@ test("an already-applied owner stays the owner when a later overlapping paid ord
     }),
   ).toEqual({ claimed: true, alreadyKnown: false });
 
-  await expect(store.resolveActivationOwnership(owner.order.id)).resolves.toMatchObject({
+  await expect(
+    store.resolveActivationOwnership(owner.order.id),
+  ).resolves.toMatchObject({
     outcome: "owner",
     order: { id: owner.order.id },
   });
-  await expect(store.resolveActivationOwnership(duplicate.order.id)).resolves.toMatchObject({
+  await expect(
+    store.resolveActivationOwnership(duplicate.order.id),
+  ).resolves.toMatchObject({
     outcome: "duplicate",
     order: { id: duplicate.order.id },
     ownerOrder: { id: owner.order.id },
@@ -538,14 +560,9 @@ test("confirmPaid retries a paid-fact primary-key collision instead of misreadin
       .select({ id: paymentEvents.id, orderId: paymentEvents.orderId })
       .from(paymentEvents)
       .where(
-        eq(
-          paymentEvents.channelTransactionId,
-          `${prefix}-tx-pk-collision`,
-        ),
+        eq(paymentEvents.channelTransactionId, `${prefix}-tx-pk-collision`),
       );
-    expect(facts).toEqual([
-      { id: `pe-${freshHex}`, orderId: order.id },
-    ]);
+    expect(facts).toEqual([{ id: `pe-${freshHex}`, orderId: order.id }]);
   } finally {
     generate.mockRestore();
   }

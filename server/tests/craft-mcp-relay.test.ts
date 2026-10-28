@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { loadCraftConfig } from "../src/craft/config";
 import { createCraftMcpRelayApp } from "../src/craft/mcp-relay";
 import { craftMcpRelayUrl } from "../src/craft/mcp-servers";
@@ -426,7 +431,8 @@ describe("relay inside the assembled craft tree", () => {
           skillsHash: "x",
           mcpConfigHash: "y",
           libraryFiles: new Map(),
-          webTemplateFiles: new Map(),        }),
+          webTemplateFiles: new Map(),
+        }),
       },
     });
     const response = await app.request("/mcp/42", {

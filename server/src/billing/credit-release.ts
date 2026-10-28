@@ -167,7 +167,9 @@ function findForbiddenAccountKeyField(
   // Case- and separator-insensitive: `external_customer_id` is the same account field as
   // `externalCustomerId`, and presence is the attempt under either spelling.
   const normalize = (key: string) => key.toLowerCase().replace(/[_-]/g, "");
-  const forbidden = new Set(RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map(normalize));
+  const forbidden = new Set(
+    RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map(normalize),
+  );
   for (const key of Object.keys(source)) {
     if (forbidden.has(normalize(key))) return key;
   }

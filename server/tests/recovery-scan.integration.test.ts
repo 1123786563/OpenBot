@@ -7,9 +7,7 @@ import { readCapacity } from "../src/billing/capacity";
 import { createPayerAccount } from "../src/billing/payer";
 import { createRecoveryScanner } from "../src/billing/recovery-scan";
 import { createCreditWriter } from "../src/billing/credits-writer";
-import {
-  attemptIdForReservation,
-} from "../src/billing/reservation-status";
+import { attemptIdForReservation } from "../src/billing/reservation-status";
 import { createDatabase } from "../src/db/client";
 import { accessGrants, botServices, usageOutbox } from "../src/db/schema";
 import {
@@ -168,12 +166,18 @@ afterAll(async () => {
   await database
     .delete(creditRecoveryItems)
     .where(
-      like(creditRecoveryItems.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditRecoveryItems.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -216,12 +220,18 @@ test("a hold left reserved by a killed process is discovered by a fresh process'
       attemptId: string;
       state: string;
       lastReason: string | null;
-      payerRef: { externalCustomerId: string; kind: string | null; payerId: string | null };
+      payerRef: {
+        externalCustomerId: string;
+        kind: string | null;
+        payerId: string | null;
+      };
       maximum: number;
     }[];
   };
 
-  const item = pass.items.find((entry) => entry.reservationId === reservationId);
+  const item = pass.items.find(
+    (entry) => entry.reservationId === reservationId,
+  );
   expect(item).toBeDefined();
   expect(pass.itemsGenerated).toBeGreaterThanOrEqual(1);
   expect(item?.attemptId).toBe(attemptIdForReservation(reservationId));
@@ -266,7 +276,9 @@ test("a hold marked unknown before the process died is discovered with its unkno
       lastReason: string | null;
     }[];
   };
-  const item = pass.items.find((entry) => entry.reservationId === reservationId);
+  const item = pass.items.find(
+    (entry) => entry.reservationId === reservationId,
+  );
   expect(item).toBeDefined();
   expect(item?.lastReason).toBe("stream_error");
 });
@@ -351,7 +363,10 @@ test("a second scan generates nothing new, and no pass moves one money fact", as
   }
 
   const outboxCount = (
-    await database.select().from(usageOutbox).where(eq(usageOutbox.externalCustomerId, world.customerKey))
+    await database
+      .select()
+      .from(usageOutbox)
+      .where(eq(usageOutbox.externalCustomerId, world.customerKey))
   ).length;
   expect(outboxCount).toBe(0);
 
@@ -461,7 +476,9 @@ test("an account with no payer mapping is recorded unattributed, never guessed",
 // ── The periodic sweep, in the maintenance pattern ─────────────────────────────────
 
 test("the sweep starter discovers holds on its own clock and stops cleanly", async () => {
-  const { startRecoveryScanSweeps } = await import("../src/billing/maintenance");
+  const { startRecoveryScanSweeps } = await import(
+    "../src/billing/maintenance"
+  );
   const world = await seedWorld();
   const reservationId = await reserve(world, 500);
   await writer.markReservationUnknown(reservationId, "usage_missing");
@@ -518,7 +535,9 @@ test("claims hand out the oldest detections first, across passes, before anythin
     recoveryItemRow(oldest),
     recoveryItemRow(newest),
   ]);
-  expect(oldestRow!.detectedAt.getTime()).toBeLessThan(newestRow!.detectedAt.getTime());
+  expect(oldestRow!.detectedAt.getTime()).toBeLessThan(
+    newestRow!.detectedAt.getTime(),
+  );
 
   const claimed = await scanner.claimRecoveryItems(`${prefix}-fifo`, 2);
   expect(new Set(claimed.map((entry) => entry.reservationId))).toEqual(

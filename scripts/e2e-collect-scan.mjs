@@ -10,7 +10,14 @@ import { pathToFileURL } from "node:url";
 const root = resolve(import.meta.dirname, "..");
 register(pathToFileURL(join(root, "scripts/e2e-collect/loader.mjs")));
 
-const SKIP = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage"]);
+const SKIP = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  "coverage",
+]);
 const TEST_FILE = /(\.test|\.spec)\.(ts|tsx|mts)$/;
 const dirs = process.argv.slice(2).length
   ? process.argv.slice(2)
@@ -53,11 +60,19 @@ for (const [index, file] of files.entries()) {
     await Promise.race([
       import(pathToFileURL(file).href).then((mod) => ({ module: mod })),
       new Promise((_r, reject) => {
-        timer = setTimeout(() => reject(new Error(`import timed out after ${timeoutOf / 1000}s`)), timeoutOf);
+        timer = setTimeout(
+          () =>
+            reject(new Error(`import timed out after ${timeoutOf / 1000}s`)),
+          timeoutOf,
+        );
       }),
     ]);
   } catch (error) {
-    failures.push({ file: label, name: error?.name ?? "Error", message: String(error?.message ?? error).slice(0, 300) });
+    failures.push({
+      file: label,
+      name: error?.name ?? "Error",
+      message: String(error?.message ?? error).slice(0, 300),
+    });
   } finally {
     clearTimeout(timer);
   }
@@ -66,14 +81,24 @@ for (const [index, file] of files.entries()) {
 
 const grouped = new Map();
 for (const failure of failures) {
-  const key = failure.message.replace(/["'`].{0,60}["'`]/g, "…").replace(/\d+/g, "N").slice(0, 100);
+  const key = failure.message
+    .replace(/["'`].{0,60}["'`]/g, "…")
+    .replace(/\d+/g, "N")
+    .slice(0, 100);
   grouped.set(key, (grouped.get(key) ?? 0) + 1);
 }
 
-writeFileSync(join(root, "archive/verification/e2e-collection.json"), JSON.stringify({ files: files.length, failures }, null, 1));
-console.log(`\n${files.length} suite files imported, ${failures.length} failed to load.`);
+writeFileSync(
+  join(root, "archive/verification/e2e-collection.json"),
+  JSON.stringify({ files: files.length, failures }, null, 1),
+);
+console.log(
+  `\n${files.length} suite files imported, ${failures.length} failed to load.`,
+);
 console.log(`\nload errors by cause (${grouped.size} distinct):`);
-for (const [cause, count] of [...grouped].sort((a, b) => b[1] - a[1]).slice(0, 25)) {
+for (const [cause, count] of [...grouped]
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 25)) {
   console.log(`  ${String(count).padStart(4)}  ${cause}`);
 }
 console.log(`\nfull ledger: archive/verification/e2e-collection.json`);

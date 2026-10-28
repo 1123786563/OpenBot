@@ -20,7 +20,14 @@
 // MT004→MT008→MT112→MT012→MT014→MT010→MT009→MT077→MT026 依赖序）经 MT003
 // 工具真实执行（幂等 applied|up-to-date），本文件不自己 DDL。
 
-import { afterAll, beforeAll, describe, expect, it, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";

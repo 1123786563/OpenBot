@@ -78,7 +78,9 @@ const encryptionKey = Buffer.from(
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const enterpriseStore = createEnterpriseStore(database);
-const endpointService = createGatewayEndpointService({ store: enterpriseStore });
+const endpointService = createGatewayEndpointService({
+  store: enterpriseStore,
+});
 const credentialService = createGatewayAdminCredentialService({
   database,
   encryptionKey,
@@ -385,11 +387,16 @@ test("the probe action classifies, persists, and on success negotiates", async (
   expect(ok.status).toBe(200);
   const ran = (await ok.json()) as {
     probe: { status: string; configVersion: number };
-    negotiation: { negotiated: boolean; negotiation: { configVersion: number } } | null;
+    negotiation: {
+      negotiated: boolean;
+      negotiation: { configVersion: number };
+    } | null;
   };
   expect(ran.probe.status).toBe("ok");
   expect(ran.negotiation?.negotiated).toBe(true);
-  expect(ran.negotiation?.negotiation.configVersion).toBe(ran.probe.configVersion);
+  expect(ran.negotiation?.negotiation.configVersion).toBe(
+    ran.probe.configVersion,
+  );
 
   // The extension vanished upstream: the probe still succeeds, the negotiation
   // verdict honestly turns "absent", and the status read carries it.
@@ -403,10 +410,15 @@ test("the probe action classifies, persists, and on success negotiates", async (
   const absent = await adminApp.request("/probe", { method: "POST" });
   expect(absent.status).toBe(200);
   const verdict = (await absent.json()) as {
-    negotiation: { negotiated: boolean; negotiation: { creditAdmissionExtension: string } };
+    negotiation: {
+      negotiated: boolean;
+      negotiation: { creditAdmissionExtension: string };
+    };
   };
   expect(verdict.negotiation.negotiated).toBe(true);
-  expect(verdict.negotiation.negotiation.creditAdmissionExtension).toBe("absent");
+  expect(verdict.negotiation.negotiation.creditAdmissionExtension).toBe(
+    "absent",
+  );
 
   const status = await adminApp.request("/status");
   const view = (await status.json()) as {
@@ -453,7 +465,9 @@ test("a deployment without the wiring reads tagged 503s, never a guessed status"
       })
     ).status,
   ).toBe(503);
-  expect((await unwired.request("/probe", { method: "POST" })).status).toBe(503);
+  expect((await unwired.request("/probe", { method: "POST" })).status).toBe(
+    503,
+  );
 });
 
 test("the combined mount never shadows 01.2's credential route", async () => {
@@ -465,7 +479,10 @@ test("the combined mount never shadows 01.2's credential route", async () => {
     "/api/admin/gateway/credential",
     gatewayAdminCredentialRoutes(actorAs("admin"), credentialService),
   );
-  combined.route("/api/admin/gateway", gatewayAdminRoutes(actorAs("admin"), deps));
+  combined.route(
+    "/api/admin/gateway",
+    gatewayAdminRoutes(actorAs("admin"), deps),
+  );
   const status = await combined.request("/api/admin/gateway/credential");
   expect(status.status).toBe(200);
   const body = (await status.json()) as { status: { state: string } };
@@ -474,6 +491,8 @@ test("the combined mount never shadows 01.2's credential route", async () => {
 
 afterAll(async () => {
   await cleanSlate();
-  await database.delete(users).where(inArray(users.id, [admin.userId, member.userId]));
+  await database
+    .delete(users)
+    .where(inArray(users.id, [admin.userId, member.userId]));
   await database.$client.close();
 });

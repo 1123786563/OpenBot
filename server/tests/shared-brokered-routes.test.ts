@@ -1,5 +1,11 @@
 // server/tests/shared-brokered-routes.test.ts
-import { afterEach, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";

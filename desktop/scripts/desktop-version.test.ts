@@ -64,10 +64,7 @@ afterEach(() => {
 
 test("the checked-in Tauri version resolves the root release number", () => {
   const config = JSON.parse(
-    readFileSync(
-      resolve(hereDir, "../src-tauri/tauri.conf.json"),
-      "utf8",
-    ),
+    readFileSync(resolve(hereDir, "../src-tauri/tauri.conf.json"), "utf8"),
   );
   expect(config.version).toBe("../../package.json");
 });

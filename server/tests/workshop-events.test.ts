@@ -49,17 +49,32 @@ const SAMPLES: Array<{ family: string; payload: Record<string, unknown> }> = [
 ];
 
 /** Rows in memory, seqs dense per turn — the store's two duties for this file. */
-function fakeStore(rowsByTurn: Map<string, Array<{ seq: number; type: string; payload: Record<string, unknown> }>>) {
+function fakeStore(
+  rowsByTurn: Map<
+    string,
+    Array<{ seq: number; type: string; payload: Record<string, unknown> }>
+  >,
+) {
   return {
-    async appendEvent(input: { turnId: string; type: string; payload: Record<string, unknown> }) {
+    async appendEvent(input: {
+      turnId: string;
+      type: string;
+      payload: Record<string, unknown>;
+    }) {
       const list = rowsByTurn.get(input.turnId) ?? [];
-      const row = { seq: list.length + 1, type: input.type, payload: input.payload };
+      const row = {
+        seq: list.length + 1,
+        type: input.type,
+        payload: input.payload,
+      };
       list.push(row);
       rowsByTurn.set(input.turnId, list);
       return row as never;
     },
     async readEventsSince(turnId: string, seq: number, limit = 500) {
-      return (rowsByTurn.get(turnId) ?? []).filter((row) => row.seq > seq).slice(0, limit) as never;
+      return (rowsByTurn.get(turnId) ?? [])
+        .filter((row) => row.seq > seq)
+        .slice(0, limit) as never;
     },
   } as unknown as WorkshopStore;
 }
@@ -103,7 +118,10 @@ describe("translate (the S1 sample set)", () => {
 
 describe("the event sink", () => {
   test("persists, pings the bus, and returns the wire shape with the row's seq", async () => {
-    const rows = new Map<string, Array<{ seq: number; type: string; payload: Record<string, unknown> }>>();
+    const rows = new Map<
+      string,
+      Array<{ seq: number; type: string; payload: Record<string, unknown> }>
+    >();
     const store = fakeStore(rows);
     const bus = createTurnEventBus(null, {
       reader: {
@@ -140,7 +158,10 @@ describe("the event sink", () => {
 
 describe("the downstream response", () => {
   test("Last-Event-ID catch-up starts at the next seq, straight from the store", async () => {
-    const rows = new Map<string, Array<{ seq: number; type: string; payload: Record<string, unknown> }>>([
+    const rows = new Map<
+      string,
+      Array<{ seq: number; type: string; payload: Record<string, unknown> }>
+    >([
       [
         "t1",
         [1, 2, 3].map((seq) => ({
@@ -178,8 +199,14 @@ describe("the downstream response", () => {
   });
 
   test("seqs are monotonically increasing on the wire", async () => {
-    const rows = new Map<string, Array<{ seq: number; type: string; payload: Record<string, unknown> }>>([
-      ["t1", [1, 2, 3, 4].map((seq) => ({ seq, type: "progress", payload: {} }))],
+    const rows = new Map<
+      string,
+      Array<{ seq: number; type: string; payload: Record<string, unknown> }>
+    >([
+      [
+        "t1",
+        [1, 2, 3, 4].map((seq) => ({ seq, type: "progress", payload: {} })),
+      ],
     ]);
     const store = fakeStore(rows);
     const bus = createTurnEventBus(null, {
@@ -209,9 +236,10 @@ describe("the downstream response", () => {
   test("the degraded bus (poll mode) still delivers through the same response", async () => {
     // A live append after the response starts: the poll fallback's reader is the same store,
     // so the subscriber's re-read picks it up even though no bus ping ever fires.
-    const rows = new Map<string, Array<{ seq: number; type: string; payload: Record<string, unknown> }>>([
-      ["t1", [{ seq: 1, type: "progress", payload: {} }]],
-    ]);
+    const rows = new Map<
+      string,
+      Array<{ seq: number; type: string; payload: Record<string, unknown> }>
+    >([["t1", [{ seq: 1, type: "progress", payload: {} }]]]);
     const store = fakeStore(rows);
     const ticks: Array<() => void> = [];
     const bus = createTurnEventBus(null, {

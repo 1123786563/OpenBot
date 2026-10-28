@@ -25,11 +25,7 @@ test.skipIf(!(await available()))(
   async () => {
     const namespace = `supervisor-test-${crypto.randomUUID()}`;
     const child = Bun.spawn(
-      [
-        process.execPath,
-        "test",
-        `${hereDir}/fixtures/docker-lifecycle.ts`,
-      ],
+      [process.execPath, "test", `${hereDir}/fixtures/docker-lifecycle.ts`],
       {
         env: {
           ...process.env,

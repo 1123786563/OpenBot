@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   type PackageBlocker,
   type PackageGrantDTO,
+  type PackageInstallAction,
   type PackageInstallDetailDTO,
   PackageInstallDetailDTOSchema,
   type PackageInstallDTO,
   PackageInstallDTOSchema,
+  type PackageInstallStatusUpdate,
+  PackageInstallStatusUpdateSchema,
   type PackageListQuery,
   type PackageManifestV1,
   type PackagePage,
@@ -15,39 +18,53 @@ import {
   PackagePlanDTOSchema,
   type PackagePlanInput,
   PackagePlanInputSchema,
+  type PackagePlanVersionDiff,
   type PackageResourceKind,
 } from "../../../../shared/enterprise/plugin-package-contracts";
 import {
   enterprisePackageChanges as changeRows,
+  enterprisePackageGrants as grantRows,
   enterprisePackageInstalls as installRows,
   enterprisePackageResourceLinks as linkRows,
   enterprisePackagePlans as planRows,
   enterprisePackageRevisions as revisionRows,
 } from "../../db/schema/enterprise-plugin-packages";
 import { enterprisePluginInstalls as connectorInstallRows } from "../../db/schema/enterprise-plugins";
+import { enterpriseMemberships } from "../../db/schema/enterprise-tenancy";
 import type {
   PackageCatalogue,
   PackageReleaseFacts,
 } from "../../plugin-packages/catalogue";
+import type { PackageReleaseFactsGate } from "../../plugin-packages/deployment-facts";
+import type { PlatformScope } from "../contracts";
 import type { CompanyAdminContext } from "../tenancy/workspace-admin";
 import {
   assertPackageWriteTx,
   type PackageApplyResult,
   type PackageClock,
   type PackageInstallFacts,
+  type PackageInstallStatusResult,
   type PackageMutationStore,
   type PackageReadStore,
   type PackageService,
+  type PackageWriteTx,
   packageError,
 } from "./contracts";
 import { createPackageExpertService } from "./experts";
-import { createPackageGrantService } from "./grants";
+import {
+  createPackageGrantService,
+  revokeGrantsForInstallLifecycle,
+} from "./grants";
 import {
   addedToolsOf,
   applyRequestDigest,
   assertReleaseUsable,
+  canonicalJson,
   canonicalPlanInput,
   changeDiff,
+  lifecycleActionOf,
+  lifecycleChangeDiff,
+  lifecycleRequestDigest,
   PLAN_TTL_MS,
   planInputDigest,
   previewBlockers,
@@ -55,6 +72,7 @@ import {
   requiredConnectorIds,
   toPlanDTO,
   validateConnectorMappings,
+  versionDiff,
 } from "./plans";
 
 /** Active-grant facts → wire DTOs (installId comes from the install). */
@@ -93,6 +111,14 @@ export interface CreatePackageServiceInput {
    */
   readonly artifactRoot?: string | null;
   readonly now?: PackageClock;
+  /**
+   * OCR-fix-B (B2): fresh deployment-facts gate. Plan/apply re-read the
+   * CURRENT release state (published/digest) at their write-decision points
+   * so a CLI withdrawal blocks a live process immediately. Null keeps the
+   * boot-snapshot behaviour (existing surfaces); production always injects
+   * the gate — the same one dispatch already linearizes against.
+   */
+  readonly releaseFacts?: PackageReleaseFactsGate | null;
 }
 
 function releaseOrArtifactBlockers(
@@ -103,6 +129,7 @@ function releaseOrArtifactBlockers(
     (blocker) =>
       blocker.code === "ARTIFACT_MISSING" ||
       blocker.code === "ARTIFACT_INVALID" ||
+      blocker.code === "PACKAGE_WITHDRAWN" ||
       blocker.code === "PACKAGE_UNSUPPORTED",
   );
   if (!release.verified && artifactBlockers.length === 0) {
@@ -138,20 +165,56 @@ function requiredConnectorBlockers(
 function readinessOf(
   facts: PackageInstallFacts,
   release: PackageReleaseFacts | null,
+  hasActiveGrant: boolean,
 ): PackageInstallDTO["readiness"] {
   if (facts.status !== "enabled") return "unavailable";
   if (!release?.verified) return "unavailable";
+  // PKG08 (#467): a withdrawn release is unavailable with its real reason.
+  // Unlisting deliberately does NOT land here — `listed=false` changes only
+  // discovery and never the installed release's runtime eligibility.
+  if (release.state !== "published") return "unavailable";
   if (requiredConnectorBlockers(release, facts).length > 0) {
     return "needs_connection";
   }
-  return facts.grants.length > 0 ? "ready" : "needs_grant";
+  return hasActiveGrant ? "ready" : "needs_grant";
+}
+
+/**
+ * PKG07 (#466): the actions THIS build actually supports on an existing
+ * install, computed from the caller's company role and the install's state.
+ *
+ *   - `enabled`   → version moves (`plan`/`apply`), `grant`, `createExpert`,
+ *                   and the two ways out of enabled: `disable`, `uninstall`;
+ *   - `disabled`  → `enable` (back on, grants still revoked) and `uninstall`;
+ *   - `uninstalled` (tombstone) → `enable` only: the reinstall path. Version
+ *                   moves and grants start from an enabled install again.
+ *
+ * A caller who cannot manage the install (a member or an auditor browses) gets
+ * an honest empty array; the server re-authorizes every write regardless.
+ */
+function allowedActionsOf(
+  status: PackageInstallFacts["status"],
+  isAdmin: boolean,
+): PackageInstallAction[] {
+  if (!isAdmin) return [];
+  switch (status) {
+    case "enabled":
+      return ["plan", "apply", "grant", "createExpert", "disable", "uninstall"];
+    case "disabled":
+      return ["enable", "uninstall"];
+    default:
+      return ["enable"];
+  }
 }
 
 function installDTO(
   facts: PackageInstallFacts,
   release: PackageReleaseFacts | null,
+  caller: { readonly isAdmin: boolean },
+  /** PKG07: the write path knows the live grant state without rebuilding it. */
+  hasActiveGrant: boolean = facts.grants.length > 0,
 ): PackageInstallDTO {
-  const readiness = readinessOf(facts, release);
+  const readiness = readinessOf(facts, release, hasActiveGrant);
   const blockers: PackageBlocker[] = [];
   if (readiness === "unavailable") {
     blockers.push(...releaseOrArtifactBlockers(release));
@@ -169,18 +232,25 @@ function installDTO(
     status: facts.status,
     readiness,
     blockers,
-    // PKG02 installs; grant/disable/uninstall arrive with their own tickets.
-    allowedActions: [],
+    allowedActions: allowedActionsOf(facts.status, caller.isAdmin),
   };
 }
 
 function detailResources(
   facts: PackageInstallFacts,
   release: PackageReleaseFacts | null,
-): Array<{ id: string; kind: PackageResourceKind; available: boolean }> {
+): Array<{
+  id: string;
+  kind: PackageResourceKind;
+  available: boolean;
+  tools?: Array<{ ref: string; effect: "read" | "write" }>;
+}> {
   const linked = new Set(facts.links.map((link) => link.resourceId));
   const manifest = release?.manifest;
   if (manifest) {
+    // PKG05: a connector resource tells the grant form which tools it may
+    // grant — the same manifest list the server validates the write against.
+    const declared = addedToolsOf(manifest);
     return manifest.resources.map((resource) => ({
       id: resource.id,
       kind: resource.kind,
@@ -188,6 +258,13 @@ function detailResources(
         resource.kind === "managedConnector"
           ? linked.has(resource.id)
           : release?.verified === true,
+      ...(resource.kind === "managedConnector"
+        ? {
+            tools: declared
+              .filter((tool) => tool.ref.startsWith(`${resource.id}:`))
+              .map((tool) => ({ ref: tool.ref, effect: tool.effect })),
+          }
+        : {}),
     }));
   }
   return facts.links.map((link) => ({
@@ -211,21 +288,181 @@ function uniqueViolation(error: unknown, constraint: string): boolean {
   return false;
 }
 
+/**
+ * PKG07 (#466): allowed lifecycle transitions. Same-status targets never reach
+ * here — they are the idempotent no-op arm (no second generation bump, no
+ * second revocation). `uninstalled → disabled` has no meaning: a tombstone
+ * either comes back `enabled` (the reinstall path) or stays uninstalled.
+ */
+function lifecycleTransitionAllowed(
+  previous: PackageInstallDTO["status"],
+  next: PackageInstallDTO["status"],
+): boolean {
+  switch (previous) {
+    case "enabled":
+      return next === "disabled" || next === "uninstalled";
+    case "disabled":
+      return next === "enabled" || next === "uninstalled";
+    default:
+      return next === "enabled";
+  }
+}
+
+/**
+ * The install facts a lifecycle DTO is built from, read INSIDE the writer's
+ * operator transaction: the current revision's resource links (readiness needs
+ * the required connectors). Grants themselves are not rebuilt here — an install
+ * DTO carries no grant list; the caller feeds readiness the live grant fact
+ * through `installDTO`'s explicit argument.
+ */
+async function lifecycleFactsWithin(
+  tx: PackageWriteTx,
+  scope: PlatformScope,
+  install: {
+    readonly id: string;
+    readonly packageKey: string;
+    readonly version: string;
+    readonly artifactDigest: string;
+    readonly revision: number;
+    readonly generation: number;
+    readonly status: PackageInstallDTO["status"];
+  },
+): Promise<PackageInstallFacts> {
+  const links = await tx.db
+    .select({
+      resourceId: linkRows.resourceId,
+      kind: linkRows.kind,
+      connectorInstallId: linkRows.connectorInstallId,
+      existingSkillId: linkRows.existingSkillId,
+      expertTemplateRef: linkRows.expertTemplateRef,
+    })
+    .from(linkRows)
+    .where(
+      and(
+        eq(linkRows.tenantId, scope.tenantId),
+        eq(linkRows.installId, install.id),
+        eq(linkRows.revision, install.revision),
+      ),
+    );
+  return {
+    tenantId: scope.tenantId,
+    workspaceId: scope.workspaceId,
+    installId: install.id,
+    packageKey: install.packageKey,
+    version: install.version,
+    artifactDigest: install.artifactDigest,
+    revision: install.revision,
+    generation: install.generation,
+    status: install.status,
+    links: links.map((link) => ({
+      resourceId: link.resourceId,
+      kind: link.kind as PackageResourceKind,
+      connectorInstallId: link.connectorInstallId,
+      existingSkillId: link.existingSkillId,
+      expertTemplateRef: link.expertTemplateRef,
+    })),
+    // Placeholder shape only: PackageInstallDTO carries no grant list, and the
+    // one reader of `grants` on this path is readiness, fed by the explicit
+    // `hasActiveGrant` argument below. Never surfaced as grant facts.
+    grants: [],
+    callerCompanyRole: "tenant_admin",
+  };
+}
+
 export function createPackageService(
   input: CreatePackageServiceInput,
 ): PackageService {
   const { catalogue, readStore, mutation } = input;
   const now: PackageClock = input.now ?? (() => new Date());
+  const releaseFacts = input.releaseFacts ?? null;
+
+  /**
+   * OCR-fix-B (B2): the fresh-deployment write gate. A lock-free advisory
+   * read (the gate's own contract allows it outside the release lock): the
+   * index's atomic replace makes each read all-old or all-new, and any
+   * unreadable index, missing entry, non-published state or digest drift
+   * from the boot snapshot answers the install surface's existing
+   * withdrawn-refusal code, fail closed.
+   */
+  const assertFreshReleasePublished = async (release: {
+    packageKey: string;
+    version: string;
+    artifactDigest: string;
+  }): Promise<void> => {
+    if (!releaseFacts) return;
+    const fresh = await releaseFacts
+      .readFreshFacts(release.packageKey, release.version)
+      .catch(() => {
+        throw packageError("PACKAGE_UNSUPPORTED");
+      });
+    if (
+      fresh?.state !== "published" ||
+      fresh.artifactDigest !== release.artifactDigest
+    ) {
+      throw packageError("PACKAGE_UNSUPPORTED");
+    }
+  };
 
   const requireMutation = (): PackageMutationStore => {
     if (!mutation) throw packageError("ADMIN_CHANNEL_UNAVAILABLE");
     return mutation;
   };
 
+  /** Does any active (never revoked) grant row still stand for this install? */
+  const hasActiveGrantWithin = async (
+    tx: PackageWriteTx,
+    scope: PlatformScope,
+    installId: string,
+  ): Promise<boolean> => {
+    const [row] = await tx.db
+      .select({ botId: grantRows.botId })
+      .from(grantRows)
+      .where(
+        and(
+          eq(grantRows.tenantId, scope.tenantId),
+          eq(grantRows.installId, installId),
+          isNull(grantRows.revokedAt),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  };
+
+  /**
+   * OCR-fix-H (R7-H1): the caller's company role read from the LIVE
+   * membership row inside this transaction, never a hardcoded literal — the
+   * mutation store already revalidated tenant_admin on the same rows; the
+   * receipt names what the actor actually holds. An unreachable missing row
+   * (defensive) reads as a non-managing caller, same as the read store.
+   */
+  const callerCompanyRoleWithin = async (
+    tx: PackageWriteTx,
+    scope: PlatformScope,
+  ): Promise<string> => {
+    const [row] = await tx.db
+      .select({ role: enterpriseMemberships.role })
+      .from(enterpriseMemberships)
+      .where(
+        and(
+          eq(enterpriseMemberships.tenantId, scope.tenantId),
+          eq(enterpriseMemberships.principalId, scope.principalId),
+        ),
+      )
+      .limit(1);
+    return row?.role ?? "";
+  };
+
   return {
     // PKG03A grant service: setBotGrant/revokeBotGrant on the same trusted
     // operator channel (mutations revalidate admin/membership per transaction).
-    ...createPackageGrantService({ mutation, now }),
+    // PKG06: the artifact root travels with it — connector-tool grants take
+    // their contract from the install's CURRENT revision manifest, and after
+    // an upgrade that manifest is the new revision's.
+    ...createPackageGrantService({
+      mutation,
+      artifactRoot: input.artifactRoot ?? null,
+      now,
+    }),
 
     // PKG04A expert instantiation on the same trusted operator channel.
     ...createPackageExpertService({
@@ -250,7 +487,12 @@ export function createPackageService(
             facts.packageKey,
             facts.version,
           );
-          return { ...item, install: installDTO(facts, release) };
+          return {
+            ...item,
+            install: installDTO(facts, release, {
+              isAdmin: facts.callerCompanyRole === "tenant_admin",
+            }),
+          };
         }),
       );
       return PackagePageSchema.parse({ items, nextCursor: page.nextCursor });
@@ -263,12 +505,40 @@ export function createPackageService(
         facts.packageKey,
         facts.version,
       );
+      // PKG06: the published-version facts the detail screen draws beside the
+      // install — the newest listed release and the exact targets an
+      // upgrade/rollback plan may name. PKG08: listVersions returns listed
+      // PUBLISHED releases only, so a withdrawn release is neither the newest
+      // published face nor a picker target. The guard keeps older catalogue
+      // implementations (and the untyped test seams) from breaking the read.
+      const versions =
+        typeof catalogue.listVersions === "function"
+          ? await catalogue.listVersions(facts.packageKey)
+          : [];
+      const usable = versions.filter((entry) => entry.verified && entry.listed);
+      // PKG10 (#469): the unknown-effect badge rides the same detail read —
+      // redacted (a count only), preserved whatever the install's lifecycle
+      // state. Same guard discipline as listVersions: an older read store (or
+      // an untyped test seam) keeps the detail it always answered, and the
+      // badge is simply absent rather than breaking the read.
+      const unknownDispatches =
+        typeof readStore.countUnknownDispatches === "function"
+          ? await readStore.countUnknownDispatches(scope, installId)
+          : undefined;
       return PackageInstallDetailDTOSchema.parse({
-        ...installDTO(facts, release),
+        ...installDTO(facts, release, {
+          isAdmin: facts.callerCompanyRole === "tenant_admin",
+        }),
         resources: detailResources(facts, release),
         // PKG03A: the install's active Bot grants (revoked grants are never
         // surfaced; "安装≠授权" — the grant list IS the authorization state).
         grants: grantDTOs(facts),
+        latestPublishedVersion: usable[0]?.version ?? null,
+        availableVersions: usable.map((entry) => ({
+          version: entry.version,
+          artifactDigest: entry.artifactDigest,
+        })),
+        unknownDispatches,
       });
     },
 
@@ -280,20 +550,28 @@ export function createPackageService(
       const parsed = PackagePlanInputSchema.safeParse(planInput);
       if (!parsed.success) throw packageError("INPUT_INVALID");
       const wellFormed = parsed.data;
-      // PKG02 owns install only; other operations parse but are unsupported.
-      if (wellFormed.operation !== "install") {
-        throw packageError("PACKAGE_UNSUPPORTED");
-      }
-      // expectedRevision CAS for an existing install belongs to PKG06.
-      if (wellFormed.expectedRevision !== null) {
+      // The install contract keeps its PKG02 shape: a first install carries
+      // no revision; the revision CAS belongs to upgrade/rollback below.
+      if (
+        wellFormed.operation === "install" &&
+        wellFormed.expectedRevision !== null
+      ) {
         throw packageError("REVISION_CONFLICT");
       }
+      // Exact published target only: an unknown version answers 404, an
+      // unlisted or unverifiable release answers PACKAGE_UNSUPPORTED, and
+      // there is no "latest" spelling to resolve — the wire version pattern
+      // already refuses one.
       const release = assertReleaseUsable(
         await catalogue.resolveRelease(
           wellFormed.packageKey,
           wellFormed.version,
         ),
       );
+      // OCR-fix-B (B2): the boot snapshot stays the manifest/verification
+      // source, but the write decision re-reads the CURRENT deployment
+      // facts — a withdrawn release is not plannable without a restart.
+      await assertFreshReleasePublished(release);
       const manifest = release.manifest as PackageManifestV1;
       const mappings = validateConnectorMappings(manifest, wellFormed);
 
@@ -302,13 +580,25 @@ export function createPackageService(
       const planId = randomUUID();
       const createdAt = now();
       const expiresAt = new Date(createdAt.getTime() + PLAN_TTL_MS);
-      const preview = {
-        resources: previewResources(manifest),
-        addedTools: addedToolsOf(manifest),
-        removedTools: [] as string[],
-        blockers: previewBlockers(manifest, mappings),
-        expiresAt: expiresAt.toISOString(),
-      };
+      /*
+       * The preview is computed INSIDE the plan transaction (the install row
+       * it diffs against is read there) and carried out for the DTO; the
+       * transaction throwing means no plan row and no DTO either. A holder
+       * object keeps TypeScript's control flow from narrowing the callback
+       * assignment away.
+       */
+      interface PlannedPreview {
+        resources: Array<{ id: string; kind: PackageResourceKind }>;
+        addedTools: PackagePlanDTO["addedTools"];
+        removedTools: string[];
+        blockers: PackageBlocker[];
+        diff?: PackagePlanVersionDiff;
+      }
+      const planned: {
+        preview: PlannedPreview | null;
+        expectedRevision: number | null;
+        operation: PackagePlanDTO["operation"];
+      } = { preview: null, expectedRevision: null, operation: "install" };
 
       await requireMutation().transaction(scope, admin, async (tx) => {
         assertPackageWriteTx(tx);
@@ -327,34 +617,181 @@ export function createPackageService(
           // Unknown and cross-scope references answer the same 404.
           if (!connectorInstall) throw packageError("RESOURCE_NOT_FOUND");
         }
+
+        // PKG06: a plan always looks at the live install row — an install
+        // request against an installed package is PRESENTED as the upgrade it
+        // actually is (PKG02 L-1: never a misleading first-install preview),
+        // and an explicit upgrade/rollback must find one to move.
+        const [install] = await tx.db
+          .select({
+            id: installRows.id,
+            status: installRows.status,
+            revision: installRows.revision,
+            currentVersion: installRows.currentVersion,
+          })
+          .from(installRows)
+          .where(
+            and(
+              eq(installRows.tenantId, scope.tenantId),
+              eq(installRows.workspaceId, scope.workspaceId),
+              eq(installRows.packageKey, wellFormed.packageKey),
+            ),
+          )
+          .limit(1);
+
+        const isVersionChange = install !== undefined;
+        if (wellFormed.operation !== "install" && !isVersionChange) {
+          // Nothing to upgrade or roll back: the same 404 as an unknown
+          // install id, never a hint about other scopes' installs.
+          throw packageError("RESOURCE_NOT_FOUND");
+        }
+        if (isVersionChange && install.status !== "enabled") {
+          // PKG07 owns disable/uninstall; a non-enabled install is not a
+          // version-change target in this build.
+          throw packageError("PACKAGE_UNSUPPORTED");
+        }
+        if (wellFormed.operation !== "install") {
+          // Explicit upgrade/rollback: the caller must name the exact live
+          // revision. Null, stale or moved answers the same 409 — the caller
+          // re-reads and replans.
+          if (
+            wellFormed.expectedRevision === null ||
+            wellFormed.expectedRevision !== install.revision
+          ) {
+            throw packageError("REVISION_CONFLICT");
+          }
+        }
+
+        const effectiveOperation: PackagePlanDTO["operation"] = isVersionChange
+          ? wellFormed.operation === "install"
+            ? "upgrade"
+            : wellFormed.operation
+          : "install";
+        const expectedRevision = isVersionChange ? install.revision : null;
+
+        let preview: PlannedPreview & { expiresAt: string };
+        if (!isVersionChange) {
+          preview = {
+            resources: previewResources(manifest),
+            addedTools: addedToolsOf(manifest),
+            removedTools: [],
+            blockers: previewBlockers(manifest, mappings),
+            expiresAt: expiresAt.toISOString(),
+          };
+        } else {
+          // The current revision's stored facts (immutable rows) and, when
+          // the current release still resolves, its manifest. A current
+          // release that left the catalogue degrades the diff to the stored
+          // facts — every target tool then counts as the increment instead
+          // of guessing what the old manifest declared.
+          const [currentRevisionRow] = await tx.db
+            .select({
+              config: revisionRows.config,
+            })
+            .from(revisionRows)
+            .where(
+              and(
+                eq(revisionRows.tenantId, scope.tenantId),
+                eq(revisionRows.installId, install.id),
+                eq(revisionRows.revision, install.revision),
+              ),
+            )
+            .limit(1);
+          const currentLinks = await tx.db
+            .select({
+              resourceId: linkRows.resourceId,
+              kind: linkRows.kind,
+            })
+            .from(linkRows)
+            .where(
+              and(
+                eq(linkRows.tenantId, scope.tenantId),
+                eq(linkRows.installId, install.id),
+                eq(linkRows.revision, install.revision),
+              ),
+            );
+          const currentRelease = await catalogue.resolveRelease(
+            wellFormed.packageKey,
+            install.currentVersion,
+          );
+          const diff = versionDiff({
+            target: manifest,
+            targetConfig: (canonicalInput.config ?? {}) as Record<
+              string,
+              unknown
+            >,
+            currentVersion: install.currentVersion,
+            currentRevision: install.revision,
+            currentConfig:
+              ((currentRevisionRow?.config ?? {}) as Record<string, unknown>) ??
+              {},
+            currentResources: currentLinks.map((link) => ({
+              resourceId: link.resourceId,
+              kind: link.kind as PackageResourceKind,
+            })),
+            currentManifest:
+              currentRelease?.manifest instanceof Object
+                ? (currentRelease.manifest as PackageManifestV1)
+                : null,
+          });
+          preview = {
+            resources: previewResources(manifest),
+            addedTools: diff.addedTools,
+            removedTools: diff.removedTools,
+            blockers: previewBlockers(manifest, mappings),
+            expiresAt: expiresAt.toISOString(),
+            diff: {
+              currentVersion: diff.currentVersion,
+              currentRevision: diff.currentRevision,
+              addedResources: diff.addedResources,
+              removedResources: diff.removedResources,
+              changedTools: diff.changedTools,
+              configChanges: diff.configChanges,
+              connectionChanges: diff.connectionChanges,
+            },
+          };
+        }
+
         await tx.db.insert(planRows).values({
           tenantId: scope.tenantId,
           id: planId,
           workspaceId: scope.workspaceId,
           actorId: scope.actorId,
           principalId: scope.principalId,
-          operation: wellFormed.operation,
+          // The operation the plan WILL perform: an install request against
+          // an installed package is recorded (and applied) as the upgrade it
+          // is, while the canonical input keeps the caller's request.
+          operation: effectiveOperation,
           packageKey: release.packageKey,
           version: release.version,
           artifactDigest: release.artifactDigest,
-          expectedRevision: null,
+          expectedRevision,
           canonicalInput,
           inputDigest,
           preview,
           expiresAt,
         });
+
+        const { expiresAt: _storedExpiry, ...previewForDto } = preview;
+        planned.preview = previewForDto;
+        planned.expectedRevision = expectedRevision;
+        planned.operation = effectiveOperation;
       });
 
       return PackagePlanDTOSchema.parse(
         toPlanDTO({
           planId,
-          operation: wellFormed.operation,
+          operation: planned.operation,
           release,
-          expectedRevision: null,
+          expectedRevision: planned.expectedRevision,
           expiresAt,
-          resources: preview.resources,
-          addedTools: preview.addedTools,
-          blockers: preview.blockers,
+          resources: planned.preview?.resources ?? [],
+          addedTools: planned.preview?.addedTools ?? [],
+          removedTools: planned.preview?.removedTools ?? [],
+          blockers: planned.preview?.blockers ?? [],
+          ...(planned.preview?.diff === undefined
+            ? {}
+            : { diff: planned.preview.diff }),
         }),
       );
     },
@@ -376,7 +813,12 @@ export function createPackageService(
       }
       const plan = await store.readPlan(scope, planId);
       if (!plan) throw packageError("RESOURCE_NOT_FOUND");
-      if (plan.operation !== "install") {
+      if (
+        plan.operation !== "install" &&
+        plan.operation !== "upgrade" &&
+        plan.operation !== "rollback"
+      ) {
+        // Closed vocabulary; a future operation this build does not know.
         throw packageError("PACKAGE_UNSUPPORTED");
       }
       // Immutable artifact verification happens OUTSIDE the write transaction.
@@ -386,6 +828,11 @@ export function createPackageService(
       if (release.artifactDigest !== plan.artifactDigest) {
         throw packageError("PLAN_CHANGED");
       }
+      // OCR-fix-B (B2): re-read the CURRENT deployment facts at apply's
+      // write decision — a plan made before a withdrawal is not applicable
+      // after it, on the same live process. Lock-free read, taken before the
+      // transaction opens (see the report for the lock-semantics note).
+      await assertFreshReleasePublished(release);
       const requestDigest = applyRequestDigest(plan);
 
       try {
@@ -423,17 +870,30 @@ export function createPackageService(
             );
           }
 
-          const [existing] = await tx.db
-            .select({ id: installRows.id })
-            .from(installRows)
-            .where(
-              and(
-                eq(installRows.tenantId, scope.tenantId),
-                eq(installRows.workspaceId, scope.workspaceId),
-                eq(installRows.packageKey, plan.packageKey),
-              ),
-            )
-            .limit(1);
+          const installColumns = {
+            id: installRows.id,
+            status: installRows.status,
+            revision: installRows.revision,
+            generation: installRows.generation,
+            currentVersion: installRows.currentVersion,
+          };
+          const readInstall = async () => {
+            const [row] = await tx.db
+              .select(installColumns)
+              .from(installRows)
+              .where(
+                and(
+                  eq(installRows.tenantId, scope.tenantId),
+                  eq(installRows.workspaceId, scope.workspaceId),
+                  eq(installRows.packageKey, plan.packageKey),
+                ),
+              )
+              .limit(1);
+            return row;
+          };
+          // The pre-lock read only names the install the advisory lock is
+          // taken on.
+          let existing = await readInstall();
           if (existing) {
             const installKey = JSON.stringify([
               "enterprise",
@@ -444,6 +904,11 @@ export function createPackageService(
             await tx.db.execute(
               sql`select pg_advisory_xact_lock(hashtextextended(${installKey}, 0))`,
             );
+            // OCR-fix-B (B5): that advisory lock is the same one a
+            // concurrent disable/uninstall queues on — the pre-lock row may
+            // be a pre-disable snapshot. Re-read under the lock and judge
+            // every later step from what stands NOW.
+            existing = await readInstall();
           }
           const planLockKey = JSON.stringify([
             "enterprise",
@@ -519,9 +984,6 @@ export function createPackageService(
           ) {
             throw packageError("RESOURCE_NOT_FOUND");
           }
-          if (lockedPlan.operation !== "install") {
-            throw packageError("PACKAGE_UNSUPPORTED");
-          }
           // Every decision below reads the LOCKED row, never the pre-lock
           // `plan`. Recomputing the input digest from the locked canonical
           // input is what detects a row rewritten between `readPlan` and this
@@ -530,12 +992,18 @@ export function createPackageService(
           const recomputedInputDigest = planInputDigest(
             lockedPlan.canonicalInput,
           );
+          // PKG06: install plans carry no revision; upgrade/rollback plans
+          // carry the exact revision they were CAS-bound to at plan time.
+          const lockedExpectedRevision =
+            lockedPlan.operation === "install"
+              ? null
+              : lockedPlan.expectedRevision;
           if (
             lockedPlan.id !== plan.planId ||
             lockedPlan.operation !== plan.operation ||
             lockedPlan.packageKey !== plan.packageKey ||
             lockedPlan.version !== plan.version ||
-            lockedPlan.expectedRevision !== null ||
+            lockedExpectedRevision !== plan.expectedRevision ||
             lockedPlan.inputDigest !== plan.inputDigest ||
             recomputedInputDigest !== lockedPlan.inputDigest ||
             lockedPlan.artifactDigest !== plan.artifactDigest ||
@@ -563,9 +1031,9 @@ export function createPackageService(
               installId: result.installId,
               revision: result.revision,
               actorId: scope.actorId,
-              action: "install",
+              action: lockedPlan.operation,
               diff: changeDiff({
-                operation: "install",
+                operation: lockedPlan.operation,
                 packageKey,
                 version,
                 artifactDigest,
@@ -582,6 +1050,344 @@ export function createPackageService(
           if (appliedAt.getTime() > lockedPlan.expiresAt.getTime()) {
             throw packageError("PLAN_EXPIRED");
           }
+
+          if (lockedPlan.operation !== "install") {
+            // ---------------------------------------------------------------
+            // PKG06 (#465): upgrade / rollback. The install row is CAS-moved
+            // to a NEW revision (append-only rows, never a rewrite); grants
+            // are neither revoked nor revived — a changed tool contract needs
+            // a fresh grant and dispatch refuses the old pins meanwhile.
+            // ---------------------------------------------------------------
+            if (!existing) {
+              // The install vanished: installs are never deleted in V1, so
+              // this is an unknown id answering the same 404.
+              throw packageError("RESOURCE_NOT_FOUND");
+            }
+            if (existing.status !== "enabled") {
+              // PKG07 owns disable/uninstall; not a version-change target.
+              throw packageError("PACKAGE_UNSUPPORTED");
+            }
+            if (
+              lockedPlan.expectedRevision === null ||
+              lockedPlan.expectedRevision !== existing.revision
+            ) {
+              // A concurrent upgrade moved the install, or this plan was
+              // bound to a revision that no longer stands: one deterministic
+              // 409, the caller re-reads and replans.
+              throw packageError("REVISION_CONFLICT");
+            }
+
+            // The current revision's immutable facts (digest + config) decide
+            // the same-version idempotence below; its links decide connector
+            // carry-over.
+            const [currentRevisionRow] = await tx.db
+              .select({
+                artifactDigest: revisionRows.artifactDigest,
+                config: revisionRows.config,
+              })
+              .from(revisionRows)
+              .where(
+                and(
+                  eq(revisionRows.tenantId, scope.tenantId),
+                  eq(revisionRows.installId, existing.id),
+                  eq(revisionRows.revision, existing.revision),
+                ),
+              )
+              .limit(1);
+            if (!currentRevisionRow) {
+              // The install row names a revision no immutable row proves:
+              // replan, never move the install on unverifiable content.
+              throw packageError("PLAN_CHANGED");
+            }
+            const currentConfig = (currentRevisionRow.config ?? {}) as Record<
+              string,
+              unknown
+            >;
+
+            if (
+              existing.currentVersion === version &&
+              currentRevisionRow.artifactDigest === artifactDigest &&
+              canonicalJson(currentConfig) === canonicalJson(config)
+            ) {
+              // Same version, same digest, same full config: applying is an
+              // idempotent no-op that returns the standing install and
+              // records the receipt.
+              // OCR-fix-H (R7-H1): the receipt carries the standing install's
+              // REAL facts, read in this same transaction — links via
+              // lifecycleFactsWithin, grant state via hasActiveGrantWithin,
+              // the same discipline updateInstallStatus's no-op arm uses.
+              // The empty-shaped construction was persisted into
+              // resultJson/planRows, so every idempotency-key replay kept
+              // answering a fabricated needs_connection / needs_grant for a
+              // connected, granted install.
+              const standingFacts = await lifecycleFactsWithin(tx, scope, {
+                id: existing.id,
+                packageKey,
+                version,
+                artifactDigest,
+                revision: existing.revision,
+                generation: existing.generation,
+                status: existing.status as PackageInstallFacts["status"],
+              });
+              const standingCallerRole = await callerCompanyRoleWithin(
+                tx,
+                scope,
+              );
+              const standingHasActiveGrant = await hasActiveGrantWithin(
+                tx,
+                scope,
+                existing.id,
+              );
+              const standing = installDTO(
+                { ...standingFacts, callerCompanyRole: standingCallerRole },
+                release,
+                { isAdmin: standingCallerRole === "tenant_admin" },
+                standingHasActiveGrant,
+              );
+              await tx.db.insert(changeRows).values({
+                tenantId: scope.tenantId,
+                changeId: randomUUID(),
+                workspaceId: scope.workspaceId,
+                installId: existing.id,
+                revision: existing.revision,
+                actorId: scope.actorId,
+                action: lockedPlan.operation,
+                diff: changeDiff({
+                  operation: lockedPlan.operation,
+                  packageKey,
+                  version,
+                  artifactDigest,
+                  revision: existing.revision,
+                  config,
+                  previousVersion: existing.currentVersion,
+                  previousRevision: existing.revision,
+                }),
+                idempotencyKey,
+                requestDigest,
+                resultJson: standing,
+              });
+              await tx.db
+                .update(planRows)
+                .set({ consumedAt: appliedAt, result: standing })
+                .where(
+                  and(
+                    eq(planRows.tenantId, scope.tenantId),
+                    eq(planRows.id, lockedPlan.id),
+                  ),
+                );
+              return { install: standing, created: false };
+            }
+
+            // New revision: strictly greater, never reused; generation only
+            // ratchets on lifecycle changes (PKG07), not on version changes.
+            const newRevision = existing.revision + 1;
+            await tx.db
+              .update(installRows)
+              .set({
+                currentVersion: version,
+                revision: newRevision,
+                updatedAt: appliedAt,
+              })
+              .where(
+                and(
+                  eq(installRows.tenantId, scope.tenantId),
+                  eq(installRows.id, existing.id),
+                ),
+              );
+            await tx.db.insert(revisionRows).values({
+              tenantId: scope.tenantId,
+              installId: existing.id,
+              revision: newRevision,
+              releaseVersion: version,
+              artifactDigest,
+              config,
+              createdBy: scope.principalId,
+            });
+
+            // Rebuild the new revision's links from the target manifest. A
+            // connector resource the caller remapped uses the new mapping;
+            // one they left unmapped KEEPS the current revision's link for
+            // the same resource id (an explicit standing choice, kept — not
+            // a guessed default); one with neither mapping nor standing link
+            // stays unlinked (NEEDS_CONNECTION), never a fake reference.
+            const manifest = release.manifest as PackageManifestV1;
+            const mapped = new Map(
+              Object.entries(
+                (canonical.connectorInstalls ?? {}) as Record<string, string>,
+              ),
+            );
+            const currentLinks = await tx.db
+              .select({
+                resourceId: linkRows.resourceId,
+                kind: linkRows.kind,
+                connectorInstallId: linkRows.connectorInstallId,
+                expertTemplateRef: linkRows.expertTemplateRef,
+              })
+              .from(linkRows)
+              .where(
+                and(
+                  eq(linkRows.tenantId, scope.tenantId),
+                  eq(linkRows.installId, existing.id),
+                  eq(linkRows.revision, existing.revision),
+                ),
+              );
+            const standingConnectorByResource = new Map(
+              currentLinks
+                .filter(
+                  (link) =>
+                    link.kind === "managedConnector" &&
+                    link.connectorInstallId !== null,
+                )
+                .map((link) => [link.resourceId, link.connectorInstallId]),
+            );
+            const linked: Array<{
+              resourceId: string;
+              kind: PackageResourceKind;
+              connectorInstallId: string | null;
+              expertTemplateRef: string | null;
+            }> = [];
+            for (const resource of manifest.resources) {
+              if (resource.kind === "skill") {
+                linked.push({
+                  resourceId: resource.id,
+                  kind: "skill",
+                  connectorInstallId: null,
+                  expertTemplateRef: null,
+                });
+              } else if (resource.kind === "expertTemplate") {
+                linked.push({
+                  resourceId: resource.id,
+                  kind: "expertTemplate",
+                  connectorInstallId: null,
+                  expertTemplateRef: `${release.packageKey}/${resource.id}`,
+                });
+              } else {
+                const connectorInstallId =
+                  mapped.get(resource.id) ??
+                  standingConnectorByResource.get(resource.id);
+                if (connectorInstallId === undefined) continue;
+                linked.push({
+                  resourceId: resource.id,
+                  kind: "managedConnector",
+                  connectorInstallId,
+                  expertTemplateRef: null,
+                });
+              }
+            }
+            if (linked.length > 0) {
+              // R4-3 discipline, same as the install path: re-prove inside
+              // THIS transaction that every connector install about to be
+              // referenced still exists — a delete in the plan→apply window
+              // answers CONNECTOR_INSTALL_MISSING, never a bare FK 500.
+              for (const connectorInstallId of [
+                ...new Set(
+                  linked
+                    .map((link) => link.connectorInstallId)
+                    .filter((id): id is string => id !== null),
+                ),
+              ]) {
+                const [stillThere] = await tx.db
+                  .select({ id: connectorInstallRows.id })
+                  .from(connectorInstallRows)
+                  .where(
+                    and(
+                      eq(connectorInstallRows.tenantId, scope.tenantId),
+                      eq(connectorInstallRows.workspaceId, scope.workspaceId),
+                      eq(connectorInstallRows.id, connectorInstallId),
+                    ),
+                  )
+                  .limit(1);
+                if (!stillThere) {
+                  throw packageError("CONNECTOR_INSTALL_MISSING");
+                }
+              }
+              await tx.db.insert(linkRows).values(
+                linked.map((link) => ({
+                  tenantId: scope.tenantId,
+                  installId: existing.id,
+                  revision: newRevision,
+                  resourceId: link.resourceId,
+                  workspaceId: scope.workspaceId,
+                  kind: link.kind,
+                  existingSkillId: null,
+                  connectorInstallId: link.connectorInstallId,
+                  expertTemplateRef: link.expertTemplateRef,
+                })),
+              );
+            }
+
+            const upgradedFacts: PackageInstallFacts = {
+              tenantId: scope.tenantId,
+              workspaceId: scope.workspaceId,
+              installId: existing.id,
+              packageKey,
+              version,
+              artifactDigest,
+              revision: newRevision,
+              generation: existing.generation,
+              status: "enabled",
+              links: linked.map((link) => ({
+                resourceId: link.resourceId,
+                kind: link.kind,
+                connectorInstallId: link.connectorInstallId,
+                existingSkillId: null,
+                expertTemplateRef: link.expertTemplateRef,
+              })),
+              // Placeholder shape only (as in lifecycleFactsWithin): the
+              // DTO carries no grant list; readiness takes the live grant
+              // fact through installDTO's explicit argument below.
+              grants: [],
+              callerCompanyRole: await callerCompanyRoleWithin(tx, scope),
+            };
+            // OCR-fix-H (R7-H1): the upgraded receipt answers readiness from
+            // the live grant state — an upgrade neither revokes nor revives
+            // grants, so one that still stands reads ready, never a fake
+            // needs_grant persisted into the receipts.
+            const upgradedHasActiveGrant = await hasActiveGrantWithin(
+              tx,
+              scope,
+              existing.id,
+            );
+            const upgraded = installDTO(
+              upgradedFacts,
+              release,
+              { isAdmin: upgradedFacts.callerCompanyRole === "tenant_admin" },
+              upgradedHasActiveGrant,
+            );
+            await tx.db.insert(changeRows).values({
+              tenantId: scope.tenantId,
+              changeId: randomUUID(),
+              workspaceId: scope.workspaceId,
+              installId: existing.id,
+              revision: newRevision,
+              actorId: scope.actorId,
+              action: lockedPlan.operation,
+              diff: changeDiff({
+                operation: lockedPlan.operation,
+                packageKey,
+                version,
+                artifactDigest,
+                revision: newRevision,
+                config,
+                previousVersion: existing.currentVersion,
+                previousRevision: existing.revision,
+              }),
+              idempotencyKey,
+              requestDigest,
+              resultJson: upgraded,
+            });
+            await tx.db
+              .update(planRows)
+              .set({ consumedAt: appliedAt, result: upgraded })
+              .where(
+                and(
+                  eq(planRows.tenantId, scope.tenantId),
+                  eq(planRows.id, lockedPlan.id),
+                ),
+              );
+            return { install: upgraded, created: false };
+          }
+
           // One install per (tenant, workspace, package_key): a different plan
           // for an already-installed package is a conflict, never an overwrite.
           if (existing) throw packageError("REVISION_CONFLICT");
@@ -710,8 +1516,11 @@ export function createPackageService(
               expertTemplateRef: link.expertTemplateRef,
             })),
             grants: [],
+            // The write path revalidated this actor as tenant_admin inside
+            // the mutation transaction; the result DTO names what they may do.
+            callerCompanyRole: "tenant_admin",
           };
-          const result = installDTO(facts, release);
+          const result = installDTO(facts, release, { isAdmin: true });
           await tx.db.insert(changeRows).values({
             tenantId: scope.tenantId,
             changeId: randomUUID(),
@@ -747,6 +1556,300 @@ export function createPackageService(
         if (uniqueViolation(error, "enterprise_package_install_scope_key_uq")) {
           throw packageError("REVISION_CONFLICT");
         }
+        if (
+          uniqueViolation(error, "enterprise_package_change_idempotency_uq")
+        ) {
+          throw packageError("IDEMPOTENCY_CONFLICT");
+        }
+        throw error;
+      }
+    },
+
+    /**
+     * PKG07 (#466): move one install's lifecycle status under the revision CAS.
+     *
+     * Lock order (Spec §8): the mutation store already holds the member class
+     * exclusively; this method takes the INSTALL class EXCLUSIVELY — the same
+     * advisory key dispatch takes SHARED for its `prepared → dispatched` CAS.
+     * Commit order therefore decides the disable/dispatch race, never
+     * timestamps:
+     *   - a disable/uninstall that commits FIRST moves the generation and the
+     *     status, so a waiting CAS re-reads `status != 'enabled'` /
+     *     `generation != pin.installGeneration` and refuses before any
+     *     transport call (network: 0);
+     *   - a CAS that commits FIRST is already dispatched; the disable revokes
+     *     the grants but the completion write is deliberately NOT gated on
+     *     authorization, so a real external effect keeps its receipt or its
+     *     `unknown` state instead of being relabelled as withdrawn.
+     *
+     * Nothing is deleted: the install row is a tombstone, revisions, Run pins,
+     * change receipts and dispatch evidence all stay.
+     */
+    async updateInstallStatus(
+      scope: PlatformScope,
+      admin: CompanyAdminContext,
+      installId: string,
+      rawInput: PackageInstallStatusUpdate,
+      idempotencyKey: string,
+    ): Promise<PackageInstallStatusResult> {
+      if (
+        typeof idempotencyKey !== "string" ||
+        idempotencyKey.length < 1 ||
+        idempotencyKey.length > 128 ||
+        !/^[\x20-\x7e]+$/.test(idempotencyKey)
+      ) {
+        throw packageError("INPUT_INVALID");
+      }
+      const parsed = PackageInstallStatusUpdateSchema.safeParse(rawInput);
+      if (!parsed.success) throw packageError("INPUT_INVALID");
+      if (
+        typeof installId !== "string" ||
+        installId.trim() === "" ||
+        installId.length > 128
+      ) {
+        throw packageError("RESOURCE_NOT_FOUND");
+      }
+      const input = parsed.data;
+      const store = requireMutation();
+      const requestDigest = lifecycleRequestDigest({
+        installId,
+        status: input.status,
+        expectedRevision: input.expectedRevision,
+      });
+
+      try {
+        return await store.transaction(scope, admin, async (tx) => {
+          assertPackageWriteTx(tx);
+          const installLockKey = JSON.stringify([
+            "enterprise",
+            "package-install",
+            scope.tenantId,
+            installId,
+          ]);
+          await tx.db.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${installLockKey}, 0))`,
+          );
+          const changedAt = now();
+
+          const [receipt] = await tx.db
+            .select({
+              requestDigest: changeRows.requestDigest,
+              response: changeRows.resultJson,
+            })
+            .from(changeRows)
+            .where(
+              and(
+                eq(changeRows.tenantId, scope.tenantId),
+                eq(changeRows.workspaceId, scope.workspaceId),
+                eq(changeRows.actorId, scope.actorId),
+                eq(changeRows.idempotencyKey, idempotencyKey),
+              ),
+            )
+            .limit(1);
+          if (receipt) {
+            // Replay under the same key: the stored answer stands, whatever
+            // the install has done since (a receipt is an audit fact).
+            if (receipt.requestDigest !== requestDigest) {
+              throw packageError("IDEMPOTENCY_CONFLICT");
+            }
+            return {
+              install: PackageInstallDTOSchema.parse(receipt.response),
+              changed: false,
+            };
+          }
+
+          const [install] = await tx.db
+            .select({
+              id: installRows.id,
+              workspaceId: installRows.workspaceId,
+              packageKey: installRows.packageKey,
+              currentVersion: installRows.currentVersion,
+              status: installRows.status,
+              generation: installRows.generation,
+              revision: installRows.revision,
+            })
+            .from(installRows)
+            .where(
+              and(
+                eq(installRows.tenantId, scope.tenantId),
+                eq(installRows.id, installId),
+              ),
+            )
+            .limit(1);
+          // Cross-scope and unknown ids answer the same 404 (the operator RLS
+          // pins the tenant; the workspace predicate is the second line).
+          if (!install || install.workspaceId !== scope.workspaceId) {
+            throw packageError("RESOURCE_NOT_FOUND");
+          }
+          // The CAS names the revision the caller read: an upgrade/rollback
+          // that moved it makes this request stale (409, re-read and retry).
+          // Lifecycle changes move the GENERATION only — revision stays the
+          // version fact PKG06 defined, so a lifecycle retry is idempotent
+          // instead of ratcheting counters.
+          if (input.expectedRevision !== install.revision) {
+            throw packageError("REVISION_CONFLICT");
+          }
+          const [currentRevision] = await tx.db
+            .select({ artifactDigest: revisionRows.artifactDigest })
+            .from(revisionRows)
+            .where(
+              and(
+                eq(revisionRows.tenantId, scope.tenantId),
+                eq(revisionRows.installId, install.id),
+                eq(revisionRows.revision, install.revision),
+              ),
+            )
+            .limit(1);
+          if (!currentRevision) {
+            // The install row names a revision no immutable row proves.
+            throw packageError("RESOURCE_NOT_FOUND");
+          }
+          const release = await catalogue.resolveRelease(
+            install.packageKey,
+            install.currentVersion,
+          );
+          const previousStatus = install.status as PackageInstallDTO["status"];
+
+          const dtoFor = async (
+            status: PackageInstallDTO["status"],
+            generation: number,
+            hasActiveGrant: boolean,
+          ): Promise<PackageInstallDTO> => {
+            const facts = await lifecycleFactsWithin(tx, scope, {
+              id: install.id,
+              packageKey: install.packageKey,
+              version: install.currentVersion,
+              artifactDigest: currentRevision.artifactDigest,
+              revision: install.revision,
+              generation,
+              status,
+            });
+            return installDTO(
+              facts,
+              release,
+              { isAdmin: true },
+              hasActiveGrant,
+            );
+          };
+
+          if (input.status === previousStatus) {
+            // Idempotent no-op: the install already stands where the caller
+            // asked. No generation bump (a retry must not ratchet it) and no
+            // second revocation; the request still earns a receipt so the key
+            // replays deterministically.
+            const hasActiveGrant = await hasActiveGrantWithin(
+              tx,
+              scope,
+              install.id,
+            );
+            const standing = await dtoFor(
+              previousStatus,
+              install.generation,
+              hasActiveGrant,
+            );
+            await tx.db.insert(changeRows).values({
+              tenantId: scope.tenantId,
+              changeId: randomUUID(),
+              workspaceId: scope.workspaceId,
+              installId: install.id,
+              revision: install.revision,
+              actorId: scope.actorId,
+              action: lifecycleActionOf(input.status),
+              diff: lifecycleChangeDiff({
+                action: lifecycleActionOf(input.status),
+                packageKey: install.packageKey,
+                version: install.currentVersion,
+                revision: install.revision,
+                previousStatus,
+                status: previousStatus,
+                previousGeneration: install.generation,
+                generation: install.generation,
+                revokedGrants: 0,
+              }),
+              idempotencyKey,
+              requestDigest,
+              resultJson: standing,
+            });
+            return { install: standing, changed: false };
+          }
+
+          if (!lifecycleTransitionAllowed(previousStatus, input.status)) {
+            throw packageError("PACKAGE_UNSUPPORTED");
+          }
+
+          // Every effective lifecycle move bumps the generation — enabled,
+          // disabled and uninstalled alike. That is what makes an OLD Run pin
+          // (which recorded the generation at admission) unable to dispatch
+          // after a disable AND unable to revive after a re-enable: the
+          // generation never returns to a value a pin holds.
+          const nextGeneration = install.generation + 1;
+          // Disable and uninstall revoke the install's ACTIVE grants in the
+          // same transaction that moves the status (Spec §10). Enable touches
+          // no grant row: a revoked approval never comes back.
+          const revokedGrants =
+            input.status === "enabled"
+              ? 0
+              : await revokeGrantsForInstallLifecycle(
+                  tx,
+                  { tenantId: scope.tenantId, installId: install.id },
+                  changedAt,
+                );
+          await tx.db
+            .update(installRows)
+            .set({
+              status: input.status,
+              generation: nextGeneration,
+              updatedAt: changedAt,
+            })
+            .where(
+              and(
+                eq(installRows.tenantId, scope.tenantId),
+                eq(installRows.id, install.id),
+                // Defence in depth: the row must still be the one this
+                // transaction read under the exclusive install lock.
+                eq(installRows.status, previousStatus),
+                eq(installRows.revision, install.revision),
+              ),
+            );
+          // Re-enable never invents a grant: whatever active rows survive (in
+          // practice none — disable revoked them) is read as a live FACT here,
+          // so readiness says `needs_grant` instead of claiming ready.
+          const hasActiveGrant =
+            input.status === "enabled"
+              ? await hasActiveGrantWithin(tx, scope, install.id)
+              : false;
+          const next = await dtoFor(
+            input.status,
+            nextGeneration,
+            hasActiveGrant,
+          );
+          const action = lifecycleActionOf(input.status);
+          await tx.db.insert(changeRows).values({
+            tenantId: scope.tenantId,
+            changeId: randomUUID(),
+            workspaceId: scope.workspaceId,
+            installId: install.id,
+            revision: install.revision,
+            actorId: scope.actorId,
+            action,
+            diff: lifecycleChangeDiff({
+              action,
+              packageKey: install.packageKey,
+              version: install.currentVersion,
+              revision: install.revision,
+              previousStatus,
+              status: input.status,
+              previousGeneration: install.generation,
+              generation: nextGeneration,
+              revokedGrants,
+            }),
+            idempotencyKey,
+            requestDigest,
+            resultJson: next,
+          });
+          return { install: next, changed: true };
+        });
+      } catch (error) {
         if (
           uniqueViolation(error, "enterprise_package_change_idempotency_uq")
         ) {

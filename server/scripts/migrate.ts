@@ -69,7 +69,10 @@ try {
       await client.unsafe(roleBootstrap).simple();
       await client.unsafe("COMMIT").simple();
     } catch (error) {
-      await client.unsafe("ROLLBACK").simple().catch(() => undefined);
+      await client
+        .unsafe("ROLLBACK")
+        .simple()
+        .catch(() => undefined);
       throw error;
     }
   }

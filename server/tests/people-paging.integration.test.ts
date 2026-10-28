@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { inArray } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";

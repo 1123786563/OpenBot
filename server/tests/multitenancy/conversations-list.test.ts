@@ -25,7 +25,13 @@
 // 会话）：RLS 租户臂 → 行 workspace === scope workspace → 行 owner ===
 // scope principal → 事务内公司（active+epoch）与团队成员关系重验。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { createDatabase } from "../../src/db/client";
 import type { PlatformScope } from "../../src/enterprise/contracts";

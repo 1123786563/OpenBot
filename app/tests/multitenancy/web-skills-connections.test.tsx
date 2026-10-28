@@ -24,8 +24,14 @@ import {
   expect,
   test,
 } from "../../../tests/support/bun-test-compat";
-import { scopedCachePrefix, useScopedCache } from "../../src/lib/enterprise/tenant/scoped-cache";
-import { type ScopeSelection, storeSelection } from "../../src/lib/enterprise/tenant/selection";
+import {
+  scopedCachePrefix,
+  useScopedCache,
+} from "../../src/lib/enterprise/tenant/scoped-cache";
+import {
+  type ScopeSelection,
+  storeSelection,
+} from "../../src/lib/enterprise/tenant/selection";
 import {
   connectAccountMutationOptions,
   disconnectBrokeredMutationOptions,

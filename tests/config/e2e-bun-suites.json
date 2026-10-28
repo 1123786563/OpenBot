@@ -1,9 +1,11 @@
 {
-  "generatedBy": "merge of main's scripts/e2e-bun-manifest.mjs regeneration + better-auth island incremental groups (T01-T05)",
+  "generatedBy": "merge: union of origin/main into 1123786563/ba503-integration via scripts/lib/e2e-manifest.mjs writeManifest",
   "groups": [
     {
       "name": "--help",
-      "files": ["--help"]
+      "files": [
+        "--help"
+      ]
     },
     {
       "name": "agent-computer/tests",
@@ -24,7 +26,9 @@
     },
     {
       "name": "agent-mastra/src",
-      "files": ["agent-mastra/src/mastra/index.test.ts"]
+      "files": [
+        "agent-mastra/src/mastra/index.test.ts"
+      ]
     },
     {
       "name": "agent-sandbox/tests",
@@ -36,7 +40,9 @@
     },
     {
       "name": "app/src",
-      "files": ["app/src/lib/i18n/ai-observability.test.ts"]
+      "files": [
+        "app/src/lib/i18n/ai-observability.test.ts"
+      ]
     },
     {
       "name": "app/tests part 1",
@@ -156,7 +162,9 @@
     },
     {
       "name": "app/tests part 5",
-      "files": ["app/tests/user-key-status-ui.test.tsx"]
+      "files": [
+        "app/tests/user-key-status-ui.test.tsx"
+      ]
     },
     {
       "name": "app/tests/ai-observability",
@@ -197,23 +205,33 @@
     },
     {
       "name": "desktop/scripts",
-      "files": ["desktop/scripts/desktop-version.test.ts"]
+      "files": [
+        "desktop/scripts/desktop-version.test.ts"
+      ]
     },
     {
       "name": "desktop/src",
-      "files": ["desktop/src/telemetry.test.ts"]
+      "files": [
+        "desktop/src/telemetry.test.ts"
+      ]
     },
     {
       "name": "scripts/processes.test.ts",
-      "files": ["scripts/processes.test.ts"]
+      "files": [
+        "scripts/processes.test.ts"
+      ]
     },
     {
       "name": "scripts/start-restart-guard.test.ts",
-      "files": ["scripts/start-restart-guard.test.ts"]
+      "files": [
+        "scripts/start-restart-guard.test.ts"
+      ]
     },
     {
       "name": "scripts/tls-pipeline.test.ts",
-      "files": ["scripts/tls-pipeline.test.ts"]
+      "files": [
+        "scripts/tls-pipeline.test.ts"
+      ]
     },
     {
       "name": "server/tests part 1",
@@ -730,7 +748,9 @@
     },
     {
       "name": "server/tests/billing-credits-writer",
-      "files": ["server/tests/billing-credits-writer.integration.test.ts"]
+      "files": [
+        "server/tests/billing-credits-writer.integration.test.ts"
+      ]
     },
     {
       "name": "server/tests/gateway-probe",
@@ -876,59 +896,87 @@
     },
     {
       "name": "shared/harnesses.test.ts",
-      "files": ["shared/harnesses.test.ts"]
+      "files": [
+        "shared/harnesses.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T01.02.01",
-      "files": ["server/tests/better-auth/fixture-contract.test.ts"]
+      "files": [
+        "server/tests/better-auth/fixture-contract.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T01.06.01",
-      "files": ["server/tests/better-auth/oidc-evidence-contract.test.ts"]
+      "files": [
+        "server/tests/better-auth/oidc-evidence-contract.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T01.07.01",
-      "files": ["server/tests/better-auth/saml-evidence-contract.test.ts"]
+      "files": [
+        "server/tests/better-auth/saml-evidence-contract.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T01.03.01",
-      "files": ["server/tests/better-auth/transaction-contract.test.ts"]
+      "files": [
+        "server/tests/better-auth/transaction-contract.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T01.04.01",
-      "files": ["server/tests/better-auth/transaction-hooks.test.ts"]
+      "files": [
+        "server/tests/better-auth/transaction-hooks.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T01.05.01",
-      "files": ["server/tests/better-auth/team-extension-contract.test.ts"]
+      "files": [
+        "server/tests/better-auth/team-extension-contract.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.01.01",
-      "files": ["server/tests/better-auth/schema-bindings.test.ts"]
+      "files": [
+        "server/tests/better-auth/schema-bindings.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.02.01",
-      "files": ["server/tests/better-auth/schema-clocks.test.ts"]
+      "files": [
+        "server/tests/better-auth/schema-clocks.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.03.01",
-      "files": ["server/tests/better-auth/schema-command-authority.test.ts"]
+      "files": [
+        "server/tests/better-auth/schema-command-authority.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.04.01",
-      "files": ["server/tests/better-auth/schema-authority-sources.test.ts"]
+      "files": [
+        "server/tests/better-auth/schema-authority-sources.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.05.01",
-      "files": ["server/tests/better-auth/schema-assurance.test.ts"]
+      "files": [
+        "server/tests/better-auth/schema-assurance.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.06.01",
-      "files": ["server/tests/better-auth/schema-roles.test.ts"]
+      "files": [
+        "server/tests/better-auth/schema-roles.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.07.01",
-      "files": ["server/tests/better-auth/principal-registry.test.ts"]
+      "files": [
+        "server/tests/better-auth/principal-registry.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.10.01",
@@ -938,138 +986,279 @@
     },
     {
       "name": "server/tests/better-auth:T02.08.01",
-      "files": ["server/tests/better-auth/directory-command.test.ts"]
+      "files": [
+        "server/tests/better-auth/directory-command.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.12.01",
-      "files": ["server/tests/better-auth/outbox-fence.test.ts"]
+      "files": [
+        "server/tests/better-auth/outbox-fence.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.09.01",
-      "files": ["server/tests/better-auth/identity-command.test.ts"]
+      "files": [
+        "server/tests/better-auth/identity-command.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.11.01",
-      "files": ["server/tests/better-auth/ingress-coverage.test.ts"]
+      "files": [
+        "server/tests/better-auth/ingress-coverage.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.13.01",
-      "files": ["server/tests/better-auth/migration-inventory.test.ts"]
+      "files": [
+        "server/tests/better-auth/migration-inventory.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.14.01",
-      "files": ["server/tests/better-auth/migration-expand.test.ts"]
+      "files": [
+        "server/tests/better-auth/migration-expand.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T02.15.01",
-      "files": ["server/tests/better-auth/migration-verify.test.ts"]
+      "files": [
+        "server/tests/better-auth/migration-verify.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T03.01.01",
-      "files": ["server/tests/better-auth/scope-generations.test.ts"]
+      "files": [
+        "server/tests/better-auth/scope-generations.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T03.02.01",
-      "files": ["server/tests/better-auth/selection-api.test.ts"]
+      "files": [
+        "server/tests/better-auth/selection-api.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T03.03.01",
-      "files": ["server/tests/better-auth/company-provision.test.ts"]
+      "files": [
+        "server/tests/better-auth/company-provision.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T03.04.01",
-      "files": ["server/tests/better-auth/company-lifecycle.test.ts"]
+      "files": [
+        "server/tests/better-auth/company-lifecycle.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T04.01.01",
-      "files": ["server/tests/better-auth/invitation-commands.test.ts"]
+      "files": [
+        "server/tests/better-auth/invitation-commands.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T04.02.01",
-      "files": ["server/tests/better-auth/invitation-acceptance.test.ts"]
+      "files": [
+        "server/tests/better-auth/invitation-acceptance.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T04.03.01",
-      "files": ["server/tests/better-auth/membership-lifecycle.test.ts"]
+      "files": [
+        "server/tests/better-auth/membership-lifecycle.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T04.07.01",
-      "files": ["server/tests/better-auth/team-management-grants.test.ts"]
+      "files": [
+        "server/tests/better-auth/team-management-grants.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T04.08.01",
-      "files": ["server/tests/better-auth/scoped-team-admin.test.ts"]
+      "files": [
+        "server/tests/better-auth/scoped-team-admin.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.01.01",
-      "files": ["server/tests/better-auth/company-auth-challenge.test.ts"]
+      "files": [
+        "server/tests/better-auth/company-auth-challenge.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.02.01",
-      "files": ["server/tests/better-auth/company-auth-oidc.test.ts"]
+      "files": [
+        "server/tests/better-auth/company-auth-oidc.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.03.01",
-      "files": ["server/tests/better-auth/company-auth-saml.test.ts"]
+      "files": [
+        "server/tests/better-auth/company-auth-saml.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.04.01",
-      "files": ["server/tests/better-auth/company-assurance.test.ts"]
+      "files": [
+        "server/tests/better-auth/company-assurance.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.05.01",
-      "files": ["server/tests/better-auth/scim-provisioning.test.ts"]
+      "files": [
+        "server/tests/better-auth/scim-provisioning.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T04.04.01",
-      "files": ["server/tests/better-auth/email-verification.test.ts"]
+      "files": [
+        "server/tests/better-auth/email-verification.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T04.05.01",
-      "files": ["server/tests/better-auth/password-reset-request.test.ts"]
+      "files": [
+        "server/tests/better-auth/password-reset-request.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T04.06.01",
-      "files": ["server/tests/better-auth/password-recovery.test.ts"]
+      "files": [
+        "server/tests/better-auth/password-recovery.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.06.01",
-      "files": ["server/tests/better-auth/provisioning-global-admin.test.ts"]
+      "files": [
+        "server/tests/better-auth/provisioning-global-admin.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.07.01",
-      "files": ["server/tests/better-auth/global-identity-routes.test.ts"]
+      "files": [
+        "server/tests/better-auth/global-identity-routes.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.10.01",
-      "files": ["server/tests/better-auth/personal-model-grants.test.ts"]
+      "files": [
+        "server/tests/better-auth/personal-model-grants.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.08.01",
-      "files": ["server/tests/better-auth/admin-account-routes.test.ts"]
+      "files": [
+        "server/tests/better-auth/admin-account-routes.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.09.01",
-      "files": ["server/tests/better-auth/remote-identity-binding.test.ts"]
+      "files": [
+        "server/tests/better-auth/remote-identity-binding.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.11.01",
-      "files": ["server/tests/better-auth/personal-model-identity.test.ts"]
+      "files": [
+        "server/tests/better-auth/personal-model-identity.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.12.01",
-      "files": ["server/tests/better-auth/mobile-session-handoff.test.ts"]
+      "files": [
+        "server/tests/better-auth/mobile-session-handoff.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.13.01",
-      "files": ["server/tests/better-auth/mobile-authority-contract.test.ts"]
+      "files": [
+        "server/tests/better-auth/mobile-authority-contract.test.ts"
+      ]
     },
     {
       "name": "server/tests/better-auth:T05.14.01",
-      "files": ["server/tests/better-auth/password-recovery-not-wired.test.ts"]
+      "files": [
+        "server/tests/better-auth/password-recovery-not-wired.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/multitenancy/package chain",
+      "files": [
+        "server/tests/multitenancy/package-storage.test.ts",
+        "server/tests/multitenancy/package-runtime.test.ts",
+        "server/tests/multitenancy/package-grants.test.ts",
+        "server/tests/multitenancy/package-expert.test.ts",
+        "server/tests/multitenancy/package-dispatch.test.ts",
+        "server/tests/multitenancy/package-unknown.test.ts",
+        "server/tests/multitenancy/package-crash-recovery.test.ts",
+        "server/tests/multitenancy/package-upgrade.test.ts",
+        "server/tests/multitenancy/package-entrypoints.test.ts",
+        "server/tests/multitenancy/package-lifecycle.test.ts",
+        "server/tests/multitenancy/package-withdraw.test.ts",
+        "server/tests/package-install.integration.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/multitenancy/package-withdraw-contention",
+      "files": [
+        "server/tests/multitenancy/package-withdraw-contention.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/multitenancy/package-migration",
+      "files": [
+        "server/tests/multitenancy/package-migration.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/package-dispatch-call",
+      "files": [
+        "server/tests/package-dispatch-call.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/package-index-ops",
+      "files": [
+        "server/tests/package-index-ops.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/package-entrypoints",
+      "files": [
+        "server/tests/package-entrypoints.test.ts"
+      ]
+    },
+    {
+      "name": "app/tests",
+      "files": [
+        "app/tests/bot-subpage.test.tsx",
+        "app/tests/channel-new-recipients.test.tsx",
+        "app/tests/hindsight-sensitive-mutations.test.ts",
+        "app/tests/routines-list.test.tsx",
+        "app/tests/tool-boundary.test.tsx"
+      ]
+    },
+    {
+      "name": "server/tests",
+      "files": [
+        "server/tests/hindsight-backup-registry.integration.test.ts",
+        "server/tests/hindsight-cleanup-evidence-status.integration.test.ts",
+        "server/tests/hindsight-memory-routes.test.ts",
+        "server/tests/mastra-produced-message-collector.test.ts"
+      ]
+    },
+    {
+      "name": "server/tests/multitenancy",
+      "files": [
+        "server/tests/multitenancy/bots-ownership.test.ts"
+      ]
     }
   ],
-  "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"],
+  "directoryIslands": [
+    "server/tests/multitenancy",
+    "app/tests/multitenancy"
+  ],
   "files": [
     "--help",
     "agent-computer/tests/identity.test.ts",
@@ -1123,6 +1312,7 @@
     "app/tests/bot-settings-rows.test.tsx",
     "app/tests/bot-setup.test.tsx",
     "app/tests/bot-sharing.test.tsx",
+    "app/tests/bot-subpage.test.tsx",
     "app/tests/boundaries-read-failure.test.tsx",
     "app/tests/brokered-account-row.test.tsx",
     "app/tests/build-cache.test.ts",
@@ -1131,6 +1321,7 @@
     "app/tests/channel-history-notice.test.ts",
     "app/tests/channel-history-refresh.test.tsx",
     "app/tests/channel-new-error-state.test.tsx",
+    "app/tests/channel-new-recipients.test.tsx",
     "app/tests/channel-pagination.test.tsx",
     "app/tests/component-preview.test.tsx",
     "app/tests/composer-attachment-lifecycle.test.tsx",
@@ -1160,6 +1351,7 @@
     "app/tests/failed-send-attachments.test.tsx",
     "app/tests/form-submit-controls.test.ts",
     "app/tests/github-sources-settings.test.tsx",
+    "app/tests/hindsight-sensitive-mutations.test.ts",
     "app/tests/home-fallback-routing.test.tsx",
     "app/tests/learning-admin.test.tsx",
     "app/tests/live-screen-app-shortcuts.test.tsx",
@@ -1198,12 +1390,14 @@
     "app/tests/realtime-usage-ui.test.tsx",
     "app/tests/root-drop-guard.test.tsx",
     "app/tests/router.test.ts",
+    "app/tests/routines-list.test.tsx",
     "app/tests/serve.test.ts",
     "app/tests/sign-in-card.test.tsx",
     "app/tests/sign-in-code-step.test.tsx",
     "app/tests/skills-read-failure.test.tsx",
     "app/tests/stopped-turn.test.ts",
     "app/tests/tool-activity.test.tsx",
+    "app/tests/tool-boundary.test.tsx",
     "app/tests/transcript-attachments.test.tsx",
     "app/tests/usage-breakdown-ui.test.tsx",
     "app/tests/user-authorizations-ui.test.tsx",
@@ -1254,6 +1448,53 @@
     "server/tests/batch-partial-success.integration.test.ts",
     "server/tests/batch-reservation.integration.test.ts",
     "server/tests/batch-settlement.integration.test.ts",
+    "server/tests/better-auth/admin-account-routes.test.ts",
+    "server/tests/better-auth/authority-and-closed-assurance.test.ts",
+    "server/tests/better-auth/company-assurance.test.ts",
+    "server/tests/better-auth/company-auth-challenge.test.ts",
+    "server/tests/better-auth/company-auth-oidc.test.ts",
+    "server/tests/better-auth/company-auth-saml.test.ts",
+    "server/tests/better-auth/company-lifecycle.test.ts",
+    "server/tests/better-auth/company-provision.test.ts",
+    "server/tests/better-auth/directory-command.test.ts",
+    "server/tests/better-auth/email-verification.test.ts",
+    "server/tests/better-auth/fixture-contract.test.ts",
+    "server/tests/better-auth/global-identity-routes.test.ts",
+    "server/tests/better-auth/identity-command.test.ts",
+    "server/tests/better-auth/ingress-coverage.test.ts",
+    "server/tests/better-auth/invitation-acceptance.test.ts",
+    "server/tests/better-auth/invitation-commands.test.ts",
+    "server/tests/better-auth/membership-lifecycle.test.ts",
+    "server/tests/better-auth/migration-expand.test.ts",
+    "server/tests/better-auth/migration-inventory.test.ts",
+    "server/tests/better-auth/migration-verify.test.ts",
+    "server/tests/better-auth/mobile-authority-contract.test.ts",
+    "server/tests/better-auth/mobile-session-handoff.test.ts",
+    "server/tests/better-auth/oidc-evidence-contract.test.ts",
+    "server/tests/better-auth/outbox-fence.test.ts",
+    "server/tests/better-auth/password-recovery-not-wired.test.ts",
+    "server/tests/better-auth/password-recovery.test.ts",
+    "server/tests/better-auth/password-reset-request.test.ts",
+    "server/tests/better-auth/personal-model-grants.test.ts",
+    "server/tests/better-auth/personal-model-identity.test.ts",
+    "server/tests/better-auth/principal-registry.test.ts",
+    "server/tests/better-auth/provisioning-global-admin.test.ts",
+    "server/tests/better-auth/remote-identity-binding.test.ts",
+    "server/tests/better-auth/saml-evidence-contract.test.ts",
+    "server/tests/better-auth/schema-assurance.test.ts",
+    "server/tests/better-auth/schema-authority-sources.test.ts",
+    "server/tests/better-auth/schema-bindings.test.ts",
+    "server/tests/better-auth/schema-clocks.test.ts",
+    "server/tests/better-auth/schema-command-authority.test.ts",
+    "server/tests/better-auth/schema-roles.test.ts",
+    "server/tests/better-auth/scim-provisioning.test.ts",
+    "server/tests/better-auth/scope-generations.test.ts",
+    "server/tests/better-auth/scoped-team-admin.test.ts",
+    "server/tests/better-auth/selection-api.test.ts",
+    "server/tests/better-auth/team-extension-contract.test.ts",
+    "server/tests/better-auth/team-management-grants.test.ts",
+    "server/tests/better-auth/transaction-contract.test.ts",
+    "server/tests/better-auth/transaction-hooks.test.ts",
     "server/tests/billing-company-renewal.integration.test.ts",
     "server/tests/billing-credits-consumption.integration.test.ts",
     "server/tests/billing-credits-summary.integration.test.ts",
@@ -1375,12 +1616,15 @@
     "server/tests/health.test.ts",
     "server/tests/hindsight-answer-evidence.integration.test.ts",
     "server/tests/hindsight-background-budget.integration.test.ts",
+    "server/tests/hindsight-backup-registry.integration.test.ts",
+    "server/tests/hindsight-cleanup-evidence-status.integration.test.ts",
     "server/tests/hindsight-degraded-recall.integration.test.ts",
     "server/tests/hindsight-derived-judgments.integration.test.ts",
     "server/tests/hindsight-judgment-review.contract.test.ts",
     "server/tests/hindsight-judgment-review.integration.test.ts",
     "server/tests/hindsight-legacy-migration.integration.test.ts",
     "server/tests/hindsight-memory-ops.integration.test.ts",
+    "server/tests/hindsight-memory-routes.test.ts",
     "server/tests/hindsight-ops-routes.integration.test.ts",
     "server/tests/hindsight-pause-controls-entry.integration.test.ts",
     "server/tests/hindsight-pause-controls.integration.test.ts",
@@ -1434,6 +1678,7 @@
     "server/tests/mastra-message-parts.test.ts",
     "server/tests/mastra-openmuse-entry.test.ts",
     "server/tests/mastra-personal-memory.test.ts",
+    "server/tests/mastra-produced-message-collector.test.ts",
     "server/tests/mastra-stream-events.test.ts",
     "server/tests/mastra-tools.test.ts",
     "server/tests/mcp-grant-removal.integration.test.ts",
@@ -1462,6 +1707,7 @@
     "server/tests/multitenancy/billing-visibility.test.ts",
     "server/tests/multitenancy/bot-lifecycle.test.ts",
     "server/tests/multitenancy/bot-publish.test.ts",
+    "server/tests/multitenancy/bots-ownership.test.ts",
     "server/tests/multitenancy/cache-keys.test.ts",
     "server/tests/multitenancy/child-backfill-kb.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -1518,6 +1764,19 @@
     "server/tests/multitenancy/openmuse-private-bot.test.ts",
     "server/tests/multitenancy/openmuse-reviewed-actions.test.ts",
     "server/tests/multitenancy/openmuse-tasks.test.ts",
+    "server/tests/multitenancy/package-crash-recovery.test.ts",
+    "server/tests/multitenancy/package-dispatch.test.ts",
+    "server/tests/multitenancy/package-entrypoints.test.ts",
+    "server/tests/multitenancy/package-expert.test.ts",
+    "server/tests/multitenancy/package-grants.test.ts",
+    "server/tests/multitenancy/package-lifecycle.test.ts",
+    "server/tests/multitenancy/package-migration.test.ts",
+    "server/tests/multitenancy/package-runtime.test.ts",
+    "server/tests/multitenancy/package-storage.test.ts",
+    "server/tests/multitenancy/package-unknown.test.ts",
+    "server/tests/multitenancy/package-upgrade.test.ts",
+    "server/tests/multitenancy/package-withdraw-contention.test.ts",
+    "server/tests/multitenancy/package-withdraw.test.ts",
     "server/tests/multitenancy/payer-accounts.test.ts",
     "server/tests/multitenancy/people-lifecycle.test.ts",
     "server/tests/multitenancy/personal-memory.test.ts",
@@ -1624,6 +1883,10 @@
     "server/tests/organization-auth.test.ts",
     "server/tests/organization-store.integration.test.ts",
     "server/tests/otel-export-scrubbing.test.ts",
+    "server/tests/package-dispatch-call.test.ts",
+    "server/tests/package-entrypoints.test.ts",
+    "server/tests/package-index-ops.test.ts",
+    "server/tests/package-install.integration.test.ts",
     "server/tests/page-frame-retention.integration.test.ts",
     "server/tests/passwords-store.integration.test.ts",
     "server/tests/payer-account.integration.test.ts",
@@ -1749,54 +2012,7 @@
     "server/tests/workshop-preview.test.ts",
     "server/tests/workshop-schedule-executor.integration.test.ts",
     "server/tests/workshop-store.test.ts",
-    "shared/harnesses.test.ts",
-    "server/tests/better-auth/admin-account-routes.test.ts",
-    "server/tests/better-auth/authority-and-closed-assurance.test.ts",
-    "server/tests/better-auth/company-assurance.test.ts",
-    "server/tests/better-auth/company-auth-challenge.test.ts",
-    "server/tests/better-auth/company-auth-oidc.test.ts",
-    "server/tests/better-auth/company-auth-saml.test.ts",
-    "server/tests/better-auth/company-lifecycle.test.ts",
-    "server/tests/better-auth/company-provision.test.ts",
-    "server/tests/better-auth/directory-command.test.ts",
-    "server/tests/better-auth/email-verification.test.ts",
-    "server/tests/better-auth/fixture-contract.test.ts",
-    "server/tests/better-auth/global-identity-routes.test.ts",
-    "server/tests/better-auth/identity-command.test.ts",
-    "server/tests/better-auth/ingress-coverage.test.ts",
-    "server/tests/better-auth/invitation-acceptance.test.ts",
-    "server/tests/better-auth/invitation-commands.test.ts",
-    "server/tests/better-auth/membership-lifecycle.test.ts",
-    "server/tests/better-auth/migration-expand.test.ts",
-    "server/tests/better-auth/migration-inventory.test.ts",
-    "server/tests/better-auth/migration-verify.test.ts",
-    "server/tests/better-auth/mobile-authority-contract.test.ts",
-    "server/tests/better-auth/mobile-session-handoff.test.ts",
-    "server/tests/better-auth/oidc-evidence-contract.test.ts",
-    "server/tests/better-auth/outbox-fence.test.ts",
-    "server/tests/better-auth/password-recovery.test.ts",
-    "server/tests/better-auth/password-reset-request.test.ts",
-    "server/tests/better-auth/personal-model-grants.test.ts",
-    "server/tests/better-auth/personal-model-identity.test.ts",
-    "server/tests/better-auth/principal-registry.test.ts",
-    "server/tests/better-auth/provisioning-global-admin.test.ts",
-    "server/tests/better-auth/remote-identity-binding.test.ts",
-    "server/tests/better-auth/saml-evidence-contract.test.ts",
-    "server/tests/better-auth/schema-assurance.test.ts",
-    "server/tests/better-auth/schema-authority-sources.test.ts",
-    "server/tests/better-auth/schema-bindings.test.ts",
-    "server/tests/better-auth/schema-clocks.test.ts",
-    "server/tests/better-auth/schema-command-authority.test.ts",
-    "server/tests/better-auth/schema-roles.test.ts",
-    "server/tests/better-auth/scim-provisioning.test.ts",
-    "server/tests/better-auth/scope-generations.test.ts",
-    "server/tests/better-auth/scoped-team-admin.test.ts",
-    "server/tests/better-auth/selection-api.test.ts",
-    "server/tests/better-auth/team-extension-contract.test.ts",
-    "server/tests/better-auth/team-management-grants.test.ts",
-    "server/tests/better-auth/transaction-contract.test.ts",
-    "server/tests/better-auth/transaction-hooks.test.ts",
-    "server/tests/better-auth/password-recovery-not-wired.test.ts"
+    "shared/harnesses.test.ts"
   ],
   "artifacts": [
     "deliverables/mobile-e2e-qa/tests/e2e/specs/auth.spec.ts",
@@ -1821,6 +2037,8 @@
     "app/tests/user-key-status-ui.test.tsx": "runner named it: wave3 重放登记",
     "server/tests/recovery-provider-query.integration.test.ts": "runner named it: wave3 重放登记",
     "server/tests/hindsight-source-bound-recall.integration.test.ts": "runner named it: wave3 重放登记",
+    "server/tests/hindsight-sync-drain.contract.test.ts": "runner named it: wave3 重放登记",
+    "server/tests/hindsight-memory-ops.integration.test.ts": "runner named it: wave3 重放登记",
     "server/tests/hindsight-sync-queue.integration.test.ts": "runner named it: wave3 重放登记",
     "server/tests/hindsight-temporal-correction.integration.test.ts": "runner named it: wave3 重放登记",
     "server/tests/recovery-ack-lost.integration.test.ts": "runner named it: wave3 重放登记",
@@ -1858,6 +2076,7 @@
     "app/tests/usage-breakdown-ui.test.tsx": "runner named it: wave3 bf11 套件",
     "server/tests/hindsight-revocation.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
     "server/tests/hindsight-pause-controls.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
+    "server/tests/hindsight-pause-controls-entry.integration.test.ts": "runner named it: 2026-10-24 hindsight-376 FIX-W1 套件：pause-controls 生产接线集成（本人入口/legacy 门/派生判断过期 sweep），DB 直跑登记",
     "server/tests/hindsight-background-budget.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
     "server/tests/hindsight-legacy-migration.integration.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
     "server/tests/multitenancy/openmuse-files.test.ts": "runner named it: wave3 重放登记（bf11 覆盖恢复）",
@@ -1904,14 +2123,23 @@
     "server/tests/realtime-exhaustion.integration.test.ts": "runner named it: wave3 bf18 套件",
     "server/tests/realtime-revocation.integration.test.ts": "runner named it: wave3 bf18 套件",
     "server/tests/realtime-tail-settlement.integration.test.ts": "runner named it: wave3 bf18 套件",
-    "server/tests/multitenancy/telemetry-attribution.test.ts\nserver/tests/multitenancy/telemetry-usage.test.ts\nserver/tests/multitenancy/voice-mobile-bff.test.ts": "runner named it: wave3 mt19 套件",
+    "server/tests/multitenancy/telemetry-attribution.test.ts": "runner named it: wave3 mt19 套件",
+    "server/tests/multitenancy/telemetry-usage.test.ts": "runner named it: wave3 mt19 套件",
     "app/tests/billing-payments.test.ts": "runner named it: wave3 bp1 套件",
     "server/tests/billing-statements.test.ts": "runner named it: wave3 bp1 套件（原生层误挂驱动层，登记纠正）",
     "server/tests/realtime-bypass-audit.test.ts": "runner named it: wave3 bf19 套件",
     "server/tests/realtime-recovery.integration.test.ts": "runner named it: wave3 bf19 套件",
     "server/tests/realtime-webrtc-parity.integration.test.ts": "runner named it: wave3 bf19 套件",
-    "server/tests/multitenancy/child-backfill-main-batch1.test.ts\nserver/tests/multitenancy/integration-evidence.test.ts\nserver/tests/multitenancy/legacy-anchor.test.ts\nserver/tests/multitenancy/migration-tool.test.ts\nserver/tests/multitenancy/observability-authz.test.ts\nserver/tests/multitenancy/root-backfill.test.ts": "runner named it: wave3 mt20 套件",
-    "server/tests/acceptance-matrix.integration.test.ts\nserver/tests/conformance-evidence-extended.test.ts\nserver/tests/conformance-evidence.test.ts\nserver/tests/delivery-baseline.test.ts": "runner named it: wave3 bf20 套件",
+    "server/tests/multitenancy/child-backfill-main-batch1.test.ts": "runner named it: wave3 mt20 套件",
+    "server/tests/multitenancy/integration-evidence.test.ts": "runner named it: wave3 mt20 套件",
+    "server/tests/multitenancy/legacy-anchor.test.ts": "runner named it: wave3 mt20 套件",
+    "server/tests/multitenancy/migration-tool.test.ts": "runner named it: wave3 mt27 套件",
+    "server/tests/multitenancy/observability-authz.test.ts": "runner named it: wave3 mt20 套件",
+    "server/tests/multitenancy/root-backfill.test.ts": "runner named it: wave3 mt20 套件",
+    "server/tests/acceptance-matrix.integration.test.ts": "runner named it: wave3 bf20 套件",
+    "server/tests/conformance-evidence-extended.test.ts": "runner named it: wave3 bf20 套件",
+    "server/tests/conformance-evidence.test.ts": "runner named it: wave3 bf20 套件",
+    "server/tests/delivery-baseline.test.ts": "runner named it: wave3 bf20 套件",
     "server/tests/multitenancy/backfill-consistency.test.ts": "runner named it: wave3 mt21b 套件",
     "server/tests/multitenancy/child-backfill-kb.test.ts": "runner named it: wave3 mt21b 套件",
     "server/tests/multitenancy/child-backfill-main-batch2.test.ts": "runner named it: wave3 mt21b 套件",
@@ -1928,25 +2156,38 @@
     "server/tests/multitenancy/craft-schedules.test.ts": "runner named it: wave3 mt27 套件",
     "server/tests/multitenancy/craft-sessions.test.ts": "runner named it: wave3 mt27 套件",
     "server/tests/multitenancy/execution-guarantees.test.ts": "runner named it: wave3 mt27 套件",
-    "server/tests/multitenancy/migration-tool.test.ts": "runner named it: wave3 mt27 套件",
     "server/tests/multitenancy/public-bot-profiles.test.ts": "runner named it: wave3 mt27 套件",
     "server/tests/multitenancy/artifact-storage.test.ts": "runner named it: wave3 mt28 套件",
     "server/tests/multitenancy/signed-download.test.ts": "runner named it: wave3 mt28 套件",
     "server/tests/multitenancy/workshop-scope.test.ts": "runner named it: wave3 mt28 套件",
     "server/tests/multitenancy/share-tokens.test.ts": "runner named it: wave3 mt28 套件",
     "server/tests/speech-tail-availability.test.ts": "runner named it: wave3 bf21 套件补登记（终门审计发现）",
-    "server/tests/opik-builtin-terminal-states.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
-    "server/tests/opik-migration-0219.integration.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
-    "server/tests/opik-observer-binding.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
-    "server/tests/hindsight-sync-drain.contract.test.ts": "runner named it: wave3 重放登记",
-    "server/tests/hindsight-memory-ops.integration.test.ts": "runner named it: wave3 重放登记",
-    "server/tests/hindsight-pause-controls-entry.integration.test.ts": "runner named it: 2026-10-24 hindsight-376 FIX-W1 套件：pause-controls 生产接线集成（本人入口/legacy 门/派生判断过期 sweep），DB 直跑登记",
     "server/tests/hindsight-ops-routes.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-W2b /api/hindsight 路由族集成套件（bun 驱动，TEST_DATABASE_URL + 脚本化 Hindsight 服务；FIX-INTG RINTG-4 收口改名，原登记名 hindsight-routes.integration.test.ts）",
     "server/tests/memory-company-isolation.integration.test.ts": "runner named it: 2026-10-24-hindsight-376 FIX-F1 旧记忆面公司隔离越权套件（bun 驱动，TEST_DATABASE_URL；FR-1）",
     "app/tests/memory-hindsight.test.tsx": "runner named it: 2026-10-24-hindsight-376 FIX-W15 补执行组（FR3-2：RF4-1 只入 files 未入 group，统一入口漏跑）——bun-test-compat happy-dom Hindsight 设置面 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-hindsight（app/tests part 3 在 BASE 即存量红：web-bot-detail/web-bot-publish 单独重跑仍红，与本套件无关，独立成组保住逐组可观测读数）",
     "app/tests/memory-answer-basis.test.tsx": "runner named it: 2026-10-25-hindsight-376 FR4-1/FR5-1 补执行组（FR4-1 只入 files 未入 group/causes，统一入口漏跑）——bun-test-compat happy-dom 回答依据 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-answer-basis（与 memory-hindsight 同模式）。",
     "server/tests/scrub-command.test.ts": "runner named it: T30 (#489 F16) scrubCommand 对抗钉子套件，与 otel-export-scrubbing.test.ts 同置 Bun 层（bun test 直跑；brief t30-scrubtests）",
     "server/tests/async-jobs-view.test.ts": "runner named it: b5r-fix1 F-A1 登记（bifrost-5 #5 收口核验修复批）——async-jobs-view 经 bun-test-compat 依赖 Bun 运行时（db client），e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'，test:ci 必红；入 server/tests part 1 组（重生成 e2e-bun-manifest 需全量重扫，代价过高，按 FIX-W15 先例手工登记 files+group+causes）",
+    "server/tests/opik-builtin-terminal-states.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
+    "server/tests/opik-migration-0219.integration.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
+    "server/tests/opik-observer-binding.test.ts": "runner named it: opik4 r7fix-c C4 登记（OCR 终审 #46，bun 层套件由 e2e 驱动）",
+    "agent-computer/tests/web-bot-auth-browser.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth-browser.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-g-testinfra/agent-computer/tests/web-bot-auth-browser.te",
+    "agent-computer/tests/web-bot-auth.test.ts": "COLLECTION_ERROR: failed to collect agent-computer/tests/web-bot-auth.test.ts: Cannot find package 'web-bot-auth' imported from ocrfix-g-testinfra/agent-computer/tests/web-bot-auth.test.ts; web-bot-a",
+    "agent-langgraph/tests/google-oauth-proxy.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/google-oauth-proxy.test.ts: Cannot find package '@ag-ui/core' imported from ocrfix-g-testinfra/agent-langgraph/tests/google-oauth-proxy.test.",
+    "agent-langgraph/tests/governed-tracing.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/governed-tracing.test.ts: Cannot find package '@langchain/core' imported from ocrfix-g-testinfra/agent-langgraph/tests/governed-tracing.test.",
+    "agent-langgraph/tests/history.test.ts": "COLLECTION_ERROR: failed to collect agent-langgraph/tests/history.test.ts: Cannot find package '@langchain/anthropic' imported from ocrfix-g-testinfra/agent-langgraph/tests/history.test.ts; @langchai",
+    "app/tests/auth-client.test.ts": "COLLECTION_ERROR: failed to collect app/tests/auth-client.test.ts: Invalid base URL: null. Please provide a valid base URL. ",
+    "desktop/src/App.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/App.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/App.test.tsx; @happy-dom/global-registra",
+    "desktop/src/CompanySelection.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/CompanySelection.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/CompanySelection.test.tsx; ",
+    "desktop/src/LocalStateIsolation.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/LocalStateIsolation.test",
+    "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/OrgSwitchCleanup.test.tsx; ",
+    "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/Problem.test.tsx; @happy-dom/global-",
+    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/ProviderPicker.test.tsx; @hap",
+    "app/tests/billing-consumption-speech-ui.test.tsx": "runner named it: b5r-speech-307 consumption UI suite (bun-test-compat layer, sibling of realtime-usage-ui)",
+    "worker/tests/env.test.ts": "COLLECTION_ERROR: failed to collect worker/tests/env.test.ts: Cannot find package '@openbot/shared' imported from ci-baseline-repair/worker/src/env.ts; @openbot/shared is declared in <user>",
+    "server/tests/multitenancy/telemetry-attribution.test.ts\nserver/tests/multitenancy/telemetry-usage.test.ts\nserver/tests/multitenancy/voice-mobile-bff.test.ts": "runner named it: wave3 mt19 套件",
+    "server/tests/multitenancy/child-backfill-main-batch1.test.ts\nserver/tests/multitenancy/integration-evidence.test.ts\nserver/tests/multitenancy/legacy-anchor.test.ts\nserver/tests/multitenancy/migration-tool.test.ts\nserver/tests/multitenancy/observability-authz.test.ts\nserver/tests/multitenancy/root-backfill.test.ts": "runner named it: wave3 mt20 套件",
+    "server/tests/acceptance-matrix.integration.test.ts\nserver/tests/conformance-evidence-extended.test.ts\nserver/tests/conformance-evidence.test.ts\nserver/tests/delivery-baseline.test.ts": "runner named it: wave3 bf20 套件",
     "server/tests/better-auth/fixture-contract.test.ts": "T01.02 (#514): createBaFixture real-DB/HTTP fixture contract",
     "server/tests/better-auth/oidc-evidence-contract.test.ts": "runner named it (T01.06): e2e list on Node aborts collection with \"Received protocol 'bun:'\" — the suite imports bun:test via tests/support/bun-test-compat and Bun.serve via support/oidc-idp",
     "server/tests/better-auth/saml-evidence-contract.test.ts": "server data layer: postgres through the BA fixture (T01.02) and Bun.serve in the fixture HTTP plane",
@@ -1973,7 +2214,6 @@
     "server/tests/better-auth/personal-model-identity.test.ts": "T05.11 (#567) personal-model-identity suite: needs the five BA_TEST_* role URLs, the 0209-0220 BA tag replay, the real PrincipalRegistry behind the grant seam and a fake Bifrost management surface behind the mounted claim/renew routes — Bun-only",
     "server/tests/better-auth/mobile-session-handoff.test.ts": "T05.12 (#568) mobile-session-handoff suite: needs the five BA_TEST_* role URLs and its own 0222 handoff-tables migration replayed on the isolated BA island — Bun-only",
     "server/tests/better-auth/mobile-authority-contract.test.ts": "T05.13 (#569) mobile-authority-contract suite: needs the five BA_TEST_* role URLs and its own 0223 admission-fence migration replayed on the isolated BA island — Bun-only",
-    "server/tests/better-auth/password-recovery-not-wired.test.ts": "T05.14 r1 F2 (#570): pins the outbox:null fail-closed refusal (503 PASSWORD_RECOVERY_NOT_WIRED before any command transaction); imports password-recovery.ts whose chain loads the Bun runtime — Bun-only",
-    "app/tests/billing-consumption-speech-ui.test.tsx": "runner named it: b5r-speech-307 consumption UI suite (bun-test-compat layer, sibling of realtime-usage-ui)"
+    "server/tests/better-auth/password-recovery-not-wired.test.ts": "T05.14 r1 F2 (#570): pins the outbox:null fail-closed refusal (503 PASSWORD_RECOVERY_NOT_WIRED before any command transaction); imports password-recovery.ts whose chain loads the Bun runtime — Bun-only"
   }
 }

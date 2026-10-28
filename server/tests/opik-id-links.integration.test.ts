@@ -9,7 +9,12 @@
  * fallback database; a missing test database fails the run.
  */
 
-import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import {

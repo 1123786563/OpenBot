@@ -52,9 +52,7 @@ function submits(node: ts.JsxOpeningLikeElement): boolean {
 
 test("every form with an onSubmit has a control that submits it", async () => {
   const dead: string[] = [];
-  for await (const file of new Glob("src/**/*.tsx").scan(
-    `${hereDir}/..`,
-  )) {
+  for await (const file of new Glob("src/**/*.tsx").scan(`${hereDir}/..`)) {
     if (SUBMITTED_ELSEWHERE.has(file)) continue;
     const text = await Bun.file(`${hereDir}/../${file}`).text();
     const source = ts.createSourceFile(

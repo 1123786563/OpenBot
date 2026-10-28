@@ -1,0 +1,70 @@
+跳转到主要内容
+OpenBot
+你还没有频道
+开始与 Agent 对话，你的频道将显示在这里。
+Bots
+技能
+插件包
+Craft
+TA
+T12 Admin
+
+为你的组织自托管 OpenBot。
+
+联系工程师
+插件包
+
+浏览本团队可安装的受信插件包；安装本身不会授予 Bot 执行能力。
+
+全部
+builtin
+productivity
+Demo Skill
+Summarize a long note into a short, ordered brief.
+openbot/demo-skill
+v1.0.0
+productivity
+可升级
+已安装
+r5
+已停用
+不可用
+OpenBot 内置目录
+由旧市场目录导出的内置专家与技能（PKG11 迁移基线）。
+openbot/legacy-catalogue
+v1.0.0
+builtin
+Demo Skill
+Summarize a long note into a short, ordered brief.
+openbot
+发布者
+demo-skill
+包名
+1.1.0
+版本
+摘要
+be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4
+已安装
+v1.0.0
+r5
+已停用
+不可用
+生命周期
+已停用
+启用
+卸载
+工具调用
+
+Bot 通过这个包发起的工具调用。效果未确认的调用不会自动重发。
+
+效果未确认
+openbot/demo-skill:summarize@1.0.0
+2026/10/25 10:55:11
+资源
+技能
+summarize
+可用
+专家模板
+note-assistant
+可用
+Close

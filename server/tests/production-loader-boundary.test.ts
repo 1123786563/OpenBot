@@ -7,7 +7,6 @@ import { createRequire } from "node:module";
 
 const nodeRequire = createRequire(import.meta.url);
 
-
 const serverRoot = fileURLToPath(new URL("..", import.meta.url));
 
 function envFileArgument(envPath: string): string {

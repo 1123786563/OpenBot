@@ -366,11 +366,7 @@ export function SkillsPane({
             hint={t("wb.empty.mineHint")}
             title={t("wb.empty.skillsMine")}
             action={
-              <ButtonLink
-                search={{ new: true }}
-                to="/skills"
-                size="sm"
-              >
+              <ButtonLink search={{ new: true }} to="/skills" size="sm">
                 {t("wb.addSkill")}
               </ButtonLink>
             }

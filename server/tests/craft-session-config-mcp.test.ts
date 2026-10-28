@@ -61,7 +61,8 @@ function contentWith(
     skillsHash: computeSkillRuntimeHash({}, "No connectable apps available."),
     mcpConfigHash: craftMcpFingerprint(mcpServers),
     libraryFiles: new Map(),
-    webTemplateFiles: new Map(),  };
+    webTemplateFiles: new Map(),
+  };
 }
 
 function expectedConfigBytes(

@@ -13,7 +13,9 @@ const SESSION = "cs-3707b9d485c72a85aa4a4877";
 const results: Array<[string, boolean, string]> = [];
 function check(name: string, ok: boolean, detail = "") {
   results.push([name, ok, detail]);
-  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`);
+  console.log(
+    `${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  — ${detail}` : ""}`,
+  );
 }
 
 const browser = await chromium.launch({ executablePath: EXECUTABLE });
@@ -45,7 +47,10 @@ try {
     waitUntil: "domcontentloaded",
     timeout: 45_000,
   });
-  await page.getByRole("tab", { name: /Preview/i }).click().catch(() => {});
+  await page
+    .getByRole("tab", { name: /Preview/i })
+    .click()
+    .catch(() => {});
 
   const frame = page.frameLocator("iframe[title]").first();
   await page.waitForSelector("iframe", { timeout: 30_000 });
@@ -56,7 +61,7 @@ try {
   // THE ORIGINAL BUG: the proxy's raw JSON body painted inside the frame.
   const paneText = await page.evaluate(() => document.body.innerText);
   check(
-    'the raw proxy JSON is NOT what the person sees',
+    "the raw proxy JSON is NOT what the person sees",
     !paneText.includes('"error":"The web app is not running'),
     paneText.includes("The web app is not running")
       ? `found: ${paneText.slice(0, 120)}`
@@ -115,7 +120,9 @@ try {
   // remounted, which is the whole point of the wrapper-grows design.
   await page.evaluate(() => {
     const f = document.querySelector("iframe") as HTMLIFrameElement | null;
-    const w = f?.contentWindow as unknown as Record<string, unknown> | undefined;
+    const w = f?.contentWindow as unknown as
+      | Record<string, unknown>
+      | undefined;
     if (w) w.__expandProbe = "alive";
   });
   const markerBefore = await page.evaluate(() => {
@@ -125,7 +132,10 @@ try {
         ?.__expandProbe,
     );
   });
-  check("marker set inside the frame before expanding", markerBefore === "alive");
+  check(
+    "marker set inside the frame before expanding",
+    markerBefore === "alive",
+  );
 
   const expand = page.getByLabel("Expand preview");
   await expand.waitFor({ timeout: 15_000 });
@@ -163,7 +173,10 @@ try {
 
   // ── Escape ───────────────────────────────────────────────────────────────
   await page.keyboard.press("Escape");
-  await page.waitForSelector('[role="dialog"]', { state: "detached", timeout: 10_000 });
+  await page.waitForSelector('[role="dialog"]', {
+    state: "detached",
+    timeout: 10_000,
+  });
   check("Escape collapses the full-viewport surface", true);
   const markerAfterEsc = await page.evaluate(() => {
     const f = document.querySelector("iframe") as HTMLIFrameElement | null;
@@ -183,7 +196,11 @@ try {
     `${clickable} buttons/links/inputs found`,
   );
 } catch (error) {
-  check("run completed", false, error instanceof Error ? error.message : String(error));
+  check(
+    "run completed",
+    false,
+    error instanceof Error ? error.message : String(error),
+  );
 } finally {
   const relevant = consoleErrors.filter(
     (e) => !/favicon|Download the React|404 \(Not Found\)/i.test(e),

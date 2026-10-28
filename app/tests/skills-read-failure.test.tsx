@@ -1,5 +1,12 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -17,7 +24,10 @@ import { type PluginsPage, pluginKeys } from "@/lib/plugins/queries";
 import { scopedCachePrefix } from "@/lib/enterprise/tenant/scoped-cache";
 
 /** Where the skills page reads its page answer under no selection (MT088). */
-const scopedPage = () => [...scopedCachePrefix("user-1", null), ...pluginKeys.page()];
+const scopedPage = () => [
+  ...scopedCachePrefix("user-1", null),
+  ...pluginKeys.page(),
+];
 import { Route as SkillsRoute } from "@/routes/_authed/_app/skills";
 import { Route as AdminSkillsRoute } from "@/routes/_authed/admin/skills";
 
@@ -74,7 +84,7 @@ afterEach(() => {
 });
 
 /** A client the failing query settles on in one attempt, so no test waits on a retry. */
-function failingQueryClient(key: readonly unknown[] = pluginKeys.page()) {
+function failingQueryClient(_key: readonly unknown[] = pluginKeys.page()) {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 

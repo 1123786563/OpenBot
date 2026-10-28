@@ -39,6 +39,8 @@ export function authorised(header: string | undefined, token: string): boolean {
  * compared against the Bot's earlier binding by the caller (`scopeFor`), because the place a
  * cross-scope reach shows up is per-Bot, not per-request.
  */
-export function statedScope(headers: Headers): ExecutionScope | null {
+export function statedScope(
+  headers: Headers | Record<string, string | undefined>,
+): ExecutionScope | null {
   return parseExecutionScope(headers);
 }

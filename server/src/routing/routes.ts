@@ -32,22 +32,24 @@ export function createRoutingRoutes(
 
   // The service's faults must not end as Hono's plain-text 500: this route answers JSON, so
   // every failure does too — the service's own input refusals as 400, the rest as a tagged 503.
-  routes.onError((error: unknown, context: Context<{ Variables: AppVariables }>) => {
-    if (error instanceof CoworkerRoutingInputError)
-      return context.json({ error: error.message }, 400);
-    log.error(
-      {
-        type: "coworker-routing-route-error",
-        errorType: error instanceof Error ? error.name : "UnknownError",
-        errorMessage: error instanceof Error ? error.message : String(error),
-      },
-      "coworker-routing-route-error",
-    );
-    return context.json(
-      { error: "Coworker routing is unavailable. Try again." },
-      503,
-    );
-  });
+  routes.onError(
+    (error: unknown, context: Context<{ Variables: AppVariables }>) => {
+      if (error instanceof CoworkerRoutingInputError)
+        return context.json({ error: error.message }, 400);
+      log.error(
+        {
+          type: "coworker-routing-route-error",
+          errorType: error instanceof Error ? error.name : "UnknownError",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+        "coworker-routing-route-error",
+      );
+      return context.json(
+        { error: "Coworker routing is unavailable. Try again." },
+        503,
+      );
+    },
+  );
 
   routes.post("/", requireUser, async (context) => {
     const raw = await context.req.text().catch(() => null);
@@ -57,7 +59,10 @@ export function createRoutingRoutes(
     } catch {
       parsed = undefined; // not JSON at all — a different refusal than a missing field
     }
-    const body = (parsed ?? null) as { text?: unknown; agentId?: unknown } | null;
+    const body = (parsed ?? null) as {
+      text?: unknown;
+      agentId?: unknown;
+    } | null;
     if (parsed === undefined)
       return context.json({ error: "Supply a JSON body." }, 400);
     const text = typeof body?.text === "string" ? body.text.trim() : "";

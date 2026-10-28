@@ -256,9 +256,8 @@ export function createGovernedHandoffRecordResolver(deps: {
         .from(workItems)
         .where(and(eq(workItems.kind, HANDOFF_KIND), eq(workItems.key, hopKey)))
         .limit(1);
-      const winner = (
-        row?.payload as { scratchThreadId?: string } | undefined
-      )?.scratchThreadId;
+      const winner = (row?.payload as { scratchThreadId?: string } | undefined)
+        ?.scratchThreadId;
       if (!winner) throw new Error("HANDOFF_SCRATCH_MAPPING_LOST");
       return {
         work: { ...work, scratchThreadId: winner },

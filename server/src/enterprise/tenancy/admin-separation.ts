@@ -78,6 +78,8 @@ export interface ManagementPlaneRule {
  *     为范围内 Bot 授予/撤回技能授权、从安装修订的专家模板创建范围内
  *     Bot：公司/团队级，按精确方法+路径登记（计划/安装/Bot/资源 ID 是
  *     路径参数）。
+ *   - PKG07：/api/enterprise/plugin-packages/installs/:id/status（PATCH）——
+ *     公司管理员停用/重新启用/卸载一个安装：公司/团队级，按精确方法+路径登记。
  *   - /api/auth/scim/** 的 PUT/PATCH/DELETE —— SCIM 供应写动词是部署
  *     管理员的身份管理动作（app.ts 以 ADMIN_ONLY 语义守卫）：平台级；
  *     GET/POST 是普通身份面，不分类。
@@ -103,6 +105,16 @@ export const MANAGEMENT_PLANE_RULES: readonly ManagementPlaneRule[] =
       pathPattern:
         /^\/api\/enterprise\/plugin-packages\/(?:plans(?:\/[^/]+\/apply)?|installs\/[^/]+\/(?:bots\/[^/]+\/grants|experts\/[^/]+))$/,
       methods: ["POST", "PUT", "DELETE"],
+    },
+    {
+      // PKG07 (#466): disable / enable / uninstall is a company administrator's
+      // lifecycle decision on one install — company/team plane, exact method and
+      // path (the install id is a path parameter).
+      plane: "company",
+      surface: "package-admin",
+      pathPattern:
+        /^\/api\/enterprise\/plugin-packages\/installs\/[^/]+\/status$/,
+      methods: ["PATCH"],
     },
     {
       plane: "platform",

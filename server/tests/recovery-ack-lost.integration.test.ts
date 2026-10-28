@@ -8,7 +8,10 @@ import {
   createRecoveryReplay,
 } from "../src/billing/recovery-replay";
 import { createCreditUsageTarget } from "../src/billing/usage-delivery";
-import { createUsageOutbox, type UsageOutboxRecord } from "../src/billing/usage-outbox";
+import {
+  createUsageOutbox,
+  type UsageOutboxRecord,
+} from "../src/billing/usage-outbox";
 import { createDatabase } from "../src/db/client";
 import { accessGrants, botServices, usageOutbox } from "../src/db/schema";
 import {
@@ -217,7 +220,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -329,7 +335,11 @@ test("a hold settled at a different actual is retained as a counted conflict, ne
   const { replay, settleCalls } = makeAckOnlyReplay();
   const batch = await replay.replayUnackedResults("worker-conflict", 10);
 
-  expect(batch).toMatchObject({ claimed: 1, failed: 1, settledAckRecovered: 0 });
+  expect(batch).toMatchObject({
+    claimed: 1,
+    failed: 1,
+    settledAckRecovered: 0,
+  });
   expect(settleCalls()).toBe(0);
 
   // The ack was NOT backfilled against a settlement it cannot name; the item is retained
@@ -368,7 +378,11 @@ test("an unsettled hold is not captured by the ack-only branch: it replays throu
   const batch = await replay.replayUnackedResults("worker-open", 10);
 
   // The 08.2 shape is unchanged: the open hold replays through the Settle effect once.
-  expect(batch).toMatchObject({ claimed: 1, replayed: 1, settledAckRecovered: 0 });
+  expect(batch).toMatchObject({
+    claimed: 1,
+    replayed: 1,
+    settledAckRecovered: 0,
+  });
   expect(settleCalls()).toBe(1);
   expect((await reservationRow(reservationId))?.status).toBe("settled");
   expect((await outboxRow(eventId))?.creditsStatus).toBe("delivered");

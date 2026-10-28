@@ -328,7 +328,8 @@ async function jsonBody<T>(response: Response): Promise<T | null> {
   }
 }
 
-function asResult(text: string, cut = false): McpCallResult {  const joined = text.trim();
+function asResult(text: string, cut = false): McpCallResult {
+  const joined = text.trim();
   if (joined === "") {
     return {
       text: "The tool returned no content. Nothing was found, so there is nothing here to answer from.",

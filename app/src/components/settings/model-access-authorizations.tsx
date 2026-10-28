@@ -50,7 +50,9 @@ export function ModelAccessAuthorizations() {
   const queryClient = useQueryClient();
   const list = useQuery(accessGrantsQueryOptions());
   const revoke = useMutation(revokeAccessGrantMutationOptions(queryClient));
-  const revokeAll = useMutation(revokeAllAccessGrantsMutationOptions(queryClient));
+  const revokeAll = useMutation(
+    revokeAllAccessGrantsMutationOptions(queryClient),
+  );
   const error = list.error ?? revoke.error ?? revokeAll.error;
 
   return (
@@ -98,7 +100,9 @@ export function ModelAccessAuthorizations() {
                       {t("modelAccess.keyVersionLine", {
                         version: key.credentialVersion,
                         status: t("modelAccess.grantStatusActive"),
-                        expiry: key.expiresAt ? formatDateTime(key.expiresAt) : "—",
+                        expiry: key.expiresAt
+                          ? formatDateTime(key.expiresAt)
+                          : "—",
                       })}
                     </ItemDescription>
                   ))}

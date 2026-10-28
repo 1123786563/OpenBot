@@ -289,7 +289,9 @@ describe("the workbench model gateway routing (09.1)", () => {
         role: "user",
         content: "This run must be refused.",
       });
-      await expect(agent.runAgent()).rejects.toBeInstanceOf(UnmeterableModelError);
+      await expect(agent.runAgent()).rejects.toBeInstanceOf(
+        UnmeterableModelError,
+      );
       expect(gateway.journal.size).toBe(0);
     } finally {
       setWorkbenchGatewayModel(undefined);
@@ -314,10 +316,9 @@ describe("the workbench model gateway routing (09.1)", () => {
       // A readiness/admission refusal rides the same seam as a thrown error: the run
       // fails with THAT reason (fail-closed), not with a provider dial against a
       // fallback base URL.
-      const readiness = Object.assign(
-        new Error("gateway-not-ready-for-test"),
-        { name: "GatewayNotReadyError" },
-      );
+      const readiness = Object.assign(new Error("gateway-not-ready-for-test"), {
+        name: "GatewayNotReadyError",
+      });
       setWorkbenchGatewayModel(async () => {
         throw readiness;
       });

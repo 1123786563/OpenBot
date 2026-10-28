@@ -1,334 +1,350 @@
 {
- "group": "02",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC01/AC13/AC14/AC15/AC18）",
-  "docs/adr/0004-company-team-tenancy.md（Tenant=公司、Workspace=团队；付款账户由服务端按业务归属或已签发授权固定，余额不足不切换）",
-  "docs/adr/0002-per-user-bot-model-access.md（每人独立余额）",
-  "CONTEXT.md（付款账户、积分台账、Grant、待结算术语）"
- ],
- "anchors": {
-  "credit-writer": "server/src/billing/credits-writer.ts（CreditWriter：grantCredits / readBalance / availableBalance / reserveCredits / settleReservation / releaseReservation / consumeCredits；CREDIT_SCALE=100；CreditAmount 为精确有理数）",
-  "credit-schema": "server/src/db/schema/credits.ts（creditGrants、creditLedger）",
-  "deployment-key": "server/src/billing/service.ts（deploymentExternalCustomerId(tenantId)：现有部署级账户键，是本组要收敛的回退路径）",
-  "tenancy-authz": "server/src/enterprise/authz/service.ts、server/src/enterprise/bootstrap.ts（受信公司/团队 scope）",
-  "user-ui": "app/src/routes/_authed/settings/usage.tsx、app/src/components/billing/*（credit-bar、credit-grant-list、consumption-table）",
-  "test-harness": "server/tests/support/database.ts（缺 TEST_DATABASE_URL 直接抛错，不回退开发库）、server/tests/support/billing.ts"
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "02.1": {
-   "slug": "payer-ref-account-model",
-   "contracts": {
-    "consumes": [
-     "creditGrants / creditLedger 现以 externalCustomerId 字符串为账户键的现状",
-     "deploymentExternalCustomerId(tenantId) 生成的部署级键"
-    ],
-    "produces": [
-     "PayerRef { kind: 'personal' | 'company' | 'legacy_deployment' | 'unknown_owner', id } 作为唯一计费主体表达",
-     "PayerAccount 存储：账户 ↔ 现有 externalCustomerId 一对一唯一映射（双向唯一约束）",
-     "payerKey(PayerRef) → externalCustomerId 解析函数：CreditWriter 的接口语义保持不变，避免一次性大重构",
-     "createPayerAccount(PayerRef) 幂等创建账户记录（只创建账户，不创建任何余额）"
-    ]
-   },
-   "steps": [
-    "定义 PayerRef 类型与账户表，加双向唯一约束：一个主体只有一个有效账户，一个 externalCustomerId 只属于一个账户",
-    "实现幂等创建与解析函数，并发创建只留下一个有效映射",
-    "保持 CreditWriter 现有金额与幂等语义不变，本 Ticket 只引入账户层，不改计费算法",
-    "不迁移、不复制、不分摊任何余额；旧记录留在原账户键上",
-    "先写失败测试：并发创建唯一性、双向唯一约束、跨账户 grant/ledger 不可见"
-   ],
-   "criteria": [
-    "同一主体并发创建账户只留下一个有效映射",
-    "一个 externalCustomerId 不能同时属于两个账户，违反约束时写入失败",
-    "不同账户的 Grant 与台账互不可见，读取接口不能跨账户聚合",
-    "本 Ticket 不产生任何余额复制、分摊或迁移"
-   ],
-   "tests": [
-    "PostgreSQL 集成测试：并发 createPayerAccount 唯一性（多连接，不用 mock 证明原子性）",
-    "双向唯一约束违反测试",
-    "跨账户隔离读取测试：账户 A 的 grant 不出现在账户 B 的余额中"
-   ],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/payer-account.integration.test.ts",
-    "bun test server/tests/payer-ref.test.ts"
-   ],
-   "owned_scope": [
-    "付款账户模块（新增，server/src/billing/payer*）",
-    "server/src/db/schema 下账户表定义与迁移",
-    "对应 server/tests 测试"
-   ],
-   "resume_hint": "若账户表已存在但 CreditWriter 仍接受任意 externalCustomerId 字符串，缺口在“解析入口唯一化”；不要在本 Ticket 改金额、尾差或预留语义，那些属于组 06。"
+  "group": "02",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC01/AC13/AC14/AC15/AC18）",
+    "docs/adr/0004-company-team-tenancy.md（Tenant=公司、Workspace=团队；付款账户由服务端按业务归属或已签发授权固定，余额不足不切换）",
+    "docs/adr/0002-per-user-bot-model-access.md（每人独立余额）",
+    "CONTEXT.md（付款账户、积分台账、Grant、待结算术语）"
+  ],
+  "anchors": {
+    "credit-writer": "server/src/billing/credits-writer.ts（CreditWriter：grantCredits / readBalance / availableBalance / reserveCredits / settleReservation / releaseReservation / consumeCredits；CREDIT_SCALE=100；CreditAmount 为精确有理数）",
+    "credit-schema": "server/src/db/schema/credits.ts（creditGrants、creditLedger）",
+    "deployment-key": "server/src/billing/service.ts（deploymentExternalCustomerId(tenantId)：现有部署级账户键，是本组要收敛的回退路径）",
+    "tenancy-authz": "server/src/enterprise/authz/service.ts、server/src/enterprise/bootstrap.ts（受信公司/团队 scope）",
+    "user-ui": "app/src/routes/_authed/settings/usage.tsx、app/src/components/billing/*（credit-bar、credit-grant-list、consumption-table）",
+    "test-harness": "server/tests/support/database.ts（缺 TEST_DATABASE_URL 直接抛错，不回退开发库）、server/tests/support/billing.ts"
   },
-  "02.2": {
-   "slug": "legacy-customer-key-explicit-mapping",
-   "contracts": {
-    "consumes": ["02.1 的 PayerAccount 与 PayerRef", "现有 creditGrants / creditLedger 中出现的 externalCustomerId 全集"],
-    "produces": [
-     "显式映射记录：每个存量 externalCustomerId 归入 legacy_deployment 账户或标记 unknown_owner",
-     "幂等迁移程序：可重复执行且结果一致，产出映射统计报告",
-     "unknown_owner 记录的隔离语义：可读作审计，不可被任何新消费路径使用"
-    ]
-   },
-   "steps": [
-    "枚举存量 Grant 与台账中出现的 externalCustomerId，按显式规则归类，禁止用字符串前缀或命名猜测账户类型",
-    "无法确定归属的记录标记 unknown_owner 并隔离，保留原值不删除",
-    "迁移写成幂等：重复执行不新增映射、不改写已有归类",
-    "输出报告：各类数量、隔离数量、未处理项；不复制余额、不分摊到个人",
-    "先写失败测试：混合数据 fixture 下迁移幂等、未知归属隔离、公司历史不被改写"
-   ],
-   "criteria": [
-    "迁移重复执行结果一致，不产生重复映射",
-    "旧记录不被删除，余额不被复制或分摊到个人或公司账户",
-    "未识别归属的记录被标记隔离，且新消费路径无法使用它们",
-    "已存在的公司/团队历史记录保持原值，可被审计查询"
-   ],
-   "tests": [
-    "混合 fixture（部署级 + 个人 + 公司 + 未知）迁移幂等测试",
-    "未知归属隔离测试：解析拒绝使用 unknown_owner 记录",
-    "迁移报告内容断言"
-   ],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/payer-legacy-mapping.integration.test.ts"
-   ],
-   "owned_scope": [
-    "付款账户模块的映射与迁移脚本",
-    "对应迁移文件",
-    "测试 fixture 与测试文件"
-   ],
-   "resume_hint": "核心约束是“不猜测”：若发现代码按前缀推断账户类型，改为显式映射表；未知归属宁可隔离，也不要默认归个人或部署账户。"
-  },
-  "02.3": {
-   "slug": "company-payer-from-trusted-scope",
-   "contracts": {
-    "consumes": ["02.1 的 PayerRef / payerKey", "受信公司 scope（server/src/enterprise/authz 的 Tenant/Workspace 解析）"],
-    "produces": [
-     "resolvePayerForCompanyContext(scope) → PayerRef(kind='company', id=tenantId)",
-     "解析只接受服务端受信 scope；请求体、查询参数或请求头中的 tenantId/companyId 一律不参与解析",
-     "scope 缺失或不受信时的拒绝语义（不回退到个人账户或部署账户）"
-    ]
-   },
-   "steps": [
-    "从受信 scope 取 Tenant（公司）与 Workspace（团队），解析公司付款账户",
-    "公司账户不存在时按显式规则处理（创建空账户或拒绝），不得静默改用个人账户",
-    "删除任何以请求参数覆盖归属的路径，并加拒绝测试",
-    "用量归属仍记录 Workspace 与使用人，但付款账户固定为公司",
-    "先写失败测试：受信 scope 解析正确、伪造参数无效、非受信 scope 拒绝"
-   ],
-   "criteria": [
-    "公司工作台业务解析到公司付款账户，用量按团队与使用人记录",
-    "请求体或查询参数中的公司标识不能改变解析结果",
-    "scope 缺失或不受信时拒绝，且不回退到个人或部署账户",
-    "解析过程不产生任何余额变化"
-   ],
-   "tests": [
-    "受信/非受信 scope 解析对比测试",
-    "伪造 tenantId 注入测试（body、query、header 三处）",
-    "公司账户缺失时的行为测试"
-   ],
-   "verification": [
-    "bun test server/tests/payer-company-resolution.test.ts"
-   ],
-   "owned_scope": [
-    "付款账户解析模块（公司分支）",
-    "与 enterprise authz 的接线点",
-    "对应测试"
-   ],
-   "resume_hint": "若已有公司解析但允许请求参数覆盖，先删除覆盖路径并补拒绝测试，再处理账户缺失分支。"
-  },
-  "02.4": {
-   "slug": "personal-payer-resolution",
-   "contracts": {
-    "consumes": ["02.1 的 PayerRef / createPayerAccount", "现有已认证用户身份（server/src/auth）"],
-    "produces": [
-     "resolvePayerForPersonalUser(authenticatedUser) → PayerRef(kind='personal', id=userId)",
-     "个人账户幂等创建（不产生余额）",
-     "跨账户访问拒绝语义：任何以他人 userId 或裸 externalCustomerId 请求的读取/写入都被拒绝"
-    ]
-   },
-   "steps": [
-    "从已认证身份解析个人账户，账户不存在则幂等创建记录",
-    "所有积分读写入口改为经解析获得账户键，不再接受调用方传入 externalCustomerId",
-    "对提交他人标识的请求返回明确拒绝，而不是空结果",
-    "为后续 Bot 授权路径（04.5、05.3）预留同一解析入口，本 Ticket 只处理已登录用户",
-    "先写失败测试：越权读取拒绝、并发幂等创建、解析不产生余额"
-   ],
-   "criteria": [
-    "已认证用户只解析到本人账户",
-    "提交他人 userId 或裸 externalCustomerId 的请求被拒绝",
-    "账户创建幂等，并发请求只留一个账户",
-    "解析与创建都不产生余额或 Grant"
-   ],
-   "tests": [
-    "越权读取/写入拒绝测试",
-    "并发幂等创建集成测试",
-    "解析纯函数测试（不写库）"
-   ],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/payer-personal-resolution.integration.test.ts",
-    "bun test server/tests/payer-personal-resolution.test.ts"
-   ],
-   "owned_scope": [
-    "付款账户解析模块（个人分支）",
-    "积分读写入口的参数收敛",
-    "对应测试"
-   ],
-   "resume_hint": "缺口通常是接口仍接受 externalCustomerId 参数；把它替换为认证身份解析，并保留一个显式的越权拒绝测试作为回归锁。"
-  },
-  "02.5": {
-   "slug": "payer-binding-no-fallback",
-   "contracts": {
-    "consumes": ["02.3 与 02.4 的解析结果"],
-    "produces": [
-     "请求级 PayerBinding：一次业务请求内准入、用量、结算与尾差全部使用同一 PayerRef",
-     "余额不足的唯一语义：拒绝并说明账户类型，不重新解析、不切换账户",
-     "PayerBinding 在跨进程恢复（组 08）中可被完整还原"
-    ]
-   },
-   "steps": [
-    "在请求上下文创建 PayerBinding 并显式传递到结算与尾差写入",
-    "移除任何“余额不足→改用部署/公司账户”的回退路径，包括隐式默认值",
-    "余额不足时返回可展示拒绝，标明账户类型与可用额度",
-    "把 PayerBinding 持久化到消费记录，使恢复路径不需要重新猜测归属",
-    "先写失败测试：余额不足场景断言 payer 不变、无第二次解析"
-   ],
-   "criteria": [
-    "余额不足时请求被拒绝，账户解析结果与拒绝前一致",
-    "代码库中不存在回退到另一账户的路径（以调用点清单为证据）",
-    "拒绝信息标明是哪个账户余额不足，不暴露他人账户数据",
-    "同一请求的结算与尾差记录在同一账户下"
-   ],
-   "tests": [
-    "余额不足注入测试：断言 payer 不变且只解析一次",
-    "回退路径缺失测试（依赖注入 spy 或静态检查 deploymentExternalCustomerId 的调用点）",
-    "跨账户错误信息不泄露测试"
-   ],
-   "verification": [
-    "bun test server/tests/payer-no-fallback.test.ts",
-    "rg -n 'deploymentExternalCustomerId' server/src | grep -v test"
-   ],
-   "owned_scope": [
-    "付款账户绑定模块",
-    "消费入口的 payer 传递路径",
-    "对应测试"
-   ],
-   "resume_hint": "搜索部署级键的调用点：凡是被当作兜底使用的都要改成显式拒绝；保留一个测试断言这些调用点数量不增长。"
-  },
-  "02.6": {
-   "slug": "personal-credits-read-api",
-   "contracts": {
-    "consumes": ["02.4 的个人解析", "CreditWriter.readBalance / availableBalance", "credits.ts 的 Grant 状态派生"],
-    "produces": [
-     "个人积分只读接口：返回账户类型、可用、已消费、已过期，以及待结算占位字段（组 06 接入前恒为 0 且标注未启用）",
-     "接口不接受账户标识参数，账户来自认证身份",
-     "跨账户查询拒绝语义与统一错误结构"
-    ]
-   },
-   "steps": [
-    "新增或改造只读路由：解析账户 → 读取余额与 Grant 状态 → 返回结构化摘要",
-    "移除路由上的 customerKey/externalCustomerId 参数",
-    "明确只读：该路径不得触发任何写入或结算",
-    "为待结算字段预留结构，避免组 06 接入时再次破坏契约",
-    "先写失败测试：本人可读、他人标识被拒、结构字段齐全"
-   ],
-   "criteria": [
-    "用户能读取本人可用、已消费与已过期额度",
-    "带他人标识的请求被拒绝且不返回任何余额数据",
-    "响应标明账户类型，且待结算字段有明确的未启用标注",
-    "只读接口不产生任何数据库写入"
-   ],
-   "tests": [
-    "路由权限与越权测试",
-    "响应结构快照测试",
-    "只读断言（写入 spy 未被调用）"
-   ],
-   "verification": [
-    "bun test server/tests/personal-credits-read.test.ts"
-   ],
-   "owned_scope": [
-    "积分只读路由与服务层",
-    "对应测试"
-   ],
-   "resume_hint": "若接口仍以部署级键返回余额，先接入 02.4 解析再调整返回结构，避免前端依赖旧字段后再改。"
-  },
-  "02.7": {
-   "slug": "personal-balance-ui",
-   "contracts": {
-    "consumes": ["02.6 的只读接口", "现有积分 UI 组件（credit-bar、credit-grant-list、consumption-table）"],
-    "produces": [
-     "用户余额页面：展示账户类型、可用、已消费、已过期与待结算占位",
-     "空态、加载态与接口失败的明确展示（失败不等于 0）",
-     "页面只请求本人账户数据"
-    ]
-   },
-   "steps": [
-    "复用现有 billing 组件展示新结构，新增账户类型标识",
-    "接口失败时展示错误状态，不把失败渲染成 0 积分",
-    "待结算字段在组 06 接入前显示为“未启用”而不是 0",
-    "先写失败的界面测试：三类额度渲染、失败态、空态"
-   ],
-   "criteria": [
-    "登录后用户看到本人可用、已消费、已过期额度与账户类型",
-    "接口失败时展示错误提示，不显示 0 余额",
-    "无数据时空态文案明确，不显示误导性 0",
-    "页面不发起任何跨账户查询"
-   ],
-   "tests": [
-    "app 界面测试：正常/失败/空三态渲染（参照 app/tests/billing-credits-ui.test.tsx）",
-    "请求参数断言：不包含他人账户标识"
-   ],
-   "verification": [
-    "bun test app/tests/personal-credits-ui.test.tsx",
-    "bun run --filter app typecheck && bun run --filter app build"
-   ],
-   "owned_scope": [
-    "app/src/routes/_authed/settings/usage.tsx 与相关 billing 组件",
-    "app/src/lib/billing 查询封装",
-    "对应 app/tests 测试"
-   ],
-   "resume_hint": "后端结构变更常导致 UI 静默显示 0；接手先核对接口契约字段名，再改组件与测试。"
-  },
-  "02.8": {
-   "slug": "admin-grant-to-personal-account",
-   "contracts": {
-    "consumes": ["02.4 的个人解析", "02.7 的页面模式", "CreditWriter.grantCredits（idempotencyKey 幂等）", "现有审计写入（server/src/audit.ts）"],
-    "produces": [
-     "管理员发放接口：目标用户 + 额度 + 过期时间 + 原因，目标账户由所选用户解析而来，不接受裸 externalCustomerId",
-     "发放幂等键规则与审计记录（操作者、目标账户、额度、原因、时间）",
-     "发放后用户页面可见新 Grant；组 02 缝合点：个人余额从发放到展示端到端可演示"
-    ]
-   },
-   "steps": [
-    "新增管理员发放路由：解析目标用户账户 → 生成幂等键 → 调用 grantCredits",
-    "写入审计记录，包含操作者与目标账户",
-    "在管理员界面加入发放入口，展示结果与失败原因",
-    "确认发放不影响其他账户，且不修改现有部署级记录",
-    "先写失败测试：重复提交幂等、越权发放拒绝、审计存在、甲乙隔离"
-   ],
-   "criteria": [
-    "同一发放请求重复提交只入账一次",
-    "甲乙各发 10 积分后，乙无法查询或消费甲的余额",
-    "非管理员调用发放接口被拒绝",
-    "每次发放都有可查询的审计记录，且目标账户来自解析而非请求参数"
-   ],
-   "tests": [
-    "发放幂等集成测试（同一 idempotencyKey 重复提交）",
-    "越权与审计断言测试",
-    "管理员界面发放流程测试"
-   ],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/admin-credit-grant.integration.test.ts",
-    "bun test app/tests/admin-credit-grant-ui.test.tsx"
-   ],
-   "owned_scope": [
-    "管理员发放路由与服务",
-    "审计写入接线",
-    "管理员 UI 发放入口",
-    "对应 server/tests 与 app/tests 测试"
-   ],
-   "resume_hint": "grantCredits 已具备幂等语义，缺口通常在“管理员传入裸账户键”和“审计缺失”两处；先补这两处再动界面。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "02.1": {
+      "slug": "payer-ref-account-model",
+      "contracts": {
+        "consumes": [
+          "creditGrants / creditLedger 现以 externalCustomerId 字符串为账户键的现状",
+          "deploymentExternalCustomerId(tenantId) 生成的部署级键"
+        ],
+        "produces": [
+          "PayerRef { kind: 'personal' | 'company' | 'legacy_deployment' | 'unknown_owner', id } 作为唯一计费主体表达",
+          "PayerAccount 存储：账户 ↔ 现有 externalCustomerId 一对一唯一映射（双向唯一约束）",
+          "payerKey(PayerRef) → externalCustomerId 解析函数：CreditWriter 的接口语义保持不变，避免一次性大重构",
+          "createPayerAccount(PayerRef) 幂等创建账户记录（只创建账户，不创建任何余额）"
+        ]
+      },
+      "steps": [
+        "定义 PayerRef 类型与账户表，加双向唯一约束：一个主体只有一个有效账户，一个 externalCustomerId 只属于一个账户",
+        "实现幂等创建与解析函数，并发创建只留下一个有效映射",
+        "保持 CreditWriter 现有金额与幂等语义不变，本 Ticket 只引入账户层，不改计费算法",
+        "不迁移、不复制、不分摊任何余额；旧记录留在原账户键上",
+        "先写失败测试：并发创建唯一性、双向唯一约束、跨账户 grant/ledger 不可见"
+      ],
+      "criteria": [
+        "同一主体并发创建账户只留下一个有效映射",
+        "一个 externalCustomerId 不能同时属于两个账户，违反约束时写入失败",
+        "不同账户的 Grant 与台账互不可见，读取接口不能跨账户聚合",
+        "本 Ticket 不产生任何余额复制、分摊或迁移"
+      ],
+      "tests": [
+        "PostgreSQL 集成测试：并发 createPayerAccount 唯一性（多连接，不用 mock 证明原子性）",
+        "双向唯一约束违反测试",
+        "跨账户隔离读取测试：账户 A 的 grant 不出现在账户 B 的余额中"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/payer-account.integration.test.ts",
+        "bun test server/tests/payer-ref.test.ts"
+      ],
+      "owned_scope": [
+        "付款账户模块（新增，server/src/billing/payer*）",
+        "server/src/db/schema 下账户表定义与迁移",
+        "对应 server/tests 测试"
+      ],
+      "resume_hint": "若账户表已存在但 CreditWriter 仍接受任意 externalCustomerId 字符串，缺口在“解析入口唯一化”；不要在本 Ticket 改金额、尾差或预留语义，那些属于组 06。"
+    },
+    "02.2": {
+      "slug": "legacy-customer-key-explicit-mapping",
+      "contracts": {
+        "consumes": [
+          "02.1 的 PayerAccount 与 PayerRef",
+          "现有 creditGrants / creditLedger 中出现的 externalCustomerId 全集"
+        ],
+        "produces": [
+          "显式映射记录：每个存量 externalCustomerId 归入 legacy_deployment 账户或标记 unknown_owner",
+          "幂等迁移程序：可重复执行且结果一致，产出映射统计报告",
+          "unknown_owner 记录的隔离语义：可读作审计，不可被任何新消费路径使用"
+        ]
+      },
+      "steps": [
+        "枚举存量 Grant 与台账中出现的 externalCustomerId，按显式规则归类，禁止用字符串前缀或命名猜测账户类型",
+        "无法确定归属的记录标记 unknown_owner 并隔离，保留原值不删除",
+        "迁移写成幂等：重复执行不新增映射、不改写已有归类",
+        "输出报告：各类数量、隔离数量、未处理项；不复制余额、不分摊到个人",
+        "先写失败测试：混合数据 fixture 下迁移幂等、未知归属隔离、公司历史不被改写"
+      ],
+      "criteria": [
+        "迁移重复执行结果一致，不产生重复映射",
+        "旧记录不被删除，余额不被复制或分摊到个人或公司账户",
+        "未识别归属的记录被标记隔离，且新消费路径无法使用它们",
+        "已存在的公司/团队历史记录保持原值，可被审计查询"
+      ],
+      "tests": [
+        "混合 fixture（部署级 + 个人 + 公司 + 未知）迁移幂等测试",
+        "未知归属隔离测试：解析拒绝使用 unknown_owner 记录",
+        "迁移报告内容断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/payer-legacy-mapping.integration.test.ts"
+      ],
+      "owned_scope": [
+        "付款账户模块的映射与迁移脚本",
+        "对应迁移文件",
+        "测试 fixture 与测试文件"
+      ],
+      "resume_hint": "核心约束是“不猜测”：若发现代码按前缀推断账户类型，改为显式映射表；未知归属宁可隔离，也不要默认归个人或部署账户。"
+    },
+    "02.3": {
+      "slug": "company-payer-from-trusted-scope",
+      "contracts": {
+        "consumes": [
+          "02.1 的 PayerRef / payerKey",
+          "受信公司 scope（server/src/enterprise/authz 的 Tenant/Workspace 解析）"
+        ],
+        "produces": [
+          "resolvePayerForCompanyContext(scope) → PayerRef(kind='company', id=tenantId)",
+          "解析只接受服务端受信 scope；请求体、查询参数或请求头中的 tenantId/companyId 一律不参与解析",
+          "scope 缺失或不受信时的拒绝语义（不回退到个人账户或部署账户）"
+        ]
+      },
+      "steps": [
+        "从受信 scope 取 Tenant（公司）与 Workspace（团队），解析公司付款账户",
+        "公司账户不存在时按显式规则处理（创建空账户或拒绝），不得静默改用个人账户",
+        "删除任何以请求参数覆盖归属的路径，并加拒绝测试",
+        "用量归属仍记录 Workspace 与使用人，但付款账户固定为公司",
+        "先写失败测试：受信 scope 解析正确、伪造参数无效、非受信 scope 拒绝"
+      ],
+      "criteria": [
+        "公司工作台业务解析到公司付款账户，用量按团队与使用人记录",
+        "请求体或查询参数中的公司标识不能改变解析结果",
+        "scope 缺失或不受信时拒绝，且不回退到个人或部署账户",
+        "解析过程不产生任何余额变化"
+      ],
+      "tests": [
+        "受信/非受信 scope 解析对比测试",
+        "伪造 tenantId 注入测试（body、query、header 三处）",
+        "公司账户缺失时的行为测试"
+      ],
+      "verification": [
+        "bun test server/tests/payer-company-resolution.test.ts"
+      ],
+      "owned_scope": [
+        "付款账户解析模块（公司分支）",
+        "与 enterprise authz 的接线点",
+        "对应测试"
+      ],
+      "resume_hint": "若已有公司解析但允许请求参数覆盖，先删除覆盖路径并补拒绝测试，再处理账户缺失分支。"
+    },
+    "02.4": {
+      "slug": "personal-payer-resolution",
+      "contracts": {
+        "consumes": [
+          "02.1 的 PayerRef / createPayerAccount",
+          "现有已认证用户身份（server/src/auth）"
+        ],
+        "produces": [
+          "resolvePayerForPersonalUser(authenticatedUser) → PayerRef(kind='personal', id=userId)",
+          "个人账户幂等创建（不产生余额）",
+          "跨账户访问拒绝语义：任何以他人 userId 或裸 externalCustomerId 请求的读取/写入都被拒绝"
+        ]
+      },
+      "steps": [
+        "从已认证身份解析个人账户，账户不存在则幂等创建记录",
+        "所有积分读写入口改为经解析获得账户键，不再接受调用方传入 externalCustomerId",
+        "对提交他人标识的请求返回明确拒绝，而不是空结果",
+        "为后续 Bot 授权路径（04.5、05.3）预留同一解析入口，本 Ticket 只处理已登录用户",
+        "先写失败测试：越权读取拒绝、并发幂等创建、解析不产生余额"
+      ],
+      "criteria": [
+        "已认证用户只解析到本人账户",
+        "提交他人 userId 或裸 externalCustomerId 的请求被拒绝",
+        "账户创建幂等，并发请求只留一个账户",
+        "解析与创建都不产生余额或 Grant"
+      ],
+      "tests": [
+        "越权读取/写入拒绝测试",
+        "并发幂等创建集成测试",
+        "解析纯函数测试（不写库）"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/payer-personal-resolution.integration.test.ts",
+        "bun test server/tests/payer-personal-resolution.test.ts"
+      ],
+      "owned_scope": [
+        "付款账户解析模块（个人分支）",
+        "积分读写入口的参数收敛",
+        "对应测试"
+      ],
+      "resume_hint": "缺口通常是接口仍接受 externalCustomerId 参数；把它替换为认证身份解析，并保留一个显式的越权拒绝测试作为回归锁。"
+    },
+    "02.5": {
+      "slug": "payer-binding-no-fallback",
+      "contracts": {
+        "consumes": ["02.3 与 02.4 的解析结果"],
+        "produces": [
+          "请求级 PayerBinding：一次业务请求内准入、用量、结算与尾差全部使用同一 PayerRef",
+          "余额不足的唯一语义：拒绝并说明账户类型，不重新解析、不切换账户",
+          "PayerBinding 在跨进程恢复（组 08）中可被完整还原"
+        ]
+      },
+      "steps": [
+        "在请求上下文创建 PayerBinding 并显式传递到结算与尾差写入",
+        "移除任何“余额不足→改用部署/公司账户”的回退路径，包括隐式默认值",
+        "余额不足时返回可展示拒绝，标明账户类型与可用额度",
+        "把 PayerBinding 持久化到消费记录，使恢复路径不需要重新猜测归属",
+        "先写失败测试：余额不足场景断言 payer 不变、无第二次解析"
+      ],
+      "criteria": [
+        "余额不足时请求被拒绝，账户解析结果与拒绝前一致",
+        "代码库中不存在回退到另一账户的路径（以调用点清单为证据）",
+        "拒绝信息标明是哪个账户余额不足，不暴露他人账户数据",
+        "同一请求的结算与尾差记录在同一账户下"
+      ],
+      "tests": [
+        "余额不足注入测试：断言 payer 不变且只解析一次",
+        "回退路径缺失测试（依赖注入 spy 或静态检查 deploymentExternalCustomerId 的调用点）",
+        "跨账户错误信息不泄露测试"
+      ],
+      "verification": [
+        "bun test server/tests/payer-no-fallback.test.ts",
+        "rg -n 'deploymentExternalCustomerId' server/src | grep -v test"
+      ],
+      "owned_scope": [
+        "付款账户绑定模块",
+        "消费入口的 payer 传递路径",
+        "对应测试"
+      ],
+      "resume_hint": "搜索部署级键的调用点：凡是被当作兜底使用的都要改成显式拒绝；保留一个测试断言这些调用点数量不增长。"
+    },
+    "02.6": {
+      "slug": "personal-credits-read-api",
+      "contracts": {
+        "consumes": [
+          "02.4 的个人解析",
+          "CreditWriter.readBalance / availableBalance",
+          "credits.ts 的 Grant 状态派生"
+        ],
+        "produces": [
+          "个人积分只读接口：返回账户类型、可用、已消费、已过期，以及待结算占位字段（组 06 接入前恒为 0 且标注未启用）",
+          "接口不接受账户标识参数，账户来自认证身份",
+          "跨账户查询拒绝语义与统一错误结构"
+        ]
+      },
+      "steps": [
+        "新增或改造只读路由：解析账户 → 读取余额与 Grant 状态 → 返回结构化摘要",
+        "移除路由上的 customerKey/externalCustomerId 参数",
+        "明确只读：该路径不得触发任何写入或结算",
+        "为待结算字段预留结构，避免组 06 接入时再次破坏契约",
+        "先写失败测试：本人可读、他人标识被拒、结构字段齐全"
+      ],
+      "criteria": [
+        "用户能读取本人可用、已消费与已过期额度",
+        "带他人标识的请求被拒绝且不返回任何余额数据",
+        "响应标明账户类型，且待结算字段有明确的未启用标注",
+        "只读接口不产生任何数据库写入"
+      ],
+      "tests": [
+        "路由权限与越权测试",
+        "响应结构快照测试",
+        "只读断言（写入 spy 未被调用）"
+      ],
+      "verification": ["bun test server/tests/personal-credits-read.test.ts"],
+      "owned_scope": ["积分只读路由与服务层", "对应测试"],
+      "resume_hint": "若接口仍以部署级键返回余额，先接入 02.4 解析再调整返回结构，避免前端依赖旧字段后再改。"
+    },
+    "02.7": {
+      "slug": "personal-balance-ui",
+      "contracts": {
+        "consumes": [
+          "02.6 的只读接口",
+          "现有积分 UI 组件（credit-bar、credit-grant-list、consumption-table）"
+        ],
+        "produces": [
+          "用户余额页面：展示账户类型、可用、已消费、已过期与待结算占位",
+          "空态、加载态与接口失败的明确展示（失败不等于 0）",
+          "页面只请求本人账户数据"
+        ]
+      },
+      "steps": [
+        "复用现有 billing 组件展示新结构，新增账户类型标识",
+        "接口失败时展示错误状态，不把失败渲染成 0 积分",
+        "待结算字段在组 06 接入前显示为“未启用”而不是 0",
+        "先写失败的界面测试：三类额度渲染、失败态、空态"
+      ],
+      "criteria": [
+        "登录后用户看到本人可用、已消费、已过期额度与账户类型",
+        "接口失败时展示错误提示，不显示 0 余额",
+        "无数据时空态文案明确，不显示误导性 0",
+        "页面不发起任何跨账户查询"
+      ],
+      "tests": [
+        "app 界面测试：正常/失败/空三态渲染（参照 app/tests/billing-credits-ui.test.tsx）",
+        "请求参数断言：不包含他人账户标识"
+      ],
+      "verification": [
+        "bun test app/tests/personal-credits-ui.test.tsx",
+        "bun run --filter app typecheck && bun run --filter app build"
+      ],
+      "owned_scope": [
+        "app/src/routes/_authed/settings/usage.tsx 与相关 billing 组件",
+        "app/src/lib/billing 查询封装",
+        "对应 app/tests 测试"
+      ],
+      "resume_hint": "后端结构变更常导致 UI 静默显示 0；接手先核对接口契约字段名，再改组件与测试。"
+    },
+    "02.8": {
+      "slug": "admin-grant-to-personal-account",
+      "contracts": {
+        "consumes": [
+          "02.4 的个人解析",
+          "02.7 的页面模式",
+          "CreditWriter.grantCredits（idempotencyKey 幂等）",
+          "现有审计写入（server/src/audit.ts）"
+        ],
+        "produces": [
+          "管理员发放接口：目标用户 + 额度 + 过期时间 + 原因，目标账户由所选用户解析而来，不接受裸 externalCustomerId",
+          "发放幂等键规则与审计记录（操作者、目标账户、额度、原因、时间）",
+          "发放后用户页面可见新 Grant；组 02 缝合点：个人余额从发放到展示端到端可演示"
+        ]
+      },
+      "steps": [
+        "新增管理员发放路由：解析目标用户账户 → 生成幂等键 → 调用 grantCredits",
+        "写入审计记录，包含操作者与目标账户",
+        "在管理员界面加入发放入口，展示结果与失败原因",
+        "确认发放不影响其他账户，且不修改现有部署级记录",
+        "先写失败测试：重复提交幂等、越权发放拒绝、审计存在、甲乙隔离"
+      ],
+      "criteria": [
+        "同一发放请求重复提交只入账一次",
+        "甲乙各发 10 积分后，乙无法查询或消费甲的余额",
+        "非管理员调用发放接口被拒绝",
+        "每次发放都有可查询的审计记录，且目标账户来自解析而非请求参数"
+      ],
+      "tests": [
+        "发放幂等集成测试（同一 idempotencyKey 重复提交）",
+        "越权与审计断言测试",
+        "管理员界面发放流程测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/admin-credit-grant.integration.test.ts",
+        "bun test app/tests/admin-credit-grant-ui.test.tsx"
+      ],
+      "owned_scope": [
+        "管理员发放路由与服务",
+        "审计写入接线",
+        "管理员 UI 发放入口",
+        "对应 server/tests 与 app/tests 测试"
+      ],
+      "resume_hint": "grantCredits 已具备幂等语义，缺口通常在“管理员传入裸账户键”和“审计缺失”两处；先补这两处再动界面。"
+    }
   }
- }
 }

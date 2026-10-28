@@ -114,14 +114,10 @@ export async function createPayerAccountsFixture(): Promise<PayerAccountsFixture
         await db
           .delete(billingCustomers)
           .where(like(billingCustomers.externalId, `${run}%`));
-        await db
-          .delete(users)
-          .where(inArray(users.id, [ids.user1, ids.user2]));
+        await db.delete(users).where(inArray(users.id, [ids.user1, ids.user2]));
         await db
           .delete(enterpriseTenants)
-          .where(
-            inArray(enterpriseTenants.id, [ids.companyA, ids.companyB]),
-          );
+          .where(inArray(enterpriseTenants.id, [ids.companyA, ids.companyB]));
       } finally {
         await db.$client.close();
       }

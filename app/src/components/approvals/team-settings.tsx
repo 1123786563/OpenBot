@@ -126,9 +126,7 @@ export function TeamApprovalSettings() {
                 <IconTerminal2 />
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>
-                  {t("teamSettings.hostCommandsCap.title")}
-                </ItemTitle>
+                <ItemTitle>{t("teamSettings.hostCommandsCap.title")}</ItemTitle>
                 <ItemDescription>
                   {t("teamSettings.hostCommandsCap.description")}
                 </ItemDescription>

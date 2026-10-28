@@ -82,7 +82,10 @@ export function renameSession(
   }).then((r) => r.json());
 }
 
-export function deleteSession(id: string, scope?: CraftScopePair): Promise<void> {
+export function deleteSession(
+  id: string,
+  scope?: CraftScopePair,
+): Promise<void> {
   return client(sessionPath(id), {
     method: "DELETE",
     fallback: "The session could not be deleted.",

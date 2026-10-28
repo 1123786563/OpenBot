@@ -72,41 +72,42 @@ export async function hindsightAdminHealthSnapshot(
   const now = options.now ?? (() => new Date());
   // Five independent reads (every one depends only on the tenant); issued together, the
   // snapshot costs one round trip of latency instead of the sum of five.
-  const [[pendingRow], [failedRow], [deletionsRow], usage, caps] = await Promise.all([
-    database
-      .select({
-        pending: count(),
-        oldest: min(hindsightSyncWork.createdAt),
-      })
-      .from(hindsightSyncWork)
-      .where(
-        and(
-          eq(hindsightSyncWork.tenantId, tenantId),
-          eq(hindsightSyncWork.state, "pending"),
+  const [[pendingRow], [failedRow], [deletionsRow], usage, caps] =
+    await Promise.all([
+      database
+        .select({
+          pending: count(),
+          oldest: min(hindsightSyncWork.createdAt),
+        })
+        .from(hindsightSyncWork)
+        .where(
+          and(
+            eq(hindsightSyncWork.tenantId, tenantId),
+            eq(hindsightSyncWork.state, "pending"),
+          ),
         ),
-      ),
-    database
-      .select({ failed: count() })
-      .from(hindsightSyncWork)
-      .where(
-        and(
-          eq(hindsightSyncWork.tenantId, tenantId),
-          eq(hindsightSyncWork.state, "pending"),
-          sql`${hindsightSyncWork.attempts} > 0`,
+      database
+        .select({ failed: count() })
+        .from(hindsightSyncWork)
+        .where(
+          and(
+            eq(hindsightSyncWork.tenantId, tenantId),
+            eq(hindsightSyncWork.state, "pending"),
+            sql`${hindsightSyncWork.attempts} > 0`,
+          ),
         ),
-      ),
-    database
-      .select({ outstanding: count() })
-      .from(hindsightRevocations)
-      .where(
-        and(
-          eq(hindsightRevocations.tenantId, tenantId),
-          sql`${hindsightRevocations.deletionState} <> 'confirmed'`,
+      database
+        .select({ outstanding: count() })
+        .from(hindsightRevocations)
+        .where(
+          and(
+            eq(hindsightRevocations.tenantId, tenantId),
+            sql`${hindsightRevocations.deletionState} <> 'confirmed'`,
+          ),
         ),
-      ),
-    budgetGate.currentUsage(tenantId),
-    budgetGate.capsOf(tenantId),
-  ]);
+      budgetGate.currentUsage(tenantId),
+      budgetGate.capsOf(tenantId),
+    ]);
   const backlog: HindsightOpsBacklog = {
     pendingWork: Number(pendingRow?.pending ?? 0),
     failedWork: Number(failedRow?.failed ?? 0),

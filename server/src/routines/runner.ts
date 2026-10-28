@@ -208,9 +208,7 @@ export function createRoutineRunner(options: {
           // one line in the channel, not one line a night for a month. The courtesy line carries
           // no internal detail: a raw upstream message can name paths, SQL or provider bodies —
           // the full reason lives on the run row this sentence points at.
-          await say(
-            "This routine failed. See the run history for the reason.",
-          );
+          await say("This routine failed. See the run history for the reason.");
         } else if (failures >= FATIGUE_LIMIT) {
           // A dead integration should not burn model spend for ever. Switched off, and said out
           // loud, because a routine that goes quiet without explaining itself is worse than one

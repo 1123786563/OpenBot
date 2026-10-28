@@ -463,9 +463,7 @@ describe("createBillingService.handleWebhook", () => {
     expect(await response.json()).toEqual({
       error: "Billing webhook could not be applied.",
     });
-    expect(logged).toEqual([
-      "billing: webhook failed unexpectedly name=Error",
-    ]);
+    expect(logged).toEqual(["billing: webhook failed unexpectedly name=Error"]);
     expect(store.inbox.size).toBe(0);
   });
 

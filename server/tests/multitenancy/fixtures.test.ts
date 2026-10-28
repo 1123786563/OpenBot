@@ -11,7 +11,12 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { afterAll, beforeAll, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import {
   runMigrateTest,
   resolveTestDatabaseTarget,
@@ -57,14 +62,24 @@ beforeAll(async () => {
       { environment: process.env, out: () => {} },
     );
     if (generation.kind !== "generated") {
-      throw new Error(`MT002 bootstrap generate failed: ${JSON.stringify(generation)}`);
+      throw new Error(
+        `MT002 bootstrap generate failed: ${JSON.stringify(generation)}`,
+      );
     }
     const applied = await runMigrateTest(
-      ["migrate", taskId, "--apply", "--manifest", join(dir, taskId, "manifest.json")],
+      [
+        "migrate",
+        taskId,
+        "--apply",
+        "--manifest",
+        join(dir, taskId, "manifest.json"),
+      ],
       { environment: process.env, out: () => {} },
     );
     if (!["applied", "up-to-date"].includes(applied.kind)) {
-      throw new Error(`MT002 bootstrap apply failed: ${JSON.stringify(applied)}`);
+      throw new Error(
+        `MT002 bootstrap apply failed: ${JSON.stringify(applied)}`,
+      );
     }
   }
 }, 60000);

@@ -715,13 +715,17 @@ describe("createLagoClient deleteSubscription", () => {
     const { client, seen } = clientWith(() => jsonResponse({}));
     const result = await client.deleteSubscription("deployment-1-pro");
     expect(result.status).toBe(200);
-    expect(seen[0]?.url).toBe(`${BASE_URL}/api/v1/subscriptions/deployment-1-pro`);
+    expect(seen[0]?.url).toBe(
+      `${BASE_URL}/api/v1/subscriptions/deployment-1-pro`,
+    );
     expect(seen[0]?.init?.method).toBe("DELETE");
   });
 
   test("HTTP 404 answers as success: an absent subscription is already terminated", async () => {
     const { client } = clientWith(() => jsonResponse({}, 404));
-    expect((await client.deleteSubscription("deployment-1-pro")).status).toBe(404);
+    expect((await client.deleteSubscription("deployment-1-pro")).status).toBe(
+      404,
+    );
   });
 
   test("any other failure is the terminal sentinel", async () => {

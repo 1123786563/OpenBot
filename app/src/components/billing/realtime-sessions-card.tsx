@@ -46,7 +46,11 @@ export function RealtimeSessionsCard({
 }) {
   const { t } = useTranslation("settings");
   if (sessions.length === 0) {
-    return <p className="text-muted-foreground text-sm">{t("creditsPage.realtimeEmpty")}</p>;
+    return (
+      <p className="text-muted-foreground text-sm">
+        {t("creditsPage.realtimeEmpty")}
+      </p>
+    );
   }
   return (
     <ul className="mt-4 divide-y">

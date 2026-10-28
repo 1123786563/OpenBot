@@ -2,7 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import {
   assertPriceSnapshotDims,
   mapPriceDims,
@@ -20,9 +25,7 @@ import {
   listToolCallChargesByGrant,
   recordToolCallCharge,
 } from "../src/billing/tool-call-charge";
-import {
-  createCreditReserveService,
-} from "../src/billing/credit-reserve";
+import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount } from "../src/billing/payer";
 import {
@@ -98,7 +101,9 @@ function dimsOf(amounts: Record<string, string>) {
 /** The pre-0195 vocabulary — the shape every snapshot written before this ticket carries. */
 const LEGACY_AMOUNTS = Object.fromEntries(
   Object.entries(V1_AMOUNTS).filter(
-    ([dimension]) => !dimension.startsWith("surcharge_tool") && !dimension.startsWith("surcharge_a2a"),
+    ([dimension]) =>
+      !dimension.startsWith("surcharge_tool") &&
+      !dimension.startsWith("surcharge_a2a"),
   ),
 );
 
@@ -106,9 +111,13 @@ describe("B20.1 (#341) tool surcharge pricing — enumeration (AC-1)", () => {
   test("the registry is internally consistent", () => {
     expect(toolSurchargeRegistryIssues()).toEqual([]);
     // The identity set is exactly the five entrances the table CHECK accepts.
-    expect([...TOOL_IDENTITY_ENTRY_IDS].sort()).toEqual(
-      ["a2a.call", "injected.tool_call", "injected.web_search", "mcp.tool_call", "responses.tool_call"],
-    );
+    expect([...TOOL_IDENTITY_ENTRY_IDS].sort()).toEqual([
+      "a2a.call",
+      "injected.tool_call",
+      "injected.web_search",
+      "mcp.tool_call",
+      "responses.tool_call",
+    ]);
     // The billed set is exactly the three surcharge dimensions tool calls bill on.
     expect([...TOOL_SURCHARGE_BILLED_DIMENSIONS]).toEqual([
       "surcharge_web_search",
@@ -122,7 +131,9 @@ describe("B20.1 (#341) tool surcharge pricing — enumeration (AC-1)", () => {
     for (const entry of TOOL_SURCHARGE_ENTRIES) {
       const [path, symbol] = entry.anchor.split(" (");
       const file = join(repoRoot, path);
-      expect(existsSync(file), `${entry.id}: anchor file ${path} exists`).toBe(true);
+      expect(existsSync(file), `${entry.id}: anchor file ${path} exists`).toBe(
+        true,
+      );
       if (symbol !== undefined) {
         const needle = symbol.replace(/\)$/, "").split(" ")[0];
         const body = readFileSync(file, "utf8");
@@ -139,7 +150,9 @@ describe("B20.1 (#341) tool surcharge pricing — enumeration (AC-1)", () => {
       (entry) => entry.billsIdentity,
     );
     expect(entrances.length).toBe(5);
-    for (const entry of TOOL_SURCHARGE_ENTRIES.filter((e) => !e.billsIdentity)) {
+    for (const entry of TOOL_SURCHARGE_ENTRIES.filter(
+      (e) => !e.billsIdentity,
+    )) {
       expect(entry.notAnEntranceReason).toBeDefined();
       expect(entry.dimension).toBeNull();
     }
@@ -158,7 +171,10 @@ describe("B20.1 (#341) tool surcharge pricing — dimensions (AC-2)", () => {
       },
     });
     // The one tool family the v1 wire prices is known.
-    expect(dims.surcharge_web_search).toEqual({ status: "known", amount: "0.001" });
+    expect(dims.surcharge_web_search).toEqual({
+      status: "known",
+      amount: "0.001",
+    });
     // The two the wire cannot price are unknown with the fixed reason — never 0.
     expect(dims.surcharge_tool_call).toEqual({
       status: "unknown",
@@ -178,9 +194,9 @@ describe("B20.1 (#341) tool surcharge pricing — dimensions (AC-2)", () => {
     expect(() =>
       assertPriceSnapshotDims(dimsOf(V1_AMOUNTS), "test"),
     ).not.toThrow();
-    expect(() => assertPriceSnapshotDims(dimsOf(LEGACY_AMOUNTS), "test")).toThrow(
-      /closed dimension set/,
-    );
+    expect(() =>
+      assertPriceSnapshotDims(dimsOf(LEGACY_AMOUNTS), "test"),
+    ).toThrow(/closed dimension set/);
   });
 
   test("the enablement verdict refuses an unpriced basis naming every missing dimension", () => {
@@ -189,7 +205,10 @@ describe("B20.1 (#341) tool surcharge pricing — dimensions (AC-2)", () => {
     const refused = assessToolSurchargeEnablement(
       mapPriceDims({ id: "prov/m", pricing: { prompt: "0.000001" } }),
     );
-    expect(refused).toMatchObject({ status: "refused", code: "tool_price_unknown" });
+    expect(refused).toMatchObject({
+      status: "refused",
+      code: "tool_price_unknown",
+    });
     if (refused.status === "refused") {
       expect(refused.missing).toEqual([
         { dimension: "surcharge_web_search", reason: "price_dim_no_source" },
@@ -274,7 +293,12 @@ async function seedWorld(options: { freeBasis?: boolean } = {}) {
     {
       ref: { provider, model, capability },
       dims: (options.freeBasis === true
-        ? dimsOf({ ...V1_AMOUNTS, surcharge_web_search: "0", surcharge_tool_call: "0", surcharge_a2a_call: "0" })
+        ? dimsOf({
+            ...V1_AMOUNTS,
+            surcharge_web_search: "0",
+            surcharge_tool_call: "0",
+            surcharge_a2a_call: "0",
+          })
         : dimsOf(V1_AMOUNTS)) as never,
       fetchedAt: new Date().toISOString(),
       source: GATEWAY_PRICE_SNAPSHOT_SOURCE,
@@ -324,14 +348,14 @@ async function reserveModelCall(world: {
     rateVersion: 0,
     maximumCredits: 100,
     idempotencyKey: `${prefix}-model-reserve-${world.n}`,
-    boundEvidence: [
-      { kind: "provider_max_tokens", maximumTokens: 1000 },
-    ],
+    boundEvidence: [{ kind: "provider_max_tokens", maximumTokens: 1000 }],
   });
 }
 
 afterAll(async () => {
-  await database.delete(toolCallCharges).where(like(toolCallCharges.grantId, `${prefix}%`));
+  await database
+    .delete(toolCallCharges)
+    .where(like(toolCallCharges.grantId, `${prefix}%`));
   await database.execute(
     sql`DELETE FROM credit_reservations WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -350,10 +374,18 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
-  await database.delete(accessGrants).where(like(accessGrants.grantId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
-  await database.delete(gatewayModelCatalogRefs).where(like(gatewayModelCatalogRefs.provider, `${prefix}%`));
-  await database.delete(gatewayModelOpenScopes).where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
+  await database
+    .delete(accessGrants)
+    .where(like(accessGrants.grantId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(gatewayModelCatalogRefs)
+    .where(like(gatewayModelCatalogRefs.provider, `${prefix}%`));
+  await database
+    .delete(gatewayModelOpenScopes)
+    .where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
 });
 
 describe("B20.1 (#341) tool surcharge pricing — identity (AC-3)", () => {
@@ -375,7 +407,9 @@ describe("B20.1 (#341) tool surcharge pricing — identity (AC-3)", () => {
       rateVersion: 0,
       maximumCredits: 5,
       idempotencyKey: `${prefix}-tool-reserve-${world.n}`,
-      boundEvidence: [{ kind: "self_enforced_input_refusal", maximumTokens: 1 }],
+      boundEvidence: [
+        { kind: "self_enforced_input_refusal", maximumTokens: 1 },
+      ],
     });
     expect(toolCall.status).toBe("reserved");
     if (toolCall.status !== "reserved") return;
@@ -470,7 +504,10 @@ describe("B20.1 (#341) tool surcharge pricing — identity (AC-3)", () => {
       grantId: `${prefix}-no-such-grant`,
       outcome: { kind: "refused", reason: "price_unknown" },
     });
-    expect(outcome).toMatchObject({ status: "refused", reasonCode: "grant_invalid" });
+    expect(outcome).toMatchObject({
+      status: "refused",
+      reasonCode: "grant_invalid",
+    });
   });
 });
 

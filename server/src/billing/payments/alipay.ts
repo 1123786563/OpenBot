@@ -148,13 +148,13 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
         appId: config.appId,
         privateKey: stripPem(config.privateKeyPem),
         alipayPublicKey: stripPem(config.alipayPublicKeyPem),
-        gateway: config.gatewayUrl.replace(/\/+$/, "") + "/gateway.do",
+        gateway: `${config.gatewayUrl.replace(/\/+$/, "")}/gateway.do`,
       }) as unknown as Record<
         string,
         (m: string, p: Record<string, unknown>) => Promise<unknown>
       >;
       return {
-        run: (m: string, p: Record<string, unknown>) => sdk["exec"](m, p),
+        run: (m: string, p: Record<string, unknown>) => sdk.exec(m, p),
       };
     })();
   // The SDK's own request entry, bound once: it carries the gateway's signing/transport quirks

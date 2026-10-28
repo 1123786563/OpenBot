@@ -1,5 +1,12 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -77,16 +84,21 @@ function failingQueryClient(
     ...pluginKeys.page(),
   ],
 ) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   client.setQueryData(authKeys.currentUser(), {
     id: "user-1",
     email: "user-1@example.com",
     role: "user",
     onboarding: null,
   });
-  client.setQueryDefaults(key, { queryFn: async () => {
-    throw new Error("plugins exploded");
-  }, retry: false });
+  client.setQueryDefaults(key, {
+    queryFn: async () => {
+      throw new Error("plugins exploded");
+    },
+    retry: false,
+  });
   return client;
 }
 

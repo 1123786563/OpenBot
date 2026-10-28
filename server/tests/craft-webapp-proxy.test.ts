@@ -983,21 +983,21 @@ describe("createPreviewProxy (the servePreview seam)", () => {
     return {
       config: loadCraftConfig({}),
       store: {
-        async findSessionById(id: string) {
+        async findSessionById(_id: string) {
           const port =
             options.nextjsPort === undefined ? 3011 : options.nextjsPort;
           return options.sessionExists === false
             ? undefined
             : sessionRow("app", port);
         },
-        async getSession(id: string, userId: string) {
+        async getSession(_id: string, _userId: string) {
           const port =
             options.nextjsPort === undefined ? 3011 : options.nextjsPort;
           return options.sessionExists === false
             ? undefined
             : sessionRow("app", port);
         },
-        async findSession(id: string, userId: string) {
+        async findSession(_id: string, _userId: string) {
           const port =
             options.nextjsPort === undefined ? 3011 : options.nextjsPort;
           return options.sessionExists === false

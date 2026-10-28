@@ -38,7 +38,10 @@ function BillingPage() {
   const books = useQuery(companyBooksQueryOptions(queryClient, scope));
 
   return (
-    <SectionPage title={t("billing.title")} description={t("billing.description")}>
+    <SectionPage
+      title={t("billing.title")}
+      description={t("billing.description")}
+    >
       {books.isPending ? (
         <TableSkeleton />
       ) : books.error instanceof CompanyFinanceRequiredError ? (
@@ -97,7 +100,9 @@ function BillingPage() {
                       {row.workspaceId}
                     </td>
                     <td className="px-4 py-2 tabular-nums">{row.heldUnits}</td>
-                    <td className="px-4 py-2 tabular-nums">{row.chargedUnits}</td>
+                    <td className="px-4 py-2 tabular-nums">
+                      {row.chargedUnits}
+                    </td>
                   </tr>
                 ))}
               </SectionTable>
@@ -115,7 +120,9 @@ function BillingPage() {
                       {row.principalId}
                     </td>
                     <td className="px-4 py-2 tabular-nums">{row.heldUnits}</td>
-                    <td className="px-4 py-2 tabular-nums">{row.chargedUnits}</td>
+                    <td className="px-4 py-2 tabular-nums">
+                      {row.chargedUnits}
+                    </td>
                   </tr>
                 ))}
               </SectionTable>
@@ -145,7 +152,9 @@ function BillingPage() {
                     <td className="px-4 py-2 whitespace-nowrap tabular-nums">
                       {formatDateTime(line.occurredAt)}
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap">{line.source}</td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {line.source}
+                    </td>
                     <td className="max-w-40 truncate px-4 py-2 font-mono text-xs">
                       {line.model}
                     </td>

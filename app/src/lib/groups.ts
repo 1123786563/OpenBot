@@ -117,7 +117,11 @@ export function scopedGroupQueryOptions(
             guarded(queryClient, open.userId, async () => {
               const response = await tryClient(
                 `/api/groups/${encodeURIComponent(channelId)}`,
-                { signal, fallbackKey: "groups.load", ...(open.selection ?? {}) },
+                {
+                  signal,
+                  fallbackKey: "groups.load",
+                  ...(open.selection ?? {}),
+                },
               );
               if (!response.ok) {
                 if (response.status === 404) throw new GroupUnavailableError();
@@ -161,10 +165,7 @@ export function sendGroupMessageMutationOptions(
       ...(scope !== undefined && scope.status === "open"
         ? [
             queryClient.invalidateQueries({
-              queryKey: [
-                ...scope.prefix,
-                ...groupKeys.detail(channelId),
-              ],
+              queryKey: [...scope.prefix, ...groupKeys.detail(channelId)],
             }),
           ]
         : []),
@@ -239,10 +240,7 @@ export function addGroupMemberMutationOptions(
         ...(scope !== undefined && scope.status === "open"
           ? [
               queryClient.invalidateQueries({
-                queryKey: [
-                  ...scope.prefix,
-                  ...groupKeys.detail(channelId),
-                ],
+                queryKey: [...scope.prefix, ...groupKeys.detail(channelId)],
               }),
             ]
           : []),
@@ -276,10 +274,7 @@ export function removeGroupMemberMutationOptions(
         ...(scope !== undefined && scope.status === "open"
           ? [
               queryClient.invalidateQueries({
-                queryKey: [
-                  ...scope.prefix,
-                  ...groupKeys.detail(channelId),
-                ],
+                queryKey: [...scope.prefix, ...groupKeys.detail(channelId)],
               }),
               queryClient.invalidateQueries({
                 queryKey: [...scope.prefix, ...channelKeys.all],

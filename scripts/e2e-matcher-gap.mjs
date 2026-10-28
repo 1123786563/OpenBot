@@ -19,8 +19,18 @@ const SKIP = new Set([
 ]);
 // A regex over source cannot tell `expect(x).toBeString()` from `value.toString()`.
 const NOT_MATCHERS = new Set([
-  "toString", "toLocaleString", "toLowerCase", "toUpperCase", "toISOString", "toSorted",
-  "toJSON", "toPrimitive", "toPromise", "toReversed", "toSpliced", "toSlice",
+  "toString",
+  "toLocaleString",
+  "toLowerCase",
+  "toUpperCase",
+  "toISOString",
+  "toSorted",
+  "toJSON",
+  "toPrimitive",
+  "toPromise",
+  "toReversed",
+  "toSpliced",
+  "toSlice",
 ]);
 /*
  * Read the supported set out of the compat layer itself. A hand-maintained copy here silently
@@ -28,10 +38,20 @@ const NOT_MATCHERS = new Set([
  * coverage tool talks itself into a wave of nonexistent work.
  */
 const compat = readFileSync(join(root, "tests/support/e2e-compat.ts"), "utf8");
-const namesFrom = (block) => [...block.matchAll(/"([a-zA-Z]+)"/g)].map((m) => m[1]);
-const delegatedBlock = compat.slice(compat.indexOf("const DELEGATED"), compat.indexOf("const ADDED"));
-const addedBlock = compat.slice(compat.indexOf("const ADDED"), compat.indexOf("/** Bun's type predicates"));
-const typesBlock = compat.slice(compat.indexOf("const TYPES"), compat.indexOf("function show("));
+const namesFrom = (block) =>
+  [...block.matchAll(/"([a-zA-Z]+)"/g)].map((m) => m[1]);
+const delegatedBlock = compat.slice(
+  compat.indexOf("const DELEGATED"),
+  compat.indexOf("const ADDED"),
+);
+const addedBlock = compat.slice(
+  compat.indexOf("const ADDED"),
+  compat.indexOf("/** Bun's type predicates"),
+);
+const typesBlock = compat.slice(
+  compat.indexOf("const TYPES"),
+  compat.indexOf("function show("),
+);
 const SUPPORTED = new Set([
   ...namesFrom(delegatedBlock),
   ...namesFrom(addedBlock),
@@ -40,9 +60,23 @@ const SUPPORTED = new Set([
   "toEndWith",
   "toContainEqual",
   // Engine matchers, legal only on a locator or browser fixture.
-  "toBeVisible", "toBeHidden", "toBeAttached", "toBeChecked", "toBeDisabled", "toBeEnabled",
-  "toBeFocused", "toBeExpanded", "toBeSelected", "toContainText", "toHaveURL", "toHaveTitle",
-  "toHaveText", "toHaveValue", "toHaveAttribute", "toHaveScreenshot", "toHaveCount",
+  "toBeVisible",
+  "toBeHidden",
+  "toBeAttached",
+  "toBeChecked",
+  "toBeDisabled",
+  "toBeEnabled",
+  "toBeFocused",
+  "toBeExpanded",
+  "toBeSelected",
+  "toContainText",
+  "toHaveURL",
+  "toHaveTitle",
+  "toHaveText",
+  "toHaveValue",
+  "toHaveAttribute",
+  "toHaveScreenshot",
+  "toHaveCount",
 ]);
 
 const used = new Map();

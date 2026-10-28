@@ -9,7 +9,6 @@ import { createRequire } from "node:module";
 
 const nodeRequire = createRequire(import.meta.url);
 
-
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
@@ -27,11 +26,12 @@ const platformCert = readFileSync(
   join(fixtureDir, "payment-test-certificate.pem"),
   "utf8",
 );
-const { rsaSign, certificateSerial } =
-  nodeRequire("../src/billing/payments/crypto") as {
-    rsaSign: (key: string, canonical: string) => string;
-    certificateSerial: (pem: string) => string;
-  };
+const { rsaSign, certificateSerial } = nodeRequire(
+  "../src/billing/payments/crypto",
+) as {
+  rsaSign: (key: string, canonical: string) => string;
+  certificateSerial: (pem: string) => string;
+};
 
 const apiv3Key = "0123456789abcdef0123456789abcdef"; // 32 bytes, test-only
 const PLATFORM_SERIAL = certificateSerial(platformCert);

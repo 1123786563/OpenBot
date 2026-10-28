@@ -46,7 +46,9 @@ export function BotResponsibilities({ agentId }: { agentId?: string }) {
   // carrying the pair, and refused — as one explicit state — when the scope does.
   const queryClient = useQueryClient();
   const scope = useScopedCache();
-  const goals = useQuery(scopedResponsibilitiesQueryOptions(queryClient, scope));
+  const goals = useQuery(
+    scopedResponsibilitiesQueryOptions(queryClient, scope),
+  );
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const shown = (goals.data ?? []).filter(

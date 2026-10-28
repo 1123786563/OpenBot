@@ -1,4 +1,10 @@
-import { afterAll, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
@@ -21,9 +27,7 @@ import {
   gatewayVirtualKeys,
 } from "../src/db/schema/gateway";
 import { createGatewayCustomerProvisioner } from "../src/gateway/customer";
-import {
-  createGatewayKeyDriftStore,
-} from "../src/gateway/key-drift";
+import { createGatewayKeyDriftStore } from "../src/gateway/key-drift";
 import {
   createGatewayKeyIssuer,
   createGatewayVirtualKeyClient,
@@ -519,12 +523,12 @@ describe("05.9 key drift handling", () => {
 
     // A term rewritten an hour out is drift; a removed term is drift; a difference within
     // the tolerance is reformatting, not drift.
-    fake.reterm(`vk-term-extended-${run}`, new Date(BASE + 600_000 + 3_600_000));
-    fake.reterm(`vk-term-removed-${run}`, null);
     fake.reterm(
-      `vk-term-cosmetic-${run}`,
-      new Date(BASE + 600_000 + 500),
+      `vk-term-extended-${run}`,
+      new Date(BASE + 600_000 + 3_600_000),
     );
+    fake.reterm(`vk-term-removed-${run}`, null);
+    fake.reterm(`vk-term-cosmetic-${run}`, new Date(BASE + 600_000 + 500));
 
     const outcome = await syncService().runSync();
     expect(outcome.status).toBe("ok");
@@ -533,9 +537,7 @@ describe("05.9 key drift handling", () => {
     const events = outcome.driftEvents;
     expect(events).toHaveLength(2);
     expect(
-      events.find(
-        (event) => event.reasonCode === "gateway_key_term_changed",
-      ),
+      events.find((event) => event.reasonCode === "gateway_key_term_changed"),
     ).toBeDefined();
 
     // The extended key's grant is paused; the cosmetic one is not (its seeded record was
@@ -643,7 +645,10 @@ describe("05.9 key drift handling", () => {
     });
 
     // The grant issues again (the seeded record was version 1, so this is version 2).
-    const issued = await issuerFor().issueKeyForGrant(grantId, identityFor(botId));
+    const issued = await issuerFor().issueKeyForGrant(
+      grantId,
+      identityFor(botId),
+    );
     expect(issued.credentialVersion).toBe(2);
 
     // A second disposal of the same event is refused — the decision is written once.
@@ -682,7 +687,10 @@ describe("05.9 key drift handling", () => {
     expect(await statusOf(key.row.id)).toBe("revoked");
 
     // And the grant issues again.
-    const issued = await issuerFor().issueKeyForGrant(grantId, identityFor(botId));
+    const issued = await issuerFor().issueKeyForGrant(
+      grantId,
+      identityFor(botId),
+    );
     expect(issued.credentialVersion).toBe(2);
   }, 30_000);
 
@@ -714,9 +722,7 @@ describe("05.9 key drift handling", () => {
     const [manualRows] = await database
       .select({ n: sql<number>`count(*)` })
       .from(gatewayVirtualKeys)
-      .where(
-        eq(gatewayVirtualKeys.gatewayVirtualKeyId, `vk-manual-${run}`),
-      );
+      .where(eq(gatewayVirtualKeys.gatewayVirtualKeyId, `vk-manual-${run}`));
     expect(Number(manualRows?.n)).toBe(0);
     // …no authorization, no account mapping, no credit, no ledger, no reservation…
     const countsAfter = await deploymentCounts();
@@ -822,7 +828,10 @@ describe("05.9 key drift handling", () => {
 
     // Issuance runs the pause check on every claim; a clean grant sails through it (the
     // seeded record was version 1, so this claim is version 2).
-    const issued = await issuerFor().issueKeyForGrant(grantId, identityFor(botId));
+    const issued = await issuerFor().issueKeyForGrant(
+      grantId,
+      identityFor(botId),
+    );
     expect(issued.credentialVersion).toBe(2);
   }, 30_000);
 });
@@ -838,7 +847,9 @@ async function deploymentCounts() {
       | typeof creditLedger
       | typeof creditReservations,
   ) => {
-    const [row] = await database.select({ n: sql<number>`count(*)` }).from(table);
+    const [row] = await database
+      .select({ n: sql<number>`count(*)` })
+      .from(table);
     return Number(row?.n ?? 0);
   };
   return {
@@ -949,9 +960,12 @@ function startFakeBifrost() {
             is_active: key.isActive,
             customer_id: key.customerId,
             allow_all_providers: key.allowAllProviders,
-            provider_configs: Array.from({ length: key.providerConfigs }, () => ({
-              provider: "openai",
-            })),
+            provider_configs: Array.from(
+              { length: key.providerConfigs },
+              () => ({
+                provider: "openai",
+              }),
+            ),
             expires_at: key.expiresAt,
           },
         });
@@ -998,7 +1012,8 @@ function startFakeBifrost() {
     },
     reterm(id: string, expiresAt: Date | null) {
       const key = keys.get(id);
-      if (key) key.expiresAt = expiresAt === null ? null : expiresAt.toISOString();
+      if (key)
+        key.expiresAt = expiresAt === null ? null : expiresAt.toISOString();
     },
     vkCreates() {
       return vkCreates;

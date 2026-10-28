@@ -6,9 +6,7 @@ import {
 import { agentKeys } from "@/lib/agents/queries";
 import { client, tryClient } from "@/lib/client";
 import { guarded } from "@/lib/enterprise/tenant/queries";
-import type {
-  ScopedCache,
-} from "@/lib/enterprise/tenant/scoped-cache";
+import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { sharedUseKeys } from "@/lib/plugins/shared-use";
 
 /** A published Team Bot as this person sees it. Audience fields only for its owner and admins. */

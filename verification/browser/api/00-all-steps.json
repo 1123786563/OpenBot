@@ -1,0 +1,671 @@
+{
+  "headSha": "e8a8b858f4f654b619088d1de076f08736241cea",
+  "base": "http://localhost:3321",
+  "steps": {
+    "PKG01_catalogue": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "packageKey": "openbot/demo-skill",
+            "version": "1.1.0",
+            "displayName": "Demo Skill",
+            "summary": "Summarize a long note into a short, ordered brief.",
+            "category": "productivity",
+            "install": null,
+            "installable": true,
+            "blockers": []
+          },
+          {
+            "packageKey": "openbot/legacy-catalogue",
+            "version": "1.0.0",
+            "displayName": "OpenBot 内置目录",
+            "summary": "由旧市场目录导出的内置专家与技能（PKG11 迁移基线）。",
+            "category": "builtin",
+            "install": null,
+            "installable": true,
+            "blockers": []
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    "PKG01_detail_current": {
+      "status": 200,
+      "body": {
+        "packageKey": "openbot/demo-skill",
+        "version": "1.1.0",
+        "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4",
+        "displayName": "Demo Skill",
+        "summary": "Summarize a long note into a short, ordered brief.",
+        "category": "productivity",
+        "publisher": "openbot",
+        "name": "demo-skill",
+        "resources": [
+          {
+            "id": "summarize",
+            "kind": "skill",
+            "available": true
+          },
+          {
+            "id": "note-assistant",
+            "kind": "expertTemplate",
+            "available": true
+          }
+        ],
+        "installable": true,
+        "blockers": [],
+        "versions": [
+          {
+            "version": "1.1.0",
+            "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4",
+            "verified": true,
+            "listed": true
+          },
+          {
+            "version": "1.0.0",
+            "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+            "verified": true,
+            "listed": true
+          }
+        ]
+      }
+    },
+    "PKG02_plan_install_100": {
+      "status": 200,
+      "body": {
+        "planId": "888f6fd2-c5f3-4c92-98ce-7f0b691ccefa",
+        "operation": "install",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "expectedRevision": null,
+        "expiresAt": "2026-10-25T03:04:20.929Z",
+        "resources": [
+          {
+            "id": "summarize",
+            "kind": "skill"
+          }
+        ],
+        "addedTools": [],
+        "removedTools": [],
+        "blockers": []
+      }
+    },
+    "PKG02_apply": {
+      "status": 201,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "revision": 1,
+        "generation": 1,
+        "status": "enabled",
+        "readiness": "needs_grant",
+        "blockers": [
+          {
+            "code": "NEEDS_GRANT"
+          }
+        ],
+        "allowedActions": [
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall"
+        ]
+      }
+    },
+    "PKG02_apply_replay": {
+      "first": {
+        "status": 200,
+        "body": {
+          "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+          "packageKey": "openbot/demo-skill",
+          "version": "1.0.0",
+          "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+          "revision": 1,
+          "generation": 1,
+          "status": "enabled",
+          "readiness": "needs_grant",
+          "blockers": [
+            {
+              "code": "NEEDS_GRANT"
+            }
+          ],
+          "allowedActions": [
+            "plan",
+            "apply",
+            "grant",
+            "createExpert",
+            "disable",
+            "uninstall"
+          ]
+        }
+      },
+      "second": {
+        "status": 200,
+        "body": {
+          "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+          "packageKey": "openbot/demo-skill",
+          "version": "1.0.0",
+          "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+          "revision": 1,
+          "generation": 1,
+          "status": "enabled",
+          "readiness": "needs_grant",
+          "blockers": [
+            {
+              "code": "NEEDS_GRANT"
+            }
+          ],
+          "allowedActions": [
+            "plan",
+            "apply",
+            "grant",
+            "createExpert",
+            "disable",
+            "uninstall"
+          ]
+        }
+      }
+    },
+    "PKG02_list_after_install": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "packageKey": "openbot/demo-skill",
+            "version": "1.1.0",
+            "displayName": "Demo Skill",
+            "summary": "Summarize a long note into a short, ordered brief.",
+            "category": "productivity",
+            "install": {
+              "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+              "packageKey": "openbot/demo-skill",
+              "version": "1.0.0",
+              "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+              "revision": 1,
+              "generation": 1,
+              "status": "enabled",
+              "readiness": "needs_grant",
+              "blockers": [
+                {
+                  "code": "NEEDS_GRANT"
+                }
+              ],
+              "allowedActions": [
+                "plan",
+                "apply",
+                "grant",
+                "createExpert",
+                "disable",
+                "uninstall"
+              ]
+            },
+            "installable": true,
+            "blockers": []
+          },
+          {
+            "packageKey": "openbot/legacy-catalogue",
+            "version": "1.0.0",
+            "displayName": "OpenBot 内置目录",
+            "summary": "由旧市场目录导出的内置专家与技能（PKG11 迁移基线）。",
+            "category": "builtin",
+            "install": null,
+            "installable": true,
+            "blockers": []
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    "PKG02_install_detail": {
+      "status": 200,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "revision": 1,
+        "generation": 1,
+        "status": "enabled",
+        "readiness": "needs_grant",
+        "blockers": [
+          {
+            "code": "NEEDS_GRANT"
+          }
+        ],
+        "allowedActions": [
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall"
+        ],
+        "resources": [
+          {
+            "id": "summarize",
+            "kind": "skill",
+            "available": true
+          }
+        ],
+        "grants": [],
+        "latestPublishedVersion": "1.1.0",
+        "availableVersions": [
+          {
+            "version": "1.1.0",
+            "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4"
+          },
+          {
+            "version": "1.0.0",
+            "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e"
+          }
+        ],
+        "unknownDispatches": 0
+      }
+    },
+    "PKG03_grant": {
+      "status": 201,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "botId": "t12-bot-1",
+        "revision": 1,
+        "resources": [
+          {
+            "resourceId": "summarize",
+            "kind": "skill"
+          }
+        ]
+      }
+    },
+    "PKG03_ready_after_grant": {
+      "status": 200,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "revision": 1,
+        "generation": 1,
+        "status": "enabled",
+        "readiness": "ready",
+        "blockers": [],
+        "allowedActions": [
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall"
+        ],
+        "resources": [
+          {
+            "id": "summarize",
+            "kind": "skill",
+            "available": true
+          }
+        ],
+        "grants": [
+          {
+            "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+            "botId": "t12-bot-1",
+            "revision": 1,
+            "resources": [
+              {
+                "resourceId": "summarize",
+                "kind": "skill"
+              }
+            ]
+          }
+        ],
+        "latestPublishedVersion": "1.1.0",
+        "availableVersions": [
+          {
+            "version": "1.1.0",
+            "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4"
+          },
+          {
+            "version": "1.0.0",
+            "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e"
+          }
+        ],
+        "unknownDispatches": 0
+      }
+    },
+    "PKG03_revoke": {
+      "status": 201,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "botId": "t12-bot-1",
+        "revision": 2,
+        "resources": [
+          {
+            "resourceId": "summarize",
+            "kind": "skill"
+          }
+        ]
+      }
+    },
+    "PKG03_needs_grant_after_revoke": {
+      "status": 200,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "revision": 1,
+        "generation": 1,
+        "status": "enabled",
+        "readiness": "needs_grant",
+        "blockers": [
+          {
+            "code": "NEEDS_GRANT"
+          }
+        ],
+        "allowedActions": [
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall"
+        ],
+        "resources": [
+          {
+            "id": "summarize",
+            "kind": "skill",
+            "available": true
+          }
+        ],
+        "grants": [],
+        "latestPublishedVersion": "1.1.0",
+        "availableVersions": [
+          {
+            "version": "1.1.0",
+            "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4"
+          },
+          {
+            "version": "1.0.0",
+            "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e"
+          }
+        ],
+        "unknownDispatches": 0
+      }
+    },
+    "PKG06_upgrade_plan_diff": {
+      "status": 200,
+      "body": {
+        "planId": "32135358-4ff4-4f21-b796-00def402810c",
+        "operation": "upgrade",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.1.0",
+        "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4",
+        "expectedRevision": 1,
+        "expiresAt": "2026-10-25T03:04:21.550Z",
+        "resources": [
+          {
+            "id": "summarize",
+            "kind": "skill"
+          },
+          {
+            "id": "note-assistant",
+            "kind": "expertTemplate"
+          }
+        ],
+        "addedTools": [],
+        "removedTools": [],
+        "blockers": [],
+        "diff": {
+          "currentVersion": "1.0.0",
+          "currentRevision": 1,
+          "addedResources": [
+            {
+              "id": "note-assistant",
+              "kind": "expertTemplate"
+            }
+          ],
+          "removedResources": [],
+          "changedTools": [],
+          "configChanges": [],
+          "connectionChanges": []
+        }
+      }
+    },
+    "PKG06_upgrade_apply": {
+      "status": 200,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.1.0",
+        "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4",
+        "revision": 2,
+        "generation": 1,
+        "status": "enabled",
+        "readiness": "needs_grant",
+        "blockers": [
+          {
+            "code": "NEEDS_GRANT"
+          }
+        ],
+        "allowedActions": [
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall"
+        ]
+      }
+    },
+    "PKG04_expert_create": {
+      "first": {
+        "status": 201,
+        "body": {
+          "agentId": "pkg-expert-cb5be50b-ddfd-4936-9598-375b8027e7c6",
+          "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+          "packageKey": "openbot/demo-skill",
+          "version": "1.1.0",
+          "resourceId": "note-assistant",
+          "expertTemplateRef": "openbot/demo-skill/note-assistant",
+          "displayName": "T12 Note Assistant",
+          "grantRevision": 1,
+          "resources": [
+            {
+              "resourceId": "summarize",
+              "kind": "skill"
+            }
+          ]
+        }
+      },
+      "replay": {
+        "status": 200,
+        "body": {
+          "agentId": "pkg-expert-cb5be50b-ddfd-4936-9598-375b8027e7c6",
+          "version": "1.1.0",
+          "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+          "resources": [
+            {
+              "kind": "skill",
+              "resourceId": "summarize"
+            }
+          ],
+          "packageKey": "openbot/demo-skill",
+          "resourceId": "note-assistant",
+          "displayName": "T12 Note Assistant",
+          "grantRevision": 1,
+          "expertTemplateRef": "openbot/demo-skill/note-assistant"
+        }
+      },
+      "sameAgent": true
+    },
+    "PKG06_rollback_plan_diff": {
+      "status": 200,
+      "body": {
+        "planId": "f736bbb1-2b6f-46aa-b271-d6dfb7f6bdb3",
+        "operation": "rollback",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "expectedRevision": 2,
+        "expiresAt": "2026-10-25T03:04:21.919Z",
+        "resources": [
+          {
+            "id": "summarize",
+            "kind": "skill"
+          }
+        ],
+        "addedTools": [],
+        "removedTools": [],
+        "blockers": [],
+        "diff": {
+          "currentVersion": "1.1.0",
+          "currentRevision": 2,
+          "addedResources": [],
+          "removedResources": [
+            {
+              "id": "note-assistant",
+              "kind": "expertTemplate"
+            }
+          ],
+          "changedTools": [],
+          "configChanges": [],
+          "connectionChanges": []
+        }
+      }
+    },
+    "PKG06_rollback_apply": {
+      "status": 200,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "revision": 3,
+        "generation": 1,
+        "status": "enabled",
+        "readiness": "needs_grant",
+        "blockers": [
+          {
+            "code": "NEEDS_GRANT"
+          }
+        ],
+        "allowedActions": [
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall"
+        ]
+      }
+    },
+    "PKG06_after_rollback": {
+      "status": 200,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "revision": 3,
+        "generation": 1,
+        "status": "enabled",
+        "readiness": "ready",
+        "blockers": [],
+        "allowedActions": [
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall"
+        ],
+        "resources": [
+          {
+            "id": "summarize",
+            "kind": "skill",
+            "available": true
+          }
+        ],
+        "grants": [
+          {
+            "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+            "botId": "pkg-expert-cb5be50b-ddfd-4936-9598-375b8027e7c6",
+            "revision": 1,
+            "resources": [
+              {
+                "resourceId": "summarize",
+                "kind": "skill"
+              }
+            ]
+          }
+        ],
+        "latestPublishedVersion": "1.1.0",
+        "availableVersions": [
+          {
+            "version": "1.1.0",
+            "artifactDigest": "be9ea9557fd26fe0e3141223391e2c35b9ff89a35e743e3f16d173d155701bd4"
+          },
+          {
+            "version": "1.0.0",
+            "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e"
+          }
+        ],
+        "unknownDispatches": 0
+      }
+    },
+    "PKG07_disable": {
+      "status": 200,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "revision": 3,
+        "generation": 2,
+        "status": "disabled",
+        "readiness": "unavailable",
+        "blockers": [],
+        "allowedActions": [
+          "enable",
+          "uninstall"
+        ]
+      }
+    },
+    "PKG07_reinstall_enable": {
+      "status": 200,
+      "body": {
+        "installId": "90e950d1-7847-4bcf-b9ec-f7a75513101d",
+        "packageKey": "openbot/demo-skill",
+        "version": "1.0.0",
+        "artifactDigest": "b5b2a8e1d65be623ad78a3097d2641c444ccd1fa0a86a73dd2203a4cdae9878e",
+        "revision": 3,
+        "generation": 3,
+        "status": "enabled",
+        "readiness": "needs_grant",
+        "blockers": [
+          {
+            "code": "NEEDS_GRANT"
+          }
+        ],
+        "allowedActions": [
+          "plan",
+          "apply",
+          "grant",
+          "createExpert",
+          "disable",
+          "uninstall"
+        ]
+      }
+    },
+    "PKG10_ledger_before_inject": {
+      "status": 200,
+      "body": {
+        "dispatches": []
+      }
+    }
+  }
+}

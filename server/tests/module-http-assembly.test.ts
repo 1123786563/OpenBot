@@ -74,7 +74,10 @@ function stubRunner(): { runner: RoutineRunner; calls: string[] } {
 
 function recordingAuditStore(): { store: AuditStore; rows: unknown[] } {
   const rows: unknown[] = [];
-  return { store: { insert: async (event: unknown) => void rows.push(event) }, rows };
+  return {
+    store: { insert: async (event: unknown) => void rows.push(event) },
+    rows,
+  };
 }
 
 /** A person's own standing instructions, in memory — the same shape the real store answers. */
@@ -217,7 +220,9 @@ describe("MOD02 assembly: capability three-state matrix", () => {
       },
     });
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: "This endpoint is the worker's." });
+    expect(await response.json()).toEqual({
+      error: "This endpoint is the worker's.",
+    });
   });
 
   test("standing instructions with no store keep the mounted 503 refusal", async () => {
@@ -225,7 +230,9 @@ describe("MOD02 assembly: capability three-state matrix", () => {
       auth: memberSessionAuth(),
       roleRepository: memberRoles,
     });
-    const response = await app.request("http://openbot.local/api/settings/instructions");
+    const response = await app.request(
+      "http://openbot.local/api/settings/instructions",
+    );
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
       error: "Standing instructions are not available.",
@@ -238,13 +245,17 @@ describe("MOD02 assembly: capability three-state matrix", () => {
       roleRepository: memberRoles,
       userInstructions: instructionsStore("answer in prose"),
     });
-    const response = await app.request("http://openbot.local/api/settings/instructions");
+    const response = await app.request(
+      "http://openbot.local/api/settings/instructions",
+    );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ instructions: "answer in prose" });
   });
 
   test("transcription off and on project the switch, never the key", async () => {
-    const off = await buildApp().request("http://openbot.local/api/capabilities");
+    const off = await buildApp().request(
+      "http://openbot.local/api/capabilities",
+    );
     expect((await off.json()).transcription).toBe(false);
 
     const on = await buildApp({
@@ -266,11 +277,16 @@ describe("MOD02 assembly: authentication judgments unchanged", () => {
     const app = buildApp({ auth: noSessionAuth, roleRepository: memberRoles });
     const response = await app.request("http://openbot.local/api/me");
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: "Authentication required." });
+    expect(await response.json()).toEqual({
+      error: "Authentication required.",
+    });
   });
 
   test("a signed-in non-admin on an administrator route answers the guard's 403", async () => {
-    const app = buildApp({ auth: memberSessionAuth(), roleRepository: memberRoles });
+    const app = buildApp({
+      auth: memberSessionAuth(),
+      roleRepository: memberRoles,
+    });
     const response = await app.request("http://openbot.local/api/admin/status");
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
@@ -289,7 +305,9 @@ describe("MOD02 assembly: authentication judgments unchanged", () => {
 
   test("pre-gate surfaces still answer with nobody signed in (mount order pin)", async () => {
     const app = buildApp();
-    const capabilities = await app.request("http://openbot.local/api/capabilities");
+    const capabilities = await app.request(
+      "http://openbot.local/api/capabilities",
+    );
     expect(capabilities.status).toBe(200);
     expect((await capabilities.json()).billing).toEqual({
       enabled: false,
@@ -311,7 +329,9 @@ describe("MOD02 assembly: origin floor unchanged", () => {
       { headers: { origin: TRUSTED_ORIGIN } },
     );
     expect(response.status).toBe(200);
-    expect(response.headers.get("access-control-allow-origin")).toBe(TRUSTED_ORIGIN);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      TRUSTED_ORIGIN,
+    );
   });
 
   test("a preview-style untrusted origin gets no CORS grant", async () => {

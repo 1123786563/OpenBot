@@ -269,17 +269,19 @@ export function createDeliveryRouter(deps: {
         signal: input.signal,
       });
       await deps.store.setInbox(row.id, "sent");
-      await deps.audit?.({
-        ...scope,
-        id: row.id,
-        kind: "inbound",
-        state: "sent",
-      }).catch((error) =>
-        log.warn(
-          { type: "delivery-audit-failed", id: row.id, error: String(error) },
-          "delivery-audit-failed",
-        ),
-      );
+      await deps
+        .audit?.({
+          ...scope,
+          id: row.id,
+          kind: "inbound",
+          state: "sent",
+        })
+        .catch((error) =>
+          log.warn(
+            { type: "delivery-audit-failed", id: row.id, error: String(error) },
+            "delivery-audit-failed",
+          ),
+        );
       return {
         kind: extras.approvals.length || result.waiting ? "waiting" : "replied",
         binding,
@@ -406,18 +408,24 @@ export function createDeliveryRouter(deps: {
             kind: "reply",
           });
         await deps.store.setInbox(row.id, "sent");
-        await deps.audit?.({
-          ownerUserId: row.ownerUserId,
-          channelId: row.channelId,
-          id: row.id,
-          kind: "inbound",
-          state: "sent",
-        }).catch((error) =>
-          log.warn(
-            { type: "delivery-audit-failed", id: row.id, error: String(error) },
-            "delivery-audit-failed",
-          ),
-        );
+        await deps
+          .audit?.({
+            ownerUserId: row.ownerUserId,
+            channelId: row.channelId,
+            id: row.id,
+            kind: "inbound",
+            state: "sent",
+          })
+          .catch((error) =>
+            log.warn(
+              {
+                type: "delivery-audit-failed",
+                id: row.id,
+                error: String(error),
+              },
+              "delivery-audit-failed",
+            ),
+          );
       } catch (error) {
         if (!(await owns())) return;
         if (

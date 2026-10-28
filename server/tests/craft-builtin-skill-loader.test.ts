@@ -11,7 +11,9 @@ test("builtin skill loading only treats a missing root as an empty tree", async 
   }));
 
   try {
-    const denied = await import("../src/craft/builtin-skills/index.ts?ocr-permission");
+    const denied = await import(
+      "../src/craft/builtin-skills/index.ts?ocr-permission"
+    );
     await expect(
       denied.builtinSkillFilesFor({ connectedServerIds: new Set() }),
     ).rejects.toThrow("permission denied");
@@ -19,7 +21,9 @@ test("builtin skill loading only treats a missing root as an empty tree", async 
     nextError = Object.assign(new Error("missing skill root"), {
       code: "ENOENT",
     });
-    const missing = await import("../src/craft/builtin-skills/index.ts?ocr-missing-root");
+    const missing = await import(
+      "../src/craft/builtin-skills/index.ts?ocr-missing-root"
+    );
     expect(
       await missing.builtinSkillFilesFor({ connectedServerIds: new Set() }),
     ).toEqual(new Map());

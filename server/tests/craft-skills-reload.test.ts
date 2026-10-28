@@ -84,7 +84,8 @@ function liveContent(
     ),
     mcpConfigHash: craftMcpFingerprint([]),
     libraryFiles: new Map(),
-    webTemplateFiles: new Map(),    ...overrides,
+    webTemplateFiles: new Map(),
+    ...overrides,
   };
 }
 
@@ -555,7 +556,9 @@ describe("POST /sessions/:id/skills/reload: #437 start-script repair", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { skills_stale: boolean };
     expect(body.skills_stale).toBe(false);
-    expect(files.get(SCRIPT_PATH)).toBe("stale bytes that must not trigger anything");
+    expect(files.get(SCRIPT_PATH)).toBe(
+      "stale bytes that must not trigger anything",
+    );
     expect(files.has(`${DIRECTORY}/opencode.json`)).toBe(false);
   });
 });

@@ -1,5 +1,9 @@
 import "../../../../tests/preload";
-import { describe, expect, test } from "../../../../../tests/support/e2e-compat";
+import {
+  describe,
+  expect,
+  test,
+} from "../../../../../tests/support/e2e-compat";
 import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_FILE_BYTES,

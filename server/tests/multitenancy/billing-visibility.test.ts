@@ -13,7 +13,13 @@
 // 既有交付（payer-accounts/credits-writer/company-reservation/payment store）
 // 全部只读消费：本套件任何用例都不修改它们。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { sql } from "drizzle-orm";
 import { createCompanyFinanceVisibilityService } from "../../src/billing/company-finance-visibility";
 import { createCompanyReservationService } from "../../src/billing/company-reservation";
@@ -92,7 +98,9 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
+          scope: {
+            actorPayerRef: { kind: "personal" as const, id: mate.userId },
+          },
         });
         expect(own).toHaveLength(2); // 一笔 canceled + 一笔 live
         const mateOrder = own[0];
@@ -120,7 +128,9 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorPayerRef: { kind: "personal" as const, id: reader.userId } },
+          scope: {
+            actorPayerRef: { kind: "personal" as const, id: reader.userId },
+          },
         });
         expect(readerList).toHaveLength(1);
         expect(readerList[0]?.createdBy).toBe(reader.userId);
@@ -128,14 +138,18 @@ describeDb(
           await fixture.store.countOrdersInWindow({
             from: null,
             to: null,
-            scope: { actorPayerRef: { kind: "personal" as const, id: reader.userId } },
+            scope: {
+              actorPayerRef: { kind: "personal" as const, id: reader.userId },
+            },
           }),
         ).toBe(1);
         expect(
           await fixture.store.countOrdersInWindow({
             from: null,
             to: null,
-            scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
+            scope: {
+              actorPayerRef: { kind: "personal" as const, id: mate.userId },
+            },
           }),
         ).toBe(2);
         // 两个成员的列表不相交。
@@ -144,7 +158,9 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
+          scope: {
+            actorPayerRef: { kind: "personal" as const, id: mate.userId },
+          },
         });
         expect(mateList.every((row) => row.createdBy === mate.userId)).toBe(
           true,
@@ -617,12 +633,16 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
+          scope: {
+            actorPayerRef: { kind: "personal" as const, id: mate.userId },
+          },
         });
         expect(mateOrders.length).toBe(2);
         for (const order of mateOrders) {
           expect(
-            await fixture.store.readOrder(order.id, { actorPayerRef: { kind: "personal" as const, id: reader.userId } }),
+            await fixture.store.readOrder(order.id, {
+              actorPayerRef: { kind: "personal" as const, id: reader.userId },
+            }),
           ).toBeNull();
         }
         const readerList = await fixture.store.listOrdersInWindow({
@@ -630,7 +650,9 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorPayerRef: { kind: "personal" as const, id: reader.userId } },
+          scope: {
+            actorPayerRef: { kind: "personal" as const, id: reader.userId },
+          },
         });
         expect(readerList).toHaveLength(1);
         expect(readerList[0]?.createdBy).toBe(reader.userId);
@@ -638,11 +660,15 @@ describeDb(
           await fixture.store.countOrdersInWindow({
             from: null,
             to: null,
-            scope: { actorPayerRef: { kind: "personal" as const, id: reader.userId } },
+            scope: {
+              actorPayerRef: { kind: "personal" as const, id: reader.userId },
+            },
           }),
         ).toBe(1);
         expect(
-          await fixture.store.readLatestLiveOrder({ actorPayerRef: { kind: "personal" as const, id: reader.userId } }),
+          await fixture.store.readLatestLiveOrder({
+            actorPayerRef: { kind: "personal" as const, id: reader.userId },
+          }),
         ).toBeNull();
       },
     );
@@ -660,7 +686,9 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorPayerRef: { kind: "personal" as const, id: admin.userId } },
+          scope: {
+            actorPayerRef: { kind: "personal" as const, id: admin.userId },
+          },
         });
         expect(adminList).toHaveLength(1);
         expect(adminList[0]?.createdBy).toBe(admin.userId);
@@ -670,12 +698,16 @@ describeDb(
           to: null,
           limit: 10,
           offset: 0,
-          scope: { actorPayerRef: { kind: "personal" as const, id: mate.userId } },
+          scope: {
+            actorPayerRef: { kind: "personal" as const, id: mate.userId },
+          },
         });
         expect(mateOrders.length).toBe(2);
         for (const order of mateOrders) {
           expect(
-            await fixture.store.readOrder(order.id, { actorPayerRef: { kind: "personal" as const, id: admin.userId } }),
+            await fixture.store.readOrder(order.id, {
+              actorPayerRef: { kind: "personal" as const, id: admin.userId },
+            }),
           ).toBeNull();
         }
         expect(adminOwn.status).toBe("canceled");
@@ -854,7 +886,8 @@ describeDb(
             grantedBy: fixture.caller("a-admin").principalId,
           })
           .catch((error: Error) => {
-            if (!error.message.startsWith("FINANCE_GRANT_EXISTS: ")) throw error;
+            if (!error.message.startsWith("FINANCE_GRANT_EXISTS: "))
+              throw error;
           });
         // finance（beforeAll 的实例）未接 orders：支付记录为空列表，其余账簿照常。
         const books = await finance.companyBooks({

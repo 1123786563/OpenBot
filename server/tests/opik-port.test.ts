@@ -1497,12 +1497,10 @@ describe("the explicit-id identity strategy (F5E1-F3)", () => {
           .filter((attribute: { key: string }) =>
             attribute.key.startsWith("opik."),
           )
-          .map(
-            (attribute: { key: string; value: { stringValue: string } }) => [
-              attribute.key,
-              attribute.value.stringValue,
-            ],
-          ),
+          .map((attribute: { key: string; value: { stringValue: string } }) => [
+            attribute.key,
+            attribute.value.stringValue,
+          ]),
       );
       expect(overrides["opik.parent_span_id"]).toBe(identity.rootOpikSpanId);
     }

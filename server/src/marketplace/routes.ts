@@ -10,6 +10,7 @@ import {
   CONNECTOR_CATEGORIES,
   EXPERT_CATEGORIES,
 } from "./catalogue";
+import { builtinExpertInstallInput } from "./expert-content-hash";
 import type { MarketplaceStore } from "./store";
 
 /**
@@ -201,13 +202,13 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
      * The same shape `POST /api/agents` writes for an endpoint-less coworker: the persona runs as
      * the standing role message, and as the built-in system prompt when there is no managed Bot to
      * run on (where the create store keeps it as the only instruction the Bot gets).
+     *
+     * The fields come from the shared install-input constructor (OCR R5-H-C) — the same source the
+     * migration's reference hash projects — so the write and the hash can never drift apart.
      */
     const agent = await deps.agents.createBot(agentActor, {
-      name: expert.name,
-      title: expert.name,
-      roleDescription: expert.roleDescription,
+      ...builtinExpertInstallInput(expert),
       visibility: "private",
-      systemPrompt: expert.roleDescription,
     });
 
     /*

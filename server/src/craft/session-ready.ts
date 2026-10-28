@@ -221,11 +221,12 @@ export async function ensureSessionReady(
         // config no instance ever picked up, so the ack rides success only.
         let disposed = true;
         if (session.opencodeSessionId) {
-          disposed = await gateway
-            .serveClientFor({ botId, directory })
-            ?.disposeInstance({ directory })
-            .then(() => true)
-            .catch(() => false) ?? !session.opencodeSessionId;
+          disposed =
+            (await gateway
+              .serveClientFor({ botId, directory })
+              ?.disposeInstance({ directory })
+              .then(() => true)
+              .catch(() => false)) ?? !session.opencodeSessionId;
         }
         await store.updateSession(session.id, {
           // Pinned by craft-managed-content.test.ts: the light path flips the row

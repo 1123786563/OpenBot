@@ -42,7 +42,10 @@ import {
  */
 
 /** Where a build line goes; tests collect instead of printing. */
-export type BuildEmit = (line: string, level: "info" | "warn" | "error") => void;
+export type BuildEmit = (
+  line: string,
+  level: "info" | "warn" | "error",
+) => void;
 
 function defaultEmit(line: string, level: "info" | "warn" | "error"): void {
   if (level === "warn") console.warn(line);
@@ -111,7 +114,8 @@ export async function buildMarketplaceArtifacts(
     const identityMatches =
       manifest !== null &&
       `${manifest.publisher}/${manifest.name}` === entry.packageKey;
-    const versionMatches = manifest !== null && manifest.version === entry.version;
+    const versionMatches =
+      manifest !== null && manifest.version === entry.version;
 
     if (manifest === null || (identityMatches && versionMatches)) {
       // Either the source is unreadable (keep the existing build-failure

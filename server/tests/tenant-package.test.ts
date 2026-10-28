@@ -1,4 +1,10 @@
-import { afterAll, afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { and, eq } from "drizzle-orm";
@@ -260,7 +266,7 @@ describe("tenant YAML validation", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-          themeCss: "",
+        themeCss: "",
       }),
     ).toThrow("agent.title must be a non-empty string");
   });
@@ -274,7 +280,7 @@ describe("tenant YAML validation", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-          themeCss: "",
+        themeCss: "",
       }),
     ).toThrow("agent.role_description must be a non-empty string");
   });
@@ -302,7 +308,7 @@ describe("tenant YAML validation", () => {
           channels: "channels: []",
           model:
             "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-              themeCss: "",
+          themeCss: "",
         }),
       ).toThrow(/reserved/i);
     });
@@ -360,7 +366,7 @@ describe("tenant YAML validation", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-          themeCss: "",
+        themeCss: "",
       }),
     ).toThrow("agent.avatar_seed must be a non-empty string");
   });
@@ -374,7 +380,7 @@ describe("tenant YAML validation", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-          themeCss: ":root { --primary: oklch(0.32 0.09 250); }",
+        themeCss: ":root { --primary: oklch(0.32 0.09 250); }",
       }),
     );
 
@@ -492,7 +498,7 @@ describe("tenant YAML validation", () => {
           "channels: [{ id: company, name: Company, description: Test, permitted_agents: [missing], allowed_groups: [all] }]",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-          themeCss: ":root { --primary: black; }",
+        themeCss: ":root { --primary: black; }",
       }),
     ).toThrow('references unknown agent "missing"');
   });
@@ -1545,7 +1551,7 @@ describe("pairing a package's coworkers with its skills", () => {
         channels: "channels: []",
         model:
           "model: { provider: openai, credential_secret_ref: openai-key, default_model: gpt-5.6-terra }",
-          skills: `skills:
+        skills: `skills:
   - slug: find-a-document
     title: Find a document
     summary: Search.

@@ -314,7 +314,8 @@ export function createToolAdmissionService(
         forbidden.has(key.toLowerCase()) ||
         Boolean(findCompanyScopeIdentityField({ [key]: true }));
       const rawInput = input as Record<string, unknown>;
-      let overreach: string | undefined = Object.keys(rawInput).find(overreaches);
+      let overreach: string | undefined =
+        Object.keys(rawInput).find(overreaches);
       const rawPayer = rawInput.payer;
       if (
         overreach === undefined &&
@@ -322,9 +323,9 @@ export function createToolAdmissionService(
         typeof rawPayer === "object" &&
         !Array.isArray(rawPayer)
       ) {
-        const innerKey = Object.keys(
-          rawPayer as Record<string, unknown>,
-        ).find(overreaches);
+        const innerKey = Object.keys(rawPayer as Record<string, unknown>).find(
+          overreaches,
+        );
         if (innerKey !== undefined) overreach = `payer.${innerKey}`;
       }
       if (overreach !== undefined) {

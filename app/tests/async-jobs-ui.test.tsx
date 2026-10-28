@@ -6,7 +6,13 @@ import "./preload";
  * shape; the e2e-compat runner cannot collect app suites in this worktree (its node
  * target lacks the runtime the preload needs), so the file pins the runner that executes.
  */
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";
@@ -90,10 +96,7 @@ type JobFixture = {
   pendingCents: number;
 };
 
-function job(
-  jobId: string,
-  overrides: Partial<JobFixture> = {},
-): JobFixture {
+function job(jobId: string, overrides: Partial<JobFixture> = {}): JobFixture {
   return {
     jobId,
     providerJobId: `prov-${jobId}`,
@@ -175,16 +178,30 @@ test("五种行状态渲染：状态词、待结算原因与金额", async () =>
   const rows = await view.findAllByTestId("async-job-row");
   expect(rows).toHaveLength(5);
 
-  const byStatus = new Map(
-    rows.map((row) => [row.dataset.status, row]),
-  );
+  const byStatus = new Map(rows.map((row) => [row.dataset.status, row]));
 
   // The status words — the code table's own vocabulary, in the reader's language.
-  expect(byStatus.get("queued")?.querySelector('[data-testid="async-job-status"]')?.textContent).toBe("排队中");
-  expect(byStatus.get("running")?.querySelector('[data-testid="async-job-status"]')?.textContent).toBe("运行中");
-  expect(byStatus.get("pending-settlement")?.querySelector('[data-testid="async-job-status"]')?.textContent).toBe("待结算");
-  expect(byStatus.get("settled")?.querySelector('[data-testid="async-job-status"]')?.textContent).toBe("已结算");
-  expect(byStatus.get("cancelled")?.querySelector('[data-testid="async-job-status"]')?.textContent).toBe("已取消");
+  expect(
+    byStatus.get("queued")?.querySelector('[data-testid="async-job-status"]')
+      ?.textContent,
+  ).toBe("排队中");
+  expect(
+    byStatus.get("running")?.querySelector('[data-testid="async-job-status"]')
+      ?.textContent,
+  ).toBe("运行中");
+  expect(
+    byStatus
+      .get("pending-settlement")
+      ?.querySelector('[data-testid="async-job-status"]')?.textContent,
+  ).toBe("待结算");
+  expect(
+    byStatus.get("settled")?.querySelector('[data-testid="async-job-status"]')
+      ?.textContent,
+  ).toBe("已结算");
+  expect(
+    byStatus.get("cancelled")?.querySelector('[data-testid="async-job-status"]')
+      ?.textContent,
+  ).toBe("已取消");
 
   // 待结算任务显示可理解原因: the waiting states carry 08.7's sentences for the money
   // lanes' own codes — the raw code never renders.

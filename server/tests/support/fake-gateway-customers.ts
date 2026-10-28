@@ -1,6 +1,6 @@
 import {
-  GatewayCustomerTransportLostError,
   type GatewayCustomerClient,
+  GatewayCustomerTransportLostError,
 } from "../../src/gateway/customer-provision";
 
 /*
@@ -97,7 +97,10 @@ export async function startFakeCustomerGateway(options: {
       }
 
       // 05.1's create: one customer per unique deterministic name.
-      if (request.method === "POST" && url.pathname === "/api/governance/customers") {
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/governance/customers"
+      ) {
         // Consume the armed fault on arrival, whatever this create's outcome:
         // a fault outrun by a 409/422 must not leak into a later case.
         const dropThisCreate = dropNextCreate;
@@ -147,7 +150,10 @@ export async function startFakeCustomerGateway(options: {
         return Response.json({
           customers: customers
             .filter((customer) => customer.name.includes(search))
-            .map((customer) => ({ id: customer.customerId, name: customer.name })),
+            .map((customer) => ({
+              id: customer.customerId,
+              name: customer.name,
+            })),
         });
       }
 

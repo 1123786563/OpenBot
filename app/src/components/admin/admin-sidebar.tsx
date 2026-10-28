@@ -1,6 +1,5 @@
 import {
   IconArrowLeft,
-  
   IconBuildingBank,
   IconChecks,
   IconCode,

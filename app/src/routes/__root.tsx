@@ -1,4 +1,7 @@
-import { I18nProvider, RouterProvider as AriaRouterProvider } from "@heroui/react/rac";
+import {
+  I18nProvider,
+  RouterProvider as AriaRouterProvider,
+} from "@heroui/react/rac";
 import {
   createRootRouteWithContext,
   Navigate,

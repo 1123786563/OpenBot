@@ -125,7 +125,8 @@ export function createTurnEventBus(
       all.push(...batch);
       const last = batch.at(-1)?.seq;
       // A reader that ignores the cursor would otherwise page forever.
-      if (batch.length < 500 || last === undefined || last <= cursor) return all;
+      if (batch.length < 500 || last === undefined || last <= cursor)
+        return all;
       cursor = last;
     }
   }

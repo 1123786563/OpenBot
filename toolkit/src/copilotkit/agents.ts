@@ -50,7 +50,10 @@ export type BuiltInAgentHooks = {
   /** Watch the model connection, for a host that reports when it fails. */
   observe: (run: Observable<BaseEvent>) => Observable<BaseEvent>;
   /** Bind the run's chain around the subscribed pipeline, including run-built agents. */
-  wrapChain?: (input: RunAgentInput, run: Observable<BaseEvent>) => Observable<BaseEvent>;
+  wrapChain?: (
+    input: RunAgentInput,
+    run: Observable<BaseEvent>,
+  ) => Observable<BaseEvent>;
   /**
    * Wrap the whole run pipeline (approvals included) in a host scope. Absent, the run is the
    * pipeline itself. The host's observation threading runs here rather than inside `observe`

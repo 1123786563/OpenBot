@@ -88,7 +88,9 @@ for (const [t, cols] of live) {
   }
   for (const c of cols) {
     if (!declaredCols.has(c)) {
-      console.error(`migration column absent from schema declarations: ${t}.${c}`);
+      console.error(
+        `migration column absent from schema declarations: ${t}.${c}`,
+      );
       bad++;
     }
   }

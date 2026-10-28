@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import { databaseComplaint, isQueryFailure, reasonWithoutStatement } from "../src/db/query-failure";
+import {
+  databaseComplaint,
+  isQueryFailure,
+  reasonWithoutStatement,
+} from "../src/db/query-failure";
 
 /**
  * The query-failure gate's whole safety argument is "drizzle hangs query/params as

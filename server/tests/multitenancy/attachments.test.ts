@@ -18,7 +18,13 @@
 // DATABASE_URL）加三个受限角色 URL；缺配置时整套显式 skip（跳过原因
 // 写在用例名里，skipped 不计为通过），绝不回退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   notFoundVerdict,
@@ -78,7 +84,8 @@ const isCanonicalNotFound = (value: unknown): boolean =>
   JSON.stringify(value) === serializeNotFoundVerdict(notFoundVerdict());
 
 let threadCounter = 0;
-const nextThread = () => `mt024-thread-${String((threadCounter += 1)).padStart(3, "0")}`;
+const nextThread = () =>
+  `mt024-thread-${String((threadCounter += 1)).padStart(3, "0")}`;
 
 describeDb("MT024 / Issue #67 — 附件归属全链路", () => {
   let fixture: AttachmentFixture;
@@ -87,8 +94,7 @@ describeDb("MT024 / Issue #67 — 附件归属全链路", () => {
     identity: AttachmentIdentity,
     tenantId: string,
     workspaceId: string,
-  ): Promise<PlatformScope> =>
-    fixture.scopeAs(identity, tenantId, workspaceId);
+  ): Promise<PlatformScope> => fixture.scopeAs(identity, tenantId, workspaceId);
 
   const stageAs = async (
     identity: AttachmentIdentity,
@@ -101,7 +107,11 @@ describeDb("MT024 / Issue #67 — 附件归属全链路", () => {
       { filename, sizeBytes: 1024 },
     );
     expect(staged.outcome).toBe("allow");
-    return staged as { outcome: "allow"; attachmentId: string; storagePath: string };
+    return staged as {
+      outcome: "allow";
+      attachmentId: string;
+      storagePath: string;
+    };
   };
 
   beforeAll(async () => {
@@ -116,30 +126,37 @@ describeDb("MT024 / Issue #67 — 附件归属全链路", () => {
   // AC1：路径按归属隔离且不可猜测；签发点与代理点双重校验
   // -------------------------------------------------------------------------
   describeDb("AC1 存储路径隔离与签名 URL 双点校验", () => {
-    itDb("路径按归属分段（tenant/workspace/ref），ref 服务端随机生成", async () => {
-      const first = await stageAs(
-        "a1-owner",
-        fixture.companyA,
-        fixture.teamA1,
-      );
-      const second = await stageAs(
-        "a1-owner",
-        fixture.companyA,
-        fixture.teamA1,
-        "规格说明.pdf",
-      );
-      expect(first.storagePath).toBe(
-        `${fixture.companyA}/${fixture.teamA1}/${first.attachmentId}/blob`,
-      );
-      // 同名文件两次上传：ref 与路径都不同（不可猜测、不可枚举）。
-      expect(first.attachmentId).not.toBe(second.attachmentId);
-      expect(first.storagePath).not.toBe(second.storagePath);
-      expect(first.attachmentId).toMatch(/^att-[0-9a-f-]{36}$/);
-    });
+    itDb(
+      "路径按归属分段（tenant/workspace/ref），ref 服务端随机生成",
+      async () => {
+        const first = await stageAs(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+        );
+        const second = await stageAs(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+          "规格说明.pdf",
+        );
+        expect(first.storagePath).toBe(
+          `${fixture.companyA}/${fixture.teamA1}/${first.attachmentId}/blob`,
+        );
+        // 同名文件两次上传：ref 与路径都不同（不可猜测、不可枚举）。
+        expect(first.attachmentId).not.toBe(second.attachmentId);
+        expect(first.storagePath).not.toBe(second.storagePath);
+        expect(first.attachmentId).toMatch(/^att-[0-9a-f-]{36}$/);
+      },
+    );
 
     itDb("跨公司路径天然隔离：B 公司附件路径不含 A 的段", async () => {
       const aFile = await stageAs("a1-owner", fixture.companyA, fixture.teamA1);
-      const bFile = await stageAs("b1-member", fixture.companyB, fixture.teamB1);
+      const bFile = await stageAs(
+        "b1-member",
+        fixture.companyB,
+        fixture.teamB1,
+      );
       expect(bFile.storagePath.startsWith(`${fixture.companyB}/`)).toBe(true);
       expect(bFile.storagePath.startsWith(`${fixture.companyA}/`)).toBe(false);
       expect(aFile.attachmentId).not.toBe(bFile.attachmentId);
@@ -174,42 +191,56 @@ describeDb("MT024 / Issue #67 — 附件归属全链路", () => {
       });
     });
 
-    itDb("代理点校验：伪造 MAC / 篡改 ref 的 token canonical not-found", async () => {
-      const file = await stageAs("a1-owner", fixture.companyA, fixture.teamA1);
-      const issued = (await fixture.attachments.issueDownloadUrl(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        file.attachmentId,
-        { ttlSeconds: 300 },
-      )) as { url: string };
-      const [, expiry, mac] = issued.url.split(".");
-      const forged = `${file.attachmentId}x.${expiry}.${mac}`;
-      const verdict = await fixture.attachments.resolveDownload(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        forged,
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "代理点校验：伪造 MAC / 篡改 ref 的 token canonical not-found",
+      async () => {
+        const file = await stageAs(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+        );
+        const issued = (await fixture.attachments.issueDownloadUrl(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          file.attachmentId,
+          { ttlSeconds: 300 },
+        )) as { url: string };
+        const [, expiry, mac] = issued.url.split(".");
+        const forged = `${file.attachmentId}x.${expiry}.${mac}`;
+        const verdict = await fixture.attachments.resolveDownload(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          forged,
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
   // AC2：无权用户不可见语义；撤销/撤权后签发拒绝、已签发链接失效
   // -------------------------------------------------------------------------
   describeDb("AC2 无权、撤销与撤权", () => {
-    itDb("无权用户（跨公司 B / 跨团队 A2 / 同团队未入 grant）请求下载 canonical not-found", async () => {
-      const file = await stageAs("a1-owner", fixture.companyA, fixture.teamA1);
-      const fromB = await fixture.attachments.issueDownloadUrl(
-        await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
-        file.attachmentId,
-        { ttlSeconds: 60 },
-      );
-      expect(isCanonicalNotFound(fromB)).toBe(true);
-      const fromA2 = await fixture.attachments.issueDownloadUrl(
-        await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
-        file.attachmentId,
-        { ttlSeconds: 60 },
-      );
-      expect(isCanonicalNotFound(fromA2)).toBe(true);
-    });
+    itDb(
+      "无权用户（跨公司 B / 跨团队 A2 / 同团队未入 grant）请求下载 canonical not-found",
+      async () => {
+        const file = await stageAs(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+        );
+        const fromB = await fixture.attachments.issueDownloadUrl(
+          await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
+          file.attachmentId,
+          { ttlSeconds: 60 },
+        );
+        expect(isCanonicalNotFound(fromB)).toBe(true);
+        const fromA2 = await fixture.attachments.issueDownloadUrl(
+          await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
+          file.attachmentId,
+          { ttlSeconds: 60 },
+        );
+        expect(isCanonicalNotFound(fromA2)).toBe(true);
+      },
+    );
 
     itDb("撤销后：新签发被拒，已签发链接在代理点被拒", async () => {
       const file = await stageAs("a1-owner", fixture.companyA, fixture.teamA1);
@@ -279,9 +310,21 @@ describeDb("MT024 / Issue #67 — 附件归属全链路", () => {
   // -------------------------------------------------------------------------
   describeDb("AC3 清理范围隔离", () => {
     itDb("清理只触及本团队过期行：A1 清理后 A2/B1 的行完好", async () => {
-      const a1File = await stageAs("a1-owner", fixture.companyA, fixture.teamA1);
-      const a2File = await stageAs("a2-member", fixture.companyA, fixture.teamA2);
-      const b1File = await stageAs("b1-member", fixture.companyB, fixture.teamB1);
+      const a1File = await stageAs(
+        "a1-owner",
+        fixture.companyA,
+        fixture.teamA1,
+      );
+      const a2File = await stageAs(
+        "a2-member",
+        fixture.companyA,
+        fixture.teamA2,
+      );
+      const b1File = await stageAs(
+        "b1-member",
+        fixture.companyB,
+        fixture.teamB1,
+      );
       // cutoff 与 created_at 同毫秒竞态：跨过整秒再清理。
       await new Promise((resolve) => setTimeout(resolve, 1100));
       const cleaned = await fixture.attachments.cleanupStaleUploads(
@@ -341,22 +384,29 @@ describeDb("MT024 / Issue #67 — 附件归属全链路", () => {
       expect(bound.outcome).toBe("allow");
     });
 
-    itDb("跨团队身份携带他人 ref 绑定：canonical not-found（重述归属无效）", async () => {
-      const threadId = nextThread();
-      await fixture.seedConversation({
-        tenantId: fixture.companyA,
-        workspaceId: fixture.teamA2,
-        principalId: fixture.ids["principal-a2-member"],
-        threadId,
-      });
-      const file = await stageAs("a1-owner", fixture.companyA, fixture.teamA1);
-      const verdict = await fixture.attachments.bindToConversation(
-        await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
-        file.attachmentId,
-        threadId,
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "跨团队身份携带他人 ref 绑定：canonical not-found（重述归属无效）",
+      async () => {
+        const threadId = nextThread();
+        await fixture.seedConversation({
+          tenantId: fixture.companyA,
+          workspaceId: fixture.teamA2,
+          principalId: fixture.ids["principal-a2-member"],
+          threadId,
+        });
+        const file = await stageAs(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+        );
+        const verdict = await fixture.attachments.bindToConversation(
+          await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
+          file.attachmentId,
+          threadId,
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
 
     itDb("附件与归属不符的会话绑定：canonical not-found", async () => {
       const file = await stageAs("a1-owner", fixture.companyA, fixture.teamA1);

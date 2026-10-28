@@ -31,10 +31,14 @@ import {
 
 const repoRoot = join(import.meta.dirname, "../..");
 
-const readRepoFile = (modulePath: string) => readFileSync(join(repoRoot, modulePath), "utf8");
-const repoFileExists = (modulePath: string) => existsSync(join(repoRoot, modulePath));
+const readRepoFile = (modulePath: string) =>
+  readFileSync(join(repoRoot, modulePath), "utf8");
+const repoFileExists = (modulePath: string) =>
+  existsSync(join(repoRoot, modulePath));
 
-const GROUP_RECORDS = CONFORMANCE_EVIDENCE.filter((record) => record.group === "22.4");
+const GROUP_RECORDS = CONFORMANCE_EVIDENCE.filter(
+  (record) => record.group === "22.4",
+);
 
 function recordOf(family: string): ConformanceRecord {
   const record = GROUP_RECORDS.find((entry) => entry.family === family);
@@ -42,7 +46,9 @@ function recordOf(family: string): ConformanceRecord {
   return record as ConformanceRecord;
 }
 
-function constraintKinds(record: ConformanceRecord): Set<ConformanceConstraintKind> {
+function constraintKinds(
+  record: ConformanceRecord,
+): Set<ConformanceConstraintKind> {
   return new Set(record.constraints.map((constraint) => constraint.kind));
 }
 
@@ -51,10 +57,13 @@ describe("Bifrost 22.4 (#355): conformance evidence — Embedding/实时/异步/
     expect(admittedEntrypointsWithoutEvidence()).toEqual([]);
     const admitted224 = MODEL_ENTRYPOINTS.filter(
       (row) =>
-        row.admission.status === "admitted" && CONFORMANCE_GROUP_22_4.includes(row.family),
+        row.admission.status === "admitted" &&
+        CONFORMANCE_GROUP_22_4.includes(row.family),
     );
     expect(admitted224.length).toBeGreaterThanOrEqual(14);
-    const covered = new Set(GROUP_RECORDS.flatMap((record) => record.entrypointIds));
+    const covered = new Set(
+      GROUP_RECORDS.flatMap((record) => record.entrypointIds),
+    );
     for (const row of admitted224) {
       expect(covered.has(row.id), row.id).toBe(true);
     }
@@ -108,31 +117,45 @@ describe("Bifrost 22.4 (#355): conformance evidence — Embedding/实时/异步/
     for (const record of GROUP_RECORDS) {
       expect(record.constraints.length, record.id).toBeGreaterThan(0);
       expect(record.verification.commands.length, record.id).toBeGreaterThan(0);
-      expect(record.verification.resultSummary.length, record.id).toBeGreaterThan(0);
+      expect(
+        record.verification.resultSummary.length,
+        record.id,
+      ).toBeGreaterThan(0);
       for (const command of record.verification.commands) {
-        const match = command.match(/(server\/tests\/[A-Za-z0-9_./-]+\.test\.ts[ex]*)/);
+        const match = command.match(
+          /(server\/tests\/[A-Za-z0-9_./-]+\.test\.ts[ex]*)/,
+        );
         expect(match, `${record.id}: ${command}`).not.toBeNull();
-        if (match) expect(existsSync(join(repoRoot, match[1])), match[1]).toBe(true);
+        if (match)
+          expect(existsSync(join(repoRoot, match[1])), match[1]).toBe(true);
       }
       for (const modulePath of record.versionBinding) {
-        expect(repoFileExists(modulePath), `${record.id}: ${modulePath}`).toBe(true);
+        expect(repoFileExists(modulePath), `${record.id}: ${modulePath}`).toBe(
+          true,
+        );
       }
       if (record.needsProviderEnvironment) {
-        expect(record.verification.environment, record.id).toBe("local-deterministic");
+        expect(record.verification.environment, record.id).toBe(
+          "local-deterministic",
+        );
       }
     }
   });
 
   test("the invalidation rule is the same machinery — the delivered fingerprints hold, and a changed bound module stale-marks this half too", () => {
     // The same ARMED check 22.3's file carries, over the whole store (both halves).
-    expect(staleEvidence(DELIVERED_FINGERPRINTS, readRepoFile, repoFileExists)).toEqual([]);
+    expect(
+      staleEvidence(DELIVERED_FINGERPRINTS, readRepoFile, repoFileExists),
+    ).toEqual([]);
     const fingerprints = Object.fromEntries(
       CONFORMANCE_EVIDENCE.map((record) => [
         record.id,
         evidenceFingerprint(record, readRepoFile),
       ]),
     );
-    expect(staleEvidence(fingerprints, readRepoFile, repoFileExists)).toEqual([]);
+    expect(staleEvidence(fingerprints, readRepoFile, repoFileExists)).toEqual(
+      [],
+    );
 
     // The realtime unit door changed (a stage reordered): the realtime record goes stale,
     // its entrances drop out of the enableable projection, everything else stays.
@@ -163,7 +186,9 @@ describe("Bifrost 22.4 (#355): conformance evidence — Embedding/实时/异步/
     }
     // The blocked/absent rows are never evidence-covered — evidence states capability,
     // and a blocked entrance has none.
-    const covered = new Set(CONFORMANCE_EVIDENCE.flatMap((r) => r.entrypointIds));
+    const covered = new Set(
+      CONFORMANCE_EVIDENCE.flatMap((r) => r.entrypointIds),
+    );
     for (const row of MODEL_ENTRYPOINTS) {
       if (row.admission.status !== "admitted") {
         expect(covered.has(row.id), row.id).toBe(false);
@@ -175,7 +200,9 @@ describe("Bifrost 22.4 (#355): conformance evidence — Embedding/实时/异步/
     // The families whose proof is structurally local-only name exactly what a provider
     // environment would upgrade; the marking is part of the record, so 22.5's matrix and
     // the readiness conclusion read the SAME unverified list from here.
-    const marked = GROUP_RECORDS.filter((record) => record.needsProviderEnvironment);
+    const marked = GROUP_RECORDS.filter(
+      (record) => record.needsProviderEnvironment,
+    );
     expect(marked.map((record) => record.id)).toContain("conformance.realtime");
     expect(marked.map((record) => record.id)).toContain("conformance.video");
     for (const record of marked) {

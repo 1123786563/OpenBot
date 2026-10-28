@@ -200,11 +200,7 @@ export class ExpertVersionCatalog {
       if (!existing) fail("EXPERT_VERSION_CONFLICT");
       let verified: CanonicalExpertDefinition;
       try {
-        verified = verify(
-          scope.tenantId,
-          canonical.expertVersionRef,
-          existing,
-        );
+        verified = verify(scope.tenantId, canonical.expertVersionRef, existing);
       } catch (cause) {
         // The corrupt-row verification failure rides on cause so operators
         // can tell a drift conflict from a damaged catalog row (OCR R10).

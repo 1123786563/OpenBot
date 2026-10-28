@@ -102,8 +102,9 @@ export function createCraftMcpRelayApp(deps: CraftMcpRelayDeps): Hono {
     }
 
     // ── membership: the server must be in THAT session's resolved set ──────
-    const servers = await deps.sessionMcpServersFor(session).catch(
-      (error: unknown) => {
+    const servers = await deps
+      .sessionMcpServersFor(session)
+      .catch((error: unknown) => {
         // An empty set and a failed resolution both land on the same 403 below;
         // without this line a transient failure is indistinguishable from a
         // real revocation in the logs — and the agent does not retry a 403.
@@ -115,8 +116,7 @@ export function createCraftMcpRelayApp(deps: CraftMcpRelayDeps): Hono {
           "[craft] mcp relay: member resolution failed; refusing",
         );
         return [];
-      },
-    );
+      });
     const member = servers.some(
       (server) => craftMcpServerIdOfRelayUrl(server.url) === serverId,
     );

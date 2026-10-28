@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
@@ -333,7 +338,10 @@ describe("grants and ledger rows of one account are invisible to another", () =>
     });
     expect((await credits.summary(bob)).rewards.remaining).toBe(0);
     expect(await credits.grants(bob)).toHaveLength(0);
-    const bobPage = await credits.consumption({ from: null, to: null, page: 1 }, bob);
+    const bobPage = await credits.consumption(
+      { from: null, to: null, page: 1 },
+      bob,
+    );
     expect(bobPage.pagination.totalCount).toBe(0);
     expect(bobPage.entries).toHaveLength(0);
 

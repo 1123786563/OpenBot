@@ -1,9 +1,6 @@
 import "../preload";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -88,7 +85,9 @@ function jsonResponse(status: number, body: unknown): Response {
  * token — flipping it between renders is how a revocation mid-life is simulated.
  */
 function serve(state: {
-  [token: string]: { status: number; scope?: string; withDownload?: boolean } | undefined;
+  [token: string]:
+    | { status: number; scope?: string; withDownload?: boolean }
+    | undefined;
 }): void {
   asked = [];
   global.fetch = (async (
@@ -97,7 +96,9 @@ function serve(state: {
   ): Promise<Response> => {
     const url = String(input);
     asked.push({ input: url.split("?")[0], init, url });
-    const match = url.match(/\/api\/public\/workshop\/share\/([^/]+)\/(artifacts|preview|report)/);
+    const match = url.match(
+      /\/api\/public\/workshop\/share\/([^/]+)\/(artifacts|preview|report)/,
+    );
     if (match !== null) {
       const answer = state[match[1]];
       if (answer === undefined) return jsonResponse(200, {});
@@ -189,7 +190,11 @@ describe("MT092 AC2 — the miss family is uniform and leaks nothing", () => {
 
     cleanup();
     serve({
-      [LIVE_TOKEN]: { status: 200, scope: "preview_download", withDownload: true },
+      [LIVE_TOKEN]: {
+        status: 200,
+        scope: "preview_download",
+        withDownload: true,
+      },
     });
     const wide = draw(LIVE_TOKEN).view;
     await waitFor(() => expect(wide.getByText("Download")).toBeTruthy());
@@ -200,7 +205,9 @@ describe("MT092 AC3 — a revoked or expired link is never served from a previou
   test("a link that was live misses on the very next visit — no cached carry-over", async () => {
     serve({ [LIVE_TOKEN]: { status: 200, scope: "preview" } });
     const first = draw(LIVE_TOKEN);
-    expect(await first.view.findByText("acme-quarterly-report.md")).toBeTruthy();
+    expect(
+      await first.view.findByText("acme-quarterly-report.md"),
+    ).toBeTruthy();
 
     // The owner revokes; the very same URL now answers the uniform miss.
     cleanup();

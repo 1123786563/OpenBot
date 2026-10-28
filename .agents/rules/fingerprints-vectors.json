@@ -430,10 +430,7 @@
             "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
             "approval_ref": null,
             "authority": null,
-            "supersedes": [
-              "context:old-a",
-              "context:old-b"
-            ]
+            "supersedes": ["context:old-a", "context:old-b"]
           },
           {
             "id": "context:old-a",
@@ -494,10 +491,7 @@
             "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
             "approval_ref": null,
             "authority": null,
-            "supersedes": [
-              "context:old-b",
-              "context:old-a"
-            ]
+            "supersedes": ["context:old-b", "context:old-a"]
           }
         ],
         "dependencies": [],

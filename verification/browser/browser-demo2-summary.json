@@ -1,0 +1,38 @@
+[
+  {
+    "step": "PKG04-detail-after-upgrade",
+    "chars": 711
+  },
+  {
+    "step": "PKG04-expert-form",
+    "chars": 293
+  },
+  {
+    "step": "PKG04-expert-created",
+    "chars": 253
+  },
+  {
+    "step": "PKG06-rollback-FAILED",
+    "chars": 1343
+  },
+  {
+    "step": "PKG07-FAILED",
+    "chars": 1343
+  },
+  {
+    "step": "PKG07-uninstall-FAILED",
+    "chars": 1343
+  },
+  {
+    "step": "PKG02-catalogue-uninstalled",
+    "chars": 1343
+  },
+  {
+    "step": "PKG02-install-ui-FAILED",
+    "chars": 1343
+  },
+  {
+    "step": "PKG10-FAILED",
+    "chars": 1343
+  }
+]

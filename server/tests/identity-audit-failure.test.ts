@@ -1,4 +1,10 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  spyOn,
+  test,
+} from "../../tests/support/e2e-compat";
 import { logLinkAuditFailure } from "../src/identity/audit-failure";
 
 let spy: ReturnType<typeof spyOn>;

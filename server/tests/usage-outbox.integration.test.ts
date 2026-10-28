@@ -314,7 +314,8 @@ function expectedExactScaledUnits(usage: Record<string, number>): {
   let denominator = 1n;
   for (const [dimension, [amountN, amountD]] of Object.entries(amounts)) {
     numerator =
-      numerator * amountD + BigInt(usage[dimension] ?? 0) * amountN * denominator;
+      numerator * amountD +
+      BigInt(usage[dimension] ?? 0) * amountN * denominator;
     denominator *= amountD;
   }
   // USD → credits (×100/1) → scaled units (×CREDIT_SCALE=100).
@@ -324,7 +325,10 @@ function expectedExactScaledUnits(usage: Record<string, number>): {
     scaledNumerator < 0n ? -scaledNumerator : scaledNumerator,
     denominator,
   );
-  return { numerator: scaledNumerator / divisor, denominator: denominator / divisor };
+  return {
+    numerator: scaledNumerator / divisor,
+    denominator: denominator / divisor,
+  };
 }
 
 async function reserveOrFail(world: SeededWorld): Promise<string> {
@@ -425,7 +429,10 @@ protocolApp.route(
     auditStore,
     endpoints: (() => {
       const endpoints = new Hono<{ Variables: CreditServiceVariables }>();
-      endpoints.route("/", creditProtocolEndpoints({ service: reserveService }));
+      endpoints.route(
+        "/",
+        creditProtocolEndpoints({ service: reserveService }),
+      );
       endpoints.route("/", creditSettleEndpoints({ service: settleService }));
       return endpoints;
     })(),
@@ -454,7 +461,12 @@ test("the gateway outbox message settles through the guarded route at the locked
   // → ×100 credits/USD = 0.1335 → scaled 13.35 = 267/20; floored: 13 charged, 7/20 owed.
   const message = gatewaySettleMessage(
     reservationId,
-    gatewayUsageOf({ input: 450, output: 400, cache_read: 100, cache_write: 50 }),
+    gatewayUsageOf({
+      input: 450,
+      output: 400,
+      cache_read: 100,
+      cache_write: 50,
+    }),
     bfatAttemptId(1),
   );
   const exact = expectedExactScaledUnits(message.actualUsage);
@@ -506,11 +518,14 @@ test("a redelivery of the same outbox message after a lost acknowledgement conve
     authorization: `Bearer ${gatewaySecret}`,
   };
 
-  const firstResponse = await protocolApp.request("/api/credit-protocol/settle", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(message),
-  });
+  const firstResponse = await protocolApp.request(
+    "/api/credit-protocol/settle",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(message),
+    },
+  );
   expect(firstResponse.status).toBe(200);
   const first = (await firstResponse.json()) as Record<string, unknown>;
   expect(first.chargedCredits).toBe(12_000);
@@ -519,10 +534,17 @@ test("a redelivery of the same outbox message after a lost acknowledgement conve
   // delivery was not. The first result comes back; no second charge exists.
   const redeliveryResponse = await protocolApp.request(
     "/api/credit-protocol/settle",
-    { method: "POST", headers, body: JSON.stringify(JSON.parse(JSON.stringify(message))) },
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(JSON.parse(JSON.stringify(message))),
+    },
   );
   expect(redeliveryResponse.status).toBe(200);
-  const redelivery = (await redeliveryResponse.json()) as Record<string, unknown>;
+  const redelivery = (await redeliveryResponse.json()) as Record<
+    string,
+    unknown
+  >;
   expect(redelivery).toEqual(first);
 
   const ledgerRows = await ledgerRowsOf(world.customerKey);
@@ -589,7 +611,10 @@ test("a dimension outside the closed vocabulary is refused at the shape boundary
     body: JSON.stringify(drifted),
   });
   expect(response.status).toBe(422);
-  const refusal = (await response.json()) as { code?: string; detail?: { dimension?: string } };
+  const refusal = (await response.json()) as {
+    code?: string;
+    detail?: { dimension?: string };
+  };
   expect(refusal.code).toBe("request_invalid");
   expect(refusal.detail?.dimension).toBe("tokens");
 

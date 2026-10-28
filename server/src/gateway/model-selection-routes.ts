@@ -234,7 +234,7 @@ export function createModelSelectionRoutes(
     // picker context and is told so — an empty list would read as "no models
     // exist", which is a different untruth.
     const bot = await botServices.getBotService(WORKBENCH_BOT_ID);
-    if (!bot || bot.status !== "active") {
+    if (bot?.status !== "active") {
       return { error: "workbench_bot_unavailable" as const };
     }
     // Registry declaration → catalog vocabulary. An empty mapping is a

@@ -80,7 +80,8 @@ function wavOf(durationSeconds: number): Uint8Array {
   const bytes = new Uint8Array(44 + dataSize);
   const view = new DataView(bytes.buffer);
   const ascii = (offset: number, text: string) => {
-    for (let i = 0; i < text.length; i++) bytes[offset + i] = text.charCodeAt(i);
+    for (let i = 0; i < text.length; i++)
+      bytes[offset + i] = text.charCodeAt(i);
   };
   ascii(0, "RIFF");
   view.setUint32(4, 36 + dataSize, true);
@@ -107,8 +108,12 @@ describe("the trusted duration measurement", () => {
 
   test("bytes that are not a readable container measure as unmeasurable", () => {
     expect(parseWavDurationSeconds(new Uint8Array(0))).toBeNull();
-    expect(parseWavDurationSeconds(new TextEncoder().encode("not audio at all"))).toBeNull();
-    expect(parseWavDurationSeconds(new Uint8Array([82, 73, 70, 70]))).toBeNull(); // "RIFF" then nothing
+    expect(
+      parseWavDurationSeconds(new TextEncoder().encode("not audio at all")),
+    ).toBeNull();
+    expect(
+      parseWavDurationSeconds(new Uint8Array([82, 73, 70, 70])),
+    ).toBeNull(); // "RIFF" then nothing
   });
 
   test("the measurement governs; a client's claim never lowers it and never substitutes", () => {
@@ -119,13 +124,19 @@ describe("the trusted duration measurement", () => {
       bytes: audio,
       clientClaimedSeconds: 10,
     });
-    expect(inflated).toEqual({ measuredSeconds: 2, clientClaimDisagrees: true });
+    expect(inflated).toEqual({
+      measuredSeconds: 2,
+      clientClaimDisagrees: true,
+    });
     // The client claims one: the hold still certifies the measured two.
     const deflated = measureAudioDurationSeconds({
       bytes: audio,
       clientClaimedSeconds: 1,
     });
-    expect(deflated).toEqual({ measuredSeconds: 2, clientClaimDisagrees: true });
+    expect(deflated).toEqual({
+      measuredSeconds: 2,
+      clientClaimDisagrees: true,
+    });
     // A consistent claim measures the same, flagged as agreeing.
     expect(
       measureAudioDurationSeconds({ bytes: audio, clientClaimedSeconds: 2 }),
@@ -142,7 +153,10 @@ describe("the trusted duration measurement", () => {
       bytes: new TextEncoder().encode("garbage"),
       clientClaimedSeconds: 30,
     });
-    expect(measurement).toEqual({ measuredSeconds: null, clientClaimDisagrees: true });
+    expect(measurement).toEqual({
+      measuredSeconds: null,
+      clientClaimDisagrees: true,
+    });
   });
 });
 
@@ -167,7 +181,11 @@ describe("the enablement verdict", () => {
 
   test("an unmeasurable duration refuses the request", () => {
     expect(
-      assessTranscription({ dims: basis, measuredSeconds: null, outputTokenCap: 300 }),
+      assessTranscription({
+        dims: basis,
+        measuredSeconds: null,
+        outputTokenCap: 300,
+      }),
     ).toEqual({
       enabled: false,
       issue: { code: "transcription_input_unmeasurable" },
@@ -176,7 +194,11 @@ describe("the enablement verdict", () => {
 
   test("no attested output cap refuses the call method", () => {
     expect(
-      assessTranscription({ dims: basis, measuredSeconds: 2, outputTokenCap: 0 }),
+      assessTranscription({
+        dims: basis,
+        measuredSeconds: 2,
+        outputTokenCap: 0,
+      }),
     ).toEqual({
       enabled: false,
       issue: { code: "transcription_output_uncapped" },
@@ -185,14 +207,22 @@ describe("the enablement verdict", () => {
 
   test("a v1 snapshot's unknown audio price refuses as price_unknown — never a zero", () => {
     const v1Dims = mapPriceDims({
-      pricing: { prompt: "0.000001", completion: "0.000002", request: "0.0001" },
+      pricing: {
+        prompt: "0.000001",
+        completion: "0.000002",
+        request: "0.0001",
+      },
     });
     expect(v1Dims.audio_input).toEqual({
       status: "unknown",
       reason: "price_dim_no_source",
     });
     expect(
-      assessTranscription({ dims: v1Dims, measuredSeconds: 2, outputTokenCap: 300 }),
+      assessTranscription({
+        dims: v1Dims,
+        measuredSeconds: 2,
+        outputTokenCap: 300,
+      }),
     ).toEqual({
       enabled: false,
       issue: {
@@ -221,7 +251,10 @@ describe("the ceiling conversion", () => {
     });
     expect(ceiling).toMatchObject({ ok: true, maximumCredits: 73 });
     if (!ceiling.ok) return;
-    expect(ceiling.exactScaledUnits).toEqual({ numerator: 73n, denominator: 1n });
+    expect(ceiling.exactScaledUnits).toEqual({
+      numerator: 73n,
+      denominator: 1n,
+    });
   });
 
   test("a fractional measured second rounds UP to the next whole second — never below", () => {
@@ -275,6 +308,9 @@ describe("the ceiling conversion", () => {
     });
     expect(ceiling).toMatchObject({ ok: true, maximumCredits: 3 });
     if (!ceiling.ok) return;
-    expect(ceiling.exactScaledUnits).toEqual({ numerator: 219n, denominator: 100n });
+    expect(ceiling.exactScaledUnits).toEqual({
+      numerator: 219n,
+      denominator: 100n,
+    });
   });
 });

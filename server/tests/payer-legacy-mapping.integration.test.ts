@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
@@ -161,7 +166,9 @@ describe("the mixed legacy fixture maps explicitly, once per key", () => {
     });
 
     for (const key of fixtureKeys) {
-      expect((await rowsOf(key)).grants.length + (await rowsOf(key)).ledger.length).toBeGreaterThan(0);
+      expect(
+        (await rowsOf(key)).grants.length + (await rowsOf(key)).ledger.length,
+      ).toBeGreaterThan(0);
     }
   });
 
@@ -199,9 +206,9 @@ describe("the mixed legacy fixture maps explicitly, once per key", () => {
     }
 
     // The explicit mappings exist and name the identity the derivation came from.
-    expect(
-      (await readPayerAccountForKey(database, claimedKey))?.payerId,
-    ).toBe(claimedId);
+    expect((await readPayerAccountForKey(database, claimedKey))?.payerId).toBe(
+      claimedId,
+    );
     expect(
       (await readPayerAccountForKey(database, directoryTenantKey))?.kind,
     ).toBe("legacy_deployment");
@@ -278,9 +285,9 @@ describe("unknown_owner records are quarantined: auditable, never consumable", (
     expect(junkRows.grants[0].total).toBe(1_000);
 
     // Isolation: no PayerRef resolves a quarantined record into a billable key.
-    expect(() =>
-      payerKey({ kind: "unknown_owner", id: junkKey }),
-    ).toThrow(TypeError);
+    expect(() => payerKey({ kind: "unknown_owner", id: junkKey })).toThrow(
+      TypeError,
+    );
     await expect(
       createPayerAccount(database, { kind: "unknown_owner", id: junkKey }),
     ).rejects.toThrow(TypeError);

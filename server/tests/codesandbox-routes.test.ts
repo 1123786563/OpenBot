@@ -3,7 +3,10 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { createCodeSandboxRoutes } from "../src/codesandbox/routes";
 import type { AppVariables } from "../src/auth/guards";
 import type { AgentActor } from "../src/agents/profile-types";
-import type { CodeRunGateway, CodeRunOutcome } from "../src/codesandbox/gateway";
+import type {
+  CodeRunGateway,
+  CodeRunOutcome,
+} from "../src/codesandbox/gateway";
 
 function gatewayWith(outcome: CodeRunOutcome): CodeRunGateway {
   return {
@@ -23,21 +26,32 @@ function requireUserAs(actor: AgentActor): MiddlewareHandler<{
 
 function buildApp(
   gateway: CodeRunGateway,
-  canUseBot: (actor: AgentActor, botId: string) => Promise<boolean> = async () => true,
+  canUseBot: (
+    actor: AgentActor,
+    botId: string,
+  ) => Promise<boolean> = async () => true,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }> = requireUserAs({
     id: "user-1",
     role: "user",
   }),
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
-  app.route("/api/codesandbox", createCodeSandboxRoutes(requireUser, canUseBot, () => gateway));
+  app.route(
+    "/api/codesandbox",
+    createCodeSandboxRoutes(requireUser, canUseBot, () => gateway),
+  );
   return app;
 }
 
 describe("POST /api/codesandbox/runs", () => {
   test("returns the completed outcome", async () => {
     const app = buildApp(
-      gatewayWith({ kind: "completed", runId: "cr-1", text: "done", artifacts: [] }),
+      gatewayWith({
+        kind: "completed",
+        runId: "cr-1",
+        text: "done",
+        artifacts: [],
+      }),
     );
     const response = await app.request("/api/codesandbox/runs", {
       method: "POST",
@@ -45,7 +59,10 @@ describe("POST /api/codesandbox/runs", () => {
       body: JSON.stringify({ botId: "bot-1", task: "算个东西" }),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ kind: "completed", text: "done" });
+    expect(await response.json()).toMatchObject({
+      kind: "completed",
+      text: "done",
+    });
   });
 
   test("a task that is not a string is 400 without reaching the gateway", async () => {
@@ -91,7 +108,12 @@ describe("POST /api/codesandbox/runs", () => {
     const app = buildApp({
       run: async (_task, opts) => {
         received = opts;
-        return { kind: "completed", runId: "cr-1", text: "done", artifacts: [] };
+        return {
+          kind: "completed",
+          runId: "cr-1",
+          text: "done",
+          artifacts: [],
+        };
       },
       resetWorkspace: async () => ({ ok: true }),
     });
@@ -150,7 +172,10 @@ describe("POST /api/codesandbox/reset", () => {
       body: JSON.stringify({ botId: "bot-1" }),
     });
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ ok: false, reason: "not-configured" });
+    expect(await response.json()).toEqual({
+      ok: false,
+      reason: "not-configured",
+    });
   });
 
   test("a missing botId is 400 without reaching the gateway", async () => {

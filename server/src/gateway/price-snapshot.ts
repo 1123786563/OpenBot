@@ -720,7 +720,8 @@ export function createGatewayPriceSnapshotService(
             type: "gateway-price-sync-catalog-unavailable",
             errorName:
               error instanceof Error ? error.name : String(typeof error),
-            errorMessage: error instanceof Error ? error.message : String(error),
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
           },
           "The last-good catalog could not be read, so no price snapshot was mapped.",
         );
@@ -736,7 +737,8 @@ export function createGatewayPriceSnapshotService(
             type: "gateway-price-sync-rate-unavailable",
             errorName:
               error instanceof Error ? error.name : String(typeof error),
-            errorMessage: error instanceof Error ? error.message : String(error),
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
           },
           "The conversion-rate state could not be read, so no price snapshot was mapped.",
         );
@@ -778,7 +780,8 @@ export function createGatewayPriceSnapshotService(
             type: "gateway-price-sync-persist-failed",
             errorName:
               error instanceof Error ? error.name : String(typeof error),
-            errorMessage: error instanceof Error ? error.message : String(error),
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
           },
           "The mapped price snapshots could not be persisted; the previous versions are kept.",
         );

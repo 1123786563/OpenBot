@@ -49,7 +49,10 @@ export function tenantStorageKey(tenantId: string): string {
  * the owner/runtime role names must hash to the same identity for grants to match their schema,
  * so a drift here is not a style problem — it is tenant isolation pointing at the wrong role.
  */
-function tenantStorageIdentity(storageKey: string, roleVersion: number): string {
+function tenantStorageIdentity(
+  storageKey: string,
+  roleVersion: number,
+): string {
   return createHash("sha256")
     .update(`${storageKey}:mastra:${roleVersion}`)
     .digest("hex")

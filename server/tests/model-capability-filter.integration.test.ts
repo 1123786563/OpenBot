@@ -1,4 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { createAuditStore } from "../src/audit";
 import { createDatabase, type Database } from "../src/db/client";
@@ -107,16 +113,17 @@ async function syncCatalog(
   }[],
 ) {
   tick += 1_000;
-  const entries: CatalogEntry[] = manifests.flatMap((manifest) =>
-    normalizeGatewayModelCatalog({
-      data: [
-        {
-          id: manifest.id,
-          supported_methods: manifest.methods,
-          ...(manifest.extraRaw ?? {}),
-        },
-      ],
-    }).entries,
+  const entries: CatalogEntry[] = manifests.flatMap(
+    (manifest) =>
+      normalizeGatewayModelCatalog({
+        data: [
+          {
+            id: manifest.id,
+            supported_methods: manifest.methods,
+            ...(manifest.extraRaw ?? {}),
+          },
+        ],
+      }).entries,
   );
   await catalogStore.replaceCatalog({
     entries,
@@ -155,9 +162,7 @@ function filterService(options: { fresh?: () => boolean } = {}) {
     catalog: catalogStore,
     priceSnapshots: priceStore,
     scopes: scopeService(),
-    ...(options.fresh === undefined
-      ? {}
-      : { isCatalogFresh: options.fresh }),
+    ...(options.fresh === undefined ? {} : { isCatalogFresh: options.fresh }),
   });
 }
 
@@ -174,12 +179,13 @@ async function openAll(refs: ReturnType<typeof chatRef>[]) {
 }
 
 function reasonOf(
-  result: Awaited<ReturnType<GatewayModelCapabilityFilterService["listSelectableModels"]>>,
+  result: Awaited<
+    ReturnType<GatewayModelCapabilityFilterService["listSelectableModels"]>
+  >,
   provider: string,
 ): ModelExclusionReason | undefined {
-  return result.excluded.find(
-    (entry) => entry.ref.provider === provider,
-  )?.reasonCode;
+  return result.excluded.find((entry) => entry.ref.provider === provider)
+    ?.reasonCode;
 }
 
 beforeAll(async () => {
@@ -209,10 +215,19 @@ describe("capability matching (聊天 Bot 不拿到纯图像模型)", () => {
       { id: `${multiProvider}/omni`, methods: ["chat", "image"] },
     ]);
     const chatModel = chatRef(chatProvider);
-    const imageModel = { ...chatRef(imageProvider, "dalle"), capability: "image" as const };
+    const imageModel = {
+      ...chatRef(imageProvider, "dalle"),
+      capability: "image" as const,
+    };
     const multiChat = chatRef(multiProvider, "omni");
-    const multiImage = { ...chatRef(multiProvider, "omni"), capability: "image" as const };
-    await priceAll([chatModel, imageModel, multiChat, multiImage], fullyPricedDims());
+    const multiImage = {
+      ...chatRef(multiProvider, "omni"),
+      capability: "image" as const,
+    };
+    await priceAll(
+      [chatModel, imageModel, multiChat, multiImage],
+      fullyPricedDims(),
+    );
     await openAll([chatModel, imageModel, multiChat, multiImage]);
 
     const result = await filterService().listSelectableModels(["chat"], {

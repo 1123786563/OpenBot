@@ -120,9 +120,9 @@ test("clip count defaults to 1 and is guarded like the image line's own count", 
 
 test("a tier field that is not a clean string refuses (never a guessed resolution)", () => {
   for (const field of ["size", "quality"]) {
-    expect(
-      videoGenerationSpecOf({ seconds: 5, [field]: " padded " }).ok,
-    ).toBe(false);
+    expect(videoGenerationSpecOf({ seconds: 5, [field]: " padded " }).ok).toBe(
+      false,
+    );
     expect(videoGenerationSpecOf({ seconds: 5, [field]: 720 }).ok).toBe(false);
     // null/absent is the model's own default — a determined spec, not a guess.
     expect(videoGenerationSpecOf({ seconds: 5, [field]: null }).ok).toBe(true);
@@ -198,7 +198,8 @@ test("per-tier prices convert exactly: two tiers, two ceilings, never one rate f
     ],
     request: { seconds: 10, size: "1920x1080", quality: "premium" },
   });
-  if (!standard.enabled || !premium.enabled) throw new Error("tiers must enable");
+  if (!standard.enabled || !premium.enabled)
+    throw new Error("tiers must enable");
   const standardCeiling = computeReservationCeiling({
     dims: videoGenerationCeilingDims(videoDims("0.02"), standard.perSecondUsd),
     quantities: standard.quantities,
@@ -229,8 +230,9 @@ test("a fractional exact cost rounds 足额 UP to the next whole unit", () => {
   if (!ceiling.ok) throw new Error("ceiling must certify");
   expect(ceiling.maximumCredits).toBe(5);
   expect(
-    (ceiling.exactScaledUnits.numerator * 1n) / ceiling.exactScaledUnits.denominator,
-    ).toBe(4n); // 4.5 exact: the ceiling is the next whole unit above it.
+    (ceiling.exactScaledUnits.numerator * 1n) /
+      ceiling.exactScaledUnits.denominator,
+  ).toBe(4n); // 4.5 exact: the ceiling is the next whole unit above it.
 });
 
 test("an unpriced tier (unknown `video` dim) refuses with the dimension named (AC3)", () => {
@@ -250,7 +252,13 @@ test("an unpriced tier (unknown `video` dim) refuses with the dimension named (A
 });
 
 test("an unreadable `video` amount is named as unreadable, never laundered to free", () => {
-  const dims = { ...v1Dims(), video: { status: "unknown" as const, reason: "price_dim_unreadable" as const } };
+  const dims = {
+    ...v1Dims(),
+    video: {
+      status: "unknown" as const,
+      reason: "price_dim_unreadable" as const,
+    },
+  };
   const verdict = assessVideoGenerationEnablement({
     dims,
     tierTable: [],
@@ -382,7 +390,11 @@ test("an unpriced spec refuses at the enablement stage: no submit, no dispatch (
     status: "refused",
     stage: "enablement",
     reasonCode: "video_tier_price_unknown",
-    detail: { code: "video_tier_price_unknown", dimension: "video", reason: "price_dim_no_source" },
+    detail: {
+      code: "video_tier_price_unknown",
+      dimension: "video",
+      reason: "price_dim_no_source",
+    },
   });
   expect(spy.reserveCalls).toBe(0);
   expect(spy.dispatchCalls).toBe(0);
@@ -400,7 +412,11 @@ test("an indeterminable spec refuses before any price is read", async () => {
 test("a priced spec submits exactly one entry carrying the worst-case seconds (AC2)", async () => {
   let seen: unknown;
   const service = createVideoSubmitService({
-    resolveBasis: async () => ({ ok: true as const, dims: videoDims("0.01"), rate: RATE_100 }),
+    resolveBasis: async () => ({
+      ok: true as const,
+      dims: videoDims("0.01"),
+      rate: RATE_100,
+    }),
     asyncSubmit: async (input: unknown) => {
       seen = input;
       return {

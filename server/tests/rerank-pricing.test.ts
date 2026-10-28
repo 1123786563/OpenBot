@@ -180,7 +180,13 @@ describe("countRerankInputTokens", () => {
     const five = countRerankInputTokens({
       model: "m",
       query: "q",
-      documents: ["same text", "same text", "same text", "same text", "same text"],
+      documents: [
+        "same text",
+        "same text",
+        "same text",
+        "same text",
+        "same text",
+      ],
     });
     expect(five! - one!).toBeGreaterThanOrEqual(
       4 * RERANK_PER_DOCUMENT_OVERHEAD_TOKENS,
@@ -190,19 +196,31 @@ describe("countRerankInputTokens", () => {
   test("uncountable shapes refuse instead of guessing", () => {
     // No documents at all is not a rerank this module can certify (ranking needs
     // candidates; an empty candidate set is the wire's own refusal).
-    expect(countRerankInputTokens({ model: "m", query: "q", documents: [] })).toBeNull();
+    expect(
+      countRerankInputTokens({ model: "m", query: "q", documents: [] }),
+    ).toBeNull();
     // A missing or non-string query cannot be counted in full.
     expect(countRerankInputTokens({ model: "m", documents: ["a"] })).toBeNull();
     expect(
       countRerankInputTokens({ model: "m", query: 42, documents: ["a"] }),
     ).toBeNull();
     // A document entry whose text cannot be named in full.
-    expect(countRerankInputTokens({ model: "m", query: "q", documents: [42] })).toBeNull();
     expect(
-      countRerankInputTokens({ model: "m", query: "q", documents: [{ text: 7 }] }),
+      countRerankInputTokens({ model: "m", query: "q", documents: [42] }),
     ).toBeNull();
     expect(
-      countRerankInputTokens({ model: "m", query: "q", documents: "not-an-array" }),
+      countRerankInputTokens({
+        model: "m",
+        query: "q",
+        documents: [{ text: 7 }],
+      }),
+    ).toBeNull();
+    expect(
+      countRerankInputTokens({
+        model: "m",
+        query: "q",
+        documents: "not-an-array",
+      }),
     ).toBeNull();
     expect(countRerankInputTokens("not even a request object")).toBeNull();
     expect(rerankRequestShape({ documents: [{ noText: true }] })).toBeNull();

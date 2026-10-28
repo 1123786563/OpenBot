@@ -85,7 +85,13 @@ function groupEnv(groupName: string): Record<string, string | undefined> {
 // E2E_BUN_ONLY=agent-computer runs one group: enough to prove the driver without spending an hour
 // on the server groups, which need the shared Postgres.
 const only = (process.env.E2E_BUN_ONLY ?? "").trim();
-const groups = only ? all.filter((group) => group.name.includes(only)) : all;
+const onlyFile =
+  only.includes("/") && all.some((group) => group.files.includes(only));
+const groups = only
+  ? all.filter(
+      (group) => group.name.includes(only) || group.files.includes(only),
+    )
+  : all;
 
 if (only && !groups.length) {
   // Used to skip, which read as "nothing asked for" in a green run: an E2E_BUN_ONLY filter that
@@ -440,8 +446,11 @@ for (const group of groups) {
     tags: ["bun-runtime"],
     timeout: 900_000,
   }, async () => {
+    const files = onlyFile
+      ? group.files.filter((file) => file === only)
+      : group.files;
     const started = await runBun(
-      group.files.map((f) => `./${f}`),
+      files.map((f) => `./${f}`),
       groupEnv(group.name),
     );
     // A group that ran nothing is not a pass: an unusable path or a crashed loader reports zero.

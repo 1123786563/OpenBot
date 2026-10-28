@@ -87,9 +87,7 @@ main().catch((error) => {
       // failed. JSON.stringify escapes the newlines, so the single-line
       // result contract holds.
       error:
-        error instanceof Error
-          ? (error.stack ?? error.message)
-          : String(error),
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
     })}`,
   );
   process.exitCode = 1;

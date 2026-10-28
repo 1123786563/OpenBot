@@ -36,7 +36,10 @@ const previewQuery = z.strictObject({
   targetVersion: z.coerce.number().pipe(knownRevision),
 });
 
-const applyInput = z.strictObject({ ownerUserId, targetVersion: knownRevision });
+const applyInput = z.strictObject({
+  ownerUserId,
+  targetVersion: knownRevision,
+});
 
 export function createOpenMuseTemplateAdminRoutes(deps: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;

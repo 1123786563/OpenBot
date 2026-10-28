@@ -18,13 +18,19 @@
       "id": "dev-empty",
       "template": "",
       "note": "The dev form (D5): no wildcard certificate exists to derive on either face.",
-      "server": { "verdict": "open", "derived": "http://127.0.0.1:3001/{label}" },
+      "server": {
+        "verdict": "open",
+        "derived": "http://127.0.0.1:3001/{label}"
+      },
       "sidecar": { "verdict": "skip", "reasonContains": "dev" }
     },
     {
       "id": "canonical-https",
       "template": "https://{session}.preview.example.com",
-      "server": { "verdict": "open", "derived": "https://{label}.preview.example.com" },
+      "server": {
+        "verdict": "open",
+        "derived": "https://{label}.preview.example.com"
+      },
       "sidecar": { "verdict": "ok", "derived": "ok|https|preview.example.com" }
     },
     {
@@ -103,7 +109,10 @@
       "id": "localhost-base",
       "template": "https://{session}.localhost:3001",
       "note": "RECORDED DIVERGENCE (harmless by construction): the server serves the local testing form; no public CA can issue for the reserved .localhost domain, so the sidecar skips rather than crash-looping (fix-ocr18 #9).",
-      "server": { "verdict": "open", "derived": "https://{label}.localhost:3001" },
+      "server": {
+        "verdict": "open",
+        "derived": "https://{label}.localhost:3001"
+      },
       "sidecar": { "verdict": "skip", "reasonContains": "localhost" }
     },
     {

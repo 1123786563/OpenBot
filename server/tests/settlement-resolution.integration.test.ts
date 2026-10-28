@@ -216,7 +216,10 @@ async function seedWorld(): Promise<SeededWorld> {
   });
   await database
     .insert(gatewayCatalogSyncState)
-    .values({ id: GATEWAY_CATALOG_SYNC_STATE_ID, lastSuccessfulSyncAt: new Date() })
+    .values({
+      id: GATEWAY_CATALOG_SYNC_STATE_ID,
+      lastSuccessfulSyncAt: new Date(),
+    })
     .onConflictDoUpdate({
       target: gatewayCatalogSyncState.id,
       set: { lastSuccessfulSyncAt: new Date() },
@@ -281,7 +284,11 @@ async function seedDisposalItem(
       queriedAt: new Date(),
     });
   }
-  return { reservationId: reserved.reservationId, itemId: item.id, evidenceIds };
+  return {
+    reservationId: reserved.reservationId,
+    itemId: item.id,
+    evidenceIds,
+  };
 }
 
 /** The disposal command as the wire carries it (operatorId is the route's own override). */
@@ -300,7 +307,8 @@ function disposalBody(
     evidence: { queryId: overrides.queryId },
     expectedVersion: overrides.expectedVersion ?? 1,
     idempotencyKey:
-      overrides.idempotencyKey ?? `${prefix}-disposal-${randomUUID().slice(0, 8)}`,
+      overrides.idempotencyKey ??
+      `${prefix}-disposal-${randomUUID().slice(0, 8)}`,
     // A body-supplied operator is the forgery the route must override with the session.
     ...(overrides.operatorId !== undefined
       ? { operatorId: overrides.operatorId }
@@ -360,12 +368,14 @@ afterAll(async () => {
     .where(like(botServices.botId, `${prefix}-%`));
 });
 
-
 test("settle: 引用具体证据，金额来自证据的用量按锁定基价计价，一次审计", async () => {
   const world = await seedWorld();
   const usage = { input: 1000, output: 2000 };
   const item = await seedDisposalItem(world, [
-    { conclusion: "still_unknown", summary: "queried too early, no record yet" },
+    {
+      conclusion: "still_unknown",
+      summary: "queried too early, no record yet",
+    },
     {
       conclusion: "settled_evidence",
       summary: "provider confirms completion with usage",
@@ -378,7 +388,11 @@ test("settle: 引用具体证据，金额来自证据的用量按锁定基价计
   const { response, body } = await postDisposal(
     ADMIN,
     item.itemId,
-    disposalBody(item, { action: "settle", queryId: evidenceId, idempotencyKey }),
+    disposalBody(item, {
+      action: "settle",
+      queryId: evidenceId,
+      idempotencyKey,
+    }),
   );
   expect(response.status).toBe(200);
   expect(body.status).toBe("disposed");
@@ -467,7 +481,10 @@ test("release: 无未计费证据的释放被拒绝；有 no_charge_evidence 时
     { conclusion: "still_unknown", summary: "no record on the provider side" },
   ]);
   const released = await seedDisposalItem(world, [
-    { conclusion: "no_charge_evidence", summary: "provider confirms never billed" },
+    {
+      conclusion: "no_charge_evidence",
+      summary: "provider confirms never billed",
+    },
   ]);
 
   // still_unknown is NOT release evidence (Q12: 查不到不等于没发生).
@@ -683,10 +700,13 @@ test("不存在的处置对象与不存在的工作台都拒绝，不猜测", as
   const missing = await postDisposal(
     ADMIN,
     `cri-${randomUUID().slice(0, 16)}`,
-    disposalBody({ itemId: "whatever" }, {
-      action: "release",
-      queryId: `crq-${randomUUID().slice(0, 16)}`,
-    }),
+    disposalBody(
+      { itemId: "whatever" },
+      {
+        action: "release",
+        queryId: `crq-${randomUUID().slice(0, 16)}`,
+      },
+    ),
   );
   expect(missing.response.status).toBe(404);
   expect(missing.body.code).toBe("no_such_item");

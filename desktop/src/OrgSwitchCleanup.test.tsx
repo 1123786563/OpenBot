@@ -5,9 +5,22 @@
 // mock answers with is identifiers and counts only, the same shape the command
 // returns.
 
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import { within } from "@testing-library/react";
 
 type CleanupReceipt = {
@@ -20,9 +33,7 @@ type CleanupReceipt = {
 };
 
 let invokeCalls = 0;
-let invokeAnswers: Array<
-  CleanupReceipt | { __error: string }
-> = [];
+let invokeAnswers: Array<CleanupReceipt | { __error: string }> = [];
 mock.module("@tauri-apps/api/core", () => ({
   invoke: async (command: string, args?: unknown) => {
     if (command !== "leave_organization") {
@@ -68,18 +79,39 @@ test("a completed cleanup shows the evidence counts and finishes", async () => {
   invokeAnswers = [doneReceipt];
   let left: CleanupReceipt | undefined;
   render(
-    <OrgSwitchCleanup root="/fixtures/openbot" onLeft={(r) => (left = r)} />,
+    <OrgSwitchCleanup
+      root="/fixtures/openbot"
+      onLeft={(r) => {
+        left = r;
+      }}
+    />,
   );
   await act(async () => {
-    fireEvent.click(within(document.body!).getByRole("button", { name: "Leave organization" }));
+    fireEvent.click(
+      within(document.body!).getByRole("button", {
+        name: "Leave organization",
+      }),
+    );
   });
-  await waitFor(() => expect(within(document.body!).getByRole("status")).toBeTruthy());
-  expect(within(document.body!).getByText(/2 credential/).textContent).toContain("2");
-  expect(within(document.body!).getByText(/1 subscription/).textContent).toContain("1");
-  expect(within(document.body!).getByText(/3 media file/).textContent).toContain("3");
-  expect(within(document.body!).getByText(/2 cache file/).textContent).toContain("2");
+  await waitFor(() =>
+    expect(within(document.body!).getByRole("status")).toBeTruthy(),
+  );
+  expect(
+    within(document.body!).getByText(/2 credential/).textContent,
+  ).toContain("2");
+  expect(
+    within(document.body!).getByText(/1 subscription/).textContent,
+  ).toContain("1");
+  expect(
+    within(document.body!).getByText(/3 media file/).textContent,
+  ).toContain("3");
+  expect(
+    within(document.body!).getByText(/2 cache file/).textContent,
+  ).toContain("2");
   // The surface never renders values: identifier counts only.
-  expect(within(document.body!).getByRole("status").textContent).not.toContain("cookie");
+  expect(within(document.body!).getByRole("status").textContent).not.toContain(
+    "cookie",
+  );
   expect(left).toBe(doneReceipt);
   expect(invokeCalls).toBe(1);
 });
@@ -91,20 +123,35 @@ test("an unfinished cleanup says so, keeps its state retryable, and retries", as
   ];
   const left: CleanupReceipt[] = [];
   render(
-    <OrgSwitchCleanup root="/fixtures/openbot" onLeft={(r) => left.push(r)} />,
+    <OrgSwitchCleanup
+      root="/fixtures/openbot"
+      onLeft={(r) => {
+        left.push(r);
+      }}
+    />,
   );
   await act(async () => {
-    fireEvent.click(within(document.body!).getByRole("button", { name: "Leave organization" }));
+    fireEvent.click(
+      within(document.body!).getByRole("button", {
+        name: "Leave organization",
+      }),
+    );
   });
   await waitFor(() =>
-    expect(within(document.body!).getByText(/could not be removed/)).toBeTruthy(),
+    expect(
+      within(document.body!).getByText(/could not be removed/),
+    ).toBeTruthy(),
   );
   expect(left).toHaveLength(0);
   await act(async () => {
-    fireEvent.click(within(document.body!).getByRole("button", { name: "Try again" }));
+    fireEvent.click(
+      within(document.body!).getByRole("button", { name: "Try again" }),
+    );
   });
   await waitFor(() =>
-    expect(within(document.body!).getByText(/Removed this organization/)).toBeTruthy(),
+    expect(
+      within(document.body!).getByText(/Removed this organization/),
+    ).toBeTruthy(),
   );
   expect(invokeCalls).toBe(2);
   expect(left).toHaveLength(1);
@@ -112,12 +159,19 @@ test("an unfinished cleanup says so, keeps its state retryable, and retries", as
 
 test("a failure shows the problem and a retry still runs", async () => {
   invokeAnswers = [
-    { __error: "Start this OpenBot installation before leaving its organization." },
+    {
+      __error:
+        "Start this OpenBot installation before leaving its organization.",
+    },
     doneReceipt,
   ];
   render(<OrgSwitchCleanup root="/fixtures/openbot" />);
   await act(async () => {
-    fireEvent.click(within(document.body!).getByRole("button", { name: "Leave organization" }));
+    fireEvent.click(
+      within(document.body!).getByRole("button", {
+        name: "Leave organization",
+      }),
+    );
   });
   await waitFor(() =>
     expect(within(document.body!).getByRole("alert").textContent).toContain(
@@ -125,8 +179,14 @@ test("a failure shows the problem and a retry still runs", async () => {
     ),
   );
   await act(async () => {
-    fireEvent.click(within(document.body!).getByRole("button", { name: "Leave organization" }));
+    fireEvent.click(
+      within(document.body!).getByRole("button", {
+        name: "Leave organization",
+      }),
+    );
   });
-  await waitFor(() => expect(within(document.body!).getByRole("status")).toBeTruthy());
+  await waitFor(() =>
+    expect(within(document.body!).getByRole("status")).toBeTruthy(),
+  );
   expect(invokeCalls).toBe(2);
 });

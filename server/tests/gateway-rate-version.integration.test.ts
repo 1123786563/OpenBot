@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { eq, sql } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
 import { enterpriseSettings } from "../src/db/schema";

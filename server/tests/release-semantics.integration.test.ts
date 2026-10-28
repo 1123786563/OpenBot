@@ -288,7 +288,10 @@ function settleRequestOf(reservationId: string, usage: Record<string, number>) {
  * A valid release message against a reservation: the 06.11 request contract as the
  * wire carries it — { reservationId, reason, noChargeEvidence }.
  */
-function releaseRequestOf(reservationId: string, reason = "provider refused before dispatch") {
+function releaseRequestOf(
+  reservationId: string,
+  reason = "provider refused before dispatch",
+) {
   return {
     reservationId,
     reason,
@@ -417,7 +420,14 @@ test("a release without noChargeEvidence refuses and leaves the hold reserved", 
   expect(row.terminalAt).toBeNull();
 });
 
-test.each(["client_disconnected", "stream_error", "cancelled", "timeout", "usage_missing", "key_expired"])(
+test.each([
+  "client_disconnected",
+  "stream_error",
+  "cancelled",
+  "timeout",
+  "usage_missing",
+  "key_expired",
+])(
   "a release standing on %s refuses: it is not no-charge evidence",
   async (kind) => {
     const world = await seedWorld();
@@ -496,13 +506,17 @@ test("an unknown hold refuses release with a stable kind and keeps occupying cap
     reservationId,
     "stream_error",
   );
-  const occupied = await fixtureCreditWriter.availableBalance(world.customerKey);
+  const occupied = await fixtureCreditWriter.availableBalance(
+    world.customerKey,
+  );
 
   const outcome = await releaseService.release(releaseRequestOf(reservationId));
   expect(outcome.status).toBe("refused");
   if (outcome.status !== "refused") return;
   expect(outcome.reasonCode).toBe("release_conflict");
-  expect((outcome.detail as { kind?: string }).kind).toBe("reservation_unknown");
+  expect((outcome.detail as { kind?: string }).kind).toBe(
+    "reservation_unknown",
+  );
 
   // The hold is still unknown, still occupying (Q12/AC15): only 08.x's recovery flow
   // may dispose of it, through releaseUnknownReservation — never this door.
@@ -523,7 +537,10 @@ test("the writer's ordinary release refuses an unknown hold with the same stable
   );
 
   try {
-    await fixtureCreditWriter.releaseReservation(reservationId, "provider_error");
+    await fixtureCreditWriter.releaseReservation(
+      reservationId,
+      "provider_error",
+    );
     throw new Error("expected the unknown release to be refused");
   } catch (error) {
     expect(error).toBeInstanceOf(CreditReservationConflictError);
@@ -611,8 +628,12 @@ test("concurrent replays of the same release answer released exactly once", asyn
   const reservationId = await reserveOrFail(world);
 
   const [a, b] = await Promise.all([
-    releaseService.release(JSON.parse(JSON.stringify(releaseRequestOf(reservationId)))),
-    releaseService.release(JSON.parse(JSON.stringify(releaseRequestOf(reservationId)))),
+    releaseService.release(
+      JSON.parse(JSON.stringify(releaseRequestOf(reservationId))),
+    ),
+    releaseService.release(
+      JSON.parse(JSON.stringify(releaseRequestOf(reservationId))),
+    ),
   ]);
   expect(a.status).toBe("released");
   expect(b.status).toBe("released");
@@ -641,7 +662,9 @@ test("releasing a settled hold refuses: the charge stands, a release cannot foll
   expect(outcome.status).toBe("refused");
   if (outcome.status !== "refused") return;
   expect(outcome.reasonCode).toBe("release_conflict");
-  expect((outcome.detail as { kind?: string }).kind).toBe("reservation_settled");
+  expect((outcome.detail as { kind?: string }).kind).toBe(
+    "reservation_settled",
+  );
 
   // The settlement stands untouched: the ledger keeps its one row, the row stays settled.
   const ledgerRows = await ledgerRowsOf(world.customerKey);
@@ -658,7 +681,9 @@ test("a settle and a release racing the same hold produce exactly one terminal f
 
   const [settleOutcome, releaseOutcome] = await Promise.all([
     settleService.settle(settleRequestOf(reservationId, { input: 1000 })),
-    releaseService.release(JSON.parse(JSON.stringify(releaseRequestOf(reservationId)))),
+    releaseService.release(
+      JSON.parse(JSON.stringify(releaseRequestOf(reservationId))),
+    ),
   ]);
 
   // Exactly one of the two wins; the loser's answer names the winner's terminal fact
@@ -694,7 +719,9 @@ test("releasing a reservation that does not exist conflicts without writing anyt
   expect(outcome.status).toBe("refused");
   if (outcome.status !== "refused") return;
   expect(outcome.reasonCode).toBe("release_conflict");
-  expect((outcome.detail as { kind?: string }).kind).toBe("no_such_reservation");
+  expect((outcome.detail as { kind?: string }).kind).toBe(
+    "no_such_reservation",
+  );
 });
 
 // ── Expired grants: the released quota never revives ────────────────────────────────
@@ -711,9 +738,9 @@ test("a release after the grant lapsed hands back quota that stays dead: no bala
     .select({ expiresAt: creditGrants.expiresAt })
     .from(creditGrants)
     .where(eq(creditGrants.id, grant.id));
-  expect(deriveGrantStatus({ ...grant, expiresAt: lapsed!.expiresAt }, Date.now())).toBe(
-    "expired",
-  );
+  expect(
+    deriveGrantStatus({ ...grant, expiresAt: lapsed!.expiresAt }, Date.now()),
+  ).toBe("expired");
 
   const outcome = await releaseService.release(releaseRequestOf(reservationId));
   expect(outcome.status).toBe("released");
@@ -802,7 +829,10 @@ protocolApp.route(
     auditStore,
     endpoints: (() => {
       const endpoints = new Hono<{ Variables: CreditServiceVariables }>();
-      endpoints.route("/", creditProtocolEndpoints({ service: reserveService }));
+      endpoints.route(
+        "/",
+        creditProtocolEndpoints({ service: reserveService }),
+      );
       endpoints.route("/", creditSettleEndpoints({ service: settleService }));
       endpoints.route("/", creditReleaseEndpoints({ service: releaseService }));
       return endpoints;
@@ -846,21 +876,27 @@ test("the release route answers 200 on release and replay, and 422 with the code
     authorization: `Bearer ${gatewaySecret}`,
   };
 
-  const firstResponse = await protocolApp.request("/api/credit-protocol/release", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(request),
-  });
+  const firstResponse = await protocolApp.request(
+    "/api/credit-protocol/release",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+    },
+  );
   expect(firstResponse.status).toBe(200);
   const first = (await firstResponse.json()) as Record<string, unknown>;
   expect(first.status).toBe("released");
   expect(first.releasedCredits).toBe(world.request.maximumCredits);
 
-  const replayResponse = await protocolApp.request("/api/credit-protocol/release", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(request),
-  });
+  const replayResponse = await protocolApp.request(
+    "/api/credit-protocol/release",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+    },
+  );
   expect(replayResponse.status).toBe(200);
   const replay = (await replayResponse.json()) as Record<string, unknown>;
   expect(replay).toEqual(first);

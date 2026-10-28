@@ -1,4 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { MCPMock } from "@copilotkit/aimock/mcp";
 import { callTool, listTools } from "../src/plugins/mcp";
 

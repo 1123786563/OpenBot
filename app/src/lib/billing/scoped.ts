@@ -2,10 +2,7 @@ import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { tryClient } from "@/lib/client";
 import { guarded } from "@/lib/enterprise/tenant/queries";
 import type { ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
-import {
-  type BillingEntitlements,
-  billingKeys,
-} from "@/lib/billing/queries";
+import { type BillingEntitlements, billingKeys } from "@/lib/billing/queries";
 import {
   type ConsumptionWindow,
   type CreditConsumptionPage,
