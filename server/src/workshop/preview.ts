@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { BotAccessCheck } from "../agents/profile-policy";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 
 /**
  * The workshop's preview door: a Bot's webapp artifact, served to the person who owns it.

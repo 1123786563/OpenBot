@@ -9,10 +9,9 @@
 
 import { Hono, type MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
-import type { ExecutionScope } from "../../../shared/execution-scope";
 import type { ApprovalStore } from "../approvals/types";
 import { createAuditStore, recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 import type { RedisPort } from "../redis";
 import { createCraftApprovalSignals } from "./approval-signals";
@@ -33,7 +32,7 @@ import {
 import { createMessageRoutes } from "./message-routes";
 import type { CraftLLMProviderConfig } from "./opencode-config";
 import type { PreviewTickets } from "./preview-ticket";
-import { createSandboxGateway } from "./sandbox-gateway";
+import type { SandboxGateway } from "./sandbox-gateway";
 import {
   createCraftScheduledTaskStore,
   createScheduledRunRoutes,
@@ -76,12 +75,14 @@ export type CraftRoutesDeps = {
     botId: string,
   ) => { baseUrl: string; token: string | null } | null;
   /**
-   * The deployment's execution ownership every sandbox request states (#618, MT050):
-   * the boot file threads the SAME lambda every craft gateway assembly consumes
-   * (same-facts discipline); unset callers fall back to the config's parsed pair
-   * inside the gateway — one source either way, never a per-request user value.
+   * MOD22 (#642): the sandbox gateway ARRIVES bound — the boot file takes the
+   * process's one instance through the MOD11 door (`craftSandboxPublic
+   * .handlesFor({ scope })`, the deployment's #618 pair frozen per binding),
+   * so the routes tree never constructs a second gateway. The scope lambda
+   * this assembly used to thread is retired with the construction it fed:
+   * the binding IS that pair, frozen at boot like every other craft surface.
    */
-  executionScopeFor?: () => ExecutionScope | null;
+  gateway: SandboxGateway;
   /** The user's display name (AGENTS.md personalization). */
   userNameFor: (userId: string) => Promise<string | null>;
   /** Organization-level craft instructions; null when unset. */
@@ -216,16 +217,9 @@ export function createCraftRoutes(input: {
   // ── the wiring (one assembly; everything below is dependency order) ──
   const store = deps.store ?? createCraftStore(db);
   const objectStore = createObjectStore(config.storage);
-  const gateway = createSandboxGateway({
-    config,
-    connectionFor: (botId) => {
-      const conn = deps.sandboxConnectionFor(botId);
-      return conn ? { botId, baseUrl: conn.baseUrl, token: conn.token } : null;
-    },
-    // #618: the boot file's scope lambda when it wired one (same facts as every other
-    // craft gateway assembly); otherwise the gateway reads the config's parsed pair.
-    executionScopeFor: deps.executionScopeFor,
-  });
+  // MOD22 (#642): no second gateway here — the boot file's MOD11-bound instance
+  // (same connection/scope facts the old self-built one resolved) arrives as a dep.
+  const gateway = deps.gateway;
   // The approval rendezvous signals (announce + wake), Redis-backed when the
   // deployment runs multi-replica, in-process otherwise — turn-state's shape.
   const approvalSignals = createCraftApprovalSignals({ redis });

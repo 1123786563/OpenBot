@@ -55,6 +55,8 @@ function serving(sms = false) {
   global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
+    // MOD19 / #639: the bots and channels reads are scoped, so the seam must open — /api/me first.
+    if (url === "/api/me") return Response.json({ user: { id: "user-1" } });
     if (method !== "GET") {
       writes.push({
         request: `${method} ${url}`,

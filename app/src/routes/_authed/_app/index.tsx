@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -15,7 +15,11 @@ import {
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { defaultAgentProfile } from "@/lib/agents/default-agent";
-import { agentListQueryOptions, isSharedWithYou } from "@/lib/agents/queries";
+import {
+  isSharedWithYou,
+  scopedAgentListQueryOptions,
+} from "@/lib/agents/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   CoworkerRoutingRefusedError,
   routeMessage,
@@ -29,11 +33,14 @@ export const Route = createFileRoute("/_authed/_app/")({
 
 function RouteComponent() {
   const { t } = useTranslation("channels");
+  // The composer's roster read rides the scope the screen holds (MOD19 / Issue #639, T1b).
+  const queryClient = useQueryClient();
+  const scope = useScopedCache();
   const {
     data: agents,
     isPending: loading,
     isError: failed,
-  } = useQuery(agentListQueryOptions());
+  } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const explore = agents?.filter(isSharedWithYou);
   const { start, startChosen, pending } = useStartChannel();
   const [error, setError] = useState<string | null>(null);

@@ -37,7 +37,8 @@ import {
 import type { PluginStore } from "./store";
 
 /**
- * 门面触达的 store 面：六个既有判定/执行成员，类型直取自 `PluginStore`。
+ * 门面触达的 store 面：六个既有判定/执行成员 + MOD16（#636）加入的四个
+ * skill 写入/查询成员，类型直取自 `PluginStore`。
  *
  * 一个 `Pick` 而不是整面 `PluginStore`，因为这同时是消费者与测试的双边合同：
  * 装配根传完整 store（结构满足），测试用对象字面量即可成双（无需成千行桩），
@@ -51,6 +52,10 @@ export type ToolAccessStore = Pick<
   | "sharedConnections"
   | "listForAgent"
   | "callTool"
+  | "installSkill"
+  | "uninstallSkill"
+  | "skillOwner"
+  | "grant"
 >;
 
 /** 受管执行的输入：就是 store 的输入（含 `credentialActorId` 语义），形状直取。 */
@@ -136,6 +141,16 @@ export interface ToolAccess<TApprovals = undefined> {
    * 撤销阻断全部发生在 store 内，这一层没有第二份实现可绕。
    */
   callTool(input: ToolAccessCall): Promise<ToolAccessAnswer>;
+  /**
+   * MOD16（#636，根 #620）：marketplace 旧入口改道所有者门面所驱的四个
+   * skill 写入/查询委托。签名直取 store 同名成员（零重定义），实现是恒等
+   * 转发——安装校验、撤销级联、slug 归属判定、grant→policy→audit 链全部
+   * 留在内件，这一层没有第二份实现可绕。
+   */
+  installSkill: ToolAccessStore["installSkill"];
+  uninstallSkill: ToolAccessStore["uninstallSkill"];
+  skillOwner: ToolAccessStore["skillOwner"];
+  grant: ToolAccessStore["grant"];
   /**
    * 审批决定与 receipt 能力组（MOD13/#633，验收①③）：`approvals/public.ts`
    * 构造的 ApprovalsAccess——decide（重复批准不产生第二个决定）、receiptOf
@@ -252,6 +267,10 @@ export function createToolAccess<TApprovals = undefined>(
     },
 
     callTool: (input) => store.callTool(input),
+    installSkill: (input) => store.installSkill(input),
+    uninstallSkill: (slug, by) => store.uninstallSkill(slug, by),
+    skillOwner: (slug) => store.skillOwner(slug),
+    grant: (kind, ref, agentId, by) => store.grant(kind, ref, agentId, by),
     approvals,
   };
 }

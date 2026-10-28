@@ -68,6 +68,9 @@ export interface CheckConfig {
 
 type ViolationCategory = "deep-reference" | "cycle" | "unknown-mapping";
 
+/** 例外条目 category 的合法枚举（unknown-mapping 只出现在违规侧，从不进例外基线）。 */
+const LEGAL_EXCEPTION_CATEGORIES = ["cycle", "deep-reference"] as const;
+
 interface Violation {
   category: ViolationCategory;
   source: string;
@@ -412,6 +415,16 @@ function validateConfig(config: CheckConfig): string[] {
         }
       }
       if (e.source === e.target) errors.push(`exception 自引用: ${e.source}`);
+      if (
+        e.category !== undefined &&
+        !LEGAL_EXCEPTION_CATEGORIES.includes(
+          e.category as (typeof LEGAL_EXCEPTION_CATEGORIES)[number],
+        )
+      ) {
+        errors.push(
+          `exception category 非法: ${e.category}（${e.source} -> ${e.target}）`,
+        );
+      }
     }
   }
   return errors;
@@ -718,6 +731,13 @@ function main(): number {
   const options = { cwd: ROOT, scanRoots: SCAN_ROOTS };
 
   if (baseline) {
+    // M-2：非法配置不再静默收敛——configErrors 非空时报错退出。
+    const configErrors = validateConfig(config);
+    if (configErrors.length) {
+      console.error("[配置自洽性错误] --baseline 拒绝在非法配置上收敛基线：");
+      for (const e of configErrors) console.error(`  - ${e}`);
+      return 1;
+    }
     // --baseline 恒以 JSON 输出（本就是机器消费形态），--json 只作用于检查结果。
     console.log(JSON.stringify(generateBaseline(config, options), null, 2));
     return 0;

@@ -1,6 +1,5 @@
-import type { AgentProfileStore } from "../agents/profile-store";
-import type { AgentProfile } from "../agents/profile-types";
-import type { AuthenticatedActor } from "../auth/guards";
+import type { AgentProfile, AgentProfileStore } from "../agents/public";
+import type { AuthenticatedActor } from "../auth/public";
 
 /** The one template key this deployment provisions per person. */
 export const OPENMUSE_TEMPLATE_KEY = "openmuse-private";

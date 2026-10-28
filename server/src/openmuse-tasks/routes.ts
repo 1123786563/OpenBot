@@ -1,7 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { OpenMuseFileStore } from "../openmuse-files/store";
 import { ACTIVE_TASKS_PER_USER, TASK_LIMIT_MESSAGE } from "./capacity";
 import {

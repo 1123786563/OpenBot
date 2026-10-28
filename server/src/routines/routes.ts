@@ -1,10 +1,11 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { type AuditStore, recordAuditEvent } from "../audit";
 import { getLogger } from "../../../shared/logger";
+import { type AuditStore, recordAuditEvent } from "../audit";
 
 const log = getLogger("server");
-import type { AppVariables } from "../auth/guards";
+
+import type { AppVariables } from "../auth/public";
 import type { RoutineRunner } from "./runner";
 import { MINIMUM_INTERVAL_MS } from "./schedule";
 import {

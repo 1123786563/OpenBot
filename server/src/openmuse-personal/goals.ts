@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 import { openmuseGoals } from "../db/schema/openmuse";
 import { createOwnerDisabled, OpenMuseOwnerDisabledError } from "./shared";

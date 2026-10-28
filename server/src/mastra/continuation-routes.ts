@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 // The ONE canonical JSON: the reply's idempotency id digests the exact
 // payload the client posted, so the same reply replays to the same id.
 import { canonicalJson } from "../ai-observability/datasets";
-import type { AppVariables } from "../auth/guards";
-import { getLogger } from "../../../shared/logger";
+import type { AppVariables } from "../auth/public";
 import type { PlatformScope } from "../enterprise/contracts";
 import type {
   MastraContinuationInstall,

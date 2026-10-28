@@ -23,8 +23,8 @@
  */
 import { Hono } from "hono";
 import { getLogger } from "../../../../shared/logger";
-import type { AgentActor } from "../../agents/profile-types";
-import type { AppVariables } from "../../auth/guards";
+import type { AgentActor } from "../../agents/public";
+import type { AppVariables } from "../../auth/public";
 import type { RunBindingStore } from "../bindings";
 import { RunBindingError } from "../bindings";
 import type { OpikConfig } from "../config";

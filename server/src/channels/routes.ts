@@ -19,9 +19,9 @@ import {
   AgentNotFoundError,
   type AgentProfileStore,
 } from "../agents/profile-store";
-import type { AgentActor, AgentProfile } from "../agents/profile-types";
+import type { AgentActor, AgentProfile } from "../agents/public";
 import { type AuditStore, recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { Database } from "../db/client";
 import {
   agentProfiles,

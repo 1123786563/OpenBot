@@ -13,7 +13,7 @@ import { getLogger } from "../../../shared/logger";
 import type { ActivityStore } from "../activity/activity";
 import type { AuditEventType, AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import {
   type BotLifecycleStore,
   type BotNotify,

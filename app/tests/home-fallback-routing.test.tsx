@@ -13,6 +13,8 @@ import {
 import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type AgentProfile, agentKeys } from "@/lib/agents/queries";
+import { selectionKeys } from "@/lib/enterprise/tenant/selection";
+import { authKeys } from "@/lib/auth/queries";
 import { Route as HomeRoute } from "@/routes/_authed/_app/index";
 
 beforeAll(() => GlobalRegistrator.register());
@@ -48,6 +50,11 @@ function agent(
   };
 }
 
+// MOD19 / #639: the composer roster reads the scoped key under the personal prefix, and the
+// scope seam opens from the seeded current user — no fetch of /api/me is wanted here.
+const USER = "user-1";
+const rosterKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
+
 function queryClientWithAgents(agents: AgentProfile[]) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -57,7 +64,11 @@ function queryClientWithAgents(agents: AgentProfile[]) {
       },
     },
   });
-  queryClient.setQueryData(agentKeys.list(false), agents);
+  queryClient.setQueryData(rosterKey, agents);
+  queryClient.setQueryData(authKeys.currentUser(), {
+    id: USER,
+    singleUser: false,
+  } as never);
   return queryClient;
 }
 
@@ -90,6 +101,7 @@ function installHomeRoutingFetch(options: {
   global.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/me") return Response.json({ user: { id: USER } });
       if (url === "/api/route") return options.routeResponse.clone();
       if (url === "/api/channels") {
         const body = JSON.parse(String(init?.body)) as { agentIds: string[] };
