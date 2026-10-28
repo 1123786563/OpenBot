@@ -601,7 +601,48 @@
     "remove": "Remove",
     "adminAria": "Administrator: {{email}}",
     "loading": "Loading…",
-    "showMore": "Show more"
+    "showMore": "Show more",
+    "add": {
+      "button": "Add person",
+      "title": "Add a person",
+      "description": "Their account is created right away. A first password is optional.",
+      "email": "Email address",
+      "name": "Name",
+      "password": "First password (optional)",
+      "submit": "Create account",
+      "pending": "Creating…"
+    },
+    "manage": "Manage account",
+    "manageAria": "Manage account: {{email}}",
+    "manageTitle": "Manage an account",
+    "manageDescription": "The name, password and open sessions of {{email}}.",
+    "accessAria": "{{action}} access: {{email}}",
+    "stopAria": "Stop computers: {{email}}",
+    "restoreNoGrants": "Restoring their sign-in does not return what they had before.",
+    "name": {
+      "title": "Name",
+      "description": "Their address is their identity, so it is not changed here.",
+      "save": "Save name"
+    },
+    "password": {
+      "title": "Password",
+      "description": "Setting one signs them out of every session they have open.",
+      "new": "New password",
+      "why": "Why (kept in the audit log)",
+      "set": "Set password",
+      "done": "Their password is set. All their sessions are signed out."
+    },
+    "sessions": {
+      "title": "Sessions",
+      "description": "The sessions they have open. Revoking one signs that device out.",
+      "why": "Reason (kept in the audit log)",
+      "loading": "Loading their sessions…",
+      "none": "They have no open sessions.",
+      "unknownDevice": "Unknown device",
+      "until": "until {{date}}",
+      "revoke": "Revoke",
+      "revokeAll": "Revoke every session"
+    }
   },
   "playground": {
     "title": "Playground",
