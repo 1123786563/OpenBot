@@ -118,6 +118,28 @@ export function ConsumptionTable({
                           {entry.requestId}
                         </p>
                       ) : null}
+                      {/*
+                       * 13.2's speech line (AC4): a speech consumption shows what was
+                       * spoken — the characters in, the seconds out, the tier — said in
+                       * the reader's language, distinguishable from every other row. A
+                       * row without a speech line shows nothing, exactly as before.
+                       */}
+                      {entry.lineDetail && "speech" in entry.lineDetail ? (
+                        <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                          {entry.lineDetail.speech.voiceTier
+                            ? t("creditsPage.speechUsage", {
+                                characters:
+                                  entry.lineDetail.speech.inputCharacters,
+                                seconds: entry.lineDetail.speech.actualSeconds,
+                                tier: entry.lineDetail.speech.voiceTier,
+                              })
+                            : t("creditsPage.speechUsageNoTier", {
+                                characters:
+                                  entry.lineDetail.speech.inputCharacters,
+                                seconds: entry.lineDetail.speech.actualSeconds,
+                              })}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">
                       {credits(entry.credits)}
