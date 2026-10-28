@@ -1,6 +1,9 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type AuditStore, recordAuditEvent } from "../audit";
+import { getLogger } from "../../../shared/logger";
+
+const log = getLogger("server");
 import type { AppVariables } from "../auth/guards";
 import type { RoutineRunner } from "./runner";
 import { MINIMUM_INTERVAL_MS } from "./schedule";
@@ -62,7 +65,14 @@ export function createRoutineRoutes(
             actorUserId: context.var.actor.id,
             payload: { runId, source: "manual" },
           }).catch(() => undefined);
-        void runner.run(runId).catch(() => {});
+        // Fire-and-forget, but never blind: a run that dies before its own terminal write
+        // would otherwise sit "running" forever with nothing on any log.
+        void runner.run(runId).catch((error: unknown) => {
+          log.error(
+            { type: "routine-manual-run-failed", runId, error },
+            "The manually requested routine run failed before it could report.",
+          );
+        });
         return context.json({ accepted: true, runId }, 202);
       } catch (error) {
         return mapStoreError(context, error);

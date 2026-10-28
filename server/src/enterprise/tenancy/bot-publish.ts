@@ -464,7 +464,10 @@ export function createBotPublishService(channels: {
           ) {
             throw new Error("BOT_PUBLISH_STATE_CONFLICT");
           }
-          if (registration.visibility === "workspace") {
+          if (
+            registration.status === "active" &&
+            registration.visibility === "workspace"
+          ) {
             // 幂等：已是团队公共（不推进任何版本号）。
             return Object.freeze({
               outcome: "allow",
@@ -522,6 +525,11 @@ export function createBotPublishService(channels: {
             revision: enterpriseResources.revision,
             aclEpoch: enterpriseResources.aclEpoch,
           });
+        if (!inserted) {
+          // 注册行刚在锁内核验过；无返回行属于不变量破坏，响亮拒绝
+          //（与上方 update 分支同款）。
+          throw new Error("BOT_PUBLISH_STATE_CONFLICT");
+        }
         return Object.freeze({
           outcome: "allow",
           publication: deepFreeze({
@@ -564,6 +572,18 @@ export function createBotPublishService(channels: {
           scope.tenantId,
           agentId,
         );
+        // 不变量守卫与发布路径同款：漂移的注册行绝不触碰（先于幂等判定，
+        // 非 active/非团队公共的漂移行同样响亮拒绝，不被幂等 allow 吞掉）。
+        if (
+          registration &&
+          (registration.kind !== "bot" ||
+            registration.workspaceId !== scope.workspaceId)
+        ) {
+          return Object.freeze({
+            outcome: "deny",
+            code: "BOT_PUBLISH_STATE_CONFLICT",
+          });
+        }
         // 幂等语义：无注册行 / 已软删 / 本就不是团队公共 → 已处于「非
         // 团队公共」目标态，allow（重复取消、从未发布都是合法重放）。
         if (
@@ -571,16 +591,6 @@ export function createBotPublishService(channels: {
           registration.visibility !== "workspace"
         ) {
           return Object.freeze({ outcome: "allow" });
-        }
-        // 不变量守卫与发布路径同款：漂移的注册行绝不触碰。
-        if (
-          registration.kind !== "bot" ||
-          registration.workspaceId !== scope.workspaceId
-        ) {
-          return Object.freeze({
-            outcome: "deny",
-            code: "BOT_PUBLISH_STATE_CONFLICT",
-          });
         }
         await tx
           .update(enterpriseResources)

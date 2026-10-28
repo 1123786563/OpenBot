@@ -3982,3 +3982,28 @@ describe("§9 work shutdown (D02)", () => {
     );
   });
 });
+
+describe("a rejecting executor does not strand the row executing", () => {
+  test("the row settles outcome_unknown (reconcilable) and the failure still surfaces", async () => {
+    const fixture = fixtureFor();
+    const created = await propose(fixture.app);
+    // The "never rejects" convention is a convention, not the interface: a
+    // future executor bug or a persistence fault past the dial rejects here.
+    fixture.executor.executor.execute = async () => {
+      throw new Error("the executor fell over");
+    };
+    await expect(
+      fixture.service.decide("user-1", created.id, "approve"),
+    ).rejects.toThrow("the executor fell over");
+    // Not wedged `executing`: recovery's own state, open to reconcile.
+    const stored = fixture.rows.actions.find((row) => row.id === created.id);
+    expect(stored?.status).toBe("outcome_unknown");
+    // The operator's surface can still close it (the route's admin seat is
+    // routes-level; the service method is the same contract).
+    const reconciled = await fixture.service.reconcile("ops@openbot.test", created.id, {
+      outcome: "confirmed_not_sent",
+      evidence: "operator closed the uncertain send",
+    });
+    expect(reconciled?.status).toBe("failed");
+  });
+});

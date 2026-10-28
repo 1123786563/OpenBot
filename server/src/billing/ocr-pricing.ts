@@ -1,5 +1,6 @@
 import type { ConversionRate } from "../gateway/conversion-rate";
 import {
+  canonicalPriceAmount,
   PRICE_DIMENSIONS,
   type PriceDimension,
   type PriceDimensionUnknownReason,
@@ -236,11 +237,12 @@ export function assessOcrEnablement(input: {
     }
   }
 
-  const free = OCR_BILLED_DIMENSIONS.every(
-    (dimension) =>
-      input.dims[dimension].status === "known" &&
-      input.dims[dimension].amount === "0",
-  );
+  const free = OCR_BILLED_DIMENSIONS.every((dimension) => {
+    const state = input.dims[dimension];
+    if (state.status !== "known") return false;
+    const canonical = canonicalPriceAmount(state.amount);
+    return canonical.ok && canonical.amount === "0";
+  });
 
   // The certified worst-case quantities, one per dimension of the closed vocabulary: the
   // page count on the flat side for a document (every page the request names), one unit on
@@ -248,20 +250,17 @@ export function assessOcrEnablement(input: {
   // side, and 0 for every dimension the OCR wire cannot bill (the usage-schema evidence,
   // stated numerically).
   const quantities = Object.fromEntries(
-    PRICE_DIMENSIONS.map((dimension) => [
-      dimension,
-      dimension === "surcharge_per_request"
-        ? shape.kind === "document"
-          ? shape.pages
-          : 1
-        : dimension === "image"
-          ? shape.kind === "image"
-            ? 1
-            : 0
-          : dimension === "output"
-            ? input.outputTokenCap
-            : 0,
-    ]),
+    PRICE_DIMENSIONS.map((dimension) => {
+      let quantity = 0;
+      if (dimension === "surcharge_per_request") {
+        quantity = shape.kind === "document" ? shape.pages : 1;
+      } else if (dimension === "image") {
+        quantity = shape.kind === "image" ? 1 : 0;
+      } else if (dimension === "output") {
+        quantity = input.outputTokenCap;
+      }
+      return [dimension, quantity];
+    }),
   ) as ReservationBoundQuantities;
 
   return {

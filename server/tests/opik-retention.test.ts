@@ -1,5 +1,6 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
-import { join } from "node:path";
 import { createOpikHttpPort } from "../src/ai-observability/opik-http";
 import {
   type OpikHttpPortDeps,
@@ -20,8 +21,6 @@ import {
   resolveStorageLocator,
 } from "../src/ai-observability/scope";
 
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
@@ -159,6 +158,10 @@ const json = (status: number, body: string) =>
     headers: { "content-type": "application/json" },
   });
 
+/** The empty span envelope the span-level absence read-back accepts as "gone". */
+const emptySpans = () =>
+  json(200, JSON.stringify({ page: 1, size: 1, total: 0, content: [] }));
+
 function port(overrides: Partial<OpikHttpPortDeps> = {}) {
   return createOpikHttpPort({
     baseUrl: "http://opik.test/api",
@@ -169,11 +172,15 @@ function port(overrides: Partial<OpikHttpPortDeps> = {}) {
 }
 
 describe("the port's trace deletion (verified capability: trace-span-physical-delete)", () => {
-  test("resolves the locator's project and deletes the ids with 204", async () => {
+  test("resolves the locator's project, deletes the ids with 204, and completes only on the read-back's 404 (FREV-07)", async () => {
     const { calls, transport } = recorder((call) =>
       call === 1
         ? json(200, JSON.stringify({ id: "proj-1" }))
-        : new Response(null, { status: 204 }),
+        : call === 2
+          ? new Response(null, { status: 204 })
+          : call === 3
+            ? json(404, "{}")
+            : emptySpans(),
     );
     const result = await port({ fetch: transport }).deleteTraces(locator, {
       traceIds: ["01a1405b-f832-70cf-b204-f4dd51387044"],
@@ -188,17 +195,207 @@ describe("the port's trace deletion (verified capability: trace-span-physical-de
       ids: ["01a1405b-f832-70cf-b204-f4dd51387044"],
       project_id: "proj-1",
     });
+    // The 204 is acceptance; completion rides the absence read-back — the same
+    // trace-detail GET the delete capability's own evidence polled...
+    expect(calls[2].url).toBe(
+      "http://opik.test/api/v1/private/traces/01a1405b-f832-70cf-b204-f4dd51387044?project_id=proj-1",
+    );
+    expect(calls[2].init.method).toBe("GET");
+    // ...and, when the contract can query a trace's spans, the span list's empty
+    // envelope too — the query surface reads spans, so their absence is verified,
+    // not assumed by the trace row's 404 (FREV-07).
+    expect(calls[3].url).toBe(
+      "http://opik.test/api/v1/private/spans?project_id=proj-1&trace_id=01a1405b-f832-70cf-b204-f4dd51387044&size=1",
+    );
   });
 
-  test("a project that does not exist upstream answers ok without a delete call", async () => {
+  test("a 204 whose read-back still finds the trace is not completion — the bounded window expires as a retryable timeout (FREV-07)", async () => {
+    const { calls, transport } = recorder((call) =>
+      call === 1
+        ? json(200, JSON.stringify({ id: "proj-1" }))
+        : call === 2
+          ? new Response(null, { status: 204 })
+          : call === 3
+            ? json(
+                200,
+                JSON.stringify({ id: "01a1405b-f832-70cf-b204-f4dd51387044" }),
+              )
+            : emptySpans(),
+    );
+    const result = await port({
+      fetch: transport,
+      timeoutMs: 100,
+    }).deleteTraces(locator, {
+      traceIds: ["01a1405b-f832-70cf-b204-f4dd51387044"],
+    });
+    // The counterexample from the final review: the delete request was accepted,
+    // the trace is still queryable — so the operation answers its own timeout
+    // fact, retryable, never the {deleted:true} the upstream has not made true.
+    expect(result).toEqual({
+      outcome: "unavailable",
+      operation: "deleteTraces",
+      code: "OPIK_TIMEOUT",
+    });
+    expect(calls[2].url).toBe(
+      "http://opik.test/api/v1/private/traces/01a1405b-f832-70cf-b204-f4dd51387044?project_id=proj-1",
+    );
+    expect(calls[2].init.method).toBe("GET");
+    // The span probe ran in the same pass and was already absent; only the trace
+    // kept the window open, so exactly the two probes were asked.
+    expect(calls).toHaveLength(4);
+  });
+
+  test("an accepted delete completes on a later poll once the trace stops answering (FREV-07)", async () => {
+    const { calls, transport } = recorder((call) =>
+      call === 1
+        ? json(200, JSON.stringify({ id: "proj-1" }))
+        : call === 2
+          ? new Response(null, { status: 204 })
+          : call === 3
+            ? json(
+                200,
+                JSON.stringify({ id: "01a1405b-f832-70cf-b204-f4dd51387044" }),
+              )
+            : call === 4
+              ? emptySpans()
+              : json(404, "{}"),
+    );
+    const result = await port({
+      fetch: transport,
+      timeoutMs: 5_000,
+    }).deleteTraces(locator, {
+      traceIds: ["01a1405b-f832-70cf-b204-f4dd51387044"],
+    });
+    expect(result).toEqual({ outcome: "ok", value: { deleted: true } });
+    // One present answer, one absent: the poll window, not the bare 204, is what
+    // the completion rides (the span probe's first pass was already empty).
+    expect(calls).toHaveLength(5);
+  });
+
+  test("a hard read-back failure surfaces as itself, never polled into success", async () => {
+    const { transport } = recorder((call) =>
+      call === 1
+        ? json(200, JSON.stringify({ id: "proj-1" }))
+        : call === 2
+          ? new Response(null, { status: 204 })
+          : new Response(null, { status: 500 }),
+    );
+    const result = await port({ fetch: transport }).deleteTraces(locator, {
+      traceIds: ["01a1405b-f832-70cf-b204-f4dd51387044"],
+    });
+    expect(result).toEqual({
+      outcome: "upstream_error",
+      operation: "deleteTraces",
+      code: "OPIK_UPSTREAM_ERROR",
+      status: 500,
+    });
+  });
+
+  test("every requested id must read back absent before the deletion completes (FREV-07)", async () => {
+    const traceA = "01a1405b-f832-70cf-b204-f4dd51387044";
+    const traceB = "01a1405b-f832-70cf-b204-f4dd51387045";
+    const { calls, transport } = recorder(
+      (call) =>
+        call === 1
+          ? json(200, JSON.stringify({ id: "proj-1" }))
+          : call === 2
+            ? new Response(null, { status: 204 })
+            : call <= 4
+              ? json(404, "{}") // both trace-detail read-backs
+              : emptySpans(), // both span-list read-backs
+    );
+    const result = await port({ fetch: transport }).deleteTraces(locator, {
+      traceIds: [traceA, traceB],
+    });
+    expect(result).toEqual({ outcome: "ok", value: { deleted: true } });
+    // Trace-detail absences AND span-list absences, every id, before completion.
+    const readbacks = calls.slice(2).map((call) => call.url);
+    expect(readbacks).toEqual([
+      `http://opik.test/api/v1/private/traces/${traceA}?project_id=proj-1`,
+      `http://opik.test/api/v1/private/traces/${traceB}?project_id=proj-1`,
+      `http://opik.test/api/v1/private/spans?project_id=proj-1&trace_id=${traceA}&size=1`,
+      `http://opik.test/api/v1/private/spans?project_id=proj-1&trace_id=${traceB}&size=1`,
+    ]);
+  });
+
+  test("a project that does not exist upstream is a failure, never complete-by-absence (FREV-07)", async () => {
     const { calls, transport } = recorder(() => json(404, "{}"));
     const result = await port({ fetch: transport }).deleteTraces(locator, {
       traceIds: ["01a1405b-f832-70cf-b204-f4dd51387044"],
     });
-    // The project is gone, so the traces are gone: the deletion is complete by
-    // absence, and honestly reported as nothing-was-deleted rather than 204-guessed.
-    expect(result).toEqual({ outcome: "ok", value: { deleted: false } });
+    // The real counterexample: the E2E deletion evidence watched trace/span rows
+    // SURVIVE the project delete, and every verified cleanup addresses the
+    // project id. A 404 here therefore cannot verify anything — the operation is
+    // the retryable failure it is, and the caller keeps its frozen locator.
+    // The code names the fact (OCR R5 handoff from ocrfix-b): deleteTraces has
+    // several 404 sources, and only this one is a missing project — the delete
+    // endpoint itself answering 404 (version/path drift) keeps OPIK_CLIENT_ERROR,
+    // so downstream classification can read the code instead of sniffing status.
+    expect(result).toEqual({
+      outcome: "upstream_error",
+      operation: "deleteTraces",
+      code: "OPIK_PROJECT_MISSING",
+      status: 404,
+    });
     expect(calls).toHaveLength(1);
+  });
+
+  test("span rows that survive the trace read-back keep the deletion retryable (FREV-07)", async () => {
+    const { calls, transport } = recorder((call) =>
+      call === 1
+        ? json(200, JSON.stringify({ id: "proj-1" }))
+        : call === 2
+          ? new Response(null, { status: 204 })
+          : call === 3
+            ? json(404, "{}")
+            : json(
+                200,
+                JSON.stringify({
+                  page: 1,
+                  size: 1,
+                  total: 2,
+                  content: [{ id: "01a1405b-f832-70cf-b204-000000000001" }],
+                }),
+              ),
+    );
+    const result = await port({
+      fetch: transport,
+      timeoutMs: 100,
+    }).deleteTraces(locator, {
+      traceIds: ["01a1405b-f832-70cf-b204-f4dd51387044"],
+    });
+    // The trace row is gone and the delete was accepted, but the spans the query
+    // surface would read are still there: no completion, the bounded window
+    // expires retryable, never a success the upstream has not made true.
+    expect(result).toEqual({
+      outcome: "unavailable",
+      operation: "deleteTraces",
+      code: "OPIK_TIMEOUT",
+    });
+    expect(calls[3].url).toBe(
+      "http://opik.test/api/v1/private/spans?project_id=proj-1&trace_id=01a1405b-f832-70cf-b204-f4dd51387044&size=1",
+    );
+  });
+
+  test("a span read-back envelope that will not parse is a malformed fact, never absence", async () => {
+    const { transport } = recorder((call) =>
+      call === 1
+        ? json(200, JSON.stringify({ id: "proj-1" }))
+        : call === 2
+          ? new Response(null, { status: 204 })
+          : call === 3
+            ? json(404, "{}")
+            : json(200, "{not json"),
+    );
+    const result = await port({ fetch: transport }).deleteTraces(locator, {
+      traceIds: ["01a1405b-f832-70cf-b204-f4dd51387044"],
+    });
+    expect(result).toEqual({
+      outcome: "malformed",
+      operation: "deleteTraces",
+      code: "OPIK_MALFORMED_RESPONSE",
+      detail: "invalid_json",
+    });
   });
 
   test("an upstream 5xx is an upstream error, never a disguised success", async () => {
@@ -239,9 +436,9 @@ describe("the port's trace deletion (verified capability: trace-span-physical-de
 });
 
 describe("the port's dataset deletion (verified capability: experiment-dataset-physical-delete)", () => {
-  test("deletes the upstream dataset id with 204", async () => {
-    const { calls, transport } = recorder(
-      () => new Response(null, { status: 204 }),
+  test("deletes the upstream dataset id with 204 and completes on the read-back's 404 (FREV-07)", async () => {
+    const { calls, transport } = recorder((call) =>
+      call === 1 ? new Response(null, { status: 204 }) : json(404, "{}"),
     );
     const result = await port({ fetch: transport }).deleteDataset(locator, {
       datasetId: "01a1405c-09c2-71bb-a219-53d843ca7d1f",
@@ -253,6 +450,37 @@ describe("the port's dataset deletion (verified capability: experiment-dataset-p
     expect(JSON.parse(String(calls[0].init.body))).toEqual({
       ids: ["01a1405c-09c2-71bb-a219-53d843ca7d1f"],
     });
+    // Same discipline as trace deletion: the batch's 204 is acceptance, and the
+    // dataset-detail GET is the verified absence the completion rides.
+    expect(calls[1].url).toBe(
+      "http://opik.test/api/v1/private/datasets/01a1405c-09c2-71bb-a219-53d843ca7d1f",
+    );
+    expect(calls[1].init.method).toBe("GET");
+  });
+
+  test("a 204 whose read-back still finds the dataset is not completion (FREV-07)", async () => {
+    const { calls, transport } = recorder((call) =>
+      call === 1
+        ? new Response(null, { status: 204 })
+        : json(
+            200,
+            JSON.stringify({ id: "01a1405c-09c2-71bb-a219-53d843ca7d1f" }),
+          ),
+    );
+    const result = await port({
+      fetch: transport,
+      timeoutMs: 100,
+    }).deleteDataset(locator, {
+      datasetId: "01a1405c-09c2-71bb-a219-53d843ca7d1f",
+    });
+    expect(result).toEqual({
+      outcome: "unavailable",
+      operation: "deleteDataset",
+      code: "OPIK_TIMEOUT",
+    });
+    expect(calls[1].url).toBe(
+      "http://opik.test/api/v1/private/datasets/01a1405c-09c2-71bb-a219-53d843ca7d1f",
+    );
   });
 
   test("a 404 from the delete endpoint itself is not a verified answer — upstream error", async () => {

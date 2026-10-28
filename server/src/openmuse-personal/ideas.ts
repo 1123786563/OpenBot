@@ -174,7 +174,12 @@ export function createOpenMuseIdeaStore(deps: {
       await guard(ownerUserId);
       return deps.rows.listByOwner(ownerUserId);
     },
-    get: (ownerUserId, id) => deps.rows.findIdea(ownerUserId, id),
+    async get(ownerUserId, id) {
+      // The same fence every other verb here runs — a disabled owner's
+      // single-row read refuses like their list does, not just over HTTP.
+      await guard(ownerUserId);
+      return deps.rows.findIdea(ownerUserId, id);
+    },
     async accept(ownerUserId, id, taskId) {
       await guard(ownerUserId);
       const current = await deps.rows.findIdea(ownerUserId, id);
@@ -369,6 +374,13 @@ export function createOpenMuseIdeaRows(database: Database): OpenMuseIdeaRows {
      * only through the runner the tasks rows already fence.
      */
     ownerDisabled: ownerDisabledRow,
+    /*
+     * Deliberate no-ops: the marker read above IS this module's whole
+     * disable/restore story — every owner-scoped answer consults the
+     * marker's phase, so D01/D05 need no rows written here (the same shape
+     * the tasks rows keep). Nothing is swallowed: there is simply no
+     * per-module state to fence.
+     */
     async disableOwner() {},
     async restoreOwner() {},
   };

@@ -70,6 +70,14 @@ export class BuildStreamingState {
     this.lastChunkRoutingMeta = routingMeta ? { ...routingMeta } : null;
   }
 
+  restoreMessageChunks(text: string): void {
+    this.messageChunks.unshift(text);
+  }
+
+  restoreThoughtChunks(text: string): void {
+    this.thoughtChunks.unshift(text);
+  }
+
   /** A synthetic agent_message packet from the accumulated text, or null when empty. */
   finalizeMessageChunks(routingMeta: Json | null = null): Json | null {
     if (this.messageChunks.length === 0) return null;
@@ -167,11 +175,13 @@ export function getEventType(event: SandboxEvent | BuildPacket): string {
   return "unknown";
 }
 
-/** Strip the non-wire marker fields before serialization (activityTimeout is executor-only). */
+/** Strip the non-wire marker fields before serialization (activityTimeout is executor-only,
+ * packetKind is this module's internal discriminant — the wire's `type` says the same thing). */
 function wireFields(event: SandboxEvent | BuildPacket): Json {
   if (isKeepalive(event)) return {};
   const { ...rest } = event as unknown as Json;
   if (isActivityTimeout(event)) delete rest.activityTimeout;
+  delete rest.packetKind;
   return rest;
 }
 
@@ -197,12 +207,8 @@ export function eventToSse(event: SandboxEvent | BuildPacket): string {
 /** Extract text from an event content structure. */
 function extractTextFromContent(content: unknown): string {
   if (content === null || content === undefined) return "";
-  if (content instanceof Object) {
-    const json = content as Json;
-    if (json.type === "text")
-      return typeof json.text === "string" ? json.text : "";
-    return "";
-  }
+  // The array test MUST come first: an array is an Object too, so the block branch
+  // below would swallow [{type:"text"}] and answer "" for it.
   if (Array.isArray(content)) {
     return content
       .map((block) =>
@@ -213,6 +219,12 @@ function extractTextFromContent(content: unknown): string {
           : "",
       )
       .join("");
+  }
+  if (content instanceof Object) {
+    const json = content as Json;
+    if (json.type === "text")
+      return typeof json.text === "string" ? json.text : "";
+    return "";
   }
   return "";
 }
@@ -236,25 +248,44 @@ async function savePendingChunks(
   store: CraftStore,
   sessionId: string,
   state: BuildStreamingState,
-  routingMeta: Json | null = null,
+  routingMeta?: Json | null,
 ): Promise<void> {
   const messagePacket = state.finalizeMessageChunks(routingMeta);
-  if (messagePacket) {
-    await store.createMessage({
-      sessionId,
-      type: "assistant" as CraftMessageType,
-      turnIndex: state.turnIndex,
-      messageMetadata: messagePacket,
-    });
-  }
   const thoughtPacket = state.finalizeThoughtChunks(routingMeta);
-  if (thoughtPacket) {
-    await store.createMessage({
-      sessionId,
-      type: "assistant",
-      turnIndex: state.turnIndex,
-      messageMetadata: thoughtPacket,
-    });
+  let messageSaved = false;
+  try {
+    if (messagePacket) {
+      await store.createMessage({
+        sessionId,
+        type: "assistant" as CraftMessageType,
+        turnIndex: state.turnIndex,
+        messageMetadata: messagePacket,
+      });
+      messageSaved = true;
+    }
+    if (thoughtPacket) {
+      await store.createMessage({
+        sessionId,
+        type: "assistant",
+        turnIndex: state.turnIndex,
+        messageMetadata: thoughtPacket,
+      });
+    }
+  } catch (error) {
+    // The write failed, not the stream: put back only the packet that did not land.
+    // If thought persistence fails after message persistence, restoring both would
+    // duplicate the already committed message on the next flush.
+    const textOf = (packet: Json): string => {
+      const content = (packet as { content?: unknown }).content;
+      return content instanceof Object &&
+        typeof (content as { text?: unknown }).text === "string"
+        ? (content as { text: string }).text
+        : "";
+    };
+    if (messagePacket && !messageSaved)
+      state.restoreMessageChunks(textOf(messagePacket));
+    if (thoughtPacket) state.restoreThoughtChunks(textOf(thoughtPacket));
+    throw error;
   }
   state.clearLastChunkType();
 }
@@ -464,7 +495,10 @@ export async function finalizePersist(
   store: CraftStore,
   sessionId: string,
   state: BuildStreamingState,
-  routingMeta: Json | null = null,
+  // Optional, not defaulted: an omitted meta means "whatever the chunks remembered",
+  // while an explicit null means "persist without routing". A hard default here would
+  // override the chunk state's own last-seen routing meta.
+  routingMeta?: Json | null,
 ): Promise<void> {
   await savePendingChunks(store, sessionId, state, routingMeta);
 

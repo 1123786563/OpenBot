@@ -405,7 +405,13 @@ export function createOpenMuseMailRoutes(deps: {
       );
       if (answer === null) {
         // Vanished between the metadata dial and this one: the same 404.
-        return attachmentNotFound(context, scope);
+        // Named fields only — the log entry is not the scope's whole shape.
+        return attachmentNotFound(context, {
+          threadId: scope.threadId,
+          messageId: scope.messageId,
+          attachmentId: scope.attachmentId,
+          alias: scope.alias,
+        });
       }
       // The metadata pre-check can be understated (a sparse or lying provider
       // answer): the payload actually received is re-checked against the same

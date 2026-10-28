@@ -91,8 +91,12 @@ export function createMarketplaceStore(database: Database): MarketplaceStore {
           agentId: input.agentId,
         })
         // A concurrent second press made the receipt first. Its Bot is the answer; this one is a
-        // twin with no receipt and is deleted by the caller, which reads the false back.
-        .onConflictDoNothing()
+        // twin with no receipt and is deleted by the caller, which reads the false back. The
+        // target pins this method's own contract to (owner, slug) — any other unique violation
+        // is a defect and must surface, not masquerade as "already installed".
+        .onConflictDoNothing({
+          target: [expertInstalls.ownerUserId, expertInstalls.expertSlug],
+        })
         .returning({ id: expertInstalls.id });
       return rows.length > 0;
     },

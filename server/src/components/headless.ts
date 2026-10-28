@@ -1,9 +1,12 @@
 import { NOT_SHOWN, NOT_SHOWN_TAIL } from "@openbot/shared/component-markers";
 import { z } from "zod";
+import { getLogger } from "../../../shared/logger";
 import type { AuditInitiator, AuditSink } from "../audit";
 import type { HeadlessTool } from "@openbot/toolkit/headless-tools";
 import type { ComponentCatalog } from "@openbot/toolkit/ports";
 import type { ComponentStore } from "./store";
+
+const log = getLogger("server");
 
 /**
  * Gallery components a headless turn can answer with, when no browser is attached to draw them.
@@ -218,7 +221,7 @@ const ActivityReportProps = z.object({
 });
 
 /** Which server-side function each activity report reads. The same map `activity.tsx` holds. */
-const ACTIVITY_FUNCTION_FOR: Record<string, string> = {
+const ACTIVITY_FUNCTION_FOR: Record<"activity" | "refusals", string> = {
   activity: "botActivity",
   refusals: "recentRefusals",
 };
@@ -314,7 +317,7 @@ export const HEADLESS_COMPONENTS: readonly HeadlessComponentSpec[] = [
       "The report is saved in this conversation. Its figures are read from this deployment when the person opens it; you were not given them.",
     reads: (args) => {
       const functionName =
-        typeof args.report === "string"
+        args.report === "activity" || args.report === "refusals"
           ? ACTIVITY_FUNCTION_FOR[args.report]
           : undefined;
       return functionName ? [functionName] : [];
@@ -386,16 +389,31 @@ export async function createHeadlessComponentTools(options: {
     extra: Record<string, unknown> = {},
   ) => {
     if (audit)
-      await audit.record({
-        eventType: extra.function
-          ? "component.function_refused"
-          : "component.refused",
-        targetType: "component",
-        targetId: spec.name,
-        actorUserId: ownerUserId,
-        initiator,
-        payload: { bot: botId, reason, headless: true, ...extra },
-      });
+      await audit
+        .record({
+          eventType: extra.function
+            ? "component.function_refused"
+            : "component.refused",
+          targetType: "component",
+          targetId: spec.name,
+          actorUserId: ownerUserId,
+          initiator,
+          // The governed fields are written last: `extra` annotates the refusal but
+          // cannot overwrite who was refused, why, or that this was headless.
+          payload: { ...extra, bot: botId, reason, headless: true },
+        })
+        .catch((error) => {
+          // The refusal itself must still reach the model: an audit-store outage is
+          // logged, not allowed to turn a governed NOT_SHOWN into a tool exception.
+          log.error(
+            {
+              type: "component-refusal-audit-failed",
+              component: spec.name,
+              error: String(error),
+            },
+            "component-refusal-audit-failed",
+          );
+        });
     return notShown(spec.title, reason);
   };
 

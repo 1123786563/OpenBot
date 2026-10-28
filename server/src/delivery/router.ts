@@ -274,7 +274,12 @@ export function createDeliveryRouter(deps: {
         id: row.id,
         kind: "inbound",
         state: "sent",
-      });
+      }).catch((error) =>
+        log.warn(
+          { type: "delivery-audit-failed", id: row.id, error: String(error) },
+          "delivery-audit-failed",
+        ),
+      );
       return {
         kind: extras.approvals.length || result.waiting ? "waiting" : "replied",
         binding,
@@ -407,7 +412,12 @@ export function createDeliveryRouter(deps: {
           id: row.id,
           kind: "inbound",
           state: "sent",
-        });
+        }).catch((error) =>
+          log.warn(
+            { type: "delivery-audit-failed", id: row.id, error: String(error) },
+            "delivery-audit-failed",
+          ),
+        );
       } catch (error) {
         if (!(await owns())) return;
         if (
@@ -536,21 +546,44 @@ export function createDeliveryRouter(deps: {
           ...(sender ? { sender } : {}),
         });
       }
-      if (!(await owns())) return;
+      if (!(await owns())) {
+        // The send already went out; this worker just no longer holds the row. Leave the
+        // reconciliation to the reclaimer, but say so — a silent return is an outcome nobody
+        // can ever match against the provider's records.
+        log.warn(
+          { type: "delivery-lease-lost-after-send", id: row.id },
+          "delivery-lease-lost-after-send",
+        );
+        return;
+      }
       await deps.store.setOutbox(
         row.id,
         result.status === "queued" ? "accepted" : result.status,
         null,
         result.id,
       );
-      if (row.transport === "push") await deps.store.offerReceipt(row.id);
-      await deps.audit?.({
-        ownerUserId: row.ownerUserId,
-        channelId: row.channelId,
-        id: row.id,
-        kind: row.transport,
-        state: result.status,
-      });
+      // The row now records the real outcome. Nothing after this point may rewrite it:
+      // receipt-offer and audit are warning-only side effects, or a failure would file a
+      // delivered send as failed and poison the audit trail against the row.
+      try {
+        if (row.transport === "push") await deps.store.offerReceipt(row.id);
+        await deps.audit?.({
+          ownerUserId: row.ownerUserId,
+          channelId: row.channelId,
+          id: row.id,
+          kind: row.transport,
+          state: result.status,
+        });
+      } catch (error) {
+        log.warn(
+          {
+            type: "delivery-post-send-failed",
+            id: row.id,
+            error: String(error),
+          },
+          "delivery-post-send-failed",
+        );
+      }
     } catch (error) {
       if (!(await owns())) return;
       if (

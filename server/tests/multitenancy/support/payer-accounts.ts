@@ -97,24 +97,34 @@ export async function createPayerAccountsFixture(): Promise<PayerAccountsFixture
     ids,
     async dispose() {
       // 级联清理：audit/mappings/accounts 随 tenant/customer/users 级联消失；
-      // 显式再删一次隔离前缀行，防种子以外的残留。
-      await db.execute(
-        sql`delete from billing_account_audit where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`} or account_id like ${`bca-${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_credit_accounts where external_customer_id like ${`${run}%`}`,
-      );
-      await db.execute(
-        sql`delete from billing_customer_mappings where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
-      );
-      await db
-        .delete(billingCustomers)
-        .where(like(billingCustomers.externalId, `${run}%`));
-      await db.delete(users).where(inArray(users.id, [ids.user1, ids.user2]));
-      await db
-        .delete(enterpriseTenants)
-        .where(inArray(enterpriseTenants.id, [ids.companyA, ids.companyB]));
-      await db.$client.close();
+      // 显式再删一次隔离前缀行，防种子以外的残留。清扫放 try、关池放
+      // finally：任一 delete 抛错也不漏关连接池。
+      try {
+        await db.execute(
+          // account_id is `bca-<hex>` with no run prefix (generateAccountId), so an
+          // account_id clause can never match; tenant_id/external_customer_id carry the run.
+          sql`delete from billing_account_audit where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_credit_accounts where external_customer_id like ${`${run}%`}`,
+        );
+        await db.execute(
+          sql`delete from billing_customer_mappings where tenant_id like ${`${run}%`} or external_customer_id like ${`${run}%`}`,
+        );
+        await db
+          .delete(billingCustomers)
+          .where(like(billingCustomers.externalId, `${run}%`));
+        await db
+          .delete(users)
+          .where(inArray(users.id, [ids.user1, ids.user2]));
+        await db
+          .delete(enterpriseTenants)
+          .where(
+            inArray(enterpriseTenants.id, [ids.companyA, ids.companyB]),
+          );
+      } finally {
+        await db.$client.close();
+      }
     },
   };
 }

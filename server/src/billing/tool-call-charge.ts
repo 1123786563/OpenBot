@@ -40,6 +40,32 @@ import type { ToolSurchargeEntryIdForIdentity } from "./tool-surcharge-pricing";
 /** The local charge id's prefix — recognisable on sight, like the reservation's `cr-`. */
 export const TOOL_CHARGE_ID_PREFIX = "tc-";
 
+/**
+ * The reservation-unique index's own conflict: a 23505 naming that index, matched along the
+ * cause chain like the other doors' unique-violation readers. Any OTHER uniqueness (a `pe-`-
+ * style id collision above all) is an unknown conflict and surfaces as the database error.
+ */
+function isReservationIndexConflict(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    const shaped = current as {
+      code?: string;
+      errno?: string;
+      constraint?: string;
+      constraint_name?: string;
+    };
+    if (
+      (shaped.code === "23505" || shaped.errno === "23505") &&
+      (shaped.constraint ?? shaped.constraint_name) ===
+        "tool_call_charges_reservation_idx"
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /** What one identity row says, read back verbatim — the answer both writes and replays carry. */
 export type ToolCallChargeView = {
   readonly chargeId: string;
@@ -143,25 +169,36 @@ export async function recordToolCallCharge(
   const reservationId =
     input.outcome.kind === "charged" ? input.outcome.reservationId : null;
 
-  const inserted = await database
-    .insert(toolCallCharges)
-    .values({
-      chargeId: `${TOOL_CHARGE_ID_PREFIX}${randomBytes(16).toString("hex")}`,
-      idempotencyKey: input.idempotencyKey,
-      entry: input.entry,
-      tool: input.tool,
-      dimension: input.dimension,
-      grantId: input.grantId,
-      payerKind: "personal",
-      payerId: grant.userId,
-      state: charged || pricedFree ? "charged" : "refused",
-      reservationId,
-      pricedFree,
-      refusalReason:
-        input.outcome.kind === "refused" ? input.outcome.reason : null,
-    })
-    .onConflictDoNothing({ target: toolCallCharges.idempotencyKey })
-    .returning();
+  // The targeted DO NOTHING covers the idempotency key alone. A second identity claiming
+  // the same hold trips the reservation-unique index as a raw 23505 — the caller's defect,
+  // surfaced as an invalid outcome rather than stored; any other uniqueness keeps throwing.
+  let inserted: (typeof toolCallCharges.$inferSelect)[];
+  try {
+    inserted = await database
+      .insert(toolCallCharges)
+      .values({
+        chargeId: `${TOOL_CHARGE_ID_PREFIX}${randomBytes(16).toString("hex")}`,
+        idempotencyKey: input.idempotencyKey,
+        entry: input.entry,
+        tool: input.tool,
+        dimension: input.dimension,
+        grantId: input.grantId,
+        payerKind: "personal",
+        payerId: grant.userId,
+        state: charged || pricedFree ? "charged" : "refused",
+        reservationId,
+        pricedFree,
+        refusalReason:
+          input.outcome.kind === "refused" ? input.outcome.reason : null,
+      })
+      .onConflictDoNothing({ target: toolCallCharges.idempotencyKey })
+      .returning();
+  } catch (error) {
+    if (isReservationIndexConflict(error)) {
+      return { status: "refused", reasonCode: "outcome_invalid" };
+    }
+    throw error;
+  }
   if (inserted.length > 0) {
     return { status: "recorded", charge: viewOf(inserted[0]) };
   }
@@ -171,11 +208,15 @@ export async function recordToolCallCharge(
     .where(eq(toolCallCharges.idempotencyKey, input.idempotencyKey))
     .limit(1);
   if (existing) {
+    // The idempotency key is unique across grants: converging on another grant's row
+    // would hand one identity the other's charge record (0183's batch-submit rule).
+    if (existing.grantId !== input.grantId) {
+      return { status: "refused", reasonCode: "grant_invalid" };
+    }
     return { status: "already", charge: viewOf(existing) };
   }
-  // Not the idempotency conflict the convergence reads — the reservation-unique index
-  // refused a second identity claiming the same hold. That is a defect in the caller
-  // (two calls sharing one hold), surfaced as an invalid outcome rather than stored.
+  // The idempotency conflict answered 0 rows yet no row reads back — the row vanished in
+  // between (a concurrent delete). Nothing to converge on; that is an invalid outcome too.
   return { status: "refused", reasonCode: "outcome_invalid" };
 }
 

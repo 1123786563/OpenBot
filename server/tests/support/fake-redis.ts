@@ -9,12 +9,14 @@ import type { RedisPort } from "../src/redis";
  * listeners synchronously. Anything else an implementation does is behind RedisPort and behind
  * these tests' needs.
  */
-export function fakeRedisPort(): RedisPort & {
+type FakeRedisTestPort = RedisPort & {
   /** Test hooks into the fake's storage and failure injection. */
   keys: Map<string, { value: string; expiresAt: number | null }>;
   listeners: Map<string, (channel: string, message: string) => void>;
   failNext: () => void;
-} {
+};
+
+export function fakeRedisPort(): FakeRedisTestPort {
   const core = {
     keys: new Map<string, { value: string; expiresAt: number | null }>(),
     listeners: new Map<string, (channel: string, message: string) => void>(),
@@ -23,11 +25,7 @@ export function fakeRedisPort(): RedisPort & {
     shouldFail: false,
   };
 
-  const portOf = (): RedisPort & {
-    keys: Map<string, { value: string; expiresAt: number | null }>;
-    listeners: Map<string, (channel: string, message: string) => void>;
-    failNext: () => void;
-  } => {
+  const portOf = (): FakeRedisTestPort => {
     const maybeFail = () => {
       if (core.shouldFail) {
         core.shouldFail = false;
@@ -70,7 +68,12 @@ export function fakeRedisPort(): RedisPort & {
         const key = String(args[0]);
         const token = String(args[1]);
         void numKeys;
-        if (script.includes("pexpire")) {
+        // The lock sends exactly two scripts: renew carries PEXPIRE, release carries DEL.
+        // The markers are kept exclusive so a script that grows either command is
+        // rejected below instead of being silently misrouted.
+        const isRenew = script.includes("pexpire") && !script.includes("del");
+        const isRelease = script.includes("del") && !script.includes("pexpire");
+        if (isRenew) {
           // alive(), not a bare get: renewing an expired key must fail the way Redis would,
           // or the lock tests cannot tell a held lock from one whose TTL has quietly lapsed.
           const entry = alive(key);
@@ -79,7 +82,7 @@ export function fakeRedisPort(): RedisPort & {
           stored.expiresAt = Date.now() + Number(args[2]);
           return 1;
         }
-        if (script.includes("del")) {
+        if (isRelease) {
           if (alive(key) === token) {
             core.keys.delete(key);
             return 1;
@@ -90,28 +93,35 @@ export function fakeRedisPort(): RedisPort & {
       },
       async publish(channel, message) {
         maybeFail();
-        // Fan out to every live listener, including those on duplicated handles — the way a
-        // real Redis reaches subscribers regardless of which connection published.
-        let count = 0;
-        for (const listener of core.listeners.values()) {
-          if (!core.closed.has(core.listeners)) listener(channel, message);
-          count += 1;
-        }
-        return count;
+        // Deliver only to the subscriber of this channel, from whichever handle
+        // published — the listener table is shared across duplicated handles,
+        // the way a real Redis reaches subscribers regardless of connection.
+        if (core.closed.has(core.listeners)) return 0;
+        const listener = core.listeners.get(channel);
+        if (!listener) return 0;
+        listener(channel, message);
+        return 1;
       },
       async subscribe(channel, onMessage) {
         maybeFail();
+        // An active subscription revives delivery: a quit() must not leave the shared
+        // listener table closed for handles that subscribe afterwards.
+        core.closed.delete(core.listeners);
         core.listeners.set(channel, onMessage);
       },
       duplicate: () => {
         // A duplicate is a new handle onto the same fake server: its subscriptions land in the
-        // same listener table, and quitting it removes only what it registered.
+        // same listener table, and quitting it restores what each channel carried before — a
+        // duplicate must not take the original handle's subscription down with it.
         const before = new Map(core.listeners);
         const handle = portOf();
         handle.quit = async () => {
           for (const [channel, listener] of core.listeners) {
-            if (before.get(channel) !== listener)
-              core.listeners.delete(channel);
+            const previous = before.get(channel);
+            if (previous !== listener) {
+              if (previous === undefined) core.listeners.delete(channel);
+              else core.listeners.set(channel, previous);
+            }
           }
         };
         return handle;

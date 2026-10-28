@@ -86,23 +86,27 @@ export async function pushEgressPolicies(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const report: EgressPushReport = { pushed: [], failed: [] };
   const computers = await options.provider.list();
-  for (const computer of computers) {
-    if (computer.status !== "running" || !computer.url) continue;
-    try {
-      const policy = await options.policyForBot(computer.botId);
-      await pushEgressPolicy(computer.url, computer.botId, policy, {
-        ...(options.token ? { token: options.token } : {}),
-        ...(options.webBotAuth ? { webBotAuth: options.webBotAuth } : {}),
-        fetchImpl,
-      });
-      report.pushed.push(computer.botId);
-    } catch (error) {
-      report.failed.push({
-        botId: computer.botId,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
+  // Independent computers push in parallel: a serial pass lets one silent computer
+  // hold every later one's policy back for its full timeout.
+  await Promise.all(
+    computers.map(async (computer) => {
+      if (computer.status !== "running" || !computer.url) return;
+      try {
+        const policy = await options.policyForBot(computer.botId);
+        await pushEgressPolicy(computer.url, computer.botId, policy, {
+          ...(options.token ? { token: options.token } : {}),
+          ...(options.webBotAuth ? { webBotAuth: options.webBotAuth } : {}),
+          fetchImpl,
+        });
+        report.pushed.push(computer.botId);
+      } catch (error) {
+        report.failed.push({
+          botId: computer.botId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
   return report;
 }
 
@@ -142,7 +146,7 @@ export async function pushEgressPolicy(
             }
           : {}),
       }),
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
     },
   );
   if (!response.ok) throw new Error(`the computer answered ${response.status}`);
@@ -150,6 +154,8 @@ export async function pushEgressPolicy(
 
 /** Without a run to compare, how long a pushed policy is trusted before it is pushed again. */
 const UNKNOWN_RUN_REPUSH_MS = 30_000;
+/** How long one computer gets to take one policy push. */
+const PUSH_TIMEOUT_MS = 5_000;
 
 /**
  * The provider, with each computer pushed its policy on the way to the action that woke it.
@@ -178,16 +184,16 @@ export function withPolicyPushOnWake(
 ): ComputerProvider {
   const pushed = new Map<string, { run: string | undefined; at: number }>();
   const ensure = async (botId: string, url: string) => {
-    const run = await provider.sessionOf?.(botId).catch(() => undefined);
-    const last = pushed.get(botId);
-    if (
-      last &&
-      (run !== undefined
-        ? last.run === run
-        : Date.now() - last.at < UNKNOWN_RUN_REPUSH_MS)
-    )
-      return;
     try {
+      const run = await provider.sessionOf?.(botId).catch(() => undefined);
+      const last = pushed.get(botId);
+      if (
+        last &&
+        (run !== undefined
+          ? last.run === run
+          : Date.now() - last.at < UNKNOWN_RUN_REPUSH_MS)
+      )
+        return;
       // Inside the try: reading the policy is a database call, and its failure is logged like a
       // failed push rather than failing the action.
       const policy = await options.policyForBot(botId);

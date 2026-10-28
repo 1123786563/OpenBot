@@ -149,6 +149,17 @@ function charW(sizePt, bold) {
   return sizePt * (bold ? 0.62 : 0.55);
 }
 
+// Fullwidth/CJK code points occupy ~1em — roughly double the Latin average.
+// Undercounting them overflows text boxes the shrink guards were meant to
+// protect, so count them as two Latin-width units.
+function wordWidthUnits(word) {
+  let units = 0;
+  for (const ch of word) {
+    units += (ch.codePointAt(0) || 0) > 0x2e7f ? 2 : 1;
+  }
+  return units;
+}
+
 function estLines(text, usableWIn, sizePt, bold) {
   const usablePt = Math.max(usableWIn * 72 - 10, 20);
   const spaceW = charW(sizePt, bold) * 0.5;
@@ -159,7 +170,7 @@ function estLines(text, usableWIn, sizePt, bold) {
     let lines = 1;
     let cur = 0;
     for (const word of hardLine.split(/\s+/).filter(Boolean)) {
-      const w = Math.min(word.length * charW(sizePt, bold), usablePt);
+      const w = Math.min(wordWidthUnits(word) * charW(sizePt, bold), usablePt);
       if (cur > 0 && cur + spaceW + w > usablePt) {
         lines += 1;
         cur = w;

@@ -29,6 +29,9 @@ export function responsibilityTools(options: {
   } = options;
   const identity = z.object({ id: z.string().trim().min(1).max(128) });
   async function owned(id: string) {
+    // Deliberately agent-scoped, not conversation-scoped: a responsibility belongs to the Bot,
+    // and any conversation of the same owner may list, edit or run it. channelId is the
+    // creation's delivery target only, never part of the authority check.
     const goal = await store.get(ownerUserId, id);
     if (goal.agentId !== agentId) throw new ResponsibilityNotFoundError();
     return goal;
@@ -72,10 +75,7 @@ export function responsibilityTools(options: {
       "list_responsibilities",
       "Inspect this person's durable responsibilities and progress for this Bot.",
       z.object({}).strict(),
-      async () =>
-        (await store.list(ownerUserId)).filter(
-          (goal) => goal.agentId === agentId,
-        ),
+      async () => store.list(ownerUserId, agentId),
     ),
     tool(
       "update_responsibility",
@@ -108,7 +108,14 @@ export function responsibilityTools(options: {
       "Queue an owned active responsibility for this Bot to work on without the person's browser open.",
       identity,
       async ({ id }) => {
-        await owned(id);
+        const goal = await owned(id);
+        // The engine only runs active responsibilities; without this check a paused or
+        // completed one accepts a manual event that can never produce a run. Same refusal
+        // the REST run route answers.
+        if (goal.status !== "active")
+          throw new ResponsibilityRefusedError(
+            `This responsibility is ${goal.status}. Resume it before running it.`,
+          );
         return engine.ingest({
           ownerUserId,
           responsibilityId: id,

@@ -164,6 +164,14 @@ function parsePending(raw: unknown): CraftConnectAppPending | null {
     ) {
       return null;
     }
+    // The optional field rides into the decision endpoint and the audit row, so a
+    // present-but-non-number value is corruption, not a passthrough.
+    if (
+      parsed.external_app_id !== undefined &&
+      typeof parsed.external_app_id !== "number"
+    ) {
+      return null;
+    }
     return parsed as CraftConnectAppPending;
   } catch {
     return null;
@@ -198,6 +206,11 @@ export function createInProcessConnectAppSignals(): CraftConnectAppSignals & {
     });
   };
 
+  // The in-process SET: one value per key, TTL refreshed — Redis's SET_WITH_TTL.
+  const replace = (key: string, value: string, ttlSeconds: number) => {
+    lists.set(key, { values: [value], expiresAt: Date.now() + ttlSeconds * 1000 });
+  };
+
   return {
     mode: "memory" as const,
     async announceRequest(sessionId, request) {
@@ -217,11 +230,9 @@ export function createInProcessConnectAppSignals(): CraftConnectAppSignals & {
       return live(announceKey(sessionId)).values;
     },
     async stashPending(requestId, pending) {
-      push(
-        pendingKey(requestId),
-        JSON.stringify(pending),
-        CONNECT_APP_PENDING_TTL_SECONDS,
-      );
+      // Replace, like the Redis SET: a re-stash of one requestId must answer one
+      // pending record, not a list where the first (stale) entry wins the read.
+      replace(pendingKey(requestId), JSON.stringify(pending), CONNECT_APP_PENDING_TTL_SECONDS);
     },
     async loadPending(requestId) {
       return parsePending(live(pendingKey(requestId)).values[0] ?? null);
@@ -257,14 +268,16 @@ export function parseConnectAppAsk(
 ): { externalAppId: number; reason: string | null } | null {
   const raw = metadata.external_app_id;
   if (raw === null || raw === undefined) return null;
-  const parsed =
-    typeof raw === "number"
-      ? Number.isInteger(raw)
-        ? raw
-        : Number.NaN
-      : typeof raw === "string" && raw.trim() !== ""
-        ? Number.parseInt(raw, 10)
-        : Number.NaN;
+  // Strict digits: parseInt would read "12abc" as 12 and bless dirty metadata where
+  // onyx's int() would refuse it.
+  const asInteger = (value: unknown): number => {
+    if (typeof value === "number" && Number.isInteger(value)) return value;
+    if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+      return Number(value);
+    }
+    return Number.NaN;
+  };
+  const parsed = asInteger(raw);
   if (!Number.isFinite(parsed)) return null;
   const reasonRaw = metadata.reason;
   const reason =

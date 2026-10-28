@@ -375,7 +375,11 @@ export function createGatewayAdminCredentialService(
             },
             tx,
           );
-          const previousCredentialId = parsed?.ref.credentialId ?? live?.id;
+          // Live-first: a reference row may name a credential that was already revoked or
+          // deleted (a hand-restored vault), and rotating a dead id would refuse a save the
+          // vault's live row can still absorb — the partial unique index holds at most one
+          // live row for this key, so this stays a rotation whenever one exists.
+          const previousCredentialId = live?.id ?? parsed?.ref.credentialId;
           const stored = previousCredentialId
             ? await vault.rotate(
                 {

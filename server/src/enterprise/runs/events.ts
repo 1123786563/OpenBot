@@ -316,6 +316,12 @@ export function createRunnerEventService(deps: {
         !proposal?.lease ||
         typeof proposal.lease.ownerToken !== "string" ||
         !proposal.lease.ownerToken.trim() ||
+        typeof proposal.lease.runId !== "string" ||
+        !proposal.lease.runId.trim() ||
+        typeof proposal.lease.attemptId !== "string" ||
+        !proposal.lease.attemptId.trim() ||
+        !Number.isSafeInteger(proposal.lease.generation) ||
+        proposal.lease.generation < 1 ||
         typeof proposal.sourceEventId !== "string" ||
         !proposal.sourceEventId.trim() ||
         proposal.sourceEventId.length > 200 ||

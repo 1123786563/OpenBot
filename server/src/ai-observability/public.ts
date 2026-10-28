@@ -91,6 +91,18 @@ export type BuiltinToolStepFact = Readonly<{
   input: string | null;
   /** The execution output or error text — BEFORE projection; the recorder projects. */
   output: string | null;
+  /**
+   * R4-03: which path observed the step — `remote-agui` saw the endpoint's
+   * stream through this server; absent reads as `builtin` at the recorder.
+   */
+  origin?: "builtin" | "remote-agui";
+  /**
+   * R4-03: the run identity the fact's chain belongs to, when the observing
+   * path knows it (the remote middleware always does). Carried so the
+   * recorder's binding gate reuses the run's authoritative binding instead of
+   * minting a second one for the same chain; absent on the built-in path.
+   */
+  runRef?: Readonly<{ runId: string; attemptId: string }> | null;
 }>;
 
 // ---------------------------------------------------------------------------
@@ -187,14 +199,21 @@ export function toolStepObserver(
       scope: fact.scope as ObservationScope | undefined,
       // The run's W3C chain captured at cell open (Issue #23/T17): the step span
       // joins the cross-service trace instead of rooting a fresh random one.
+      // R4-03: a remote-mediated fact names its run identity too — the binding
+      // gate must reuse the binding the run's basic record began (the run's own
+      // run id), never mint a second chain-keyed row for the same trace.
       ...(fact.trace
         ? {
             trace: {
               traceId: fact.trace.traceId,
               parentSpanId: fact.trace.spanId,
+              ...(fact.runRef ? { runRef: fact.runRef } : {}),
             },
           }
         : {}),
+      // R4-03: the observing path's own name — builtin facts carry no origin and
+      // read as `builtin` at the recorder; a remote-agui fact names itself.
+      ...(fact.origin ? { origin: fact.origin } : {}),
     });
 }
 

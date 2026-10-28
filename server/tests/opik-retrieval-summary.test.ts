@@ -14,9 +14,12 @@
 //      the way the real read-back observed it),
 //   5. the production steps projection (T18-server) over that row.
 // No database, no network; the only fakes are the HTTP transport below and the read-side port.
+
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
-import { join } from "node:path";
 import type { RunBinding } from "../src/ai-observability/bindings";
+import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
 import { createOpikHealthService } from "../src/ai-observability/health";
 import type {
@@ -28,8 +31,6 @@ import { createRunsQueryService } from "../src/ai-observability/queries/runs";
 import { resolveObservationScope } from "../src/ai-observability/scope";
 import { createToolStepRecorder } from "../src/ai-observability/tool-steps";
 
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
@@ -144,7 +145,7 @@ function bindingRow(opikTraceId: string): RunBinding {
     botId: scope.botId,
     runId: "run-g3",
     attemptId: "attempt-g3",
-    traceId: "traceg3traceg3traceg3traceg3traceg3",
+    traceId: "0123456789abcdef0123456789abcdef",
     opikTraceId,
     locatorWorkspace: "ws",
     locatorProject: "proj",
@@ -200,7 +201,10 @@ describe("the retrieval hit summary on the real write/read composition (G3)", ()
     const healthService = createOpikHealthService({ config, port });
     // The write gate answers only after a probe has succeeded (T09 fail-closed).
     await healthService.readiness();
-    const recorder = createToolStepRecorder({ healthService });
+    const recorder = createToolStepRecorder({
+      healthService,
+      bindings: observerRunBindingGateForTests(),
+    });
 
     recorder.recordRetrieval({
       occurredAt: new Date("2026-10-16T11:00:00.000Z"),
@@ -221,7 +225,7 @@ describe("the retrieval hit summary on the real write/read composition (G3)", ()
       },
       scope,
       trace: {
-        traceId: "traceg3traceg3traceg3traceg3traceg3",
+        traceId: "0123456789abcdef0123456789abcdef",
         parentSpanId: "aabbccddeeff0011",
         opikTraceId: "01a1405b-f832-70cf-b204-f4dd5138700",
       },
@@ -248,7 +252,10 @@ describe("the retrieval hit summary on the real write/read composition (G3)", ()
     const { port, writes } = await capturingPort();
     const healthService = createOpikHealthService({ config, port });
     await healthService.readiness();
-    const recorder = createToolStepRecorder({ healthService });
+    const recorder = createToolStepRecorder({
+      healthService,
+      bindings: observerRunBindingGateForTests(),
+    });
 
     const canary = `sk-live-${"a".repeat(24)}`;
     recorder.recordRetrieval({
@@ -258,6 +265,7 @@ describe("the retrieval hit summary on the real write/read composition (G3)", ()
       kbIds: ["kb-1", canary],
       outcome: { kind: "hit", fragments: [] },
       scope,
+      trace: { traceId: "0123456789abcdef0123456789abcdef" },
     });
     await healthService.drain();
 

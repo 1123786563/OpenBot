@@ -208,18 +208,26 @@ async function checkRunningTurns() {
   }
   const database = state.database;
   if (!database) return;
-  for (const key of [...state.running.keys()]) {
-    const [ownerUserId, agentId] = JSON.parse(key) as [string, string];
-    const paused = await readPause(database, ownerUserId, agentId);
+  // The pause reads are independent, so they go out together: a scan that stalls one pair at
+  // a time can outlast its own interval and overlap the next pass, double-counting failures.
+  const keys = [...state.running.keys()];
+  const pauses = await Promise.all(
+    keys.map((key) => {
+      const [ownerUserId, agentId] = JSON.parse(key) as [string, string];
+      return readPause(database, ownerUserId, agentId);
+    }),
+  );
+  keys.forEach((key, index) => {
+    const paused = pauses[index];
     if (paused === undefined) {
       const failures = (state.unreadable.get(key) ?? 0) + 1;
       state.unreadable.set(key, failures);
       if (failures >= UNREADABLE_CHECKS_BEFORE_STOP) stopRunningTurns(key);
-      continue;
+      return;
     }
     state.unreadable.delete(key);
     if (paused) stopRunningTurns(key);
-  }
+  });
 }
 
 export type BotLifecycleState = {

@@ -150,8 +150,15 @@ def _add_to_content_types(unpacked_dir: Path, dest: str) -> None:
     )
 
     if f"/ppt/slides/{dest}" not in content_types:
-        content_types = content_types.replace("</Types>", f"  {new_override}\n</Types>")
-        content_types_path.write_text(content_types, encoding="utf-8")
+        updated = content_types.replace(
+            "</Types>", f"  {new_override}\n</Types>"
+        )
+        if updated == content_types:
+            sys.exit(
+                f"Error: could not register {dest} in [Content_Types].xml: "
+                "closing </Types> tag not found"
+            )
+        content_types_path.write_text(updated, encoding="utf-8")
 
 
 def _add_to_presentation_rels(unpacked_dir: Path, dest: str) -> str:
@@ -174,10 +181,15 @@ def _add_to_presentation_rels(unpacked_dir: Path, dest: str) -> str:
     if existing_rel:
         return existing_rel.group(1)
 
-    pres_rels = pres_rels.replace(
+    updated_rels = pres_rels.replace(
         "</Relationships>", f"  {new_rel}\n</Relationships>"
     )
-    pres_rels_path.write_text(pres_rels, encoding="utf-8")
+    if updated_rels == pres_rels:
+        sys.exit(
+            f"Error: could not register {rid} in presentation.xml.rels: "
+            "closing </Relationships> tag not found"
+        )
+    pres_rels_path.write_text(updated_rels, encoding="utf-8")
 
     return rid
 

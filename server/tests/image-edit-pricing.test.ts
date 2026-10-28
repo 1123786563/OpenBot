@@ -177,6 +177,28 @@ describe("probeImageSpec", () => {
     expect(probeImageSpec("https://cdn.example/input.png")).toBeNull(); // a URL is not data
     expect(probeImageSpec("")).toBeNull();
   });
+
+  test("legal data-URL spellings are not refused: MIME parameters and case", () => {
+    const png = pngDataUrl(64, 32);
+    const bare = png.slice("data:image/png;base64,".length);
+    expect(probeImageSpec(`data:image/png;charset=utf-8;base64,${bare}`)).toEqual(
+      { format: "png", width: 64, height: 32 },
+    );
+    expect(probeImageSpec(`data:image/PNG;base64,${bare}`)).toEqual({
+      format: "png",
+      width: 64,
+      height: 32,
+    });
+  });
+
+  test("a forged zero-length JPEG segment answers null instead of stalling the walk", () => {
+    const forged = Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      Buffer.from([0xff, 0xfe, 0x00, 0x00]), // COM marker declaring length 0
+      Buffer.from([0xff, 0xd9]),
+    ]).toString("base64");
+    expect(probeImageSpec(`data:image/jpeg;base64,${forged}`)).toBeNull();
+  });
 });
 
 // ── AC2 (the spec): determinable before dispatch, or refused ──

@@ -34,7 +34,9 @@ export function createDemonstrationRecorder(options: {
   };
   async function stop(ownerUserId: string, id: string) {
     clearTimer(id);
-    await pending.get(id);
+    // A rejected in-flight capture must not abort the stop: the timer is already
+    // gone, so a throw here would leave the recording stuck in "recording".
+    await (pending.get(id) ?? Promise.resolve()).catch(() => undefined);
     return options.store.stop(ownerUserId, id);
   }
   return {
@@ -73,16 +75,19 @@ export function createDemonstrationRecorder(options: {
       action: unknown,
     ) {
       // Stop waits for every successful gesture already received on the stream.
-      const work = (pending.get(recordingId) ?? Promise.resolve()).then(
-        async () => {
+      // A previous capture's failure must not poison the chain: it is wiped before we
+      // chain onto it, so one refused gesture (another Bot's action, a transient store
+      // error) is that capture's own outcome — the next gesture still runs and still lands.
+      const work = (pending.get(recordingId) ?? Promise.resolve())
+        .catch(() => undefined)
+        .then(async () => {
           const recording = await options.store.get(ownerUserId, recordingId);
           if (recording.botId !== botId)
             throw new DemonstrationRefusedError(
               "That action belongs to another Bot.",
             );
           await options.store.append(ownerUserId, recordingId, action);
-        },
-      );
+        });
       pending.set(recordingId, work);
       try {
         await work;

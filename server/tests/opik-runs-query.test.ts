@@ -10,17 +10,20 @@
 //      access, forged ownership, guessed ids and cross-scope cursors widen nothing.
 //   2. list/detail answer the actual state, duration, safe content and version
 //      references; missing provider usage is an explicit "unavailable", never 0.
-//   3. transfer or revocation makes history, pagination and the cache immediately
-//      unreadable: manage flips answer 404, an epoch bump kills outstanding
-//      cursors (T06 downstream obligation: 403 OWNERSHIP_REQUIRED) and orphans the
-//      cache under the old scope key.
+//   3. transfer or revocation makes history and pagination immediately unreadable:
+//      manage flips answer 404 and an epoch bump kills outstanding cursors (T06
+//      downstream obligation: 403 OWNERSHIP_REQUIRED). FREV-03: the window cache
+//      follows the Bot's stable data key, so an epoch bump neither moves the
+//      address nor needs to orphan the pages over it.
 //   4. the surface is not an upstream query proxy: caller query params never reach
-//      Opik, and two scopes holding the same resource ids stay isolated.
+//      Opik; two authorized viewers of one Bot read the same range, while another
+//      Bot's rows stay out of reach.
 //   5. an unavailable upstream answers with an explainable error code, never a
 //      disguised empty list.
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
+
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { AgentProfile } from "../src/agents/profile-types";
 import type { RunBinding } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
@@ -43,6 +46,7 @@ import {
 } from "../src/ai-observability/queries/runs";
 import { createRunsQueryRoutes } from "../src/ai-observability/routes/runs";
 import { resolveObservationScope } from "../src/ai-observability/scope";
+import { MAX_TOOL_CALL_ID_LENGTH } from "../src/ai-observability/tool-steps";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 
 const owner = { id: "user-owner", role: "user" } as const;
@@ -245,6 +249,11 @@ function appFor(
     capabilities?: ReadonlyMap<string, string>;
     /** Issue #18: unreconciled bindings this scope holds, for the list-level syncing flag. */
     unreconciled?: number;
+    /**
+     * R3-03: the row-level lifecycle join — the binding's state per upstream
+     * trace id, exactly the read the production store now provides.
+     */
+    lifecycleStates?: ReadonlyMap<string, RunBinding["state"]>;
   } = {},
 ) {
   const port = setup.port ?? fakePort();
@@ -270,6 +279,17 @@ function appFor(
             ),
           ),
         countUnreconciled: async () => setup.unreconciled ?? 0,
+        ...(setup.lifecycleStates !== undefined
+          ? {
+              statesByOpikTraceIds: async (
+                _scope: ObservationScope,
+                ids: readonly string[],
+              ) =>
+                new Map(
+                  [...setup.lifecycleStates].filter(([id]) => ids.includes(id)),
+                ),
+            }
+          : {}),
       },
       config: setup.config ?? (() => enabledConfig),
       port: port.port,
@@ -358,42 +378,37 @@ describe("runs query — acceptance 1: only current managers may query", () => {
     expect(reads(port.calls)).toBe(0);
   });
 
-  test("two scopes holding the same resource ids stay isolated", async () => {
-    // Both scopes own a binding for the SAME run id with different attempt ids;
-    // each scope must only ever see its own row. The TTL is the production
-    // default: the count of upstream reads this asserts must not race a
-    // sub-test wall clock.
+  test("an administrator's read resolves the creator's run (FREV-03 a)", async () => {
+    // The binding was recorded by the Bot's creator; the administrator's route
+    // view mints its own scope, and FREV-03's stable data key means that scope
+    // names the SAME range — the creator's attempt answers instead of 404.
     const shared = fakePort();
-    const a = appFor({
-      bindings: [bindingRow(scopeA, { attemptId: "a-1" })],
-      port: shared,
-      cacheTtlMs: 5_000,
-    });
-    const b = appFor({
-      actor: otherOwner,
-      rows: [profile({ ownerUserId: otherOwner.id })],
-      bindings: [bindingRow(scopeB, { attemptId: "b-1" })],
+    const { app } = appFor({
+      actor: admin,
+      bindings: [bindingRow(scopeA, { attemptId: "owner-1" })],
       port: shared,
       cacheTtlMs: 5_000,
     });
 
-    const detailA = await (await detail(a.app)).json();
-    expect(detailA.run.attemptId).toBe("a-1");
-    const detailB = await (await detail(b.app)).json();
-    expect(detailB.run.attemptId).toBe("b-1");
-
-    // And each scope lists through its own scope object: one window per scope,
-    // never a shared one.
-    await list(a.app);
-    await list(b.app);
+    const asAdmin = await (await detail(app)).json();
+    expect(asAdmin.run.attemptId).toBe("owner-1");
+    // One Bot, one upstream window: the range's cache serves both viewers.
+    await list(app);
     const lists = shared.calls.filter((call) => call.op === "listTraces");
-    expect(lists).toHaveLength(2);
+    expect(lists).toHaveLength(1);
   });
 
-  test("a scope cannot read the other scope's run even when the row exists", async () => {
-    // Only scope B has a binding; scope A's detail of the same run id is not found.
+  test("another Bot's run is not found even when the row exists (the boundary that remains)", async () => {
+    // The row exists — under a different Bot's data key. This route's scope
+    // never answers it, whatever its actor could manage.
+    const otherBot = resolveObservationScope({
+      actorId: owner.id,
+      botId: "agent-2",
+      ownership: "owner",
+      epoch: EPOCH,
+    });
     const { app } = appFor({
-      bindings: [bindingRow(scopeB, { attemptId: "b-1" })],
+      bindings: [bindingRow(otherBot, { attemptId: "b-1" })],
     });
     const response = await detail(app);
     expect(response.status).toBe(404);
@@ -435,21 +450,28 @@ describe("runs query — acceptance 3: revocation and transfer are immediate", (
     expect((await response.json()).error).toBe("OWNERSHIP_REQUIRED");
   });
 
-  test("an epoch bump orphans the cache under the old scope key", async () => {
+  test("an epoch bump keeps the history reachable and the Bot's window cache serving (FREV-03 b)", async () => {
     const epochs = { current: EPOCH };
     const clock = { t: 1_000 };
     const { app, port } = appFor({
       scopeEpoch: async () => epochs.current,
+      port: fakePort({ rows: fiveRows }),
       now: () => new Date(clock.t),
     });
     await list(app);
     await list(app); // Within TTL, still the same window: no second fetch.
     expect(reads(port.calls)).toBe(2); // retrieveProject + listTraces
 
+    // A profile update / rename bumps the epoch. The data address is the
+    // Bot's stable key, so the next generation answers from the SAME range —
+    // the history is not lost to a rotated key space, and the range's cache
+    // still serves it.
     epochs.current = EPOCH + 1;
-    clock.t = 1_001; // Still within TTL — the cache entry must not be reachable.
-    await list(app);
-    expect(reads(port.calls)).toBe(4);
+    clock.t = 1_001;
+    const after = await list(app);
+    expect(after.status).toBe(200);
+    expect((await after.json()).runs).toHaveLength(fiveRows.length);
+    expect(reads(port.calls)).toBe(2);
   });
 
   test("a cache entry expires after its TTL and refetches", async () => {
@@ -848,6 +870,57 @@ describe("runs query — Issue #18 list fields: time, capability, syncing, filte
     ]);
   });
 
+  test("a statusless trace row keeps the bound run's lifecycle state (R3-03)", async () => {
+    // The trace rows a real deployment answers carry NO status word — the
+    // pre-fix list answered unknown for every builtin run no matter how it
+    // ended. The binding's state is the authority detail already reads; the
+    // list joins it under the same R5-26 rule: upstream unknown is evidence
+    // absence, so the local answer stands.
+    const rows = [
+      traceRow({ id: "t1" }), // completed run
+      traceRow({ id: "t2" }), // failed run
+      traceRow({ id: "t3" }), // still running
+      traceRow({ id: "t4" }), // unbound — unknown stays
+    ];
+    for (const row of rows) delete (row as Record<string, unknown>).status;
+    const { app } = appFor({
+      port: fakePort({ rows }),
+      lifecycleStates: new Map([
+        ["t1", "completed"],
+        ["t2", "failed"],
+        ["t3", "running"],
+      ]),
+    });
+    const body = await (await list(app, "?limit=4")).json();
+    expect(body.runs.map((run: { state: string }) => run.state)).toEqual([
+      "completed",
+      "failed",
+      "running",
+      "unknown",
+    ]);
+  });
+
+  test("an upstream word the vocabulary maps is an observation and stands (R3-03)", async () => {
+    // The join must not overwrite an upstream answer with the local one:
+    // COMPLETED is a word this build understands, so it wins over a binding
+    // row that (say) never settled past running.
+    const rows = [traceRow({ id: "t1", status: "COMPLETED" })];
+    const { app } = appFor({
+      port: fakePort({ rows }),
+      lifecycleStates: new Map([["t1", "running"]]),
+    });
+    const body = await (await list(app)).json();
+    expect(body.runs[0].state).toBe("completed");
+  });
+
+  test("a wiring without the lifecycle join keeps the upstream word, never a guess (R3-03)", async () => {
+    const rows = [traceRow({ id: "t1" })];
+    delete (rows[0] as Record<string, unknown>).status;
+    const { app } = appFor({ port: fakePort({ rows }) });
+    const body = await (await list(app)).json();
+    expect(body.runs[0].state).toBe("unknown");
+  });
+
   test("a wiring without the join seam answers capability unavailable, never a guess", async () => {
     // The parallel-stream shape: only latestAttempt is injected. The optional
     // seams must degrade to the honest verdict rather than throwing.
@@ -1132,5 +1205,76 @@ describe("the upstream status vocabulary is pinned, unknown the only fallback (R
       span_count: 6,
     };
     expect(projectRow(evidenceShape).state).toBe("unknown");
+  });
+});
+
+describe("steps — the tool_call_id bound is the write face's own line (OCR final #59)", () => {
+  /** One span row shaped as the read-back observed it, with a caller-set call id. */
+  function toolSpanRow(toolCallId: string) {
+    return {
+      id: "span-1",
+      trace_id: "trace-1",
+      parent_span_id: null,
+      name: "tool:host_read",
+      start_time: "2026-10-16T09:30:08.000Z",
+      end_time: "2026-10-16T09:30:09.000Z",
+      input: {
+        step_kind: "tool",
+        tool_call_id: toolCallId,
+        execution_state: "unobserved",
+        span_state: "unknown",
+        origin: "builtin",
+      },
+      output: { output: "the projected result text" },
+    };
+  }
+
+  /** A read-only port whose one span page holds exactly the given rows. */
+  function stepsPort(rows: unknown[]): OpikPort {
+    return {
+      healthCheck: async () => ({ outcome: "ok", value: { healthy: true } }),
+      retrieveProject: async () => ({ outcome: "ok", value: { id: "proj-1" } }),
+      listTraces: async () => ({
+        outcome: "ok",
+        value: { page: 1, size: 0, total: 0, content: [] },
+      }),
+      listSpans: async () => ({
+        outcome: "ok",
+        value: {
+          page: 1,
+          size: rows.length,
+          total: rows.length,
+          content: rows as never,
+        },
+      }),
+      createTrace: async () => {
+        throw new Error("the read surface must never write");
+      },
+      writeSpans: async () => {
+        throw new Error("the read surface must never write");
+      },
+    };
+  }
+
+  test("an id at the shared bound reads back provided; one past it stays never provided", async () => {
+    // Exactly at the shared constant — the length the write face clamps to now:
+    // the association survives the round trip instead of vanishing past a
+    // read-side-only ceiling.
+    const atBound = "c".repeat(MAX_TOOL_CALL_ID_LENGTH);
+    const bounded = await createRunsQueryService({
+      bindings: { latestAttempt: async () => bindingRow(scopeA) },
+      config: () => enabledConfig,
+      port: stepsPort([toolSpanRow(atBound)]),
+    }).steps(scopeA, "run-1");
+    expect(bounded.steps[0]?.toolCallId).toBe(atBound);
+
+    // One past the shared line — a row this service's writers can no longer
+    // produce (OTLP-ingested or hand-edited): the fail-closed half is unchanged.
+    const past = await createRunsQueryService({
+      bindings: { latestAttempt: async () => bindingRow(scopeA) },
+      config: () => enabledConfig,
+      port: stepsPort([toolSpanRow("c".repeat(MAX_TOOL_CALL_ID_LENGTH + 1))]),
+    }).steps(scopeA, "run-1");
+    expect(past.steps[0]?.toolCallId).toBeUndefined();
   });
 });

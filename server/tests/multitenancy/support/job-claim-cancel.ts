@@ -18,23 +18,23 @@
 import { sql } from "drizzle-orm";
 import { createDatabase, type Database } from "../../../src/db/client";
 import {
-  createBotOwnershipService,
   type BotOwnershipService,
+  createBotOwnershipService,
 } from "../../../src/enterprise/tenancy/bots-ownership";
 import {
-  verifyOperatorDatabase,
   type OperatorDatabase,
+  verifyOperatorDatabase,
 } from "../../../src/enterprise/tenancy/connections";
 import {
   createJobOwnershipService,
   type JobOwnershipService,
   type JobRef,
 } from "../../../src/enterprise/tenancy/job-ownership";
+import { enterpriseRuntimeDatabaseUrlFrom } from "../../support/enterprise-database";
 import {
   createJobOwnershipFixture,
   type JobOwnershipFixture,
 } from "./job-ownership";
-import { enterpriseRuntimeDatabaseUrlFrom } from "../../support/enterprise-database";
 
 export interface JobClaimCancelFixture {
   readonly jobs: JobOwnershipFixture;
@@ -90,10 +90,15 @@ export async function createJobClaimCancelFixture(): Promise<JobClaimCancelFixtu
   const raceCloseables: Array<{ close(): void | Promise<void> }> = [];
 
   /** execute() result rows: drizzle returns either a row array or { rows }. */
-  const rowsOf = (result: unknown): readonly Record<string, unknown>[] =>
-    Array.isArray(result)
-      ? (result as Record<string, unknown>[])
-      : ((result as { rows?: Record<string, unknown>[] }).rows ?? []);
+  const rowsOf = (result: unknown): readonly Record<string, unknown>[] => {
+    if (Array.isArray(result)) return result as Record<string, unknown>[];
+    const rows = (result as { rows?: Record<string, unknown>[] }).rows;
+    // An unrecognised driver shape must not masquerade as "no rows".
+    if (rows === undefined) {
+      throw new Error("UNRECOGNISED_DRIVER_RESULT_SHAPE");
+    }
+    return rows;
+  };
 
   const fixture: JobClaimCancelFixture = {
     jobs,
@@ -117,9 +122,19 @@ export async function createJobClaimCancelFixture(): Promise<JobClaimCancelFixtu
       );
     },
     async backdateLease(ref, ms) {
-      await setup.execute(
-        sql`update job_leases set lease_until = now() - make_interval(secs => ${ms / 1000}) where kind = ${ref.kind} and object_id = ${ref.objectId}`,
-      );
+      const updated = (await setup.execute(
+        sql`update job_leases set lease_until = now() - make_interval(secs => ${ms / 1000}) where kind = ${ref.kind} and object_id = ${ref.objectId} returning 1`,
+      )) as unknown;
+      // 0 affected rows means the ref did not match (job not pinned, kind or
+      // objectId misspelled) and the reclaim-race case would race nothing.
+      const updatedRows = Array.isArray(updated)
+        ? updated
+        : ((updated as { rows?: unknown[] })?.rows ?? []);
+      if (updatedRows.length !== 1) {
+        throw new Error(
+          `LEASE_BACKDATE_MISSED:${ref.kind}:${ref.objectId}:${updatedRows.length}`,
+        );
+      }
     },
     async readLeaseRaw(ref) {
       const row = rowsOf(

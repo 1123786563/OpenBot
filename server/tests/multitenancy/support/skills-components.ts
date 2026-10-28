@@ -405,7 +405,15 @@ export async function createSkillFixture(): Promise<SkillFixture> {
     };
     return fixture;
   } catch (error) {
-    await dispose(true);
+    // A disposal failure must not replace the setup error that caused it.
+    try {
+      await dispose(true);
+    } catch (disposeError) {
+      throw new AggregateError(
+        [error, disposeError],
+        "Tool fixture setup and disposal both failed.",
+      );
+    }
     throw error;
   }
 }

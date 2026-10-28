@@ -50,6 +50,9 @@ type MessageAttachmentInput = {
 function validateAttachmentPath(value: unknown): string | null {
   if (typeof value !== "string" || value.length === 0) return null;
   if (value.startsWith("/")) return null;
+  // A backslash is a separator on some consumers the path reaches; refusing it beats
+  // a segment like "..\..\secret" sailing through the ".." check below.
+  if (value.includes("\\")) return null;
   const parts = value.split("/").filter((part) => part.length > 0);
   if (parts.length < 2) return null;
   if (parts[0] !== "attachments") return null;
@@ -245,21 +248,19 @@ export function createMessageRoutes(
             turnIndex,
             attachments: promptAttachments,
           });
-          try {
-            await deps.store.createMessage({
-              sessionId,
-              type: "user",
-              turnIndex,
-              messageMetadata,
-            });
-          } catch (error) {
-            // Deferred: finishTurn takes the same active-turn lock, which this
-            // body still holds — finishing here would deadlock until the lock
-            // wait expired and swallow the FAILED transition. The catch below
-            // finishes the turn once withActiveTurnLock has released.
-            pendingFailure.turnId = turn.turnId;
-            throw error;
-          }
+          // The turn now exists: any failure after this point must end it FAILED, and
+          // it can only happen once the admission lock has unwound (finishing here
+          // would deadlock on the same active-turn lock this body holds) — so the
+          // catch below does it. Without this registration, a throw in a later write
+          // (the model-override update, or anything added after it) would leave the
+          // turn ACTIVE for ever, 409-ing every send until the Redis TTL lapses.
+          pendingFailure.turnId = turn.turnId;
+          await deps.store.createMessage({
+            sessionId,
+            type: "user",
+            turnIndex,
+            messageMetadata,
+          });
           if (
             agentProvider !== session.agentProvider ||
             agentModel !== session.agentModel

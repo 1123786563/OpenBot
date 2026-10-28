@@ -48,13 +48,13 @@ const prefix = `t22-${randomUUID()}`;
 
 const scopeA = resolveObservationScope({
   actorId: "user-a",
-  botId: "agent-1",
+  botId: `opik-experiments-integration-bot-a-${randomUUID()}`,
   ownership: "owner",
   epoch: 1,
 });
 const scopeB = resolveObservationScope({
   actorId: "user-b",
-  botId: "agent-1",
+  botId: `opik-experiments-integration-bot-b-${randomUUID()}`,
   ownership: "admin",
   epoch: 1,
 });
@@ -349,7 +349,7 @@ test("a submitted experiment freezes the whole acceptance field set (Issue #28 A
   expect(frozen).toMatchObject({
     scopeKey: scopeA.key,
     actorId: "user-a",
-    botId: "agent-1",
+    botId: scopeA.botId,
     state: "frozen",
     datasetVersionId: version.id,
     datasetContentHash: version.contentHash,

@@ -83,13 +83,17 @@ def deck_style(
 
 
 def save_for_slide(fig: Figure, path: str, width_in: float, height_in: float) -> None:
-    """Save ``fig`` as a PNG sized for placement at width_in x height_in inches.
+    """Save ``fig`` as an image sized for placement at width_in x height_in inches.
 
-    Renders at 2x resolution (``SLIDE_DPI``); place the PNG at exactly
-    ``width_in`` x ``height_in`` on the slide (e.g. pptxgenjs ``addImage``
-    ``w``/``h``) so text renders at the sizes chosen in ``deck_style``.
+    The image format follows the suffix of ``path`` (default png). Renders at
+    2x resolution (``SLIDE_DPI``); place the image at exactly ``width_in`` x
+    ``height_in`` on the slide (e.g. pptxgenjs ``addImage`` ``w``/``h``) so text
+    renders at the sizes chosen in ``deck_style``. Closes ``fig`` either way.
     """
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     fig.set_size_inches(width_in, height_in)
-    fig.savefig(path, dpi=SLIDE_DPI)
-    plt.close(fig)
+    try:
+        fig.savefig(path, dpi=SLIDE_DPI)
+    finally:
+        # One figure per slide in batch runs: an unreachable close leaks them.
+        plt.close(fig)

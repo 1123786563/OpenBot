@@ -42,13 +42,13 @@ const prefix = `t17-${randomUUID()}`;
 
 const scopeA = resolveObservationScope({
   actorId: "user-a",
-  botId: "agent-1",
+  botId: `opik-id-links-integration-bot-a-${randomUUID()}`,
   ownership: "owner",
   epoch: 1,
 });
 const scopeB = resolveObservationScope({
   actorId: "user-b",
-  botId: "agent-1",
+  botId: `opik-id-links-integration-bot-b-${randomUUID()}`,
   ownership: "admin",
   epoch: 1,
 });
@@ -218,7 +218,7 @@ test("a forged scope cannot reach the database (acceptance 3)", async () => {
     kind: "workbench",
     key: scopeA.key,
     actorId: "user-a",
-    botId: "agent-1",
+    botId: scopeA.botId,
     epoch: 1,
   };
   await expect(

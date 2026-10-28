@@ -8,6 +8,7 @@
  */
 
 import { Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import type { ExecutionScope } from "../../../shared/execution-scope";
 import type { ApprovalStore } from "../approvals/types";
 import { createAuditStore, recordAuditEvent } from "../audit";
@@ -188,6 +189,23 @@ export function stopCraftIdleReaper(): void {
   runningIdleReaper = null;
 }
 
+/**
+ * The scheduled-task sweeper, held at module scope for the same two reasons the idle reaper
+ * is: a second assembly must not run a second dispatcher over the same due tasks (two sweeps
+ * in one window both read a task whose nextRunAt has not advanced yet and both enqueue runs
+ * for it — real duplicate headless turns), and shutdown needs the off switch.
+ */
+let runningTaskSweeper: {
+  stop: () => void;
+  sweepOnce: () => Promise<unknown>;
+} | null = null;
+
+/** Stop the assembled scheduled-task sweeper (boot-file shutdown hook). Idempotent. */
+export function stopCraftScheduledTaskSweeper(): void {
+  runningTaskSweeper?.stop();
+  runningTaskSweeper = null;
+}
+
 export function createCraftRoutes(input: {
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>;
   deps: CraftRoutesDeps;
@@ -283,6 +301,15 @@ export function createCraftRoutes(input: {
 
   const app = new Hono<{ Variables: AppVariables }>();
 
+  // The enabled gate runs before the relays too: a craft-disabled deployment must not
+  // serve the sandbox-facing relay any more than the cookie surface below it.
+  app.use("*", async (context, next) => {
+    if (!config.enabled) {
+      return context.json({ error: "Craft is not available." }, 503);
+    }
+    await next();
+  });
+
   // The MCP relay mounts BEFORE requireUser: its caller is the sandbox's
   // opencode MCP client, which authenticates with the session-tag header the
   // relay itself validates (an unattributable tag is a 403, never a dial).
@@ -294,7 +321,18 @@ export function createCraftRoutes(input: {
       store,
       sessionMcpServersFor: async (session) => {
         const content = resolver
-          ? await resolver(session).catch(() => null)
+          ? await resolver(session).catch((error) => {
+              // A resolver failure is not the same as "nothing pushed"; say so
+              // instead of answering a silent empty set.
+              getLogger("server").warn(
+                {
+                  type: "craft-managed-content-resolve-failed",
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                "craft-managed-content-resolve-failed",
+              );
+              return null;
+            })
           : null;
         return content?.mcpServers ?? [];
       },
@@ -463,7 +501,8 @@ export function createCraftRoutes(input: {
       manager,
       botIdFor: deps.botIdFor,
     });
-    startCraftScheduledTaskSweeper({ tasks, enqueueRun });
+    runningTaskSweeper?.stop();
+    runningTaskSweeper = startCraftScheduledTaskSweeper({ tasks, enqueueRun });
     app.route(
       "/",
       createScheduledTaskRoutes(requireUser, {

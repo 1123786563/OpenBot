@@ -84,13 +84,15 @@ export function createRedisSessionFlowLocks(
       .eval(RELEASE_SCRIPT, 1, lockKey(userId), token)
       .catch(() => undefined);
   };
+  /** Distinguishes "the lock was not acquired" from a body that legitimately answers null. */
+  const NOT_ACQUIRED = Symbol("session-flow-lock-not-acquired");
   const run = async <T>(
     userId: string,
     waitSeconds: number,
     body: () => Promise<T>,
-  ): Promise<T | null> => {
+  ): Promise<T | typeof NOT_ACQUIRED> => {
     const token = await acquire(userId, waitSeconds);
-    if (token === null) return null;
+    if (token === null) return NOT_ACQUIRED;
     try {
       return await body();
     } finally {
@@ -102,12 +104,13 @@ export function createRedisSessionFlowLocks(
     mode: "redis" as const,
     async withSessionCreationLock(userId, body) {
       const result = await run(userId, SESSION_FLOW_LOCK_WAIT_SECONDS, body);
-      if (result === null)
+      if (result === NOT_ACQUIRED)
         throw new SessionCreationLockAcquisitionError(userId);
       return result;
     },
-    trySessionCreationLock(userId, body) {
-      return run(userId, 0, body);
+    async trySessionCreationLock(userId, body) {
+      const result = await run(userId, 0, body);
+      return result === NOT_ACQUIRED ? null : result;
     },
   };
 }
@@ -137,13 +140,15 @@ export function createInProcessSessionFlowLocks(): SessionFlowLocks {
     const existing = held.get(userId);
     if (existing && existing.token === token) held.delete(userId);
   };
+  /** Distinguishes "the lock was not acquired" from a body that legitimately answers null. */
+  const NOT_ACQUIRED = Symbol("session-flow-lock-not-acquired");
   const run = async <T>(
     userId: string,
     waitSeconds: number,
     body: () => Promise<T>,
-  ): Promise<T | null> => {
+  ): Promise<T | typeof NOT_ACQUIRED> => {
     const token = await acquire(userId, waitSeconds);
-    if (token === null) return null;
+    if (token === null) return NOT_ACQUIRED;
     try {
       return await body();
     } finally {
@@ -155,12 +160,13 @@ export function createInProcessSessionFlowLocks(): SessionFlowLocks {
     mode: "memory" as const,
     async withSessionCreationLock(userId, body) {
       const result = await run(userId, SESSION_FLOW_LOCK_WAIT_SECONDS, body);
-      if (result === null)
+      if (result === NOT_ACQUIRED)
         throw new SessionCreationLockAcquisitionError(userId);
       return result;
     },
-    trySessionCreationLock(userId, body) {
-      return run(userId, 0, body);
+    async trySessionCreationLock(userId, body) {
+      const result = await run(userId, 0, body);
+      return result === NOT_ACQUIRED ? null : result;
     },
   };
 }

@@ -18,6 +18,7 @@ import {
   type AuditStore,
   recordAuditEvent,
 } from "../audit";
+import { getLogger } from "../../../shared/logger";
 import type { CodeRunGateway, StreamingRun } from "../codesandbox/gateway";
 import type { SandboxArtifact, TranslatedEvent } from "../codesandbox/types";
 import type { TurnLease, TurnLock } from "./locks";
@@ -25,6 +26,12 @@ import type { WorkshopStore } from "./store";
 
 /** Postgres's unique-violation: a lost race on a guarded insert. */
 const UNIQUE_VIOLATION = "23505";
+
+const log = getLogger("server");
+
+/** The gallery diff reads at most this many new files, this many bytes each. */
+const GALLERY_DIFF_MAX_FILES = 100;
+const GALLERY_DIFF_MAX_BYTES = 64 * 1024;
 
 /** Streaming runs in flight, so `cancel` can reach the stream itself. */
 const activeStreams = new Map<string, StreamingRun>();
@@ -50,7 +57,10 @@ export type TurnOrchestrator = {
   cancel(turnId: string): Promise<boolean>;
   /** Settle running turns whose heartbeat went quiet; each exactly once. */
   recoverStale(nowMs: number, staleAfterMs: number): Promise<string[]>;
-  /** The runner is alive; both clocks (lease and DB row) get the beat. */
+  /**
+   * The runner is alive; the DB row gets the beat. (The lease is runTurn's own
+   * local renewal loop; this method never touches it.)
+   */
   heartbeat(turnId: string): Promise<void>;
 };
 
@@ -200,6 +210,12 @@ export function createTurnOrchestrator(
         return;
       }
       activeStreams.set(input.turnId, streaming);
+      // Registration window: a cancel that landed between the row's settlement and this set
+      // returned true without anything to stop. The row is the truth — if it says cancelled,
+      // the stream that just registered is the one that has to stop.
+      if ((await store.getTurn(input.turnId))?.status === "cancelled") {
+        await streaming.cancel().catch(() => undefined);
+      }
 
       try {
         for await (const event of streaming.events) {
@@ -225,12 +241,19 @@ export function createTurnOrchestrator(
       if (lease.lost) {
         // Unrenewed past its TTL: this replica is no longer the sanctioned runner. Settle its
         // own view; the stale sweep would catch it otherwise, but self-settling is kinder.
-        await store.markFailed(input.turnId, "the turn lock was lost mid-run");
-        await audit(
-          "workshop.turn_failed",
-          { turnId: input.turnId, reason: "lock-lost" },
-          input,
+        // Guarded like markSucceeded below: a row that was already cancelled/reaped must not
+        // gain a turn_failed row claiming this replica settled it.
+        const failed = await store.markFailed(
+          input.turnId,
+          "the turn lock was lost mid-run",
         );
+        if (failed) {
+          await audit(
+            "workshop.turn_failed",
+            { turnId: input.turnId, reason: "lock-lost" },
+            input,
+          );
+        }
         return;
       }
 
@@ -250,9 +273,9 @@ export function createTurnOrchestrator(
             const after = await diffClient.listFiles();
             const created = after.filter((path) => !before.includes(path));
             const artifacts: SandboxArtifact[] = [];
-            for (const path of created.slice(0, 100)) {
+            for (const path of created.slice(0, GALLERY_DIFF_MAX_FILES)) {
               const file = await diffClient
-                .readFile(path, 64 * 1024)
+                .readFile(path, GALLERY_DIFF_MAX_BYTES)
                 .catch(() => undefined);
               if (file) artifacts.push(file);
             }
@@ -307,7 +330,11 @@ export function createTurnOrchestrator(
       });
     return interval(() => {
       void (async () => {
-        await lease.renew();
+        // A renewal that REJECTS is a lost lease, not a crash: read as false so `lost` settles
+        // and runTurn's lease.lost branch ends the run, instead of an unhandled rejection every
+        // ten seconds while the lock service is down.
+        const kept = await lease.renew().catch(() => false);
+        if (kept === false) return;
         await store.heartbeat(turnId).catch(() => undefined);
       })();
     }, options.heartbeatIntervalMs ?? 10_000);
@@ -333,7 +360,10 @@ export function createTurnOrchestrator(
         { turnId: row.id, sessionId: input.sessionId, bot: input.botId },
         input,
       );
-      // Fire-and-forget: enqueue resolves on existence; the stream (B9) shows the rest.
+      // Fire-and-forget: enqueue resolves on existence; the stream (B9) shows the rest. The
+      // tail catch keeps runTurn's OWN settling paths (whose markFailed/audit calls can throw
+      // exactly when the database is unwell) from becoming an unhandled rejection — a row that
+      // cannot be settled here waits for the stale sweep, which is the designed backstop.
       void runTurn({
         turnId: row.id,
         sessionId: input.sessionId,
@@ -342,6 +372,15 @@ export function createTurnOrchestrator(
         botId: input.botId,
         ownerUserId: input.ownerUserId,
         initiator: input.initiator,
+      }).catch((error) => {
+        log.error(
+          {
+            type: "workshop-turn-runner-crashed",
+            turnId: row.id,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "workshop-turn-runner-crashed",
+        );
       });
       return { turnId: row.id };
     },

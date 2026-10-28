@@ -147,7 +147,12 @@ export async function reportCodeRunUsage(
   log: (message: string) => void = (message) => console.warn(message),
 ): Promise<boolean> {
   if (!outbox) return false; // Unconfigured: silent, and the code_runs row already stands.
-  if (input.inputTokens <= 0 && input.outputTokens <= 0) return false; // Nothing meterable.
+  // The same rule the charging side applies, applied before anything is written: a negative or
+  // non-integer count is gateway dirt, and writing it would meter a negative charge. Thrown —
+  // the wiring around every reporter call already names it in the log.
+  const inputTokens = wholeTokens(input.inputTokens);
+  const outputTokens = wholeTokens(input.outputTokens);
+  if (inputTokens === 0 && outputTokens === 0) return false; // Nothing meterable.
   /*
    * A code-run row without reservation facts is a permanently blocked credits target: the
    * delivery worker's credit effect needs the hold and the exact cost to settle against, and
@@ -167,8 +172,8 @@ export async function reportCodeRunUsage(
     source: "code_run",
     externalCustomerId: input.externalCustomerId,
     transactionId: `code-run:${input.runId}`,
-    inputTokens: input.inputTokens,
-    outputTokens: input.outputTokens,
+    inputTokens,
+    outputTokens,
     model: input.modelId,
     client: currentUsageOrigin(),
     occurredAt: input.occurredAt,

@@ -1,5 +1,6 @@
 import type { ConversionRate } from "../gateway/conversion-rate";
 import {
+  canonicalPriceAmount,
   PRICE_DIMENSIONS,
   type PriceDimension,
   type PriceDimensionUnknownReason,
@@ -199,11 +200,20 @@ export function assessSpeechGeneration(input: {
     ]),
   ) as ReservationBoundQuantities;
 
+  const surchargeState = input.dims.surcharge_per_request;
+  const inputCharacter = canonicalPriceAmount(tier.tier.perInputCharacterUsd);
+  const outputSecond = canonicalPriceAmount(tier.tier.perOutputSecondUsd);
+  const surchargeAmount =
+    surchargeState.status === "known"
+      ? canonicalPriceAmount(surchargeState.amount)
+      : { ok: false as const };
   const free =
-    tier.tier.perInputCharacterUsd === "0" &&
-    tier.tier.perOutputSecondUsd === "0" &&
-    input.dims.surcharge_per_request.status === "known" &&
-    input.dims.surcharge_per_request.amount === "0";
+    inputCharacter.ok &&
+    inputCharacter.amount === "0" &&
+    outputSecond.ok &&
+    outputSecond.amount === "0" &&
+    surchargeAmount.ok &&
+    surchargeAmount.amount === "0";
 
   return {
     enabled: true,

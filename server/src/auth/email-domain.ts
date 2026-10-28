@@ -61,9 +61,15 @@ function emailDomain(email: string): string | undefined {
   if (at <= 0) return undefined;
 
   const local = email.slice(0, at);
-  if (local.includes("@") && !(local.startsWith('"') && local.endsWith('"'))) {
+  // A legal local part is either unquoted (no `@`, no bare quotes) or a well-formed quoted
+  // string — `"..."`, `\"` escapes only. An unpaired quote or one closed by an escaped quote
+  // (`"@example.com`, `"a\"@example.com`) is not an address: refuse it rather than admit it
+  // by the domain after the last `@`.
+  if (
+    !/^"(?:[^"\\]|\\.)*"$/.test(local) &&
+    (local.includes("@") || local.includes('"'))
+  )
     return undefined;
-  }
 
   return normalizeDomain(email.slice(at + 1));
 }

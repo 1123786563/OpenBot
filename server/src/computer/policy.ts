@@ -219,6 +219,18 @@ export type PolicyDecision = {
  * Both are case-insensitive. A rule saying "never click submit" also catches a button labelled
  * "SUBMIT".
  */
+/** Rule patterns are admin-configured and stable; compile each once per process. */
+const PATTERN_CACHE = new Map<string, RegExp>();
+const PATTERN_CACHE_LIMIT = 1000;
+function compiledPattern(pattern: string): RegExp {
+  const cached = PATTERN_CACHE.get(pattern);
+  if (cached) return cached;
+  const compiled = new RegExp(pattern, "i");
+  if (PATTERN_CACHE.size < PATTERN_CACHE_LIMIT)
+    PATTERN_CACHE.set(pattern, compiled);
+  return compiled;
+}
+
 const POLICY_FUNCTIONS: Record<string, (...args: never[]) => unknown> = {
   contains: ((haystack: unknown, needle: unknown) =>
     String(haystack).toLowerCase().includes(String(needle).toLowerCase())) as (
@@ -226,7 +238,7 @@ const POLICY_FUNCTIONS: Record<string, (...args: never[]) => unknown> = {
   ) => unknown,
   matches: ((value: unknown, pattern: unknown) => {
     try {
-      return new RegExp(String(pattern), "i").test(String(value));
+      return compiledPattern(String(pattern)).test(String(value));
     } catch {
       // An unparseable regex is a broken rule, not a match. The caller treats a thrown expression as
       // fail-closed, so returning false here would quietly weaken a deny rule; throw instead.
@@ -319,7 +331,25 @@ export function setPolicyOverlay(next: PolicyOverlay | null): void {
 function enterpriseDecision(context: PolicyContext): PolicyDecision | null {
   if (!overlay) return null;
   try {
-    return overlay(context);
+    const decision = overlay(context);
+    // The overlay's contract is "final refusal or null" (see above). A producer that
+    // ever answers an allow is broken, and the boundary fails closed, not open.
+    if (decision !== null && decision.allowed !== false) {
+      log.error(
+        { type: "enterprise-policy-overlay-not-refusal" },
+        "enterprise-policy-overlay-not-refusal",
+      );
+      return {
+        allowed: false,
+        mode: "enforce",
+        matched: "enterprise:unavailable",
+        source: "deny",
+        forward: false,
+        reason:
+          "This deployment's enterprise controls could not be checked, so the action was refused.",
+      };
+    }
+    return decision;
   } catch (error) {
     log.error(
       {
@@ -417,9 +447,14 @@ function describeRefusal(context: PolicyContext, expression: string): string {
   // refused read ":  on  is blocked" — two empty strings where the element and page belonged. A real
   // tool call always names its server and its tool, so those are what the branch keys on.
   if (context.mcp?.server || context.mcp?.tool) {
+    // Either half may be present on its own; never print the missing one as
+    // "undefined".
+    const what = [context.mcp.tool, context.mcp.server]
+      .filter((part): part is string => typeof part === "string" && part !== "")
+      .join(" on ");
     return (
-      `This deployment's policy does not allow that: ${context.mcp.tool} on ` +
-      `${context.mcp.server} is blocked by the rule \`${expression}\`.`
+      `This deployment's policy does not allow that: ${what} ` +
+      `is blocked by the rule \`${expression}\`.`
     );
   }
   // A file refusal must not be phrased as happening "on <host>": the workspace has nothing to do with
@@ -433,8 +468,9 @@ function describeRefusal(context: PolicyContext, expression: string): string {
   const what = context.element?.name
     ? `“${context.element.name}”`
     : `a ${context.tool.name.replace("computer_", "")} action`;
+  const where = context.page.host ? ` on ${context.page.host}` : "";
   return (
-    `This deployment's policy does not allow that: ${what} on ${context.page.host} ` +
+    `This deployment's policy does not allow that: ${what}${where} ` +
     `is blocked by the rule \`${expression}\`.`
   );
 }

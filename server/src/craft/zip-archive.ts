@@ -142,6 +142,19 @@ export function zipEntries(
     const crc = crc32(entry.bytes);
     const { time, date } = dosDateTime(new Date());
 
+    // Not ZIP64: setUint16/setUint32 silently truncate their low bits, so a field that
+    // no longer fits ships as a corrupt archive. Fail honestly, like the entry-count cap.
+    if (name.length > 0xffff) {
+      throw new RangeError(
+        `zip writer is not ZIP64: the name of ${entry.path} exceeds 65,535 bytes`,
+      );
+    }
+    if (offset + 30 + name.length + data.length > 0xffffffff) {
+      throw new RangeError(
+        "zip writer is not ZIP64: archives past 4 GiB would truncate silently",
+      );
+    }
+
     const local = new Uint8Array(30 + name.length);
     const localView = new DataView(local.buffer);
     localView.setUint32(0, 0x04034b50, true); // local file header signature
@@ -179,6 +192,11 @@ export function zipEntries(
   }
 
   const centralSize = central.reduce((total, chunk) => total + chunk.length, 0);
+  if (centralSize > 0xffffffff) {
+    throw new RangeError(
+      "zip writer is not ZIP64: the central directory exceeds the 4 GiB field limit",
+    );
+  }
   const end = new Uint8Array(22);
   const endView = new DataView(end.buffer);
   endView.setUint32(0, 0x06054b50, true); // end of central directory signature

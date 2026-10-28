@@ -173,6 +173,11 @@ export function createCaseReviewRoutes(
       if (typeof raw.runId !== "string" || typeof raw.decision !== "string") {
         throw new CaseReviewError(CASE_REVIEW_INPUT_INVALID, 400);
       }
+      // The seam states the vocabulary itself instead of trusting the service's
+      // fallback to keep an arbitrary string out of the typed field.
+      if (raw.decision !== "approved" && raw.decision !== "rejected") {
+        throw new CaseReviewError(CASE_REVIEW_INPUT_INVALID, 400);
+      }
       if (raw.note !== undefined && typeof raw.note !== "string") {
         throw new CaseReviewError(CASE_REVIEW_INPUT_INVALID, 400);
       }

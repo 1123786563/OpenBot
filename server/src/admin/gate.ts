@@ -236,10 +236,39 @@ async function governRun(
       .where(eq(agents.id, agentId))
       .limit(1);
     builtIn = row?.type === "built_in";
-  } catch {
-    builtIn = false;
+  } catch (error) {
+    // Fail closed, like the capability check above: a type that cannot be read
+    // must not downgrade a built-in Bot's pre-run allowlist refusal to a
+    // post-stream observation.
+    log.error(
+      { type: "agent-type-lookup-failed", agentId, error: String(error) },
+      "agent-type-lookup-failed",
+    );
+    return context.json(
+      {
+        error:
+          "This deployment's enterprise controls could not be checked, so nothing was done.",
+      },
+      503,
+    );
   }
-  const allowlist = controls.snapshot()?.settings.modelAllowlist;
+  // Fail closed, like the capability check: with no snapshot the settings were never read (the
+  // re-read keeps failing), and a silent allow would let a built-in Bot run on any model.
+  const snapshot = controls.snapshot();
+  if (!snapshot) {
+    log.error(
+      { type: "allowlist-snapshot-missing", agentId },
+      "allowlist-snapshot-missing",
+    );
+    return context.json(
+      {
+        error:
+          "This deployment's enterprise controls could not be checked, so nothing was done.",
+      },
+      503,
+    );
+  }
+  const allowlist = snapshot.settings.modelAllowlist;
   const isAllowed = (model: string) =>
     !allowlist?.enabled || allowlist.models.includes(model);
   const configured = builtIn ? controls.deps.builtInModel : undefined;

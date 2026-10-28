@@ -176,10 +176,14 @@ export function createAlipayProvider(config: AlipayConfig): PaymentProvider {
     } catch (error) {
       // The SDK raises business failures as errors whose fields carry the verdict; a network
       // raise carries none. Both normalise: a typed business answer is returned for the caller
-      // to classify, anything else is the retryable transport sentinel.
+      // to classify, anything else is the retryable transport sentinel. Alipay's own verdicts
+      // are five-digit strings ("10000", "40004"); a transport error's symbolic code
+      // ("ENOTFOUND", "ECONNRESET") must not be misread as one.
       if (error && typeof error === "object") {
         const carried = error as Record<string, unknown>;
-        if (typeof carried.code === "string") return carried;
+        if (typeof carried.code === "string" && /^\d{5}$/.test(carried.code)) {
+          return carried;
+        }
       }
       throw new BillingError("unreachable");
     }

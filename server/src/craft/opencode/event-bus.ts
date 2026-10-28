@@ -46,6 +46,17 @@ export class SubscriberQueue {
 
   constructor(readonly maxSize: number) {}
 
+  /**
+   * The closed marker's push: a full queue drops the NEW item, and a slow consumer has no
+   * waiter while full, so a plain push would drop the marker itself and the consumer would
+   * drain its backlog without ever learning the bus closed. Evicting the head makes room.
+   */
+  pushForced(item: BusItem): void {
+    if (this.items.length >= this.maxSize) this.items.shift();
+    this.items.push(item);
+    this.drainWaiters();
+  }
+
   push(item: BusItem): boolean {
     if (this.items.length >= this.maxSize) {
       this.droppedCount += 1;
@@ -238,7 +249,7 @@ export class PodEventBus {
     this.subscribers.clear();
     for (const sub of all) {
       // Drop head to make room if full — slow consumers must not block close.
-      sub.queue.push(POD_EVENT_BUS_CLOSED);
+      sub.queue.pushForced(POD_EVENT_BUS_CLOSED);
     }
   }
 
@@ -255,7 +266,6 @@ export class PodEventBus {
       let hadSuccessfulRead = false;
       try {
         await this.readOneStream();
-        hadSuccessfulRead = this.streamReady;
       } catch (error) {
         if (
           error instanceof EventStreamForbiddenError ||
@@ -272,6 +282,11 @@ export class PodEventBus {
         }
         // Stream error — reconnect below (with backoff).
       } finally {
+        // Collected BEFORE the clear: a stream that connected and delivered events
+        // and then died mid-flight counts as a success, or a healthy
+        // connect-run-break cycle would keep climbing the failure ladder until the
+        // bus closed itself under a living sandbox.
+        hadSuccessfulRead = this.streamReady;
         this.streamReady = false;
       }
 
@@ -317,15 +332,29 @@ export class PodEventBus {
       refuseExecutionScope,
     );
 
-    const response = await this.doFetch(url.toString(), {
-      headers,
-      // The read timeout bounds how long a silent connection is tolerated before
-      // this fetch rejects and the loop reconnects.
-      signal: AbortSignal.timeout(
-        this.config.opencodeServeEventReadTimeoutSeconds * 1000,
-      ),
-    });
+    // An IDLE clock, not a wall-clock one: the subscription is a long-lived SSE read, and an
+    // absolute timeout would keep cutting healthy streams that simply talk longer than the
+    // interval. The timer re-arms on every chunk, so it only fires when the bot went silent.
+    const idleMs = this.config.opencodeServeEventReadTimeoutSeconds * 1000;
+    const idle = new AbortController();
+    let idleTimer = setTimeout(() => idle.abort(), idleMs);
+    const rearmIdle = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => idle.abort(), idleMs);
+    };
+
+    let response: Response;
+    try {
+      response = await this.doFetch(url.toString(), {
+        headers,
+        signal: idle.signal,
+      });
+    } catch (error) {
+      clearTimeout(idleTimer);
+      throw error;
+    }
     if (!response.ok) {
+      clearTimeout(idleTimer);
       // Release the body before throwing (#618 OCR r2): an unconsumed body pins its
       // pool socket in undici until GC — and with the gateway's per-turn bus rebuilds
       // (closed bus → new dial → 403 again) a scope-misconfigured deployment with live
@@ -350,6 +379,7 @@ export class PodEventBus {
         if (this.stopped) return;
         const chunk = await reader.read();
         if (chunk.done) return;
+        rearmIdle();
         buffer += decoder.decode(chunk.value, { stream: true });
         let separatorIndex = buffer.indexOf("\n\n");
         while (separatorIndex >= 0) {
@@ -361,6 +391,9 @@ export class PodEventBus {
         }
       }
     } finally {
+      // An idle abort surfaces from `reader.read()` as a rejection the reconnect
+      // ladder handles like any read failure.
+      clearTimeout(idleTimer);
       await reader.cancel().catch(() => undefined);
     }
   }

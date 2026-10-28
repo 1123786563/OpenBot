@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { DEV_CSP_ALLOW_LISTED, STATIC_CSP } from "./preview";
+import { timingSafeEqual } from "node:crypto";
+import { STATIC_CSP } from "./preview";
 
 /**
  * The workshop's ANONYMOUS surface: what a share token reaches.
@@ -64,6 +65,14 @@ export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
     return headers;
   };
 
+  // Every miss — unknown, revoked, malformed — is the answer outside links hit most, so it
+  // carries the same noindex/no-referrer headers as everything else here.
+  const notFound = (): Response =>
+    new Response("404 Not Found", {
+      status: 404,
+      headers: publicHeaders(new Headers()),
+    });
+
   app.get("/:channelId/public/preview/*", async (context) => {
     // An anonymous upgrade is refused before anything else: the share is static, full stop.
     if (context.req.header("upgrade")?.toLowerCase() === "websocket") {
@@ -82,7 +91,7 @@ export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
     const actor = await input.sharing.resolveShareActor(token);
     if (!actor || actor.channelId !== context.req.param("channelId")) {
       // The uniform miss: wrong, expired, revoked, and not-this-channel all look alike.
-      return context.notFound();
+      return notFound();
     }
     // The preview path is whatever follows the route's own /public/preview/ segment —
     // spelled mount-relative (c.req.path keeps the mount prefix), so the route serves the
@@ -96,7 +105,7 @@ export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
       actor.channelId,
       path || "index.html",
     );
-    if (!file) return context.notFound();
+    if (!file) return notFound();
     const headers = publicHeaders(new Headers());
     headers.set("content-type", file.contentType);
     headers.set("content-security-policy", STATIC_CSP);
@@ -113,7 +122,7 @@ export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
     }
     const actor = await input.sharing.resolveShareActor(token);
     if (!actor || actor.channelId !== context.req.param("channelId")) {
-      return context.notFound();
+      return notFound();
     }
     const artifacts = await input.listArtifacts(actor.channelId);
     const headers = publicHeaders(new Headers());
@@ -157,7 +166,7 @@ export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
     ) {
       // A preview-only share asking for a download: the uniform miss, not a 403 that names
       // what it is missing.
-      return context.notFound();
+      return notFound();
     }
     // The signature binds channel + artifact + scope; a reshaped URL fails here.
     const expected = new URL(
@@ -167,17 +176,26 @@ export function createWorkshopPublicRoutes(input: PublicWorkshopInput): Hono {
         scope: "preview_download",
       })}`,
     ).searchParams.get("s");
-    if (!expected || signature !== expected || scope !== "preview_download") {
-      return context.notFound();
+    // Constant-time compare: this endpoint is anonymous, and a byte-at-a-time string
+    // compare is a (cheap) oracle on the signature.
+    const sameSignature =
+      expected !== null &&
+      expected.length > 0 &&
+      signature.length === expected.length &&
+      timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    if (!sameSignature || scope !== "preview_download") {
+      return notFound();
     }
     const artifacts = await input.listArtifacts(actor.channelId);
     const artifact = artifacts.find(
       (row) => row.id === context.req.param("artifactId"),
     );
-    if (!artifact) return context.notFound();
+    if (!artifact) return notFound();
     const headers = publicHeaders(new Headers());
     headers.set("content-type", "application/json");
-    headers.set("content-security-policy", DEV_CSP_ALLOW_LISTED);
+    // Anonymous surface, static policy: the anonymous face never carries the dev road's
+    // looser connect-src, even on a response no script should ever read.
+    headers.set("content-security-policy", STATIC_CSP);
     return new Response(
       JSON.stringify({
         artifact,

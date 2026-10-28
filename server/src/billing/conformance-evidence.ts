@@ -887,13 +887,13 @@ export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
   "conformance.text":
     "fc2f3eb182b1ab61143e9d69fa38a802a153343854ec60627c603e44e5c2fed9",
   "conformance.image":
-    "558e65ddd4a8da160e570480e9f6add26430fd59b6e0f5ef69283f1a8f3b2290",
+    "5721d17fe9b0fc34ab5867105b73880d88d97dc8c3d97b832eda074512e4dc78",
   "conformance.audio":
-    "5edc7e3c6adbe8cb82f8718b43088b40532a29408532b123efa447e20de30b78",
+    "09e829c310373c2b92ede3c5a7db502b4db24f62bfa8991c8daf81be0883ebe9",
   "conformance.runtime":
     "e25359e7be75fc014ca7b3fe6cecb1f00f43a4caa8c4bbd5914e6de821c6f675",
   "conformance.embedding":
-    "131a0d70bb8541692e1a549e8a990699cc24f9ec227b31dfd96837600126feb3",
+    "b643f683c5ea20d9cc2f92b7ae62dad72e2984f0bb3ff44f3afabc690c87e4f4",
   "conformance.rerank":
     "2eb95fce142fb5b96cd634eee45a6d9b2ff4de62ad1072c740152d078aca4bc3",
   "conformance.ocr":
@@ -903,21 +903,21 @@ export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
   "conformance.async":
     "54c61e7db510c0847ce4a7a6440d62a61b6d3ec165e391c7ce0c0d2f69b7d6c3",
   "conformance.batch":
-    "9ee704e029e02a5d96e1a97002481a8bfe546a256b85a3c2107fd177a6284359",
+    "a863787b70cee9da5ae213e0c3acd47628cada96f2595aa97e61374de19e3b4e",
   "conformance.video":
-    "250f8a395e81245446a107e06c613779cf642171e263c8eafb6e8f6312a99169",
+    "9e2c3dd01eae4f7a287f2459aa76fe7f5710a8915cdf1e9512848c43806c9a67",
   "conformance.tool":
-    "159486f55d743ceb99986deaac208b8d510f2aa87db83a2b514944e405d921de",
+    "1ce756dcf656e478c56bd221c1bdc018aef1a5acb34d561c9c61ae3f4ce6e4c7",
   "conformance.evaluation":
-    "2d8f8b96f7c091fc6f5a0d7dc6888ed424da6e664c9ca8a47ff8ac6f76e7a46f",
+    "f86d77b64510798308a9b71012d8191c31c5123708d55f04378e253544cdb51a",
   "conformance.harness":
-    "f4726fe5bd740781bc45e797740aab1e4dc0747056f61f15d372def33588380d",
+    "f5a0ffec000d7e9ef91bc9848355f0b2e84ba0ce5f6b8aa99147cb06509a3919",
 } as const;
 
-/** A record whose bound files changed (or vanished) since its fingerprint was taken. */
+/** A record whose bound files changed (or vanished), or whose fingerprint was never recorded. */
 export type StaleEvidence = {
   id: string;
-  reason: "fingerprint-mismatch" | "bound-file-missing";
+  reason: "fingerprint-mismatch" | "bound-file-missing" | "fingerprint-unrecorded";
   detail: string;
 };
 
@@ -936,7 +936,16 @@ export function staleEvidence(
   const stale: StaleEvidence[] = [];
   for (const record of records) {
     const recorded = fingerprints[record.id];
-    if (recorded === undefined) continue;
+    // A record with no recorded fingerprint has no evidence binding at all — stale the
+    // loudest way, never silently fresh (missing evidence leaves the capability OUT).
+    if (recorded === undefined) {
+      stale.push({
+        id: record.id,
+        reason: "fingerprint-unrecorded",
+        detail: "no fingerprint was recorded for this record's id",
+      });
+      continue;
+    }
     const missing = record.versionBinding.filter((path) => !fileExists(path));
     if (missing.length > 0) {
       stale.push({
@@ -946,7 +955,20 @@ export function staleEvidence(
       });
       continue;
     }
-    if (evidenceFingerprint(record, readFile) !== recorded) {
+    let fingerprint: string;
+    try {
+      fingerprint = evidenceFingerprint(record, readFile);
+    } catch {
+      // A file that vanished or turned unreadable between the existence check and the
+      // read is missing evidence all the same: the capability stays OUT, never silent.
+      stale.push({
+        id: record.id,
+        reason: "bound-file-missing",
+        detail: `${record.versionBinding.join(", ")} became unreadable during the check`,
+      });
+      continue;
+    }
+    if (fingerprint !== recorded) {
       stale.push({
         id: record.id,
         reason: "fingerprint-mismatch",

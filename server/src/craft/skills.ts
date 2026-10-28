@@ -65,7 +65,8 @@ export function craftMcpFingerprint(
     .map((server): [string, string, string[]] => [
       server.key,
       server.url,
-      [...server.disabledTools],
+      // Sorted: two sets differing only in tool order are the same fingerprint.
+      [...server.disabledTools].sort(),
     ])
     .sort(compareMcpEntries);
   return createHash("sha256")

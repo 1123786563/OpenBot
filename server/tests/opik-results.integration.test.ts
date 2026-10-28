@@ -61,19 +61,19 @@ const prefix = `t28-${randomUUID()}`;
 
 const scopeA = resolveObservationScope({
   actorId: "user-a",
-  botId: "agent-1",
+  botId: `opik-results-integration-bot-a-${randomUUID()}`,
   ownership: "owner",
   epoch: 1,
 });
 const scopeB = resolveObservationScope({
   actorId: "user-b",
-  botId: "agent-1",
+  botId: `opik-results-integration-bot-b-${randomUUID()}`,
   ownership: "admin",
   epoch: 1,
 });
 const scopeANextEpoch = resolveObservationScope({
   actorId: "user-a",
-  botId: "agent-1",
+  botId: scopeA.botId,
   ownership: "owner",
   epoch: 2,
 });
@@ -218,7 +218,7 @@ test("a settled execution answers the per-sample report end to end", {
   expect(report.execution.id).toBe(enqueued.id);
   expect(report.execution.experimentConfigHash).toBe(experiment.configHash);
   expect(report.resultLink).toBe(
-    `/api/ai-observability/bots/agent-1/experiments/${experiment.id}/results/${enqueued.id}`,
+    `/api/ai-observability/bots/${scopeA.botId}/experiments/${experiment.id}/results/${enqueued.id}`,
   );
 
   // AC1: score, reason, scorer version, usage, result link — per sample.
@@ -392,15 +392,13 @@ test("scope discipline: another scope or epoch learns nothing, and the back-link
     new ExperimentResultsError("RESULTS_EXPERIMENT_NOT_FOUND", 404),
   );
 
-  // A bumped ownership epoch is a different key space.
-  await expect(
-    service.query(scopeANextEpoch, {
-      experimentId: mine.id,
-      executionId: myExecution.id,
-    }),
-  ).rejects.toThrow(
-    new ExperimentResultsError("RESULTS_EXPERIMENT_NOT_FOUND", 404),
-  );
+  // A bumped ownership epoch keeps the SAME data address (FREV-03 b): the new
+  // generation reads the execution instead of losing it to a rotated key space.
+  const bumped = await service.query(scopeANextEpoch, {
+    experimentId: mine.id,
+    executionId: myExecution.id,
+  });
+  expect(bumped.execution.id).toBe(myExecution.id);
 
   // A guessed execution id under a real experiment is not found.
   await expect(
@@ -471,7 +469,7 @@ test("the REST route serves the report over the real stores behind the manage ga
     }),
   );
 
-  const path = `/bots/agent-1/experiments/${experiment.id}/results/${enqueued.id}`;
+  const path = `/bots/${scopeA.botId}/experiments/${experiment.id}/results/${enqueued.id}`;
   const response = await app.request(`http://openbot.test${path}`);
   expect(response.status).toBe(200);
   const body = await response.json();
@@ -482,7 +480,7 @@ test("the REST route serves the report over the real stores behind the manage ga
     summary: { sampleBase: 1, scored: 1, meanScore: 1 },
   });
   expect(body.samples[0].resultLink).toBe(
-    `/api/ai-observability/bots/agent-1/experiments/${experiment.id}/results/${enqueued.id}`,
+    `/api/ai-observability/bots/${scopeA.botId}/experiments/${experiment.id}/results/${enqueued.id}`,
   );
   expect(JSON.stringify(body)).not.toContain("Infinity");
 

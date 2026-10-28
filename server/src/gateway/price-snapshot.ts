@@ -509,6 +509,14 @@ export function createEnterpriseGatewayPriceSnapshotStore(
               `The snapshot append for ${input.ref.provider}/${input.ref.model} carries capability "${input.ref.capability}", which is outside the closed set.`,
             );
           }
+          // Name the defective ref here, so a bad catalog stamp fails with an attributable
+          // error instead of an opaque persist failure from the write layer.
+          const fetchedAt = new Date(input.fetchedAt);
+          if (Number.isNaN(fetchedAt.getTime())) {
+            throw new TypeError(
+              `The snapshot append for ${input.ref.provider}/${input.ref.model}/${input.ref.capability} carries fetchedAt ${JSON.stringify(input.fetchedAt)}, which is not a valid date.`,
+            );
+          }
           const [latest] = await tx
             .select({
               snapshotVersion: gatewayPriceSnapshots.snapshotVersion,
@@ -568,7 +576,7 @@ export function createEnterpriseGatewayPriceSnapshotStore(
             source: input.source,
             configVersion: input.configVersion,
             rateVersion: input.rateVersion,
-            fetchedAt: new Date(input.fetchedAt),
+            fetchedAt,
           });
           appended += 1;
         }
@@ -712,6 +720,7 @@ export function createGatewayPriceSnapshotService(
             type: "gateway-price-sync-catalog-unavailable",
             errorName:
               error instanceof Error ? error.name : String(typeof error),
+            errorMessage: error instanceof Error ? error.message : String(error),
           },
           "The last-good catalog could not be read, so no price snapshot was mapped.",
         );
@@ -727,6 +736,7 @@ export function createGatewayPriceSnapshotService(
             type: "gateway-price-sync-rate-unavailable",
             errorName:
               error instanceof Error ? error.name : String(typeof error),
+            errorMessage: error instanceof Error ? error.message : String(error),
           },
           "The conversion-rate state could not be read, so no price snapshot was mapped.",
         );
@@ -768,6 +778,7 @@ export function createGatewayPriceSnapshotService(
             type: "gateway-price-sync-persist-failed",
             errorName:
               error instanceof Error ? error.name : String(typeof error),
+            errorMessage: error instanceof Error ? error.message : String(error),
           },
           "The mapped price snapshots could not be persisted; the previous versions are kept.",
         );

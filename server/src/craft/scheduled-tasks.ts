@@ -677,7 +677,7 @@ export async function runScheduledTask(
     await deps.manager.finalizePersist(sessionId, state);
 
     if (terminalError || cancelled || !gotPromptResponse) {
-      const errorClass = terminalError ? "agent_exception" : "agent_exception";
+      const errorClass = "agent_exception";
       const errorDetail = terminalError
         ? terminalError.message
         : cancelled
@@ -741,6 +741,17 @@ export async function sweepScheduledTasks(
     // row records the attempt.
     const next = computeNextRunAt(task.cronExpression, now());
     await deps.tasks.updateTask(task.id, { nextRunAt: next });
+    // A run that outlives its recurrence interval must not stack: the previous run is still
+    // queued or running, so this sweep records a skipped run (onyx's shape) instead of
+    // firing a second concurrent headless turn with real side effects.
+    if (await deps.tasks.hasInFlightRun(task.id)) {
+      const skipped = await deps.tasks.insertRun(task.id, "scheduled", "skipped");
+      await deps.tasks.markRunStatus(skipped.id, {
+        status: "skipped",
+        skipReason: "A previous run is still in flight.",
+      });
+      continue;
+    }
     const run = await deps.tasks.insertRun(task.id, "scheduled", "queued");
     deps.enqueueRun(run.id);
     fired += 1;
@@ -753,10 +764,19 @@ export function startCraftScheduledTaskSweeper(
   options: { intervalMs?: number } = {},
 ): { stop: () => void; sweepOnce: () => Promise<ScheduledTaskSweepReport> } {
   const intervalMs = options.intervalMs ?? 30_000;
+  // A pass slower than the interval must not overlap itself: two sweeps would claim
+  // the same due tasks and race their nextRunAt writes.
+  let sweeping = false;
   const timer = setInterval(() => {
-    sweepScheduledTasks(deps).catch((error) => {
-      logger.error({ error }, "[craft] scheduled-task sweeper failed");
-    });
+    if (sweeping) return;
+    sweeping = true;
+    sweepScheduledTasks(deps)
+      .catch((error) => {
+        logger.error({ error }, "[craft] scheduled-task sweeper failed");
+      })
+      .finally(() => {
+        sweeping = false;
+      });
   }, intervalMs);
   timer.unref?.();
   return {
@@ -847,9 +867,13 @@ export function createScheduledTaskRoutes(
   // ── GET /scheduled-tasks ──────────────────────────────────────────────────
   app.get("/scheduled-tasks", async (context) => {
     const tasks = await deps.tasks.listTasks(actorId(context));
+    // Independent rows: one round of parallel reads instead of one per task.
+    const lastRuns = await Promise.all(
+      tasks.map((task) => deps.tasks.latestRun(task.id)),
+    );
     const items: Record<string, unknown>[] = [];
-    for (const task of tasks) {
-      const lastRun = await deps.tasks.latestRun(task.id);
+    for (const [index, task] of tasks.entries()) {
+      const lastRun = lastRuns[index];
       items.push({
         id: task.id,
         name: task.name,
@@ -1192,10 +1216,15 @@ export function createScheduledRunRoutes(
     }
     const runId = runContext.runId;
 
+    // The flag lives outside `start` so `cancel` (client disconnect) reaches it too;
+    // otherwise the attach loop and its live subscription run on for the whole run.
+    let live = true;
     const stream = new ReadableStream<Uint8Array>({
+      cancel() {
+        live = false;
+      },
       start(controller) {
         const encoder = new TextEncoder();
-        let live = true;
         const guard = (text: string) => {
           if (!live) return;
           try {

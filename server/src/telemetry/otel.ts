@@ -124,10 +124,20 @@ export function parseHeaders(raw: string | undefined): Record<string, string> {
   for (const pair of (raw ?? "").split(",")) {
     const index = pair.indexOf("=");
     if (index < 1) continue;
-    headers[decodeURIComponent(pair.slice(0, index).trim())] =
-      decodeURIComponent(pair.slice(index + 1).trim());
+    headers[decodeHeaderPart(pair.slice(0, index).trim())] = decodeHeaderPart(
+      pair.slice(index + 1).trim(),
+    );
   }
   return headers;
+}
+
+/** Malformed percent-encoding is a configuration defect, never a fatal one at startup. */
+function decodeHeaderPart(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
 }
 
 export function otelConfigured(
@@ -161,9 +171,17 @@ export function createOtelEventExporter(
     ),
     timeoutMillis: 10_000,
   });
+  // The standard `OTEL_RESOURCE_ATTRIBUTES` (same `k=v,k=v` shape as the headers) rides along:
+  // an explicit resource suppresses the SDK's env detection, so without this the SIEM's
+  // deployment.environment / host attributes would be silently dropped from every record.
+  const resourceAttributes = parseHeaders(env.OTEL_RESOURCE_ATTRIBUTES);
   const provider = new LoggerProvider({
     resource: resourceFromAttributes({
-      "service.name": env.OTEL_SERVICE_NAME?.trim() || "openbot",
+      ...resourceAttributes,
+      "service.name":
+        env.OTEL_SERVICE_NAME?.trim() ||
+        resourceAttributes["service.name"] ||
+        "openbot",
     }),
     processors: [new BatchLogRecordProcessor({ exporter })],
   });
@@ -172,12 +190,10 @@ export function createOtelEventExporter(
   return {
     emit(event) {
       try {
+        const severity = severityOf(event.eventType);
         logger.emit({
-          severityNumber: severityOf(event.eventType),
-          severityText:
-            severityOf(event.eventType) === SeverityNumber.WARN
-              ? "WARN"
-              : "INFO",
+          severityNumber: severity,
+          severityText: severity === SeverityNumber.WARN ? "WARN" : "INFO",
           body: event.eventType,
           eventName: event.eventType,
           attributes: {

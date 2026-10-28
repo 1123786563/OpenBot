@@ -18,11 +18,11 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 
 每 Task 写清依赖、角色、owned_files、Consumes/Produces、具体步骤、适用测试与预期结果、验收和失败处理，不留 TODO/TBD。派发前完成需求覆盖、共享文件/接口和任务内部一致性预检。用户已要求端到端实施时，保存并展示方案后直接执行，常规修复不增加确认门槛。
 
-实施默认沿 DAG 串行派发；并行实现须有已记录且仍有效的明确用户授权，复用本任务既有授权而不重复询问。使用 Orca 或设定 K 上限本身不授予并行权限。已获并行授权时，仍须满足[编排门禁](orchestration.md)、独立 Worktree、不相交写权限、稳定接口、资源容量及集成次序。数据库、端口、缓存和产物目录均属共享状态；跨 Run 声明遵守[共享协调状态](coordination-state.md)。工作区细则见 [worktrees.md](worktrees.md)。
+实施默认沿 DAG 串行派发；每日批次的源文件只读审计/验证按 [每日规则](closed-issue-daily-run.md)的 P 和资源隔离接纳，审计期间的测试写入仍受共享声明约束。并行实现须有已记录且仍有效的明确用户授权，复用本任务既有授权而不重复询问。使用 Orca 或设定 K 上限本身不授予并行权限。已获并行授权时，仍须满足[编排门禁](orchestration.md)、独立 Worktree、不相交写权限、稳定接口、资源容量及集成次序。数据库、端口、缓存和产物目录均属共享状态；跨 Run 声明遵守[共享协调状态](coordination-state.md)。工作区细则见 [worktrees.md](worktrees.md)。
 
 ## 角色与独立性
 
-| 工作 | agent_type |
+| 工作 | 专业职责 / 平台支持时的 agent_type |
 | --- | --- |
 | Issue 树与依赖证据 | issue_analyst |
 | 代码/文档探索 | researcher |
@@ -34,7 +34,9 @@ Superpowers 负责 HOW / EXECUTE：`writing-plans`、`using-git-worktrees`、`su
 | 独立 Spec + 质量审查 | reviewer |
 | 核实专业角色不能胜任后的升级 | default + 已验证可用的显式模型与推理等级 |
 
-保留内置 default、worker、explorer；探索优先 researcher，若用 explorer，按当前可用目录核实 `gpt-5.6-luna / low`，不可用时报告并选择已验证模型。派发实现前检查专业角色，派发后核对实际 agent_type、模型和推理等级，不以提示词中的角色名称代替实际配置。固定角色配置可能覆盖 spawn 参数；升级改用 default 并传专业约束。Ledger 写明具体障碍、升级原因、模型与受影响 Task；数量多、并行或主控模型强都不是升级理由。
+能力预检先核对平台是否能选择并回执 agent_type：支持时使用上表已配置且可用的专业角色，派发后核验实际值；不支持时，使用平台可用的通用独立会话，以专业 Brief 指定职责，保存真实会话 ID、干净上下文、启动回执、能力核验及模型/推理配置的可核实部分，并将 agent_type 记为“不支持”。这条兼容路径不要求制造不存在的角色参数，也不允许把提示词角色名冒充平台配置；会话或贡献独立性、专业能力、必要身份无法证明时仍 blocked。未知模型字段明确记为不可见，不填推测值；强制模型要求无法核实时阻塞对应阶段。
+
+平台提供 default、worker、explorer 时保留其配置；探索优先可用的 researcher，若用 explorer，按当前可用目录核实 `gpt-5.6-luna / low`，不可用时报告并选择已验证模型。固定角色配置可能覆盖 spawn 参数；升级时在平台支持的通用会话/角色上传专业约束并核验实际配置。Ledger 写明具体障碍、升级原因、模型与受影响 Task；数量多、并行或主控模型强都不是升级理由。
 
 以上 agent_type 路由用于非 Orca 编排的子 Agent。Orca 多 Agent 流程的实施、独立任务审核和终审 Agent 按 [Agent 选择](orchestration-agents.md)确定；后端/前端专业职责仍写入 Brief，记录实际 Orca Agent 身份，不能将非 Orca 子 Agent 当作满足该流程的派发证据。
 

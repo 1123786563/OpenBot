@@ -34,6 +34,9 @@ const UNREADABLE = "That schedule could not be read.";
 const UNKNOWN_ZONE = "That is not a timezone I know.";
 const TOO_FREQUENT = "Workshop schedules may run at most once a minute.";
 const BAD_TIME = "A daily time is HH:MM on a 24-hour clock.";
+/** "Every N past a field's range" compiles to a step that fires once per larger cycle — refuse rather than drift. */
+const EVERY_TOO_LARGE =
+  "That every-N value is larger than its field can express (minutes 59, hours 23, days 31); pick a larger unit instead.";
 
 export type IntervalUnit = "minutes" | "hours" | "days";
 
@@ -56,10 +59,15 @@ export function compileInterval(input: {
   }
   switch (input.unit) {
     case "minutes":
+      // A step past the field's top (59) degenerates: `*/90 * * * *` fires only on the hour —
+      // "every 90 minutes" silently meaning "hourly". Refused where the user can see it.
+      if (every > 59) throw new WorkshopScheduleRefusedError(EVERY_TOO_LARGE);
       return `*/${every} * * * *`;
     case "hours":
+      if (every > 23) throw new WorkshopScheduleRefusedError(EVERY_TOO_LARGE);
       return `0 */${every} * * *`;
     case "days":
+      if (every > 31) throw new WorkshopScheduleRefusedError(EVERY_TOO_LARGE);
       return `0 0 */${every} * *`;
     default:
       throw new WorkshopScheduleRefusedError(UNREADABLE);

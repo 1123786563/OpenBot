@@ -142,10 +142,19 @@ export function createBotServiceRegistry(
       );
     }
     const bot = await store.getBotService(botId);
-    if (bot?.status !== "active") {
+    if (!bot) {
       throw new CredentialBundleUnavailableError(
         "bundle_models_unavailable",
         "The bot service record is not readable, so the credential bundle cannot be completed.",
+      );
+    }
+    // Split from the missing-record answer: a disabled Bot's record reads fine, and the
+    // key-issuance route passes this message straight to the caller, so "not readable"
+    // would send whoever reads it looking for a deployment fault that does not exist.
+    if (bot.status !== "active") {
+      throw new CredentialBundleUnavailableError(
+        "bundle_models_unavailable",
+        "The bot service is not active, so the credential bundle cannot be completed.",
       );
     }
     const selection = await filter.listSelectableModels(

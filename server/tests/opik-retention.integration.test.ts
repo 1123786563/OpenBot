@@ -1,13 +1,14 @@
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
+import postgres from "postgres";
+import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 import {
   afterAll,
   afterEach,
   expect,
   test,
 } from "../../tests/support/bun-test-compat";
-import { randomUUID } from "node:crypto";
-import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
-import postgres from "postgres";
-import { REDACTION_POLICY_VERSION } from "../../shared/ai-observability";
 import { createRunBindingStore } from "../src/ai-observability/bindings";
 import type { OpikConfig } from "../src/ai-observability/config";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
@@ -18,7 +19,15 @@ import {
   type ObservationExportStore,
 } from "../src/ai-observability/exports";
 import { createIdLinkStore } from "../src/ai-observability/id-links";
-import type { OpikPort, OpikTraceRow } from "../src/ai-observability/opik-port";
+import {
+  createOpikHttpPort,
+  runUpstreamIdentity,
+} from "../src/ai-observability/opik-http";
+import type {
+  OpikPort,
+  OpikTraceRow,
+  VerifiedOpikContract,
+} from "../src/ai-observability/opik-port";
 import { createRunsQueryService } from "../src/ai-observability/queries/runs";
 import {
   createObservationRetentionStore,
@@ -71,13 +80,13 @@ const fresh = postgres(testDatabaseUrl(), { max: 1 });
 
 const scopeA = resolveObservationScope({
   actorId: `t35-a-${randomUUID()}`,
-  botId: "agent-1",
+  botId: `opik-retention-integration-bot-a-${randomUUID()}`,
   ownership: "owner",
   epoch: 1,
 });
 const scopeB = resolveObservationScope({
   actorId: `t35-b-${randomUUID()}`,
-  botId: "agent-1",
+  botId: `opik-retention-integration-bot-b-${randomUUID()}`,
   ownership: "admin",
   epoch: 1,
 });
@@ -93,6 +102,14 @@ const enabledConfig: OpikConfig = {
 };
 const disabledConfig: OpikConfig = { ...enabledConfig, enabled: false };
 
+/** The verified T04 manifest — the same evidence the production adapter is gated on. */
+const manifest = (await Bun.file(
+  join(
+    import.meta.dir,
+    "../src/ai-observability/opik-contract/47-manifest.json",
+  ),
+).json()) as VerifiedOpikContract;
+
 /**
  * The upstream, faked at the port seam. Trace deletion is observable: the ids
  * handed to deleteTraces leave `rows`, so the T11 query surface built on the same
@@ -104,6 +121,13 @@ function fakePort(options: {
   gatedDelete?: boolean;
   failFirstTraceDelete?: boolean;
   failFirstDatasetDelete?: boolean;
+  /**
+   * FREV-07: the first N deleteTraces calls answer the port's missing-project
+   * failure (404) — the shape the locator's project being gone answers — while
+   * the rows stay in the fake, exactly as the E2E evidence watched them survive
+   * a project delete.
+   */
+  projectMissingDeletes?: number;
 }) {
   const rows = [...(options.rows ?? [])];
   const calls: {
@@ -147,6 +171,17 @@ function fakePort(options: {
       traceDeleteCalls += 1;
       if (options.gatedDelete) {
         await new Promise<void>((resolve) => waiting.push(resolve));
+      }
+      if (
+        options.projectMissingDeletes !== undefined &&
+        traceDeleteCalls <= options.projectMissingDeletes
+      ) {
+        return {
+          outcome: "upstream_error" as const,
+          operation: "deleteTraces" as const,
+          code: "OPIK_PROJECT_MISSING" as const,
+          status: 404,
+        };
       }
       if (options.failFirstTraceDelete && traceDeleteCalls === 1) {
         return {
@@ -840,17 +875,130 @@ test("upstream failure parks in failed with the row intact, and a retry complete
   expect(await auditRows(binding.id)).toHaveLength(1);
 });
 
-test("a missing capability fails upstream-carrying records without deleting them; purely local ones proceed (AC6)", async () => {
+test("an accepted delete is not completion: the record parks until the read-back observes absence (FREV-07)", async () => {
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51387${randomUUID().slice(0, 4)}`;
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: traceId,
+    days: 8,
+  });
+
+  // The production adapter against a scripted upstream (no fake port at the
+  // seam — the final review's counterexample rides the real delete semantics):
+  // the delete POST is accepted with 204, but the trace stays queryable until
+  // the script flips to gone. The window is a short configured deadline, so the
+  // first pass exhausts it in one poll.
+  let traceGone = false;
+  let deletePosts = 0;
+  let readbacks = 0;
+  const transport = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/private/projects/retrieve")) {
+      return new Response(JSON.stringify({ id: "proj-frev07" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.endsWith("/v1/private/traces/delete")) {
+      deletePosts += 1;
+      return new Response(null, { status: 204 });
+    }
+    if (url.startsWith(`http://opik.test/api/v1/private/traces/${traceId}?`)) {
+      readbacks += 1;
+      return traceGone
+        ? new Response("{}", { status: 404 })
+        : new Response(JSON.stringify({ id: traceId }), { status: 200 });
+    }
+    // The span-level absence probe (FREV-07): the spans follow the trace row's
+    // cleanup — still listed while the trace is queryable, an empty envelope
+    // once the whole thing is gone.
+    if (
+      url.startsWith("http://opik.test/api/v1/private/spans?") &&
+      url.includes(`trace_id=${traceId}`)
+    ) {
+      readbacks += 1;
+      return traceGone
+        ? new Response(
+            JSON.stringify({ page: 1, size: 1, total: 0, content: [] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          )
+        : new Response(
+            JSON.stringify({
+              page: 1,
+              size: 1,
+              total: 1,
+              content: [{ id: "01a1405b-f832-70cf-b204-000000000001" }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+    }
+    throw new Error(`unexpected upstream call: GET ${url}`);
+  }) as typeof fetch;
+  const worker = workerFor({
+    port: createOpikHttpPort({
+      baseUrl: "http://opik.test/api",
+      contract: manifest,
+      fetch: transport,
+      timeoutMs: 200,
+    }),
+  });
+
+  // Pass one: the delete was accepted, the read-back still finds the trace —
+  // so the record parks failed for retry, keeps its locator, and nothing local
+  // is "completed": the binding row survives and no audit was written.
+  await worker.sweep();
+  let records = await deletionsFor(scopeA);
+  expect(records[0].state).toBe("failed");
+  expect(records[0].lastError).toBe("OPIK_TIMEOUT");
+  expect(records[0].attempts).toBe(1);
+  expect(deletePosts).toBe(1);
+  expect(readbacks).toBeGreaterThanOrEqual(1);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 1 }]);
+  expect(await auditRows(binding.id)).toEqual([]);
+
+  // The upstream finishes; only now does the retry complete the deletion.
+  traceGone = true;
+  await worker.sweep();
+  records = await deletionsFor(scopeA);
+  expect(records[0].state).toBe("deleted");
+  expect(records[0].lastError).toBeNull();
+  expect(records[0].attempts).toBe(2);
+  // The retry re-fired the (idempotent) delete and then read the absence back —
+  // acceptance twice, completion exactly once, on the observed-absent answer.
+  expect(deletePosts).toBe(2);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a missing capability fails upstream-carrying records without deleting them; local-by-construction kinds proceed (AC6, R3-05)", async () => {
   const reconciled = await expiredBinding(scopeA, {
     opikTraceId: "trace-gone",
     days: 8,
   });
+  // R3-05: a run binding's null opik_trace_id is not proof of "no upstream
+  // copy" — the materializer writes the trace and root BEFORE it records the
+  // mapping — so without a port that can verify the derived identity, this
+  // record parks too, never completing local-only over a possible orphan.
   const unreconciled = await expiredBinding(scopeA, {
     opikTraceId: null,
     days: 8,
   });
+  // A dataset that never synced upstream IS local by construction: its null
+  // upstream reference means the local rows are the whole world's copy, so a
+  // deployment without a port still deletes it for real.
+  const { dataset } = await datasetStore.saveVersion(scopeA, {
+    datasetName: `t35-ac6-${randomUUID()}`,
+    cases: [oneCase(unreconciled.runId)],
+  });
+  await database
+    .update(aiObservationDatasets)
+    .set({ createdAt: sql`now() - interval '40 days'` })
+    .where(eq(aiObservationDatasets.id, dataset.id));
 
-  await workerFor({ port: null }).sweep();
+  await workerFor({ port: null, concurrency: 8 }).sweep();
 
   const byTarget = new Map(
     (await deletionsFor(scopeA)).map((record) => [record.targetId, record]),
@@ -860,10 +1008,14 @@ test("a missing capability fails upstream-carrying records without deleting them
   expect(
     await fresh`select count(*)::int as n from ai_observation_bindings where id = ${reconciled.id}`,
   ).toEqual([{ n: 1 }]);
-  expect(byTarget.get(unreconciled.id)?.state).toBe("deleted");
+  expect(byTarget.get(unreconciled.id)?.state).toBe("failed");
+  expect(byTarget.get(unreconciled.id)?.lastError).toBe("CAPABILITY_MISSING");
   expect(
     await fresh`select count(*)::int as n from ai_observation_bindings where id = ${unreconciled.id}`,
-  ).toEqual([{ n: 0 }]);
+  ).toEqual([{ n: 1 }]);
+  // The purely local kind still finishes: no upstream copy exists to strand.
+  expect(byTarget.get(dataset.id)?.state).toBe("deleted");
+  expect(await datasetStore.getDataset(scopeA, dataset.id)).toBeNull();
 });
 
 test("the stop-work pass waits for the gate: a capability-missing deletion cancels no export (OCR R2-43)", async () => {
@@ -952,10 +1104,13 @@ test("a stop-work pass the gate refused still runs on the retry once the gate op
 });
 
 test("a stop that itself fails on the first pass still runs on the retry (OCR R3-34)", async () => {
-  // The unreconciled branch has no gate to wait behind: its stop is the
-  // else-if cancelForScope. A cancel that throws must not flip the record
-  // into a state whose retries believe the stop already ran.
-  await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  // R3-05 moved the unreconciled run's stop behind the gate as well — its
+  // derived upstream reference is promoted before the upstream half, so the
+  // stop is now observed on the same gated path a reconciled record takes. A
+  // cancel that throws must still not flip the record into a state whose
+  // retries believe the stop already ran.
+  const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const derived = runUpstreamIdentity(binding.traceId).opikTraceId;
   const exportJob = await exportStore.enqueue(scopeA, 10);
   let cancelBroken = true;
   const flakyStore: ObservationExportStore = {
@@ -965,21 +1120,31 @@ test("a stop that itself fails on the first pass still runs on the retry (OCR R3
       return exportStore.cancelForScope(scopeKey);
     },
   };
+  const first = fakePort({});
 
-  await workerFor({ port: null, exportStore: flakyStore }).sweep();
+  await workerFor({ port: first.port, exportStore: flakyStore }).sweep();
   let record = (await deletionsFor(scopeA))[0];
   expect(record.state).toBe("failed");
   expect(record.workStoppedAt).toBeNull();
   expect((await exportStore.get(scopeA, exportJob.id))?.state).toBe("queued");
+  // The stop precedes the upstream half: nothing upstream was deleted while
+  // the cancel itself was failing.
+  expect(first.calls.deleteTraces).toEqual([]);
 
   cancelBroken = false;
-  await workerFor({ port: null }).sweep();
+  const second = fakePort({});
+  await workerFor({ port: second.port }).sweep();
   record = (await deletionsFor(scopeA))[0];
   expect(record.state).toBe("deleted");
   expect((await exportStore.get(scopeA, exportJob.id))?.state).toBe(
     "cancelled",
   );
   expect(record.workStoppedAt).not.toBeNull();
+  // The retry's upstream half addressed the DERIVED identity — the one object a
+  // materialization of this chain could ever have written.
+  expect(second.calls.deleteTraces).toEqual([
+    { ids: [derived], project: resolveStorageLocator(scopeA).project },
+  ]);
 });
 
 test("dataset deletion goes through the sanctioned channel: versions cascade, the guard still refuses everyone else (AC2)", async () => {
@@ -1596,8 +1761,15 @@ test("the lease keeps a second replica off a deletion in flight (AC5)", async ()
   expect(await retentionStore.markUpstreamDone(record.id)).toBeNull();
 });
 
-test("governance counts answer per kind and state (AC4)", async () => {
+test("governance counts answer per kind and state (AC4, R3-05)", async () => {
+  // R3-05 closed the null-upstream local-only completion, so the deleted count
+  // is earned the honest way: the derived identity's VERIFIED absence upstream.
   const done = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  await workerFor({ port: fakePort({ rows: [] }).port }).sweep();
+  expect(
+    (await deletionsFor(scopeA)).find((r) => r.targetId === done.id)?.state,
+  ).toBe("deleted");
+
   const stuck = await expiredBinding(scopeA, {
     opikTraceId: "trace-stuck",
     days: 8,
@@ -1776,4 +1948,409 @@ test("a deletion in flight hides its dataset and experiment from the readers (M1
   const experimentStore = createObservationExperimentStore(database);
   expect(await experimentStore.getExperiment(scopeA, hiding)).toBeNull();
   expect(await experimentStore.getExperiment(scopeA, kept)).not.toBeNull();
+});
+
+test("a missing locator project parks the run deletion with its locator, then recovers once the project answers (FREV-07)", async () => {
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51387${randomUUID().slice(0, 4)}`;
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: traceId,
+    days: 8,
+  });
+  // The real counterexample, replayed at the port seam: the project is gone
+  // upstream while its trace/span rows survive it — so the delete answers the
+  // port's missing-project failure and nothing has been physically cleaned.
+  const upstream = fakePort({
+    rows: [{ id: traceId, status: "COMPLETED" }],
+    projectMissingDeletes: 1,
+  });
+  const worker = workerFor({ port: upstream.port });
+
+  await worker.sweep();
+
+  let records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  // Parked failed, named apart from a generic client error, never completed.
+  expect(records[0].state).toBe("failed");
+  expect(records[0].lastError).toBe("OPIK_PROJECT_MISSING");
+  // The locator and the upstream reference survive on the record — what a retry
+  // needs, which is #41's "keep the locator until the upstream half completes".
+  expect(records[0].upstreamKind).toBe("trace");
+  expect(records[0].upstreamId).toBe(traceId);
+  expect(records[0].locatorProject).toBe(resolveStorageLocator(scopeA).project);
+  expect(records[0].deletedAt).toBeNull();
+  // The local row stays; the upstream row stays; no success was reported.
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 1 }]);
+  expect(upstream.rows.map((row) => row.id)).toEqual([traceId]);
+  expect(await auditRows(binding.id)).toHaveLength(0);
+
+  // Fault recovery: the project answers again, and the SAME record completes the
+  // deletion it was parked on — upstream copy gone, local rows gone, audited once.
+  await worker.sweep();
+
+  records = await deletionsFor(scopeA);
+  expect(records[0].state).toBe("deleted");
+  expect(records[0].lastError).toBeNull();
+  expect(upstream.calls.deleteTraces).toHaveLength(2);
+  expect(upstream.rows).toEqual([]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a run record frozen upstream-less adopts its binding's reconciled id and completes (F5E1-F3, OCR R5)", async () => {
+  const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // The record froze "no upstream copy" — then the binding's materialization
+  // completed under it (a reconcile landing between discovery and the sweep).
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51387${randomUUID().slice(0, 4)}`;
+  await bindingStore.reconcile(
+    scopeA,
+    binding.runId,
+    binding.attemptId,
+    traceId,
+  );
+
+  await worker.sweep();
+
+  // OCR R5: the old guard parked this shape forever — the reconcile never
+  // rewrites the id, so every sweep re-read the same row and re-raised. The
+  // record now promotes the binding's authoritative id (R3-05's guarded
+  // freeze) and the upstream half verify-deletes the copy it names.
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("deleted");
+  expect(records[0].upstreamKind).toBe("trace");
+  expect(records[0].upstreamId).toBe(traceId);
+  expect(upstream.calls.deleteTraces).toEqual([
+    { ids: [traceId], project: resolveStorageLocator(scopeA).project },
+  ]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a run record that froze a DIFFERENT upstream id than its binding names still parks (F5E1-F3 core)", async () => {
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: `01a1405b-f832-70cf-b204-f4dd51aaa${randomUUID().slice(0, 3)}`,
+    days: 8,
+  });
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // The frozen reference and the binding's authoritative id genuinely
+  // disagree — deleting underneath either would strand the other's copy.
+  // Direct UPDATE, not reconcile: the disagreement is a data fact, not a
+  // materialization completing.
+  const otherTrace = `01a1405b-f832-70cf-b204-f4dd51bbb${randomUUID().slice(0, 3)}`;
+  await database
+    .update(aiObservationBindings)
+    .set({ opikTraceId: otherTrace })
+    .where(eq(aiObservationBindings.id, binding.id));
+
+  await worker.sweep();
+
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("failed");
+  expect(records[0].lastError).toBe("OPIK_UPSTREAM_UNLOCATED");
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 1 }]);
+  expect(upstream.calls.deleteTraces).toEqual([]);
+});
+
+test("a collision-loser binding at its legacy key is still found and deleted (0209 two-key-spaces, OCR R5)", async () => {
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51ccc${randomUUID().slice(0, 3)}`;
+  const binding = await expiredBinding(scopeA, {
+    opikTraceId: traceId,
+    days: 8,
+  });
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // The 0209 shape: the deletion record's scope_key converged to the stable
+  // key while the binding row — a collision loser — keeps its legacy
+  // composite. The record and its target now live in two key spaces of one
+  // Bot, and only the frozen bot identity joins them.
+  const legacy = `2:wb|9:mig-actor|${scopeA.botId.length}:${scopeA.botId}|1:1`;
+  await database
+    .update(aiObservationBindings)
+    .set({
+      scopeKey: legacy,
+      locatorWorkspace: "legacy-ws",
+      locatorProject: "legacy-proj",
+    })
+    .where(eq(aiObservationBindings.id, binding.id));
+
+  await worker.sweep();
+
+  // The identity-keyed read still finds the row; the upstream half deletes
+  // the frozen reference; the bot-keyed local delete reaches the legacy row.
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("deleted");
+  expect(upstream.calls.deleteTraces).toEqual([
+    { ids: [traceId], project: resolveStorageLocator(scopeA).project },
+  ]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a legacy-key binding that reconciled after discovery promotes instead of stranding (OCR R5, the 888 inference)", async () => {
+  const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const traceId = `01a1405b-f832-70cf-b204-f4dd51ddd${randomUUID().slice(0, 3)}`;
+  const upstream = fakePort({ rows: [] });
+  const worker = workerFor({ port: upstream.port });
+  await worker.discover();
+
+  // Reconciled AFTER discovery — the order the name states (OCR 终审 #64): the
+  // record froze null at discovery, so the sweep's promote path
+  // (promoteUpstreamReference in retention.ts) adopts the binding's reconciled
+  // id. Reconciling first would let discovery freeze the trace directly and
+  // the promote branch would never run here.
+  await bindingStore.reconcile(
+    scopeA,
+    binding.runId,
+    binding.attemptId,
+    traceId,
+  );
+
+  // Both facts at once: the record froze null AND the binding row sits at a
+  // legacy key (the collision loser). The old (id, scope_key) read missed the
+  // row, inferred "the local half already ran", skipped the upstream half,
+  // and terminalized — stranding the binding row AND the trace it names.
+  const legacy = `2:wb|9:mig-actor|${scopeA.botId.length}:${scopeA.botId}|1:1`;
+  await database
+    .update(aiObservationBindings)
+    .set({ scopeKey: legacy })
+    .where(eq(aiObservationBindings.id, binding.id));
+
+  await worker.sweep();
+
+  const records = await deletionsFor(scopeA);
+  expect(records).toHaveLength(1);
+  expect(records[0].state).toBe("deleted");
+  expect(records[0].upstreamKind).toBe("trace");
+  expect(records[0].upstreamId).toBe(traceId);
+  expect(upstream.calls.deleteTraces).toEqual([
+    { ids: [traceId], project: resolveStorageLocator(scopeA).project },
+  ]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("a collision-loser dataset at its legacy key is still deleted (OCR R5, deleteLocal recheck)", async () => {
+  const dataset = {
+    id: randomUUID(),
+    scopeKey: scopeA.key,
+    actorId: scopeA.actorId,
+    botId: scopeA.botId,
+    name: `t35-r239-${randomUUID()}`,
+    locatorWorkspace: "ws",
+    locatorProject: "proj",
+    syncState: "pending",
+    createdAt: backdate(40),
+    updatedAt: backdate(40),
+  };
+  await database.insert(aiObservationDatasets).values(dataset);
+  const worker = workerFor();
+  await worker.discover();
+
+  // Converge the record's key (what 0209 did to every existing record) while
+  // the dataset row keeps its legacy composite.
+  const legacy = `2:wb|9:mig-actor|${scopeA.botId.length}:${scopeA.botId}|1:1`;
+  await database
+    .update(aiObservationDatasets)
+    .set({ scopeKey: legacy })
+    .where(eq(aiObservationDatasets.id, dataset.id));
+  await database
+    .update(aiObservationRetentionDeletions)
+    .set({ scopeKey: scopeA.key })
+    .where(eq(aiObservationRetentionDeletions.kind, "dataset"));
+
+  await worker.sweep();
+
+  const records = await deletionsFor(scopeA);
+  const record = records.find((r) => r.kind === "dataset");
+  expect(record?.state).toBe("deleted");
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_datasets where id = ${dataset.id}`,
+  ).toEqual([{ n: 0 }]);
+});
+
+test("a materialized-but-unreconciled run is cleaned by its derived identity — parked with its locator first, trace and spans verifiably gone after (R3-05)", async () => {
+  // The review's deterministic counterexample, driven through the production
+  // seams: begin (opik_trace_id null) → createTrace ok → root writeSpans ok →
+  // the reconcile never landed (DB failure or a crash), and no later fact ever
+  // retried it. The upstream trace and its run root are real; the binding still
+  // records null; the frozen record reads "no upstream copy". The old code
+  // completed that record local-only and left the upstream tree an orphan —
+  // this regression pins the closed shape end to end, on the real adapter.
+  const chain = "4bf92f3577b34da6a3ce929d0e0e4736";
+  const derived = runUpstreamIdentity(chain).opikTraceId;
+  const { binding } = await bindingStore.begin(scopeA, {
+    runId: `run-${randomUUID()}`,
+    attemptId: bindingAttemptId(),
+    traceId: chain,
+    capability: "detailed",
+    expiresAt: new Date(Date.now() + 3_600_000),
+  });
+  await bindingStore.finish(
+    scopeA,
+    binding.runId,
+    binding.attemptId,
+    "completed",
+  );
+  await database
+    .update(aiObservationBindings)
+    .set({ createdAt: sql`now() - interval '8 days'` })
+    .where(eq(aiObservationBindings.id, binding.id));
+
+  // The upstream, scripted at the transport of the production adapter: the
+  // derived trace exists (the create succeeded) and so does its root span —
+  // until the script flips the whole tree to gone.
+  let upstreamGone = false;
+  let deletePosts = 0;
+  let traceReadbacks = 0;
+  let spanReadbacks = 0;
+  const jsonResponse = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  const transport = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/private/projects/retrieve")) {
+      return jsonResponse(200, { id: "proj-r305" });
+    }
+    if (url.endsWith("/v1/private/traces/delete")) {
+      deletePosts += 1;
+      return new Response(null, { status: 204 });
+    }
+    if (url.startsWith(`http://opik.test/api/v1/private/traces/${derived}?`)) {
+      traceReadbacks += 1;
+      return upstreamGone
+        ? new Response("{}", { status: 404 })
+        : jsonResponse(200, { id: derived });
+    }
+    if (
+      url.startsWith("http://opik.test/api/v1/private/spans?") &&
+      url.includes(`trace_id=${derived}`)
+    ) {
+      spanReadbacks += 1;
+      return upstreamGone
+        ? jsonResponse(200, { page: 1, size: 1, total: 0, content: [] })
+        : jsonResponse(200, {
+            page: 1,
+            size: 1,
+            total: 1,
+            content: [{ id: "01a1405b-f832-70cf-b204-000000000001" }],
+          });
+    }
+    throw new Error(`unexpected upstream call: GET ${url}`);
+  }) as typeof fetch;
+  const worker = workerFor({
+    port: createOpikHttpPort({
+      baseUrl: "http://opik.test/api",
+      contract: manifest,
+      fetch: transport,
+      timeoutMs: 200,
+    }),
+  });
+
+  // Pass one — the deletion window the counterexample parked in. The delete was
+  // accepted, the read-back still finds the tree: nothing local completes, the
+  // record parks with its locator AND the derived upstream reference, and the
+  // binding row survives underneath it (删前定位保留).
+  await worker.sweep();
+  let record = (await deletionsFor(scopeA)).find(
+    (row) => row.targetId === binding.id,
+  );
+  expect(record?.state).toBe("failed");
+  expect(record?.lastError).toBe("OPIK_TIMEOUT");
+  expect(record?.upstreamKind).toBe("trace");
+  expect(record?.upstreamId).toBe(derived);
+  expect(record?.locatorProject).toBe(resolveStorageLocator(scopeA).project);
+  expect(record?.deletedAt).toBeNull();
+  // The upstream half ran BY THE DERIVED IDENTITY — the orphan is addressed,
+  // never left nameless behind a local-only completion.
+  expect(deletePosts).toBe(1);
+  expect(traceReadbacks).toBeGreaterThanOrEqual(1);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 1 }]);
+  expect(await auditRows(binding.id)).toEqual([]);
+
+  // The upstream finishes cleaning; only now does the SAME record complete —
+  // and completion rode the observed absence of the trace AND its spans (删后
+  // trace/span 真实查无), not the bare 204.
+  upstreamGone = true;
+  await worker.sweep();
+  record = (await deletionsFor(scopeA)).find(
+    (row) => row.targetId === binding.id,
+  );
+  expect(record?.state).toBe("deleted");
+  expect(record?.deletedAt).toBeInstanceOf(Date);
+  expect(deletePosts).toBe(2);
+  expect(traceReadbacks).toBeGreaterThanOrEqual(2);
+  expect(spanReadbacks).toBeGreaterThanOrEqual(2);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
+});
+
+test("an unreconciled run without a port never completes local-only: it parks with locator and derived reference, and recovers once the port can verify absence (R3-05)", async () => {
+  const binding = await expiredBinding(scopeA, { opikTraceId: null, days: 8 });
+  const derived = runUpstreamIdentity(binding.traceId).opikTraceId;
+
+  // No verified port: whether this run ever materialized upstream is exactly
+  // what the binding's null cannot prove — the honest answer is the park, never
+  // a local-only completion that might strand a real upstream tree.
+  await workerFor({ port: null }).sweep();
+
+  let record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("failed");
+  expect(record.lastError).toBe("CAPABILITY_MISSING");
+  expect(record.upstreamKind).toBe("trace");
+  expect(record.upstreamId).toBe(derived);
+  expect(record.locatorProject).toBe(resolveStorageLocator(scopeA).project);
+  expect(record.deletedAt).toBeNull();
+  // The gate refused before the stop-work pass: a deletion that cannot proceed
+  // cancels nothing (the R2-43 discipline).
+  expect(record.workStoppedAt).toBeNull();
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 1 }]);
+  expect(await auditRows(binding.id)).toEqual([]);
+
+  // The port answers now. The derived identity was never written upstream (the
+  // never-materialized shape), so its VERIFIED absence completes the deletion —
+  // the fix parks the unknown; it does not wedge the known-empty forever.
+  const upstream = fakePort({ rows: [] });
+  await workerFor({ port: upstream.port }).sweep();
+
+  record = (await deletionsFor(scopeA))[0];
+  expect(record.state).toBe("deleted");
+  expect(record.lastError).toBeNull();
+  expect(upstream.calls.deleteTraces).toEqual([
+    { ids: [derived], project: resolveStorageLocator(scopeA).project },
+  ]);
+  expect(
+    await fresh`select count(*)::int as n from ai_observation_bindings where id = ${binding.id}`,
+  ).toEqual([{ n: 0 }]);
+  expect(await auditRows(binding.id)).toHaveLength(1);
 });

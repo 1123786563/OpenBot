@@ -343,8 +343,11 @@ export function createCompanyReservationService({
 
     async usageSummary(tenantId) {
       requireNonEmpty(tenantId, "tenantId");
-      const heldUnits = sql<number>`coalesce(sum(case when ${creditReservations.status} = 'reserved' then ${creditReservations.maximum} else 0 end), 0)::int`;
-      const chargedUnits = sql<number>`coalesce(sum(case when ${creditReservations.status} = 'settled' then coalesce(${creditReservations.charged}, 0) else 0 end), 0)::int`;
+      // sum() over an integer column is bigint in Postgres; it rides back as text and is
+      // widened here, so a long-lived tenant past 2^31-1 scaled units is a number instead
+      // of an "integer out of range" throw.
+      const heldUnits = sql<string>`coalesce(sum(case when ${creditReservations.status} = 'reserved' then ${creditReservations.maximum} else 0 end), 0)::bigint`;
+      const chargedUnits = sql<string>`coalesce(sum(case when ${creditReservations.status} = 'settled' then coalesce(${creditReservations.charged}, 0) else 0 end), 0)::bigint`;
       const byTeam = await database
         .select({
           workspaceId: billingCallAttributions.workspaceId,
@@ -371,7 +374,15 @@ export function createCompanyReservationService({
         )
         .where(eq(billingCallAttributions.tenantId, tenantId))
         .groupBy(billingCallAttributions.principalId);
-      return { byTeam, byUser };
+      const widen = <T extends { heldUnits: string; chargedUnits: string }>(
+        rows: readonly T[],
+      ) =>
+        rows.map((row) => ({
+          ...row,
+          heldUnits: Number(row.heldUnits),
+          chargedUnits: Number(row.chargedUnits),
+        }));
+      return { byTeam: widen(byTeam), byUser: widen(byUser) };
     },
   };
 }

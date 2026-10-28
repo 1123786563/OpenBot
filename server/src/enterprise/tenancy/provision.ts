@@ -286,8 +286,9 @@ export async function provisionDeployment(
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
+    // 键序用码点比较而非 localeCompare：摘要必须跨节点/ICU 字节级稳定。
     const entries = Object.entries(value as Record<string, unknown>).sort(
-      ([a], [b]) => a.localeCompare(b),
+      ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
     );
     return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(",")}}`;
   }

@@ -21,12 +21,17 @@
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { join } from "node:path";
 import { Hono } from "hono";
+import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
 import { opikConfigFromEnv } from "../src/ai-observability/config";
 import {
   createOpikHealthService,
   type OpikHealthDeps,
   type OpikHealthService,
 } from "../src/ai-observability/health";
+import {
+  createModelSpanRecorder,
+  modelSpanChainGateDrops,
+} from "../src/ai-observability/model-span";
 import { createOpikHttpPort } from "../src/ai-observability/opik-http";
 import type {
   OpikPort,
@@ -35,6 +40,11 @@ import type {
 } from "../src/ai-observability/opik-port";
 import { createAiObservabilityRoutes } from "../src/ai-observability/routes";
 import { createAiObservabilityHealthRoutes } from "../src/ai-observability/routes/health";
+import { resolveObservationScope } from "../src/ai-observability/scope";
+import {
+  createToolStepRecorder,
+  toolStepChainGateDrops,
+} from "../src/ai-observability/tool-steps";
 
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -709,6 +719,8 @@ describe("health output is a safe projection (acceptance 4)", () => {
       "failed",
       // T17's id-mapping outcome counters — labels only, same safe shape.
       "idLinks",
+      // The FREV-02 chain-gate drops (T-M #2) — counters only, same safe shape.
+      "chainGateDrops",
     ]);
     for (const value of Object.values(writes)) {
       if (typeof value === "object" && value !== null) continue;
@@ -725,6 +737,66 @@ describe("health output is a safe projection (acceptance 4)", () => {
     for (const value of Object.values(failed)) {
       expect(typeof value).toBe("number");
     }
+    const chainGateDrops = writes.chainGateDrops as Record<string, unknown>;
+    expect(Object.keys(chainGateDrops)).toEqual(["steps", "modelSpans"]);
+    for (const value of Object.values(chainGateDrops)) {
+      expect(typeof value).toBe("number");
+    }
+  });
+
+  test("the FREV-02 chain-gate drops land in the projection — both twins, one outlet (T-M #2)", async () => {
+    // A recorder-side refusal happens BEFORE any submit, so the submit
+    // counters cannot see it; the steps and model-span drop counts must reach
+    // the operator through the same projection the id-link counters ride —
+    // one twin without an outlet would keep the gap (T-M #2's twin warning).
+    const svc = service();
+    const before = {
+      steps: toolStepChainGateDrops().missingChain,
+      modelSpans: modelSpanChainGateDrops().missingChain,
+    };
+    const scope = resolveObservationScope({
+      actorId: "user-1",
+      botId: "bot-1",
+      ownership: "owner",
+      epoch: 1,
+    });
+    const bindings = observerRunBindingGateForTests();
+    const steps = createToolStepRecorder({ healthService: svc, bindings });
+    steps.record({
+      toolCallId: "call-outlet",
+      endedAt: new Date(),
+      proposalObserved: true,
+      executionObserved: false,
+      receiptObserved: false,
+      window: "terminal",
+      scope,
+    });
+    const spans = createModelSpanRecorder({ healthService: svc, bindings });
+    spans.record({
+      occurredAt: new Date(),
+      endedAt: new Date(),
+      ending: { kind: "succeeded", inputTokens: 1, outputTokens: 1 },
+      scope,
+    });
+    // Neither drop is a submit: the writeStats projection is where they surface.
+    expect(svc.writeStats().chainGateDrops).toEqual({
+      steps: before.steps + 1,
+      modelSpans: before.modelSpans + 1,
+    });
+    // snapshot() serves the same counts, and so does the route reading it.
+    const snapshot = await svc.snapshot();
+    expect(snapshot.writes.chainGateDrops).toEqual({
+      steps: before.steps + 1,
+      modelSpans: before.modelSpans + 1,
+    });
+    const response = await appWith(svc).request("/health");
+    const body = (await response.json()) as {
+      opik: { writes: { chainGateDrops: unknown } };
+    };
+    expect(body.opik.writes.chainGateDrops).toEqual({
+      steps: before.steps + 1,
+      modelSpans: before.modelSpans + 1,
+    });
   });
 
   test("an unhealthy projection carries one enumerated reason and no secrets", async () => {

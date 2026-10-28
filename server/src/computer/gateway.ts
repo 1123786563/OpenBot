@@ -1349,11 +1349,20 @@ export function createComputerGateway(
         actor,
         { filePath: input.path },
         async () => {
-          // Charged before the write is sent, so a refused write writes nothing. See capacity.ts.
+          // Locate (the capacity reserve included) BEFORE the charge: a write that never
+          // found a computer never sent a byte, so there is nothing to refund. See capacity.ts.
+          const address = await locate(botId);
           const bytes = Buffer.byteLength(input.contents, "utf8");
           capacity.chargeWrite(botId, bytes);
           try {
-            return await post<WriteFileResult>(botId, "/files/write", input);
+            return await post<WriteFileResult>(
+              botId,
+              "/files/write",
+              input,
+              undefined,
+              undefined,
+              address,
+            );
           } catch (error) {
             // Only failures that PROVE the write never landed refund the charge:
             // the transport refusing before anything was sent

@@ -106,7 +106,7 @@ function CardExample() {
   return (
     <Example title="Card" className="items-center justify-center">
       <Card className="relative w-full max-w-sm overflow-hidden pt-0">
-        <div className="bg-primary absolute inset-0 z-30 aspect-video opacity-50 mix-blend-color" />
+        <div className="bg-primary pointer-events-none absolute inset-0 z-30 aspect-video opacity-50 mix-blend-color" />
         <img
           src="https://images.unsplash.com/photo-1604076850742-4c7221f3101b?q=80&w=1887&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
           alt="Photo by mymind on Unsplash"
@@ -169,6 +169,7 @@ function FormExample() {
     sms: false,
     push: true,
   });
+  const [view, setView] = React.useState({ sidebar: true, statusBar: false });
   const [theme, setTheme] = React.useState("light");
 
   return (
@@ -260,24 +261,18 @@ function FormExample() {
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>View</DropdownMenuLabel>
                   <DropdownMenuCheckboxItem
-                    checked={notifications.email}
+                    checked={view.sidebar}
                     onCheckedChange={(checked) =>
-                      setNotifications({
-                        ...notifications,
-                        email: checked === true,
-                      })
+                      setView({ ...view, sidebar: checked === true })
                     }
                   >
                     <EyeIcon />
                     Show Sidebar
                   </DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem
-                    checked={notifications.sms}
+                    checked={view.statusBar}
                     onCheckedChange={(checked) =>
-                      setNotifications({
-                        ...notifications,
-                        sms: checked === true,
-                      })
+                      setView({ ...view, statusBar: checked === true })
                     }
                   >
                     <LayoutIcon />
@@ -418,7 +413,7 @@ function FormExample() {
           </CardAction>
         </CardHeader>
         <CardContent>
-          <form>
+          <form onSubmit={(event) => event.preventDefault()}>
             <FieldGroup>
               <div className="grid grid-cols-2 gap-4">
                 <Field>

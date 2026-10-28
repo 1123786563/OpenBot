@@ -105,6 +105,11 @@ function isIdentifier(value: unknown, maxLength: number): value is string {
   );
 }
 
+// Compile-time constant, requested on every status read — built once, not per request.
+const FORBIDDEN_ACCOUNT_KEY_FIELDS = new Set(
+  RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
+);
+
 /**
  * Pure shape validation, before any database contact: exactly one selector, and the
  * account/company-scope vocabulary refused on presence (06.4 + 09.3 — presence is the
@@ -126,9 +131,7 @@ function validateStatusRequest(input: unknown):
   }
   const raw = input as Record<string, unknown>;
 
-  const forbidden = new Set(
-    RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS.map((key) => key.toLowerCase()),
-  );
+  const forbidden = FORBIDDEN_ACCOUNT_KEY_FIELDS;
   for (const key of Object.keys(raw)) {
     if (
       forbidden.has(key.toLowerCase()) ||
@@ -151,7 +154,9 @@ function validateStatusRequest(input: unknown):
   }
 
   const selectors = ["jobId", "submitIdempotencyKey", "providerJobId"].filter(
-    (key) => raw[key] !== undefined,
+    // Null is absence here (isIdentifier would refuse it as a value, but then a lone
+    // `{"jobId": null}` would read as "two selectors" instead of "none").
+    (key) => raw[key] !== undefined && raw[key] !== null,
   );
   if (selectors.length !== 1) {
     return {
@@ -234,13 +239,13 @@ export function createAsyncJobStatusService(
       const [jobRow] = await database
         .select()
         .from(asyncJobs)
-        .where(
-          jobId !== undefined
-            ? eq(asyncJobs.jobId, jobId)
-            : submitIdempotencyKey !== undefined
-              ? eq(asyncJobs.submitIdempotencyKey, submitIdempotencyKey)
-              : eq(asyncJobs.providerJobId, providerJobId as string),
-        )
+        .where((() => {
+          if (jobId !== undefined) return eq(asyncJobs.jobId, jobId);
+          if (submitIdempotencyKey !== undefined) {
+            return eq(asyncJobs.submitIdempotencyKey, submitIdempotencyKey);
+          }
+          return eq(asyncJobs.providerJobId, providerJobId as string);
+        })())
         .limit(1);
 
       // The ownership check the whole door exists for: the job's frozen payer must be

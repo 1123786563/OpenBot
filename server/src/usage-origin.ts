@@ -24,12 +24,22 @@ export type UsageOrigin = "web" | "api" | "cli" | "unknown";
 
 const originStore = new AsyncLocalStorage<{ origin: UsageOrigin }>();
 
-/** Run `fn` (and everything it awaits) as work that came from `origin`. */
+/**
+ * Run `fn` (and everything it awaits) as work that came from `origin`.
+ *
+ * Failure is always a rejected promise: `AsyncLocalStorage.run` rethrows a synchronous
+ * throw as-is, which would defeat the `.catch()` every fire-and-forget dispatch hangs on
+ * this call — so a sync throw is wrapped into the returned promise instead.
+ */
 export function withUsageOrigin<T>(
   origin: Exclude<UsageOrigin, "unknown">,
   fn: () => Promise<T>,
 ): Promise<T> {
-  return originStore.run({ origin }, fn);
+  try {
+    return originStore.run({ origin }, fn);
+  } catch (error) {
+    return Promise.reject(error);
+  }
 }
 
 /**

@@ -40,7 +40,11 @@ import { createWorkQueue, type WorkQueue } from "../work/queue";
 import type { OpikConfig } from "./config";
 import type { ObservationScope } from "./contracts";
 import type { OpikPort, OpikPortResult, OpikTraceRow } from "./opik-port";
-import { projectRow, type RunSummary } from "./queries/runs";
+import {
+  adoptLocalState,
+  projectRow,
+  type RunSummary,
+} from "./queries/runs";
 import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
 
@@ -62,6 +66,10 @@ export const EXPORT_JOB_ERROR_CODES = [
   "OPIK_UNREACHABLE",
   "OPIK_UPSTREAM_ERROR",
   "OPIK_CLIENT_ERROR",
+  // ocrfix-a (OCR R5 b-handoff): the port's deleteTraces now names a missing
+  // locator project apart; the export worker's delete sweep can hit it and must
+  // be able to store the code.
+  "OPIK_PROJECT_MISSING",
   "OPIK_MALFORMED_RESPONSE",
   "OPIK_OWNERSHIP_DRIFT",
 ] as const;
@@ -581,7 +589,10 @@ export function createObservationExportStore(
 
 /**
  * Fold upstream pages under a row cap. Pure: the caller supplies the page
- * fetcher, this supplies the honesty.
+ * fetcher, this supplies the honesty. Page numbers are the upstream's 1-based
+ * numbering — the first page asked is 1 (F8D-2: real Opik answers 400 on
+ * page=0), and the last-page verdict reads only the envelope's total, never
+ * the starting offset.
  *
  *  - `total` above the cap fails EXPORT_ROW_LIMIT_EXCEEDED before any further
  *    fetch — an export that cannot be whole does not ship half and call itself
@@ -597,7 +608,11 @@ export async function foldExportPages<T>(
     page: number,
   ) => Promise<{ total: number; content: readonly T[] }>,
 ): Promise<readonly T[]> {
-  const first = await fetchPage(0);
+  // F8D-2: upstream pages are 1-based. Real Opik 2.2.100 answers 400 on
+  // page=0 (the a11-export evidence), so a fold that opened there failed
+  // every real-deployment export job as OPIK_CLIENT_ERROR before it read a
+  // single row — the first page asked is 1, and page=0 is never requested.
+  const first = await fetchPage(1);
   if (first.total > cap) {
     throw new ExportRowLimitExceeded();
   }
@@ -608,7 +623,7 @@ export async function foldExportPages<T>(
   if (rows.length > cap) {
     throw new ExportRowLimitExceeded();
   }
-  let page = 0;
+  let page = 1;
   while (rows.length < first.total) {
     page += 1;
     const next = await fetchPage(page);
@@ -755,10 +770,12 @@ export function createObservationExportWorker(
     }
 
     /*
-     * Re-derive the scope from live authorization. A revoked actor, a
-     * transferred bot or a bumped epoch answers differently than the scope the
-     * job was enqueued under — including null — and every one of those answers
-     * cancels the job before a single upstream byte is fetched.
+     * Re-derive the scope from live authorization. A revoked actor or a
+     * transferred bot answers differently than the scope the job was enqueued
+     * under — including null — and every one of those answers cancels the job
+     * before a single upstream byte is fetched. FREV-03: the data address is
+     * stable, so this gate — not an address change — is what retires the old
+     * holder's job, while a new owner's own job reads the same history.
      */
     const scope = await deps.reauthorize({
       actorId: job.actorId,
@@ -774,8 +791,9 @@ export function createObservationExportWorker(
       locator.workspace !== job.locatorWorkspace ||
       locator.project !== job.locatorProject
     ) {
-      // The scope the world would issue now points somewhere else than the
-      // locator this job froze: ownership moved underneath the job.
+      // The stable per-Bot address the world would issue now points somewhere
+      // else than the locator this job froze — a structural drift (never a
+      // transfer: those are caught by the reauthorization above), fail closed.
       await store.settleCancelled(job.id);
       await finish();
       return;
@@ -814,13 +832,20 @@ export function createObservationExportWorker(
       // obeys the same reader contract as bindings.ts's capabilitiesByOpikTraceIds
       // (OCR R4-37): a deletion-in-flight binding no longer answers for its
       // trace, so the export never carries a verdict the query surface refuses.
+      // The lifecycle state rides the same join (OCR R2 #19 / FREV-R6-01②,
+      // m143's same-projection contract made real): the batch also reads each
+      // binding's state, and the projection adopts it through the ONE helper the
+      // query face uses — an upstream "unknown" plus a locally observed state
+      // answers the local word, byte-for-byte what the list page answers.
       const ids = rows.map((row) => row.id);
       const verdicts = new Map<string, string>();
+      const localStates = new Map<string, string>();
       for (const batch of chunkTraceIds(ids)) {
         const bound = await deps.database
           .select({
             opikTraceId: aiObservationBindings.opikTraceId,
             capability: aiObservationBindings.capability,
+            state: aiObservationBindings.state,
           })
           .from(aiObservationBindings)
           .where(
@@ -834,16 +859,21 @@ export function createObservationExportWorker(
             ),
           );
         for (const row of bound) {
-          if (row.opikTraceId !== null)
+          if (row.opikTraceId !== null) {
             verdicts.set(row.opikTraceId, row.capability);
+            localStates.set(row.opikTraceId, row.state);
+          }
         }
       }
       const artifact = rows.map((row) =>
-        projectRow(
-          row,
-          (verdicts.get(row.id) ?? "unavailable") as Parameters<
-            typeof projectRow
-          >[1],
+        adoptLocalState(
+          projectRow(
+            row,
+            (verdicts.get(row.id) ?? "unavailable") as Parameters<
+              typeof projectRow
+            >[1],
+          ),
+          localStates.get(row.id),
         ),
       );
       // Null when revocation won the row while the fetch ran: the artifact is

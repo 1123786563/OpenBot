@@ -5,13 +5,16 @@ import {
 } from "@copilotkit/runtime/v2";
 import { COMPUTER_GUIDANCE } from "@openbot/shared/bot-prompt";
 import { getLogger } from "@openbot/shared/logger";
-import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
-import { initProcessTracing } from "@openbot/shared/trace";
+import {
+  initProcessTracing,
+  SERVER_TRACING_SERVICE_NAME,
+} from "@openbot/shared/trace";
 import { workOwner } from "@openbot/shared/work-owner";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
 import { createTurnRunner } from "@openbot/toolkit/run-turn";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { buildResponsibilityTurn } from "../../../shared/responsibility-turn";
 import { createActivityStore } from "../activity/activity";
 import {
   auditRoutineStore,
@@ -48,7 +51,7 @@ import {
   createOpenMuseTemplateRevisionStore,
   createOpenMuseTemplateStore,
 } from "../agents/openmuse-template-store";
-import { canManageAgent } from "../agents/profile-policy";
+import { canObserveAgent } from "../agents/profile-policy";
 import { createAgentProfileStore } from "../agents/profile-store";
 import type { AgentActor } from "../agents/profile-types";
 import { createBotCatalog } from "../agents/public";
@@ -61,9 +64,14 @@ import {
   wakeUpInstruction,
   wakeUpTools,
 } from "../agents/wake-up";
-import { createRunBindingStore } from "../ai-observability/bindings";
+import {
+  createObserverRunBindingGate,
+  createRunBindingStore,
+  observerChainId,
+} from "../ai-observability/bindings";
 import { opikConfigFromEnv } from "../ai-observability/config";
 import type { BotManagementCheck } from "../ai-observability/context";
+import type { ObservationScope } from "../ai-observability/contracts";
 import { createExecutionBudgetPrecheck } from "../ai-observability/execution-billing";
 import { createExperimentExecutionWorkerBoot } from "../ai-observability/execution-boot";
 import {
@@ -85,6 +93,11 @@ import {
 } from "../ai-observability/public";
 import { createRunsQueryService } from "../ai-observability/queries/runs";
 import {
+  createRemoteBudgetContractResolver,
+  createRemoteRunBudgetGate,
+  createRemoteRunRecorder,
+} from "../ai-observability/remote-run";
+import {
   createObservationRetentionWorker,
   RETENTION_WORK_KIND,
   resolveRetentionDays,
@@ -100,8 +113,8 @@ import {
 } from "../ai-observability/wiring";
 import { createApp, createDeploymentRequireUser } from "../app";
 import { createApprovedActionExecutor } from "../approvals/execute";
-import { resumePersonQuestion } from "../approvals/question-resume";
 import { createApprovalsAccess } from "../approvals/public";
+import { resumePersonQuestion } from "../approvals/question-resume";
 import {
   type PersonQuestion,
   personQuestionSchema,
@@ -145,8 +158,10 @@ import {
 } from "../billing/maintenance";
 import { checkOutboundUrl, createOutboundGuard } from "../billing/outbound";
 import {
+  CreditInsufficientError,
   currentPayerBinding,
   ensureDeploymentPayerBinding,
+  resolveConsumptionPayerBinding,
 } from "../billing/payer-binding";
 import { createAlipayProvider } from "../billing/payments/alipay";
 import { startPaymentSweeps } from "../billing/payments/maintenance";
@@ -163,6 +178,7 @@ import {
 } from "../billing/service";
 import { createBillingStatements } from "../billing/statements";
 import { createBillingStore } from "../billing/store";
+import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../billing/types";
 import {
   createCreditUsageTarget,
   createLagoUsageTarget,
@@ -220,6 +236,7 @@ import { createStreamAuthorizer } from "../computer/stream-auth";
 import { loadConfig, trustedBrowserOrigins } from "../config";
 import {
   billingMethodForModel,
+  CreditGateFailureError,
   type IdentifyActor,
   type IdentifyUser,
   type ModelBillingAuditEvent,
@@ -228,12 +245,16 @@ import {
   runtimeModelForEnvironment,
   setBuiltinExecutionEngine,
   setBuiltinModelSpanObserver,
+  setBuiltinRunLifecycleObserver,
   setBuiltinToolStepObserver,
   setMastraContinuations,
   setMastraConversationRuntime,
   setMastraPersonalMemoryContext,
   setModelBillingAudit,
   setModelUsageGate,
+  setRemoteBudgetContractResolver,
+  setRemoteRunBudgetGate,
+  setRemoteRunObserver,
   setWorkbenchGatewayModel,
   type ToolSelection,
 } from "../copilot";
@@ -253,12 +274,12 @@ import {
   singleReplicaStartupNotice,
 } from "../craft/preview-origin";
 import { createPreviewTickets } from "../craft/preview-ticket";
+import { createCraftSandboxPublic } from "../craft/public";
 import {
   type CraftRoutesFactory,
   createCraftRoutes,
   stopCraftIdleReaper,
 } from "../craft/routes";
-import { createCraftSandboxPublic } from "../craft/public";
 import { createCraftStore } from "../craft/store";
 import { createPreviewProxy } from "../craft/webapp-proxy";
 import {
@@ -298,9 +319,9 @@ import type {
   RunnerRequestLease,
   RunService,
 } from "../enterprise/contracts";
-import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
 import { createMastraStorageArm } from "../enterprise/conversations/integration";
 import { createConversationPublic } from "../enterprise/conversations/public";
+import { createUnavailableConversationRoutes } from "../enterprise/conversations/routes";
 import { createPackageRuntime } from "../enterprise/plugin-packages/runtime";
 import { createRunContinuations } from "../enterprise/runs/continuations";
 import type { GovernedModelExecution } from "../enterprise/runs/governed-execution";
@@ -347,11 +368,11 @@ import {
   type ResourceInventoryService,
 } from "../enterprise/tenancy/not-found-semantics";
 import { createOAuthStateService } from "../enterprise/tenancy/oauth-state";
-import { createCompanyPeopleLifecycleService } from "../enterprise/tenancy/people-lifecycle";
 import {
   createOpenMuseVoiceMobileTenancyService,
   type OpenMuseVoiceMobileTenancyRows,
 } from "../enterprise/tenancy/openmuse-voice-mobile-tenancy";
+import { createCompanyPeopleLifecycleService } from "../enterprise/tenancy/people-lifecycle";
 import {
   createPersonalShareAdminService,
   createPersonalShareDecisionService,
@@ -361,14 +382,14 @@ import {
   createPluginCatalogDecisionService,
 } from "../enterprise/tenancy/plugin-catalog";
 import {
+  applyReadinessEnforcementVerdict,
+  runReadinessEnforcement,
+} from "../enterprise/tenancy/readiness-enforcement";
+import {
   createSharedApprovalAdminService,
   createSharedApprovalService,
 } from "../enterprise/tenancy/shared-approvals";
 import { createCompanySsoScimConfigService } from "../enterprise/tenancy/sso-scim-config";
-import {
-  applyReadinessEnforcementVerdict,
-  runReadinessEnforcement,
-} from "../enterprise/tenancy/readiness-enforcement";
 import {
   applyStartupDefaultsVerdict,
   buildStartupDefaultsRecord,
@@ -426,12 +447,6 @@ import {
   createDrizzlePauseControls,
   createUserPauseGate,
 } from "../hindsight/pause-controls";
-// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
-// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
-import {
-  createHindsightRecallArm,
-  createHindsightSyncArm,
-} from "../memory/integration";
 import {
   createDrizzlePreferenceRecords,
   createPreferenceRecallService,
@@ -521,6 +536,12 @@ import { createMastraTools } from "../mastra/tools";
 import { resolveMemoryCompany } from "../memory/company";
 import { createMemoryDefaults } from "../memory/defaults";
 import { createMemoryIngestion } from "../memory/ingestion";
+// MOD15 (#635)：个人记忆语境的降级召回装配经 M10 具名臂（memory/integration.ts），
+// 个人记忆语境组合与渲染装载器收拢在臂内；此前内联于此的组合逐参数等价。
+import {
+  createHindsightRecallArm,
+  createHindsightSyncArm,
+} from "../memory/integration";
 import { createMemoryStore } from "../memory/store";
 import { memoryTools } from "../memory/tools";
 import { OPENMUSE_TEMPLATE_KEY } from "../mobile-bff/openmuse-bot";
@@ -725,6 +746,7 @@ import { createRuntimeLifecycle } from "./lifecycle";
 import {
   createModelBudgetArm,
   logUsageOutboxWriteFailure,
+  MODEL_RESERVATION_WINDOW_MS,
 } from "./model-budget";
 
 /**
@@ -1001,14 +1023,38 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
      * where its await belongs.
      */
     const opikBootConfig = opikConfigFromEnv(process.env);
-    const aiObservabilityCanManageBot: BotManagementCheck = async (
+    /*
+     * R4-02: the observation domain's ONE gate is the observe-level policy, not the
+     * manage rule. `canManageAgent` refuses `systemOwned` for every role — right for
+     * editing, wrong for reading — so routing this seam through it left the default
+     * LangGraph Bot executing, billing and writing traces upstream while every
+     * observation face answered 404 and no binding ever existed. `canObserveAgent`
+     * keeps the manage answer for user-owned Bots and hands a creatorless system
+     * Bot's data to the administrator alone; the profile EDIT paths keep
+     * `canManageAgent`.
+     *
+     * CONSUMER AUDIT (OCR R5): this one guard is wired at four places, and the audit
+     * is the boundary statement. (1) The builtin run scope resolver mints observation
+     * scopes — reading. (2) The observation routes use it for every per-Bot answer,
+     * including the observation domain's OPERATIONAL faces — export queueing,
+     * case-review persistence, experiment submit/start — which write observation DATA
+     * (and a billed evaluation execution spends credits); none of them edits a Bot
+     * profile. (3) The export re-authorization reads data out — reading. (4) The
+     * evaluation execution worker runs billed evaluations over observed runs — an
+     * observation-data operation, the operator's own job on a Bot whose data the Spec
+     * assigns to administrators. The divergence therefore reaches the observation
+     * domain's own faces, including the spend, and never the profile edit paths; a
+     * face that must refuse admin on system Bots gets its own gate, it does not
+     * reroute this one.
+     */
+    const aiObservabilityCanObserveBot: BotManagementCheck = async (
       actor,
       botId,
     ) => {
       const profile = await agentProfileStore
         .get(actor, botId)
         .catch(() => null);
-      return profile && canManageAgent(actor, profile) ? profile : null;
+      return profile && canObserveAgent(actor, profile) ? profile : null;
     };
     const aiObservabilityScopeEpoch = createAgentProfileScopeEpoch(database);
     /*
@@ -1022,7 +1068,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
      */
     const aiObservabilityRunScope = createBuiltinRunScopeResolver({
       enabled: () => opikBootConfig.enabled,
-      canManageBot: aiObservabilityCanManageBot,
+      canManageBot: aiObservabilityCanObserveBot,
       scopeEpoch: aiObservabilityScopeEpoch,
     });
     /*
@@ -1427,7 +1473,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // no share can ever be created or revoked — when that channel is not wired.
     // Held here for the share-token and share-page entrypoints that land in
     // MT058 and MT092; nothing in this assembly serves traffic with it yet.
-    const personalShareRules = await (async () => {
+    const _personalShareRules = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
       const operator = operatorUrl
@@ -1453,7 +1499,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // the deployment's existing AES-GCM envelope (credentials.ts): plaintext is
     // sealed on registration and only ever opened inside an authorized disclosure,
     // which writes the append-only audit row in the same data transaction.
-    const credentialOwnership = await (async () => {
+    const _credentialOwnership = await (async () => {
       if (!enterpriseCapabilities) return null;
       const credentialOwnershipVault: SecretVault = {
         seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
@@ -1491,7 +1537,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // AES-GCM envelope (same as credentialOwnership): an install secret is sealed
     // on install and never returned by any view; invocation hands the sealed
     // envelope only to the allow branch of the trusted execution plane.
-    const pluginCatalog = await (async () => {
+    const _pluginCatalog = await (async () => {
       if (!enterpriseCapabilities) return null;
       const pluginCatalogVault: SecretVault = {
         seal: (plaintext) => encryptSecret(config.keyEncryptionKey, plaintext),
@@ -1525,7 +1571,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // unaffected), never a flow that could not be consumed or audited. Held here
     // for the connector callback wiring that lands in the downstream ticket;
     // nothing in this assembly serves traffic with it yet.
-    const oauthState = await (async () => {
+    const _oauthState = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
       const operator = operatorUrl
@@ -1573,7 +1619,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     // execution-chain wiring (plugin/shared-account gates compose this at their
     // checkpoints downstream); nothing in this assembly serves traffic with it
     // yet.
-    const sharedApprovals = await (async () => {
+    const _sharedApprovals = await (async () => {
       if (!enterpriseCapabilities) return null;
       const operatorUrl = config.enterpriseOperatorDatabaseUrl;
       const operator = operatorUrl
@@ -4436,7 +4482,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       );
     }
 
-    const mastraContinuationRouteDeps =
+    const _mastraContinuationRouteDeps =
       mastraContinuationStore &&
       enterpriseCapabilities &&
       mastraContinuationInstall
@@ -6015,7 +6061,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
      * Trace context propagation and, when a collector is configured, trace export. Installed
      * beside the audit exporter below so the first request already runs inside a trace.
      */
-    initProcessTracing("server", process.env);
+    initProcessTracing(SERVER_TRACING_SERVICE_NAME, process.env);
 
     /*
      * Enterprise controls (server/src/admin): capability switches, SSO-required, SCIM offboarding,
@@ -6343,8 +6389,88 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           },
         }).catch(() => undefined);
       });
+
+      /*
+       * The remote dial's budget seam (F5E1-F2, closed by R3-02). TWO things have to exist before a
+       * remote Bot dials, and the finding is precisely that only the first one did:
+       *
+       * 1. THE ADMISSION holds the run's worst case in credits — one writer, one ledger, the same
+       *    reservation machinery the built-in path uses, over the policy's `codeRun` ceiling. It
+       *    exists exactly when billing is composed AND the credit policy is configured, and it is
+       *    what makes the charge bounded. A hold bounds what is CHARGED.
+       *
+       * 2. THE CONTRACT bounds what the ENDPOINT SPENDS: caps derived from that same policy ceiling
+       *    ride out with the dial, the endpoint enforces them at its own model call, and its signed
+       *    receipt is checked against them before the run's ending is delivered. It exists only
+       *    where the operator has named the endpoint in `REMOTE_BUDGET_CONTRACT_ENDPOINTS` and the
+       *    endpoint presents this deployment's own token — see `createRemoteBudgetContractResolver`.
+       *
+       * A deployment with either missing keeps its remote Bots fail-closed (REMOTE_RUN_BUDGET_
+       * UNVERIFIED) at build time, before tools, roster or transport are touched. That is the
+       * deliberate tightening: the presence of a price list is not authorization for a third party
+       * to spend without limit, which is what the F6D hold alone amounted to.
+       *
+       * Settlement stays the unknown-cost doctrine the hold has always kept: AG-UI carries no
+       * usage receipt in credit units, so an admitted run's hold is MARKED UNKNOWN (06.8 — it
+       * outlives its own expiry for reconciliation) with the observed outcome as its reason, and
+       * nothing releases. The contract's receipt bounds what was spent; it does not price it, and
+       * pricing it here would be a second book beside the ledger.
+       */
+      const remoteRunCreditPolicy =
+        billingSettings?.creditPolicy.configured === true
+          ? billingSettings.creditPolicy
+          : undefined;
+      if (remoteRunCreditPolicy !== undefined) {
+        setRemoteRunBudgetGate(
+          createRemoteRunBudgetGate({
+            creditWriter: billing.creditWriter,
+            // The request's one payer (B5-219), resolved once, exactly as the model gate does:
+            // the request's own binding when the surface bound one, else the deployment's.
+            resolvePayer: () =>
+              resolveConsumptionPayerBinding({
+                requestBinding: currentPayerBinding(),
+                deploymentBinding: billing.deploymentPayerBinding,
+              }),
+            maximumCents: Number(
+              remoteRunCreditPolicy.codeRun.maximumReservationUnits,
+            ),
+            reservationWindowMs: MODEL_RESERVATION_WINDOW_MS,
+            idempotencyPrefix: USAGE_IDEMPOTENCY_KEY_PREFIX,
+            log,
+            refusals: {
+              gateFailure: () => new CreditGateFailureError(),
+              insufficient: (input) => new CreditInsufficientError(input),
+            },
+          }),
+        );
+
+        /*
+         * The contract, wired from three explicit facts and nothing inferred: the operator's list
+         * of contract-capable endpoints, the deployment token both ends hold, and the policy's own
+         * token ceiling. Absent either of the first two, no endpoint resolves and every remote Bot
+         * refuses — the same safe direction a deployment with no billing takes.
+         */
+        const sessionContract = config.remoteBudgetContract;
+        setRemoteBudgetContractResolver(
+          sessionContract === undefined
+            ? undefined
+            : createRemoteBudgetContractResolver({
+                endpoints: sessionContract.endpoints,
+                sharedSecret: config.managedAgent?.token,
+                maximumTokens: remoteRunCreditPolicy.codeRun.maximumTokens,
+                maxModelSteps: sessionContract.maxModelSteps,
+              }),
+        );
+      } else {
+        // No policy means no hold, and no hold means no dial: the contract alone would bound
+        // spending but nothing would bound the charge, so both seams go away together.
+        setRemoteRunBudgetGate(undefined);
+        setRemoteBudgetContractResolver(undefined);
+      }
     } else {
       setModelUsageGate(undefined);
+      setRemoteRunBudgetGate(undefined);
+      setRemoteBudgetContractResolver(undefined);
       setWorkbenchGatewayModel(undefined);
       setModelBillingAudit(undefined);
     }
@@ -7735,7 +7861,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       // The shared guard, not a second construction (OCR m209): one deployment-level
       // requireUser per process, or two copies age separately and fork silently.
       requireUser: deploymentRequireUser,
-      canManageBot: aiObservabilityCanManageBot,
+      canManageBot: aiObservabilityCanObserveBot,
       healthService: opikHealthService,
       database,
       scopeEpoch: aiObservabilityScopeEpoch,
@@ -7778,7 +7904,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
      */
     const observationExportStore = createObservationExportStore(database);
     const opikExportReauthorize = createExportReauthorization({
-      canManageBot: aiObservabilityCanManageBot,
+      canManageBot: aiObservabilityCanObserveBot,
       scopeEpoch: aiObservabilityScopeEpoch,
       resolveActor: createActorResolver((userId) =>
         roleRepository.rolesForUser(userId),
@@ -7855,14 +7981,83 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
      * writes its spans upstream through the queue; a null scope (disabled, non-manager,
      * failed read) submits nothing, exactly as before the thread existed.
      */
+    /*
+     * The observer-path binding gate (FREV-02): every business span the builtin
+     * recorders export is gated on this run's LOCAL authoritative binding — begin
+     * (idempotent, T07's store at 7517) before the first export of a chain, and
+     * the observed run close settling the binding after it. A binding that cannot
+     * be established fails the write closed: counted by the write queue, logged by
+     * the gate, never an unattributed span upstream.
+     */
+    const opikObserverBindings = createObserverRunBindingGate(
+      aiObservabilityBindings,
+      // F5E1-F3: with the verified port behind the gate, establishing a chain's binding also
+      // materializes the run's upstream trace/root and records the authoritative mapping, so a
+      // run is listable and its cleanup locatable from the moment its first span exports. A
+      // disabled or unverified deployment answers null and the gate keeps its binding-only
+      // shape — the port accessor is read at materialization time, never boot-time frozen.
+      { port: () => opikObservationPort },
+    );
     const opikModelSpans = createModelSpanRecorder({
       healthService: opikHealthService,
+      bindings: opikObserverBindings,
     });
+    /*
+     * The remote run's basic record (F5E1-F2): one recorder over the same T07 binding store the
+     * observer gate reads and the same verified port its materialization rides, keeping the
+     * remote origin's governed records on the machinery every other observed run uses — binding
+     * gate, deterministic upstream identity, authoritative reconcile — rather than a parallel
+     * path around it. Registered on the same inert-until-proven footing as the span observer
+     * above: an Opik-disabled deployment keeps the dial (the budget gate governs it) and simply
+     * keeps no basic record.
+     */
+    const opikRemoteRuns = createRemoteRunRecorder({
+      bindings: aiObservabilityBindings,
+      port: () => opikObservationPort,
+    });
+    if (observationEnabled(opikBootConfig)) {
+      setRemoteRunObserver((fact) =>
+        opikRemoteRuns.record({
+          scope: fact.scope,
+          botId: fact.botId,
+          threadId: fact.threadId,
+          runId: fact.runId,
+          attemptId: fact.attemptId,
+          traceId: fact.traceId,
+          dial: fact.dial,
+          events: fact.events,
+          endedAt: fact.endedAt,
+        }),
+      );
+    }
     if (observationEnabled(opikBootConfig)) {
       // MOD17: the fact→observation adaptation moved verbatim into the M11 public
       // facade — this seam now only binds the recorder (queue semantics stay in the
       // health service the recorder was built with) and registers the observer.
       setBuiltinModelSpanObserver(modelSpanObserver(opikModelSpans));
+    }
+
+    /*
+     * F5E1-F1's assembly fact, said once at boot: the observation face above is NOT billing's,
+     * and this line names which reason installed the model wrapper. With the billing machinery
+     * composed, `copilot.ts` builds the metered wrapper it always did (admission, settlement and
+     * the observation bypass on one wrapper); without it — a legal stock deployment — the
+     * observation-only wrapper does, producing governed facts with no gate and no meter. A run
+     * shape that still cannot be wrapped (a runtime-resolved string model, a subscription harness
+     * model) is counted and warned by `copilot.ts`; this line names the wiring, that warn names
+     * the gap, and together they keep an enabled deployment from looking observed when it is not.
+     */
+    if (observationEnabled(opikBootConfig)) {
+      log.info(
+        {
+          type: "opik-observation-wiring",
+          modelWrapper:
+            billing !== undefined && usageOutbox !== undefined
+              ? "metered"
+              : "observation_only",
+        },
+        "opik-observation-wiring",
+      );
     }
 
     /*
@@ -7877,6 +8072,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
      */
     const opikToolSteps = createToolStepRecorder({
       healthService: opikHealthService,
+      bindings: opikObserverBindings,
       /*
        * The id-mapping half (Issue #23/T17): a tool step whose span adopted an explicit
        * upstream id is linked after the write lands, chain-checked against the run
@@ -7891,7 +8087,45 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     if (observationEnabled(opikBootConfig)) {
       // MOD17: same move as the model spans above — the adaptation lives in the
       // M11 public facade; this seam binds the recorder and registers the observer.
+      // R3-03: the tool-step window no longer settles the run — a tool window is
+      // not a run's lifetime. The run's OWN lifecycle observation (the
+      // registration below) is the one settle authority now; the observer records
+      // steps and nothing else.
       setBuiltinToolStepObserver(toolStepObserver(opikToolSteps));
+    }
+
+    /*
+     * The run's own lifecycle (R3-03): the common builtin event entry observes the
+     * run's real start and terminal — RUN_FINISHED success/cancel/interrupt and
+     * RUN_ERROR are distinguished at the event face and persisted here, instead of
+     * being dropped at the tool-step fact boundary. The start observation rides
+     * ahead of the first business fact, so the materialized trace and root carry
+     * the run's real start; the terminal settles the binding (first terminal
+     * wins, the lease sweeper still the net for a reporter that died mid-run) and
+     * closes the run root upstream with the observed window. A disconnected
+     * window — nothing terminal was seen — settles the honest unknown and nothing
+     * else ever does.
+     */
+    if (observationEnabled(opikBootConfig)) {
+      setBuiltinRunLifecycleObserver((fact) => {
+        const runScope = fact.scope as ObservationScope | undefined;
+        const runChainId = observerChainId(fact.trace?.traceId);
+        if (runScope === undefined || runChainId === null) return;
+        const chain = { traceId: runChainId };
+        if (fact.terminal === null) {
+          opikObserverBindings.noteObservedRunStart(
+            runScope,
+            chain,
+            fact.startedAt,
+          );
+          return;
+        }
+        opikObserverBindings.settleObservedRun(runScope, chain, {
+          startedAt: fact.startedAt,
+          ending: fact.terminal.ending,
+          endedAt: fact.terminal.endedAt,
+        });
+      });
     }
 
     /*
@@ -7927,7 +8161,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
             policy: opikEvaluationCreditPolicy.models,
             externalCustomerId: billing.externalCustomerKey,
           },
-          canManageBot: aiObservabilityCanManageBot,
+          canManageBot: aiObservabilityCanObserveBot,
           scopeEpoch: aiObservabilityScopeEpoch,
           resolveActor: createActorResolver((userId) =>
             roleRepository.rolesForUser(userId),

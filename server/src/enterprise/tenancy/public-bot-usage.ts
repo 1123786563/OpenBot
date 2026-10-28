@@ -357,11 +357,16 @@ export function createPublicBotUsageService(
           and status = 'active'
         order by dependency_ref asc
       `)) as unknown;
-      const dependencyList = (
-        Array.isArray(dependencyRows)
-          ? dependencyRows
-          : ((dependencyRows as { rows?: unknown[] })?.rows ?? [])
-      ) as readonly CredentialDependencyRow[];
+      // 驱动返回形状回归时响亮拒绝，绝不静默折叠为空依赖列表
+      //（空列表会让 Bot 在零凭据绑定下 admitted）。
+      const dependencySource: unknown = Array.isArray(dependencyRows)
+        ? dependencyRows
+        : (dependencyRows as { rows?: unknown })?.rows;
+      if (!Array.isArray(dependencySource)) {
+        throw new TypeError("PUBLIC_BOT_DEPENDENCY_ROWS_INVALID");
+      }
+      const dependencyList =
+        dependencySource as readonly CredentialDependencyRow[];
 
       // 凭据选择 = 使用者本人的个人凭据：target=ref 精确匹配、
       // (created_at, id) 确定性序取首个。创建者（或任何他人）的同名

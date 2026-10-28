@@ -210,10 +210,14 @@ export async function createGroupFixture(): Promise<GroupFixture> {
       ? result
       : ((result as { rows?: unknown[] })?.rows ?? []);
     const first = (rows as Readonly<{ current_user?: unknown }>[])[0];
+    // current_user always answers exactly one row: a miss means the probe
+    // itself broke, and an empty role must not silently pass the RLS proofs.
+    if (typeof first?.current_user !== "string") {
+      throw new Error(`RESTRICTED_ROLE_PROBE_FAILED:${role}`);
+    }
     restricted.push({
       role,
-      currentUser:
-        typeof first?.current_user === "string" ? first.current_user : "",
+      currentUser: first.current_user,
     });
   };
 

@@ -85,7 +85,11 @@ export function createProactiveStore(database: Database) {
           ...scoped,
           ...parsed,
         })
-        .onConflictDoNothing()
+        // The business unique constraint is (owner, agent); pinning the target means any other
+        // violation surfaces as the defect it is instead of masquerading as "already set up".
+        .onConflictDoNothing({
+          target: [proactiveSettings.ownerUserId, proactiveSettings.agentId],
+        })
         .returning();
       if (!row)
         throw new ProactiveRefusedError(
@@ -109,9 +113,16 @@ export function createProactiveStore(database: Database) {
     },
     /** Removing research is turning it down for this Bot: OpenBot never switches it back on. */
     async remove(owner: string, id: string) {
-      const { agentId } = await get(owner, id);
       await database.transaction(async (transaction) => {
-        await lockDefaults(transaction, owner, agentId);
+        // The row is read under the same lock that guards the defaults: the agentId the
+        // opt-out names is the one the locked delete saw, not a pre-lock snapshot.
+        const [row] = await transaction
+          .select()
+          .from(proactiveSettings)
+          .where(owned(owner, id))
+          .limit(1);
+        if (!row) throw new ProactiveNotFoundError();
+        await lockDefaults(transaction, owner, row.agentId);
         const rows = await transaction
           .delete(proactiveSettings)
           .where(owned(owner, id))
@@ -119,7 +130,7 @@ export function createProactiveStore(database: Database) {
         if (!rows.length) throw new ProactiveNotFoundError();
         await recordOptOut(transaction, {
           ownerUserId: owner,
-          agentId,
+          agentId: row.agentId,
           feature: "proactive_research",
         });
       });
@@ -129,13 +140,16 @@ export function createProactiveStore(database: Database) {
      * sweeps can never both take one and the interval holds even when a run then fails.
      */
     async claimDue(limit = 5): Promise<ProactiveSetting[]> {
+      // Both the guard and the advance read the database's clock: an application/DB skew
+      // would otherwise claim rows the database does not consider due, or advance a claimed
+      // row to a moment its own guard already passed.
       const due = await database
         .select({ id: proactiveSettings.id })
         .from(proactiveSettings)
         .where(
           and(
             eq(proactiveSettings.enabled, true),
-            lte(proactiveSettings.nextRunAt, new Date()),
+            lte(proactiveSettings.nextRunAt, sql`now()`),
           ),
         )
         .limit(Math.min(limit, 10));
@@ -151,7 +165,7 @@ export function createProactiveStore(database: Database) {
             and(
               eq(proactiveSettings.id, id),
               eq(proactiveSettings.enabled, true),
-              lte(proactiveSettings.nextRunAt, new Date()),
+              lte(proactiveSettings.nextRunAt, sql`now()`),
             ),
           )
           .returning();
@@ -225,6 +239,12 @@ export function createProactiveStore(database: Database) {
           ),
         );
     },
+    /*
+     * Delivery is at-least-once: a crash between the suggestion's delivery and this mark leaves
+     * the row undelivered, and the next pass re-delivers it. Downstream surfaces dedupe by
+     * suggestion id, which is the contract that makes the window harmless — keep that true if
+     * delivery ever grows a second consumer.
+     */
     async markDelivered(id: string) {
       await database
         .update(proactiveSuggestions)

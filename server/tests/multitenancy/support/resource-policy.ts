@@ -219,7 +219,7 @@ export async function createResourcePolicyFixture(): Promise<ResourcePolicyFixtu
             team.principalId,
           ])}, 0))`,
         );
-        await tx.execute(sql`
+        const updated = (await tx.execute(sql`
           update enterprise_workspace_memberships
           set status = ${status},
             epoch = (select coalesce(max(epoch), 0) + 1
@@ -230,7 +230,18 @@ export async function createResourcePolicyFixture(): Promise<ResourcePolicyFixtu
           where tenant_id = ${team.tenantId}
             and workspace_id = ${team.workspaceId}
             and principal_id = ${team.principalId}
-        `);
+          returning 1
+        `)) as unknown;
+        // Mirror markVisibility: 0 affected rows means the fixture row is not
+        // there, so dependent cases must not pass on data that never changed.
+        const rows = Array.isArray(updated)
+          ? updated
+          : ((updated as { rows?: unknown[] })?.rows ?? []);
+        if (rows.length !== 1) {
+          throw new Error(
+            `MEMBERSHIP_STATUS_FAILED:${team.tenantId}:${team.workspaceId}:${team.principalId}:${rows.length}`,
+          );
+        }
       });
     },
 

@@ -23,6 +23,7 @@ const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  * high surrogate is dropped, and one followed by its pair in the source is exactly the split case.
  */
 export function cutAtCodeUnits(text: string, limit: number): string {
+  if (limit <= 0) return "";
   const sliced = text.slice(0, limit);
   const last = sliced.charCodeAt(sliced.length - 1);
   return last >= 0xd800 && last <= 0xdbff ? sliced.slice(0, -1) : sliced;
@@ -34,6 +35,8 @@ export function cutAtCodeUnits(text: string, limit: number): string {
  * different ones.
  */
 export function oneLine(text: string, maxGraphemes: number): string {
+  // A non-positive cap can only be satisfied by nothing at all.
+  if (maxGraphemes <= 0) return "";
   // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point.
   const flattened = text.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").trim();
   const collapsed = flattened.replace(/\s+/g, " ");
@@ -41,10 +44,13 @@ export function oneLine(text: string, maxGraphemes: number): string {
   // already under the cap and needs no segmenting. Nearly everything a roster draws is that short,
   // and segmenting is the expensive part of this function.
   if (collapsed.length <= maxGraphemes) return collapsed;
-  const graphemes = Array.from(
-    GRAPHEMES.segment(collapsed),
-    (each) => each.segment,
-  );
-  if (graphemes.length <= maxGraphemes) return collapsed;
-  return `${graphemes.slice(0, maxGraphemes - 1).join("")}…`;
+  // Stop segmenting at the cap: the input (a titler's raw HTTP body) can be
+  // megabytes, and only the first maxGraphemes clusters are ever used.
+  const parts: string[] = [];
+  for (const { segment } of GRAPHEMES.segment(collapsed)) {
+    if (parts.length === maxGraphemes)
+      return `${parts.slice(0, -1).join("")}…`;
+    parts.push(segment);
+  }
+  return collapsed;
 }

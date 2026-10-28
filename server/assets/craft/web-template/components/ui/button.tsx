@@ -9,7 +9,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        default: "bg-primary text-primary-foreground hover:bg-primary/80",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-expanded:bg-muted aria-expanded:text-foreground",
         secondary:
@@ -46,6 +46,7 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  type,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
@@ -53,6 +54,8 @@ function Button({
   }) {
   const Comp = asChild ? Slot.Root : "button";
 
+  // A native <button> defaults to type="submit"; default it to "button" and
+  // keep explicit overrides. Never inject a type onto an asChild element.
   return (
     <Comp
       data-slot="button"
@@ -60,6 +63,7 @@ function Button({
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      {...(Comp === "button" ? { type: type ?? "button" } : {})}
     />
   );
 }

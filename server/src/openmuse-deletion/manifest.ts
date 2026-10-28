@@ -326,10 +326,31 @@ export function createOpenMuseDeletionManifest(deps: {
         deps.marker.get(userId),
         deps.rows.listResources(userId),
       ]);
+      /*
+       * Answered from the marker that stands NOW, not the one this call read
+       * on entry: D05's restore can lift the fence during the enumeration
+       * above, and a manifest asserting "fenced" over a lifted marker would
+       * both lie and hang these rows off a deletion that no longer stands —
+       * the entry read's own contract (re-answered, never asserted).
+       */
+      if (marker?.phase !== "fenced") {
+        if (!marker) {
+          throw new Error(
+            `The deletion marker for ${userId} is gone; a manifest cannot name a fence that is not there.`,
+          );
+        }
+        return {
+          userId,
+          disabledAt: marker.disabledAt.toISOString(),
+          restoreUntil: marker.restoreUntil?.toISOString() ?? null,
+          phase: marker.phase,
+          resources: [],
+        };
+      }
       return {
         userId,
-        disabledAt: marker?.disabledAt.toISOString() ?? null,
-        restoreUntil: marker?.restoreUntil?.toISOString() ?? null,
+        disabledAt: marker.disabledAt.toISOString(),
+        restoreUntil: marker.restoreUntil?.toISOString() ?? null,
         phase: "fenced",
         resources: stored.map((row) => {
           // G06's display guard: a recorded reason may quote the credential

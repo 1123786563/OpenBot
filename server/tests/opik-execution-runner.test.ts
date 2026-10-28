@@ -5,13 +5,23 @@ import {
   test,
 } from "../../tests/support/bun-test-compat";
 import type { FrozenDatasetCase } from "../src/ai-observability/datasets";
+import type { OpikObservationWrite } from "../src/ai-observability/health";
+import { observerRunBindingGateForTests } from "../src/ai-observability/bindings";
+import { createModelSpanRecorder } from "../src/ai-observability/model-span";
 import {
   createGatewayModelCall,
   createProductionEvaluationCaseRunner,
+  evaluationObservationChain,
   type EvaluationModelCall,
   type EvaluationModelCallObserver,
+  type EvaluationStepBudget,
+  type EvaluationStepUsage,
 } from "../src/ai-observability/execution-runner";
-import type { EvaluationCaseContext } from "../src/ai-observability/executions";
+import type {
+  EvaluationCaseContext,
+  EvaluationToolSurface,
+} from "../src/ai-observability/executions";
+import { createEvaluationToolGate } from "../src/ai-observability/executions";
 import { freezeExperimentConfig } from "../src/ai-observability/experiments";
 import type { ModelSpanObservation } from "../src/ai-observability/model-span";
 import { resolveObservationScope } from "../src/ai-observability/scope";
@@ -164,6 +174,45 @@ describe("the production case runner makes one controlled, observed model call",
       kind: "refused",
       code: "budget_refused",
     });
+  });
+
+  test("every report carries the execution's derived chain and passes the FREV-02 gate (OCR R2 C1)", async () => {
+    // The regression: the runner's base carried no trace, so a scoped
+    // observation hit the recorder's chain gate and was silently dropped. Now
+    // the observation joins the chain derived from the execution's identity —
+    // fed into the REAL recorder it is enqueued, not dropped.
+    const submitted: OpikObservationWrite[] = [];
+    const recorderImpl = createModelSpanRecorder({
+      healthService: {
+        submit(write: OpikObservationWrite) {
+          submitted.push(write);
+          return "accepted" as const;
+        },
+      },
+      bindings: observerRunBindingGateForTests(),
+    });
+    const runner = createProductionEvaluationCaseRunner({
+      callModel: async () => ({ output: "ok", inputTokens: 1, outputTokens: 1 }),
+      observe: (observation) => recorderImpl.record(observation),
+    });
+
+    const outcome = await runner(contextFor());
+
+    expect(outcome.status).toBe("completed");
+    expect(submitted).toHaveLength(1);
+    // One chain per execution, deterministic: a re-run of the same execution
+    // continues the same chain instead of rooting a new one, and another
+    // execution roots its own.
+    const chain = evaluationObservationChain("execution-1");
+    expect(chain).toBeDefined();
+    expect(chain).toEqual(evaluationObservationChain("execution-1"));
+    expect(chain?.traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(chain?.traceId).not.toBe(
+      evaluationObservationChain("execution-2")?.traceId,
+    );
+    // An execution id that cannot name a chain carries none — that drop is the
+    // recorder's counted refusal, never a silent one.
+    expect(evaluationObservationChain("  ")).toBeUndefined();
   });
 
   test("a withheld prompt refuses the case before admission and before any dial (OCR R4-21)", async () => {
@@ -387,6 +436,80 @@ describe("the production case runner makes one controlled, observed model call",
   });
 });
 
+describe("the task's cancellation signal (FREV-05)", () => {
+  test("the runner threads the task's signal into the model call", async () => {
+    const { callModel, calls } = recorder();
+    const runner = createProductionEvaluationCaseRunner({ callModel });
+    const controller = new AbortController();
+
+    await runner({ ...contextFor(), signal: controller.signal });
+
+    // The signal the worker's cancel-watch aborts is the signal the dial holds:
+    // no re-derivation, no copy — one chain from the execution row to the wire.
+    expect(calls[0]?.signal).toBe(controller.signal);
+  });
+
+  test("a task cancelled before the dial refuses with zero holds and the canceled observation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { callModel, observe, observations, calls } = recorder();
+    let admitted = 0;
+    const runner = createProductionEvaluationCaseRunner({
+      callModel,
+      observe,
+      admit: async () => {
+        admitted += 1;
+        return { allowed: true };
+      },
+    });
+
+    const outcome = await runner({
+      ...contextFor(),
+      signal: controller.signal,
+    });
+
+    // The same settlement class as the projection refusal: the case lands
+    // failed with its reason, nothing is held, nothing is dialed, and the
+    // observation says canceled — never a provider error the call never got
+    // the chance to be.
+    expect(outcome).toEqual({ status: "failed", reason: "cancelled" });
+    expect(admitted).toBe(0);
+    expect(calls).toEqual([]);
+    expect(observations[0]?.ending).toEqual({ kind: "canceled" });
+  });
+
+  test("an abort that fires mid-call lands as cancellation, not provider_error", async () => {
+    const controller = new AbortController();
+    const { observe, observations } = recorder();
+    // The dial's shape of an abort: it holds the call open until the task's
+    // signal fires, then rejects. Nothing about the rejection itself says WHY,
+    // so the runner asks the signal — the only fact that knows.
+    let dialing!: () => void;
+    const dialStarted = new Promise<void>((resolve) => {
+      dialing = resolve;
+    });
+    const callModel = (async (request: Parameters<EvaluationModelCall>[0]) => {
+      const signal = request.signal;
+      if (!signal) throw new Error("no signal threaded into the model call");
+      dialing();
+      return new Promise<never>((_, reject) => {
+        signal.addEventListener("abort", () =>
+          reject(new Error("The operation was aborted")),
+        );
+      });
+    }) satisfies EvaluationModelCall;
+    const runner = createProductionEvaluationCaseRunner({ callModel, observe });
+
+    const settled = runner({ ...contextFor(), signal: controller.signal });
+    await dialStarted;
+    controller.abort();
+    const outcome = await settled;
+
+    expect(outcome).toEqual({ status: "failed", reason: "cancelled" });
+    expect(observations[0]?.ending).toEqual({ kind: "canceled" });
+  });
+});
+
 /*
  * The gateway adapter against a real local HTTP upstream (the T15 precedent: a
  * Bun.serve on an ephemeral port, not a mocked fetch) — proving the frozen
@@ -525,5 +648,415 @@ describe("the gateway model call", () => {
     } finally {
       hanging.stop(true);
     }
+  });
+
+  test("a task cancellation aborts an in-flight dial before its own time bound (FREV-05)", async () => {
+    // The call's two bounds — its own timeout and the task's cancellation — are
+    // one signal, whichever fires first. A dial holding a 5s budget is aborted
+    // by the task at 50ms: the interrupt reaches the wire, it does not wait
+    // for the budget to expire.
+    const hanging = Bun.serve({
+      port: 0,
+      fetch: () => new Promise(() => {}),
+    });
+    try {
+      const bounded = createGatewayModelCall({
+        apiKey: "test-key",
+        baseURL: `http://127.0.0.1:${hanging.port}/v1`,
+        timeoutMs: 5_000,
+      });
+      const controller = new AbortController();
+      const startedAt = Date.now();
+      const call = bounded({
+        modelName: "gateway-model",
+        modelParameters: {},
+        system: "s",
+        user: "u",
+        signal: controller.signal,
+      });
+      setTimeout(() => controller.abort(), 50);
+      await expect(call).rejects.toThrow();
+      expect(Date.now() - startedAt).toBeLessThan(2_000);
+    } finally {
+      hanging.stop(true);
+    }
+  });
+});
+
+/*
+ * FREV-04: the evaluation runs the case as the Bot's public tool loop — the real
+ * gateway adapter against a scripted OpenAI-compatible upstream (no mocked fetch),
+ * the gate the worker hands the runner, and the frozen fixture as the only thing a
+ * tool call may answer with. What is asserted is the production chain end to end:
+ * the model is offered the frozen surface, its call lands in the gate, the replayed
+ * fixture comes back to it as a tool result, invented tools are counted refusals, and
+ * a cancellation still interrupts a loop already in flight.
+ */
+
+/** One scripted upstream round; `body` is what the adapter actually sent. */
+type Round = (body: Record<string, unknown>) => Response | Promise<Response>;
+
+const upstreamUsage = {
+  prompt_tokens: 5,
+  completion_tokens: 3,
+  total_tokens: 8,
+};
+
+function chatCompletion(message: Record<string, unknown>, finish: string) {
+  return Response.json({
+    id: `chatcmpl-${Math.random().toString(36).slice(2)}`,
+    object: "chat.completion",
+    choices: [{ index: 0, message, finish_reason: finish }],
+    usage: upstreamUsage,
+  });
+}
+
+/** One round that answers with a tool call the model "made". */
+const toolCallRound =
+  (name: string, args = "{}", id = "call_1") =>
+  () =>
+    chatCompletion(
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id, type: "function", function: { name, arguments: args } },
+        ],
+      },
+      "tool_calls",
+    );
+
+/** One round that answers with plain text. */
+const textRound = (text: string) => () =>
+  chatCompletion({ role: "assistant", content: text }, "stop");
+
+/**
+ * A scripted upstream: rounds are consumed in order (the last one repeats), every
+ * request body is kept, and `when(n)` resolves once n requests have arrived — the
+ * handle the cancellation test needs to abort a loop that is already away.
+ */
+function scriptedGateway(rounds: Round[]) {
+  const bodies: Record<string, unknown>[] = [];
+  const waiters: (() => void)[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const body = (await request.json()) as Record<string, unknown>;
+      bodies.push(body);
+      for (const wake of waiters.splice(0)) wake();
+      const round = rounds[Math.min(bodies.length - 1, rounds.length - 1)];
+      return round === undefined
+        ? new Response(null, { status: 500 })
+        : round(body);
+    },
+  });
+  const when = (count: number) =>
+    new Promise<void>((resolve) => {
+      const check = () => {
+        if (bodies.length >= count) resolve();
+        else waiters.push(check);
+      };
+      check();
+    });
+  return { server, bodies, when };
+}
+
+const toolContextFor = (input: {
+  config: ReturnType<typeof freezeExperimentConfig>;
+  caseFixtures?: Record<string, unknown>;
+  surface?: (name: string) => EvaluationToolSurface | undefined;
+  callTool?: EvaluationCaseContext["callTool"];
+}): EvaluationCaseContext => {
+  const gate = createEvaluationToolGate(
+    input.config,
+    (name) => input.surface?.(name)?.effect ?? "write",
+  );
+  return {
+    ...contextFor(),
+    config: input.config,
+    frozenCase: input.caseFixtures
+      ? {
+          ...frozenCase,
+          toolFixtures: freezeExperimentConfig({
+            ...baseConfig(),
+            toolFixtures: input.caseFixtures,
+          }).toolFixtures,
+        }
+      : frozenCase,
+    callTool:
+      input.callTool ??
+      (async (name) =>
+        gate.call(name, [frozenCase.toolFixtures, input.config.toolFixtures])),
+    ...(input.surface === undefined
+      ? {}
+      : { resolveToolSurface: input.surface }),
+  };
+};
+
+const baseConfig = () => ({
+  botConfig: {},
+  prompt: "Answer the support question.",
+  modelName: "gateway-model",
+  modelParameters: { temperature: 0 },
+  toolFixtures: {},
+  judgeConfig: {},
+  judgeVersion: "judge/1",
+  readOnlyTools: [] as string[],
+});
+
+describe("the evaluation runs the frozen tool surface through the gate (FREV-04)", () => {
+  test("a frozen fixture answers the model's tool call and shapes the output", async () => {
+    const { server, bodies } = scriptedGateway([
+      toolCallRound("search", '{"q":"outage"}'),
+      textRound("the outage reached three regions"),
+    ]);
+    try {
+      const config = freezeExperimentConfig({
+        ...baseConfig(),
+        readOnlyTools: ["search"],
+        toolFixtures: { search: { summary: "three regions of impact" } },
+      });
+      const surface = (name: string): EvaluationToolSurface | undefined =>
+        name === "search"
+          ? {
+              description: "Search the support knowledge base.",
+              parameters: {
+                type: "object",
+                properties: { q: { type: "string" } },
+                required: ["q"],
+              },
+              effect: "read",
+            }
+          : undefined;
+      const observations: ModelSpanObservation[] = [];
+      const runner = createProductionEvaluationCaseRunner({
+        callModel: createGatewayModelCall({
+          apiKey: "test-key",
+          baseURL: `http://127.0.0.1:${server.port}/v1`,
+        }),
+        observe: (fact) => observations.push(fact),
+      });
+
+      const outcome = await runner(toolContextFor({ config, surface }));
+
+      expect(outcome.status).toBe("completed");
+      expect(outcome.output).toBe("the outage reached three regions");
+      // The two provider calls the loop made are billed as one case's usage.
+      expect(outcome.usage).toEqual({ inputTokens: 10, outputTokens: 6 });
+      expect(observations[0]?.ending).toEqual({
+        kind: "succeeded",
+        inputTokens: 10,
+        outputTokens: 6,
+      });
+      // The first request declared the frozen tool with the catalogue's own
+      // description and schema — the surface the experiment pinned, not an invention.
+      const first = JSON.stringify(bodies[0]);
+      expect(first).toContain('"name":"search"');
+      expect(first).toContain("Search the support knowledge base.");
+      expect(first).toContain('"q"');
+      // The replayed fixture is the tool result the model answered from: the frozen
+      // answer reached the wire, which is what makes the output depend on the freeze.
+      expect(JSON.stringify(bodies[1])).toContain("three regions of impact");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a whitelisted tool the classifier calls a write is refused, counted, and never replays its fixture", async () => {
+    const { server, bodies } = scriptedGateway([
+      toolCallRound("search", '{"q":"outage"}'),
+      textRound("I could not look that up"),
+    ]);
+    try {
+      const config = freezeExperimentConfig({
+        ...baseConfig(),
+        readOnlyTools: ["search"],
+        toolFixtures: { search: { summary: "three regions of impact" } },
+      });
+      // No surface: the fail-closed classifier's word — a write — governs.
+      const runner = createProductionEvaluationCaseRunner({
+        callModel: createGatewayModelCall({
+          apiKey: "test-key",
+          baseURL: `http://127.0.0.1:${server.port}/v1`,
+        }),
+      });
+
+      const outcome = await runner(toolContextFor({ config }));
+
+      expect(outcome.status).toBe("completed");
+      // The model was told the call failed; the fixture never reached it.
+      expect(JSON.stringify(bodies[1])).toContain(
+        "EVALUATION_TOOL_REFUSED: write_tool",
+      );
+      expect(JSON.stringify(bodies[1])).not.toContain(
+        "three regions of impact",
+      );
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a name the model invents is put through the gate and counted — the case still completes", async () => {
+    const { server } = scriptedGateway([
+      toolCallRound("evil_tool", "{}"),
+      textRound("no tools available"),
+    ]);
+    try {
+      // No whitelist: the case declares no tools at all, and the model still invents
+      // one. The engine reports the attempt; the runner's own gate call is what makes
+      // it a counted refusal instead of an invisible nothing.
+      const config = freezeExperimentConfig(baseConfig());
+      const seen: string[] = [];
+      const gate = createEvaluationToolGate(config, () => "read");
+      const runner = createProductionEvaluationCaseRunner({
+        callModel: createGatewayModelCall({
+          apiKey: "test-key",
+          baseURL: `http://127.0.0.1:${server.port}/v1`,
+        }),
+      });
+
+      const outcome = await runner(
+        toolContextFor({
+          config,
+          callTool: async (name) => {
+            seen.push(name);
+            return gate.call(name, [
+              frozenCase.toolFixtures,
+              config.toolFixtures,
+            ]);
+          },
+        }),
+      );
+
+      expect(outcome.status).toBe("completed");
+      expect(seen).toEqual(["evil_tool"]);
+      expect(gate.tally()).toEqual({
+        rejections: 1,
+        rejectedTools: ["evil_tool"],
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a cancellation interrupts a tool loop already in flight, landed as cancelled", async () => {
+    const hanging = new Promise<Response>(() => {});
+    const { server, when } = scriptedGateway([
+      toolCallRound("search", "{}"),
+      () => hanging,
+    ]);
+    try {
+      const config = freezeExperimentConfig({
+        ...baseConfig(),
+        readOnlyTools: ["search"],
+        toolFixtures: { search: { summary: "the fixture answer" } },
+      });
+      const surface = (name: string): EvaluationToolSurface | undefined =>
+        name === "search"
+          ? {
+              description: "Search.",
+              parameters: { type: "object" },
+              effect: "read",
+            }
+          : undefined;
+      const controller = new AbortController();
+      const observations: ModelSpanObservation[] = [];
+      const runner = createProductionEvaluationCaseRunner({
+        callModel: createGatewayModelCall({
+          apiKey: "test-key",
+          baseURL: `http://127.0.0.1:${server.port}/v1`,
+          timeoutMs: 5_000,
+        }),
+        observe: (fact) => observations.push(fact),
+      });
+
+      const run = runner({
+        ...toolContextFor({ config, surface }),
+        signal: controller.signal,
+      });
+      await when(2);
+      controller.abort();
+      const outcome = await run;
+
+      expect(outcome).toEqual({ status: "failed", reason: "cancelled" });
+      expect(observations[0]?.ending).toEqual({ kind: "canceled" });
+    } finally {
+      server.stop(true);
+    }
+  });
+});
+
+/*
+ * R3-01: the budget is not a business-whitelist fact. Every actual provider request
+ * a dialed model makes is admitted and input-bounded — the toolless single call
+ * included, and the count that refuses it happens BEFORE the wire.
+ */
+describe("the gateway dial carries the step budget on every request (R3-01)", () => {
+  const callModel = createGatewayModelCall({
+    apiKey: "test-key",
+    baseURL: `http://127.0.0.1:${gateway.port}/v1`,
+  });
+
+  const request = (user: string) => ({
+    modelName: "gateway-model",
+    modelParameters: { temperature: 0 },
+    system: "Answer the support question.",
+    user,
+  });
+
+  test("a call with no tool surface still asks the budget before its one request — and carries the admitted ceiling", async () => {
+    const verdicts: number[] = [];
+    const records: EvaluationStepUsage[] = [];
+    const budget: EvaluationStepBudget = {
+      admit: async (stepIndex) => {
+        verdicts.push(stepIndex);
+        return { allowed: true, maxOutputTokens: 700 };
+      },
+      record: (usage) => {
+        records.push(usage);
+      },
+    };
+
+    const answer = await callModel({
+      ...request("Summarize the outage."),
+      stepBudget: budget,
+    });
+
+    expect(answer.output).toBe("gateway answer");
+    // The budget is asked for the single provider request too — whether a case can
+    // multi-step is not decided by the declared tool surface (R3-01).
+    expect(verdicts).toEqual([0]);
+    expect(records).toEqual([{ index: 0, inputTokens: 7, outputTokens: 11 }]);
+    // The admitted ceiling lands on the wire even though the frozen configuration
+    // names no cap of its own.
+    expect(seenRequests.at(-1)).toMatchObject({ max_tokens: 700 });
+  });
+
+  test("an input the conservative count places over the step's input ceiling is refused before the dial", async () => {
+    const verdicts: number[] = [];
+    const before = seenRequests.length;
+    const budget: EvaluationStepBudget = {
+      inputCeiling: 300,
+      admit: async (stepIndex) => {
+        verdicts.push(stepIndex);
+        return { allowed: true };
+      },
+      record: () => {},
+    };
+
+    const answer = await callModel({
+      ...request("y".repeat(2_000)),
+      stepBudget: budget,
+    });
+
+    // 2,000 ASCII bytes count as at least 1,250 tokens by the approved conservative
+    // counter — the request never reaches the wire, and nothing is admitted for it.
+    expect(seenRequests.length).toBe(before);
+    expect(verdicts).toEqual([]);
+    expect(answer.budgetRefusal).toEqual({
+      step: 0,
+      reason: "input_over_limit",
+    });
+    expect(answer.output).toBe("");
   });
 });

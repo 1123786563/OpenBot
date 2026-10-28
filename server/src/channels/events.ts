@@ -1,4 +1,7 @@
 import postgres from "postgres";
+import { getLogger } from "../../../shared/logger";
+
+const log = getLogger("server");
 
 /**
  * Live channel activity, from whoever ran an agent to everybody else in the channel.
@@ -100,10 +103,12 @@ export function createChannelEventHub(): ChannelEventHub {
     },
 
     deliver(event) {
+      // One serialization for every recipient and tab: the body is identical for all.
+      const body = JSON.stringify(event);
       for (const userId of event.memberIds) {
         for (const send of connections.get(userId) ?? []) {
           try {
-            send(JSON.stringify(event));
+            send(body);
           } catch {
             // A connection that cannot be written to is one that is closing. Its own close handler
             // detaches it; failing here would deny the event to everybody after it in the set.
@@ -162,18 +167,52 @@ export async function startChannelActivityListener(
     hub.resyncAll();
   };
 
-  await connection.listen(
-    CHANNEL_ACTIVITY_TOPIC,
-    (payload) => {
-      try {
-        hub.deliver(JSON.parse(payload) as ChannelActivityEvent);
-      } catch {
-        // A payload we cannot read is not a reason to tear down the subscription: the roster query
-        // is still correct, and the next refetch shows whatever this event would have.
-      }
-    },
-    resync,
-  );
+  await connection
+    .listen(
+      CHANNEL_ACTIVITY_TOPIC,
+      (payload) => {
+        try {
+          const parsed: unknown = JSON.parse(payload);
+          /*
+           * NOTIFY carries no permission gate: any session on this database can publish
+           * anything on this topic. `memberIds` is the delivery authorization, so the
+           * payload is checked for the shape the hub trusts before it is cast; a
+           * malformed one is dropped loudly and the roster query stays authoritative.
+           */
+          const event = parsed as ChannelActivityEvent;
+          if (
+            typeof event !== "object" ||
+            event === null ||
+            typeof event.channelId !== "string" ||
+            !Array.isArray(event.memberIds) ||
+            !event.memberIds.every((id) => typeof id === "string")
+          ) {
+            log.warn(
+              { type: "channel-activity-notify-malformed" },
+              "channel-activity-notify-malformed",
+            );
+            return;
+          }
+          hub.deliver(event);
+        } catch {
+          // A payload we cannot read is not a reason to tear down the subscription: the roster query
+          // is still correct, and the next refetch shows whatever this event would have.
+        }
+      },
+      resync,
+    )
+    // Observed, not silent: a subscription that never came up (or never came back) leaves the
+    // roster stale with nothing in the logs to say so. The roster query stays authoritative.
+    .catch((error) => {
+      log.error(
+        {
+          type: "channel-listen-failed",
+          note: "Channel activity from other instances is not reaching this server; browsers still refetch the roster on their own reconnects.",
+          error: String(error),
+        },
+        "channel-listen-failed",
+      );
+    });
 
   return {
     stop: async () => {

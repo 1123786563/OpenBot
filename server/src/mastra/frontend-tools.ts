@@ -61,6 +61,14 @@ export interface CreateFrontendBridgeToolsOptions {
   readonly onExecuteContext?: (context: unknown) => void;
 }
 
+/** A declared argument schema: absent, or a plain JSON object — never an array or a class instance. */
+function isPlainParameters(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 /**
  * Mount the client-declared tools as inert bridges. Names are validated with
  * the client-facing charset (VALID_BRIDGE_TOOL_NAME — `[A-Za-z0-9_-]`, no
@@ -96,6 +104,19 @@ export function createFrontendBridgeTools(
   const mounted = new Set<string>();
   for (const definition of definitions) {
     const name = definition?.name;
+    // A declared argument schema reaches the engine as a schema object: only a plain JSON
+    // object (or an absent one, which defaults to `{ type: "object" }`) qualifies, so a
+    // malformed declaration degrades THIS tool — the bridge's own contract — instead of
+    // throwing inside the engine and taking the whole run down with it.
+    if (!isPlainParameters(definition?.parameters)) {
+      // biome-ignore lint/suspicious/noConsole: stable-code operational log
+      console.warn({
+        event: "mastra_frontend_tool_declaration_dropped",
+        toolName: typeof name === "string" ? name : undefined,
+        reason: "invalid parameters schema (not a plain object)",
+      });
+      continue;
+    }
     const dropReason =
       !definition || typeof name !== "string"
         ? "invalid declaration (no string name)"
@@ -152,7 +173,26 @@ export function createFrontendBridgeTools(
         if (resumeData !== undefined) {
           // The authenticated client result, as the client returned it — the
           // one value the model may read as this call's outcome. Never
-          // re-worded, never synthesized.
+          // re-worded, never synthesized. Bound when it names a call: an
+          // envelope carrying a DIFFERENT call's id belongs to another pause
+          // point, and handing it over here would feed the model someone
+          // else's answer as this tool's result — refused, the same fail-closed
+          // way a missing suspend is.
+          const resumedId = (resumeData as { toolCallId?: unknown } | null)
+            ?.toolCallId;
+          const expectedId =
+            typeof ctx?.agent?.toolCallId === "string"
+              ? ctx.agent.toolCallId
+              : undefined;
+          if (
+            typeof resumedId === "string" &&
+            expectedId !== undefined &&
+            resumedId !== expectedId
+          ) {
+            throw new FrontendBridgeRefusal(
+              "MASTRA_FRONTEND_TOOL_RESULT_MISMATCH: the resumed result names a different tool call, so it is not this call's outcome; the bridge refuses rather than hand the model a foreign answer.",
+            );
+          }
           return resumeData;
         }
         const suspend = ctx?.agent?.suspend;
@@ -163,14 +203,23 @@ export function createFrontendBridgeTools(
             "MASTRA_FRONTEND_TOOL_SUSPEND_UNAVAILABLE: the bridge can only wait inside an engine run; there is no participation surface to suspend on here.",
           );
         }
+        // The call id is the route a resumed client result takes back to THIS call; writing an
+        // empty one would make the suspension unrouteable, so an engine that names no call is
+        // refused here rather than parked with an address nothing can answer.
+        const toolCallId =
+          typeof ctx?.agent?.toolCallId === "string"
+            ? ctx.agent.toolCallId
+            : typeof ctx?.toolCallId === "string"
+              ? ctx.toolCallId
+              : undefined;
+        if (toolCallId === undefined) {
+          throw new FrontendBridgeRefusal(
+            "MASTRA_FRONTEND_TOOL_CALL_ID_MISSING: the engine did not name the suspended call, so a client result could never be routed back to it; the bridge refuses instead of parking an unanswerable wait.",
+          );
+        }
         const payload: FrontendSuspendPayload = {
           kind: "frontend_tool",
-          toolCallId:
-            typeof ctx?.agent?.toolCallId === "string"
-              ? ctx.agent.toolCallId
-              : typeof ctx?.toolCallId === "string"
-                ? ctx.toolCallId
-                : "",
+          toolCallId,
           toolName: definition.name,
           args: input,
         };

@@ -10,8 +10,10 @@ Rules:
 - Only merges if truly adjacent (only whitespace between them)
 """
 
+import sys
 import zipfile
 from pathlib import Path
+from xml.parsers.expat import ExpatError
 
 import defusedxml.ElementTree as ET
 import defusedxml.minidom
@@ -41,7 +43,10 @@ def simplify_redlines(input_dir: str) -> tuple[int, str]:
         doc_xml.write_bytes(dom.toxml(encoding="UTF-8"))
         return merge_count, f"Simplified {merge_count} tracked changes"
 
-    except Exception as e:
+    except (DefusedXmlException, ExpatError, OSError) as e:
+        # Expected failure shapes only (malformed / unreadable XML); a bug in
+        # the merge logic itself must surface as a real traceback, not a
+        # silently-empty "0 simplified" tuple.
         return 0, f"Error: {e}"
 
 
@@ -166,7 +171,14 @@ def _get_authors_from_docx(docx_path: Path) -> dict[str, int]:
                         if author:
                             authors[author] = authors.get(author, 0) + 1
                 return authors
-    except (zipfile.BadZipFile, ET.ParseError, DefusedXmlException):
+    except (zipfile.BadZipFile, ET.ParseError, DefusedXmlException) as e:
+        # An unreadable original must not silently read as "no authors in the
+        # original": infer_author would blame every tracked change on the
+        # modifiers. Warn so the misattribution is diagnosable.
+        print(
+            f"Warning: could not read tracked-change authors from {docx_path}: {e}",
+            file=sys.stderr,
+        )
         return {}
 
 

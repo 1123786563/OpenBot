@@ -115,13 +115,25 @@ function wrapRedisClient(client: Redis): RedisPort {
         subscriber.on("message", onMessage);
         subscribers.set(channel, subscriber);
       }
-      await subscriber.subscribe(channel);
+      try {
+        await subscriber.subscribe(channel);
+      } catch (error) {
+        // The dead connection must not stay cached: a retry would keep reusing it and
+        // failing forever, and nothing else removes an entry from this map.
+        subscribers.delete(channel);
+        subscriber.disconnect();
+        throw error;
+      }
     },
     duplicate: () => wrapRedisClient(client.duplicate({ lazyConnect: true })),
     quit: async () => {
-      await Promise.allSettled([
-        ...[...subscribers.values()].map((s) => s.quit()),
-      ]);
+      // A reconnecting subscriber refuses quit() without closing the socket, so the disconnect
+      // fallback rides along exactly as it does for the main client below.
+      await Promise.allSettled(
+        [...subscribers.values()].map((s) =>
+          s.quit().catch(() => s.disconnect()),
+        ),
+      );
       subscribers.clear();
       await client.quit().catch(() => client.disconnect());
     },

@@ -126,17 +126,26 @@ export function createFailureLimiter(
         failures.delete(hint);
         return false;
       }
+      // Re-inserted so an actively attacked hint reads as recent: a Map.set on an existing
+      // key keeps its old insertion position, and the eviction below would otherwise evict
+      // exactly the hint under attack once the map fills.
+      failures.delete(hint);
       failures.set(hint, recent);
       return recent.length >= maxFailures;
     },
     record(hint) {
+      // Stale attempts are dropped here too: record must not grow a hint's window past the
+      // failure cap just because a caller skipped the blocked() probe first.
+      const cutoff = now() - windowMs;
+      const attempts = (failures.get(hint) ?? []).filter((at) => at > cutoff);
       if (!failures.has(hint) && failures.size >= maxHints) {
-        // Evict the oldest hint (Map iterates in insertion order) rather than grow forever.
+        // Evict the least-recently-seen hint (Map iterates in insertion order, refreshed
+        // by blocked/record above) rather than grow forever.
         const oldest = failures.keys().next().value;
         if (oldest !== undefined) failures.delete(oldest);
       }
-      const attempts = failures.get(hint) ?? [];
       attempts.push(now());
+      failures.delete(hint);
       failures.set(hint, attempts);
     },
   };

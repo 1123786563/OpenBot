@@ -7,9 +7,10 @@
 export type EnterpriseRuntimeRole = "directory" | "data" | "operator";
 
 export const ENTERPRISE_CAPABILITY_ROLES = new Set([
-  "ob_ent_directory",
-  "ob_ent_data",
-  "ob_ent_operator",
+  // Derived from the one spelling of the convention below, so a new runtime
+  // role cannot be forgotten here; the identity operator has no login URL and
+  // stays a literal.
+  ...(["directory", "data", "operator"] as const).map(enterpriseCapabilityName),
   "ob_ent_identity_operator",
 ]);
 
@@ -85,7 +86,7 @@ export function parseRuntimeTestLogin(
   // PostgreSQL roles are cluster-wide: an ALTER on an ordinary shared
   // name would reset that login everywhere, so only test-scoped ent*
   // logins (CI's enterprise_*_login, a developer's ent_*) may pass.
-  if (!/^ent/.test(name)) {
+  if (!/^(?:ent|enterprise)_/.test(name)) {
     throw new Error(
       `${variable} must name an ent*-prefixed test login, not the ordinary role "${name}" (an existing role would be reset cluster-wide).`,
     );
@@ -98,7 +99,6 @@ export function parseRuntimeTestLogin(
       `${variable} reuses login "${name}" already provisioned for another role; each role must use a distinct test login.`,
     );
   }
-  seenLoginNames.add(name);
   if (!password) {
     throw new Error(
       `${variable} must carry the test login's password in its userinfo`,
@@ -109,6 +109,9 @@ export function parseRuntimeTestLogin(
       `${variable} must carry a printable ASCII password without a space or backslash`,
     );
   }
+  // Recorded only once the URL fully validates: a rejected login must not
+  // leave the caller's dedup set polluted for a retry.
+  seenLoginNames.add(name);
   return { role, capability: enterpriseCapabilityName(role), name, password };
 }
 
@@ -134,16 +137,36 @@ export function assertFreshSetupDatabaseIdentity(
   identity: SetupDatabaseIdentity | undefined,
   expectedDatabase: string,
 ): asserts identity is SetupDatabaseIdentity {
-  if (
-    !identity ||
-    identity.database_name !== expectedDatabase ||
-    identity.session_user !== identity.current_user ||
-    ENTERPRISE_CAPABILITY_ROLES.has(identity.current_user) ||
-    !identity.setup_has_bypass ||
-    !identity.public_schema_is_empty
-  ) {
+  // One message per failed precondition: a red CI line should name the root
+  // cause, not list every way the setup URL could be wrong.
+  if (!identity) {
     throw new Error(
-      "Refusing migration: the enterprise setup URL is not the fresh setup-only database reserved for this enterprise test run.",
+      "Refusing migration: the enterprise setup URL returned no identity row (is it a PostgreSQL URL pointing at the setup-only database?).",
+    );
+  }
+  if (identity.database_name !== expectedDatabase) {
+    throw new Error(
+      `Refusing migration: the enterprise setup URL points at database "${identity.database_name}" rather than the fresh setup-only database "${expectedDatabase}" reserved for this enterprise test run.`,
+    );
+  }
+  if (identity.session_user !== identity.current_user) {
+    throw new Error(
+      `Refusing migration: session_user "${identity.session_user}" differs from current_user "${identity.current_user}", so the setup URL would not act as the login it names.`,
+    );
+  }
+  if (ENTERPRISE_CAPABILITY_ROLES.has(identity.current_user)) {
+    throw new Error(
+      `Refusing migration: current_user "${identity.current_user}" is an enterprise capability role, not the superuser the setup-only migration requires.`,
+    );
+  }
+  if (!identity.setup_has_bypass) {
+    throw new Error(
+      "Refusing migration: the setup connection lacks BYPASSRLS, so the setup-only migration could not populate RLS-protected tables.",
+    );
+  }
+  if (!identity.public_schema_is_empty) {
+    throw new Error(
+      "Refusing migration: the setup-only database's public schema is not empty, so it is not the fresh database reserved for this enterprise test run.",
     );
   }
 }

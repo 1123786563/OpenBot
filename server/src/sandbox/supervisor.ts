@@ -96,7 +96,15 @@ export function createSandboxSupervisor(
     // Sleeping wakes in place: the container is warm, only the row moves.
     if (live?.status === "sleeping") {
       const woke = await state.transition(live.id, "sleeping", "ready");
-      if (woke) return addressFor(input.botId);
+      if (woke) {
+        // A fresh heartbeat, or the next idle sweep reads the pre-sleep one and sleeps the
+        // sandbox straight back — the wake this path exists for, undone in one pass. The
+        // persisted address is the row's own truth, the same one `status` answers from.
+        await state.heartbeat(live.id, now());
+        return live.address
+          ? { address: live.address, ports: live.ports }
+          : addressFor(input.botId);
+      }
       // The row moved under us (another replica woke it, or it was torn down): fall through
       // to the full walk, which reads the world as it now is.
     }
@@ -105,6 +113,12 @@ export function createSandboxSupervisor(
     // racing replicas), container after, ready transition only once the address is durable.
     const attempt = await state.beginAttempt(input);
     if (!attempt.won) {
+      // The loser closes out its OWN row first, the way state.ts's protocol words it: left live,
+      // the row stays this bot's earliest provisioning attempt, every later provision loses the
+      // CAS to it, and no reconcile pass ever reaps a provisioning row — refused for ever.
+      await state
+        .transition(attempt.id, "provisioning", "failed")
+        .catch(() => undefined);
       // Another replica is provisioning this Bot: wait for its verdict by reading back.
       const winner = await state.liveOf(input.botId);
       if (winner?.status === "ready" && winner.address) {
@@ -114,13 +128,31 @@ export function createSandboxSupervisor(
         `Another provision attempt for ${input.botId} is in flight and has not settled.`,
       );
     }
-    const address = addressFor(input.botId);
-    await state.transition(attempt.id, "provisioning", "ready", {
-      address: address.address,
-      ports: address.ports,
-    });
-    await state.heartbeat(attempt.id, now());
-    return address;
+    try {
+      // The container exists before the row claims it: a ready row over no container is what
+      // the reconcile sweep fails, which would unpick this provision one pass later.
+      await runtime.recreate(input.botId);
+      const address = addressFor(input.botId);
+      const moved = await state.transition(attempt.id, "provisioning", "ready", {
+        address: address.address,
+        ports: address.ports,
+      });
+      // CAS false means the row was torn down under us (a stop, another replica): the address
+      // is no longer ours to hand out.
+      if (!moved)
+        throw new Error(
+          `The provision row for ${input.botId} moved before it could be marked ready.`,
+        );
+      await state.heartbeat(attempt.id, now());
+      return address;
+    } catch (error) {
+      // `provisioning → failed` is the only exit this file owns for a provision that threw;
+      // skipped, the row stays live for ever and every later provision loses the CAS to it.
+      await state
+        .transition(attempt.id, "provisioning", "failed")
+        .catch(() => undefined);
+      throw error;
+    }
   };
 
   const status: SandboxSupervisor["status"] = async (botId) => {
@@ -154,7 +186,9 @@ export function createSandboxSupervisor(
     // The container goes away in the runtime FIRST: a row saying terminated beside a live
     // container is a leak, while a stopped container beside a stale row is Tuesday for the
     // reconcile sweep.
-    await runtime.remove(botId).catch(() => undefined);
+    // Removal failing means the container may still be alive. Leave the durable row live so
+    // reconcile can observe and retry; writing terminated here would hide the leak from it.
+    await runtime.remove(botId);
     if (live) {
       await state
         .transition(live.id, live.status, "terminated")
@@ -166,23 +200,31 @@ export function createSandboxSupervisor(
     input,
   ) => {
     const lived = await state.listLive();
-    const slept: string[] = [];
-    let fresh = 0;
-    for (const row of lived) {
-      if (row.status !== "ready") continue; // Sleeping is done; provisioning is not ours to judge.
-      const age =
-        row.lastHeartbeatAt === null
-          ? Number.POSITIVE_INFINITY // Never heartbeated: provision died mid-flight, asleep it goes.
-          : input.nowMs - row.lastHeartbeatAt.getTime();
-      if (age <= input.idleMs) {
-        fresh += 1;
-        continue;
-      }
-      // CAS-quiet: if the row moved first (a provision woke it, a stop tore it down), the
-      // transition answers false and the sweep simply disagrees with a newer truth.
-      if (await state.transition(row.id, "ready", "sleeping"))
-        slept.push(row.botId);
-    }
+    // Each row's CAS is independent of the others', so the scan goes out in parallel
+    // instead of one round trip per awake bot.
+    const outcomes = await Promise.all(
+      lived.map(async (row) => {
+        if (row.status !== "ready")
+          return { fresh: false, slept: undefined as string | undefined }; // Sleeping is done; provisioning is not ours to judge.
+        const age =
+          row.lastHeartbeatAt === null
+            ? Number.POSITIVE_INFINITY // Never heartbeated: provision died mid-flight, asleep it goes.
+            : input.nowMs - row.lastHeartbeatAt.getTime();
+        if (age <= input.idleMs) return { fresh: true, slept: undefined };
+        // CAS-quiet: if the row moved first (a provision woke it, a stop tore it down), the
+        // transition answers false and the sweep simply disagrees with a newer truth.
+        return {
+          fresh: false,
+          slept: (await state.transition(row.id, "ready", "sleeping"))
+            ? row.botId
+            : undefined,
+        };
+      }),
+    );
+    const slept = outcomes.flatMap((outcome) =>
+      outcome.slept ? [outcome.slept] : [],
+    );
+    const fresh = outcomes.filter((outcome) => outcome.fresh).length;
     return { slept, fresh };
   };
 

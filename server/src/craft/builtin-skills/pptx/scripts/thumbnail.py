@@ -57,6 +57,9 @@ def main():
 
     args = parser.parse_args()
 
+    if args.cols < 1:
+        print(f"Error: --cols must be at least 1 (got {args.cols})", file=sys.stderr)
+        sys.exit(1)
     cols = min(args.cols, MAX_COLS)
     if args.cols > MAX_COLS:
         print(f"Warning: Columns limited to {MAX_COLS}")
@@ -178,7 +181,10 @@ def convert_to_images(pptx_path: Path, temp_dir: Path) -> list[Path]:
         env=get_soffice_env(),
     )
     if result.returncode != 0 or not pdf_path.exists():
-        raise RuntimeError("PDF conversion failed")
+        raise RuntimeError(
+            f"PDF conversion failed (rc={result.returncode}): "
+            f"{(result.stderr or '').strip()[:500]}"
+        )
 
     result = subprocess.run(
         [
@@ -193,7 +199,10 @@ def convert_to_images(pptx_path: Path, temp_dir: Path) -> list[Path]:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError("Image conversion failed")
+        raise RuntimeError(
+            f"Image conversion failed (rc={result.returncode}): "
+            f"{(result.stderr or '').strip()[:500]}"
+        )
 
     return sorted(temp_dir.glob("slide-*.jpg"))
 

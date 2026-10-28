@@ -325,6 +325,9 @@ export async function createScopeGateFixture(): Promise<ScopeGateFixture> {
       if (disposed) return isolation.dispose();
       disposed = true;
       // Own added rows first (children), then the MT002 fixture's teardown.
+      // Failure-isolated: one close throwing must not skip the remaining
+      // pools or the isolation fixture's own teardown.
+      const failures: unknown[] = [];
       await setup
         .delete(enterpriseWorkspaceMemberships)
         .where(
@@ -333,11 +336,18 @@ export async function createScopeGateFixture(): Promise<ScopeGateFixture> {
             `${isolation.idPrefix}%`,
           ),
         )
-        .catch(() => {});
-      await setup.$client.close();
-      await directory.$client.close();
-      await data.$client.close();
-      await isolation.dispose();
+        .catch((error) => failures.push(error));
+      await setup.$client.close().catch((error) => failures.push(error));
+      await directory.$client.close().catch((error) => failures.push(error));
+      await data.$client.close().catch((error) => failures.push(error));
+      try {
+        await isolation.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, "MT013 scope-gate fixture dispose failed");
+      }
     },
   };
   return fixture;

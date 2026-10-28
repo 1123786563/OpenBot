@@ -59,7 +59,7 @@ export type HostAccessStatus = {
 export function asHostAccessDesktopResult(
   value: unknown,
 ): HostAccessDesktopResult | null {
-  if (!value || typeof value !== "object") return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const result = value as Partial<HostAccessDesktopResult>;
   if (typeof result.operationId !== "string" || !result.operationId)
     return null;
@@ -82,9 +82,9 @@ export function asHostAccessDesktopResult(
     ...(grant &&
     typeof grant === "object" &&
     typeof grant.grantId === "string" &&
-    grant.grantId &&
+    grant.grantId.trim() &&
     typeof grant.displayName === "string" &&
-    grant.displayName
+    grant.displayName.trim()
       ? {
           grant: {
             grantId: grant.grantId,

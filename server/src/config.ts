@@ -8,8 +8,8 @@ function spreadOptional<K extends string, V>(
 // Bun gives an ESM module a global `require`, which is how `pemOrFile` below reaches `node:fs`
 // without putting it in this module's eager import graph. Node has no such global, so the same
 // laziness needs a handle.
-import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 /**
  * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
  * for durable threads and memory. Configuration the product cannot function without belongs at the
@@ -306,6 +306,16 @@ export type DeploymentConfig = {
    * Its presence, not this auth configuration, determines whether a bundled Bot is available.
    */
   managedAgent?: ManagedAgentConfig;
+  /**
+   * Remote endpoints this deployment can hold to an enforceable budget (R3-02).
+   *
+   * Absent means no remote AG-UI Bot may run: the per-run credit hold is not a contract on what
+   * an endpoint SPENDS, so a dial without one of these would put unbounded work behind a bounded
+   * charge. Nothing here is defaulted from `managedAgent` on purpose — the picked harness is
+   * also a managed endpoint and does not speak the contract, so the operator names exactly the
+   * endpoints that do.
+   */
+  remoteBudgetContract?: RemoteBudgetContractConfig;
   /**
    * Private addresses an agent may be registered at, named one at a time.
    *
@@ -743,7 +753,7 @@ function reachOf(raw: string): Reach {
     bare === "localhost" ||
     bare === "::1" ||
     bare === "0:0:0:0:0:0:0:1" ||
-    /^127(\.\d{1,3}){3}$/.test(bare)
+    /^127(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(bare)
   ) {
     return "loopback";
   }
@@ -859,6 +869,93 @@ function managedAgentConfig(
     token,
     ...(alsoRun ? { alsoRun } : {}),
   };
+}
+
+/**
+ * The endpoints this deployment declares able to enforce the remote budget contract (R3-02).
+ *
+ * Two facts, both explicit:
+ *
+ * - `endpoints`: the exact URLs of AG-UI endpoints that implement the contract openbot's server
+ *   dials them with. Named, not inferred — `managedAgent` also covers the picked harness, which
+ *   is a managed endpoint that does NOT enforce this contract, and treating "we run it" as "it
+ *   is contract-capable" is how a run gets admitted on a promise nobody keeps.
+ * - `maxModelSteps`: the per-run model-step ceiling the contract carries. The token ceiling is
+ *   the billing policy's (`BILLING_CODE_RUN_MAX_RESERVATION_TOKENS`), so the contract and the
+ *   credit hold are derived from the same approved number; steps have no price, so their limit
+ *   is a deployment setting with the same default the built-in runtime loop uses.
+ *
+ * Identities are canonicalised the way `runtime-agents.ts` canonicalises a managed endpoint, so
+ * a trailing slash is the same endpoint on both sides.
+ */
+export type RemoteBudgetContractConfig = {
+  endpoints: ReadonlySet<string>;
+  maxModelSteps: number;
+};
+
+/** The built-in runtime's own loop limit, reused so a remote run is not bounded more loosely. */
+const DEFAULT_REMOTE_BUDGET_MAX_MODEL_STEPS = 8;
+
+/** One endpoint identity, canonicalised exactly as `runtime-agents.ts` does for the managed one. */
+export function canonicalAgentEndpoint(
+  value: string | URL,
+): string | undefined {
+  try {
+    const endpoint = new URL(value);
+    endpoint.pathname = endpoint.pathname.replace(/\/+$/, "");
+    return endpoint.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function remoteBudgetContractConfig(
+  environment: Environment,
+): RemoteBudgetContractConfig | undefined {
+  const raw = optional(environment, "REMOTE_BUDGET_CONTRACT_ENDPOINTS");
+  if (!raw) return undefined;
+  const endpoints = new Set<string>();
+  for (const entry of raw.split(",")) {
+    const name = entry.trim();
+    if (!name) {
+      throw new Error(
+        "REMOTE_BUDGET_CONTRACT_ENDPOINTS must be a comma-separated list of endpoint URLs",
+      );
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(name);
+    } catch {
+      throw new Error(
+        `REMOTE_BUDGET_CONTRACT_ENDPOINTS entry ${JSON.stringify(name)} must be a valid URL`,
+      );
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(
+        `REMOTE_BUDGET_CONTRACT_ENDPOINTS entry ${JSON.stringify(name)} must be an HTTP(S) URL`,
+      );
+    }
+    endpoints.add(canonicalAgentEndpoint(parsed) as string);
+  }
+  const rawSteps = optional(
+    environment,
+    "REMOTE_BUDGET_CONTRACT_MAX_MODEL_STEPS",
+  );
+  let maxModelSteps = DEFAULT_REMOTE_BUDGET_MAX_MODEL_STEPS;
+  if (rawSteps !== undefined) {
+    if (!/^\d+$/.test(rawSteps)) {
+      throw new Error(
+        "REMOTE_BUDGET_CONTRACT_MAX_MODEL_STEPS must be a whole number",
+      );
+    }
+    maxModelSteps = Number.parseInt(rawSteps, 10);
+    if (maxModelSteps < 1 || maxModelSteps > 1_000) {
+      throw new Error(
+        "REMOTE_BUDGET_CONTRACT_MAX_MODEL_STEPS must be between 1 and 1000",
+      );
+    }
+  }
+  return { endpoints, maxModelSteps };
 }
 
 function oauthClient(
@@ -2470,7 +2567,7 @@ function notifyBaseAllowed(
     return ipv6LiteralAllowed(host, allowPrivate) ? undefined : refusal;
   }
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4) {
+  if (ipv4 && ipv4.slice(1).every((octet) => Number(octet) <= 255)) {
     return ipv4LiteralAllowed(Number(ipv4[1]), Number(ipv4[2]), allowPrivate)
       ? undefined
       : refusal;
@@ -2514,6 +2611,27 @@ function ipv6LiteralAllowed(literal: string, allowPrivate: boolean): boolean {
   if (address.startsWith("fc") || address.startsWith("fd")) return allowPrivate; // fc00::/7
   if (/^fe[89ab]/.test(address)) return false; // fe80::/10 link-local
   if (address.startsWith("ff")) return false; // multicast
+  // IPv4-mapped (::ffff:0:0/96): judged by the embedded IPv4, in either spelling —
+  // the dotted one, or the hex one URL parsers normalize bracketed literals to
+  // ([::ffff:169.254.169.254] arrives as ::ffff:a9fe:a9fe). Left unexpanded, a
+  // metadata address in mapped form would sail past every check above as "global".
+  if (address.startsWith("::ffff:")) {
+    const tail = address.slice("::ffff:".length);
+    const bytes = tail.includes(":")
+      ? tail
+          .split(":")
+          .flatMap((group) => {
+            const value = Number.parseInt(group, 16);
+            return Number.isInteger(value) && value >= 0 && value <= 0xffff
+              ? [value >> 8, value & 0xff]
+              : [-1];
+          })
+      : tail.split(".").map((part) => Number.parseInt(part, 10));
+    if (bytes.length === 4 && bytes.every((byte) => byte >= 0 && byte <= 255)) {
+      return ipv4LiteralAllowed(bytes[0], bytes[1], allowPrivate);
+    }
+    return false;
+  }
   return true;
 }
 
@@ -2719,13 +2837,18 @@ function paymentsConfig(
     // overcharged. Refuse to start; the monthly cycle is the only cycle v1 collects.
     const displayed = billing.planCatalog
       .get(planCode)
-      ?.pricing.find(
+      ?.pricing.filter(
         (cycle) =>
           cycle.code === "monthly" || cycle.code === "recurring_monthly",
       );
-    if (displayed && displayed.priceCents !== amountCents) {
+    // Every monthly-spelled cycle must agree with the amount: a find-first would let a
+    // mismatched second spelling pass checkout while the dialog shows the other price.
+    const mismatch = displayed?.find(
+      (cycle) => cycle.priceCents !== amountCents,
+    );
+    if (mismatch) {
       throw new Error(
-        `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents (${amountCents}) does not match LAGO_PLAN_CATALOG's monthly price (${displayed.priceCents}): the checkout would collect a different number than the dialog shows — align the two catalogs before starting`,
+        `PAYMENT_PLAN_CATALOG plan "${planCode}" amountCents (${amountCents}) does not match LAGO_PLAN_CATALOG's monthly price (${mismatch.priceCents} on "${mismatch.code}"): the checkout would collect a different number than the dialog shows — align the two catalogs before starting`,
       );
     }
     if (!displayed) {
@@ -2987,6 +3110,7 @@ export function loadConfig(
     ? organizationAuthority(organizationAuthValue)
     : undefined;
   const managedAgent = managedAgentConfig(environment);
+  const remoteBudgetContract = remoteBudgetContractConfig(environment);
   const githubApp = githubAppConfig(environment);
   const publicUrl = (
     optional(environment, "OPENBOT_PUBLIC_URL") ?? auth?.baseUrl
@@ -3038,6 +3162,7 @@ export function loadConfig(
     keyEncryptionKey: deploymentKey,
     ...(webBotAuth ? { webBotAuth } : {}),
     ...(managedAgent ? { managedAgent } : {}),
+    ...(remoteBudgetContract ? { remoteBudgetContract } : {}),
     ...(githubApp ? { githubApp } : {}),
     agentEndpointAllowedHosts: agentEndpointAllowedHosts(environment),
     deploymentId: optional(environment, "DEPLOYMENT_ID"),
@@ -3052,7 +3177,11 @@ export function loadConfig(
     publicUrl,
     appUrl: (
       optional(environment, "OPENBOT_APP_URL") ??
-      commaSeparated(environment, "TRUSTED_ORIGINS")[0] ??
+      // An http(s) entry only: TRUSTED_ORIGINS may carry mobile scheme urls, which are
+      // legitimate configuration but no app URL any browser can open.
+      commaSeparated(environment, "TRUSTED_ORIGINS").find((origin) =>
+        /^https?:\/\//i.test(origin),
+      ) ??
       optional(environment, "OPENBOT_PUBLIC_URL") ??
       auth?.baseUrl
     )?.replace(/\/+$/, ""),

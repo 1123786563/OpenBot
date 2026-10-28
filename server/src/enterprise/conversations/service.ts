@@ -422,7 +422,8 @@ export function createConversationService({
       backend: "mastra",
     });
     const memoryForRead = await storeForRead.getStore("memory");
-    const found = await memoryForRead?.listMessagesById({
+    if (!memoryForRead) throw new Error("MASTRA_MEMORY_STORAGE_UNAVAILABLE");
+    const found = await memoryForRead.listMessagesById({
       messageIds: [messageId],
     });
     const priorMessage = found?.messages[0];
