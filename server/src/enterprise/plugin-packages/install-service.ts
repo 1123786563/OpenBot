@@ -30,6 +30,7 @@ import {
   enterprisePackageRevisions as revisionRows,
 } from "../../db/schema/enterprise-plugin-packages";
 import { enterprisePluginInstalls as connectorInstallRows } from "../../db/schema/enterprise-plugins";
+import { enterpriseMemberships } from "../../db/schema/enterprise-tenancy";
 import type {
   PackageCatalogue,
   PackageReleaseFacts,
@@ -425,6 +426,30 @@ export function createPackageService(
       )
       .limit(1);
     return row !== undefined;
+  };
+
+  /**
+   * OCR-fix-H (R7-H1): the caller's company role read from the LIVE
+   * membership row inside this transaction, never a hardcoded literal — the
+   * mutation store already revalidated tenant_admin on the same rows; the
+   * receipt names what the actor actually holds. An unreachable missing row
+   * (defensive) reads as a non-managing caller, same as the read store.
+   */
+  const callerCompanyRoleWithin = async (
+    tx: PackageWriteTx,
+    scope: PlatformScope,
+  ): Promise<string> => {
+    const [row] = await tx.db
+      .select({ role: enterpriseMemberships.role })
+      .from(enterpriseMemberships)
+      .where(
+        and(
+          eq(enterpriseMemberships.tenantId, scope.tenantId),
+          eq(enterpriseMemberships.principalId, scope.principalId),
+        ),
+      )
+      .limit(1);
+    return row?.role ?? "";
   };
 
   return {
@@ -1087,23 +1112,38 @@ export function createPackageService(
               // Same version, same digest, same full config: applying is an
               // idempotent no-op that returns the standing install and
               // records the receipt.
-              const standingFacts: PackageInstallFacts = {
-                tenantId: scope.tenantId,
-                workspaceId: scope.workspaceId,
-                installId: existing.id,
+              // OCR-fix-H (R7-H1): the receipt carries the standing install's
+              // REAL facts, read in this same transaction — links via
+              // lifecycleFactsWithin, grant state via hasActiveGrantWithin,
+              // the same discipline updateInstallStatus's no-op arm uses.
+              // The empty-shaped construction was persisted into
+              // resultJson/planRows, so every idempotency-key replay kept
+              // answering a fabricated needs_connection / needs_grant for a
+              // connected, granted install.
+              const standingFacts = await lifecycleFactsWithin(tx, scope, {
+                id: existing.id,
                 packageKey,
                 version,
                 artifactDigest,
                 revision: existing.revision,
                 generation: existing.generation,
-                status: existing.status,
-                links: [],
-                grants: [],
-                callerCompanyRole: "tenant_admin",
-              };
-              const standing = installDTO(standingFacts, release, {
-                isAdmin: true,
+                status: existing.status as PackageInstallFacts["status"],
               });
+              const standingCallerRole = await callerCompanyRoleWithin(
+                tx,
+                scope,
+              );
+              const standingHasActiveGrant = await hasActiveGrantWithin(
+                tx,
+                scope,
+                existing.id,
+              );
+              const standing = installDTO(
+                { ...standingFacts, callerCompanyRole: standingCallerRole },
+                release,
+                { isAdmin: standingCallerRole === "tenant_admin" },
+                standingHasActiveGrant,
+              );
               await tx.db.insert(changeRows).values({
                 tenantId: scope.tenantId,
                 changeId: randomUUID(),
@@ -1293,12 +1333,27 @@ export function createPackageService(
                 existingSkillId: null,
                 expertTemplateRef: link.expertTemplateRef,
               })),
+              // Placeholder shape only (as in lifecycleFactsWithin): the
+              // DTO carries no grant list; readiness takes the live grant
+              // fact through installDTO's explicit argument below.
               grants: [],
-              callerCompanyRole: "tenant_admin",
+              callerCompanyRole: await callerCompanyRoleWithin(tx, scope),
             };
-            const upgraded = installDTO(upgradedFacts, release, {
-              isAdmin: true,
-            });
+            // OCR-fix-H (R7-H1): the upgraded receipt answers readiness from
+            // the live grant state — an upgrade neither revokes nor revives
+            // grants, so one that still stands reads ready, never a fake
+            // needs_grant persisted into the receipts.
+            const upgradedHasActiveGrant = await hasActiveGrantWithin(
+              tx,
+              scope,
+              existing.id,
+            );
+            const upgraded = installDTO(
+              upgradedFacts,
+              release,
+              { isAdmin: upgradedFacts.callerCompanyRole === "tenant_admin" },
+              upgradedHasActiveGrant,
+            );
             await tx.db.insert(changeRows).values({
               tenantId: scope.tenantId,
               changeId: randomUUID(),

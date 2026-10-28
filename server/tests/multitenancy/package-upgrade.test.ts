@@ -1150,6 +1150,89 @@ describeDb("PKG06 package upgrade/rollback (real roles)", () => {
     },
   );
 
+  // OCR-fix-H (R7-H1): the no-op and upgraded arms must build their receipts
+  // from the install's REAL facts — live links and live grant state read in
+  // the same transaction. The pre-fix empty-shaped construction (links: [],
+  // grants: []) was persisted into resultJson/planRows, so a connected,
+  // granted install kept replaying fabricated needs_connection/needs_grant.
+  itDb(
+    "OCR-fix-H H1: replay and upgrade receipts carry the standing install's real readiness (no fake needs_*)",
+    async () => {
+      const current = await installV1Case({ config: { region: "us" } });
+      const admin = await fixture.adminContextOf("company-admin", "company-a");
+
+      // Same version, same full config: the no-op arm. The standing install
+      // IS connected (crm linked on the current revision) and HAS an active
+      // grant (installV1Case seeded one), so the only honest receipt is
+      // readiness "ready" with zero blockers.
+      const same = await service.plan(scopeA1, admin, {
+        operation: "upgrade",
+        packageKey: PACKAGE_KEY,
+        version: V1,
+        expectedRevision: current.install.revision,
+        config: { region: "us" },
+        connectorInstalls: { crm: connectorA1 },
+      });
+      const noopKey = `ocrfix-h-noop-${randomUUID()}`;
+      const replay = await service.apply(scopeA1, admin, same.planId, noopKey);
+      expect(replay.created).toBe(false);
+      expect(replay.install.readiness).toBe("ready");
+      expect(replay.install.blockers).toEqual([]);
+
+      // The persistence the finding named: both receipt stores (change row
+      // resultJson and the consumed plan row's result) hold the real
+      // readiness, so later replays read the truth, not a frozen fake.
+      const storedChange = (await setup.$client.unsafe(
+        "select result_json as result from enterprise_package_changes where idempotency_key = $1",
+        [noopKey],
+      )) as Array<{ result: { readiness: string; blockers: unknown[] } }>;
+      expect(storedChange[0]?.result.readiness).toBe("ready");
+      expect(storedChange[0]?.result.blockers).toEqual([]);
+      const storedPlan = (await setup.$client.unsafe(
+        "select result from enterprise_package_plans where id = $1",
+        [same.planId],
+      )) as Array<{ result: { readiness: string; blockers: unknown[] } }>;
+      expect(storedPlan[0]?.result.readiness).toBe("ready");
+      expect(storedPlan[0]?.result.blockers).toEqual([]);
+
+      // Replaying the SAME idempotency key returns exactly the stored answer.
+      const replayAgain = await service.apply(
+        scopeA1,
+        admin,
+        same.planId,
+        noopKey,
+      );
+      expect(replayAgain.install).toEqual(replay.install);
+
+      // The real-upgrade arm: an upgrade neither revokes nor revives grants,
+      // so the standing active grant keeps the upgraded receipt "ready" —
+      // never a fabricated needs_grant persisted into the receipts.
+      const plan = await service.plan(scopeA1, admin, {
+        operation: "upgrade",
+        packageKey: PACKAGE_KEY,
+        version: V2,
+        expectedRevision: current.install.revision,
+        config: { region: "us" },
+        connectorInstalls: { crm: connectorA1 },
+      });
+      const upgradeKey = `ocrfix-h-up-${randomUUID()}`;
+      const moved = await service.apply(
+        scopeA1,
+        admin,
+        plan.planId,
+        upgradeKey,
+      );
+      expect(moved.install.readiness).toBe("ready");
+      expect(moved.install.blockers).toEqual([]);
+      const storedUp = (await setup.$client.unsafe(
+        "select result_json as result from enterprise_package_changes where idempotency_key = $1",
+        [upgradeKey],
+      )) as Array<{ result: { readiness: string; blockers: unknown[] } }>;
+      expect(storedUp[0]?.result.readiness).toBe("ready");
+      expect(storedUp[0]?.result.blockers).toEqual([]);
+    },
+  );
+
   itDb(
     "another team's install and created experts are untouched (AC7); allowedActions names the caller's real actions",
     async () => {
