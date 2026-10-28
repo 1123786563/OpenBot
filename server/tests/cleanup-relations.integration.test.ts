@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
   afterAll,
@@ -94,9 +95,9 @@ import { TEST_POOL, testDatabaseUrl } from "./support/database";
  * - the whole evaluation persists as one deterministic JSON manifest (AC4).
  */
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-const run = `b347-${Math.random().toString(36).slice(2, 10)}`;
+const run = `b347-${randomUUID().slice(0, 8)}`;
 
-/** The five fixture keys: one company keep, and the four legacy situations (K1–K4). */
+/** The five fixture keys: one company key as the never-cleaned comparison arm, plus the four legacy situations (K1–K4). */
 const companyKey = `b347-co-${run}`;
 const flightKey = `b347-leg1-${run}`;
 const activeSubKey = `b347-leg2-${run}`;
@@ -167,7 +168,9 @@ const resolutionAllocationId = `b347-as4-${run}`;
 /** A pending order needs a deployment purchase slot of its own: one pending per scope. */
 const cleanOrderScope = `b347-scope-${run}`;
 
-/** The operator-vouched test-evidence registries: the four legacy orders (K1–K4), nothing else. */
+/** The operator-vouched test-evidence registries: one evidenced legacy order per key
+ * (K1–K4). The registries only make the keys classifiable — K2's retained arm is its ACTIVE
+ * subscription anchor and K3's is its PENDING order, not these orders. */
 const evidenceInput = {
   testOrderIds: [
     flightOrderId,
@@ -759,7 +762,8 @@ beforeAll(async () => {
   ]);
 
   // Usage outbox: carries the customer key by VALUE (no FK) — deleting the customer never
-  // reaches these rows. O and O3 also carry a reservation link (again by value only).
+  // reaches these rows. The first and third rows (uo1, uo3) also carry a reservation link
+  // (again by value only); the second (uo2) carries neither link.
   await database.insert(usageOutbox).values([
     {
       eventId: flightOutboxId,
@@ -961,9 +965,14 @@ beforeAll(async () => {
   manifest = await evaluateCleanupRelations(database, classification);
 });
 
-/** The evaluation of one candidate record, by table and record id. */
-function evaluationOf(table: string, recordId: string) {
-  const evaluation = manifest.evaluations.find(
+/** The evaluation of one candidate record, by table and record id (#680.3: parameterized so
+ * the later describes reuse it instead of keeping parallel `evaluationIn` twins). */
+function evaluationOf(
+  table: string,
+  recordId: string,
+  evaluated: CleanupRelationsManifest = manifest,
+) {
+  const evaluation = evaluated.evaluations.find(
     (entry) => entry.table === table && entry.recordId === recordId,
   );
   expect(evaluation).toBeDefined();
@@ -978,8 +987,12 @@ function removedEntryOf(table: string, recordId: string) {
   return removed!;
 }
 
-function isSafe(table: string, recordId: string) {
-  return manifest.safeCandidates.some(
+function isSafe(
+  table: string,
+  recordId: string,
+  evaluated: CleanupRelationsManifest = manifest,
+) {
+  return evaluated.safeCandidates.some(
     (entry) => entry.table === table && entry.recordId === recordId,
   );
 }
@@ -1059,6 +1072,7 @@ describe("the legacy billing relations evaluation maps associations from live da
       const impact = customer.retainedImpact.find(
         (entry) => entry.recordId === recordId,
       );
+      expect(impact).toBeDefined();
       expect(impact!.class).toBe("unknown_owner");
       expect(impact!.protection).toBe("retained");
     }
@@ -1343,7 +1357,13 @@ describe("the legacy billing relations evaluation maps associations from live da
       classification.evidenceInput.sha256,
     );
     const roundTripped = JSON.parse(JSON.stringify(manifest));
-    expect(roundTripped).toEqual(manifest);
+    // The round trip alone can never fail (#680.8): assert the persisted KEY SET survives
+    // serialization — the field inventory a 21.4 consumer hashes — and that the generation
+    // timestamp is present as the one metadata field the hash projection excludes (#679.3).
+    expect(Object.keys(roundTripped).sort()).toEqual(
+      Object.keys(manifest).sort(),
+    );
+    expect(typeof manifest.generatedAt).toBe("string");
     // Two evaluations agree on everything but the generation timestamp (21.4's hash input).
   });
 
@@ -1374,8 +1394,11 @@ describe("the legacy billing relations evaluation maps associations from live da
         },
       ],
     };
+    // The rejection must name the EXACT drifted row (#680.9): a validation that tripped on
+    // the fabricated attributionSource instead of the missing row would be the wrong branch
+    // passing this test.
     await expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
-      /no longer exists/,
+      new RegExp(`credit_grants/b347-missing-${run}[^]*no longer exists`),
     );
   });
 
@@ -1678,8 +1701,65 @@ describe("the legacy billing relations evaluation maps associations from live da
  *   the authorized execution still commits its verified scope, and the company rows are
  *   all still present afterwards.
  */
+/**
+ * One legacy estate's persisted roots (#680.1): the customers, their legacy_deployment
+ * payer mappings and their evidenced orders, inserted once and named per key. The explicit
+ * id lists keep the persisted rows byte-identical to the former inline inserts; the return
+ * value is the per-key record set the cleanup assertions cite.
+ */
+async function insertLegacyEstate(
+  db: typeof database,
+  config: {
+    label: string;
+    scope: string;
+    amountBase: number;
+    keys: {
+      key: string;
+      payerId: string;
+      deployId: string;
+      orderId: string;
+    }[];
+  },
+): Promise<{ keys: string[]; payers: string[]; orders: string[] }> {
+  await db.insert(billingCustomers).values(
+    config.keys.map(({ key }) => ({
+      externalId: key,
+      name: `${config.label} fixture ${key}`,
+    })),
+  );
+  await db.insert(payerAccounts).values(
+    config.keys.map(({ key, payerId, deployId }) => ({
+      id: payerId,
+      kind: "legacy_deployment" as const,
+      payerId: deployId,
+      externalCustomerId: key,
+    })),
+  );
+  const orders = config.keys.map(({ orderId }) => orderId);
+  await db.insert(paymentOrders).values(
+    config.keys.map(({ deployId, orderId }, index) => ({
+      id: orderId,
+      deploymentScope: config.scope,
+      planCode: "legacy-test",
+      provider: "alipay" as const,
+      amountCents: config.amountBase + index,
+      status: "canceled" as const,
+      activationState: "pending" as const,
+      ownerPayerKind: "legacy_deployment" as const,
+      ownerPayerId: deployId,
+      expiresAt: new Date("2026-01-01T00:00:00Z"),
+      terminalAt: new Date("2026-01-01T00:30:00Z"),
+    })),
+  );
+  return {
+    keys: config.keys.map(({ key }) => key),
+    payers: config.keys.map(({ payerId }) => payerId),
+    orders,
+  };
+}
+
 describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", () => {
-  const fix2b = `fix2b-${Math.random().toString(36).slice(2, 10)}`;
+  const fix2b = `fix2b-${randomUUID().slice(0, 8)}`;
   const actor = `fix2b-review-${fix2b}`;
 
   // Path A: four evidenced legacy keys, each carrying a real 0163 registration.
@@ -1739,27 +1819,29 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
   let aPersonalAccountId = "";
   let aPersonalTestAccountId = "";
 
-  const allFix2bCustomers = [
+  // Named candidate groups (#680.5): Path A's four arms are enumerated, never positional —
+  // "the first four" is an accident of layout, not a contract.
+  const aKeyList = [
     aKeys.quarantined,
     aKeys.company,
     aKeys.personal,
     aKeys.personalTestOwned,
-    bKey,
   ];
-  const allFix2bPayers = [
+  const aPayerList = [
     aPayers.quarantined,
     aPayers.company,
     aPayers.personal,
     aPayers.personalTestOwned,
-    bPayer,
   ];
-  const allFix2bOrders = [
+  const aOrderList = [
     aOrders.quarantined,
     aOrders.company,
     aOrders.personal,
     aOrders.personalTestOwned,
-    bOrder,
   ];
+  const allFix2bCustomers = [...aKeyList, bKey];
+  const allFix2bPayers = [...aPayerList, bPayer];
+  const allFix2bOrders = [...aOrderList, bOrder];
 
   beforeAll(async () => {
     // Identity and tenancy the composite FKs require (0163's discipline: a forged
@@ -1785,68 +1867,40 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
         { tenantId: bTenant, id: bWorkspace, name: `fix2b B ws ${fix2b}` },
       ]);
 
-    // Legacy estate roots: customers, legacy_deployment payer mappings, canceled orders.
-    await database.insert(billingCustomers).values(
-      allFix2bCustomers.map((externalId) => ({
-        externalId,
-        name: `fix2b fixture ${externalId}`,
-      })),
-    );
-    await database.insert(payerAccounts).values([
-      {
-        id: aPayers.quarantined,
-        kind: "legacy_deployment",
-        payerId: aDeploys.quarantined,
-        externalCustomerId: aKeys.quarantined,
-      },
-      {
-        id: aPayers.company,
-        kind: "legacy_deployment",
-        payerId: aDeploys.company,
-        externalCustomerId: aKeys.company,
-      },
-      {
-        id: aPayers.personal,
-        kind: "legacy_deployment",
-        payerId: aDeploys.personal,
-        externalCustomerId: aKeys.personal,
-      },
-      {
-        id: aPayers.personalTestOwned,
-        kind: "legacy_deployment",
-        payerId: aDeploys.personalTestOwned,
-        externalCustomerId: aKeys.personalTestOwned,
-      },
-      {
-        id: bPayer,
-        kind: "legacy_deployment",
-        payerId: bDeploy,
-        externalCustomerId: bKey,
-      },
-    ]);
-    await database.insert(paymentOrders).values(
-      (
-        [
-          [aOrders.quarantined, aDeploys.quarantined],
-          [aOrders.company, aDeploys.company],
-          [aOrders.personal, aDeploys.personal],
-          [aOrders.personalTestOwned, aDeploys.personalTestOwned],
-          [bOrder, bDeploy],
-        ] as const
-      ).map(([id, ownerPayerId], index) => ({
-        id,
-        deploymentScope: `${fix2b}-scope`,
-        planCode: "legacy-test",
-        provider: "alipay" as const,
-        amountCents: 1_000 + index,
-        status: "canceled" as const,
-        activationState: "pending" as const,
-        ownerPayerKind: "legacy_deployment" as const,
-        ownerPayerId,
-        expiresAt: new Date("2026-01-01T00:00:00Z"),
-        terminalAt: new Date("2026-01-01T00:30:00Z"),
-      })),
-    );
+    // Legacy estate roots: customers, legacy_deployment payer mappings, canceled orders —
+    // through the shared factory (#680.1), with the exact ids the describe always used.
+    await insertLegacyEstate(database, {
+      label: "fix2b",
+      scope: `${fix2b}-scope`,
+      amountBase: 1_000,
+      keys: [
+        {
+          key: aKeys.quarantined,
+          payerId: aPayers.quarantined,
+          deployId: aDeploys.quarantined,
+          orderId: aOrders.quarantined,
+        },
+        {
+          key: aKeys.company,
+          payerId: aPayers.company,
+          deployId: aDeploys.company,
+          orderId: aOrders.company,
+        },
+        {
+          key: aKeys.personal,
+          payerId: aPayers.personal,
+          deployId: aDeploys.personal,
+          orderId: aOrders.personal,
+        },
+        {
+          key: aKeys.personalTestOwned,
+          payerId: aPayers.personalTestOwned,
+          deployId: aDeploys.personalTestOwned,
+          orderId: aOrders.personalTestOwned,
+        },
+        { key: bKey, payerId: bPayer, deployId: bDeploy, orderId: bOrder },
+      ],
+    });
 
     // Path B's settled chain first: the attribution's FK needs the hold to stand.
     await database.insert(creditLedger).values({
@@ -1976,28 +2030,6 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
       .where(inArray(users.id, [aUserPersonal, aUserPersonalTest, bUser]));
   });
 
-  function evaluationIn(
-    evaluated: CleanupRelationsManifest,
-    table: string,
-    recordId: string,
-  ): CandidateRelationEvaluation {
-    const evaluation = evaluated.evaluations.find(
-      (entry) => entry.table === table && entry.recordId === recordId,
-    );
-    expect(evaluation).toBeDefined();
-    return evaluation!;
-  }
-
-  function isSafeIn(
-    evaluated: CleanupRelationsManifest,
-    table: string,
-    recordId: string,
-  ) {
-    return evaluated.safeCandidates.some(
-      (entry) => entry.table === table && entry.recordId === recordId,
-    );
-  }
-
   test("R2-F1 repro A: service-registered accounts and the company mapping are verified, never cascaded away", async () => {
     // 21.2 still classifies from the legacy mapping alone: all four keys are candidates.
     const classification = await classifyCleanup(database, evidenceA);
@@ -2013,10 +2045,10 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
     // owner; the test-user-owned personal account follows the estate semantics and its
     // key stays cleanable.
     const evaluated = await evaluateCleanupRelations(database, classification);
-    const quarantined = evaluationIn(
-      evaluated,
+    const quarantined = evaluationOf(
       "billing_customers",
       aKeys.quarantined,
+      evaluated,
     );
     expect(quarantined.removed).toBe(true);
     expect(quarantined.removalReason).toBe("cascade_impact_on_retained");
@@ -2031,7 +2063,7 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
     ).toBe(true);
     expect(quarantined.evidence).toContain("quarantined_account");
 
-    const company = evaluationIn(evaluated, "billing_customers", aKeys.company);
+    const company = evaluationOf("billing_customers", aKeys.company, evaluated);
     expect(company.removed).toBe(true);
     expect(
       company.retainedImpact.some(
@@ -2050,10 +2082,10 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
       ),
     ).toBe(true);
 
-    const personal = evaluationIn(
-      evaluated,
+    const personal = evaluationOf(
       "billing_customers",
       aKeys.personal,
+      evaluated,
     );
     expect(personal.removed).toBe(true);
     expect(
@@ -2065,17 +2097,17 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
       ),
     ).toBe(true);
 
-    const testOwned = evaluationIn(
-      evaluated,
+    const testOwned = evaluationOf(
       "billing_customers",
       aKeys.personalTestOwned,
+      evaluated,
     );
     expect(testOwned.removed).toBe(false);
     expect(
-      isSafeIn(evaluated, "billing_customers", aKeys.personalTestOwned),
+      isSafe("billing_customers", aKeys.personalTestOwned, evaluated),
     ).toBe(true);
     for (const key of [aKeys.quarantined, aKeys.company, aKeys.personal]) {
-      expect(isSafeIn(evaluated, "billing_customers", key)).toBe(false);
+      expect(isSafe("billing_customers", key, evaluated)).toBe(false);
     }
 
     // The fresh 21.5 guard refuses the same three with the ownership evidence attached.
@@ -2157,12 +2189,8 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
     ).toHaveLength(0);
     // The legacy payer mappings and evidenced orders of the pulled keys stay cleanable —
     // they are the obsolete legacy attribution, unlike the company mapping above.
-    expect(
-      await rowsOf("payer_accounts", "id", allFix2bPayers.slice(0, 4)),
-    ).toHaveLength(0);
-    expect(
-      await rowsOf("payment_orders", "id", allFix2bOrders.slice(0, 4)),
-    ).toHaveLength(0);
+    expect(await rowsOf("payer_accounts", "id", aPayerList)).toHaveLength(0);
+    expect(await rowsOf("payment_orders", "id", aOrderList)).toHaveLength(0);
   });
 
   test("R2-F1 repro B: a company call attribution fail-closes its legacy-classified settled chain", async () => {
@@ -2176,7 +2204,7 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
     // shelters it, the ledger shelters the hold, and the dimension rows are pinned with
     // the ledger — every one named.
     const evaluated = await evaluateCleanupRelations(database, classification);
-    const customer = evaluationIn(evaluated, "billing_customers", bKey);
+    const customer = evaluationOf("billing_customers", bKey, evaluated);
     expect(customer.removed).toBe(true);
     expect(customer.removalReason).toBe("cascade_impact_on_retained");
     expect(
@@ -2203,7 +2231,7 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
       ).toBe(true);
     }
 
-    const hold = evaluationIn(evaluated, "credit_reservations", bHold);
+    const hold = evaluationOf("credit_reservations", bHold, evaluated);
     expect(hold.removed).toBe(true);
     expect(
       hold.retainedImpact.some(
@@ -2214,7 +2242,7 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
     ).toBe(true);
     expect(hold.evidence).toContain("billing_call_attributions");
 
-    const ledger = evaluationIn(evaluated, "credit_ledger", bLedger);
+    const ledger = evaluationOf("credit_ledger", bLedger, evaluated);
     expect(ledger.removed).toBe(true);
     // The hold's SET NULL link is what pulls the ledger line itself…
     expect(
@@ -2236,9 +2264,9 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
         ),
       ).toBe(true);
     }
-    expect(isSafeIn(evaluated, "billing_customers", bKey)).toBe(false);
-    expect(isSafeIn(evaluated, "credit_reservations", bHold)).toBe(false);
-    expect(isSafeIn(evaluated, "credit_ledger", bLedger)).toBe(false);
+    expect(isSafe("billing_customers", bKey, evaluated)).toBe(false);
+    expect(isSafe("credit_reservations", bHold, evaluated)).toBe(false);
+    expect(isSafe("credit_ledger", bLedger, evaluated)).toBe(false);
 
     // Fresh guard: every chain row is refused with the attribution named upstream.
     const guard = await guardCleanupDeletion(database, evidenceB, {
@@ -2302,7 +2330,7 @@ describe("R2-F1 (REV-2): 0163 ownership is verified before any legacy cascade", 
  * the same authorized execution.
  */
 describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdict", () => {
-  const fix4 = `fix4-${Math.random().toString(36).slice(2, 10)}`;
+  const fix4 = `fix4-${randomUUID().slice(0, 8)}`;
   const actor = `fix4-review-${fix4}`;
 
   const coTenant = `${fix4}-co-tenant`;
@@ -2320,6 +2348,10 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
 
   const coLedgerId = `${fix4}-co-ledger`;
   const coHoldId = `${fix4}-co-hold`;
+  // #680.11: the quarantined key's OWN ledger/hold shelter arm — previously only its grant
+  // had a direct fixture; the ledger and reservation claims had no direct DB assertion.
+  const quarLedgerId = `${fix4}-q-ledger`;
+  const quarHoldId = `${fix4}-q-hold`;
   const legacyLedgerId = `${fix4}-legacy-ledger`;
   const legacyHoldId = `${fix4}-legacy-hold`;
 
@@ -2338,35 +2370,19 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
     await database
       .insert(enterpriseTenants)
       .values([{ id: coTenant, name: `fix4 ${fix4}` }]);
-    await database.insert(billingCustomers).values(
-      keys.map((externalId) => ({
-        externalId,
-        name: `fix4 fixture ${externalId}`,
+    // Legacy estate roots through the shared factory (#680.1); the id conventions
+    // (`${key}-pa` / `${key}-deploy` / `${key}-order`) are unchanged.
+    await insertLegacyEstate(database, {
+      label: "fix4",
+      scope: `${fix4}-scope`,
+      amountBase: 2_000,
+      keys: keys.map((key, index) => ({
+        key,
+        payerId: payers[index],
+        deployId: deploys[index],
+        orderId: orders[index],
       })),
-    );
-    await database.insert(payerAccounts).values(
-      keys.map((key, index) => ({
-        id: payers[index],
-        kind: "legacy_deployment",
-        payerId: deploys[index],
-        externalCustomerId: key,
-      })),
-    );
-    await database.insert(paymentOrders).values(
-      orders.map((id, index) => ({
-        id,
-        deploymentScope: `${fix4}-scope`,
-        planCode: "legacy-test",
-        provider: "alipay" as const,
-        amountCents: 2_000 + index,
-        status: "canceled" as const,
-        activationState: "pending" as const,
-        ownerPayerKind: "legacy_deployment" as const,
-        ownerPayerId: deploys[index],
-        expiresAt: new Date("2026-01-01T00:00:00Z"),
-        terminalAt: new Date("2026-01-01T00:30:00Z"),
-      })),
-    );
+    });
 
     // The 0163 rows through the REAL service: a company account with its payment mapping,
     // a quarantined account, and — the estate-semantics boundary — a personal account
@@ -2447,6 +2463,14 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
         applied: 100,
       },
       {
+        id: quarLedgerId,
+        externalCustomerId: quarKey,
+        title: `fix4 quarantined settlement ${fix4}`,
+        idempotencyKey: `${fix4}-q-ledger`,
+        credits: 100,
+        applied: 100,
+      },
+      {
         id: legacyLedgerId,
         externalCustomerId: legacyKey,
         title: `fix4 legacy settlement ${fix4}`,
@@ -2470,6 +2494,21 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
         applied: 100,
         released: 900,
         ledgerId: coLedgerId,
+      },
+      {
+        id: quarHoldId,
+        externalCustomerId: quarKey,
+        idempotencyKey: `${fix4}-q-hold`,
+        maximum: 1_000,
+        status: "settled",
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        terminalAt: new Date("2026-01-01T01:00:00Z"),
+        actualNumerator: "10000",
+        actualDenominator: "100",
+        charged: 100,
+        applied: 100,
+        released: 900,
+        ledgerId: quarLedgerId,
       },
       {
         id: legacyHoldId,
@@ -2508,10 +2547,14 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
       .where(eq(billingAccountAudit.actor, actor));
     await database
       .delete(creditReservations)
-      .where(inArray(creditReservations.id, [coHoldId, legacyHoldId]));
+      .where(
+        inArray(creditReservations.id, [coHoldId, quarHoldId, legacyHoldId]),
+      );
     await database
       .delete(creditLedger)
-      .where(inArray(creditLedger.id, [coLedgerId, legacyLedgerId]));
+      .where(
+        inArray(creditLedger.id, [coLedgerId, quarLedgerId, legacyLedgerId]),
+      );
     await database
       .delete(creditGrants)
       .where(
@@ -2559,6 +2602,8 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
       ["credit_ledger", coLedgerId],
       ["credit_reservations", coHoldId],
       ["credit_grants", quarGrantId],
+      ["credit_ledger", quarLedgerId],
+      ["credit_reservations", quarHoldId],
     ] as const) {
       const evaluation = evaluated.evaluations.find(
         (entry) => entry.table === table && entry.recordId === recordId,
@@ -2663,14 +2708,14 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
       await database
         .select({ id: creditLedger.id })
         .from(creditLedger)
-        .where(eq(creditLedger.id, coLedgerId)),
-    ).toHaveLength(1);
+        .where(inArray(creditLedger.id, [coLedgerId, quarLedgerId])),
+    ).toHaveLength(2);
     expect(
       await database
         .select({ id: creditReservations.id })
         .from(creditReservations)
-        .where(eq(creditReservations.id, coHoldId)),
-    ).toHaveLength(1);
+        .where(inArray(creditReservations.id, [coHoldId, quarHoldId])),
+    ).toHaveLength(2);
 
     // The cleanup line still holds, exactly as AC18's other half demands: the pure
     // legacy key is fully deleted (customer, payer, order, grant, ledger, settled hold),
@@ -2730,9 +2775,11 @@ describe("R2B-F1 (REV-2b): funding rows follow their key's 0163 ownership verdic
  * only a historical drift row can carry a missing or mismatching one.
  */
 describe("OCR2R-H1 (FIX-6): account_key drift fails closed as unknown_account_shape", () => {
-  const fix6 = `fix6-${Math.random().toString(36).slice(2, 10)}`;
+  const fix6 = `fix6-${randomUUID().slice(0, 8)}`;
   const actor = `fix6-review-${fix6}`;
   const registryUser = `${fix6}-user`;
+  /** A second owner id whose derived key names the mismatch arm's wrong owner (#680.6). */
+  const mismatchOwnerUser = `${fix6}-user-else`;
   const nullKey = `${fix6}-null`;
   const mismatchKey = `${fix6}-mismatch`;
   const keys = [nullKey, mismatchKey];
@@ -2748,35 +2795,18 @@ describe("OCR2R-H1 (FIX-6): account_key drift fails closed as unknown_account_sh
     await database
       .insert(users)
       .values([{ id: registryUser, email: `${registryUser}@openbot.test` }]);
-    await database.insert(billingCustomers).values(
-      keys.map((externalId) => ({
-        externalId,
-        name: `fix6 fixture ${externalId}`,
+    // Legacy estate roots through the shared factory (#680.1), same id conventions.
+    await insertLegacyEstate(database, {
+      label: "fix6",
+      scope: `${fix6}-scope`,
+      amountBase: 2_000,
+      keys: keys.map((key, index) => ({
+        key,
+        payerId: payers[index],
+        deployId: deploys[index],
+        orderId: orders[index],
       })),
-    );
-    await database.insert(payerAccounts).values(
-      keys.map((key, index) => ({
-        id: payers[index],
-        kind: "legacy_deployment",
-        payerId: deploys[index],
-        externalCustomerId: key,
-      })),
-    );
-    await database.insert(paymentOrders).values(
-      orders.map((id, index) => ({
-        id,
-        deploymentScope: `${fix6}-scope`,
-        planCode: "legacy-test",
-        provider: "alipay" as const,
-        amountCents: 2_000 + index,
-        status: "canceled" as const,
-        activationState: "pending" as const,
-        ownerPayerKind: "legacy_deployment" as const,
-        ownerPayerId: deploys[index],
-        expiresAt: new Date("2026-01-01T00:00:00Z"),
-        terminalAt: new Date("2026-01-01T00:30:00Z"),
-      })),
-    );
+    });
     // The drift arms: every one of the five legacy columns reads as a legal personal
     // account and the owner IS in this run's registry — only account_key breaks the
     // declared shape (NULL, or a key derived from a different owner).
@@ -2795,7 +2825,10 @@ describe("OCR2R-H1 (FIX-6): account_key drift fails closed as unknown_account_sh
         accountType: "personal",
         status: "active",
         ownerUserId: registryUser,
-        accountKey: "personal:someone-else",
+        // The mismatch arm derives its wrong-owner key with the SAME rule production uses
+        // (`personal:${ownerUserId}` in payer-accounts.ts) so the fixture breaks only on the
+        // ownership fact, never on an arbitrarily malformed string (#680.6).
+        accountKey: `personal:${mismatchOwnerUser}`,
       },
     ]);
   });
