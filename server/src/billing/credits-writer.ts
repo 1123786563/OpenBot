@@ -628,8 +628,7 @@ export function createCreditWriter(database: Database): CreditWriter {
                 existing.specDurationCapSeconds !== spec.durationCapSeconds ||
                 existing.specPerInputCharacterUsd !==
                   spec.perInputCharacterUsd ||
-                existing.specPerOutputSecondUsd !==
-                  spec.perOutputSecondUsd));
+                existing.specPerOutputSecondUsd !== spec.perOutputSecondUsd));
           if (specMismatch) {
             throw new CreditReservationConflictError(
               "reserveCredits: the idempotency key belongs to a reservation frozen with a different speech spec.",

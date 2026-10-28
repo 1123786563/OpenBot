@@ -1,3 +1,4 @@
+import { addRational, type Rational, reduceRational } from "./rational";
 import {
   SPEECH_EVIDENCE_MAX_WAV_CONTAINERS,
   SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES,
@@ -5,7 +6,6 @@ import {
   type SpeechSettleRequest,
 } from "./speech-settlement";
 import { readWavDurationSecondsExact } from "./transcription-pricing";
-import { addRational, reduceRational, type Rational } from "./rational";
 
 /*
  * The speech interruption path (Bifrost 13.3, #308): what a playback or stream cut owes,

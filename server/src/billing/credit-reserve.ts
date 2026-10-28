@@ -429,7 +429,9 @@ function validateRequest(input: unknown, now: Date): RequestValidation {
   if (raw.speechSpec !== undefined) {
     const candidate = raw.speechSpec as Record<string, unknown> | null;
     const specTier =
-      candidate !== null && typeof candidate === "object" && candidate.voiceTier !== undefined
+      candidate !== null &&
+      typeof candidate === "object" &&
+      candidate.voiceTier !== undefined
         ? candidate.voiceTier
         : null;
     const pricesExact =

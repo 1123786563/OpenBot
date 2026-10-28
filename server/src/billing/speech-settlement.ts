@@ -7,6 +7,7 @@ import {
   CreditReservationConflictError,
   createCreditWriter,
 } from "./credits-writer";
+import { addRational, type Rational, reduceRational } from "./rational";
 import {
   attemptIdForReservation,
   reservationIdFromAttemptId,
@@ -18,7 +19,6 @@ import {
 } from "./reserve-bound";
 import { parseExactDecimal } from "./speech-pricing";
 import { readWavDurationSecondsExact } from "./transcription-pricing";
-import { addRational, reduceRational, type Rational } from "./rational";
 
 /**
  * The speech-generation settlement path (Bifrost 13.2, #307): what a synthesis dispatch owes
