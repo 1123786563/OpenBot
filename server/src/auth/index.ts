@@ -1,3 +1,9 @@
+import { createHash } from "node:crypto";
+import {
+  getCurrentDBAdapterAsyncLocalStorage,
+  runWithAdapter,
+  runWithEndpointContext,
+} from "@better-auth/core/context";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { electron } from "@better-auth/electron";
 import { expo } from "@better-auth/expo";
@@ -28,10 +34,18 @@ import {
   verifications,
 } from "../db/schema";
 import type { Directory, DirectoryTx } from "./directory/contracts";
+import { createIdentityFinalizer } from "./directory/finalizer";
+import {
+  createIdentityExecutor,
+  type IdentityBaAccess,
+  type IdentityExecutor,
+} from "./directory/identity";
 import { createAuthMailOutbox } from "./directory/outbox";
+import { principalRegistry } from "./directory/principal-registry";
 import {
   assertBaAuthorityPreconditions,
   BA_AUTHORITY_CONFIG_VIOLATION,
+  createTransactionBoundBa,
 } from "./directory/transaction-adapter";
 import { DOMAIN_REFUSAL_MESSAGE, emailDomainAllowed } from "./email-domain";
 import { encryptSsoConfig } from "./encrypt-sso-config";
@@ -390,6 +404,150 @@ export const DIRECTORY_ORGANIZATION_PLUGIN_OPTIONS = Object.freeze({
   teams: Object.freeze({ enabled: true }),
 });
 
+/*
+ * The fixed build's table mapping, shared by the main adapter and the
+ * identity executor's transaction-bound twin so the two can never disagree
+ * about which physical table a model lands in (T05.08).
+ */
+const BA_ADAPTER_SCHEMA = Object.freeze({
+  users,
+  sessions,
+  accounts,
+  verifications,
+  ssoProviders,
+  scimConnectionBindings,
+  scimIdentityTombstones,
+  scimSubjects,
+  scimUsers,
+  scimProjectionGrants,
+  scimGroups,
+  scimGroupMembers,
+});
+
+/**
+ * T05.08 (#564): the auth instance a directory-wired deployment assembles
+ * carries its identity executor — the object the assembly mounts behind
+ * createApp's `coworker.directory.identity` seam, where the native admin
+ * account writes (create-user, update-user, set-user-password) translate
+ * into identity commands. Optional because a legacy deployment that wires
+ * nothing assembles none and keeps the honest 503 it answers today.
+ */
+export type DirectoryIdentityAuth = ReturnType<typeof betterAuth> & {
+  /** Assigned once by the factory below; never written afterwards. */
+  directoryIdentity?: Pick<IdentityExecutor, "execute">;
+};
+
+/**
+ * The fixed-build calls the identity executor's BA half needs (§2.1/§5.1):
+ * the pinned build's own createUser/password paths, reached only from
+ * inside a command's TransactionBoundBa run so every row they write rides
+ * the command's transaction. Outside one there is nothing to ride, so the
+ * calls refuse rather than orphan a user or a credential.
+ */
+function createDirectoryIdentityBaAccess(
+  auth: ReturnType<typeof betterAuth>,
+): IdentityBaAccess {
+  return {
+    createUser: async (input) => {
+      const context = await auth.$context;
+      /*
+       * The current TransactionBoundBa store: the identity command is
+       * running, and its adapter is bound to the command's open
+       * transaction. The nested runWithAdapter declares that this createUser
+       * is not its own transaction — which is exactly true — so the fixed
+       * build's user-create database hooks (the domain/revocation gate
+       * before, the role bootstrap after) execute inline inside the command
+       * instead of queueing as post-commit work the hook fence refuses.
+       */
+      const store = (await getCurrentDBAdapterAsyncLocalStorage()).getStore() as
+        | { adapter?: unknown }
+        | undefined;
+      if (!store?.adapter) {
+        throw new Error(
+          "DIRECTORY_IDENTITY_BA_STORE_MISSING: the fixed build's createUser may only run inside the identity command's TransactionBoundBa — a user row written outside the command transaction is the orphan the receipt exists to prevent",
+        );
+      }
+      /*
+       * validateUserInfo demands an endpoint context; an identity command is
+       * not a fixed-build endpoint, so the deployment's own context view is
+       * supplied and the source names how this user really arrived — a
+       * platform command, never a sign-in. The gate itself (SSO-required,
+       * admitted domains, revoked addresses) runs unchanged: an SSO-mandated
+       * deployment still refuses an admin-created account except for its
+       * break-glass administrators.
+       */
+      await runWithEndpointContext(
+        /*
+         * The pinned build's createUser reads only context.options (the
+         * validateUserInfo gate) and context.logger off this view; the cast
+         * stands for that narrow contract rather than forging a full
+         * endpoint context.
+         */
+        {
+          context: { options: context.options, logger: context.logger },
+        } as never,
+        () =>
+          runWithAdapter(store.adapter as never, async () => {
+            const user = await context.internalAdapter.createUser(
+              {
+                id: input.userId,
+                email: input.email,
+                name: input.name,
+                ...(input.image !== null ? { image: input.image } : {}),
+              },
+              { method: "platform" },
+            );
+            if (!user) {
+              throw new Error(
+                "DIRECTORY_IDENTITY_BA_CREATE_REFUSED: the fixed build's createUser returned no user; the command is refused rather than binding the pre-allocated id to nothing",
+              );
+            }
+            if (input.password !== null) {
+              const hashed = await context.password.hash(input.password);
+              await context.internalAdapter.linkAccount({
+                providerId: "credential",
+                // The pinned build's synthetic issuer for local credentials.
+                issuer: "local:credential",
+                accountId: user.id,
+                password: hashed,
+                userId: user.id,
+              });
+            }
+          }),
+      );
+    },
+    writePassword: async (input) => {
+      const context = await auth.$context;
+      const hashed = await context.password.hash(input.newPassword);
+      const existing = await context.internalAdapter.findCredentialAccount(
+        input.userId,
+      );
+      if (existing) {
+        await context.internalAdapter.updatePassword(input.userId, hashed);
+      } else {
+        await context.internalAdapter.createAccount({
+          userId: input.userId,
+          providerId: "credential",
+          issuer: "local:credential",
+          accountId: input.userId,
+          password: hashed,
+        });
+      }
+    },
+    consumeResetToken: async (input) => {
+      await (
+        auth.api as unknown as {
+          resetPassword: (args: {
+            body: { token: string; newPassword: string };
+          }) => Promise<unknown>;
+        }
+      ).resetPassword({
+        body: { token: input.resetToken, newPassword: input.newPassword },
+      });
+    },
+  };
+}
+
 /**
  * The SSO factory hard precondition (T05.05's named startup gate, extracted
  * from createAuth so the missing/false variants are pinnable at unit level):
@@ -500,12 +658,20 @@ export function createAuth(
    * The transaction capture (T05.05): every transaction the fixed build opens
    * on this database records its open tx, so the SCIM hooks can execute their
    * directory commands on exactly the transaction the plugin owns. Installed
-   * only when the wiring asks for the transcription — a legacy deployment's
-   * database object is passed to the adapter untouched.
+   * whenever the deployment wires the directory surface at all — the SCIM
+   * transcription (T05.05) and the identity executor (T05.08) both need it,
+   * and the sign-in hooks' writerOf below reads it either way. A legacy
+   * deployment's database object is passed to the adapter untouched.
    */
-  const scimCapture = scimWiring?.directory
+  const scimCapture = scimWiring
     ? createScimTransactionCapture(database)
     : null;
+  /*
+   * The resolved options the fixed build hands its database factory once
+   * $context initializes; the identity executor's transaction-bound adapter
+   * twin is built from the same pair (T05.08).
+   */
+  let resolvedBaOptions: unknown;
   /*
    * The writer the sign-in hooks run on (T05.06): the fixed build's open
    * transaction when the capture seam is assembled — the same commit that
@@ -757,35 +923,25 @@ export function createAuth(
      * for a customer's directory is inside them. Every other secret this deployment keeps goes
      * through `KEY_ENCRYPTION_KEY`; these two were the exception. See encrypt-sso-config.ts.
      */
-    database: encryptSsoConfig(
-      drizzleAdapter(scimCapture?.database ?? database, {
-        provider: "pg",
-        usePlural: true,
-        schema: {
-          users,
-          sessions,
-          accounts,
-          verifications,
-          ssoProviders,
-          scimConnectionBindings,
-          scimIdentityTombstones,
-          scimSubjects,
-          scimUsers,
-          scimProjectionGrants,
-          scimGroups,
-          scimGroupMembers,
-        },
-        /*
-         * Interactive transactions: the SCIM plugin's transcription needs
-         * them, and so does the SSO user resolution (T05.06: resolveUser is
-         * what makes the fixed build defer its link-account dispatch inside
-         * a native transaction — the pinned package refuses the callback
-         * without one), so the adapter always offers them.
-         */
-        transaction: true,
-      }),
-      config.keyEncryptionKey,
-    ),
+    database: (baOptions: unknown) => {
+      resolvedBaOptions = baOptions;
+      return encryptSsoConfig(
+        drizzleAdapter(scimCapture?.database ?? database, {
+          provider: "pg",
+          usePlural: true,
+          schema: BA_ADAPTER_SCHEMA,
+          /*
+           * Interactive transactions: the SCIM plugin's transcription needs
+           * them, and so does the SSO user resolution (T05.06: resolveUser is
+           * what makes the fixed build defer its link-account dispatch inside
+           * a native transaction — the pinned package refuses the callback
+           * without one), so the adapter always offers them.
+           */
+          transaction: true,
+        }),
+        config.keyEncryptionKey,
+      )(baOptions as never);
+    },
     account: {
       /*
        * The provider's access and refresh tokens, encrypted at rest.
@@ -1070,5 +1226,34 @@ export function createAuth(
     );
   }
 
-  return betterAuth(options);
+  const auth = betterAuth(options);
+  if (scimCapture) {
+    /*
+     * T05.08 (#564): the deployment's identity executor, on the SAME
+     * captured database the sign-in hooks write through, so a command's
+     * transaction is the one the fixed build's user-create hooks, the BA
+     * sync and the finalizer all share — and a fault anywhere in it refuses
+     * the whole command. The commitment key is the deployment's auth secret
+     * under SHA-256: server-held, never persisted, the same derivation the
+     * recovery boundary uses for its actor commitments.
+     */
+    const executor = createIdentityExecutor({
+      database: scimCapture.database,
+      bound: createTransactionBoundBa({
+        createTxAdapter: (tx) =>
+          drizzleAdapter(tx as never, {
+            provider: "pg",
+            usePlural: true,
+            schema: BA_ADAPTER_SCHEMA,
+            transaction: false,
+          })(resolvedBaOptions as never),
+      }),
+      registry: principalRegistry,
+      finalizer: createIdentityFinalizer(),
+      ba: createDirectoryIdentityBaAccess(auth),
+      commitmentKey: createHash("sha256").update(authConfig.secret).digest(),
+    });
+    (auth as DirectoryIdentityAuth).directoryIdentity = executor;
+  }
+  return auth;
 }

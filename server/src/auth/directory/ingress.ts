@@ -828,6 +828,8 @@ export const NATIVE_AUTH_TRANSLATION_INCOMPLETE =
   "NATIVE_AUTH_TRANSLATION_INCOMPLETE";
 export const NATIVE_AUTH_SELF_PREFERENCE_NOT_WIRED =
   "NATIVE_AUTH_SELF_PREFERENCE_NOT_WIRED";
+export const NATIVE_AUTH_PROFILE_FIELDS_NOT_WRITABLE =
+  "NATIVE_AUTH_PROFILE_FIELDS_NOT_WRITABLE";
 export const DIRECTORY_INGRESS_EXECUTOR_UNWIRED =
   "DIRECTORY_INGRESS_EXECUTOR_UNWIRED";
 export const IDENTITY_INGRESS_EXECUTOR_UNWIRED =
@@ -1361,6 +1363,37 @@ export function createDirectoryIngress(
         ? randomUUID()
         : (text(body.userId) ?? "");
     const reason = text(body.reason);
+    /*
+     * The account surfaces' frozen vocabulary (§2.1, T05.08): email, role,
+     * status and arbitrary data are never writable through the native
+     * create-user/update-user translation — email changes belong to the
+     * verified flow, role and status to their own commands — so a body that
+     * carries any of them is refused whole with 403 rather than trimmed to
+     * its editable half and reported as a write that never happened. The
+     * create surface still takes its email (it is creating the identity)
+     * and its first credential; the edit surface takes neither.
+     */
+    if (
+      operation === "identity.user.create" ||
+      operation === "identity.profile.update"
+    ) {
+      const forbidden = [
+        "emailVerified",
+        "role",
+        "banned",
+        "banReason",
+        "banExpires",
+        "data",
+        ...(operation === "identity.profile.update" ? ["email"] : []),
+      ].filter((field) => body[field] !== undefined);
+      if (forbidden.length > 0) {
+        throw new NativeAuthRefusal(
+          NATIVE_AUTH_PROFILE_FIELDS_NOT_WRITABLE,
+          `${endpoint.nativeOperation} carries ${forbidden.join(", ")}: the translated account surface writes name/image (and a first credential on create) only — email changes go through the verified flow and role/status through their own commands; the request is refused rather than trimmed`,
+          403,
+        );
+      }
+    }
     let payload: Record<string, unknown>;
     switch (operation) {
       case "identity.user.create": {
