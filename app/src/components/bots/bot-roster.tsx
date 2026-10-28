@@ -47,7 +47,9 @@ export function BotRoster() {
   const queryClient = useQueryClient();
   const scope = useScopedCache();
   const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
-  const hidden = useQuery(scopedAgentListQueryOptions(queryClient, scope, true));
+  const hidden = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope, true),
+  );
   const attention = useQuery(botAttentionQueryOptions());
   const byId = new Map((attention.data ?? []).map((bot) => [bot.agentId, bot]));
 

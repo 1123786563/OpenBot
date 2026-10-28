@@ -373,7 +373,9 @@ function ConnectDialog({
   const { t } = useTranslation("agents");
   const formId = useId();
   const scope = useScopedCache();
-  const channels = useInfiniteQuery(scopedChannelListQueryOptions(queryClient, scope));
+  const channels = useInfiniteQuery(
+    scopedChannelListQueryOptions(queryClient, scope),
+  );
   // Reopened with a link message still held, the dialog shows the conversation it links.
   const [channelId, setChannelId] = useState(
     linked?.channelId ?? (transport === "sms" ? pendingChannelId : ""),

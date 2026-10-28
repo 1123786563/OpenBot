@@ -15,7 +15,10 @@ import {
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { defaultAgentProfile } from "@/lib/agents/default-agent";
-import { isSharedWithYou, scopedAgentListQueryOptions } from "@/lib/agents/queries";
+import {
+  isSharedWithYou,
+  scopedAgentListQueryOptions,
+} from "@/lib/agents/queries";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   CoworkerRoutingRefusedError,

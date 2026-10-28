@@ -718,8 +718,7 @@ describe("MOD04 D5: facades expose a read-only surface (acceptance 4)", () => {
       // MOD21（#641）：同目录相对导入（如 ./guards）落在 auth/ 自身——
       // moduleRoot 即该目录，组内成立；跨目录仍须命中 M01 三组。
       expect(
-        /^\.\.\/(auth|identity|people)(\/|$)/.test(spec) ||
-          /^\.\//.test(spec),
+        /^\.\.\/(auth|identity|people)(\/|$)/.test(spec) || /^\.\//.test(spec),
       ).toBe(true);
     }
   });

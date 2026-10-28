@@ -1,9 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
-import {
-  workspaceScopeListingQueryOptions,
-} from "@/lib/enterprise/tenant/selection";
+import { workspaceScopeListingQueryOptions } from "@/lib/enterprise/tenant/selection";
 import type { PluginPackageScope } from "./queries";
 
 /**

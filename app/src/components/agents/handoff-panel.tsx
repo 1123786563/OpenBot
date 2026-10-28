@@ -45,7 +45,9 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
   // Every read and write here rides the scope the screen holds (MOD19 / Issue #639, T1b): keyed
   // under the scope's own prefix, carrying the selection pair, refused when the selection moved.
   const scope = useScopedCache();
-  const handoff = useQuery(scopedAgentHandoffQueryOptions(queryClient, scope, agentId));
+  const handoff = useQuery(
+    scopedAgentHandoffQueryOptions(queryClient, scope, agentId),
+  );
   const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   /*
    * The roster this person has hidden, read so a grant pointing into it can still be taken away.
@@ -54,7 +56,9 @@ export function HandoffPanel({ agentId }: { agentId: string }) {
    * joining the grants against the visible roster alone dropped live grants off the only screen that
    * manages them. See `handoffRoster`, which is where that join now happens.
    */
-  const hiddenAgents = useQuery(scopedAgentListQueryOptions(queryClient, scope, true));
+  const hiddenAgents = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope, true),
+  );
   const setGrant = useMutation(
     setHandoffGrantMutationOptions(queryClient, scope),
   );

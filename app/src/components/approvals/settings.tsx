@@ -47,7 +47,9 @@ export function ApprovalSettings() {
   const me = useQuery(currentUserQueryOptions()).data;
   // The roster reads ride the scope this screen holds (MOD19 / Issue #639, T1b).
   const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
-  const hiddenAgents = useQuery(scopedAgentListQueryOptions(queryClient, scope, true));
+  const hiddenAgents = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope, true),
+  );
   const preferences = useMutation(
     approvalPreferencesMutationOptions(queryClient, scope),
   );

@@ -384,9 +384,13 @@ export function ChannelChat({
       }
 
       try {
-        const stored = await readThreadMessages(channel.threadId, runtimeAgentId, {
-          pair: pairOf(scopeHolder.current),
-        });
+        const stored = await readThreadMessages(
+          channel.threadId,
+          runtimeAgentId,
+          {
+            pair: pairOf(scopeHolder.current),
+          },
+        );
         const isCurrent = current && version === historyReadVersion.current;
         if (isCurrent) {
           // The gateway snapshot can lag the store. Keep its valid local rows even when the

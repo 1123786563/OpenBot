@@ -43,9 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import {
-  scopedAgentListQueryOptions,
-} from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { conversationLabel } from "@/lib/channels/label";
 import { scopedChannelListQueryOptions } from "@/lib/channels/queries";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
@@ -259,7 +257,9 @@ function TurnOnResearchDialog({
   const { t } = useTranslation("agents");
   const scope = useScopedCache();
   const bots = useQuery(scopedAgentListQueryOptions(queryClient, scope));
-  const channels = useInfiniteQuery(scopedChannelListQueryOptions(queryClient, scope));
+  const channels = useInfiniteQuery(
+    scopedChannelListQueryOptions(queryClient, scope),
+  );
   const [pickedBot, setAgentId] = useState("");
   const agentId = fixedBot ?? pickedBot;
   const [channelId, setChannelId] = useState("");

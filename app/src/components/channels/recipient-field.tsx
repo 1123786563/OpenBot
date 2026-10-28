@@ -34,7 +34,9 @@ export function RecipientField({
   // The roster read rides the scope the screen holds (MOD19 / Issue #639, T1b).
   const queryClient = useQueryClient();
   const scope = useScopedCache();
-  const { data: profiles } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
+  const { data: profiles } = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope),
+  );
   const [search, setSearch] = useState("");
 
   const chosen = new Set(recipients.map((recipient) => recipient.id));

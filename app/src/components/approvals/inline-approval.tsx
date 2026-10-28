@@ -30,9 +30,7 @@ export function InlineApproval({
   // never across.
   const scope = useScopedCache();
   const inbox = useQuery(scopedApprovalInboxOptions(cache, scope));
-  const decision = useMutation(
-    decideApprovalMutationOptions(cache, scope),
-  );
+  const decision = useMutation(decideApprovalMutationOptions(cache, scope));
   const request = toolCallId
     ? inbox.data?.requests.find(
         (candidate) => candidate.action.toolCallId === toolCallId,
@@ -77,9 +75,7 @@ export function InlineApproval({
             size="sm"
             variant={index === 0 ? "default" : "outline"}
             disabled={decision.isPending}
-            onClick={() =>
-              decision.mutate({ id: request?.id ?? "", choice })
-            }
+            onClick={() => decision.mutate({ id: request?.id ?? "", choice })}
           >
             {label}
           </Button>

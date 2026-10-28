@@ -29,7 +29,9 @@ export function SkillAgents({
   const queryClient = useQueryClient();
   // The roster read rides the scope the screen holds (MOD19 / Issue #639, T1b).
   const scope = useScopedCache();
-  const { data: agents } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
+  const { data: agents } = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope),
+  );
   const mine = (agents ?? []).filter((agent) => agent.mine);
   const held = new Set(grantedTo);
 

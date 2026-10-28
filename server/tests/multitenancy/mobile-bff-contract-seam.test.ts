@@ -10,10 +10,7 @@ import type {
   AgentProfile,
   AgentProfileStore,
 } from "../../src/agents/public";
-import type {
-  AppVariables,
-  AuthenticatedActor,
-} from "../../src/auth/public";
+import type { AppVariables, AuthenticatedActor } from "../../src/auth/public";
 import type { ChannelStore } from "../../src/channels/public";
 import * as botSource from "../../src/mobile-bff/openmuse-bot";
 import {
@@ -45,7 +42,8 @@ import { OpenMuseMailVendorError } from "../../src/openmuse-mail/client";
  * 走源码扫描（源扫描与文本耦合是刻意的——合同锚就是那些行）。
  */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const read = (rel: string): string => readFileSync(join(REPO_ROOT, rel), "utf8");
+const read = (rel: string): string =>
+  readFileSync(join(REPO_ROOT, rel), "utf8");
 
 /** 从模块源文本提取全部 `export [type] { … } from "…"` 的导出名单（排序）。 */
 function reExportedNames(source: string): string[] {
@@ -78,7 +76,11 @@ function functionBody(source: string, marker: string): string {
 }
 
 /** 类型同一性（双向可赋值）——public 出口的类型 re-export 与源同绑定的编译期钉。 */
-type Identical<T, U> = [T] extends [U] ? ([U] extends [T] ? true : false) : false;
+type Identical<T, U> = [T] extends [U]
+  ? [U] extends [T]
+    ? true
+    : false
+  : false;
 
 // ---------------------------------------------------------------------------
 // D1 出口等价：恰符号 re-export，与源同绑定
@@ -86,9 +88,9 @@ type Identical<T, U> = [T] extends [U] ? ([U] extends [T] ? true : false) : fals
 
 describe("D1 public exits re-export exactly the consumed symbols", () => {
   test("openmuse-tasks/public.ts exports exactly the three task types", () => {
-    expect(reExportedNames(read("server/src/openmuse-tasks/public.ts"))).toEqual(
-      ["OpenMuseTaskStep", "OpenMuseTaskStore", "StoredOpenMuseTask"],
-    );
+    expect(
+      reExportedNames(read("server/src/openmuse-tasks/public.ts")),
+    ).toEqual(["OpenMuseTaskStep", "OpenMuseTaskStore", "StoredOpenMuseTask"]);
   });
 
   test("mobile-bff/public.ts exports exactly the seven provisioner symbols", () => {
@@ -121,14 +123,14 @@ describe("D1 public exits re-export exactly the consumed symbols", () => {
   });
 
   test("type re-exports are identical to the source types (compile-time)", () => {
-    const taskStore: Identical<OpenMuseTaskStore, taskSource.OpenMuseTaskStore> =
-      true;
+    const taskStore: Identical<
+      OpenMuseTaskStore,
+      taskSource.OpenMuseTaskStore
+    > = true;
     const taskStep: Identical<OpenMuseTaskStep, taskSource.OpenMuseTaskStep> =
       true;
-    const stored: Identical<
-      StoredOpenMuseTask,
-      taskSource.StoredOpenMuseTask
-    > = true;
+    const stored: Identical<StoredOpenMuseTask, taskSource.StoredOpenMuseTask> =
+      true;
     expect([taskStore, taskStep, stored]).toEqual([true, true, true]);
   });
 
@@ -141,9 +143,9 @@ describe("D1 public exits re-export exactly the consumed symbols", () => {
     for (const name of ["AppVariables", "AuthenticatedActor"]) {
       expect(auth).toContain(name);
     }
-    expect(
-      reExportedNames(read("server/src/approvals/public.ts")),
-    ).toContain("ApprovalService");
+    expect(reExportedNames(read("server/src/approvals/public.ts"))).toContain(
+      "ApprovalService",
+    );
   });
 });
 
@@ -268,9 +270,9 @@ describe("D2 acceptance ① the workspace projection stays roster+channels", () 
 
 describe("D3 acceptance ② the scope trust anchor stays server-issued", () => {
   test("a scope nobody issued is refused before any query runs", () => {
-    expect(() =>
-      assertTrustedScope({ tenantId: "t" } as never),
-    ).toThrow("UNVERIFIED_SCOPE");
+    expect(() => assertTrustedScope({ tenantId: "t" } as never)).toThrow(
+      "UNVERIFIED_SCOPE",
+    );
   });
 
   test("the anchor is a WeakSet signer, not a token check", () => {
@@ -383,9 +385,9 @@ describe("D4 acceptance ③ the onError semantic anchors survive the mount", () 
       () => new SyntaxError("{"),
     ).request("/openmuse-files/boom");
     expect(invalid.status).toBe(400);
-    const unknown = await bffWithThrowingRoute(
-      () => new Error("boom"),
-    ).request("/openmuse-files/boom");
+    const unknown = await bffWithThrowingRoute(() => new Error("boom")).request(
+      "/openmuse-files/boom",
+    );
     expect(unknown.status).toBe(503);
     expect(await unknown.json()).toEqual({
       error: "The mobile workspace is unavailable. Try again.",
@@ -454,22 +456,22 @@ describe("D6 the four mobile-bff files import cross-module only via public exits
   test("each redirected consumer names its public exits", () => {
     const expectImports: Record<string, string[]> = {
       "server/src/mobile-bff/routes.ts": [
-        '../agents/public',
-        '../auth/public',
-        '../channels/public',
+        "../agents/public",
+        "../auth/public",
+        "../channels/public",
       ],
       "server/src/mobile-bff/workspace.ts": [
-        '../agents/public',
-        '../channels/public',
+        "../agents/public",
+        "../channels/public",
       ],
       "server/src/mobile-bff/activity.ts": [
-        '../agents/public',
-        '../approvals/public',
-        '../routines/public',
+        "../agents/public",
+        "../approvals/public",
+        "../routines/public",
       ],
       "server/src/mobile-bff/openmuse-bot.ts": [
-        '../agents/public',
-        '../auth/public',
+        "../agents/public",
+        "../auth/public",
       ],
     };
     for (const [file, exits] of Object.entries(expectImports)) {

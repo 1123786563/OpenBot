@@ -83,7 +83,9 @@ function ScheduleSkill({
   const [scheduled, setScheduled] = useState<DemonstrationRoutine | null>(null);
   // The roster read rides the scope the screen holds (MOD19 / Issue #639, T1b).
   const scope = useScopedCache();
-  const channels = useInfiniteQuery(scopedChannelListQueryOptions(queryClient, scope));
+  const channels = useInfiniteQuery(
+    scopedChannelListQueryOptions(queryClient, scope),
+  );
   const botChannels = (channels.data ?? []).filter(
     (channel) => channel.active && channel.agentIds.includes(recording.botId),
   );

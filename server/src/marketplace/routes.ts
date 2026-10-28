@@ -261,7 +261,9 @@ export function createMarketplaceRoutes(deps: MarketplaceDeps) {
       // The Bot exists but the receipt never landed: retire the twin here, so a failed
       // grant or skill write cannot leave an unaccounted Bot on the roster. The person's
       // retry starts clean.
-      await deps.agents.softDeleteBot(agentActor, agent.id).catch(() => undefined);
+      await deps.agents
+        .softDeleteBot(agentActor, agent.id)
+        .catch(() => undefined);
       throw error;
     }
 

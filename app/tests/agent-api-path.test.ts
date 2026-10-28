@@ -281,8 +281,11 @@ for (const id of [
       expect((await client.fetchQuery(agentQueryOptions(id))).id).toBe(id);
       expect(client.getQueryData(agentKeys.detail(id))).toBeDefined();
       expect(
-        (await client.fetchQuery(scopedAgentHandoffQueryOptions(client, PERSONAL_SCOPE, id)))
-          .enabled,
+        (
+          await client.fetchQuery(
+            scopedAgentHandoffQueryOptions(client, PERSONAL_SCOPE, id),
+          )
+        ).enabled,
       ).toBe(false);
       for (const operation of operations(client, id)) {
         await operation.run();

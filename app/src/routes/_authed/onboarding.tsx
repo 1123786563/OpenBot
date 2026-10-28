@@ -10,7 +10,10 @@ import { Composer } from "@/components/channels/composer";
 import { DesktopIllustration } from "@/components/computer/desktop-illustration";
 import { ComputerPlaceholder } from "@/components/computer/placeholder";
 import { Button } from "@/components/ui/button";
-import { type AgentProfile, scopedAgentListQueryOptions } from "@/lib/agents/queries";
+import {
+  type AgentProfile,
+  scopedAgentListQueryOptions,
+} from "@/lib/agents/queries";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { currentUserQueryOptions, needsOnboarding } from "@/lib/auth/queries";
 import { appConfig } from "@/lib/generated/application-config";
