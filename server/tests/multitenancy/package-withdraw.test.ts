@@ -31,6 +31,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { sql } from "drizzle-orm";
 import type { PackageManifestV1 } from "../../../shared/enterprise/plugin-package-contracts";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import type { Database } from "../../src/db/client";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {

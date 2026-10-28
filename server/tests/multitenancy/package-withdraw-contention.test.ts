@@ -38,6 +38,13 @@ import {
   sha256Hex,
 } from "../../../scripts/plugin-packages/index-file";
 import type { PackageManifestV1 } from "../../../shared/enterprise/plugin-package-contracts";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   createPackageDispatchService,

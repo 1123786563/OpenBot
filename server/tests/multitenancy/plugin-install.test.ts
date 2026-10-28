@@ -29,7 +29,13 @@
 // 最小授权）经 MT003 工具（migrate-test.ts）三步配方真实执行：套件内
 // dry-run → manifest → --apply，本文件不自己 DDL。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { sql } from "drizzle-orm";

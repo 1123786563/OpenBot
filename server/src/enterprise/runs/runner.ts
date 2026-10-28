@@ -764,10 +764,10 @@ class DurableProductionRunner extends AgentRunner {
 
     if (type === EventType.RUN_ERROR) {
       const code = classifyGovernedRunFailure(state.carrier, event);
-      const relayed = this.withServerRunIdentity(
-        state,
-        { ...event, code } as BaseEvent,
-      );
+      const relayed = this.withServerRunIdentity(state, {
+        ...event,
+        code,
+      } as BaseEvent);
       await this.appendEvent(state, relayed);
       state.settlementAttempted = true;
       const settled = await this.deps.runs.fail(state.scope, {

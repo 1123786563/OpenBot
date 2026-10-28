@@ -2640,14 +2640,12 @@ function ipv6LiteralAllowed(literal: string, allowPrivate: boolean): boolean {
   if (address.startsWith("::ffff:")) {
     const tail = address.slice("::ffff:".length);
     const bytes = tail.includes(":")
-      ? tail
-          .split(":")
-          .flatMap((group) => {
-            const value = Number.parseInt(group, 16);
-            return Number.isInteger(value) && value >= 0 && value <= 0xffff
-              ? [value >> 8, value & 0xff]
-              : [-1];
-          })
+      ? tail.split(":").flatMap((group) => {
+          const value = Number.parseInt(group, 16);
+          return Number.isInteger(value) && value >= 0 && value <= 0xffff
+            ? [value >> 8, value & 0xff]
+            : [-1];
+        })
       : tail.split(".").map((part) => Number.parseInt(part, 10));
     if (bytes.length === 4 && bytes.every((byte) => byte >= 0 && byte <= 255)) {
       return ipv4LiteralAllowed(bytes[0], bytes[1], allowPrivate);

@@ -4,9 +4,7 @@
   "groups": [
     {
       "name": "--help",
-      "files": [
-        "--help"
-      ]
+      "files": ["--help"]
     },
     {
       "name": "agent-computer/tests",
@@ -27,9 +25,7 @@
     },
     {
       "name": "agent-mastra/src",
-      "files": [
-        "agent-mastra/src/mastra/index.test.ts"
-      ]
+      "files": ["agent-mastra/src/mastra/index.test.ts"]
     },
     {
       "name": "agent-sandbox/tests",
@@ -41,9 +37,7 @@
     },
     {
       "name": "app/src",
-      "files": [
-        "app/src/lib/i18n/ai-observability.test.ts"
-      ]
+      "files": ["app/src/lib/i18n/ai-observability.test.ts"]
     },
     {
       "name": "app/tests part 1",
@@ -208,33 +202,23 @@
     },
     {
       "name": "desktop/scripts",
-      "files": [
-        "desktop/scripts/desktop-version.test.ts"
-      ]
+      "files": ["desktop/scripts/desktop-version.test.ts"]
     },
     {
       "name": "desktop/src",
-      "files": [
-        "desktop/src/telemetry.test.ts"
-      ]
+      "files": ["desktop/src/telemetry.test.ts"]
     },
     {
       "name": "scripts/processes.test.ts",
-      "files": [
-        "scripts/processes.test.ts"
-      ]
+      "files": ["scripts/processes.test.ts"]
     },
     {
       "name": "scripts/start-restart-guard.test.ts",
-      "files": [
-        "scripts/start-restart-guard.test.ts"
-      ]
+      "files": ["scripts/start-restart-guard.test.ts"]
     },
     {
       "name": "scripts/tls-pipeline.test.ts",
-      "files": [
-        "scripts/tls-pipeline.test.ts"
-      ]
+      "files": ["scripts/tls-pipeline.test.ts"]
     },
     {
       "name": "server/tests part 1",
@@ -751,9 +735,7 @@
     },
     {
       "name": "server/tests/billing-credits-writer",
-      "files": [
-        "server/tests/billing-credits-writer.integration.test.ts"
-      ]
+      "files": ["server/tests/billing-credits-writer.integration.test.ts"]
     },
     {
       "name": "server/tests/gateway-probe",
@@ -778,7 +760,6 @@
         "server/tests/multitenancy/billing-visibility.test.ts",
         "server/tests/multitenancy/bot-lifecycle.test.ts",
         "server/tests/multitenancy/bot-publish.test.ts",
-        "server/tests/multitenancy/bots-ownership.test.ts",
         "server/tests/multitenancy/cache-keys.test.ts",
         "server/tests/multitenancy/child-backfill-kb.test.ts",
         "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -788,13 +769,13 @@
         "server/tests/multitenancy/company-reservation.test.ts",
         "server/tests/multitenancy/computer-allocation.test.ts",
         "server/tests/multitenancy/conversation-messages.test.ts",
-        "server/tests/multitenancy/conversations-list.test.ts"
+        "server/tests/multitenancy/conversations-list.test.ts",
+        "server/tests/multitenancy/coverage-billing.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 2",
       "files": [
-        "server/tests/multitenancy/coverage-billing.test.ts",
         "server/tests/multitenancy/coverage-bots-conversations.test.ts",
         "server/tests/multitenancy/coverage-craft-openmuse.test.ts",
         "server/tests/multitenancy/coverage-governance.test.ts",
@@ -817,13 +798,13 @@
         "server/tests/multitenancy/group-membership.test.ts",
         "server/tests/multitenancy/host-access.test.ts",
         "server/tests/multitenancy/identity-binding.test.ts",
-        "server/tests/multitenancy/identity-matrix-runner.test.ts"
+        "server/tests/multitenancy/identity-matrix-runner.test.ts",
+        "server/tests/multitenancy/inbound-attribution.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 3",
       "files": [
-        "server/tests/multitenancy/inbound-attribution.test.ts",
         "server/tests/multitenancy/integration-evidence.test.ts",
         "server/tests/multitenancy/inventory.test.ts",
         "server/tests/multitenancy/job-claim-cancel.test.ts",
@@ -846,13 +827,13 @@
         "server/tests/multitenancy/openmuse-reviewed-actions.test.ts",
         "server/tests/multitenancy/openmuse-tasks.test.ts",
         "server/tests/multitenancy/payer-accounts.test.ts",
-        "server/tests/multitenancy/people-lifecycle.test.ts"
+        "server/tests/multitenancy/people-lifecycle.test.ts",
+        "server/tests/multitenancy/personal-memory.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 4",
       "files": [
-        "server/tests/multitenancy/personal-memory.test.ts",
         "server/tests/multitenancy/personal-share-rules.test.ts",
         "server/tests/multitenancy/preferences.test.ts",
         "server/tests/multitenancy/proactive-tx.test.ts",
@@ -875,13 +856,13 @@
         "server/tests/multitenancy/settlement-idempotency.test.ts",
         "server/tests/multitenancy/share-tokens.test.ts",
         "server/tests/multitenancy/shared-approvals.test.ts",
-        "server/tests/multitenancy/signed-download.test.ts"
+        "server/tests/multitenancy/signed-download.test.ts",
+        "server/tests/multitenancy/skills-components.test.ts"
       ]
     },
     {
       "name": "server/tests/multitenancy part 5",
       "files": [
-        "server/tests/multitenancy/skills-components.test.ts",
         "server/tests/multitenancy/sso-scim-config.test.ts",
         "server/tests/multitenancy/startup-checks.test.ts",
         "server/tests/multitenancy/startup-defaults.test.ts",
@@ -898,9 +879,7 @@
     },
     {
       "name": "shared/harnesses.test.ts",
-      "files": [
-        "shared/harnesses.test.ts"
-      ]
+      "files": ["shared/harnesses.test.ts"]
     },
     {
       "name": "server/tests/multitenancy/package chain",
@@ -922,39 +901,27 @@
     },
     {
       "name": "server/tests/multitenancy/package-withdraw-contention",
-      "files": [
-        "server/tests/multitenancy/package-withdraw-contention.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/package-withdraw-contention.test.ts"]
     },
     {
       "name": "server/tests/multitenancy/package-migration",
-      "files": [
-        "server/tests/multitenancy/package-migration.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/package-migration.test.ts"]
     },
     {
       "name": "server/tests/multitenancy/tool-invocation",
-      "files": [
-        "server/tests/multitenancy/tool-invocation.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/tool-invocation.test.ts"]
     },
     {
       "name": "server/tests/package-dispatch-call",
-      "files": [
-        "server/tests/package-dispatch-call.test.ts"
-      ]
+      "files": ["server/tests/package-dispatch-call.test.ts"]
     },
     {
       "name": "server/tests/package-index-ops",
-      "files": [
-        "server/tests/package-index-ops.test.ts"
-      ]
+      "files": ["server/tests/package-index-ops.test.ts"]
     },
     {
       "name": "server/tests/package-entrypoints",
-      "files": [
-        "server/tests/package-entrypoints.test.ts"
-      ]
+      "files": ["server/tests/package-entrypoints.test.ts"]
     }
   ],
   "files": [
@@ -1351,7 +1318,6 @@
     "server/tests/multitenancy/billing-visibility.test.ts",
     "server/tests/multitenancy/bot-lifecycle.test.ts",
     "server/tests/multitenancy/bot-publish.test.ts",
-    "server/tests/multitenancy/bots-ownership.test.ts",
     "server/tests/multitenancy/cache-keys.test.ts",
     "server/tests/multitenancy/child-backfill-kb.test.ts",
     "server/tests/multitenancy/child-backfill-main-batch1.test.ts",
@@ -1820,8 +1786,5 @@
     "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/Problem.test.tsx; @happy-dom/global-",
     "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/ProviderPicker.test.tsx; @hap"
   },
-  "directoryIslands": [
-    "server/tests/multitenancy",
-    "app/tests/multitenancy"
-  ]
+  "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"]
 }

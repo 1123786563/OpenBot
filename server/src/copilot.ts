@@ -4117,7 +4117,8 @@ async function buildAgent(
         gatewayModel,
       ),
       {
-        wrapChain: (input, run) => builtinRunChainMiddleware(agent.id)(input, run),
+        wrapChain: (input, run) =>
+          builtinRunChainMiddleware(agent.id)(input, run),
         observe: (run) =>
           observeModelConnection(
             observeBuiltinRunLifecycle(observeBuiltinToolSteps(run)),
@@ -4895,48 +4896,49 @@ export function builtinRunChainCounts(): Readonly<
 export function builtinRunChainMiddleware(
   botId: string,
 ): (input: RunAgentInput, run: Observable<BaseEvent>) => Observable<BaseEvent> {
-  return (input, run) => defer(() => {
-    if (currentTraceContext() !== undefined) {
-      builtinRunChainTally.ambient += 1;
-      return run;
-    }
-    const runId = typeof input.runId === "string" ? input.runId.trim() : "";
-    if (runId === "") {
-      builtinRunChainTally.unavailable += 1;
-      log.warn(
-        { type: "builtin-run-chain-unavailable", botId },
-        "builtin-run-chain-unavailable: no active span and no run identity; the run's facts stay chain-less and submit nothing upstream",
+  return (input, run) =>
+    defer(() => {
+      if (currentTraceContext() !== undefined) {
+        builtinRunChainTally.ambient += 1;
+        return run;
+      }
+      const runId = typeof input.runId === "string" ? input.runId.trim() : "";
+      if (runId === "") {
+        builtinRunChainTally.unavailable += 1;
+        log.warn(
+          { type: "builtin-run-chain-unavailable", botId },
+          "builtin-run-chain-unavailable: no active span and no run identity; the run's facts stay chain-less and submit nothing upstream",
+        );
+        return run;
+      }
+      builtinRunChainTally.derived += 1;
+      // The chain derives from a per-subscription nonce, not the wire runId (OCR delta T-J
+      // #2): the runId is display, and this mint is the one identity two re-driven runs
+      // cannot share.
+      const attemptId = randomUUID();
+      const traceId = derivedBuiltinRunTraceId(botId, attemptId);
+      log.info(
+        {
+          type: "builtin-run-chain",
+          botId,
+          runId,
+          origin: "derived",
+          traceId,
+        },
+        "builtin-run-chain",
       );
-      return run;
-    }
-    builtinRunChainTally.derived += 1;
-    // The chain derives from a per-subscription nonce, not the wire runId (OCR delta T-J
-    // #2): the runId is display, and this mint is the one identity two re-driven runs
-    // cannot share.
-    const attemptId = randomUUID();
-    const traceId = derivedBuiltinRunTraceId(botId, attemptId);
-    log.info(
-      {
-        type: "builtin-run-chain",
-        botId,
-        runId,
-        origin: "derived",
-        traceId,
-      },
-      "builtin-run-chain",
-    );
-    const ctx = trace.setSpan(
-      context.active(),
-      trace.wrapSpanContext({
-        traceId,
-        spanId: runRootSpanId(traceId),
-        traceFlags: TraceFlags.SAMPLED,
-        isRemote: false,
-        traceState: undefined,
-      }),
-    );
-    return subscribeWithin(ctx, run);
-  });
+      const ctx = trace.setSpan(
+        context.active(),
+        trace.wrapSpanContext({
+          traceId,
+          spanId: runRootSpanId(traceId),
+          traceFlags: TraceFlags.SAMPLED,
+          isRemote: false,
+          traceState: undefined,
+        }),
+      );
+      return subscribeWithin(ctx, run);
+    });
 }
 
 /**
@@ -5708,8 +5710,7 @@ function remoteAgentWithStandingRole(
               // the governed run's local): the receipt echoes this id back and is
               // checked against the trimmed one, so a wire runId with surrounding
               // whitespace used to fail its own honest endpoint (T-N#3).
-              runId:
-                typeof input.runId === "string" ? input.runId.trim() : "",
+              runId: typeof input.runId === "string" ? input.runId.trim() : "",
               caps: contract.caps,
             },
           }),
