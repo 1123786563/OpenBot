@@ -118,9 +118,26 @@ describe("folding upstream pages under a row cap", () => {
     const all = Array.from({ length: 5 }, (_, i) => ({ id: `r${i}` }));
     const folded = await foldExportPages(10, async (n) => {
       asked.push(n);
-      return page(5, all.slice(n * 2, n * 2 + 2));
+      return page(5, all.slice((n - 1) * 2, (n - 1) * 2 + 2));
     });
-    expect(asked).toEqual([0, 1, 2]);
+    expect(asked).toEqual([1, 2, 3]);
+    expect(folded).toEqual(all);
+  });
+
+  test("the first page asked is 1 — Opik 2.2.100 answers 400 on page=0 (F8D-2)", async () => {
+    // Real-deployment evidence (F8D a11-export): /v1/private/traces rejects
+    // page=0 with 400 and serves page=1 as the first page. The 0-based fold
+    // failed every real-deployment export job as OPIK_CLIENT_ERROR before it
+    // read a single row — page=0 must never be requested.
+    const asked: number[] = [];
+    const all = Array.from({ length: 5 }, (_, i) => ({ id: `r${i}` }));
+    const folded = await foldExportPages(10, async (n) => {
+      asked.push(n);
+      // The real contract shape: page=0 does not answer data, it 400s.
+      if (n === 0) throw new Error("400: upstream pages are 1-based");
+      return page(5, all.slice((n - 1) * 2, (n - 1) * 2 + 2));
+    });
+    expect(asked).toEqual([1, 2, 3]);
     expect(folded).toEqual(all);
   });
 
@@ -140,7 +157,7 @@ describe("folding upstream pages under a row cap", () => {
     // it can see, not the envelope's promise.
     await expect(
       foldExportPages(2, async (n) =>
-        page(3, n === 0 ? [{ id: "a" }, { id: "b" }] : [{ id: "c" }]),
+        page(3, n === 1 ? [{ id: "a" }, { id: "b" }] : [{ id: "c" }]),
       ),
     ).rejects.toBeInstanceOf(ExportRowLimitExceeded);
   });
@@ -158,7 +175,7 @@ describe("folding upstream pages under a row cap", () => {
   test("pages that run out before total are malformed, never a short success", async () => {
     await expect(
       foldExportPages(10, async (n) =>
-        page(4, n === 0 ? [{ id: "a" }, { id: "b" }] : []),
+        page(4, n === 1 ? [{ id: "a" }, { id: "b" }] : []),
       ),
     ).rejects.toBeInstanceOf(MalformedExportPage);
   });
@@ -166,7 +183,7 @@ describe("folding upstream pages under a row cap", () => {
   test("a drifting total between pages is malformed", async () => {
     await expect(
       foldExportPages(10, async (n) =>
-        page(n === 0 ? 4 : 3, [{ id: "a" }, { id: "b" }]),
+        page(n === 1 ? 4 : 3, [{ id: "a" }, { id: "b" }]),
       ),
     ).rejects.toBeInstanceOf(MalformedExportPage);
   });
@@ -181,7 +198,7 @@ describe("folding upstream pages under a row cap", () => {
       foldExportPages(10, async (n) =>
         page(
           4,
-          n === 0
+          n === 1
             ? [{ id: "a" }, { id: "b" }, { id: "c" }]
             : [{ id: "d" }, { id: "e" }, { id: "f" }],
         ),
@@ -194,7 +211,7 @@ describe("folding upstream pages under a row cap", () => {
       foldExportPages(10, async (n) =>
         page(
           4,
-          n === 0 ? [{ id: "a" }, { id: "b" }] : [{ id: "a" }, { id: "c" }],
+          n === 1 ? [{ id: "a" }, { id: "b" }] : [{ id: "a" }, { id: "c" }],
         ),
       ),
     ).rejects.toBeInstanceOf(MalformedExportPage);

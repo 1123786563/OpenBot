@@ -14,6 +14,7 @@
  * terminal event or turn loss.
  */
 
+import { getLogger } from "../../../shared/logger";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables } from "../auth/guards";
 import type { CraftApprovalSignals } from "./approval-signals";
@@ -35,6 +36,8 @@ export const CRAFT_SSE_HEADERS: Record<string, string> = {
   connection: "keep-alive",
   "x-accel-buffering": "no",
 };
+
+const log = getLogger("server");
 
 const TERMINAL_STREAM_EVENT_TYPES = new Set(["prompt_response", "error"]);
 
@@ -101,10 +104,19 @@ export function createTurnRoutes(
     const userId = actor.id;
     const config = deps.config;
 
+    // Hoisted out of start() so the disconnect paths can reach them: without cancel(),
+    // a client that walks away leaves the polls and the bus subscription running to the
+    // terminal frame with nobody reading, and maybeStartRunner retrying the whole time.
+    let live = true;
+    let stopIteration: (() => void) | null = null;
+    const stopStreaming = () => {
+      live = false;
+      stopIteration?.();
+    };
+
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         const encoder = new TextEncoder();
-        let live = true;
         const guard = (text: string) => {
           if (!live) return;
           try {
@@ -198,6 +210,9 @@ export function createTurnRoutes(
                     ).drainAnnouncements(sessionId)
                 : null,
             });
+            // return() runs the generator's finally (the bus unsubscribe): this is
+            // what makes a mid-stream disconnect actually tear the subscription down.
+            stopIteration = () => void events.return(undefined);
             for await (const event of events) {
               if (!live) return;
               const frame = eventToSse(event);
@@ -242,7 +257,19 @@ export function createTurnRoutes(
               maybeStartRunner();
             }
           } catch (error) {
-            guard(formatStreamError(String(error)));
+            // The SSE error frame is browser-facing: a stable sentence plus a log
+            // entry, never the raw exception text (subscription internals like
+            // "No sandbox event bus configured." are not client vocabulary).
+            log.error(
+              {
+                type: "craft-turn-stream-error",
+                sessionId,
+                turnId,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              "craft-turn-stream-error",
+            );
+            guard(formatStreamError("The turn stream failed. Try again."));
           } finally {
             live = false;
             try {
@@ -253,9 +280,17 @@ export function createTurnRoutes(
           }
         })();
 
-        // Client-teardown hook: nothing to cancel beyond the loop's live flag —
-        // the generator's finally unsubscribes the bus.
+        // Client teardown: cancel() (the stream machinery's own hook) and the request's
+        // abort signal both stop the loop and return() the bus iterator, whose finally
+        // unsubscribes.
       },
+      cancel: () => {
+        stopStreaming();
+      },
+    });
+
+    context.req.raw.signal?.addEventListener("abort", stopStreaming, {
+      once: true,
     });
 
     return new Response(stream, { status: 200, headers: CRAFT_SSE_HEADERS });

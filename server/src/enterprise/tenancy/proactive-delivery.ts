@@ -396,11 +396,14 @@ export function createEnterpriseProactiveDelivery(deps: {
     title: string;
     detail: string;
     sourceApp: string | null;
+    sourceLink: string | null;
   }): string {
     return [
       `Suggested next step: ${suggestion.title}`,
       suggestion.detail,
       suggestion.sourceApp ? `From ${suggestion.sourceApp}` : "",
+      // 头注契约的第四个字段：跳转链接随正文送达，投影不落正文=链接丢失。
+      suggestion.sourceLink ?? "",
     ]
       .filter((part) => part !== "")
       .join("\n");

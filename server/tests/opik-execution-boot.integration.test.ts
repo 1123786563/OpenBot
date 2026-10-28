@@ -1,9 +1,17 @@
-import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, like } from "drizzle-orm";
+import {
+  afterAll,
+  afterEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
 import { createExecutionBudgetPrecheck } from "../src/ai-observability/execution-billing";
-import { createExperimentExecutionWorkerBoot } from "../src/ai-observability/execution-boot";
+import {
+  createCatalogueToolSurface,
+  createExperimentExecutionWorkerBoot,
+} from "../src/ai-observability/execution-boot";
 import type { EvaluationModelCall } from "../src/ai-observability/execution-runner";
 import { GATEWAY_CALL_TIMEOUT_MS } from "../src/ai-observability/execution-runner";
 import {
@@ -22,6 +30,7 @@ import { createUsageOutbox } from "../src/billing/usage-outbox";
 import type { BillingModelCreditPolicyEntry } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { aiObservationExperimentExecutions } from "../src/db/schema/ai-observability-executions";
+import { mcpServers, mcpTools } from "../src/db/schema/plugins";
 import { usageOutbox } from "../src/db/schema/usage-outbox";
 import { workItems } from "../src/db/schema/work";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -150,7 +159,10 @@ function boot(input: {
 const startedExecutionIds: string[] = [];
 
 /** One frozen dataset version + experiment, and the execution the service started. */
-async function submittedExecution(customer: string) {
+async function submittedExecution(
+  customer: string,
+  config: typeof configInput = configInput,
+) {
   const datasets = createObservationDatasetStore(database);
   const experiments = createObservationExperimentStore(database);
   const executions = createObservationExecutionStore(database);
@@ -170,7 +182,7 @@ async function submittedExecution(customer: string) {
   const { experiment } = await experiments.submit(scope, {
     name: `${prefix}-exp-${randomUUID().slice(0, 8)}`,
     datasetVersionId: version.id,
-    config: configInput,
+    config,
   });
   const service = createExperimentExecutionService({
     executions,
@@ -387,4 +399,198 @@ test("the production boot's judge wiring loads from env and records its honest f
   expect(judge).toBeDefined();
   expect(judge?.status).toBe("failed");
   expect(judge?.code).toBe("JUDGE_CALL_FAILED");
+});
+
+/*
+ * FREV-04: the evaluated Bot's tool surface is the deployment's OWN catalogue. The
+ * frozen whitelist is resolved against the same `mcp_tools` rows the runtime's
+ * granted-tool listing reads, classified by the same `classifyTool` the store's
+ * `callTool` classifies a real call with — so an evaluation offers the model
+ * production schemas and refuses on production's read/write answer, rather than
+ * starting every name from a fail-closed "write" the catalogue could have answered.
+ */
+const toolPrefix = `f5c2-${randomUUID().slice(0, 8)}`;
+
+async function seedTool(
+  serverId: string,
+  tool: {
+    name: string;
+    description: string;
+    inputSchema?: Record<string, unknown>;
+    effect?: string | null;
+  },
+) {
+  await database
+    .insert(mcpServers)
+    .values({
+      id: serverId,
+      title: serverId,
+      vendor: "Test",
+      url: `https://${serverId}.example.test/mcp`,
+      provenance: "custom",
+    })
+    .onConflictDoNothing();
+  await database.insert(mcpTools).values({
+    serverId,
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema ?? { type: "object" },
+    effect: tool.effect ?? null,
+  });
+}
+
+async function dropToolServers() {
+  for (const serverId of [`${toolPrefix}-kb`, `${toolPrefix}-kb2`]) {
+    await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
+  }
+}
+
+test("the catalogue tool surface answers every spelling of a frozen name, and refuses to guess at an ambiguous bare one (FREV-04)", async () => {
+  try {
+    await seedTool(`${toolPrefix}-kb`, {
+      name: "search",
+      description: "Search the support knowledge base.",
+      inputSchema: {
+        type: "object",
+        properties: { q: { type: "string" } },
+        required: ["q"],
+      },
+      // The vendor's own label, which is what a custom server's classification reads.
+      effect: "read",
+    });
+    await seedTool(`${toolPrefix}-kb`, {
+      name: "note_delete",
+      description: "Delete a note.",
+    });
+
+    const surfaces = await createCatalogueToolSurface(database)([
+      `${toolPrefix}-kb/search`,
+      `mcp__${toolPrefix}-kb__search`,
+      "search",
+      "note_delete",
+      "never_listed",
+    ]);
+
+    const expected = {
+      description: "Search the support knowledge base.",
+      parameters: {
+        type: "object",
+        properties: { q: { type: "string" } },
+        required: ["q"],
+      },
+      effect: "read",
+    };
+    // The ref spelling, the model-facing spelling a transcript would carry, and the
+    // bare name that is unique among advertised tools all resolve to the same facts.
+    expect(surfaces.get(`${toolPrefix}-kb/search`)).toEqual(expected);
+    expect(surfaces.get(`mcp__${toolPrefix}-kb__search`)).toEqual(expected);
+    expect(surfaces.get("search")).toEqual(expected);
+    // A tool the vendor recorded no effect for is a write — the store's own answer.
+    expect(surfaces.get("note_delete")?.effect).toBe("write");
+    // A name no row advertises stays absent: the fail-closed classifier keeps it a write.
+    expect(surfaces.has("never_listed")).toBe(false);
+
+    // A second server advertising the same bare name makes it ambiguous: the bare
+    // spelling resolves to nothing, while each ref still names its own row.
+    await seedTool(`${toolPrefix}-kb2`, {
+      name: "search",
+      description: "A different server's search.",
+      effect: "read",
+    });
+    const ambiguous = await createCatalogueToolSurface(database)([
+      "search",
+      `${toolPrefix}-kb/search`,
+    ]);
+    expect(ambiguous.has("search")).toBe(false);
+    expect(ambiguous.get(`${toolPrefix}-kb/search`)?.description).toBe(
+      "Search the support knowledge base.",
+    );
+  } finally {
+    await dropToolServers();
+  }
+});
+
+test("a swept execution declares the catalogue's tool surface and keeps every call on the gate (FREV-04)", {
+  timeout: 30_000,
+}, async () => {
+  const serverId = `${toolPrefix}-kb`;
+  const toolName = `mcp__${serverId}__lookup`;
+  try {
+    await seedTool(serverId, {
+      name: "lookup",
+      description: "Look a support article up.",
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+      effect: "read",
+    });
+    const customer = `${prefix}-tools`;
+    await grant(customer, 10_000);
+    const execution = await submittedExecution(customer, {
+      ...configInput,
+      readOnlyTools: [toolName],
+      toolFixtures: { [toolName]: { answer: "the frozen article" } },
+    });
+
+    // What the production runner hands the engine: the declared surface (catalogue
+    // description and schema) and the replayed fixture. The model here is a stand-in
+    // for the provider's "call the tool, then answer from it" — the tool invocation
+    // itself is the production closure under test, not a re-implementation.
+    let declared: readonly {
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+    }[] = [];
+    const replayed: unknown[] = [];
+    const { worker } = boot({
+      customer,
+      callModel: async (request) => {
+        declared = (request.tools ?? []).map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        }));
+        for (const tool of request.tools ?? []) {
+          replayed.push(await tool.execute({ id: "article-1" }));
+        }
+        return {
+          output: "answered from the frozen article",
+          inputTokens: 10,
+          outputTokens: 20,
+          // A name the model invented: the runner must put it through the gate too.
+          undeclaredToolCalls: ["evil_tool"],
+        };
+      },
+    });
+
+    await worker.sweep();
+
+    expect(declared).toEqual([
+      {
+        name: toolName,
+        description: "Look a support article up.",
+        parameters: {
+          type: "object",
+          properties: { id: { type: "string" } },
+          required: ["id"],
+        },
+      },
+    ]);
+    // The gate answered the call with the frozen fixture — not a live tool, and not
+    // a refusal: the projection envelopes are unwrapped, so the model reads the
+    // frozen value the experiment pinned.
+    expect(replayed).toEqual([{ answer: "the frozen article" }]);
+
+    const rows = await database
+      .select()
+      .from(aiObservationExperimentExecutions)
+      .where(eq(aiObservationExperimentExecutions.id, execution.id));
+    expect(rows[0]?.state).toBe("completed");
+    // The invented tool reached the gate: the governance counter is a real count.
+    expect(rows[0]?.toolRejections).toBe(1);
+  } finally {
+    await dropToolServers();
+  }
 });

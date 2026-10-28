@@ -37,6 +37,7 @@ import {
   type OpenMuseTaskRow,
   openmuseTasks,
 } from "../../../src/db/schema/openmuse";
+import { createAccess } from "../../../src/enterprise/authz/public";
 import type { PlatformScope } from "../../../src/enterprise/contracts";
 import {
   createMachineScanIdentity,
@@ -63,6 +64,7 @@ import {
   provisionDeployment,
   suspendMembership,
 } from "../../../src/enterprise/tenancy/provision";
+import { createResourcePolicyService } from "../../../src/enterprise/tenancy/resource-policy";
 import { createWorkspaceGate } from "../../../src/enterprise/tenancy/scope-gate";
 import { createScopeResolver } from "../../../src/enterprise/tenancy/store";
 import {
@@ -517,7 +519,13 @@ export async function createOpenMuseTasksFixture(): Promise<OpenMuseTasksFixture
         rows,
         jobs: createJobOwnershipService(operator, data),
         personalBots: createPersonalBotService({ data, operator }),
-        gate: createWorkspaceGate(data),
+        // MOD04：服务消费 M02 门面 runInScope（内部仍是同一个 MT005 gate
+        // 事务本体——createWorkspaceGate(data).transaction，逐字节等价）。
+        access: createAccess({
+          resolver,
+          gate: createWorkspaceGate(data),
+          resourcePolicy: createResourcePolicyService(data),
+        }),
         issueScheduleScope: async (facts) => {
           const request = new Request("https://mt060-fixture.invalid/schedule");
           // 服务面 facts 以 actorId 命名；schedule 会话缝按 userId 键存取。

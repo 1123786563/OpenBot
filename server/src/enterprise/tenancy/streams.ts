@@ -439,6 +439,23 @@ export function createStreamSubscriptionService(channels: {
             : await tx
                 .select({ id: enterpriseResources.id })
                 .from(enterpriseResources)
+                // 订阅是个人事实（readSubscription 同款）：只关闭本人订阅行，
+                // 同名 threadId 的他人订阅不得被本 principal 翻转。
+                .innerJoin(
+                  enterpriseResourceGrants,
+                  and(
+                    eq(
+                      enterpriseResourceGrants.tenantId,
+                      enterpriseResources.tenantId,
+                    ),
+                    eq(
+                      enterpriseResourceGrants.resourceId,
+                      enterpriseResources.id,
+                    ),
+                    eq(enterpriseResourceGrants.action, "read"),
+                    eq(enterpriseResourceGrants.principalId, scope.principalId),
+                  ),
+                )
                 .where(
                   and(
                     eq(enterpriseResources.tenantId, scope.tenantId),
@@ -490,7 +507,11 @@ export function createStreamSubscriptionService(channels: {
         ]);
         // 推送面事实重验（AC1）：订阅行活跃 + 订阅者当前事实。
         const subscription = await readSubscription(tx, scope, subscriptionId);
-        if (!subscription) return notFoundVerdict();
+        if (!subscription) {
+          // 订阅行已取消/失效（private/非 active/已切范围）：契约语义是
+          //「停止推送并关闭」，与撤权同臂，不折叠为 canonical not-found。
+          return { outcome: "closed" } as const;
+        }
         const alive = await readSubscriberFacts(tx, scope);
         if (!alive) {
           // 撤权/停用：停止推送并关闭连接语义（判定面表达）。
@@ -513,9 +534,23 @@ export function createStreamSubscriptionService(channels: {
             exclusive: true,
           },
         ]);
+        // 订阅是个人事实（readSubscription 同款 join）：订阅 id 泄露给同
+        // workspace 他人时，他人 scope 也不得取消本人订阅。
         const [row] = await tx
           .select({ id: enterpriseResources.id })
           .from(enterpriseResources)
+          .innerJoin(
+            enterpriseResourceGrants,
+            and(
+              eq(
+                enterpriseResourceGrants.tenantId,
+                enterpriseResources.tenantId,
+              ),
+              eq(enterpriseResourceGrants.resourceId, enterpriseResources.id),
+              eq(enterpriseResourceGrants.action, "read"),
+              eq(enterpriseResourceGrants.principalId, scope.principalId),
+            ),
+          )
           .where(
             and(
               eq(enterpriseResources.tenantId, scope.tenantId),

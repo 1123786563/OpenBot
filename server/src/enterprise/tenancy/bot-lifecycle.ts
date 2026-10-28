@@ -214,13 +214,22 @@ function assertAgentId(agentId: string): string {
   return agentId;
 }
 
-/** 回调/配置体里的归属键（驼峰与下划线拼写一律拒绝）。 */
+/** 回调/配置体里的归属键（驼峰与下划线拼写一律拒绝；嵌套层一并扫描）。 */
 function assertNoClientAttribution(document: Record<string, unknown>): void {
-  for (const key of Object.keys(document)) {
-    if (ATTRIBUTION_KEYS.includes(key)) {
-      throw new Error("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
     }
-  }
+    if (!value || typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value)) {
+      if (ATTRIBUTION_KEYS.includes(key)) {
+        throw new Error("ATTRIBUTION_NOT_CLIENT_DECLARABLE");
+      }
+      visit(child);
+    }
+  };
+  visit(document);
 }
 
 function assertScopeContext(scope: PlatformScope): void {
@@ -498,7 +507,11 @@ export function createBotLifecycleService(channels: {
               })
               .onConflictDoNothing();
             const [created] = await tx
-              .select({ revision: enterpriseBotOwnership.revision })
+              .select({
+                workspaceId: enterpriseBotOwnership.workspaceId,
+                ownerPrincipalId: enterpriseBotOwnership.ownerPrincipalId,
+                status: enterpriseBotOwnership.status,
+              })
               .from(enterpriseBotOwnership)
               .where(
                 and(
@@ -508,8 +521,15 @@ export function createBotLifecycleService(channels: {
               )
               .limit(1);
             // 冲突（全局唯一索引或主键占用）在 INSERT 处被约束本身拒绝：
-            // 同公司重复与跨公司占用同一代码，不泄露占用发生在哪。
-            if (!created) {
+            // 同公司重复与跨公司占用同一代码，不泄露占用发生在哪。冲突吞掉
+            // 后的重读只认本人本团队的活行——同租户他人/别团队的占用行对
+            // RLS 可见，不得当作 duplicate 成功。
+            if (
+              !created ||
+              created.status !== "active" ||
+              created.ownerPrincipalId !== scope.principalId ||
+              created.workspaceId !== scope.workspaceId
+            ) {
               throw new Error("BOT_ID_UNAVAILABLE");
             }
             return deepFreeze({ outcome: "allow", newAgentId });
@@ -721,7 +741,8 @@ export function createBotLifecycleService(channels: {
             .where(eq(enterpriseBotOwnership.agentId, agentId));
         }
         // external-notice：无状态变化（域内无事件表；效果面属后续票）。
-        return { outcome: "allow" as const, revision: current.revision + 1 };
+        // revision 只随真实写入推进——无写入时回读值，不虚增。
+        return { outcome: "allow" as const, revision: current.revision };
       });
     },
   };

@@ -128,7 +128,17 @@ export function createOrganizationAuth(options: {
     }
     const user = actor(await response.json().catch(() => null));
     if (!user) return null;
-    const localUser = await options.materializeUser({ ...user, authority });
+    // Materializing is a database step like any other here: a failure it throws is an
+    // authority outage to the caller, not a raw error to escape as a bare 500.
+    let localUser: Awaited<ReturnType<typeof options.materializeUser>>;
+    try {
+      localUser = await options.materializeUser({ ...user, authority });
+    } catch (error) {
+      throw new AuthorityUnavailable(
+        "The account could not be loaded just now. Try again.",
+        { cause: error instanceof Error ? error : undefined },
+      );
+    }
     clearDesktopConnectionFailure("organization");
     // The registered origin is this server's own fact, consumed by the
     // binding above; the session payload keeps its established shape.
@@ -213,6 +223,9 @@ export function createOrganizationAuth(options: {
             return false;
           }
         };
+        // The request already came from the authority itself: routing it back here would hand a
+        // page served on the authority's origin this deployment's session cookies (host/port
+        // confusion between the two local faces), so it is refused outright.
         if (url.origin === authority) return unavailable();
         if (url.pathname === HANDOFF_PATH && request.method === "POST") {
           // Native supplies this exact Origin; a foreign browser cannot deliver a login via CSRF.
@@ -248,15 +261,19 @@ export function createOrganizationAuth(options: {
         if (url.pathname === HANDOFF_PATH && request.method === "GET") {
           const key = url.searchParams.get("ticket") ?? "";
           const ticket = tickets.get(key);
-          tickets.delete(key);
           if (
             !ticket ||
             ticket.expires <= Date.now() ||
             ticket.epoch !== handoffEpoch
-          )
+          ) {
+            tickets.delete(key);
             return unavailable();
+          }
+          // Consumed only once the cookie has proven itself: a verify that trips on a transient
+          // authority outage must not burn a ticket the person just earned.
           const verified = await verify(ticket.cookie);
           if (!verified || verified.id !== ticket.subject) return unavailable();
+          tickets.delete(key);
           handoffEpoch += 1;
           const value = Buffer.from(
             JSON.stringify({ authority, cookie: ticket.cookie }),

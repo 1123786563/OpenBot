@@ -51,7 +51,7 @@ const scopeA = resolveObservationScope({
 });
 const scopeB = resolveObservationScope({
   actorId: "user-b",
-  botId: "agent-1",
+  botId: "agent-2",
   ownership: "admin",
   epoch: EPOCH,
 });
@@ -1260,10 +1260,14 @@ describe("the REST surface (mounting contract: /bots/:botId/experiments/:experim
     expect(response.status).toBe(404);
   });
 
-  test("a bumped ownership epoch is a different key space — not found", async () => {
+  test("a bumped ownership epoch still answers — the data address is the Bot's (FREV-03 b)", async () => {
     const response = await get(appFor({ epoch: EPOCH + 1 }), "execution-1");
-    expect(response.status).toBe(404);
-    expect((await response.json()).error).toBe("RESULTS_EXPERIMENT_NOT_FOUND");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      experimentId: "experiment-1",
+      executionId: "execution-1",
+      state: "completed",
+    });
   });
 
   test("a guessed execution id answers the 404, not an empty report", async () => {

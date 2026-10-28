@@ -210,6 +210,10 @@ export function createGovernedModelExecution(
 
   const issueCapability = async (maximumTokens: number): Promise<string> => {
     if (!binding) throw new Error("GOVERNED_EXECUTION_UNBOUND");
+    // Mint-point defense: never cast a capability above the admitted ceiling;
+    // resolveInvocation re-checks the minted context with the same code.
+    if (maximumTokens > deps.ceiling)
+      throw unauthorized("MODEL_INVOCATION_BINDING_MISMATCH");
     // Fresh modelRequestId per invocation: a retry mints a new capability
     // rather than replaying one, and a 402 is terminal, never retried.
     const modelRequestId = randomUUID();

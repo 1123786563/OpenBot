@@ -20,7 +20,8 @@ import type { Database } from "../db/client";
 import { hindsightRevocations } from "../db/schema/hindsight-revocations";
 import { hindsightSyncWork } from "../db/schema/hindsight-sync";
 import type { HindsightBudgetGateService } from "./budget-gate";
-import type { HindsightHealthState } from "./health";
+import { loadHindsightConfig } from "./config";
+import { checkHindsightHealth, type HindsightHealthState } from "./health";
 
 /** The admin-visible backlog: counts and ages, nothing else. */
 export type HindsightOpsBacklog = {
@@ -69,39 +70,43 @@ export async function hindsightAdminHealthSnapshot(
   } = {},
 ): Promise<HindsightAdminHealthSnapshot> {
   const now = options.now ?? (() => new Date());
-  const [pendingRow] = await database
-    .select({
-      pending: count(),
-      oldest: min(hindsightSyncWork.createdAt),
-    })
-    .from(hindsightSyncWork)
-    .where(
-      and(
-        eq(hindsightSyncWork.tenantId, tenantId),
-        eq(hindsightSyncWork.state, "pending"),
+  // Five independent reads (every one depends only on the tenant); issued together, the
+  // snapshot costs one round trip of latency instead of the sum of five.
+  const [[pendingRow], [failedRow], [deletionsRow], usage, caps] = await Promise.all([
+    database
+      .select({
+        pending: count(),
+        oldest: min(hindsightSyncWork.createdAt),
+      })
+      .from(hindsightSyncWork)
+      .where(
+        and(
+          eq(hindsightSyncWork.tenantId, tenantId),
+          eq(hindsightSyncWork.state, "pending"),
+        ),
       ),
-    );
-  const [failedRow] = await database
-    .select({ failed: count() })
-    .from(hindsightSyncWork)
-    .where(
-      and(
-        eq(hindsightSyncWork.tenantId, tenantId),
-        eq(hindsightSyncWork.state, "pending"),
-        sql`${hindsightSyncWork.attempts} > 0`,
+    database
+      .select({ failed: count() })
+      .from(hindsightSyncWork)
+      .where(
+        and(
+          eq(hindsightSyncWork.tenantId, tenantId),
+          eq(hindsightSyncWork.state, "pending"),
+          sql`${hindsightSyncWork.attempts} > 0`,
+        ),
       ),
-    );
-  const [deletionsRow] = await database
-    .select({ outstanding: count() })
-    .from(hindsightRevocations)
-    .where(
-      and(
-        eq(hindsightRevocations.tenantId, tenantId),
-        sql`${hindsightRevocations.deletionState} <> 'confirmed'`,
+    database
+      .select({ outstanding: count() })
+      .from(hindsightRevocations)
+      .where(
+        and(
+          eq(hindsightRevocations.tenantId, tenantId),
+          sql`${hindsightRevocations.deletionState} <> 'confirmed'`,
+        ),
       ),
-    );
-  const usage = await budgetGate.currentUsage(tenantId);
-  const caps = await budgetGate.capsOf(tenantId);
+    budgetGate.currentUsage(tenantId),
+    budgetGate.capsOf(tenantId),
+  ]);
   const backlog: HindsightOpsBacklog = {
     pendingWork: Number(pendingRow?.pending ?? 0),
     failedWork: Number(failedRow?.failed ?? 0),
@@ -125,4 +130,40 @@ export async function hindsightAdminHealthSnapshot(
     budgets,
     checkedAt: now().toISOString(),
   };
+}
+
+/**
+ * The production snapshot the admin route serves (FIX-W11 A-2, #393): the health probe runs
+ * when the deployment's health configuration is declared, and a missing or malformed
+ * declaration answers "unknown" — the honest state for a probe nobody wired — while the
+ * backlog and budget blocks read the same database either way. The health probe itself never
+ * throws: an unreachable service is a `service_down` verdict, not an error on the operator's
+ * route. The database-backed backlog and budget reads stay fallible — a fault there surfaces
+ * through the route's own error boundary, not as a fabricated zero-filled snapshot.
+ */
+export async function hindsightAdminHealthSnapshotForRoute(
+  database: Database,
+  budgetGate: HindsightBudgetGateService,
+  tenantId: string,
+  options: {
+    env?: Record<string, string | undefined>;
+    fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+    now?: () => Date;
+  } = {},
+): Promise<HindsightAdminHealthSnapshot> {
+  let serviceState: HindsightHealthState | undefined;
+  try {
+    serviceState = (
+      await checkHindsightHealth(
+        loadHindsightConfig(options.env ?? process.env),
+        { fetch: options.fetch, now: options.now },
+      )
+    ).state;
+  } catch {
+    serviceState = undefined;
+  }
+  return hindsightAdminHealthSnapshot(database, budgetGate, tenantId, {
+    ...(serviceState === undefined ? {} : { serviceState }),
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
 }

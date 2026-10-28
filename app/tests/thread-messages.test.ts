@@ -397,3 +397,112 @@ describe("thread history retrieval outcomes", () => {
     });
   });
 });
+
+/*
+ * FIX-OCR3 (O3-H1): the platform's history carries no per-message metadata, so the basis rows
+ * a live answer stamped are re-attached here, from the server's own re-export keyed by engine
+ * message id. Best-effort by contract: a failed, malformed or slow re-export leaves the
+ * transcript exactly as it read — no basis drawn, nothing else changed.
+ */
+describe("the answer-basis re-attach on restore (O3-H1)", () => {
+  type RestoreHandler = (
+    ...args: Parameters<typeof globalThis.fetch>
+  ) => ReturnType<typeof globalThis.fetch>;
+  type RestoredThread = Awaited<ReturnType<typeof readThreadMessages>>;
+  const basisTurns = [
+    { id: "u1", role: "user", content: "what do you remember about me" },
+    {
+      id: "ans-1",
+      role: "assistant",
+      content: "your confirmed preference",
+    },
+  ];
+  const basisMap = {
+    "ans-1": [
+      { id: "pref-1", kind: "general-preference" },
+      { id: "judg-9", kind: "derived-judgment" },
+    ],
+  };
+
+  const withBasisFetch = async (
+    handler: RestoreHandler,
+    run: () => Promise<RestoredThread>,
+  ) => {
+    const original = globalThis.fetch;
+    let call = 0;
+    globalThis.fetch = Object.assign(
+      async (...args: Parameters<typeof fetch>) => {
+        call += 1;
+        // The first call is the thread read; every later one is the re-export.
+        return call === 1
+          ? Response.json({ messages: basisTurns })
+          : handler(...args);
+      },
+      { preconnect: original.preconnect },
+    ) as typeof fetch;
+    try {
+      return await run();
+    } finally {
+      globalThis.fetch = original;
+    }
+  };
+
+  test("a restored answer carries the basis the re-export answers", async () => {
+    const read = await withBasisFetch(
+      async () => Response.json({ basis: basisMap }),
+      () => readThreadMessages("thread-basis", "agent-1"),
+    );
+    expect(read.availability).toBe("ready");
+    const answer = read.messages.find((message) => message.id === "ans-1");
+    expect((answer as { metadata?: unknown }).metadata).toEqual({
+      openbot: {
+        personalMemoryBasis: [
+          { id: "pref-1", kind: "general-preference" },
+          { id: "judg-9", kind: "derived-judgment" },
+        ],
+      },
+    });
+    // The turn the map does not name is untouched.
+    const question = read.messages.find((message) => message.id === "u1");
+    expect((question as { metadata?: unknown }).metadata).toBeUndefined();
+  });
+
+  test("a failed or malformed re-export leaves the transcript untouched", async () => {
+    for (const handler of [
+      async () => new Response("down", { status: 500 }),
+      async () => Response.json({ nope: true }),
+      async () => Response.json({ basis: { "ans-1": "not-a-list" } }),
+      async () =>
+        Response.json({
+          basis: { "ans-1": [{ id: "", kind: "derived-judgment" }] },
+        }),
+      async () =>
+        Response.json({ basis: { "ans-1": [{ id: "x", kind: "nope" }] } }),
+    ]) {
+      const read = await withBasisFetch(handler, () =>
+        readThreadMessages("thread-basis", "agent-1"),
+      );
+      expect(read.availability).toBe("ready");
+      const answer = read.messages.find((message) => message.id === "ans-1");
+      expect((answer as { metadata?: unknown }).metadata).toBeUndefined();
+    }
+  });
+
+  test("an unreadable thread is still unavailable, re-export or not", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async () => new Response("broken", { status: 500 }),
+      { preconnect: original.preconnect },
+    ) as typeof fetch;
+    try {
+      const read = await readThreadMessages("thread-dead", "agent-1");
+      expect(read).toEqual({
+        messages: [],
+        unreadable: 0,
+        availability: "unavailable",
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

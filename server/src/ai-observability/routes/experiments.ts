@@ -28,11 +28,14 @@
  * freeze itself stays durable and the funded retry replays it. Errors keep the house
  * convention: the code is the contract.
  */
-import { Hono } from "hono";
-import type { AgentActor } from "../../agents/profile-types";
+import { type Context, Hono } from "hono";
 import type { AuditStore } from "../../audit";
-import type { AppVariables } from "../../auth/guards";
-import { type BotManagementCheck, resolveObservationBot } from "../context";
+import {
+  type BotManagementCheck,
+  explicitObservationOwnership,
+  OBSERVATION_BOT_NOT_FOUND,
+  resolveObservationBot,
+} from "../context";
 import { ObservationScopeError } from "../contracts";
 import {
   createExecutionCancelService,
@@ -48,6 +51,22 @@ import {
   type SaveExperimentInput,
 } from "../experiments";
 import { resolveObservationScope } from "../scope";
+import type { AiObservabilityDeps } from "./index";
+
+/**
+ * MOD18（#638）：两条身份类型边改走组内签名提取（MOD05-08 先例），M11 的
+ * 直连 import 移除——`agents/profile-types` 的 `AgentActor` 经 context.ts 既有
+ * `BotManagementCheck` 合同的首参收拢（M03 边）；`auth/guards` 的
+ * `AppVariables` 经 routes/index.ts 既有 `AiObservabilityDeps` 的 requireUser
+ * 中间件签名收拢（Context 泛型反解，M01 边）。两者都是类型级引用：运行时
+ * 零边、零新合同，形状漂移由 typecheck 红。
+ */
+type AgentActor = Parameters<BotManagementCheck>[0];
+type RouteEnv =
+  Parameters<AiObservabilityDeps["requireUser"]>[0] extends Context<infer E>
+    ? E
+    : never;
+type AppVariables = NonNullable<RouteEnv["Variables"]>;
 
 export type ExperimentWriteRouteDeps = Readonly<{
   canManageBot: BotManagementCheck;
@@ -135,10 +154,15 @@ export function createExperimentWriteRoutes(
       return Response.json({ error: access.error }, { status: access.status });
     }
     const actor = context.var.actor;
-    const ownership =
-      access.profile.ownerUserId === actor.id
-        ? ("owner" as const)
-        : ("admin" as const);
+    // Explicit, never inferred (OCR h10/m182): a caller the seam refuses to mint
+    // for is answered with the same unified not-found the manage gate uses.
+    const ownership = explicitObservationOwnership(actor, access.profile);
+    if (ownership === null) {
+      return Response.json(
+        { error: OBSERVATION_BOT_NOT_FOUND },
+        { status: 404 },
+      );
+    }
     const epoch = await deps.scopeEpoch(actor, access.botId);
     return {
       scope: resolveObservationScope({

@@ -124,19 +124,19 @@ const SINK_SMTP_PORT = 1025;
 const SINK_REST_BASE = "http://127.0.0.1:8025";
 
 const MIGRATION_TAGS = [
-  "0209_better_auth_directory",
-  "0210_better_auth_clocks",
-  "0211_better_auth_command_authority",
-  "0212_better_auth_authority_sources",
-  "0213_better_auth_assurance",
-  "0214_better_auth_schema_roles",
-  "0215_better_auth_company_lifecycle",
-  "0216_better_auth_invitation_resend",
-  "0217_better_auth_team_management_grants",
-  "0218_better_auth_company_auth_challenge",
-  "0219_better_auth_company_auth_complete",
-  "0220_better_auth_company_auth_policy_read",
-  "0221_better_auth_provisioning_rules",
+  "0221_better_auth_directory",
+  "0222_better_auth_clocks",
+  "0223_better_auth_command_authority",
+  "0224_better_auth_authority_sources",
+  "0225_better_auth_assurance",
+  "0226_better_auth_schema_roles",
+  "0227_better_auth_company_lifecycle",
+  "0228_better_auth_invitation_resend",
+  "0229_better_auth_team_management_grants",
+  "0230_better_auth_company_auth_challenge",
+  "0231_better_auth_company_auth_complete",
+  "0232_better_auth_company_auth_policy_read",
+  "0233_better_auth_provisioning_rules",
 ] as const;
 
 /** Everything the migrations above create (the T02.15 inventory + 0217–0219). */

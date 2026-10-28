@@ -92,14 +92,41 @@ export function createTurnEventBus(
     // Redis message. A seq at or below the last delivered one is a duplicate the subscribers
     // have already seen, so it is dropped here rather than re-read.
     if (seq <= sub.lastSeq) return;
-    sub.lastSeq = seq;
-    const events = await reader.readEventsSince(turnId, 0, 500).catch(() => []);
+    // The watermark advances only AFTER the read succeeds: a failed read that already moved
+    // lastSeq would skip this event and every earlier one forever (poll mode has no backstop).
+    let events: Array<{ seq: number }>;
+    try {
+      events = await readAllSince(turnId, sub.lastSeq);
+    } catch {
+      return;
+    }
+    sub.lastSeq = Math.max(seq, events.at(-1)?.seq ?? 0);
     for (const callback of sub.callbacks) {
       try {
         callback(events);
       } catch {
         // A subscriber's rendering bug must not take the fan-out down for everybody else.
       }
+    }
+  }
+
+  /**
+   * The reader's limit is per call, not per turn: page until the turn is exhausted, or a turn
+   * with more events than one page would deliver only its first page and skip the rest.
+   */
+  async function readAllSince(
+    turnId: string,
+    from: number,
+  ): Promise<Array<{ seq: number }>> {
+    const all: Array<{ seq: number }> = [];
+    let cursor = from;
+    for (;;) {
+      const batch = await reader.readEventsSince(turnId, cursor, 500);
+      all.push(...batch);
+      const last = batch.at(-1)?.seq;
+      // A reader that ignores the cursor would otherwise page forever.
+      if (batch.length < 500 || last === undefined || last <= cursor) return all;
+      cursor = last;
     }
   }
 

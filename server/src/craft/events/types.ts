@@ -148,6 +148,11 @@ export type SandboxEvent =
 
 // ── Guards: the wire fields themselves discriminate (the isinstance chains) ──
 
+/** A non-null object — the only shape a wire field can be read (or `in`) off safely. */
+function isRecord(event: unknown): event is Record<string, unknown> {
+  return typeof event === "object" && event !== null;
+}
+
 export function isKeepalive(event: unknown): event is SSEKeepalive {
   return event instanceof SSEKeepalive;
 }
@@ -156,8 +161,9 @@ export function isAgentMessageChunk(
   event: unknown,
 ): event is AgentMessageChunk {
   return (
+    isRecord(event) &&
     !(event instanceof SSEKeepalive) &&
-    (event as AgentMessageChunk).sessionUpdate === "agent_message_chunk"
+    event.sessionUpdate === "agent_message_chunk"
   );
 }
 
@@ -165,28 +171,36 @@ export function isAgentThoughtChunk(
   event: unknown,
 ): event is AgentThoughtChunk {
   return (
+    isRecord(event) &&
     !(event instanceof SSEKeepalive) &&
-    (event as AgentThoughtChunk).sessionUpdate === "agent_thought_chunk"
+    event.sessionUpdate === "agent_thought_chunk"
   );
 }
 
 export function isToolCallStart(event: unknown): event is ToolCallStart {
   return (
+    isRecord(event) &&
     !(event instanceof SSEKeepalive) &&
-    (event as ToolCallStart).sessionUpdate === "tool_call"
+    event.sessionUpdate === "tool_call"
   );
 }
 
 export function isToolCallProgress(event: unknown): event is ToolCallProgress {
   return (
+    isRecord(event) &&
     !(event instanceof SSEKeepalive) &&
-    (event as ToolCallProgress).sessionUpdate === "tool_call_update"
+    event.sessionUpdate === "tool_call_update"
   );
 }
 
 export function isAgentPlanUpdate(event: unknown): event is AgentPlanUpdate {
+  // Arrays own an inherited `entries` method, so the bare `in` test would call every
+  // array an update; only a real record with the key qualifies.
   return (
-    !(event instanceof SSEKeepalive) && "entries" in (event as AgentPlanUpdate)
+    isRecord(event) &&
+    !Array.isArray(event) &&
+    !(event instanceof SSEKeepalive) &&
+    "entries" in event
   );
 }
 
@@ -194,23 +208,26 @@ export function isCurrentModeUpdate(
   event: unknown,
 ): event is CurrentModeUpdate {
   return (
+    isRecord(event) &&
     !(event instanceof SSEKeepalive) &&
-    "currentMode" in (event as CurrentModeUpdate)
+    "currentMode" in event
   );
 }
 
 export function isPromptResponse(event: unknown): event is PromptResponse {
   return (
+    isRecord(event) &&
     !(event instanceof SSEKeepalive) &&
-    "stopReason" in (event as PromptResponse) &&
-    !("code" in (event as SandboxError))
+    "stopReason" in event &&
+    !("code" in event)
   );
 }
 
 export function isSandboxError(event: unknown): event is SandboxError {
   return (
+    isRecord(event) &&
     !(event instanceof SSEKeepalive) &&
-    "code" in (event as SandboxError) &&
-    "message" in (event as SandboxError)
+    "code" in event &&
+    "message" in event
   );
 }

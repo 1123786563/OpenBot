@@ -410,6 +410,7 @@ export function agUiStream(
   heartbeatMs = AG_UI_HEARTBEAT_MS,
 ) {
   const encoder = new TextEncoder();
+  let stopHeartbeat: () => void = () => {};
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
@@ -426,13 +427,20 @@ export function agUiStream(
         heartbeatMs,
       );
       heartbeat.unref?.();
+      stopHeartbeat = () => clearInterval(heartbeat);
       try {
         await run(emit);
       } finally {
         clearInterval(heartbeat);
+        stopHeartbeat = () => {};
         closed = true;
         controller.close();
       }
+    },
+    cancel() {
+      // Client gone: the heartbeat's next enqueue would throw on the closed
+      // controller, and the interval would live until `run` returns.
+      stopHeartbeat();
     },
   });
 }

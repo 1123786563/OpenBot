@@ -806,8 +806,15 @@ function workspaceParam(value: string | undefined): string {
  * (they were masked at write and again at export), one header row, values quoted on demand.
  */
 function toAuditCsv(events: readonly TenantAuditEventRow[]): string {
-  const quoteIfNeeded = (value: string): string =>
-    /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  const quoteIfNeeded = (value: string): string => {
+    // Excel/Sheets formula-injection guard: cells starting with a formula
+    // trigger character get a neutralizing apostrophe. CR joins the
+    // structural characters so CR-only values cannot break row boundaries.
+    const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+    return /[",\n\r]/.test(guarded)
+      ? `"${guarded.replace(/"/g, '""')}"`
+      : guarded;
+  };
   const lines = ["id,domain,eventType,actorId,targetId,createdAt"];
   for (const event of events) {
     lines.push(

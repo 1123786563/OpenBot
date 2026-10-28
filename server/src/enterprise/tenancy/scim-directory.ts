@@ -378,6 +378,11 @@ export function createCompanyScopedDirectoryReconciler(
               ),
             );
         }
+        // 逐行 pin 是事务级的，不会自动清空：循环后复位，避免残留的
+        // resource_id / operator_principal_id 被同事务后续语句读到。
+        await tx.execute(
+          sql`select set_config('app.resource_id', '', true), set_config('app.operator_principal_id', '', true)`,
+        );
         // Server-persisted fact for the reprovision ruling (the directory may
         // lift only what it wrote): principal + epoch of this suspension.
         await tx

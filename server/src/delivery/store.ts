@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { agents } from "../db/schema/core";
 import { agentProfiles } from "../db/schema/coworker";
@@ -28,10 +28,20 @@ export function createDeliveryStore(database: Database) {
     key: string,
     runAt?: Date,
   ) {
-    await db
+    // A collision is not one thing: a live row wants the caller's runAt (the work is
+    // still to do), while a FINISHED row means this key's work already ran and rescheduling
+    // it would be a false wake the worker cannot claim ("a finished row is the collision").
+    // So: update only unfinished rows, and notify only when something is actually waiting.
+    const rows = await db
       .insert(workItems)
       .values({ kind, key, payload: {}, ...(runAt ? { runAt } : {}) })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: [workItems.kind, workItems.key],
+        set: { ...(runAt ? { runAt } : {}), updatedAt: sql`now()` },
+        setWhere: isNull(workItems.finishedAt),
+      })
+      .returning({ key: workItems.key });
+    if (rows.length === 0) return;
     await db.execute(sql`select pg_notify('openbot_work_offered', ${kind})`);
   }
   return {
@@ -428,6 +438,10 @@ export function createDeliveryStore(database: Database) {
       state: "delivered" | "failed" | "sent",
       error: string | null,
     ) {
+      // Twilio callbacks arrive out of order and repeat: a late `sent` must not roll a
+      // `delivered`/`failed` terminal state back. The guard only ever moves the row forward
+      // through queued/accepted/running → sent → delivered/failed, like startOutbox's
+      // conditional write.
       await database
         .update(deliveryOutbox)
         .set({ state, error })
@@ -435,6 +449,12 @@ export function createDeliveryStore(database: Database) {
           and(
             eq(deliveryOutbox.transport, "sms"),
             eq(deliveryOutbox.providerId, providerId),
+            inArray(
+              deliveryOutbox.state,
+              state === "sent"
+                ? ["queued", "accepted", "running"]
+                : ["queued", "accepted", "running", "sent"],
+            ),
           ),
         );
     },

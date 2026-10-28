@@ -334,7 +334,9 @@ describe("the dataset migration touches only its own objects", () => {
       "ai_observation_datasets_scope_opik_dataset_uq",
       "ai_observation_dataset_versions",
       "ai_observation_dataset_versions_scope_dataset_hash_uq",
-      "ai_observation_dataset_versions_dataset_id_ai_observation_datasets_id_fk",
+      // 0150's dataset FK, renamed short by 403c9368f: the generated long name exceeds
+      // Postgres' 63-byte identifier limit, so the original spelling was unappliable.
+      "ai_observation_dataset_versions_dataset_id_fk",
       "ai_observation_dataset_versions_reject_update",
       "ai_observation_dataset_versions_immutable",
     ]);

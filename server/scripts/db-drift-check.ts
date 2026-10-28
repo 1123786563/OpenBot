@@ -20,23 +20,40 @@ if (!url) {
 
 // 声明侧：表 → 列（DB 名），来自运行时 drizzle:Columns
 const declared = new Map<string, Set<string>>();
+// Same base as the import below: a CWD-relative read entered a different
+// schema set than the one actually imported (and threw a bare ENOENT).
+const schemaDir = new URL("../src/db/schema/", import.meta.url);
 for (const f of fs
-  .readdirSync("src/db/schema")
+  .readdirSync(schemaDir)
   .filter((x) => x.endsWith(".ts") && x !== "index.ts")) {
   const mod = await import(`../src/db/schema/${f}`);
   for (const v of Object.values(mod)) {
+    // drizzle-orm runtime internals (not public API): the Columns/Name symbols
+    // are how a pgTable carries its SQL name and column map at runtime. Pinned
+    // by bun.lock; re-check both symbols if drizzle-orm is ever upgraded.
     const cols = (v as any)?.[Symbol.for("drizzle:Columns")];
     const name = (v as any)?.[Symbol.for("drizzle:Name")];
     if (typeof name === "string" && cols) {
+      if (declared.has(name)) {
+        throw new Error(
+          `duplicate declared table "${name}" in ${f}; a copied schema file must not silently shadow the earlier one`,
+        );
+      }
       declared.set(name, new Set(Object.values(cols).map((c: any) => c.name)));
     }
   }
 }
 
 const sql = postgres(url);
-const rows =
-  await sql`select table_name, column_name from information_schema.columns where table_schema = 'public'`;
-await sql.end();
+// information_schema.columns also lists plain views; join the table inventory
+// so only base tables take part in the comparison.
+const rows = await sql`
+  select c.table_name, c.column_name
+  from information_schema.columns c
+  join information_schema.tables t
+    on t.table_schema = c.table_schema and t.table_name = c.table_name
+  where c.table_schema = 'public' and t.table_type = 'BASE TABLE'
+`.finally(() => sql.end({ timeout: 5 }).catch(() => undefined));
 const live = new Map<string, Set<string>>();
 for (const r of rows) {
   live.set(
@@ -62,10 +79,18 @@ for (const [t, cols] of declared) {
     }
   }
 }
-for (const t of live.keys()) {
-  if (!declared.has(t)) {
+for (const [t, cols] of live) {
+  const declaredCols = declared.get(t);
+  if (!declaredCols) {
     console.error(`migration table absent from schema declarations: ${t}`);
     bad++;
+    continue;
+  }
+  for (const c of cols) {
+    if (!declaredCols.has(c)) {
+      console.error(`migration column absent from schema declarations: ${t}.${c}`);
+      bad++;
+    }
   }
 }
 if (bad > 0) {

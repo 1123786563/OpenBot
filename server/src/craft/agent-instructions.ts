@@ -69,7 +69,13 @@ export async function appendAttachmentsSectionIfMissing(
   let entries: string[];
   try {
     entries = await api.listFiles(`${directory}/${attachmentsDir}`);
-  } catch {
+  } catch (error) {
+    // An absent directory answers [] from the gateway, so a throw here is a real fault
+    // (permissions, a transport failure): say so rather than read it as "no attachments".
+    logger.warn(
+      { err: error, directory: `${directory}/${attachmentsDir}` },
+      "Could not list the attachments directory.",
+    );
     return false;
   }
   if (entries.length === 0) return false;
@@ -94,7 +100,13 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 
 export function getProviderDisplayName(provider: string | null): string | null {
   if (!provider) return null;
-  return PROVIDER_DISPLAY_NAMES[provider] ?? titleCase(provider);
+  // Own properties only: a provider named like an Object member ("constructor") must not
+  // read the prototype chain and stringify a built-in function into the instructions.
+  return (
+    (Object.hasOwn(PROVIDER_DISPLAY_NAMES, provider)
+      ? PROVIDER_DISPLAY_NAMES[provider]
+      : undefined) ?? titleCase(provider)
+  );
 }
 
 function titleCase(value: string): string {

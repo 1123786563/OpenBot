@@ -13,6 +13,7 @@
  * honest about being one shared computer.
  */
 
+import { getLogger } from "../../../shared/logger";
 import { injectTraceHeaders } from "../../../shared/trace";
 import type { ComputerLocation, ComputerProvider } from "./provider";
 import type { ComputerStatus } from "./schema";
@@ -42,6 +43,8 @@ export class SupervisorError extends Error {
     this.name = "SupervisorError";
   }
 }
+
+const log = getLogger("server");
 
 export function createDockerSupervisorProvider(
   options: SupervisorOptions,
@@ -94,18 +97,23 @@ export function createDockerSupervisorProvider(
       );
     }
 
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-      stopped?: boolean;
-      reset?: boolean;
-      computers?: SupervisorComputerLocation[];
-    } | null;
     if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
       throw new SupervisorError(
         body?.error ?? `The supervisor answered ${response.status}.`,
       );
     }
-    return body;
+    try {
+      return await response.json();
+    } catch {
+      // A 2xx whose body is not JSON used to read as null, which stop/reset reported
+      // as wasRunning:false — say it is unreadable instead.
+      throw new SupervisorError(
+        `The supervisor at ${base} answered ${response.status} with an unreadable body.`,
+      );
+    }
   }
 
   async function listRaw(): Promise<SupervisorComputerLocation[]> {
@@ -199,9 +207,18 @@ export function createDockerSupervisorProvider(
         )?.startedAt;
         if (startedAt) sessions.set(botId, startedAt);
         return startedAt;
-      } catch {
+      } catch (error) {
         // Unknown, not mismatched. A supervisor that cannot be reached must not turn every ref into
         // a refusal; the generation check goes back to being skipped, which is where it started.
+        // Logged, because a security check that silently never runs is invisible otherwise.
+        log.warn(
+          {
+            type: "supervisor-generation-unknown",
+            botId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "supervisor-generation-unknown",
+        );
         return undefined;
       }
     },
@@ -244,6 +261,8 @@ export function createDockerSupervisorProvider(
       const result = (await call(
         `/computers/${encodeURIComponent(botId)}/stop`,
       )) as { stopped?: boolean } | null;
+      // The container is gone; its recorded run answers nothing from here on.
+      sessions.delete(botId);
       return { wasRunning: result?.stopped === true };
     },
 
@@ -251,6 +270,8 @@ export function createDockerSupervisorProvider(
       const result = (await call(
         `/computers/${encodeURIComponent(botId)}/reset`,
       )) as { reset?: boolean } | null;
+      // Same as stop: what the container recorded answers nothing after a reset.
+      sessions.delete(botId);
       return { cleared: result?.reset === true };
     },
 

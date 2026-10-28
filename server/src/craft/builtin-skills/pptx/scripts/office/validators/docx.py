@@ -170,7 +170,7 @@ class DOCXSchemaValidator(BaseSchemaValidator):
             try:
                 root = lxml.etree.parse(str(xml_file)).getroot()
                 paragraphs = root.findall(f".//{{{self.WORD_2006_NAMESPACE}}}p")
-                count = len(paragraphs)
+                count += len(paragraphs)
             except Exception as e:
                 print(f"Error counting paragraphs in unpacked document: {e}")
 
@@ -260,10 +260,17 @@ class DOCXSchemaValidator(BaseSchemaValidator):
             try:
                 for elem in lxml.etree.parse(str(xml_file)).iter():
                     if val := elem.get(para_id_attr):
-                        if self._parse_id_value(val, base=16) >= 0x80000000:
+                        try:
+                            para_id = self._parse_id_value(val, base=16)
+                        except ValueError:
                             errors.append(
-                                f"  {xml_file.name}:{elem.sourceline}: paraId={val} >= 0x80000000"
+                                f"  {xml_file.name}:{elem.sourceline}: paraId={val} must be hexadecimal"
                             )
+                        else:
+                            if para_id >= 0x80000000:
+                                errors.append(
+                                    f"  {xml_file.name}:{elem.sourceline}: paraId={val} >= 0x80000000"
+                                )
 
                     if val := elem.get(durable_id_attr):
                         if xml_file.name == "numbering.xml":
@@ -277,12 +284,19 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                                     f"  {xml_file.name}:{elem.sourceline}: durableId={val} must be decimal in numbering.xml"
                                 )
                         else:
-                            if self._parse_id_value(val, base=16) >= 0x7FFFFFFF:
+                            try:
+                                durable_id = self._parse_id_value(val, base=16)
+                            except ValueError:
                                 errors.append(
-                                    f"  {xml_file.name}:{elem.sourceline}: durableId={val} >= 0x7FFFFFFF"
+                                    f"  {xml_file.name}:{elem.sourceline}: durableId={val} must be hexadecimal"
                                 )
-            except Exception:
-                pass
+                            else:
+                                if durable_id >= 0x7FFFFFFF:
+                                    errors.append(
+                                        f"  {xml_file.name}:{elem.sourceline}: durableId={val} >= 0x7FFFFFFF"
+                                    )
+            except (lxml.etree.XMLSyntaxError, OSError) as e:
+                errors.append(f"  {xml_file.name}: XML parse error: {e}")
 
         if errors:
             print(f"FAILED - {len(errors)} ID constraint violations:")
@@ -395,10 +409,25 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                 modified = False
 
                 for elem in dom.getElementsByTagName("*"):
-                    if not elem.hasAttribute("w16cid:durableId"):
+                    # Namespace-aware lookup: the w16cid prefix is a document
+                    # convention, the namespace URI is the contract (mirrors
+                    # validate_id_constraints below).
+                    durable_attr = next(
+                        (
+                            attr
+                            for attr in (
+                                elem.attributes.item(i)
+                                for i in range(elem.attributes.length)
+                            )
+                            if attr.namespaceURI == self.W16CID_NAMESPACE
+                            and attr.localName == "durableId"
+                        ),
+                        None,
+                    )
+                    if durable_attr is None:
                         continue
 
-                    durable_id = elem.getAttribute("w16cid:durableId")
+                    durable_id = durable_attr.value
                     needs_repair = False
 
                     if xml_file.name == "numbering.xml":
@@ -423,7 +452,11 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                         else:
                             new_id = f"{value:08X}"
 
-                        elem.setAttribute("w16cid:durableId", new_id)
+                        # Mutate the attribute node in place so the document's
+                        # own prefix and namespace declaration survive the
+                        # rewrite (setAttribute with a literal prefix could
+                        # inject an undeclared w16cid:).
+                        durable_attr.value = new_id
                         print(
                             f"  Repaired: {xml_file.name}: durableId {durable_id} → {new_id}"
                         )
@@ -433,8 +466,12 @@ class DOCXSchemaValidator(BaseSchemaValidator):
                 if modified:
                     xml_file.write_bytes(dom.toxml(encoding="UTF-8"))
 
-            except Exception:
-                pass
+            except Exception as e:
+                # A failed repair must not be silent: the caller counts this
+                # return value as the number of durableIds fixed.
+                print(
+                    f"Error repairing durableId in {xml_file.name}: {e}"
+                )
 
         return repairs
 

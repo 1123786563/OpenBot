@@ -161,6 +161,19 @@ export async function summariseClaimedChannels(
           delayMs: 15_000,
           reason: "the conversation is not readable yet",
         });
+        // This release path never reaches the catch below, so the cap would pass
+        // silently: say it out loud here too, on the attempt that is the last one.
+        if (item.attempts + 1 >= (options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)) {
+          log.warn(
+            {
+              type: "channel-summary-gave-up",
+              channelId,
+              attempts: item.attempts + 1,
+              reason: "not readable yet",
+            },
+            "channel-summary-gave-up",
+          );
+        }
         report.skipped.push({ channelId, reason: "not readable yet" });
         continue;
       }
@@ -175,13 +188,27 @@ export async function summariseClaimedChannels(
       // Released and pushed out: a model that just refused will refuse again, and nothing is broken meanwhile.
       const reason =
         error instanceof Error ? error.message : "could not be summarised";
-      await options.queue.release({
-        kind: CHANNEL_SUMMARY_KIND,
-        key: item.key,
-        owner: options.owner,
-        delayMs: 60_000,
-        reason,
-      });
+      try {
+        await options.queue.release({
+          kind: CHANNEL_SUMMARY_KIND,
+          key: item.key,
+          owner: options.owner,
+          delayMs: 60_000,
+          reason,
+        });
+      } catch (releaseError) {
+        // A failed release must not abort the remaining claims; the lease expires
+        // on its own if the row truly cannot be put back.
+        log.warn(
+          {
+            type: "channel-summary-release-failed",
+            channelId,
+            errorType:
+              releaseError instanceof Error ? releaseError.name : "unknown",
+          },
+          "channel-summary-release-failed",
+        );
+      }
       // Said out loud when it gives up, because at the cap this loop simply never sees the channel
       // again and every pass afterwards looks clean.
       if (item.attempts >= (options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)) {
@@ -257,7 +284,15 @@ async function summariseOne(
       const applied = await transaction
         .update(channels)
         .set({ summary: title, summaryAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(channels.id, channelId), isNull(channels.summary)))
+        .where(
+          and(
+            eq(channels.id, channelId),
+            isNull(channels.summary),
+            // A channel deleted between the claim and this write is not there to
+            // be named, and the member notify below rides this same transaction.
+            isNull(channels.deletedAt),
+          ),
+        )
         .returning({ id: channels.id });
       // Somebody else named it between the claim and this write. Their title stands, and this work
       // is done rather than still owed.

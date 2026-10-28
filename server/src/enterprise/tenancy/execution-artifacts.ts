@@ -159,6 +159,11 @@ export function parseExecutionArtifactPath(
   const plain = (value: string): boolean =>
     /^[a-z0-9][a-z0-9-]{0,127}$/.test(value);
   if (!plain(tenantId) || !plain(workspaceId) || !plain(botId)) return null;
+  // botId 之后的段是文件名，不是归属段——但也不能是爬升段：open() 收到的是调用方给的
+  // 完整路径，名字里的 `..`（或空段）会逃出本 scope 树，归属判定就形同虚设。
+  for (const segment of segments.slice(6)) {
+    if (segment === "" || segment === "." || segment === "..") return null;
+  }
   return { tenantId, workspaceId, botId };
 }
 

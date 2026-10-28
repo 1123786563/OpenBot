@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, rename, unlink } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { dirname, isAbsolute } from "node:path";
 import type { Env, Hono } from "hono";
 import { z } from "zod";
 import { sameToken } from "./agents/callback-token";
@@ -119,6 +119,18 @@ async function persistRotation(
       await handle.close();
     }
     await rename(temporary, file);
+    // The rename is only durable once its directory entry is: without this, a crash right here
+    // can resurrect the pre-rotation file while the provider has already invalidated the old
+    // refresh token — the user locked out until they sign in again. Best-effort: a filesystem
+    // that cannot open a directory (Windows) skips silently rather than failing a rotation.
+    const directory = await open(dirname(file), "r").catch(() => undefined);
+    if (directory) {
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close().catch(() => undefined);
+      }
+    }
   } finally {
     await unlink(temporary).catch((error: unknown) => {
       if (!hasCode(error, "ENOENT")) throw error;

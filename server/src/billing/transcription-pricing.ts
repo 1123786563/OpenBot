@@ -55,37 +55,63 @@ export type AudioDurationMeasurement = {
 
 /**
  * Read one WAV container's duration from its own metadata: the `fmt ` chunk's byte rate
- * against the `data` chunk's payload size. Exact rational arithmetic on integers, so the
- * same bytes always measure the same duration. Anything else — empty bytes, a truncated
- * header, a non-RIFF payload, a missing fmt/data pair — is null: this parser answers
- * "what the container itself states", never a guess about bytes it could not read.
+ * against the `data` chunk's payload size. The single WAV parser on this chain (OCR r2
+ * convergence): the meter and the settle surface's re-measurement delegate to the exact
+ * version below, so a future layout change can never split what "measured" means.
+ * Anything else — empty bytes, a truncated header, a non-RIFF payload, a missing
+ * fmt/data pair — is null: this parser answers "what the container itself states", never
+ * a guess about bytes it could not read.
  */
 export function parseWavDurationSeconds(bytes: Uint8Array): number | null {
+  const exact = readWavDurationSecondsExact(bytes);
+  return exact === null
+    ? null
+    : Number(exact.numerator) / Number(exact.denominator);
+}
+
+/**
+ * The same measurement, kept as the EXACT rational it is — the `data` chunk's payload
+ * size over the `fmt ` chunk's byte rate, two integers, never a float that has already
+ * been through binary rounding — plus the byte length of the container's header proper
+ * (everything up to and including the `data` chunk's own size word), the slice that
+ * states the duration and is what the interrupted collector carries as evidence. The
+ * speech settle surface re-measures carried artifacts with this, so an honest reporter's
+ * rounded decimal is checked against the rational itself, not against another rounding
+ * of it.
+ */
+export function readWavDurationSecondsExact(bytes: Uint8Array): {
+  numerator: bigint;
+  denominator: bigint;
+  headerEnd: number;
+} | null {
   const view = safeView(bytes);
   if (view === null) return null;
   if (bytes.length < 12) return null;
   if (tag(bytes, 0) !== "RIFF" || tag(bytes, 8) !== "WAVE") return null;
 
-  // Walk the chunks: one 4-byte id + one little-endian 4-byte size ahead of each body.
   let offset = 12;
-  let byteRate: number | null = null;
-  let dataSize: number | null = null;
+  let byteRate: bigint | null = null;
+  let dataSize: bigint | null = null;
+  let dataHeaderEnd = 0;
   while (offset + 8 <= bytes.length) {
     const id = tag(bytes, offset);
-    const size = view.getUint32(offset + 4, true);
+    const size = BigInt(view.getUint32(offset + 4, true));
     const body = offset + 8;
-    if (id === "fmt " && size >= 16 && body + 16 <= bytes.length) {
-      byteRate = view.getUint32(body + 8, true); // sampleRate × channels × bits/8
+    if (id === "fmt " && size >= 16n && body + 16 <= bytes.length) {
+      byteRate = BigInt(view.getUint32(body + 8, true));
     } else if (id === "data") {
-      // The header's own size word is the truth about the payload, even when the bytes
-      // handed in were truncated: the container SAYS how long its audio is.
       dataSize = size;
+      dataHeaderEnd = offset + 8;
       break;
     }
-    offset = body + size + (size % 2); // chunks are word-aligned
+    offset = body + Number(size) + (Number(size) % 2);
   }
-  if (byteRate === null || dataSize === null || byteRate <= 0) return null;
-  return dataSize / byteRate;
+  if (byteRate === null || dataSize === null || byteRate <= 0n) return null;
+  return {
+    numerator: dataSize,
+    denominator: byteRate,
+    headerEnd: dataHeaderEnd,
+  };
 }
 
 /** A DataView over the bytes, or null when the buffer cannot back one. */
@@ -223,16 +249,13 @@ export function assessTranscription(input: {
       input.dims[dimension].amount === "0",
   );
   const quantities = Object.fromEntries(
-    PRICE_DIMENSIONS.map((dimension) => [
-      dimension,
-      dimension === "audio_input"
-        ? inputSeconds
-        : dimension === "output"
-          ? input.outputTokenCap
-          : dimension === "surcharge_per_request"
-            ? 1
-            : 0,
-    ]),
+    PRICE_DIMENSIONS.map((dimension) => {
+      let quantity = 0;
+      if (dimension === "audio_input") quantity = inputSeconds;
+      else if (dimension === "output") quantity = input.outputTokenCap;
+      else if (dimension === "surcharge_per_request") quantity = 1;
+      return [dimension, quantity];
+    }),
   ) as ReservationBoundQuantities;
 
   return {

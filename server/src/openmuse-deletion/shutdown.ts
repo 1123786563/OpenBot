@@ -50,7 +50,21 @@ export function createOpenMuseWorkShutdown(deps: {
     userId: string,
   ): Promise<OpenMuseWorkShutdownReport> {
     const tasks = await deps.tasks.shutdownOwner(userId);
-    const reviewedCancelled = await deps.reviewed.cancelAwaiting(userId);
+    let reviewedCancelled: string[];
+    let reviewedError: unknown;
+    try {
+      reviewedCancelled = await deps.reviewed.cancelAwaiting(userId);
+    } catch (error) {
+      /*
+       * The Task transitions above already landed, and their guarded UPDATEs
+       * will not match again — throwing from here without recording them would
+       * lose the marker's only evidence of them (the retry finds an empty
+       * transitions list and reports ok). Record what landed, then report the
+       * Reviewed half's failure.
+       */
+      reviewedCancelled = [];
+      reviewedError = error;
+    }
     const transitions = [
       ...tasks.cancelled.map((id) => `openmuse-task:${id}:cancelled`),
       ...tasks.cancelRequested.map(
@@ -125,6 +139,7 @@ export function createOpenMuseWorkShutdown(deps: {
         }
       }),
     );
+    if (reviewedError !== undefined) throw reviewedError;
     return {
       tasksCancelled: tasks.cancelled,
       tasksCancelRequested: tasks.cancelRequested,

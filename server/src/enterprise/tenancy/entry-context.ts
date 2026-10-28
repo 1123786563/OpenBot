@@ -125,6 +125,14 @@ export function createDeploymentEntryContextFactory({
       tenantId,
       workspaceId,
     }: DeploymentInternalEntryIdentity) {
+      // 内部接缝 fail-fast：持久化身份必须是可作 HTTP 头值的可打印 ASCII。
+      // 接线故障在此给出 canonical 错误，而不是 new Request 的裸 TypeError
+      //（或下游误报为 AUTH_REQUIRED）。
+      for (const value of [actorId, tenantId, workspaceId]) {
+        if (typeof value !== "string" || !/^[\x20-\x7E]+$/.test(value)) {
+          throw new Error("ENTRY_IDENTITY_INVALID");
+        }
+      }
       const request = new Request("http://mt122.internal/entry", {
         headers: {
           "x-openbot-internal-actor": actorId,

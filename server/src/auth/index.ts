@@ -68,6 +68,11 @@ import {
  * 放行（保留代理能力）。auth bootstrap 里调用一次。
  */
 function patchGlobalFetchForLocalhost(): void {
+  // 幂等：二次求值（或测试里重复 import 的变体路径）不得把补丁叠在补丁上，
+  // 否则 original 指向已补丁的函数，语义随层数叠加难以排查。
+  const marker = globalThis as { __openbotLoopbackFetchPatched?: boolean };
+  if (marker.__openbotLoopbackFetchPatched) return;
+  marker.__openbotLoopbackFetchPatched = true;
   const original = globalThis.fetch.bind(globalThis);
   const loopback =
     /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\]|host\.docker\.internal)(:\d+)?$/;
@@ -128,10 +133,15 @@ function patchGlobalFetchForLocalhost(): void {
           ? Buffer.from(rawBody, "utf8")
           : Buffer.from(await new Response(rawBody as BodyInit).arrayBuffer());
     }
-    const [{ request }, { Readable }] = await Promise.all([
-      import("node:http"),
+    const transport = await Promise.all([
+      url.protocol === "https:" ? import("node:https") : import("node:http"),
       import("node:stream"),
     ]);
+    // 原生 fetch 自己解压响应：这里不代压缩，也就不把 accept-encoding 透传给上游，
+    // 上游回身份编码，消费方拿到的体无需解压（压过的体原样透传等于乱码）。
+    const { "accept-encoding": _noAcceptEncoding, ...directHeaders } = headers;
+    const request = transport[0].request as typeof import("node:http").request;
+    const { Readable } = transport[1];
     return new Promise<Response>((resolve, reject) => {
       const req = request(
         {
@@ -140,7 +150,7 @@ function patchGlobalFetchForLocalhost(): void {
           path: `${url.pathname}${url.search}`,
           method,
           headers: {
-            ...headers,
+            ...directHeaders,
             ...(body !== undefined
               ? { "content-length": String(body.byteLength) }
               : {}),
@@ -150,22 +160,40 @@ function patchGlobalFetchForLocalhost(): void {
           const status = res.statusCode ?? 0;
           // 传输层分帧头不属于 Response 元数据；残留会让 Response 构造异常
           // 或误导消费者，剥掉（原生 fetch 的 Response 从不携带它们）。
-          const responseHeaders: Record<string, string> = {};
+          // content-encoding / content-length 同理：体以未解压流透传，声明
+          // 它们只会让消费方按错误的长度/编码去读（原生 fetch 从不透出）。
+          const responseHeaders: Record<string, string | string[]> = {};
           for (const [key, value] of Object.entries(res.headers)) {
             if (value === undefined) continue;
             if (
               key === "transfer-encoding" ||
               key === "connection" ||
-              key === "keep-alive"
+              key === "keep-alive" ||
+              key === "content-encoding" ||
+              key === "content-length"
             )
               continue;
+            // set-cookie 是逐条下发的（Better Auth 一次登录可发多枚，值内还可能合法含逗号），
+            // join 成一条会丢 Cookie；按数组原样交给 Headers 处理。
             responseHeaders[key] = Array.isArray(value)
-              ? value.join(", ")
+              ? key.toLowerCase() === "set-cookie"
+                ? value
+                : value.join(", ")
               : value;
+          }
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(responseHeaders)) {
+            // set-cookie 以数组逐条下发（多枚 Cookie、值内可含逗号），Headers 会逐条保留；
+            // 其余头仍是单值字符串。
+            if (Array.isArray(value)) {
+              for (const item of value) headers.append(key, item);
+            } else {
+              headers.set(key, value);
+            }
           }
           if (status === 204 || status === 304) {
             res.resume(); // 无体响应：读完（空）才能把 socket 还回池。
-            resolve(new Response(null, { status, headers: responseHeaders }));
+            resolve(new Response(null, { status, headers }));
             return;
           }
           resolve(
@@ -173,7 +201,7 @@ function patchGlobalFetchForLocalhost(): void {
               Readable.toWeb(res) as unknown as ReadableStream<Uint8Array>,
               {
                 status,
-                headers: responseHeaders,
+                headers,
               },
             ),
           );

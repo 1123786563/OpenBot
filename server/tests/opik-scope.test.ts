@@ -8,6 +8,7 @@ import {
 } from "../src/ai-observability/contracts";
 import {
   assertObservationScope,
+  authorizationKey,
   bindCursor,
   cacheKey,
   exportKey,
@@ -16,7 +17,7 @@ import {
   resolveEvaluationEligibility,
   resolveObservationScope,
   resolveStorageLocator,
-  scopeKey,
+  resourceScopeKey,
 } from "../src/ai-observability/scope";
 
 import { dirname } from "node:path";
@@ -77,9 +78,15 @@ describe("resolveObservationScope", () => {
     expect(Object.isFrozen(scope)).toBe(true);
   });
 
-  test("an administrator gets a scope, and its key differs from the owner's", () => {
+  test("an administrator's scope shares the owner's stable data key (FREV-03)", () => {
+    // One Bot is one data range: the administrator's scope for a managed Bot
+    // names the SAME key as the creator's, so the admin's reads reach the
+    // creator's records. Who may hold the scope is the live manage gate's
+    // answer; the key only names the data.
     const asAdmin = workbench({ actorId: actorB, ownership: "admin" });
-    expect(asAdmin.key).not.toBe(workbench().key);
+    expect(asAdmin.key).toBe(workbench().key);
+    // ...while the scopes themselves still carry their own actor and epoch.
+    expect(asAdmin.actorId).not.toBe(workbench().actorId);
   });
 
   test("a missing actor is 401 before ownership is even considered", () => {
@@ -106,27 +113,51 @@ describe("resolveObservationScope", () => {
     );
   });
 
-  test("an ownership epoch bump produces a different key, killing old cursors", () => {
-    expect(workbench({ epoch: 2 }).key).not.toBe(workbench({ epoch: 1 }).key);
+  test("an ownership epoch bump leaves the data key in place (FREV-03)", () => {
+    // A rename or transfer bumps the epoch — the AUTHORIZATION artifacts bound
+    // to it (cursors, job/export keys) die with the generation, but the data
+    // address does not move: history stays reachable for whoever the live gate
+    // authorizes next.
+    expect(workbench({ epoch: 2 }).key).toBe(workbench({ epoch: 1 }).key);
   });
 
-  test("scopeKey is deterministic and injective over its three inputs", () => {
-    expect(scopeKey(actorA, "agent-1", 1)).toBe(scopeKey(actorA, "agent-1", 1));
-    expect(scopeKey(actorA, "agent-1", 1)).not.toBe(
-      scopeKey(actorA, "agent-2", 1),
+  test("the stable resource key is a pure function of the Bot id (FREV-03)", () => {
+    expect(resourceScopeKey("agent-1")).toBe(resourceScopeKey("agent-1"));
+    expect(resourceScopeKey("agent-1")).not.toBe(resourceScopeKey("agent-2"));
+    // Never an actor or an epoch in the data identity: the counterexample the
+    // final review proved was a key whose parts moved the data address.
+    expect(resourceScopeKey("agent-1")).not.toContain(actorA);
+  });
+
+  test("authorizationKey is deterministic and injective over its three inputs", () => {
+    expect(authorizationKey(actorA, "agent-1", 1)).toBe(
+      authorizationKey(actorA, "agent-1", 1),
     );
-    expect(scopeKey(actorA, "agent-1", 1)).not.toBe(
-      scopeKey(actorB, "agent-1", 1),
+    expect(authorizationKey(actorA, "agent-1", 1)).not.toBe(
+      authorizationKey(actorA, "agent-2", 1),
+    );
+    expect(authorizationKey(actorA, "agent-1", 1)).not.toBe(
+      authorizationKey(actorB, "agent-1", 1),
     );
   });
 
   test("a bot id cannot smuggle a separator and collide with another key", () => {
-    expect(scopeKey(actorA, "agent-1:2", 1)).not.toBe(
-      scopeKey(actorA, "agent-1", 2),
+    expect(resourceScopeKey("agent|1")).not.toBe(resourceScopeKey("agent"));
+    expect(authorizationKey(actorA, "agent-1:2", 1)).not.toBe(
+      authorizationKey(actorA, "agent-1", 2),
     );
-    expect(scopeKey(actorA, "agent|1", 1)).not.toBe(
-      scopeKey(actorA, "agent", 1),
+    expect(authorizationKey(actorA, "agent|1", 1)).not.toBe(
+      authorizationKey(actorA, "agent", 1),
     );
+    // The two key families can never collide, whatever the ids carry.
+    expect(resourceScopeKey("wb-auth")).not.toBe(
+      authorizationKey("", "", 0),
+    );
+    for (const actor of [actorA, "wb", "wb-auth"]) {
+      for (const bot of ["agent-1", "wb", "wb-auth"]) {
+        expect(resourceScopeKey(bot)).not.toBe(authorizationKey(actor, bot, 1));
+      }
+    }
   });
 });
 
@@ -182,7 +213,7 @@ describe("assertObservationScope — process-internal trust", () => {
   test("a hand-built object with the right shape fails closed", () => {
     const forged = Object.freeze({
       kind: "workbench" as const,
-      key: scopeKey(actorA, "agent-1", 1),
+      key: resourceScopeKey("agent-1"),
       actorId: actorA,
       botId: "agent-1",
       epoch: 1,
@@ -204,50 +235,45 @@ describe("assertObservationScope — process-internal trust", () => {
   });
 });
 
-/** Two trusted scopes with the SAME resource ids — A12 without a single tenant table. */
+/**
+ * Two trusted scopes over the SAME Bot: the data identity is shared (A12 still
+ * holds across BOTS — different Bots stay different key spaces).
+ */
 const scopeAlpha = workbench();
 const scopeBeta = workbench({ actorId: actorB, ownership: "admin" });
 
-describe("two trusted scopes over identical resource ids", () => {
-  test("the scopes differ while botId is identical", () => {
+describe("two trusted scopes over one Bot — one data range (FREV-03)", () => {
+  test("the scopes carry their own actor while the data key is the Bot's", () => {
     expect(scopeAlpha.botId).toBe(scopeBeta.botId);
-    expect(scopeAlpha.key).not.toBe(scopeBeta.key);
+    expect(scopeAlpha.key).toBe(scopeBeta.key);
+    expect(scopeAlpha.actorId).not.toBe(scopeBeta.actorId);
   });
 
-  test("storage locators are distinct and both namespaced by scopeKey", () => {
+  test("storage locators follow the Bot, not the actor (FREV-03)", () => {
     const a = resolveStorageLocator(scopeAlpha);
     const b = resolveStorageLocator(scopeBeta);
+    // Same Bot: one address, so an administrator reads what the creator wrote.
     expect(a.scopeKey).toBe(scopeAlpha.key);
-    expect(a.project).not.toBe(b.project);
-    expect(a.workspace).not.toBe(b.workspace);
+    expect(a.project).toBe(b.project);
+    expect(a.workspace).toBe(b.workspace);
+    // Different Bots: different addresses — the isolation boundary that stays.
+    const other = workbench({ botId: "agent-2" });
+    const c = resolveStorageLocator(other);
+    expect(c.project).not.toBe(a.project);
+    expect(c.workspace).not.toBe(a.workspace);
   });
 
-  test("equal-length scope keys still get distinct locators", () => {
-    const aa = resolveObservationScope({
-      actorId: "user-aa",
-      botId: "agent-1",
-      ownership: "owner",
-      epoch: 1,
-    });
-    const bb = resolveObservationScope({
-      actorId: "user-bb",
-      botId: "agent-1",
-      ownership: "admin",
-      epoch: 1,
-    });
-    // Pin the premise the fingerprint exists for: same key LENGTH, different keys.
-    expect(aa.key.length).toBe(bb.key.length);
-    expect(aa.key).not.toBe(bb.key);
-    const a = resolveStorageLocator(aa);
-    const b = resolveStorageLocator(bb);
-    expect(a.workspace).not.toBe(b.workspace);
-    expect(a.project).not.toBe(b.project);
+  test("a profile epoch bump moves nothing upstream (FREV-03)", () => {
+    const before = resolveStorageLocator(workbench({ epoch: 1 }));
+    const after = resolveStorageLocator(workbench({ epoch: 2 }));
+    expect(after.workspace).toBe(before.workspace);
+    expect(after.project).toBe(before.project);
   });
 
   test("the storage fingerprint is 16 hex chars of the scope key hash", () => {
     const { workspace, project } = resolveStorageLocator(scopeAlpha);
     expect(workspace).toMatch(/-[0-9a-f]{16}$/);
-    expect(project).toMatch(/-[0-9a-f]{16}-\d+$/);
+    expect(project).toMatch(/-[0-9a-f]{16}$/);
   });
 
   test("a cursor minted under one scope is refused by the other", () => {
@@ -279,9 +305,16 @@ describe("two trusted scopes over identical resource ids", () => {
     expect(() => readCursor(scopeAlpha, tampered)).toThrow();
   });
 
-  test("cache, job and export keys cannot cross scopes even with identical names", () => {
-    expect(cacheKey(scopeAlpha, "runs", "p1")).not.toBe(
+  test("cache keys follow the data range; job and export keys stay per-actor (FREV-03)", () => {
+    // A cached upstream page is a fact about the Bot's range — both authorized
+    // viewers read the same one (and retention can drop it by the stored row
+    // key). A job/export idempotency key is one actor's claim — they never
+    // merge across viewers of the same Bot.
+    expect(cacheKey(scopeAlpha, "runs", "p1")).toBe(
       cacheKey(scopeBeta, "runs", "p1"),
+    );
+    expect(cacheKey(scopeAlpha, "runs", "p1")).not.toBe(
+      cacheKey(workbench({ botId: "agent-2" }), "runs", "p1"),
     );
     expect(jobKey(scopeAlpha, "evaluation", "idem-1")).not.toBe(
       jobKey(scopeBeta, "evaluation", "idem-1"),

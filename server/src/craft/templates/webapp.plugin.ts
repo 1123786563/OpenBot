@@ -105,9 +105,11 @@ const OUTPUT_DRAIN_MS = 500;
 function startTimeoutMs(): number {
   const raw = process.env.OPENBOT_WEBAPP_START_TIMEOUT_MS;
   const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : DEFAULT_START_TIMEOUT_MS;
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_START_TIMEOUT_MS;
+  // Hard ceiling: this timeout must stay well under the ~200s turn inactivity
+  // watchdog (see above) — a configured value past it would recreate the very
+  // watchdog-cancels-tool incident the margin exists to prevent.
+  return Math.min(parsed, DEFAULT_START_TIMEOUT_MS);
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -269,6 +271,11 @@ function runScript(
     let output = "";
     child.stdout?.on("data", (chunk: Buffer) => {
       output += chunk.toString("utf8");
+      // bun install / build progress can run to megabytes; keep only the tail
+      // as the data arrives instead of holding the whole run in memory.
+      if (output.length > MAX_OUTPUT_BYTES * 2) {
+        output = output.slice(-MAX_OUTPUT_BYTES);
+      }
     });
 
     let settled = false;

@@ -255,7 +255,13 @@ export async function runQuarantineScan(
         on conflict (tenant_id, id) do update
           set last_seen_at = now(),
               reason = excluded.reason,
-              suggested_disposition = excluded.suggested_disposition
+              suggested_disposition = excluded.suggested_disposition,
+              status = case
+                when enterprise_quarantine_items.status = 'cleared-upstream'
+                then 'open' else enterprise_quarantine_items.status end,
+              resolved_at = case
+                when enterprise_quarantine_items.status = 'cleared-upstream'
+                then null else enterprise_quarantine_items.resolved_at end
         returning (xmax = 0) as inserted_new
       `)) as unknown as { inserted_new: boolean }[];
       if (inserted[0]?.inserted_new) upsertedNew += 1;
@@ -355,6 +361,7 @@ async function requireAnchorAdmin(
   const rows = (await tx.execute(sql`
     select role from enterprise_memberships
     where tenant_id = ${anchor} and principal_id = ${scope.principalId}
+      and status = 'active'
     limit 1
   `)) as unknown as { role: string }[];
   if (rows[0]?.role !== "tenant_admin") {

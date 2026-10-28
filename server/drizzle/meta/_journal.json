@@ -1468,106 +1468,190 @@
     {
       "idx": 209,
       "version": "7",
-      "when": 1792870645200,
-      "tag": "0209_better_auth_directory",
+      "when": 1792857703000,
+      "tag": "0209_enterprise_scope_governance_tables",
       "breakpoints": true
     },
     {
       "idx": 210,
       "version": "7",
-      "when": 1792881446929,
-      "tag": "0210_better_auth_clocks",
+      "when": 1792857704000,
+      "tag": "0210_enterprise_plugin_package_market_tables",
       "breakpoints": true
     },
     {
       "idx": 211,
       "version": "7",
-      "when": 1792883454900,
-      "tag": "0211_better_auth_command_authority",
+      "when": 1792857705000,
+      "tag": "0211_openmuse_tenancy_scope_tables",
       "breakpoints": true
     },
     {
       "idx": 212,
       "version": "7",
-      "when": 1792887000000,
-      "tag": "0212_better_auth_authority_sources",
+      "when": 1792857705001,
+      "tag": "0212_hindsight_migration_quarantine_reasons",
       "breakpoints": true
     },
     {
       "idx": 213,
       "version": "7",
-      "when": 1792888078374,
-      "tag": "0213_better_auth_assurance",
+      "when": 1792857705002,
+      "tag": "0213_hindsight_pause_controls_user_id",
       "breakpoints": true
     },
     {
       "idx": 214,
       "version": "7",
-      "when": 1792892119284,
-      "tag": "0214_better_auth_schema_roles",
+      "when": 1792857705003,
+      "tag": "0214_personal_memories_company_attribution",
       "breakpoints": true
     },
     {
       "idx": 215,
       "version": "7",
-      "when": 1792965326836,
-      "tag": "0215_better_auth_company_lifecycle",
+      "when": 1792857705004,
+      "tag": "0215_memory_sources_company_attribution",
       "breakpoints": true
     },
     {
       "idx": 216,
       "version": "7",
-      "when": 1792992000000,
-      "tag": "0216_better_auth_invitation_resend",
+      "when": 1792997459426,
+      "tag": "0216_enterprise_package_primary_key_names",
       "breakpoints": true
     },
     {
       "idx": 217,
       "version": "7",
-      "when": 1793078400000,
-      "tag": "0217_better_auth_team_management_grants",
+      "when": 1793081097943,
+      "tag": "0217_enterprise_learning_memory_rls",
       "breakpoints": true
     },
     {
       "idx": 218,
       "version": "7",
-      "when": 1793164800000,
-      "tag": "0218_better_auth_company_auth_challenge",
+      "when": 1793081097944,
+      "tag": "0218_price_status_backfill_repair",
       "breakpoints": true
     },
     {
       "idx": 219,
       "version": "7",
-      "when": 1793251200000,
-      "tag": "0219_better_auth_company_auth_complete",
+      "when": 1793081098944,
+      "tag": "0219_opik_stable_resource_scope",
       "breakpoints": true
     },
     {
       "idx": 220,
       "version": "7",
-      "when": 1793254800000,
-      "tag": "0220_better_auth_company_auth_policy_read",
+      "when": 1793167861000,
+      "tag": "0220_bifrost_speech_reservation_spec",
       "breakpoints": true
     },
     {
       "idx": 221,
       "version": "7",
-      "when": 1793341200000,
-      "tag": "0221_better_auth_provisioning_rules",
+      "when": 1792870645200,
+      "tag": "0221_better_auth_directory",
       "breakpoints": true
     },
     {
       "idx": 222,
       "version": "7",
-      "when": 1793344800000,
-      "tag": "0222_better_auth_mobile_session_handoff",
+      "when": 1792881446929,
+      "tag": "0222_better_auth_clocks",
       "breakpoints": true
     },
     {
       "idx": 223,
       "version": "7",
+      "when": 1792883454900,
+      "tag": "0223_better_auth_command_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1792887000000,
+      "tag": "0224_better_auth_authority_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1792888078374,
+      "tag": "0225_better_auth_assurance",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1792892119284,
+      "tag": "0226_better_auth_schema_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1792965326836,
+      "tag": "0227_better_auth_company_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1792992000000,
+      "tag": "0228_better_auth_invitation_resend",
+      "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1793078400000,
+      "tag": "0229_better_auth_team_management_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1793164800000,
+      "tag": "0230_better_auth_company_auth_challenge",
+      "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1793251200000,
+      "tag": "0231_better_auth_company_auth_complete",
+      "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1793254800000,
+      "tag": "0232_better_auth_company_auth_policy_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
+      "when": 1793341200000,
+      "tag": "0233_better_auth_provisioning_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1793344800000,
+      "tag": "0234_better_auth_mobile_session_handoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
       "when": 1793344800001,
-      "tag": "0223_better_auth_mobile_session_admission",
+      "tag": "0235_better_auth_mobile_session_admission",
       "breakpoints": true
     }
   ]

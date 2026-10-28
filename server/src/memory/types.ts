@@ -1,6 +1,13 @@
 import { z } from "zod";
 
 const text = (max: number) => z.string().trim().min(1).max(max);
+/** The one review-state vocabulary, shared by the patch schema and the record type. */
+export const MEMORY_REVIEW_STATES = [
+  "unreviewed",
+  "confirmed",
+  "edited",
+] as const;
+export type MemoryReviewState = (typeof MEMORY_REVIEW_STATES)[number];
 export const memoryInputSchema = z
   .object({
     content: text(6000),
@@ -20,7 +27,7 @@ export const memoryPatchSchema = z
   .object({
     content: text(6000).optional(),
     enabled: z.boolean().optional(),
-    reviewState: z.enum(["unreviewed", "confirmed", "edited"]).optional(),
+    reviewState: z.enum(MEMORY_REVIEW_STATES).optional(),
   })
   .strict();
 export const memorySourceInputSchema = z
@@ -32,7 +39,14 @@ export const memorySourceInputSchema = z
   })
   .strict()
   .refine(
-    (input) => JSON.stringify(input.args).length <= 8192,
+    (input) => {
+      // An unserializable args object (circular, BigInt) is invalid input, not a crash.
+      try {
+        return JSON.stringify(input.args).length <= 8192;
+      } catch {
+        return false;
+      }
+    },
     "Source settings are too large.",
   );
 export class MemoryRefusedError extends Error {
@@ -41,6 +55,38 @@ export class MemoryRefusedError extends Error {
     this.name = "MemoryRefusedError";
   }
 }
+/**
+ * Said to the Bot whose observation arrived while the person paused learning (#392): the
+ * switch is the person's own, so the answer says what happened and how it changes back.
+ */
+export const LEARNING_PAUSED_REFUSAL =
+  "Learning is paused for this person. They can turn it back on in their memory settings.";
+/**
+ * FIX-OCR3 (O3-H2): an enterprise deployment's answer to a Bot observation whose company
+ * cannot be proven right now. The proactive seam has no company of its own to carry, and the
+ * one honest alternative to this refusal was a tenant-less row invisible to every
+ * company-pinned face — unwritable is the fix, not unreadable.
+ */
+export const MEMORY_ATTRIBUTION_REFUSAL =
+  "This memory cannot be attributed to a company right now, so it was not kept.";
+/**
+ * The person's own pause-switches patch (#392): booleans only. Strict, so a tenant, principal
+ * or bank id supplied from the wire is refused as a bad request — identity never travels in a
+ * body; the route derives it from the server-issued scope.
+ */
+export const pauseControlPatchSchema = z
+  .object({
+    learningPaused: z.boolean().optional(),
+    usagePaused: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (patch) =>
+      patch.learningPaused !== undefined || patch.usagePaused !== undefined,
+    "Choose which switch to change.",
+  );
+export const parsePauseControlPatch = (input: unknown) =>
+  parse(pauseControlPatchSchema, input);
 export class MemoryNotFoundError extends Error {
   constructor() {
     super("This memory could not be found.");
@@ -73,7 +119,7 @@ export type MemoryRecord = MemoryInput & {
   sourceId: string | null;
   externalId: string | null;
   importDigest: string | null;
-  reviewState: "unreviewed" | "confirmed" | "edited";
+  reviewState: MemoryReviewState;
   /** Who formed it: the person, a source import, or a Bot that observed it. */
   formedBy: "person" | "import" | "bot";
   formedByAgentId: string | null;
@@ -88,6 +134,13 @@ export type MemoryRecord = MemoryInput & {
 export type MemorySource = MemorySourceInput & {
   id: string;
   ownerUserId: string;
+  /**
+   * FIX-W13 (#376, FR2-2): the company this source belongs to, fixed at binding — the
+   * (person, Bot)'s own proven company, never a request's selection. NULL is an ISOLATED
+   * source: no company's to list, operate or sync in an enterprise deployment, and the
+   * single-user deployment's ordinary standing.
+   */
+  tenantId: string | null;
   enabled: boolean;
   syncStatus: "idle" | "running" | "succeeded" | "error";
   syncError: string | null;

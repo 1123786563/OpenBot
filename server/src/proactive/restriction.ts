@@ -17,7 +17,10 @@
  */
 import type { AuditInitiator } from "../audit";
 import type { GrantedTool } from "@openbot/toolkit/granted-tool";
+import { getLogger } from "../../../shared/logger";
 import { REFUSAL_MARKER } from "../plugins/tools";
+
+const log = getLogger("server");
 
 export const PROACTIVE_INITIATOR_PREFIX = "proactive:";
 
@@ -92,14 +95,31 @@ export function restrictToolsForRun<A extends unknown[]>(
   readOnlyRefs: ReadOnlyRefs,
 ): (...args: A) => Promise<GrantedTool[]> {
   if (!isProactiveInitiator(initiator)) return load;
+  // A catalogue read failure must not escape as a raw loader crash (the file's own rule is
+  // "cannot read the catalogue, so refuse"): the run fails closed to its built-in memory
+  // reads, and every catalogue-derived tool is refused until the catalogue answers.
+  const refsFailClosed = async (): Promise<ReadonlySet<string>> => {
+    try {
+      return await readOnlyRefs();
+    } catch (error) {
+      log.error(
+        { type: "proactive-readonly-refs-unavailable", error },
+        "The catalogue could not be read for a proactive run; only built-in memory reads stay available.",
+      );
+      return PROACTIVE_MEMORY_READS;
+    }
+  };
   return async (...args: A) => {
-    const [tools, allowed] = await Promise.all([load(...args), readOnlyRefs()]);
+    const [tools, allowed] = await Promise.all([
+      load(...args),
+      refsFailClosed(),
+    ]);
     return tools
       .filter((tool) => allowed.has(tool.ref) || allowed.has(tool.name))
       .map((tool) => ({
         ...tool,
         execute: async (input: unknown) => {
-          const current = await readOnlyRefs();
+          const current = await refsFailClosed();
           if (!current.has(tool.ref) && !current.has(tool.name))
             return refused(tool.name);
           return tool.execute(input);

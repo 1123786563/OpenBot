@@ -49,7 +49,7 @@ const scopeA = resolveObservationScope({
 });
 const scopeB = resolveObservationScope({
   actorId: "user-b",
-  botId: "agent-1",
+  botId: "agent-2",
   ownership: "admin",
   epoch: EPOCH,
 });
@@ -1222,11 +1222,13 @@ describe("the REST surface (mounting contract: /bots/:botId/experiment-compariso
     expect((await response.json()).error).toBe(OBSERVATION_BOT_NOT_FOUND);
   });
 
-  test("a bumped ownership epoch is a different key space — not found", async () => {
+  test("a bumped ownership epoch still answers — the data address is the Bot's (FREV-03 b)", async () => {
+    // A rename or profile update bumps the epoch; the comparison pins live under
+    // the Bot's stable data key, so the next generation reads the same history.
     const response = await appFor({ epoch: EPOCH + 1 }).request(
       `http://openbot.test/bots/agent-1/experiment-comparisons${query}`,
     );
-    expect(response.status).toBe(404);
-    expect((await response.json()).error).toBe("RESULTS_EXPERIMENT_NOT_FOUND");
+    expect(response.status).toBe(200);
+    expect((await response.json()).regressions.length).toBe(1);
   });
 });

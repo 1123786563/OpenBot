@@ -1,10 +1,15 @@
-import type { MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
+import { getLogger } from "../../../shared/logger";
 import {
+  CoworkerRoutingInputError,
   type HttpCoworkerRoutingService,
   MAX_ROUTING_TEXT_LENGTH,
 } from "./service";
+
+const log = getLogger("server");
 
 export { defaultRoutingProfile } from "./service";
 
@@ -21,11 +26,40 @@ export function createRoutingRoutes(
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
+  // Every sibling message surface caps its body before reading it; without this, an oversized
+  // body is fully read and parsed before the length check can refuse it.
+  routes.use("*", bodyLimit({ maxSize: 256 * 1024 }));
+
+  // The service's faults must not end as Hono's plain-text 500: this route answers JSON, so
+  // every failure does too — the service's own input refusals as 400, the rest as a tagged 503.
+  routes.onError((error: unknown, context: Context<{ Variables: AppVariables }>) => {
+    if (error instanceof CoworkerRoutingInputError)
+      return context.json({ error: error.message }, 400);
+    log.error(
+      {
+        type: "coworker-routing-route-error",
+        errorType: error instanceof Error ? error.name : "UnknownError",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      },
+      "coworker-routing-route-error",
+    );
+    return context.json(
+      { error: "Coworker routing is unavailable. Try again." },
+      503,
+    );
+  });
+
   routes.post("/", requireUser, async (context) => {
-    const body = (await context.req.json().catch(() => null)) as {
-      text?: unknown;
-      agentId?: unknown;
-    } | null;
+    const raw = await context.req.text().catch(() => null);
+    let parsed: unknown = null;
+    try {
+      parsed = raw === null ? null : JSON.parse(raw);
+    } catch {
+      parsed = undefined; // not JSON at all — a different refusal than a missing field
+    }
+    const body = (parsed ?? null) as { text?: unknown; agentId?: unknown } | null;
+    if (parsed === undefined)
+      return context.json({ error: "Supply a JSON body." }, 400);
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     if (!text) return context.json({ error: "A message is required." }, 400);
     if (text.length > MAX_ROUTING_TEXT_LENGTH) {

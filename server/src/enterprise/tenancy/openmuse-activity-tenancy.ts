@@ -553,37 +553,36 @@ export function createOpenMuseActivityTenancyService(deps: {
           return { entries: [] as ScopedActivityEntry[] };
         }
         // 两源各按三元组读本人协会行（restrictive 主体自读臂下的本人
-        // 面）；审阅动作协会表归 MT064 所有，此处只读聚合。
-        const [notificationRows, reviewedRows] = await Promise.all([
-          tx
-            .select()
-            .from(openmuseNotificationScopes)
-            .where(
-              and(
-                eq(openmuseNotificationScopes.tenantId, scope.tenantId),
-                eq(openmuseNotificationScopes.workspaceId, scope.workspaceId),
-                eq(openmuseNotificationScopes.principalId, scope.principalId),
-              ),
-            )
-            .orderBy(
-              sql`${openmuseNotificationScopes.createdAt} DESC, ${openmuseNotificationScopes.notificationId} DESC`,
-            )
-            .limit(page.limit),
-          tx
-            .select()
-            .from(openmuseReviewedActionScopes)
-            .where(
-              and(
-                eq(openmuseReviewedActionScopes.tenantId, scope.tenantId),
-                eq(openmuseReviewedActionScopes.workspaceId, scope.workspaceId),
-                eq(openmuseReviewedActionScopes.principalId, scope.principalId),
-              ),
-            )
-            .orderBy(
-              sql`${openmuseReviewedActionScopes.createdAt} DESC, ${openmuseReviewedActionScopes.actionId} DESC`,
-            )
-            .limit(page.limit),
-        ]);
+        // 面）；审阅动作协会表归 MT064 所有，此处只读聚合。同一事务连接
+        // 上顺序执行（并发查询无收益且会借出额外连接）。
+        const notificationRows = await tx
+          .select()
+          .from(openmuseNotificationScopes)
+          .where(
+            and(
+              eq(openmuseNotificationScopes.tenantId, scope.tenantId),
+              eq(openmuseNotificationScopes.workspaceId, scope.workspaceId),
+              eq(openmuseNotificationScopes.principalId, scope.principalId),
+            ),
+          )
+          .orderBy(
+            sql`${openmuseNotificationScopes.createdAt} DESC, ${openmuseNotificationScopes.notificationId} DESC`,
+          )
+          .limit(page.limit);
+        const reviewedRows = await tx
+          .select()
+          .from(openmuseReviewedActionScopes)
+          .where(
+            and(
+              eq(openmuseReviewedActionScopes.tenantId, scope.tenantId),
+              eq(openmuseReviewedActionScopes.workspaceId, scope.workspaceId),
+              eq(openmuseReviewedActionScopes.principalId, scope.principalId),
+            ),
+          )
+          .orderBy(
+            sql`${openmuseReviewedActionScopes.createdAt} DESC, ${openmuseReviewedActionScopes.actionId} DESC`,
+          )
+          .limit(page.limit);
         const entries: ScopedActivityEntry[] = [
           ...notificationRows.map((row) =>
             entryOf("notification", row.notificationId, row),

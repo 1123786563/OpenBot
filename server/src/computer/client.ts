@@ -59,11 +59,15 @@ function causesOf(
   error: unknown,
 ): Array<{ code?: unknown; message?: unknown }> {
   const nodes: Array<{ code?: unknown; message?: unknown }> = [];
+  // A wrapped error can carry a cycle (a proxy or deserializer rebuilt the chain); the
+  // refund decision must terminate, so a node already visited ends the walk.
+  const seen = new Set<unknown>();
   for (
     let node: unknown = error;
-    node !== undefined && node !== null;
+    node !== undefined && node !== null && !seen.has(node);
     node = (node as { cause?: unknown }).cause
   ) {
+    seen.add(node);
     nodes.push(node as { code?: unknown; message?: unknown });
   }
   return nodes;
@@ -76,6 +80,18 @@ function causesOf(
  * answers false, and so does every failure this classifier does not
  * recognise — the ambiguous direction keeps the charge.
  */
+/**
+ * Any legal `RequestInit` headers shape (record, Headers instance, entry array) as a
+ * plain record, so the spread in `request` keeps every caller header — a Headers
+ * instance or entry array spreads to nothing as a plain object.
+ */
+function headerRecord(
+  headers: HeadersInit | undefined,
+): Record<string, string> {
+  if (headers === undefined) return {};
+  return Object.fromEntries(new Headers(headers).entries());
+}
+
 function provablyNeverReached(error: unknown): boolean {
   const signals = causesOf(error)
     .flatMap((node) => [
@@ -283,7 +299,7 @@ export function createComputerTransport(
       response = await doFetch(`${target}${path}`, {
         ...init,
         headers: injectTraceHeaders({
-          ...(init?.headers as Record<string, string> | undefined),
+          ...headerRecord(init?.headers),
           "x-openbot-bot-id": botId,
           ...(options.token
             ? { "x-openbot-computer-token": options.token }
@@ -354,6 +370,13 @@ export function createComputerTransport(
     > | null;
     if (!response.ok) {
       throwMappedError(response.status, body);
+    }
+    if (body === null) {
+      // A 2xx whose body is not JSON (a proxy's HTML page, an empty body) is not an
+      // answer: the typed callers would destructure null into a TypeError downstream.
+      throw new ComputerUnavailableError(
+        "The assistant's computer returned a response that could not be read.",
+      );
     }
     return body as T;
   }

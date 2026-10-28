@@ -25,12 +25,15 @@ export function startPaymentSweeps(
   options: {
     intervalMs?: number;
     firstRunMs?: number;
+    log?: (message: string) => void;
     lock?: SweepLock;
   } = {},
 ): { stop(): void } {
   const intervalMs = options.intervalMs ?? 60_000;
   const firstRunMs = options.firstRunMs ?? 60_000;
   const lock = options.lock;
+  // biome-ignore lint/suspicious/noConsole: stable-code operational log
+  const log = options.log ?? ((message: string) => console.warn(message));
   const timers: ReturnType<typeof setTimeout>[] = [];
 
   const run = () => {
@@ -40,15 +43,34 @@ export function startPaymentSweeps(
       // The sweep is best-effort housekeeping over the money the callbacks and the poll already
       // cover; a failed pass is retried on the interval, and nothing here can lose an order
       // that a channel has not answered about yet.
-      const sweepExpired = service.sweepExpired().catch(() => {});
+      const sweepExpired = service.sweepExpired().catch((error: unknown) => {
+        log(
+          `billing: payments expiry sweep failed error=${
+            error instanceof Error ? error.name : "unknown"
+          }`,
+        );
+      });
       // The activation pass runs on the same discipline: paid orders waiting for their Lago
       // subscription are retried on the interval until the rule that refused them changes.
-      const sweepActivations = service.sweepActivations().catch(() => {});
+      const sweepActivations = service
+        .sweepActivations()
+        .catch((error: unknown) => {
+          log(
+            `billing: payments activation sweep failed error=${
+              error instanceof Error ? error.name : "unknown"
+            }`,
+          );
+        });
       await sweepExpired;
       await sweepActivations;
-    }).catch(() => {
+    }).catch((error: unknown) => {
       // A pass that could not take its guard (or lost the database doing it) is retried on the
       // interval; housekeeping never throws into the timer.
+      log(
+        `billing: payments sweep pass failed error=${
+          error instanceof Error ? error.name : "unknown"
+        }`,
+      );
     });
   };
 

@@ -9,12 +9,14 @@
 // summary mounts appearing only with their deps), the background reauthorization
 // seam the export worker boots with, and the control-plane cancel seam the admin
 // people-revocation route calls.
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
+
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { getLogger } from "../../shared/logger";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import type { AgentProfile } from "../src/agents/profile-types";
 import type {
   AdminSummary,
@@ -32,8 +34,6 @@ import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
 
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
@@ -328,6 +328,13 @@ describe("GET /admin/summary authorization and filters", () => {
     );
     const response = await app.request("http://openbot.test/admin/summary");
     expect(response.status).toBe(500);
+    // The 500 is the route's own fault boundary, not hono's dispatch
+    // fallback: the body names the fault so the page's unavailable mapping
+    // rides an explicit contract, and a regression to the accidental
+    // pass-through cannot hide behind the same status code.
+    expect(await response.json()).toEqual({
+      error: "ADMIN_SUMMARY_UNAVAILABLE",
+    });
     expect(recorder.calls).toEqual([]);
   });
 });
@@ -398,13 +405,7 @@ describe("the T01 mount seam (Part 2 wiring)", () => {
     // boundary; this pin keeps the promise from silently returning without
     // the filter that would enforce it.
     const source = readFileSync(
-      join(
-        hereDir,
-        "..",
-        "src",
-        "ai-observability",
-        "admin-summary.ts",
-      ),
+      join(hereDir, "..", "src", "ai-observability", "admin-summary.ts"),
       "utf8",
     );
     expect(source).not.toMatch(/a creator may not/);
@@ -416,7 +417,7 @@ describe("the T01 mount seam (Part 2 wiring)", () => {
     // Bot hidden from the caller's sidebar is still in the admin summary's
     // scope (the per-bot manage gate downstream re-checks authorization).
     const indexSource = readFileSync(
-      join(hereDir, "..", "src", "index.ts"),
+      join(hereDir, "..", "src", "assembly", "runtime.ts"),
       "utf8",
     );
     expect(indexSource).toMatch(

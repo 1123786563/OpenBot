@@ -318,6 +318,13 @@ async function deploymentFullArgs(
   enterprise: "real" | "unavailable",
   notes: string[],
 ): Promise<unknown[]> {
+  // 本清单写入到索引 47 为止：形参数量一旦少于这个索引，后面的依赖会静默
+  // 落在数组之外，产出一份“看起来装配了”的虚假覆盖。
+  if (createApp.length < 48) {
+    throw new Error(
+      `createApp 形参数量 ${createApp.length} 少于装配使用的最高索引 48；src/app.ts 形参顺序已与本清单漂移，拒绝产出虚假覆盖`,
+    );
+  }
   const args: unknown[] = new Array(createApp.length).fill(undefined);
   args[0] = config;
   args[1] = {
@@ -887,12 +894,18 @@ async function serveLevelEntrances(): Promise<{
 }> {
   const entrances: EntranceEntry[] = [];
   const verification: string[] = [];
-  const indexPath = resolve(SERVER_ROOT, "src/index.ts");
-  const indexSource = existsSync(indexPath)
-    ? readFileSync(indexPath, "utf8")
-    : "";
-  const upgradeBranches = (indexSource.match(/server\.upgrade\(/g) ?? [])
-    .length;
+  // The upgrade branches moved out of the boot file into http-server.ts in the
+  // #784 split; scan both so a branch appearing in either still trips the count.
+  const serveSources = ["src/assembly/runtime.ts", "src/http-server.ts"].map(
+    (rel) => {
+      const p = resolve(SERVER_ROOT, rel);
+      return existsSync(p) ? readFileSync(p, "utf8") : "";
+    },
+  );
+  const upgradeBranches = serveSources.reduce(
+    (sum, source) => sum + (source.match(/server\.upgrade\(/g) ?? []).length,
+    0,
+  );
 
   // 1) 电脑流代理：路径判定来自真实纯函数 streamPathBotId（探测验证）。
   const probeBotId = "inventory-probe-bot";
@@ -971,7 +984,7 @@ async function serveLevelEntrances(): Promise<{
 // ---------------------------------------------------------------------------
 
 const BACKGROUND_SOURCES = [
-  "src/index.ts",
+  "src/assembly/runtime.ts",
   "../worker/src/index.ts",
   "scripts/fire-routines.ts",
   "scripts/fire-workshop-schedules.ts",
@@ -1121,12 +1134,19 @@ function classifyTable(table: string): string {
 export async function extractDataTables(): Promise<DataTableEntry[]> {
   const entries: DataTableEntry[] = [];
   const schemas: Array<{ schema: string; module: object }> = [];
-  // 真实 schema 导入（drizzle 表定义，无连接副作用）。
-  const server = await attempt(
-    "drizzle-schema",
-    () => import("../../src/db/schema"),
-  );
-  if (server.value) schemas.push({ schema: "server", module: server.value });
+  // 真实 schema 导入（drizzle 表定义，无连接副作用）。这是核心面而非可选面：
+  // 导入失败降级为空数组会让报告谎报“共 0 张表”，必须 fail-loud。
+  let serverModule: object;
+  try {
+    serverModule = (await import("../../src/db/schema")) as object;
+  } catch (error) {
+    throw new Error(
+      `drizzle-schema: 数据表清单无法提取（${
+        error instanceof Error ? error.message : String(error)
+      }）；核心 schema 缺席时本清单不成立`,
+    );
+  }
+  schemas.push({ schema: "server", module: serverModule });
   for (const { schema, module } of schemas) {
     for (const value of Object.values(module)) {
       let table: string | undefined;
@@ -1492,10 +1512,12 @@ async function enterpriseCapabilityStage(
   environment: Record<string, string | undefined>,
 ): Promise<StageRecord> {
   const requires =
-    "ENTERPRISE_DIRECTORY_DATABASE_URL + ENTERPRISE_DATA_DATABASE_URL + TENANT_STORAGE_RUNTIME_DATABASE_URL";
+    "ENTERPRISE_DIRECTORY_DATABASE_URL + ENTERPRISE_DATA_DATABASE_URL + OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL";
   const directory = environment.ENTERPRISE_DIRECTORY_DATABASE_URL?.trim();
   const data = environment.ENTERPRISE_DATA_DATABASE_URL?.trim();
-  const runtime = environment.TENANT_STORAGE_RUNTIME_DATABASE_URL?.trim();
+  // The config reader (src/config.ts) only ever reads the OPENBOT_-prefixed
+  // key; without the prefix this stage was skipped in every environment.
+  const runtime = environment.OPENBOT_TENANT_STORAGE_RUNTIME_DATABASE_URL?.trim();
   if (!directory || !data || !runtime) {
     return {
       stage: "enterprise-capability-assembly",
@@ -1511,20 +1533,25 @@ async function enterpriseCapabilityStage(
     );
     const { createDatabase } = await import("../../src/db/client");
     const directoryDatabase = createDatabase(directory);
-    const dataDatabase = createDatabase(data);
     try {
-      await Promise.all([
-        connections.verifyDirectoryDatabase(directoryDatabase),
-        connections.verifyDataDatabase(dataDatabase),
-      ]);
-      return {
-        stage: "enterprise-capability-assembly",
-        status: "ok",
-        result: { verified: ["directory", "data"] },
-      };
+      // Opened inside the outer try so a failing second createDatabase cannot
+      // strand the directory connection.
+      const dataDatabase = createDatabase(data);
+      try {
+        await Promise.all([
+          connections.verifyDirectoryDatabase(directoryDatabase),
+          connections.verifyDataDatabase(dataDatabase),
+        ]);
+        return {
+          stage: "enterprise-capability-assembly",
+          status: "ok",
+          result: { verified: ["directory", "data"] },
+        };
+      } finally {
+        await dataDatabase.$client.close();
+      }
     } finally {
       await directoryDatabase.$client.close();
-      await dataDatabase.$client.close();
     }
   } catch (error) {
     return {
@@ -1949,5 +1976,10 @@ async function main() {
 }
 
 if (import.meta.main) {
-  await main();
+  await main().catch((error: unknown) => {
+    process.stderr.write(
+      `INVENTORY_RUN_FAILED:${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });
 }

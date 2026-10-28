@@ -142,8 +142,8 @@ export function recordingPorts() {
       },
       async resetProfile(botId: string) {
         profileResets.push(botId);
-        loginSeeds.delete(botId);
-        return { cleared: loginSeeds.has(botId) === false };
+        // Map.delete answers "was it there": asking has() after delete always sees false.
+        return { cleared: loginSeeds.delete(botId) };
       },
       state: {
         async ensure(dir: string) {

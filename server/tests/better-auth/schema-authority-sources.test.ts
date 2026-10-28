@@ -62,7 +62,7 @@ const BA_URL_VARIABLES = [
   "BA_TEST_AUTH_WRITER_DATABASE_URL",
 ] as const;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-const MIGRATION_TAG = "0212_better_auth_authority_sources";
+const MIGRATION_TAG = "0224_better_auth_authority_sources";
 const MIGRATION_PATH = join(
   import.meta.dirname,
   `../../drizzle/${MIGRATION_TAG}.sql`,
@@ -74,7 +74,7 @@ const MIGRATION_PATH = join(
  * migrations and reverts them (T02.01/T02.02/T02.03 did the same), so this
  * suite applies its verified prerequisite and removes it again in cleanup.
  */
-const PREREQUISITE_TAG = "0209_better_auth_directory";
+const PREREQUISITE_TAG = "0221_better_auth_directory";
 const PREREQUISITE_PATH = join(
   import.meta.dirname,
   `../../drizzle/${PREREQUISITE_TAG}.sql`,

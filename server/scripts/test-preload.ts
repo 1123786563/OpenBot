@@ -19,7 +19,8 @@
  *
  * `@copilotkit/runtime` also eagerly imports the Vertex provider, which pulls `gaxios` through a
  * Bun global cache path during tests. These tests do not exercise Vertex, so the provider is stubbed
- * at the same preload boundary and fails loudly if a server test tries to use it.
+ * at the same preload boundary: importing it succeeds, and building a model with it (calling what
+ * `createVertex` returns) fails loudly.
  */
 
 import { mock } from "bun:test";

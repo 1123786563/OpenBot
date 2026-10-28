@@ -37,9 +37,19 @@ export const ME06_TOOL_DEFINITION = {
   },
 } as const;
 
+export interface FrontendProviderRequest {
+  readonly messages: { role: string }[];
+  /**
+   * The tool declarations this request offered, verbatim from the wire — the
+   * surface a public provider's function-name charset judges. Recorded so a
+   * suite can assert which mounted names actually rode the request.
+   */
+  readonly tools?: { function?: { name?: string } }[];
+}
+
 export interface FrontendProvider {
   url: string;
-  readonly requests: { messages: { role: string }[] }[];
+  readonly requests: FrontendProviderRequest[];
   close(): Promise<void>;
 }
 
@@ -51,22 +61,25 @@ export interface FrontendProvider {
 export function startFrontendProvider(
   toolName = ME06_TOOL_NAME,
 ): Promise<FrontendProvider> {
-  const requests: { messages: { role: string }[] }[] = [];
+  const requests: FrontendProviderRequest[] = [];
   const server: Server = createServer((request, response) => {
     let body = "";
     request.on("data", (chunk) => (body += chunk));
     // A client disconnecting mid-body must not leave the request unhandled.
     request.on("error", () => response.destroy());
     request.on("end", () => {
-      let parsed: { messages?: { role: string }[] } = {};
+      let parsed: {
+        messages?: { role: string }[];
+        tools?: { function?: { name?: string } }[];
+      } = {};
       try {
-        parsed = JSON.parse(body) as { messages?: { role: string }[] };
+        parsed = JSON.parse(body) as typeof parsed;
       } catch {
         response.writeHead(400, { "content-type": "application/json" });
         response.end("{}");
         return;
       }
-      requests.push({ messages: parsed.messages ?? [] });
+      requests.push({ messages: parsed.messages ?? [], tools: parsed.tools });
       const turn = requests.length - 1;
       const hasToolResult = (parsed.messages ?? []).some(
         (message) => message.role === "tool",

@@ -269,7 +269,13 @@ export class CraftSessionManager {
         portEnd: this.config.sandboxNextjsPortEnd,
       });
     }
-    await this.reconcileSession(db, existing, input.userName ?? null);
+    // The reservation persists nextjsPort on the row AFTER the snapshot above was
+    // taken — re-read so the repair envelope sees the reserved port and
+    // start-webapp.sh lands on the first repair, not only after a later reconcile
+    // (F-D, same reason as createSession).
+    const toProvision =
+      (await this.store.getSession(existing.id, input.userId)) ?? existing;
+    await this.reconcileSession(db, toProvision, input.userName ?? null);
     return (await this.store.getSession(existing.id, input.userId)) ?? existing;
   }
 
@@ -364,8 +370,6 @@ export class CraftSessionManager {
     let current: string | null = null;
     if (fileApi) {
       try {
-        const entries = await fileApi.listFiles(directory);
-        void entries;
         current = await this.readWorkspaceFile(
           botId,
           `${directory}/opencode.json`,
@@ -652,7 +656,16 @@ export class CraftSessionManager {
       userName,
       content,
     );
-    const ackMcp = content?.mcpConfigHash ?? hashes?.mcpConfigHash ?? null;
+    // Same resolver gate as the skills ack below: a wired resolver that failed this
+    // reload rewrote nothing, so acking a hash would pin a config no instance ever
+    // received (the skills hash keeps its row value on the same condition). When
+    // content IS resolved, the config rewrite carries its mcp block whether or not
+    // the skills tree landed, so the mcp hash acks — pinned by craft-skills-reload.
+    const ackMcp = content
+      ? content.mcpConfigHash
+      : this.deps.managedContentFor
+        ? undefined
+        : (hashes?.mcpConfigHash ?? null);
     // The skills-hash ack is push-gated: a content-bearing reload acks only what
     // landed, and a WIRED resolver that failed this reload pushes nothing and so
     // acks nothing — hashes-only acks belong to wirings with no content to push.
@@ -668,17 +681,17 @@ export class CraftSessionManager {
       "status" | "origin" | "opencodeSessionId" | "skillsHash" | "mcpConfigHash"
     > = {
       ...session,
-      mcpConfigHash: ackMcp,
+      ...(ackMcp !== undefined ? { mcpConfigHash: ackMcp } : {}),
       ...(ackSkills !== undefined ? { skillsHash: ackSkills } : {}),
     };
     await this.store.updateSession(session.id, {
-      mcpConfigHash: ackMcp,
+      ...(ackMcp !== undefined ? { mcpConfigHash: ackMcp } : {}),
       ...(ackSkills !== undefined ? { skillsHash: ackSkills } : {}),
     });
     return sessionRuntimeStale(
       acked,
       content?.skillsHash ?? hashes?.skillsHash ?? null,
-      ackMcp,
+      ackMcp === undefined ? (session.mcpConfigHash ?? null) : ackMcp,
     );
   }
 

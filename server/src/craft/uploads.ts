@@ -56,11 +56,17 @@ export function sanitizeFilename(filename: string): string {
   if (name.length > max_length) {
     const dot = name.lastIndexOf(".");
     const ext = dot > 0 ? name.slice(dot) : "";
-    const stem = (dot > 0 ? name.slice(0, dot) : name).slice(
-      0,
-      max_length - ext.length,
-    );
-    name = stem + ext;
+    // An extension can itself exceed the platform's filename cap, making the old
+    // negative slice end relative to the string tail and preserving an overlong name.
+    if (ext.length >= max_length) {
+      name = ext.slice(0, max_length);
+    } else {
+      const stem = (dot > 0 ? name.slice(0, dot) : name).slice(
+        0,
+        max_length - ext.length,
+      );
+      name = stem + ext;
+    }
   }
 
   return name;

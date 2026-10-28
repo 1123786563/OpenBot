@@ -1,9 +1,8 @@
-import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "../../tests/support/bun-test-compat";
+
 const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
@@ -19,7 +18,7 @@ const hereDir = dirname(herePath);
  * red before a deployment can.
  */
 const indexSource = readFileSync(
-  join(hereDir, "..", "src", "index.ts"),
+  join(hereDir, "..", "src", "assembly", "runtime.ts"),
   "utf8",
 );
 
@@ -53,7 +52,7 @@ describe("the production ai-observability assembly wires the submit billing gate
 
   test("the precheck factory is imported from the execution-billing module", () => {
     expect(indexSource).toMatch(
-      /import\s*\{[^}]*createExecutionBudgetPrecheck[^}]*\}\s*from\s*"\.\/ai-observability\/execution-billing"/,
+      /import\s*\{[^}]*createExecutionBudgetPrecheck[^}]*\}\s*from\s*"\.\.?\/ai-observability\/execution-billing"/,
     );
   });
 });

@@ -1,4 +1,5 @@
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { getLogger } from "../../../shared/logger";
 import { type AppVariables, requireAdmin } from "../auth/guards";
 import type { BotServiceRegistry } from "./registry";
 import type { BotServiceStore } from "./store";
@@ -33,15 +34,19 @@ export function botServiceCredentialRoutes(
   const credentials =
     registry && "credentials" in registry ? registry.credentials : undefined;
   if (!credentials) {
-    app.all("*", (context) =>
-      context.json(
+    // The 503 answers after the admin gate, not instead of it: a signed-in non-admin
+    // learns nothing about this surface, not even that it exists.
+    app.all("*", (context) => {
+      const denied = requireAdmin(context);
+      if (denied) return denied;
+      return context.json(
         {
           error: "The bot service credential surface is not available.",
           code: "bot_service_credentials_unavailable",
         },
         503,
-      ),
-    );
+      );
+    });
     return app;
   }
   app.use("*", async (context, next) => {
@@ -85,6 +90,30 @@ export function botServiceCredentialRoutes(
       409,
     );
 
+  const log = getLogger("server");
+  // The fallback every catch shares: this surface's answers are JSON with a code, so
+  // an unexpected failure keeps that shape (Hono's plain-text 500 breaks JSON clients)
+  // and lands in the log with its cause.
+  const internal = (
+    context: Context<{ Variables: AppVariables }>,
+    error: unknown,
+  ) => {
+    log.error(
+      {
+        type: "bot-service-credential-route-failed",
+        error: String(error),
+      },
+      "bot-service-credential-route-failed",
+    );
+    return context.json(
+      {
+        error: "The bot service credential surface could not complete the request.",
+        code: "bot_service_internal",
+      },
+      500,
+    );
+  };
+
   app.post("/:botId/credentials", async (context) => {
     const botIdOr = botIdOf(context);
     if (botIdOr instanceof Response) return botIdOr;
@@ -93,7 +122,7 @@ export function botServiceCredentialRoutes(
     try {
       const issued = await credentials.issue(botId, actorId);
       return context.json(
-        { botServiceCredential: { ...issued, secret: issued.secret } },
+        { botServiceCredential: issued },
         201,
       );
     } catch (error) {
@@ -103,7 +132,7 @@ export function botServiceCredentialRoutes(
           { error: error.message, code: "bot_service_invalid" },
           400,
         );
-      throw error;
+      return internal(context, error);
     }
   });
 
@@ -114,10 +143,9 @@ export function botServiceCredentialRoutes(
     const actorId = context.var.actor.id;
     try {
       const issued = await credentials.rotate(botId, actorId);
-      return context.json(
-        { botServiceCredential: { ...issued, secret: issued.secret } },
-        201,
-      );
+      // 201, like issue: a new secret was minted, so this is a creation answer, not
+      // an update of an existing resource.
+      return context.json({ botServiceCredential: issued }, 201);
     } catch (error) {
       if (error instanceof BotServiceNotFoundError) return notFound(context);
       if (error instanceof BotServiceCredentialMissingError)
@@ -127,7 +155,7 @@ export function botServiceCredentialRoutes(
           { error: error.message, code: "bot_service_invalid" },
           400,
         );
-      throw error;
+      return internal(context, error);
     }
   });
 
@@ -148,7 +176,7 @@ export function botServiceCredentialRoutes(
           { error: error.message, code: "bot_service_invalid" },
           400,
         );
-      throw error;
+      return internal(context, error);
     }
   });
 
@@ -167,7 +195,7 @@ export function botServiceCredentialRoutes(
           { error: error.message, code: "bot_service_invalid" },
           400,
         );
-      throw error;
+      return internal(context, error);
     }
   });
 

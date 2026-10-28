@@ -7,6 +7,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
+from defusedxml.common import DefusedXmlException
+
 
 class RedliningValidator:
     def __init__(self, unpacked_dir, original_docx, verbose=False, author="Claude"):
@@ -27,36 +30,6 @@ class RedliningValidator:
             print(f"FAILED - Modified document.xml not found at {modified_file}")
             return False
 
-        try:
-            import xml.etree.ElementTree as ET
-
-            # TODO(security): switch to defusedxml.ElementTree to harden against
-            # XXE / billion-laughs in user-supplied .docx files.
-            tree = ET.parse(modified_file)  # noqa: S314
-            root = tree.getroot()
-
-            del_elements = root.findall(".//w:del", self.namespaces)
-            ins_elements = root.findall(".//w:ins", self.namespaces)
-
-            author_del_elements = [
-                elem
-                for elem in del_elements
-                if elem.get(f"{{{self.namespaces['w']}}}author") == self.author
-            ]
-            author_ins_elements = [
-                elem
-                for elem in ins_elements
-                if elem.get(f"{{{self.namespaces['w']}}}author") == self.author
-            ]
-
-            if not author_del_elements and not author_ins_elements:
-                if self.verbose:
-                    print(f"PASSED - No tracked changes by {self.author} found.")
-                return True
-
-        except Exception:
-            pass
-
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
@@ -74,16 +47,12 @@ class RedliningValidator:
                 )
                 return False
 
-            import xml.etree.ElementTree as ET
-
             try:
-                # TODO(security): switch to defusedxml.ElementTree to harden
-                # against XXE / billion-laughs in user-supplied .docx files.
-                modified_tree = ET.parse(modified_file)  # noqa: S314
+                modified_tree = ET.parse(modified_file)
                 modified_root = modified_tree.getroot()
-                original_tree = ET.parse(original_file)  # noqa: S314
+                original_tree = ET.parse(original_file)
                 original_root = original_tree.getroot()
-            except ET.ParseError as e:
+            except (ET.ParseError, DefusedXmlException) as e:
                 print(f"FAILED - Error parsing XML files: {e}")
                 return False
 
@@ -193,7 +162,9 @@ class RedliningValidator:
                             content_lines.append(line)
                     return "\n".join(content_lines)
 
-        except (subprocess.CalledProcessError, FileNotFoundError, Exception):
+        except (subprocess.SubprocessError, OSError):
+            # Best-effort decoration only: returning None makes the FAILED
+            # message above fall back to the undecorated text diff.
             pass
 
         return None
@@ -232,6 +203,12 @@ class RedliningValidator:
                 parent.remove(del_elem)
 
     def _extract_text_content(self, root):
+        """Non-empty w:t text per paragraph, newline-joined.
+
+        Known blind spot: edits touching only empty paragraphs, tabs/breaks,
+        images or run structure compare equal here — this is a text-level
+        backstop, not a full structural diff.
+        """
         p_tag = f"{{{self.namespaces['w']}}}p"
         t_tag = f"{{{self.namespaces['w']}}}t"
 

@@ -310,7 +310,7 @@ export function createCredentialOwnershipAdminService(
             classification: credentialRows.classification,
             workspaceId: credentialRows.workspaceId,
             target: credentialRows.target,
-            label: sql<string>`${credentialRows.display} ->> 'label'`,
+            label: sql<string>`coalesce(${credentialRows.display} ->> 'label', '')`,
             createdAt: credentialRows.createdAt,
           })
           .from(credentialRows)
@@ -561,9 +561,18 @@ function visibleCredential(
 }
 
 function redactedView(
+  scope: PlatformScope,
   credential: NonNullable<CredentialFacts["credential"]>,
   grants: CredentialFacts["grants"],
 ): RedactedCredentialView {
+  // 个人凭据的可用/披露按属主判定（与 decideCredential 同一语义，属主无需
+  // 动作行）；展示若只映射动作行，属主视图会显示 false 而判定放行。
+  const personalOwner =
+    classificationOf(credential.classification) === "personal" &&
+    credential.ownerPrincipalId === scope.principalId;
+  const effectiveActions = personalOwner
+    ? { use: true, disclose: true }
+    : { use: grants.use, disclose: grants.disclose };
   return Object.freeze({
     credentialId: credential.id,
     tenantId: credential.tenantId,
@@ -573,10 +582,7 @@ function redactedView(
     target: credential.target,
     label: credential.label,
     status: "active" as const,
-    effectiveActions: Object.freeze({
-      use: grants.use,
-      disclose: grants.disclose,
-    }),
+    effectiveActions: Object.freeze(effectiveActions),
     createdAt: credential.createdAt.toISOString(),
   });
 }
@@ -743,7 +749,12 @@ export function createCredentialOwnershipDecisionService(
         workspaceId: row.workspaceId,
         ownerPrincipalId: row.ownerPrincipalId,
         target: row.target,
-        label: (row.display as { label?: unknown }).label as string,
+        // display JSON 可能缺 label（或 display 为 null）：脱敏视图的
+        // label 契约是 string，缺键回落空串而不是泄漏 undefined。
+        label:
+          ((row.display as { label?: unknown } | null)?.label as
+            | string
+            | undefined) ?? "",
         status: row.status,
         envelope: row.envelope,
         createdAt: row.createdAt,
@@ -773,7 +784,7 @@ export function createCredentialOwnershipDecisionService(
         if (!verdict.allowed || !facts.credential) return DENY_VERDICT;
         return {
           outcome: "allow" as const,
-          credential: redactedView(facts.credential, facts.grants),
+          credential: redactedView(scope, facts.credential, facts.grants),
           envelope: facts.credential.envelope,
         };
       });
@@ -886,7 +897,10 @@ export function createCredentialOwnershipDecisionService(
               workspaceId: row.workspaceId,
               ownerPrincipalId: row.ownerPrincipalId,
               target: row.target,
-              label: (row.display as { label?: unknown }).label as string,
+              label:
+                ((row.display as { label?: unknown } | null)?.label as
+                  | string
+                  | undefined) ?? "",
               status: row.status,
               envelope: "",
               createdAt: row.createdAt,
@@ -902,7 +916,7 @@ export function createCredentialOwnershipDecisionService(
             },
           };
           if (!visibleCredential(scope, facts) || !facts.credential) continue;
-          views.push(redactedView(facts.credential, facts.grants));
+          views.push(redactedView(scope, facts.credential, facts.grants));
         }
         return Object.freeze(views);
       });
@@ -921,7 +935,7 @@ export function createCredentialOwnershipDecisionService(
         }
         return {
           outcome: "allow" as const,
-          credential: redactedView(facts.credential, facts.grants),
+          credential: redactedView(scope, facts.credential, facts.grants),
         };
       });
     },

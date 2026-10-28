@@ -127,8 +127,45 @@ ALTER TABLE "gateway_price_snapshots" ADD COLUMN "price_status_missing_dims" jso
 --> statement-breakpoint
 -- Rows recorded between 0133 and 0134 classify from their own dims; the backfill is the same
 -- rule the CHECK below enforces forever after.
-UPDATE "gateway_price_snapshots"
-SET "price_status" = classify_gateway_price_status("dims");
+-- This one-time derived-column backfill is the append-only exception; this migration runs in
+-- one transaction, so any failure rolls the trigger state back as well.
+ALTER TABLE "gateway_price_snapshots" DISABLE TRIGGER "gateway_price_snapshots_append_only";
+--> statement-breakpoint
+UPDATE "gateway_price_snapshots" AS snapshot
+SET
+  "price_status" = classify_gateway_price_status(snapshot."dims"),
+  "price_status_reason" = CASE
+    WHEN classify_gateway_price_status(snapshot."dims") <> 'unknown' THEN NULL
+    WHEN EXISTS (
+      SELECT 1
+      FROM unnest(ARRAY[
+        'input', 'output', 'reasoning', 'image', 'cache_read', 'cache_write',
+        'surcharge_web_search', 'surcharge_per_request'
+      ]) AS required(dimension)
+      WHERE snapshot."dims" -> required.dimension ->> 'status' IS DISTINCT FROM 'known'
+        AND snapshot."dims" -> required.dimension ->> 'reason' = 'price_dim_unreadable'
+    ) THEN 'price_status_dims_unreadable'
+    ELSE 'price_status_dims_missing'
+  END,
+  "price_status_missing_dims" = CASE
+    WHEN classify_gateway_price_status(snapshot."dims") <> 'unknown' THEN NULL
+    ELSE (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'dimension', required.dimension,
+          'reason', snapshot."dims" -> required.dimension ->> 'reason'
+        )
+        ORDER BY required.ordinality
+      )
+      FROM unnest(ARRAY[
+        'input', 'output', 'reasoning', 'image', 'cache_read', 'cache_write',
+        'surcharge_web_search', 'surcharge_per_request'
+      ]) WITH ORDINALITY AS required(dimension, ordinality)
+      WHERE snapshot."dims" -> required.dimension ->> 'status' IS DISTINCT FROM 'known'
+    )
+  END;
+--> statement-breakpoint
+ALTER TABLE "gateway_price_snapshots" ENABLE TRIGGER "gateway_price_snapshots_append_only";
 --> statement-breakpoint
 ALTER TABLE "gateway_price_snapshots" ALTER COLUMN "price_status" SET NOT NULL;
 --> statement-breakpoint

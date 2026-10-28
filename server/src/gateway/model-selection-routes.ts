@@ -53,13 +53,20 @@ import type { AppVariables } from "../auth/guards";
 import { WORKBENCH_BOT_ID } from "../bot-services/access-grants";
 import type { BotServiceStore } from "../bot-services/store";
 import type { BotServiceCapability } from "../bot-services/types";
-import { MODEL_CAPABILITIES, type ModelRef, modelRefKey } from "./catalog";
+import { getLogger } from "../../../shared/logger";
+import {
+  MODEL_CAPABILITIES,
+  type ModelCapability,
+  type ModelRef,
+  modelRefKey,
+} from "./catalog";
 import {
   type BotCapability,
   type GatewayModelCapabilityFilterService,
   gatewayModelCapabilityFilterControls,
   MODEL_EXCLUSION_REASONS,
   type ModelExclusionReason,
+  type ModelSelectionPriceStatus,
 } from "./model-capability-filter";
 import {
   type EffectiveModelResolution,
@@ -72,6 +79,7 @@ import {
   createEnterpriseGatewayPriceSnapshotStore,
   type GatewayPriceSnapshotStore,
 } from "./price-snapshot";
+import { createModelAccessPublic } from "./public";
 
 /**
  * Why the selection on record may not be offerable right now. Closed and
@@ -94,6 +102,8 @@ export type ModelSelectionUnavailableReason =
  * capabilities; `async` names a delivery mode, not a capability, and
  * contributes nothing.
  */
+const log = getLogger("server");
+
 const WORKBENCH_CAPABILITY_MAPPING: Record<
   BotServiceCapability,
   readonly BotCapability[]
@@ -151,10 +161,39 @@ function unavailable(
   return context.json({ error, code }, status);
 }
 
+/** The context resolutions that fail before any answer can be served. */
+type ModelSelectionContextError =
+  | "model_selection_unavailable"
+  | "workbench_bot_unavailable"
+  | "bot_capabilities_unmappable";
+
+/** The one mapping from a failed context resolution to its tagged answer. */
+function answerContextError(
+  context: Context<{ Variables: AppVariables }>,
+  error: ModelSelectionContextError,
+) {
+  if (error === "workbench_bot_unavailable") {
+    return unavailable(
+      context,
+      "The workbench bot is not available for model selection.",
+      error,
+    );
+  }
+  if (error === "bot_capabilities_unmappable") {
+    return unavailable(
+      context,
+      "The workbench bot declares no capability the model catalog can offer.",
+      error,
+      409,
+    );
+  }
+  return unavailable(context, "Model selection is not available.", error);
+}
+
 /** One selectable ref with the price display status the picker renders. */
 type SelectableModelView = {
   ref: ModelRef;
-  priceStatus: string;
+  priceStatus: ModelSelectionPriceStatus;
 };
 
 /** The effective resolution with its availability verdict — never a replacement. */
@@ -217,90 +256,69 @@ export function createModelSelectionRoutes(
 
   app.get("/", async (context) => {
     const ready = await resolveContext();
-    if (ready.error === "model_selection_unavailable") {
-      return unavailable(
-        context,
-        "Model selection is not available.",
-        ready.error,
-      );
-    }
-    if (ready.error === "workbench_bot_unavailable") {
-      return unavailable(
-        context,
-        "The workbench bot is not available for model selection.",
-        ready.error,
-      );
-    }
-    if (ready.error === "bot_capabilities_unmappable") {
-      return unavailable(
-        context,
-        "The workbench bot declares no capability the model catalog can offer.",
-        ready.error,
-        409,
-      );
-    }
+    if (ready.error !== null) return answerContextError(context, ready.error);
 
     const conversationId = context.req.query("conversationId") ?? "";
     const userId = context.var.actor.id;
 
-    // One answer each: the offered list (03.8, verbatim) and the stored
-    // resolution (03.9, verbatim — it never falls through or substitutes).
-    const [selection, effective, snapshots] = await Promise.all([
-      ready.selectable.listSelectableModels(ready.capabilities, {
-        kind: "user",
-        id: userId,
-      }),
-      ready.preferences.resolveEffectiveModel({
-        userId,
-        botId: WORKBENCH_BOT_ID,
-        conversationId,
-      }),
-      ready.priceSnapshots.listLatestPriceSnapshots(),
-    ]);
-    const priceStatusByRef = new Map(
-      snapshots.map((snapshot) => [
-        modelRefKey(snapshot.ref),
-        snapshot.classification.status,
-      ]),
-    );
-    const selectableViews: SelectableModelView[] = selection.selectable.map(
-      (ref) => ({
-        ref,
-        priceStatus: priceStatusByRef.get(modelRefKey(ref)) ?? "unmapped",
-      }),
+    // One answer each: the offered list through M06's business facade (Issue
+    // #628 — 03.8's judgment and the price annotation inside it, verbatim) and
+    // the stored resolution (03.9, verbatim — it never falls through or
+    // substitutes). A storage fault answers the same tagged unavailability the
+    // missing-service cases do, never a bare 500.
+    const modelAccess = createModelAccessPublic({
+      models: {
+        selectable: ready.selectable,
+        priceSnapshots: ready.priceSnapshots,
+      },
+    });
+    let answer: Awaited<ReturnType<typeof modelAccess.availableModels>>;
+    let effective: EffectiveModelResolution;
+    try {
+      [answer, effective] = await Promise.all([
+        modelAccess.availableModels({
+          botCapabilities: ready.capabilities,
+          requester: { kind: "user", id: userId },
+        }),
+        ready.preferences.resolveEffectiveModel({
+          userId,
+          botId: WORKBENCH_BOT_ID,
+          conversationId,
+        }),
+      ]);
+    } catch (error) {
+      log.error(
+        {
+          type: "model-selection-read-failed",
+          errorType: error instanceof Error ? error.name : "UnknownError",
+          context: { route: context.req.path },
+          timestamp: new Date().toISOString(),
+        },
+        "model-selection-read-failed",
+      );
+      return unavailable(
+        context,
+        "Model selection is not available.",
+        "model_selection_unavailable",
+      );
+    }
+    const selectableViews: SelectableModelView[] = answer.selectable.map(
+      (entry) => ({ ref: entry.ref, priceStatus: entry.priceStatus }),
     );
 
     return context.json({
       bot: { botId: ready.bot.botId, displayName: ready.bot.displayName },
       selectable: selectableViews,
-      effective: effectiveView(effective, selection),
+      effective: effectiveView(effective, {
+        selectable: answer.selectable.map((entry) => entry.ref),
+        excluded: answer.excluded,
+      }),
     });
   });
 
   app.put("/preference", async (context) => {
     const ready = await resolveContext();
-    if (ready.error === "model_selection_unavailable") {
-      return unavailable(
-        context,
-        "Model selection is not available.",
-        ready.error,
-      );
-    }
-    if (ready.error === "workbench_bot_unavailable") {
-      return unavailable(
-        context,
-        "The workbench bot is not available for model selection.",
-        ready.error,
-      );
-    }
-    if (ready.error === "bot_capabilities_unmappable") {
-      return unavailable(
-        context,
-        "The workbench bot declares no capability the model catalog can offer.",
-        ready.error,
-        409,
-      );
-    }
+    if (ready.error !== null) return answerContextError(context, ready.error);
 
     const body = await context.req.json().catch(() => undefined);
     if (typeof body !== "object" || body === null) {
@@ -362,7 +380,7 @@ export function createModelSelectionRoutes(
       typeof ref.model !== "string" ||
       ref.model.trim() === "" ||
       typeof ref.capability !== "string" ||
-      !MODEL_CAPABILITIES.includes(ref.capability as never)
+      !MODEL_CAPABILITIES.includes(ref.capability as ModelCapability)
     ) {
       return context.json(
         {
@@ -381,24 +399,45 @@ export function createModelSelectionRoutes(
       // the same answer the read served the list with.
       botCapabilities: ready.capabilities,
     };
-    switch (scope) {
-      case "global":
-        return context.json(await ready.preferences.setGlobalDefault(input));
-      case "bot":
-        return context.json(
-          await ready.preferences.setBotDefault({
-            ...input,
-            botId: WORKBENCH_BOT_ID,
-          }),
-        );
-      case "conversation":
-        return context.json(
-          await ready.preferences.setConversationSelection({
-            ...input,
-            botId: WORKBENCH_BOT_ID,
-            conversationId,
-          }),
-        );
+    // A storage fault is the same tagged unavailability the reads answer —
+    // never a bare 500 masquerading as a third, undefined response shape
+    // beside the business rejections this handler returns as 200 + ok:false.
+    try {
+      switch (scope) {
+        case "global":
+          return context.json(await ready.preferences.setGlobalDefault(input));
+        case "bot":
+          return context.json(
+            await ready.preferences.setBotDefault({
+              ...input,
+              botId: WORKBENCH_BOT_ID,
+            }),
+          );
+        case "conversation":
+          return context.json(
+            await ready.preferences.setConversationSelection({
+              ...input,
+              botId: WORKBENCH_BOT_ID,
+              conversationId,
+            }),
+          );
+      }
+    } catch (error) {
+      log.error(
+        {
+          type: "model-selection-write-failed",
+          errorType: error instanceof Error ? error.name : "UnknownError",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          context: { route: context.req.path },
+          timestamp: new Date().toISOString(),
+        },
+        "model-selection-write-failed",
+      );
+      return unavailable(
+        context,
+        "Model selection is not available.",
+        "model_selection_unavailable",
+      );
     }
   });
 

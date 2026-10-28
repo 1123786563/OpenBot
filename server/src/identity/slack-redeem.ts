@@ -8,6 +8,10 @@ import {
   IdentityLinkError,
 } from "./types";
 
+/** This deployment's one Slack connection and installation; the realm pins identities to them. */
+const SLACK_CONNECTION_ID = "opentag";
+const SLACK_INSTALLATION_ID = "opentag";
+
 /**
  * Redeems a link code a person sent from Slack, or (`discard`) cancels one they exposed in a shared
  * conversation, reporting whether a live Slack code was cancelled. Failures a person can cause (a bad or used code, or a
@@ -29,9 +33,12 @@ export function slackCodeRedeemer(
     async redeem(code, sender) {
       let link: Awaited<ReturnType<typeof store.redeemChallenge>>;
       try {
+        // The realm derivation stays inside the try: the docstring and
+        // identity-slack-redeem.test.ts both pin "a blank or rejected team id" as "invalid",
+        // so an IdentityInputError from it is a person-causable refusal, not an outage.
         const realm = slackRealm({
-          connectionId: "opentag",
-          installationId: "opentag",
+          connectionId: SLACK_CONNECTION_ID,
+          installationId: SLACK_INSTALLATION_ID,
           workspaceId: sender.teamId,
         });
         link = await store.redeemChallenge(code, {

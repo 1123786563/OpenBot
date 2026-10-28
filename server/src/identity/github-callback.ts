@@ -11,7 +11,7 @@ import {
   githubRedirectUri,
   openGithubState,
 } from "./github-oauth";
-import { GITHUB_DOTCOM_REALM } from "./providers";
+import { GITHUB_DOTCOM_REALM, GITHUB_USER_TOKEN_PROVIDER } from "./providers";
 import type { IdentityStore } from "./store";
 import { IdentityConflictError } from "./types";
 
@@ -123,7 +123,7 @@ export function githubCallbackRoutes(
       stage = "store";
       const stored = await deps.credentials.create({
         kind: "connector",
-        provider: "github-user-token",
+        provider: GITHUB_USER_TOKEN_PROVIDER,
         keyId: `${state.userId}:${user.id}:${randomUUID()}`,
         metadata: { login: user.login },
         encryptedValue: await encryptSecret(

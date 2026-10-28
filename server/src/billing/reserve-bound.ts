@@ -313,6 +313,80 @@ export type ReservationRowLockFields = {
 };
 
 /**
+ * The speech quantities a hold froze at admission (Bifrost 13.2, #307): what 13.1's
+ * admission certified, persisted WITH the pricing lock so settlement can corroborate the
+ * character side — the side the price vocabulary has no slot for (13.1's own unit-honesty).
+ * The two tier prices ride along so the settle surface re-carries the exact certified pair.
+ */
+export type ReservationSpeechSpec = {
+  inputCharacters: number;
+  voiceTier: string | null;
+  durationCapSeconds: number;
+  perInputCharacterUsd: string;
+  perOutputSecondUsd: string;
+};
+
+/** The speech spec as the reservation row stores it (nullable: a non-speech row carries none). */
+export type ReservationRowSpeechSpecFields = {
+  specInputCharacters: number | null;
+  specVoiceTier: string | null;
+  specDurationCapSeconds: number | null;
+  specPerInputCharacterUsd: string | null;
+  specPerOutputSecondUsd: string | null;
+};
+
+/**
+ * Read the frozen speech spec off a reservation row. All five absent → null (a non-speech
+ * hold, or a row from before the spec columns existed); the character side can only be
+ * corroborated against a spec that was actually frozen. Present → the certified spec,
+ * shape-proved the same way the row's own completeness CHECK is — a half-spec or a
+ * spec outside its shapes is a defect this reader refuses to launder into a price.
+ */
+export function speechSpecOfReservation(
+  row: ReservationRowSpeechSpecFields,
+): ReservationSpeechSpec | null {
+  const { specInputCharacters: chars, specDurationCapSeconds: cap } = row;
+  if (
+    chars === null &&
+    row.specVoiceTier === null &&
+    row.specPerInputCharacterUsd === null &&
+    row.specPerOutputSecondUsd === null &&
+    cap === null
+  ) {
+    return null;
+  }
+  if (
+    chars === null ||
+    row.specPerInputCharacterUsd === null ||
+    row.specPerOutputSecondUsd === null ||
+    cap === null
+  ) {
+    throw new TypeError(
+      "speechSpecOfReservation: the reservation row carries a half speech spec; the table's completeness CHECK refuses to write such rows.",
+    );
+  }
+  if (
+    !Number.isSafeInteger(chars) ||
+    chars < 0 ||
+    !Number.isSafeInteger(cap) ||
+    cap < 1 ||
+    !/^\d+(\.\d+)?$/.test(row.specPerInputCharacterUsd) ||
+    !/^\d+(\.\d+)?$/.test(row.specPerOutputSecondUsd)
+  ) {
+    throw new TypeError(
+      "speechSpecOfReservation: the reservation row carries a speech spec outside its shapes.",
+    );
+  }
+  return {
+    inputCharacters: chars,
+    voiceTier: row.specVoiceTier,
+    durationCapSeconds: cap,
+    perInputCharacterUsd: row.specPerInputCharacterUsd,
+    perOutputSecondUsd: row.specPerOutputSecondUsd,
+  };
+}
+
+/**
  * Read the lock off a reservation row. All five fields absent → null (a pre-06.5 reservation,
  * or a hold written by a caller outside the credit protocol). All five present → the locked
  * basis, with the cell's capability re-proved against the closed vocabulary and the versions

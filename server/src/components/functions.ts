@@ -49,6 +49,9 @@ function bounded(
   return Math.min(max, Math.max(min, parsed));
 }
 
+/** The chart's Top-N: how many Bots the botActivity answer carries. */
+const ACTIVITY_TOP_BOTS = 12;
+
 export const DATA_FUNCTIONS: DataFunction[] = [
   {
     name: "botActivity",
@@ -67,7 +70,7 @@ export const DATA_FUNCTIONS: DataFunction[] = [
               and created_at > now() - make_interval(days => ${days})
             group by 1
             order by actions desc
-            limit 12`,
+            limit ${ACTIVITY_TOP_BOTS}`,
       );
       return { days, rows: [...rows] };
     },
@@ -94,7 +97,8 @@ export const DATA_FUNCTIONS: DataFunction[] = [
               'computer.action_refused',
               'component.refused',
               'component.function_refused',
-              'bot.declined'
+              'bot.declined',
+              'code.run_refused'
             )
             order by created_at desc
             limit ${limit}`,

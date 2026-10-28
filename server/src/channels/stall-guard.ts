@@ -281,7 +281,9 @@ export function createStallGuard(options: StallGuardOptions): StallGuard {
         cancelUpstream: () => {
           void reader.cancel().catch(() => undefined);
         },
-        sse: response.headers.get("content-type") !== PROTOBUF_CONTENT_TYPE,
+        sse:
+        response.headers.get("content-type")?.toLowerCase() !==
+        PROTOBUF_CONTENT_TYPE,
         requestBody:
           typeof requestInit.body === "string" ? requestInit.body : null,
         finished: false,
@@ -331,6 +333,10 @@ export function createStallGuard(options: StallGuardOptions): StallGuard {
       }
       if (release(id)) await writer.close().catch(() => undefined);
     } catch (error) {
+      // The downstream side is gone (a write into a cancelled relay throws). Cancel the
+      // upstream read too: cancelUpstream only fires on the give-up path, so without this a
+      // Bot that has stopped speaking keeps its socket held until the Bot times out on its own.
+      void reader.cancel().catch(() => undefined);
       if (release(id)) await writer.abort(error).catch(() => undefined);
     }
   }

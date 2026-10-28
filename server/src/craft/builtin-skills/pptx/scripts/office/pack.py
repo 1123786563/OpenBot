@@ -40,14 +40,15 @@ def pack(
 
     if validate and original_file:
         original_path = Path(original_file)
-        if original_path.exists():
-            success, output = _run_validation(
-                input_dir, original_path, suffix, infer_author_func
-            )
-            if output:
-                print(output)
-            if not success:
-                return None, f"Error: Validation failed for {input_dir}"
+        if not original_path.is_file():
+            return None, f"Error: Original file {original_path} does not exist or is not a file"
+        success, output = _run_validation(
+            input_dir, original_path, suffix, infer_author_func
+        )
+        if output:
+            print(output)
+        if not success:
+            return None, f"Error: Validation failed for {input_dir}"
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_content_dir = Path(temp_dir) / "content"
@@ -55,13 +56,23 @@ def pack(
 
         for pattern in ["*.xml", "*.rels"]:
             for xml_file in temp_content_dir.rglob(pattern):
-                _condense_xml(xml_file)
+                try:
+                    _condense_xml(xml_file)
+                except Exception as error:
+                    return None, f"Error: Failed to process {xml_file}: {error}"
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in temp_content_dir.rglob("*"):
-                if f.is_file():
-                    zf.write(f, f.relative_to(temp_content_dir))
+            files = sorted(f for f in temp_content_dir.rglob("*") if f.is_file())
+            # Deterministic entry order, with the package manifest first: rglob's
+            # order is filesystem-dependent and some OPC readers expect
+            # [Content_Types].xml before anything it describes.
+            files.sort(
+                key=lambda f: f.relative_to(temp_content_dir).as_posix()
+                != "[Content_Types].xml"
+            )
+            for f in files:
+                zf.write(f, f.relative_to(temp_content_dir))
 
     return None, f"Successfully packed {input_dir} to {output_file}"
 
@@ -111,7 +122,7 @@ def _condense_xml(xml_file: Path) -> None:
             dom = defusedxml.minidom.parse(f)
 
         for element in dom.getElementsByTagName("*"):
-            if element.tagName.endswith(":t"):
+            if (element.localName or element.tagName).rsplit(":", 1)[-1] == "t":
                 continue
 
             for child in list(element.childNodes):
@@ -124,8 +135,17 @@ def _condense_xml(xml_file: Path) -> None:
 
         xml_file.write_bytes(dom.toxml(encoding="UTF-8"))
     except Exception as e:
-        print(f"ERROR: Failed to parse {xml_file.name}: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to process {xml_file.name}: {e}", file=sys.stderr)
         raise
+
+
+def _parse_bool(value: str) -> bool:
+    normalized = value.lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
 
 
 if __name__ == "__main__":
@@ -140,7 +160,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--validate",
-        type=lambda x: x.lower() == "true",
+        type=_parse_bool,
         default=True,
         metavar="true|false",
         help="Run validation with auto-repair (default: true)",
@@ -155,5 +175,5 @@ if __name__ == "__main__":
     )
     print(message)
 
-    if "Error" in message:
+    if message.startswith("Error:"):
         sys.exit(1)

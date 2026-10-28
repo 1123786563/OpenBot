@@ -6,7 +6,7 @@ import "./preload";
  * shape; the e2e-compat runner cannot collect app suites in this worktree (its node
  * target lacks the runtime the preload needs), so the file pins the runner that executes.
  */
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
+import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";

@@ -1613,7 +1613,22 @@ export async function runVerify(
       if (firstDetail === undefined) firstDetail = `${threadId}: ${detail}`;
       continue;
     }
-    const expected = fingerprintsOf(outcome.planned);
+    // Apply-time skips are in the row's plan but invisible to this re-plan: the port checks
+    // attachment EXISTENCE, while apply checked AUTHORITY (ATTACHMENT_FORBIDDEN → recorded as
+    // `attachment_unauthorized`). Those messages were deliberately never written, so an
+    // expectation that still counts them can only ever be a row_count_mismatch this run cannot
+    // clear — the permanent "blocked" the retry path was supposed to be able to leave.
+    const appliedSkips = new Set(
+      (entry.plan?.skips ?? [])
+        .filter((skip) => skip.reason === "attachment_unauthorized")
+        .map((skip) => skip.sourceId),
+    );
+    const expected = fingerprintsOf(
+      outcome.planned.filter(
+        (message) =>
+          message.decision === "skip" || !appliedSkips.has(message.sourceId),
+      ),
+    );
     let detail: string | undefined;
     try {
       const rows = await deps.targetReader.readFinalizedRows(

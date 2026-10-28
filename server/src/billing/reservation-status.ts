@@ -259,7 +259,8 @@ function validateStatusRequest(input: unknown): StatusRequestValidation {
   }
   if (
     hasAttemptId &&
-    reservationIdFromAttemptId(raw.attemptId as string) === null
+    (typeof raw.attemptId !== "string" ||
+      reservationIdFromAttemptId(raw.attemptId) === null)
   ) {
     return {
       ok: false,

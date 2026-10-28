@@ -301,11 +301,16 @@ export function parseApprovalContinuation(
   };
 }
 function canonical(value: unknown): string {
+  // Its own word: JSON.stringify folds undefined/NaN into "null" too, so three
+  // distinct payloads ({a:undefined}/{a:null}/NaN) would share one digest.
+  if (value === undefined) return '"undefined"';
   if (value === null || typeof value !== "object")
     return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   return `{${Object.entries(value)
-    .sort(([a], [b]) => a.localeCompare(b))
+    // Code-unit order: localeCompare varies with the host's ICU, and a digest
+    // that shifts between processes breaks consume()'s verification.
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
     .join(",")}}`;
 }

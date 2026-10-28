@@ -37,6 +37,7 @@ import {
   type MarketplaceCatalogEntry,
   type MarketplaceInstallService,
   createMarketplaceInstallService,
+  MARKETPLACE_RECEIPT_KIND,
 } from "../../../src/enterprise/tenancy/marketplace-install";
 import {
   type DataDatabase,
@@ -216,10 +217,14 @@ export async function createMarketplaceFixture(
       ? result
       : ((result as { rows?: unknown[] })?.rows ?? []);
     const first = (rows as Readonly<{ current_user?: unknown }>[])[0];
+    // current_user always answers exactly one row: a miss means the probe
+    // itself broke, and an empty role must not silently pass the RLS proofs.
+    if (typeof first?.current_user !== "string") {
+      throw new Error(`RESTRICTED_ROLE_PROBE_FAILED:${role}`);
+    }
     restricted.push({
       role,
-      currentUser:
-        typeof first?.current_user === "string" ? first.current_user : "",
+      currentUser: first.current_user,
     });
   };
 
@@ -431,7 +436,7 @@ export async function createMarketplaceFixture(
             select id, display_name, revision, status
             from enterprise_resources
             where tenant_id = ${tenantId}
-              and kind = 'marketplace-install'
+              and kind = ${MARKETPLACE_RECEIPT_KIND}
             order by id
           `)) as unknown;
           const list = Array.isArray(rows)
@@ -482,7 +487,15 @@ export async function createMarketplaceFixture(
     };
     return fixture;
   } catch (error) {
-    await dispose(true);
+    // A disposal failure must not replace the setup error that caused it.
+    try {
+      await dispose(true);
+    } catch (disposeError) {
+      throw new AggregateError(
+        [error, disposeError],
+        "Marketplace fixture setup and disposal both failed.",
+      );
+    }
     throw error;
   }
 }

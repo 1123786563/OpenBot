@@ -30,6 +30,9 @@ export function testEnvironment(
     COPILOTKIT_LICENSE_TOKEN: "license-token",
     MANAGED_AGENT_AG_UI_URL: "http://localhost:4200/ag-ui",
     MANAGED_AGENT_TOKEN: "managed-agent-token",
+    // Overrides merge by key: a value replaces the default, but there is no way
+    // to REMOVE a key here. Downstream `optional()` reads "" as absent, so
+    // passing "" is how a consumer is switched to its not-configured branch.
     ...overrides,
   };
 }

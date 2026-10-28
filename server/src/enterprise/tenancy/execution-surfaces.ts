@@ -215,7 +215,10 @@ export function nativeRuntimeExecutionSurface(
       if (
         !invocation ||
         invocation.tenant_id !== target.tenantId ||
-        invocation.workspace_id !== target.workspaceId
+        invocation.workspace_id !== target.workspaceId ||
+        // target 带 runId 时逐字比对（MT049 AC1：信封归属与 target 一致，
+        // 拿别的 run 的信封取消本 run 同样是接线错误）。
+        (target.runId !== undefined && invocation.run_id !== target.runId)
       ) {
         return unavailable(
           `native-runtime invocation ownership mismatch for tenant ${target.tenantId} workspace ${target.workspaceId} bot ${target.botId}`,

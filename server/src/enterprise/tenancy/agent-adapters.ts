@@ -116,8 +116,10 @@ export function issueRuntimeInvocation(input: {
  * 消费一个信封头（native 面收到的 x-openbot-runtime-invocation 值）。
  *
  * 只做形状与归属完整性校验（wire schema）；身份判定是 Go 侧 auth 中间件
- * 经 TS 验证端做的事，不在这里伪造。半归属/被篡改的信封返回 null——
- * 调用方拒绝执行，不修补、不默认。
+ * 经 TS 验证端做的事，不在这里伪造。形状非法/字段残缺的信封返回 null——
+ * 调用方拒绝执行，不修补、不默认。注意：形状合法不等于归属可信，
+ * envelope 本体无签名/MAC、也不校验新鲜度，tenant/workspace/principal
+ * 的真实性完全交由 Go 侧 auth；调用方不得把非 null 结果当已认证凭据。
  */
 export function consumeRuntimeInvocationHeader(
   header: unknown,

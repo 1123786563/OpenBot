@@ -4,6 +4,11 @@ import {
   useRenderActivityMessage,
   useRenderToolCall,
 } from "@copilotkit/react-core/v2";
+import { readConnectPrompt } from "@openbot/shared/connect-prompt";
+import {
+  refusalBody as markerRefusalBody,
+  readConnectPrompt,
+} from "@openbot/shared/connect-prompt";
 import {
   IconAlertTriangle,
   IconBox,
@@ -24,6 +29,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { Streamdown } from "streamdown";
+import { MemoryAnswerBasisSection } from "@/components/memory/answer-basis";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
   Dialog,
@@ -54,17 +60,12 @@ import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { readToolName } from "@/lib/plugins/tool-name";
 import {
-  asText,
   forDisplay,
-  REFUSAL_MARKER,
+  refusalAndAnswer,
   refusalBody,
   toolResultFailed,
 } from "@/lib/plugins/tool-result";
 import { readTeamBotConsent } from "@/lib/team-bots";
-import {
-  readConnectPrompt,
-  refusalBody as markerRefusalBody,
-} from "@openbot/shared/connect-prompt";
 import { cn } from "@/lib/utils";
 import { VOICE_CHAT_ACTIVITY, type VoiceChatEntry } from "@/lib/voice/archive";
 import {
@@ -1400,8 +1401,7 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * wording is a policy message an administrator can rewrite and the first rephrasing would break
    * any guess made here. See REFUSAL_MARKER in server/src/plugins/tools.ts.
    */
-  const answer = result === undefined ? undefined : asText(result);
-  const refusal = markerRefusalBody(answer, REFUSAL_MARKER);
+  const { refusal, answer } = refusalAndAnswer(result);
   const refused = refusal !== null;
   const failed = !refused && toolResultFailed(result);
   /*
@@ -1409,8 +1409,10 @@ function ServerToolLine({ name, result }: { name: string; result?: string }) {
    * label and then "Refused." again in the first two words of the body, which is the same fact three
    * times over by the end of the sentence. Stripped here rather than on the server, because the
    * server's copy is what the model is told and "Refused." in front of a reason is right for it —
-   * and the strip is `markerRefusalBody`, the connect codec's; the fold and the card read the same
-   * envelope off through `refusalBody` in `tool-result`, which decodes before it matches.
+   * and the strip is the one sequence in `tool-result` (`refusalBody`, read through
+   * `refusalAndAnswer` here so the envelope decodes once), the same one the fold, the card, and
+   * `connectPromptOf` below all read; the connect codec's own copy answers only its marker wire
+   * now, and no two readers can drift apart.
    */
   const body = refusal ?? answer;
   // A Team Bot asking to use this person's own account draws its consent card, not the sentence.
@@ -1790,6 +1792,19 @@ export function ChatTranscript({
                     attachments={item.attachments}
                     delay={delays.delayFor(item.id, index, items.length)}
                   />
+                </MessageScrollerItem>
+              ) : item.kind === "answer-basis" ? (
+                <MessageScrollerItem key={item.id} messageId={item.id}>
+                  <Arriving
+                    delay={delays.delayFor(item.id, index, items.length)}
+                  >
+                    {/*
+                     * The answer's own basis (FIX-W14, #387): one control under the turn's
+                     * final answer, expanding exactly the ids that answer carried — the
+                     * person can check, correct or forget from the answer itself.
+                     */}
+                    <MemoryAnswerBasisSection basis={item.basis} />
+                  </Arriving>
                 </MessageScrollerItem>
               ) : (
                 // Every member of the union is handled above. `assertNever` types `item` as

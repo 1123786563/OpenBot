@@ -97,7 +97,19 @@ export function accountMethods(context: ClientContext) {
 
     async accountName({ account, toolkit }) {
       const rows = await accountsFor(account.vendorUserId, toolkit, CONNECTED, {
-        enough: (found) => found.length > 0,
+        // Enough means "a name was found", not "a row was found": stopping at
+        // the first page's first row would answer null for a connection whose
+        // name lives on a later page.
+        enough: (found) =>
+          found.some((row) => {
+            const data = row.data;
+            return (
+              data !== null &&
+              typeof data === "object" &&
+              "displayName" in data &&
+              textOf((data as { displayName?: unknown }).displayName) !== null
+            );
+          }),
       });
       /*
        * BY NAME, AND NOTHING ELSE. `data` is the vendor's whole connection blob — access, refresh

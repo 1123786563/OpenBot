@@ -1,14 +1,16 @@
-import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { inflateRawSync } from "node:zlib";
 import type { MiddlewareHandler } from "hono";
+import { describe, expect, test } from "../../tests/support/e2e-compat";
 import type { AppVariables } from "../src/auth/guards";
 import { createArtifactRoutes } from "../src/craft/artifact-routes";
 import { loadCraftConfig } from "../src/craft/config";
+import { SandboxExecutionScopeUnavailableError } from "../src/craft/errors";
 import { createFileRoutes } from "../src/craft/file-routes";
 import type {
   AgentSandboxFileApi,
   SandboxGateway,
 } from "../src/craft/sandbox-gateway";
+import { createSandboxGateway } from "../src/craft/sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 import {
   collisionFreeName,
@@ -312,6 +314,30 @@ describe("upload endpoint", () => {
     expect(response.status).toBe(429);
     expect(((await response.json()) as { error: string }).error).toBe(
       "Maximum number of files (3) reached",
+    );
+  });
+
+  test("a sandbox 413 on the write answers the transfer-ceiling 413 — the message needle (OCR r4 pin)", async () => {
+    // The upload catch dispatches on the gateway's message convention
+    // (/answered 413/), not an error class — the exact contract SandboxHttpError
+    // was shaped to keep. This pin holds both sides to the text the real
+    // request() throw produces, query string included.
+    const { api } = memoryFileApi();
+    api.writeFileBytes = async (path: string) => {
+      throw new Error(
+        `Sandbox /file?path=${encodeURIComponent(path)} answered 413.`,
+      );
+    };
+    const response = await routes(api).request(
+      `/sessions/${SESSION_ID}/upload`,
+      {
+        method: "POST",
+        body: multipart("big.bin", new Uint8Array([1, 2, 3])),
+      },
+    );
+    expect(response.status).toBe(413);
+    expect(((await response.json()) as { error: string }).error).toBe(
+      "The file exceeds the sandbox's transfer ceiling (SANDBOX_MAX_UPLOAD_BYTES).",
     );
   });
 
@@ -676,5 +702,262 @@ describe("artifact download reads the multi-segment path (wildcard regression)",
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("# the report");
     expect(response.headers.get("content-disposition")).toMatch(/report\.md/);
+  });
+});
+
+// ── #618 R1-F2: a scopeless deployment answers its own 503, not a mask ────────
+
+/**
+ * A REAL gateway on a deployment whose scope pair is missing (only the tenant half
+ * configured — a half scope is no scope), so every sandbox verb refuses with the
+ * displayable sentence before any request leaves. fetchImpl is a recorder: the
+ * fail-closed contract says it must stay untouched.
+ */
+const halfScopedConfig = loadCraftConfig({
+  OPENBOT_CRAFT_MAX_UPLOAD_FILE_SIZE_MB: "1",
+  OPENBOT_CRAFT_MAX_UPLOAD_FILES_PER_SESSION: "3",
+  OPENBOT_CRAFT_MAX_TOTAL_UPLOAD_SIZE_MB: "1",
+  OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID: "acme-co",
+});
+
+function unscopedGateway() {
+  const calls: { method: string; url: string }[] = [];
+  const fetchImpl = (async (input: unknown, init?: RequestInit) => {
+    const url = new URL(String(input));
+    calls.push({ method: init?.method ?? "GET", url: url.pathname });
+    return new Response(null, { status: 200 });
+  }) as typeof fetch;
+  return {
+    calls,
+    gateway: createSandboxGateway({
+      config: halfScopedConfig,
+      connectionFor: () => ({
+        botId: "craft",
+        baseUrl: "http://gw.test",
+        token: "sandbox-secret",
+      }),
+      fetchImpl,
+    }),
+  };
+}
+
+describe("#618 R1-F2: the fail-closed refusal answers as its own 503", () => {
+  const REFUSAL = new SandboxExecutionScopeUnavailableError().message;
+
+  test("upload surfaces the fixed sentence, not the generic 502, with zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await createFileRoutes(fakeRequireUser(), {
+      config: halfScopedConfig,
+      store: fakeStore(),
+      gateway,
+      botIdFor: async () => "craft",
+    }).request(`/sessions/${SESSION_ID}/upload`, {
+      method: "POST",
+      body: multipart("report.txt", new Uint8Array([1, 2, 3])),
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    // The configured half must never echo back into an answer people read.
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]); // fail-closed: no request ever left the process
+  });
+
+  test("download-directory surfaces the same 503 through the listing wrap, zero outbound calls", async () => {
+    // The walk folds the refused root listing into a WorkspaceListingError — the
+    // endpoint must not wear onyx's "Directory not found" 404 mask for it either.
+    const { gateway, calls } = unscopedGateway();
+    const response = await createFileRoutes(fakeRequireUser(), {
+      config: halfScopedConfig,
+      store: fakeStore(),
+      gateway,
+      botIdFor: async () => "craft",
+    }).request(`/sessions/${SESSION_ID}/download-directory/outputs`);
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
+
+  test("delete surfaces the same 503 (the r2-disclosed mask), zero outbound calls", async () => {
+    // r2 disclosed this catch as the same masking shape — the refusal used to wear
+    // the generic "could not be deleted" 502. deletePath meets the refusal directly
+    // (it is not listing-wrapped), so the recognizer's instanceof arm settles it.
+    const { gateway, calls } = unscopedGateway();
+    const response = await createFileRoutes(fakeRequireUser(), {
+      config: halfScopedConfig,
+      store: fakeStore(),
+      gateway,
+      botIdFor: async () => "craft",
+    }).request(`/sessions/${SESSION_ID}/files/attachments/report.txt`, {
+      method: "DELETE",
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
+
+  test("download-directory answers 503 by the wrap's CAUSE when the text lost the sentence (OCR r2)", async () => {
+    // OCR r2: an error-enhancing layer (or a future wrap-template tweak) can rewrite
+    // the message until the fixed sentence is gone from the wrap's TEXT — recognition
+    // must ride the structural cause chain, or this face falls back into the 404
+    // "Directory not found" mask the refusal must never wear.
+    const rewritten = new SandboxExecutionScopeUnavailableError();
+    rewritten.message = "rewritten by an error-reporting layer";
+    const { api } = memoryFileApi();
+    const listingRefuses: AgentSandboxFileApi = {
+      ...api,
+      async listFiles() {
+        throw rewritten;
+      },
+    };
+    const response = await routes(listingRefuses).request(
+      `/sessions/${SESSION_ID}/download-directory/outputs`,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+  });
+});
+
+describe("#656 D2: the guard shape keeps the 503 body fixed on the direct arm too", () => {
+  test("a directly-thrown refusal with a rewritten message still answers the fixed sentence", async () => {
+    // OCRFX5-F2's pin, landed: the recognizer hands the ORIGINAL instance back
+    // (OCR r4) and an enhancer may have rewritten that instance's message on
+    // the way — the r2 wrap case is pinned, but no face pinned the DIRECT
+    // throw of a rewritten instance. The guard answers the fixed sentence by
+    // construction, so this pins exactly that: delete meets the refusal
+    // directly (no listing wrap), the message is lost, the 503 body is not.
+    const rewritten = new SandboxExecutionScopeUnavailableError();
+    rewritten.message = "rewritten by an error-reporting layer";
+    const { api } = memoryFileApi();
+    const refusingDelete: AgentSandboxFileApi = {
+      ...api,
+      async deletePath() {
+        throw rewritten;
+      },
+    };
+    const response = await routes(refusingDelete).request(
+      `/sessions/${SESSION_ID}/files/attachments/report.txt`,
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(
+      new SandboxExecutionScopeUnavailableError().message,
+    );
+    expect(body.error).not.toContain("rewritten");
+  });
+});
+
+// ── #657: the three 404 read faces answer the refusal as their own 503 ───────
+
+/**
+ * #657 closes the read faces' mask family: download/export/preview folded a
+ * missing scope into "not found", so an admin's most common triage entry point
+ * could not see the missing pair. The gallery and the Files tab keep their
+ * deliberate empty degrade (the ticket verdict: a transient sandbox hiccup
+ * must not 5xx the shell) — pinned below as-is, not changed.
+ */
+const artifactRoutes = (gateway: SandboxGateway) =>
+  createArtifactRoutes(fakeRequireUser(), {
+    config,
+    store: fakeStore(),
+    gateway,
+    botIdFor: async () => "craft",
+  });
+
+describe("#657: the fail-closed refusal outranks the read faces' 404 mask", () => {
+  const REFUSAL = new SandboxExecutionScopeUnavailableError().message;
+
+  test("artifact download (readFileBytes) surfaces the fixed sentence, not 'Artifact not found', zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/artifacts/outputs/report.md`,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    // The configured half must never echo back into an answer people read.
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]); // fail-closed: no request ever left the process
+  });
+
+  test("export-docx (readFile) surfaces the same 503, zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/export-docx/outputs/report.md`,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
+
+  test("pptx-preview (readFile) surfaces the same 503, zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/pptx-preview/outputs/report.md`,
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe(REFUSAL);
+    expect(body.error).not.toContain("acme-co");
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("#657: real absence keeps the honest 404 (regression pins)", () => {
+  test("artifact download of an absent file stays 'Artifact not found'", async () => {
+    const { api } = memoryFileApi();
+    const response = await artifactRoutes(gatewayWith(api)).request(
+      `/sessions/${SESSION_ID}/artifacts/outputs/absent.md`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Artifact not found" });
+  });
+
+  test("export-docx of an absent markdown stays 'File not found'", async () => {
+    const { api } = memoryFileApi();
+    const response = await artifactRoutes(gatewayWith(api)).request(
+      `/sessions/${SESSION_ID}/export-docx/outputs/absent.md`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "File not found" });
+  });
+
+  test("pptx-preview of an absent markdown stays 'File not found'", async () => {
+    const { api } = memoryFileApi();
+    const response = await artifactRoutes(gatewayWith(api)).request(
+      `/sessions/${SESSION_ID}/pptx-preview/outputs/absent.md`,
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "File not found" });
+  });
+});
+
+describe("#657: the gallery and the Files tab keep their empty degrade (verdict pins)", () => {
+  test("the gallery answers an empty 200 on a scopeless deployment, zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/artifacts`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ artifacts: [] });
+    expect(calls).toEqual([]); // the degrade is fail-closed too: no dial was made
+  });
+
+  test("the Files tab answers an empty 200 on a scopeless deployment, zero outbound calls", async () => {
+    const { gateway, calls } = unscopedGateway();
+    const response = await artifactRoutes(gateway).request(
+      `/sessions/${SESSION_ID}/files`,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ entries: [] });
+    expect(calls).toEqual([]);
   });
 });

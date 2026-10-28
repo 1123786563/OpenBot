@@ -314,8 +314,21 @@ const driveQuery = (query: string) => {
  * `cut` is true when reading stopped before the file ended (see {@link readOpening}), so the file's
  * full length is not known and is not claimed.
  */
-function asResult(text: string, cut = false): McpCallResult {
-  const joined = text.trim();
+/**
+ * A 200 body that is not JSON (a gateway's HTML error page, an empty body) is
+ * a vendor failure to answer, not a crash — the same class of refusal a
+ * non-2xx status is, so it comes back as a failure message instead of an
+ * exception escaping the tool call.
+ */
+async function jsonBody<T>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+function asResult(text: string, cut = false): McpCallResult {  const joined = text.trim();
   if (joined === "") {
     return {
       text: "The tool returned no content. Nothing was found, so there is nothing here to answer from.",
@@ -404,7 +417,12 @@ export async function callTool(
     });
     if (!result.ok) return failure(result.message);
 
-    const body = (await result.response.json()) as { files?: DriveFile[] };
+    const body = await jsonBody<{ files?: DriveFile[] }>(result.response);
+    if (!body) {
+      return failure(
+        "Google Drive answered with a body this connector could not read. Try again.",
+      );
+    }
     const files = body.files ?? [];
     return asResult(files.map(fileLine).join("\n"));
   }
@@ -420,7 +438,12 @@ export async function callTool(
     );
     if (!result.ok) return failure(result.message);
 
-    const file = (await result.response.json()) as DriveFile;
+    const file = await jsonBody<DriveFile>(result.response);
+    if (!file) {
+      return failure(
+        "Google Drive answered with a body this connector could not read. Try again.",
+      );
+    }
     const owner = file.owners?.[0]?.emailAddress;
     return asResult(
       [
@@ -451,7 +474,13 @@ export async function callTool(
       },
     );
     if (!metadata.ok) return failure(metadata.message);
-    let file = (await metadata.response.json()) as DriveFile;
+    const read = await jsonBody<DriveFile>(metadata.response);
+    if (!read) {
+      return failure(
+        "Google Drive answered with a body this connector could not read. Try again.",
+      );
+    }
+    let file = read;
     let readId = fileId;
 
     /*
@@ -474,7 +503,13 @@ export async function callTool(
         { ...SHARED_DRIVES, fields: "id,name,mimeType" },
       );
       if (!target.ok) return failure(target.message);
-      file = (await target.response.json()) as DriveFile;
+      const targetFile = await jsonBody<DriveFile>(target.response);
+      if (!targetFile) {
+        return failure(
+          "Google Drive answered with a body this connector could not read. Try again.",
+        );
+      }
+      file = targetFile;
       readId = targetId;
     }
 

@@ -183,6 +183,20 @@ describe("#411: the TLS renewal-status gate in admission (host form)", () => {
     }
   });
 
+  test("skipped is a recorded band, not malformed data: it closes with its own sentence", () => {
+    // The sidecar writes health=skipped when the certificate pipeline is configured off;
+    // the gate must not file it under "cannot be judged".
+    const { origin, statusFile } = hostOriginWithStatus();
+    writeFileSync(statusFile, statusRecord("skipped"));
+    const gate = origin.admission();
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) {
+      expect(gate.reason).toContain("skipped");
+      expect(gate.reason).toContain("no certificate pipeline");
+      expect(gate.reason).not.toContain("cannot be judged");
+    }
+  });
+
   test("an ok band with the certificate already expired closes (daysLeft is the fact)", () => {
     const { origin, statusFile } = hostOriginWithStatus();
     writeFileSync(statusFile, statusRecord("ok", { daysLeft: 0 }));
@@ -1045,7 +1059,9 @@ describe("preview origin admission", () => {
         );
       }
       expect(() => broken.originFor(SESSION_ID)).toThrow();
-      expect(broken.handlesRequest(new Request("https://x.*.example.com/"))).toBe(false);
+      expect(
+        broken.handlesRequest(new Request("https://x.*.example.com/")),
+      ).toBe(false);
     }
   });
 
@@ -2080,13 +2096,16 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
     const origin = originWith({}, { PORT: "3001" }, undefined, servePreview);
     const address = origin.originFor(SESSION_ID);
     const label = new URL(address).pathname.replace(/^\//, "");
+    // #427: every mint is a fresh random token, so the cookie the request
+    // carries and the expectation must name the SAME value — computed once.
+    const presentedPass = `${PREVIEW_SESSION_COOKIE}=${passFor(SESSION_ID)}`;
 
     const response = await origin.handlePreviewRequest(
       SESSION_ID,
       new Request(`${address}/api/probe?x=1&y=2`, {
         method: "POST",
         headers: {
-          cookie: `${PREVIEW_SESSION_COOKIE}=${passFor(SESSION_ID)}; other=irrelevant`,
+          cookie: `${presentedPass}; other=irrelevant`,
           "content-type": "application/json",
         },
         body: "{}",
@@ -2101,7 +2120,7 @@ describe("the preview origin's proxied traffic (cookie gate + servePreview seam)
         appPath: `/${label}/api/probe`,
         query: "?x=1&y=2",
         method: "POST",
-        cookie: `${passCookie(SESSION_ID)}; other=irrelevant`,
+        cookie: `${presentedPass}; other=irrelevant`,
       },
     ]);
   });
@@ -2654,6 +2673,35 @@ describe("#358 repair: the gate accepts only a deployment-signed pass", () => {
     expect(origin.verifyPass(SESSION_ID, shadowOnly)).toBeNull();
   });
 
+  test("#427: revokePass retires exactly one token — the session, its siblings and a re-mint stay open", () => {
+    const origin = originWith({ previewOriginTemplate: TEMPLATE });
+    const address = origin.originFor(SESSION_ID);
+    const reqWith = (value: string) =>
+      new Request(`${address}/`, {
+        headers: { cookie: `${PREVIEW_SESSION_COOKIE}=${value}` },
+      });
+    const retireMe = passFor(SESSION_ID);
+    const keepMe = passFor(SESSION_ID);
+
+    expect(origin.verifyPass(SESSION_ID, reqWith(retireMe))).toEqual({
+      userId: USER_ID,
+    });
+    // The seam a server-side caller drives without holding the secret:
+    expect(origin.revokePass(SESSION_ID, retireMe)).toBe(true);
+    expect(origin.verifyPass(SESSION_ID, reqWith(retireMe))).toBeNull();
+    // AC7's shape: the SESSION and its other tokens are untouched —
+    expect(origin.verifyPass(SESSION_ID, reqWith(keepMe))).toEqual({
+      userId: USER_ID,
+    });
+    // a re-mint opens again, and the guard refuses to retire another
+    // session's token through a wrong id.
+    expect(origin.revokePass(OTHER_SESSION_ID, keepMe)).toBe(false);
+    const replanted = passFor(SESSION_ID);
+    expect(origin.verifyPass(SESSION_ID, reqWith(replanted))).toEqual({
+      userId: USER_ID,
+    });
+  });
+
   test("Review Focus 4: two dev /<label> passes coexist — each serves its own session, and cross-session passes are refused", async () => {
     const { store } = {
       store: {
@@ -2751,8 +2799,12 @@ describe("#418 Option B: single-replica contract — registry empty-state observ
 
 describe("#418 Option B: singleReplicaStartupNotice — the startup line the boot log prints", () => {
   const logged = () => {
-    const info = spyOn(getLogger("server"), "info").mockImplementation(() => {});
-    const warn = spyOn(getLogger("server"), "warn").mockImplementation(() => {});
+    const info = spyOn(getLogger("server"), "info").mockImplementation(
+      () => {},
+    );
+    const warn = spyOn(getLogger("server"), "warn").mockImplementation(
+      () => {},
+    );
     return { info, warn };
   };
 
@@ -2804,5 +2856,39 @@ describe("#418 Option B: singleReplicaStartupNotice — the startup line the boo
     expect(warn).not.toHaveBeenCalled();
     info.mockRestore();
     warn.mockRestore();
+  });
+
+  test("#647: the notice enumerates the pass index beside the label registry and ticket table — and names its own failure shape", () => {
+    // The contract covers every in-process registry/index a restart clears.
+    // Naming only the two it shipped with left the pass index — the family
+    // #427 added — unattributed, and its failure shape is the least obvious
+    // of the three: the index clears, so a pass that already redeemed and
+    // whose MAC still verifies misses the lookup and 401s AFTER a
+    // successful redemption, which reads as an auth bug rather than as a
+    // lost index. These pins hold the enumeration and that sentence in the
+    // line a person reads at boot.
+    for (const redisUrl of [undefined, "redis://redis:6379"]) {
+      const { info, warn } = logged();
+      singleReplicaStartupNotice({
+        previewOriginEnabled: true,
+        template: TEMPLATE,
+        redisUrl,
+        registryStats: () => ({ registeredLabels: 0 }),
+      });
+      const calls = redisUrl ? warn.mock.calls : info.mock.calls;
+      // pino's call shape is (fields, message) — the text is the 2nd arg.
+      const [, message] = calls[0] ?? [];
+      const text = String(message);
+      // The enumeration belongs on BOTH arms: which families are in-process
+      // is the same fact whether or not a multi-replica signal is present.
+      expect(text).toContain("pass index");
+      expect(text).toContain("label registry");
+      expect(text).toContain("ticket table");
+      // The 401 failure shape is spelled out on the escalated arm, where an
+      // operator is reading the line because the deployment is half-migrated.
+      if (redisUrl) expect(text).toContain("401");
+      info.mockRestore();
+      warn.mockRestore();
+    }
   });
 });

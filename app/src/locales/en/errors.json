@@ -143,7 +143,8 @@
     "update": "Could not update memory",
     "forget": "Could not forget this memory",
     "addSource": "Could not add this source",
-    "changeSource": "Could not change this source"
+    "changeSource": "Could not change this source",
+    "changePause": "Could not change the pause switches"
   },
   "package": {
     "loadActive": "Could not load the active package"
@@ -266,5 +267,20 @@
   "companyAdmin": {
     "saveCompanyProfile": "Couldn't save the company profile.",
     "changeTeamMembers": "Couldn't change the team's members."
+  },
+  "hindsight": {
+    "loadCandidates": "Could not load judgments",
+    "loadEvidence": "Could not load the basis",
+    "loadCleanup": "Could not load the cleanup status",
+    "loadAdopted": "Could not load your adopted judgments",
+    "loadMemories": "Could not load your memories",
+    "confirm": "Could not confirm this judgment",
+    "edit": "Could not save this judgment",
+    "reject": "Could not reject this judgment",
+    "forget": "Could not forget this memory",
+    "correct": "Could not save this correction",
+    "verify": "Could not check the cleanup status",
+    "sensitiveRequired": "Medical, financial and customer information is remembered only when you ask for it yourself and confirm a second time.",
+    "credential": "Credentials are never remembered. OpenBot refuses passwords, tokens, passphrases and keys even when asked to remember them."
   }
 }

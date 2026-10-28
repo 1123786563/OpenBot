@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
 import { loadConfig } from "../src/config";
 import {
@@ -98,13 +98,42 @@ function readJsonFile(path: string, what: string): unknown {
 }
 
 const config = loadConfig(process.env);
-const runId = args.runId ?? `cutover-${randomUUID()}`;
-// The switch and the switched rollback work from the persisted run state,
-// not from a fresh source scan; every other command scans the source.
-const needsSource = !(
-  args.command === "cutover" ||
-  (args.command === "rollback" && args.stateDir !== undefined)
-);
+/*
+ * A rollback addresses the persisted run state by id, and the state file is
+ * named after that id. Without --run-id a random id misses the state, routes
+ * a switched run through the staging path, and skips the switched rollback's
+ * authorization gate. Adopt the state directory's single run id instead.
+ */
+function rollbackRunIdFrom(stateDir: string): string {
+  let names: string[];
+  try {
+    names = readdirSync(stateDir);
+  } catch {
+    names = [];
+  }
+  const candidates = names
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => name.slice(0, -".json".length))
+    .filter((name) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name));
+  if (candidates.length === 1) return candidates[0];
+  console.error(
+    candidates.length === 0
+      ? "CUTOVER_RUN_ID_REQUIRED: rollback needs --run-id (no run state in the state dir)."
+      : `CUTOVER_RUN_ID_AMBIGUOUS: the state dir holds ${candidates.length} run states; pass --run-id.`,
+  );
+  process.exit(2);
+}
+
+const runId =
+  args.runId ??
+  (args.command === "rollback" && args.stateDir !== undefined
+    ? rollbackRunIdFrom(args.stateDir)
+    : `cutover-${randomUUID()}`);
+// The switch works from the persisted run state, not from a fresh source scan.
+// A rollback may go either way — a switched/maintenance state rolls back from
+// the run state, a staging state needs the source — so it builds the source up
+// front; requireSource() rejects only the staging path that has none.
+const needsSource = args.command !== "cutover";
 const scan: ScanDescriptor | null = args.thread
   ? { mode: "explicit-thread", threadId: args.thread }
   : args.user && args.agent

@@ -50,10 +50,15 @@ webapp-info 面可以给出原因）——这是预期形状，不是退化。
    Max-Age/Expires——浏览器关闭即失效）→ 302 到同地址的干净路径（票据从 URL 消失）。
 4. 此后该 host 上的一切请求（应用文档、API 调用、Server Actions）凭该 cookie 放行，
    代理到该会话沙箱内的 dev server（附着模型：只探测、不重复拉起）。
-   cookie 必须是**本部署用部署密钥为当前会话签发的** preview pass（`v1.<userId>.<MAC>`，
-   #358 修复）：HTTP 与 HMR 共用同一 verifyPass 签名校验，签出的 userId 再经 store 按
-   (sessionId, userId) 复核会话行——会话被删除或转移后，旧 pass 立即失效（401/404）。
-   A 会话的通行证打不开 B 会话的 host；明文 session id 不是通行证，一律 401。
+   cookie 必须是**本部署为当前会话签发的** preview pass（`v1.<随机 token>.<MAC>`，
+   #358 修复 + #427 轮换）：值是每次兑换新鲜铸出的 128 位随机 token，MAC 只覆盖版本与
+   token（不覆盖 sessionId，cookie 里也不出现 session id）；token → (sessionId, userId)
+   的绑定在**服务端索引**（`server/src/craft/preview-pass.ts` 的 `PreviewPassIndex`）。
+   HTTP 与 HMR 共用同一 `verifyPass` 判定：MAC 不过 ⇒ 401；MAC 过但索引查不到 ⇒ 也是
+   401（没有「查不到索引就放行」的路径）；索引命中的 sessionId 还必须等于本 host 解析
+   出的会话。签出的 userId 再经 store 按 (sessionId, userId) 复核会话行——会话被删除或
+   转移后，旧 pass 立即失效（401/404）。A 会话的通行证打不开 B 会话的 host；明文
+   session id 不是通行证，一律 401。
 
 票据值不出现在任何日志、错误响应或重定向后的 URL（唯一合法出现位置是签发响应体）。
 签发响应与兑换 302 均带 `Cache-Control: no-store` + `Referrer-Policy: no-referrer`（#406）。
@@ -68,8 +73,13 @@ webapp-info 面可以给出原因）——这是预期形状，不是退化。
 修复后 cookie 值是部署密钥签发的 pass。**部署新版本后：所有旧 preview cookie（明文 id）
 立即被拒（401），不存在兼容旁路**；受影响用户从主站重新进入预览（面板的 webapp-info 轮
 询或重新换票都会走完整兑换，种下新 pass）即恢复。不需要迁移旧会话的 webapp 代际（D10 不
-受影响），不需要任何数据迁移；pass 无状态、不过期（会话级 cookie，浏览器关闭即消失），
-只有“签名密钥 ≠ 当前部署密钥”或“会话行不再属于签发 userId”两种失效方式。
+受影响），不需要任何数据迁移；pass 不过期（会话级 cookie，浏览器关闭即消失），
+只有“签名密钥 ≠ 当前部署密钥”、**“token 不在本进程索引里（重启 / 已作废）”**或“会话行
+不再属于签发 userId”三种失效方式。
+
+#427 再次换了内核（不变外层）：值从确定性签名变为**随机 token + 服务端索引**。上线后，
+旧版 stateless pass 的 token 槽位是一个 userId 的 base64url（长度不是 16 字节），在严格
+解析第一步即被拒——同样是 401 后经主站重新换票恢复，没有兼容分支、没有数据迁移。
 
 ## 已知约束
 
@@ -94,14 +104,15 @@ upgrade 全部 401，且 preview-tab 在 entry 存活期内不重换票，**无�
 
 服务端判定（2026-10-18 按代码更正，#419）：`verifyPassWith`
 （`server/src/craft/preview-origin.ts:104`）**遍历 Cookie 头里全部同名候选，任一验签
-通过即放行**（fix-ocr20 #3）。早期写法是「取第一个同名值」并断言父路径 `Path=/` 的
+通过即放行**（fix-ocr20 #3；#427 起「验签通过」包含索引命中，阴影里的伪造值仍然过不了
+MAC 也过不了索引）。早期写法是「取第一个同名值」并断言父路径 `Path=/` 的
 同名阴影恒排最后（fix-ocr5）——该断言不成立：RFC 6265 §5.4 按 Path 长度**降序**发送，
 而 HttpOnly 只保护通行证自己那条 name+domain+path 槽位，页面 JS 在更深路径
 （如 `Path=/<labelB>/x`）种同名候选完全合法，于是阴影排在最前，只判首值即被遮住，一次
 种阴影就能把会话 B 的整个预览打成 401（跨会话 DoS）。遍历全部候选后，阴影遮不住罐子里
 真实存在的通行证；罐子里没有通过验签的候选仍然拒绝。旧函数名
 `holdsPreviewSessionPass` 及其「cookie 值 == sessionId」的比较已随 #358 修复删除，
-通行证必须是本部署用部署密钥签发的 pass。
+通行证必须是本部署为该会话签发且索引仍在的 pass（#427：随机 token + 服务端索引）。
 
 HMR upgrade 路径 `/<label>/_next/...` 也在 Path 覆盖内。生产 host 形态一个会话一个
 主机，无共享，维持 `Path=/`。
@@ -123,6 +134,43 @@ fix-ocr13）：探针必须同源——跨源 fetch 无 CORS 头时 status 不�
 30 秒票据流买一张 schema 迁移不值——恢复代价是一次点击。多副本部署或运维反馈
 "重启丢预览"成为真实痛点时再迁移（见 preview-origin.ts 头注释）。
 
+### 通行证索引与单 token 作废（#427）
+
+#427 把通行证的内核改为**每次兑换新鲜铸出的 128 位随机 token**，并新增
+token → (sessionId, userId) 的服务端索引（`createPreviewPassIndex` /
+`PreviewPassCodec.revoke`，经 `PreviewOrigin.revokePass` 暴露给服务端调用面）。
+索引与 label registry、票据表同属**进程内状态**（#418 单副本契约）：多副本部署需要
+sticky 路由或共享存储，启动日志的 single-replica 通知覆盖这一族。
+
+- **生命周期与重启**：索引随进程重启清空，MAC 仍能通过的存量 token 查不到 ⇒ 401。
+  恢复与 M-2 相同——经主站重新进入（webapp-info 轮询或新换票都会重新兑换并种下新
+  token）。D9 的 cookie 是会话级的：浏览器关闭即丢弃 cookie，但服务端看不到这个
+  事件，索引条目会留到重启、显式作废或**逐出**（见下一条）。
+- **每会话容量上限与逐出（#651，推翻此前的「不做逐出」取舍）**：每个会话最多保留
+  最近 **8** 个通行证（`PREVIEW_PASSES_PER_SESSION`，N 值论证写在该常量注释里）；
+  第 9 次铸出会逐出该会话**最旧**的一条。逐出是**被动**的：被逐 token 只是查不到，
+  兑换时落进与「过期 / 重启清空」完全相同的索引 miss 分支 ⇒ 401，不是错误码，也不
+  存在放行分支。
+  - **不变量**：逐出只取**本会话最旧**的一条，因此会话**当前最新铸出**的通行证永不
+    因自己这次铸出而失效；A 会话的铸出也永不影响 B 会话的队列。这是小 N 之所以安全
+    的前提——常态（每个预览 host/path 只有一个 cookie 槽，每次兑换覆盖前值）远低于
+    8，逐出只约束「循环 mint+redeem」的客户端。
+  - **为何推翻旧取舍**：旧条目接受「按兑换次数增长」，但兑换由客户端驱动——认证
+    客户端循环 mint+redeem 会让进程内存单调增长，且每个被覆盖的旧 token 在作废或
+    重启前一直有效。上限把增长从「每次兑换」换成「每会话」。
+  - **未选方案**：会话删除钩子清扫。它需要生产调用方接上会话删除钩子（`revokePass`
+    目前仍无生产调用方，#649 的接缝），属后续票；容量上限不需要任何调用方，钩子即使
+    永不触发也成立。
+- **单 token 作废（AC7）**：删除一个索引条目即可让**那一个**通行证 401，会话本身与
+  同一会话的其他 token 不受影响；再次铸票立即可用。作废按 (sessionId, 候选值) 双重
+  校验——传错会话 id 不会误删别人的 token；候选值先过与 verify 相同的**形状**门
+  （mac 字符集、token 严格解码与 16 字节长度，N4-01），MAC 本身在作废时不复验——撤销的
+  权威是索引命中与会话绑定，不是签名。全局密钥/版本轮换仍是更粗的上一层。
+  本票只交付导出 API 与测试覆盖，尚无生产调用方（调用面是后续会话删除/强制退出
+  钩子的接缝）。
+- **fail-safe 同形**：空值、未知 token、已作废 token、别的部署铸出的 token 全部 401
+  ——判定是「MAC 通过 **且** 索引命中本会话」，不存在「查不到就放行」。
+
 ### 多副本契约：单副本或 sticky 路由，否则跨实例 404（#418，Option B）
 
 同一份进程内状态（label registry 与 preview ticket 表）在多副本/负载均衡下的另一个
@@ -138,11 +186,19 @@ fix-ocr13）：探针必须同源——跨源 fetch 无 CORS 头时 status 不�
  （host 形态按 `<label>.<preview-base>` 子域哈希分发即可，dev 形态按源 IP）。没有
  sticky 的多副本不在支持范围内。
 
-启动检查（#418）：preview origin 开启时，启动日志必打一条
-`single-replica contract: the preview origin's label registry and ticket table are in-process …`
-（info 级）；当检测到 `OPENBOT_REDIS_URL` 已设（部署自己的多副本信号，与 workshop
-域读同一个变量）而 registry 仍是进程内状态时，升为 **warn** 并点名 sticky 路由。
-craft 关闭或 preview origin 关闭时不打——关闭的 origin 没有 preview host 可路由错。
+启动检查（#418，#647 补齐枚举）：preview origin 开启时，启动日志必打一条
+`single-replica contract: the preview origin's in-process registries/indexes …`
+（info 级）；这一条把进程内三族一次性点名——**label registry、ticket table、
+pass index**——因为它们是重启会清空、第二个副本永远看不见的三张表/索引。当检测到
+`OPENBOT_REDIS_URL` 已设（部署自己的多副本信号，与 workshop 域读同一个变量）而
+registry 仍是进程内状态时，升为 **warn** 并点名 sticky 路由。craft 关闭或 preview
+origin 关闭时不打——关闭的 origin 没有 preview host 可路由错。
+
+**pass index 的失败形态（#647 补写）**：索引随进程重启清空，于是**已成功兑换过**
+的存量通行证会出现「MAC 通过、索引 miss」——兑换之后才 401。这是它自己的形状，
+既不落进 label registry 的 404 "Unknown preview host."，也不像认证被篡改：
+看起来像鉴权 bug，实际是索引丢了。恢复与 M-2 相同（经主站重新进入即重新铸票）。
+启动日志一次点名该族，正是为了让这个 401 可被归因。
 
 可观测信号：preview origin 暴露 `registryStats()`（返回
 `{"registeredLabels": N}`，只计数，永不枚举 label 或 session id，AC9）。健康检查/
@@ -220,8 +276,11 @@ site is refused (#404)」；改任一侧的判据必须同时改另一侧。
 落回主站（dev 形态），恢复方式与 M-2 相同（经主站重新进入）。
 #358 修复后 pass 的 MAC 密钥同样从 keyEncryptionKey 按 `"craft-preview-pass"` 用途域分离
 派生：轮换 key 还会使全部已签发 pass 失效（验证不过 → 401），用户经主站重新换票即恢复。
+这是**全局**层级；#427 的单 token 作废（`revokePass`，删索引条目）是更细的层级——只退掉
+一个通行证而不动会话与其他 token。两层并存：日常轮换用单 token 作废，密钥轮换是全量重置。
 两条派生互不可逆推、不可互相伪造（用途域分离）。
-registry 不做逐出：条目数以会话数为上界，与 M-2 一并接受。
+registry 不做逐出：条目数以会话数为上界，与 M-2 一并接受；pass 索引**按会话容量上限
+逐出**（每会话最近 8 条，#651），见「通行证索引与单 token 作废」一节。
 
 ### HMR（#363，代码已落地）
 

@@ -63,7 +63,7 @@ export function createConnectAppRoutes(
   app.post("/apps/connect/:requestId/decision", async (context) => {
     const actor = context.var.actor;
     const requestId = context.req.param("requestId");
-    const body = (await context.req.json().catch(() => ({}))) as {
+    const body = ((await context.req.json().catch(() => ({}))) ?? {}) as {
       decision?: unknown;
     };
     if (body.decision !== "connected" && body.decision !== "declined") {
@@ -140,51 +140,17 @@ export function createConnectAppRoutes(
       return context.json({ ok: true });
     }
 
-    // Branch 4: apply the choice on the sandbox the ask parked on.
-    const botId = (await deps.botIdFor(session.id)) ?? "";
-    const client = botId
-      ? deps.gateway.serveClientFor({
-          botId,
-          directory: sessionDirectory(
-            pending.build_session_id,
-            deps.config.sessionDirectoryMode,
-          ),
-        })
-      : null;
-    const answered = client
-      ? await client.answerPermission(
-          pending.opencode_session_id,
-          pending.perm_id,
-          {
-            allow: body.decision === "connected",
-            directory: pending.directory,
-          },
-        )
-      : { ok: false, permissionGone: false };
-    if (answered.permissionGone) {
-      // opencode pins the semantics (1.18.7, verified live): the first answer
-      // deletes the pending entry and every re-answer 404s with
-      // PermissionNotFoundError — a false-negative answer (applied but
-      // response lost) makes every retry 404 forever. Terminal, then: do NOT
-      // re-stash (a resurrected card could never be answered), no audit row
-      // (this side cannot prove the choice took effect upstream) — the retry
-      // loop's cap.
-      return context.json(
-        {
-          error:
-            "This connect request is no longer answerable — it was already " +
-            "resolved or expired upstream.",
-          retryable: false,
-        },
-        410,
-      );
-    }
-    if (!answered.ok) {
-      // The take already removed the record; put it back so the user can
-      // retry (the pre-take posture: a failed answer retains its pending).
+    // The taken payload is authoritative: a concurrent caller that lost its answer
+    // re-stashes a REBUILT record under the same key, so this take may carry a payload
+    // that is not the snapshot authorized above. Answering the stale snapshot would act
+    // on a session the decision never covered.
+    const live = taken;
+    if (live.build_session_id !== session.id) {
+      // Put it back untouched for its real owner and refuse; this caller's decision
+      // was made against a record that no longer exists.
       let restored = true;
       try {
-        await deps.signals.stashPending(requestId, pending);
+        await deps.signals.stashPending(requestId, live);
       } catch (error) {
         restored = false;
         logger.warn(
@@ -194,10 +160,98 @@ export function createConnectAppRoutes(
       }
       return context.json(
         {
+          error: restored
+            ? "This connect request changed while it was being answered — please try again."
+            : "This connect request is no longer answerable.",
+          retryable: restored,
+        },
+        409,
+      );
+    }
+
+    const restorePending = async (): Promise<boolean> => {
+      try {
+        await deps.signals.stashPending(requestId, live);
+        return true;
+      } catch (error) {
+        logger.warn(
+          { err: error instanceof Error ? error.message : String(error) },
+          "[craft] connect_app pending re-stash failed",
+        );
+        return false;
+      }
+    };
+
+    // Branch 4: apply the choice on the sandbox the ask parked on. The take already
+    // removed the record, so any throw in this section must re-stash it (the same
+    // posture as a refused answer below) instead of leaking an unanswerable 500.
+    try {
+      const botId = (await deps.botIdFor(session.id)) ?? "";
+      const client = botId
+        ? deps.gateway.serveClientFor({
+            botId,
+            directory: sessionDirectory(
+              live.build_session_id,
+              deps.config.sessionDirectoryMode,
+            ),
+          })
+        : null;
+      const answered = client
+        ? await client.answerPermission(
+            live.opencode_session_id,
+            live.perm_id,
+            {
+              allow: body.decision === "connected",
+              directory: live.directory,
+            },
+          )
+        : { ok: false, permissionGone: false };
+      if (answered.permissionGone) {
+        // opencode pins the semantics (1.18.7, verified live): the first answer
+        // deletes the pending entry and every re-answer 404s with
+        // PermissionNotFoundError — a false-negative answer (applied but
+        // response lost) makes every retry 404 forever. Terminal, then: do NOT
+        // re-stash (a resurrected card could never be answered), no audit row
+        // (this side cannot prove the choice took effect upstream) — the retry
+        // loop's cap.
+        return context.json(
+          {
+            error:
+              "This connect request is no longer answerable — it was already " +
+              "resolved or expired upstream.",
+            retryable: false,
+          },
+          410,
+        );
+      }
+      if (!answered.ok) {
+        // The take already removed the record; put it back so the user can
+        // retry (the pre-take posture: a failed answer retains its pending).
+        const restored = await restorePending();
+        return context.json(
+          {
+            error:
+              "Could not reach the sandbox to apply your choice — please try again.",
+            // The record could not be restored: a retry will silently no-op
+            // (200), so the client must not treat this as retryable.
+            retryable: restored,
+          },
+          502,
+        );
+      }
+    } catch (error) {
+      // The record was consumed by the take: without this, an infrastructure
+      // throw past it would answer a bare 500 with the pending gone for good —
+      // unanswerable, unaudited, and never restored.
+      logger.warn(
+        { err: error instanceof Error ? error.message : String(error) },
+        "[craft] connect_app decision apply failed",
+      );
+      const restored = await restorePending();
+      return context.json(
+        {
           error:
             "Could not reach the sandbox to apply your choice — please try again.",
-          // The record could not be restored: a retry will silently no-op
-          // (200), so the client must not treat this as retryable.
           retryable: restored,
         },
         502,
@@ -215,8 +269,8 @@ export function createConnectAppRoutes(
         payload: {
           decision: body.decision,
           session: session.id,
-          ...(pending.external_app_id !== undefined
-            ? { external_app_id: pending.external_app_id }
+          ...(live.external_app_id !== undefined
+            ? { external_app_id: live.external_app_id }
             : {}),
         },
       })

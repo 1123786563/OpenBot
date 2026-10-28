@@ -351,15 +351,11 @@ function plainEnvelope(envelope: SafeText | SafeValue | undefined): unknown {
   const unwrap = (value: unknown): unknown => {
     if (!value || typeof value !== "object" || Array.isArray(value))
       return null;
-    const envelope = value as { state?: unknown };
-    if (envelope.state === "projected") {
-      return "value" in envelope
-        ? payload((envelope as { value: unknown }).value)
-        : "text" in envelope
-          ? payload((envelope as { text: unknown }).text)
-          : null;
-    }
+    const inner = value as { state?: unknown; value?: unknown; text?: unknown };
     // omitted, truncated, or a word the contract never minted: withheld.
+    if (inner.state !== "projected") return null;
+    if ("value" in inner) return payload(inner.value);
+    if ("text" in inner) return payload(inner.text);
     return null;
   };
   /** A payload: primitives serve as leaves; records and arrays hold envelopes only. */
@@ -377,6 +373,16 @@ function plainEnvelope(envelope: SafeText | SafeValue | undefined): unknown {
     return typeof value === "number" && !Number.isFinite(value) ? null : value;
   };
   return payload(envelope.value);
+}
+
+/** Whether a not-yet-settled execution's claim ticket has orphaned (and how). */
+function reconciliationOrphanCode(
+  ticket: WorkTicketState | null,
+): ReconciliationCode | null {
+  if (ticket === null) return "TICKET_MISSING";
+  if (ticket.finishedAt !== null) return "TICKET_FINISHED";
+  if (ticket.claimedBy !== null && ticket.leaseExpired) return "LEASE_EXPIRED";
+  return null;
 }
 
 export type ExperimentResultService = Readonly<{
@@ -434,9 +440,12 @@ export function createExperimentResultService(
       const state = parseExecutionState(execution.state);
       const base = version.cases.length;
       const resultLink = `/api/ai-observability/bots/${scope.botId}/experiments/${experiment.id}/results/${execution.id}`;
-      const judgeVersion = experiment.config.judgeVersion as SafeText;
+      // config is jsonb: a row that predates the field (or was repaired by hand)
+      // may lack judgeVersion — answer "no recorded version", never a TypeError.
+      const judgeVersion = (experiment.config as { judgeVersion?: SafeText })
+        .judgeVersion;
       const scorerVersion =
-        judgeVersion.state === "projected" ? judgeVersion.text : null;
+        judgeVersion?.state === "projected" ? judgeVersion.text : null;
 
       // Mutable while the classification runs; the report serves it frozen.
       const summary: {
@@ -617,14 +626,7 @@ export function createExperimentResultService(
         // lease-recovery territory.
         const unsettledState = state === "running" ? "running" : "pending";
         const ticket = await deps.ticket(execution.id);
-        const orphanCode: ReconciliationCode | null =
-          ticket === null
-            ? "TICKET_MISSING"
-            : ticket.finishedAt !== null
-              ? "TICKET_FINISHED"
-              : ticket.claimedBy !== null && ticket.leaseExpired
-                ? "LEASE_EXPIRED"
-                : null;
+        const orphanCode = reconciliationOrphanCode(ticket);
         samples = Array.from({ length: base }, (_, index) =>
           orphanCode === null
             ? push(index, "in_progress", {

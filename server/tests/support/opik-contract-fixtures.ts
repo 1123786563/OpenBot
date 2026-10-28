@@ -226,6 +226,13 @@ export function contractTarget(opts: {
   if (baseUrl.protocol !== "http:" && baseUrl.protocol !== "https:") {
     throw new Error("--target must be an http(s) URL");
   }
+  // Embedded credentials would land verbatim in manifest.target.baseUrl and
+  // bypass the key-name redaction when the evidence is written.
+  if (baseUrl.username !== "" || baseUrl.password !== "") {
+    throw new Error(
+      "--target must not embed credentials; pass them out of band of the evidence.",
+    );
+  }
   let project = opts.project?.trim();
   if (!project) {
     const now = opts.now ?? Date.now();
@@ -382,16 +389,22 @@ export function buildOtlpJsonPayload(
 }
 
 const SENSITIVE_HEADERS =
-  /^(authorization|cookie|set-cookie|api[-_]key|x-api-key)$/i;
+  /^(authorization|proxy-authorization|cookie|set-cookie|api[-_]key|x-api-key|x-auth-token|auth-token|token|access[-_]token|refresh[-_]token|session[-_]id|private[-_]key)$/i;
 
 /** Deep-copies a JSON value with secret values and auth headers redacted. */
 export function sanitizeEvidence(value: unknown, secrets: string[]): unknown {
   const redact = (text: string): string => {
     let out = text;
     for (const secret of secrets) {
-      if (secret && secret.length >= 4) {
-        out = out.split(secret).join("[redacted]");
+      if (!secret) continue;
+      // Redaction is a guarantee: a too-short secret cannot be interpolated
+      // reliably and must fail loudly instead of being skipped silently.
+      if (secret.length < 4) {
+        throw new Error(
+          `sanitizeEvidence: secret candidate of ${secret.length} characters is too short to redact reliably.`,
+        );
       }
+      out = out.split(secret).join("[redacted]");
     }
     return out;
   };
@@ -548,6 +561,8 @@ export function validateContract(manifest: VerifiedOpikContract): {
       fail("span id mapping missing one side");
     }
     if (span.opikParentSpanId !== null) {
+      if (span.opikParentSpanId === span.opikSpanId)
+        fail("span is its own parent: the parent/child proof is circular");
       if (!spanIds.has(span.opikParentSpanId))
         fail("span parent id does not resolve to a mapped span");
       linked = true;
@@ -573,6 +588,7 @@ export function validateContract(manifest: VerifiedOpikContract): {
     if (!span.absentAfterDelete)
       fail(`span ${span.opikId} still queryable after delete`);
   }
+  if (manifest.deletion.spans.length === 0) fail("no span deletion proof");
   if (!manifest.deletion.dataset.absentAfterDelete)
     fail("dataset still queryable after delete");
   if (!manifest.deletion.experiment.absentAfterDelete)
@@ -583,6 +599,13 @@ export function validateContract(manifest: VerifiedOpikContract): {
 
   if (manifest.bodyLimit.maxAcceptedBytes <= 0)
     fail("supported body limit not proven");
+  if (
+    manifest.bodyLimit.minRejectedBytes !== null &&
+    manifest.bodyLimit.minRejectedBytes <= manifest.bodyLimit.maxAcceptedBytes
+  )
+    fail(
+      "body limit evidence contradicts itself: minRejectedBytes <= maxAcceptedBytes",
+    );
   if (!manifest.canaries.safe.foundInStoredSpan)
     fail("safe canary never reached stored span data");
   if (manifest.canaries.forbiddenFound.length > 0) {

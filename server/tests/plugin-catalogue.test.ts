@@ -9,8 +9,8 @@ import {
   hostAdmissible,
   resolveServerUrl,
   serverCredentialKind,
-  tokenHeaderFor,
 } from "../src/plugins/catalogue";
+import { deploymentTokenHeader } from "../src/plugins/store";
 
 /**
  * The catalogue decides two things that are worth being sure about: which addresses this deployment
@@ -710,32 +710,40 @@ describe("whose credential each research provider uses", () => {
     expect(
       entry?.auth.kind === "deployment-bearer" ? entry.auth.header : undefined,
     ).toBe("x-api-key");
-    expect(tokenHeaderFor(entry)).toBe("x-api-key");
+    // The live header decision is the store's, not a catalogue answer: this is the same
+    // function the call path consults before every transport handoff, pinned here beside the
+    // catalogue field it reads.
+    expect(deploymentTokenHeader(entry)).toBe("x-api-key");
   });
 
   test("a vendor without its own header keeps Authorization, as before", () => {
     // Firecrawl reads its key from Authorization; so does every deployment-bearer server this
-    // catalogue had before the header field existed. The default IS the old behavior.
-    expect(tokenHeaderFor(catalogueEntry("firecrawl-authenticated"))).toBe(
-      "Authorization",
-    );
-    expect(tokenHeaderFor(catalogueEntry("parallel-authenticated"))).toBe(
-      "Authorization",
-    );
+    // catalogue had before the header field existed. The default IS the old behavior. In the
+    // live decision's vocabulary that default is `undefined`: no vendor-named header goes out,
+    // so the transport adds the Bearer scheme to `Authorization` — pinned end to end on the
+    // wire by the Parallel test in plugin-store.integration.test.ts.
+    expect(
+      deploymentTokenHeader(catalogueEntry("firecrawl-authenticated")),
+    ).toBeUndefined();
+    expect(
+      deploymentTokenHeader(catalogueEntry("parallel-authenticated")),
+    ).toBeUndefined();
   });
 
   test("anything that is not a deployment token answers the Authorization default", () => {
     // A user-oauth vendor sends no deployment token at all, a keyless endpoint has nothing to
     // send, and a server an administrator added by URL has no entry — all three fall to the
-    // default header rather than to a guess.
-    expect(tokenHeaderFor(catalogueEntry("google-drive"))).toBe(
-      "Authorization",
-    );
-    expect(tokenHeaderFor(catalogueEntry("exa"))).toBe("Authorization");
-    expect(tokenHeaderFor(null)).toBe("Authorization");
-    expect(tokenHeaderFor(catalogueEntry("not-a-vendor"))).toBe(
-      "Authorization",
-    );
+    // default header rather than to a guess. The live decision answers `undefined` for each:
+    // no vendor-named header exists to send, so a token rides `Authorization` wherever one
+    // rides at all.
+    expect(
+      deploymentTokenHeader(catalogueEntry("google-drive")),
+    ).toBeUndefined();
+    expect(deploymentTokenHeader(catalogueEntry("exa"))).toBeUndefined();
+    expect(deploymentTokenHeader(null)).toBeUndefined();
+    expect(
+      deploymentTokenHeader(catalogueEntry("not-a-vendor")),
+    ).toBeUndefined();
   });
 });
 
@@ -899,10 +907,12 @@ describe("the Parallel entries this deployment already granted against", () => {
     expect(
       serverCredentialKind(catalogueEntry("parallel-authenticated")!),
     ).toBe("mcp");
-    // No header was named before the field existed; none may appear now.
-    expect(tokenHeaderFor(catalogueEntry("parallel-authenticated"))).toBe(
-      "Authorization",
-    );
+    // No header was named before the field existed; none may appear now. The live decision
+    // answers `undefined`, which is what keeps the key in `Authorization` (wire-pinned in
+    // plugin-store.integration.test.ts).
+    expect(
+      deploymentTokenHeader(catalogueEntry("parallel-authenticated")),
+    ).toBeUndefined();
   });
 
   test("keeps classifying the old real tool refs as reads", () => {

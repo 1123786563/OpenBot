@@ -75,9 +75,15 @@ export function taskWorkerCapacity(options?: {
 }): TaskWorkerCapacity {
   const raw = process.env.OPENMUSE_TASK_WORKERS;
   const parsed = raw === undefined ? Number.NaN : Number(raw);
+  // A whole number of workers or the default: 4.5 workers is 4, not a
+  // fractional slot the comparisons treat as an extra nobody can take.
+  const wholeWorkers =
+    Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : Number.NaN;
   const maxWorkers =
     options?.maxWorkers ??
-    (Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TASK_WORKERS);
+    (Number.isSafeInteger(wholeWorkers) && wholeWorkers > 0
+      ? wholeWorkers
+      : DEFAULT_TASK_WORKERS);
   let running = 0;
   return {
     claimLimit() {

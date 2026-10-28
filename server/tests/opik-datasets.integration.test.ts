@@ -36,13 +36,13 @@ const prefix = `t19-${randomUUID()}`;
 
 const scopeA = resolveObservationScope({
   actorId: "user-a",
-  botId: "agent-1",
+  botId: `opik-datasets-integration-bot-a-${randomUUID()}`,
   ownership: "owner",
   epoch: 1,
 });
 const scopeB = resolveObservationScope({
   actorId: "user-b",
-  botId: "agent-1",
+  botId: `opik-datasets-integration-bot-b-${randomUUID()}`,
   ownership: "admin",
   epoch: 1,
 });
@@ -131,7 +131,7 @@ test("a saved version freezes the whole acceptance field set (Issue #25 AC1)", a
   expect(dataset).toMatchObject({
     scopeKey: scopeA.key,
     actorId: "user-a",
-    botId: "agent-1",
+    botId: scopeA.botId,
     name,
     syncState: "pending",
     opikDatasetId: null,

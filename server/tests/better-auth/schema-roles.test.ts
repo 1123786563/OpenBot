@@ -61,7 +61,7 @@ const BA_URL_VARIABLES = [
   "BA_TEST_AUTH_WRITER_DATABASE_URL",
 ] as const;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-const MIGRATION_TAG = "0214_better_auth_schema_roles";
+const MIGRATION_TAG = "0226_better_auth_schema_roles";
 const MIGRATION_PATH = join(
   import.meta.dirname,
   `../../drizzle/${MIGRATION_TAG}.sql`,
@@ -75,11 +75,11 @@ const MIGRATION_PATH = join(
  * suite applies its verified prerequisites and removes them in cleanup.
  */
 const PREREQUISITE_TAGS = [
-  "0209_better_auth_directory",
-  "0210_better_auth_clocks",
-  "0211_better_auth_command_authority",
-  "0212_better_auth_authority_sources",
-  "0213_better_auth_assurance",
+  "0221_better_auth_directory",
+  "0222_better_auth_clocks",
+  "0223_better_auth_command_authority",
+  "0224_better_auth_authority_sources",
+  "0225_better_auth_assurance",
 ] as const;
 const PREREQUISITE_PATHS = PREREQUISITE_TAGS.map((tag) =>
   join(import.meta.dirname, `../../drizzle/${tag}.sql`),
@@ -1157,8 +1157,8 @@ describe("T02.06 restricted connections, DML guard and deferred constraints", ()
     // T05.13 (#569) appended 0223 the same way: the per-action admission
     // fence's one table, SELECT/INSERT on the same auth-writer capability,
     // every other role at zero.
-    expect(before?.tag).toBe("0222_better_auth_mobile_session_handoff");
-    expect(last?.tag).toBe("0223_better_auth_mobile_session_admission");
+    expect(before?.tag).toBe("0234_better_auth_mobile_session_handoff");
+    expect(last?.tag).toBe("0235_better_auth_mobile_session_admission");
     expect(last?.idx).toBe((before?.idx ?? 0) + 1);
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });
