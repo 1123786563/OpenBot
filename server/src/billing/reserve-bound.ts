@@ -348,6 +348,7 @@ export function speechSpecOfReservation(
   const { specInputCharacters: chars, specDurationCapSeconds: cap } = row;
   if (
     chars === null &&
+    row.specVoiceTier === null &&
     row.specPerInputCharacterUsd === null &&
     row.specPerOutputSecondUsd === null &&
     cap === null

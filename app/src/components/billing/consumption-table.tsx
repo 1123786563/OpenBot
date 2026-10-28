@@ -124,27 +124,26 @@ export function ConsumptionTable({
                        * the reader's language, distinguishable from every other row. The
                        * numbers are DISPLAY numbers (grouped characters, seconds to three
                        * decimals), never the raw wire decimal. A null line shows nothing.
+                       * The parameters are built once; only the key differs by tier.
                        */}
                       {entry.lineDetail?.kind === "speech" ? (
                         <p className="text-muted-foreground mt-0.5 text-xs">
-                          {entry.lineDetail.speech.voiceTier
-                            ? t("creditsPage.speechUsage", {
-                                characters: count(
-                                  entry.lineDetail.speech.inputCharacters,
-                                ),
-                                seconds: seconds(
-                                  entry.lineDetail.speech.actualSeconds,
-                                ),
-                                tier: entry.lineDetail.speech.voiceTier,
-                              })
-                            : t("creditsPage.speechUsageNoTier", {
-                                characters: count(
-                                  entry.lineDetail.speech.inputCharacters,
-                                ),
-                                seconds: seconds(
-                                  entry.lineDetail.speech.actualSeconds,
-                                ),
-                              })}
+                          {t(
+                            entry.lineDetail.speech.voiceTier
+                              ? "creditsPage.speechUsage"
+                              : "creditsPage.speechUsageNoTier",
+                            {
+                              characters: count(
+                                entry.lineDetail.speech.inputCharacters,
+                              ),
+                              seconds: seconds(
+                                entry.lineDetail.speech.actualSeconds,
+                              ),
+                              ...(entry.lineDetail.speech.voiceTier
+                                ? { tier: entry.lineDetail.speech.voiceTier }
+                                : {}),
+                            },
+                          )}
                         </p>
                       ) : null}
                     </td>

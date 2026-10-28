@@ -579,8 +579,10 @@ export function createCreditWriter(database: Database): CreditWriter {
         spec !== undefined &&
         (!Number.isSafeInteger(spec.inputCharacters) ||
           spec.inputCharacters < 0 ||
+          spec.inputCharacters > MAX_STORED_UNITS ||
           !Number.isSafeInteger(spec.durationCapSeconds) ||
           spec.durationCapSeconds < 1 ||
+          spec.durationCapSeconds > MAX_STORED_UNITS ||
           (spec.voiceTier !== null &&
             (typeof spec.voiceTier !== "string" ||
               spec.voiceTier.length === 0 ||
@@ -591,7 +593,7 @@ export function createCreditWriter(database: Database): CreditWriter {
           !/^\d+(\.\d+)?$/.test(spec.perOutputSecondUsd))
       ) {
         throw new TypeError(
-          "reserveCredits needs a complete speech spec: safe quantities, a tier under 128 chars, and exact-decimal tier prices.",
+          "reserveCredits needs a complete speech spec: quantities within the int4 column bounds, a tier under 128 chars, and exact-decimal tier prices.",
         );
       }
       await ensureCustomer(database, input.externalCustomerId);
@@ -612,6 +614,25 @@ export function createCreditWriter(database: Database): CreditWriter {
           ) {
             throw new CreditReservationConflictError(
               "reserveCredits: the idempotency key belongs to a different reservation.",
+            );
+          }
+          // The frozen speech spec is part of the reservation's identity: a replay with
+          // a different spec would silently resurrect the ORIGINAL hold and doom its
+          // settle to spec_not_corroborated with a hold only recovery could free — the
+          // same conflict a different amount already is.
+          const specMismatch =
+            (spec === undefined) !== (existing.specInputCharacters === null) ||
+            (spec !== undefined &&
+              (existing.specInputCharacters !== spec.inputCharacters ||
+                existing.specVoiceTier !== spec.voiceTier ||
+                existing.specDurationCapSeconds !== spec.durationCapSeconds ||
+                existing.specPerInputCharacterUsd !==
+                  spec.perInputCharacterUsd ||
+                existing.specPerOutputSecondUsd !==
+                  spec.perOutputSecondUsd));
+          if (specMismatch) {
+            throw new CreditReservationConflictError(
+              "reserveCredits: the idempotency key belongs to a reservation frozen with a different speech spec.",
             );
           }
           if (existing.status !== "reserved") {
