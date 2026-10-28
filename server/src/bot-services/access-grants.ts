@@ -500,6 +500,24 @@ export function createAccessGrantService(
         };
       });
 
+      if (
+        outcome.retiredGatewayVirtualKeyIds.length > 0 &&
+        dependencies.revokeGatewayKeys
+      ) {
+        // Before the audit write, on purpose: the remote disable is an outward side effect
+        // that must not hinge on the audit table being writable — an audit failure must not
+        // leave the retired keys live at the gateway with nothing asked about them. The seam
+        // is total by contract (it records each failed key as
+        // `gateway.key_revocation_deactivation_failed` and never throws), so a gateway that
+        // cannot be reached softens nothing — the synchronous refusal lives in the rows
+        // above. A process crash in the window between the commit and this seam is not
+        // compensated here: an exact retry needs a persisted asked-the-seam marker (a
+        // migration), which is out of this ticket's write scope.
+        await dependencies.revokeGatewayKeys({
+          grantId: outcome.grant.grantId,
+          gatewayVirtualKeyIds: outcome.retiredGatewayVirtualKeyIds,
+        });
+      }
       // Recorded for the no-op too: the docblock's "caller retries into the idempotent
       // no-op" is only a self-healing trail if the retry writes the event the first
       // attempt lost, so `revoked` in the payload tells the two answers apart.
@@ -519,32 +537,6 @@ export function createAccessGrantService(
             revoked: outcome.revoked,
           },
         });
-      }
-      if (
-        outcome.revoked &&
-        outcome.retiredGatewayVirtualKeyIds.length > 0 &&
-        dependencies.revokeGatewayKeys
-      ) {
-        // After the commit, after the trail: the person's answer is already true. The seam is
-        // total by contract (failures recorded, never thrown), so a gateway that cannot be
-        // reached softens nothing — the synchronous refusal lives in the rows above. A seam
-        // that breaks its contract and throws must not turn the committed revocation into a
-        // 500 whose idempotent retry would then skip this call and strand the keys live.
-        try {
-          await dependencies.revokeGatewayKeys({
-            grantId: outcome.grant.grantId,
-            gatewayVirtualKeyIds: outcome.retiredGatewayVirtualKeyIds,
-          });
-        } catch (error) {
-          log.error(
-            {
-              type: "gateway-key-revocation-failed",
-              grantId: outcome.grant.grantId,
-              error: String(error),
-            },
-            "gateway-key-revocation-failed",
-          );
-        }
       }
       return outcome;
     },
