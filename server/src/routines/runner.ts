@@ -57,20 +57,11 @@ export type RoutineRunner = {
  * a failure that says what failed rather than a truncated "This routine failed: Error: could not…".
  * The whole message is on the run row for anybody who wants all of it.
  */
-const MAX_NOTIFIED_REASON = 160;
-
 /** Consecutive failed firings after which a routine stops being fired at all. */
 const FATIGUE_LIMIT = 10;
 
 const SWITCHED_OFF =
   "This routine has failed ten times in a row, so I have switched it off. Ask me to turn it back on when whatever it needs is working.";
-
-/** Measured in code points, like every other cap in this area, so nothing is cut mid-pair. */
-function shorten(reason: string): string {
-  const codePoints = Array.from(reason);
-  if (codePoints.length <= MAX_NOTIFIED_REASON) return reason;
-  return `${codePoints.slice(0, MAX_NOTIFIED_REASON - 1).join("")}…`;
-}
 
 function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -214,8 +205,12 @@ export function createRoutineRunner(options: {
         const failures = await routineStore.consecutiveFailures(routineId);
         if (failures === 1) {
           // Only the first failure after a success. A routine that fails every night at three has
-          // one line in the channel, not one line a night for a month.
-          await say(`This routine failed: ${shorten(reason)}`);
+          // one line in the channel, not one line a night for a month. The courtesy line carries
+          // no internal detail: a raw upstream message can name paths, SQL or provider bodies —
+          // the full reason lives on the run row this sentence points at.
+          await say(
+            "This routine failed. See the run history for the reason.",
+          );
         } else if (failures >= FATIGUE_LIMIT) {
           // A dead integration should not burn model spend for ever. Switched off, and said out
           // loud, because a routine that goes quiet without explaining itself is worse than one

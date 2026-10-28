@@ -849,7 +849,10 @@ export function createPersonalBotService(channels: {
         const requested = input?.templateRef;
         if (requested !== undefined) {
           assertTemplateRef(requested);
-          if (row.templateRef && requested !== row.templateRef) {
+          // 模板身份不可换：无模板的 Bot 也不经此入口绑定首个模板
+          //（首建走 EnsurePersonalBotInput.templateRef），显式指定必须
+          // 与既有绑定一致，包括「无模板遇显式指定」。
+          if (requested !== row.templateRef) {
             throw new Error("PERSONAL_BOT_TEMPLATE_CONFLICT");
           }
         }

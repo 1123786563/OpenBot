@@ -194,3 +194,95 @@ test("docker global options and the sshpass env form are scrubbed on the wire to
   expect(wire).not.toContain(dockerSecret);
   expect(wire).not.toContain(sshSecret);
 });
+
+/*
+ * F04-6 and F04-4 at the same wire level: an attached sshpass password may itself contain a `p`,
+ * and a bare value ends where its command does — the `;` after it starts another command the
+ * collector must still see. A quoted password keeps its separators (inside the quotes they are
+ * part of the secret, T8a), and none of this turns a port into a redaction.
+ */
+test("passwords containing p and commands after bare-value separators survive the wire", async () => {
+  // The attached secret carries a lowercase `p`, which is what used to bait the terminator's
+  // greedy backtrack (F04-6).
+  const sshSecret = "fixture-pass-8d3a5c1e9b72";
+  const dockerSecret = "fixture-dock-2f6e8b4a1d93";
+  const envSecret = "fixture-env-5b9d7c3e6a84";
+  const quotedSecret = "fixture-quo-8c1a4f7d2e5b";
+  const received: string[] = [];
+  const collector = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      received.push(await request.text());
+      return new Response("{}");
+    },
+  });
+  try {
+    const exporter = createOtelEventExporter({
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: `http://127.0.0.1:${collector.port}/v1/logs`,
+    });
+    exporter?.emit({
+      eventType: "computer.action_allowed",
+      targetType: "computer",
+      targetId: "bot-1",
+      actorUserId: null,
+      initiatorKind: "person",
+      initiatorId: null,
+      payload: {
+        // The attached password contains a `p`; the terminator must take the flag's own `p`.
+        sshpassAttachedP: {
+          command: `sshpass -p${sshSecret} ssh deploy@host.example.test`,
+        },
+        // The `;` starts another command; the password ends before it.
+        dockerSeparator: { command: `docker login -p ${dockerSecret};whoami` },
+        // The env form's bare arm stops at the separator too.
+        sshpassEnvSeparator: {
+          command: `SSHPASS=${envSecret};id -u sshpass -e ssh deploy@host.example.test`,
+        },
+        // A `;` inside the quoted password is part of the secret and must not end the value.
+        mysqlQuotedSeparator: {
+          command: `mysql -h db.internal -p"${quotedSecret};extra" appdb`,
+        },
+      },
+    });
+    await exporter?.shutdown();
+  } finally {
+    collector.stop(true);
+  }
+  const wire = received.join("");
+  const commands = received.flatMap((body) =>
+    (
+      JSON.parse(body).resourceLogs as Array<{
+        scopeLogs: Array<{
+          logRecords: Array<{
+            attributes: Array<{ key: string; value: { stringValue?: string } }>;
+          }>;
+        }>;
+      }>
+    )
+      .flatMap((resource) => resource.scopeLogs)
+      .flatMap((scope) => scope.logRecords)
+      .flatMap((record) => record.attributes)
+      .filter((attribute) => attribute.key.startsWith("openbot.payload."))
+      .map(
+        (attribute) =>
+          JSON.parse(attribute.value.stringValue ?? "{}").command as string,
+      ),
+  );
+  expect(commands).toContain(
+    "sshpass -p[REDACTED] ssh deploy@host.example.test",
+  );
+  expect(commands).toContain("docker login -p [REDACTED];whoami");
+  expect(commands).toContain(
+    "SSHPASS=[REDACTED];id -u sshpass -e ssh deploy@host.example.test",
+  );
+  expect(commands).toContain("mysql -h db.internal -p[REDACTED] appdb");
+  // The command after the separator keeps reaching the collector.
+  expect(wire).toContain("whoami");
+  expect(wire).toContain("id -u");
+  expect(wire).not.toContain(";extra");
+  expect(wire).not.toContain(sshSecret);
+  expect(wire).not.toContain(dockerSecret);
+  expect(wire).not.toContain(envSecret);
+  expect(wire).not.toContain(quotedSecret);
+});

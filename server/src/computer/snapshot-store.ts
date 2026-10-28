@@ -47,9 +47,9 @@ export type StoredSnapshot = {
    *
    * The generation only orders snapshots within one session. This is what tells two sessions apart,
    * so a ref from a computer that has since been replaced resolves to nothing instead of to whatever
-   * now holds that ref. Undefined only where the provider could not be asked at all, which leaves the
-   * behaviour as it was: a null on either side skips the comparison, so a row written during an
-   * outage stays unordered against the runs around it.
+   * now holds that ref. Undefined only where the provider could not be asked at all. The write rule
+   * is "a different session always wins" (see `save`): whichever side carries a session replaces the
+   * row, so a snapshot taken during an outage is superseded by the first one that names its run.
    */
   session?: string;
 };
@@ -201,7 +201,9 @@ export function createInMemorySnapshotStore(): SnapshotStore {
 function objectFromElements(
   elements: Map<string, SnapshotElement>,
 ): Record<string, SnapshotElement> {
-  const object: Record<string, SnapshotElement> = {};
+  // null prototype: a ref of "__proto__" is an own property here, not an assignment
+  // to Object.prototype (which the JSON round trip then drops).
+  const object: Record<string, SnapshotElement> = Object.create(null);
   for (const [ref, element] of elements) object[ref] = element;
   return object;
 }

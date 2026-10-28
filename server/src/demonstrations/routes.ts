@@ -24,6 +24,7 @@ export function createDemonstrationRoutes(
       {
         type: "demonstration-route-error",
         error: error.name,
+        message: error.message,
         context: { path: context.req.path },
         timestamp: new Date().toISOString(),
       },

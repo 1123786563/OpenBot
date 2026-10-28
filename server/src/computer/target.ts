@@ -164,10 +164,19 @@ function expandIpv6(hostname: string): number[] | null {
   const halves = hostname.split("::");
   if (halves.length > 2) return null;
 
+  // Groups must be 1-4 hex digits: parseInt("0g", 16) stops at "0" and parseInt("")
+  // is NaN, so an unchecked parse turns a malformed literal into a wrong address the
+  // private-range checks then answer confidently.
+  const groups = (part: string) =>
+    part === "" ? [] : part.split(":");
+  if (
+    [...groups(halves[0] ?? ""), ...groups(halves[1] ?? "")].some(
+      (group) => !/^[0-9a-fA-F]{1,4}$/.test(group),
+    )
+  )
+    return null;
   const parse = (part: string) =>
-    part === ""
-      ? []
-      : part.split(":").map((group) => Number.parseInt(group, 16));
+    part === "" ? [] : part.split(":").map((group) => Number.parseInt(group, 16));
   const head = parse(halves[0] ?? "");
   const tail = halves.length === 2 ? parse(halves[1] ?? "") : [];
   if ([...head, ...tail].some((group) => Number.isNaN(group))) return null;
@@ -186,6 +195,9 @@ function isPrivateIpv4(hostname: string): boolean {
     return false;
   }
   const [a, b] = octets as [number, number, number, number];
+  // 0.0.0.0/8 is this network: on Linux a connect() to any 0.x.y.z lands on the loopback of
+  // the machine that asked, so a Bot naming 0.0.7.5432 would read the host's own ports.
+  if (a === 0) return true;
   if (a === 10) return true;
   if (a === 127) return true;
   if (a === 169 && b === 254) return true; // link-local, includes metadata

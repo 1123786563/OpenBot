@@ -16,7 +16,9 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import {
   PREVIEW_PASS_COOKIE_SHAPE,
+  PREVIEW_PASSES_PER_SESSION,
   createPreviewPassCodec,
+  createPreviewPassIndex,
   type PreviewPassCodec,
 } from "../src/craft/preview-pass";
 import {
@@ -26,6 +28,7 @@ import {
 
 const SECRET = "deployment-key-1";
 const SESSION_ID = "cs-444455556666";
+const OTHER_SESSION_ID = "cs-777788889999";
 const USER_ID = "u1";
 
 function codec(secret: string = SECRET): PreviewPassCodec {
@@ -123,7 +126,9 @@ describe("createPreviewPassCodec.verify", () => {
   });
 
   test("non-string and over-length candidates refuse without throwing", () => {
-    expect(codec().verify(SESSION_ID, undefined as unknown as string)).toBeNull();
+    expect(
+      codec().verify(SESSION_ID, undefined as unknown as string),
+    ).toBeNull();
     expect(codec().verify(SESSION_ID, `${"a".repeat(513)}`)).toBeNull();
     expect(codec().verify("", "v1.AAAA.AAAA")).toBeNull();
   });
@@ -145,14 +150,355 @@ describe("pass derivation", () => {
     expect(a.split(".")[2]).not.toBe(b.split(".")[2]);
   });
 
-  test("issuing is deterministic and verify is repeatable (no state, no burn)", () => {
+  test("issuing is NON-deterministic (#427 AC1: a fresh random token per pass) and verify is repeatable (no burn)", () => {
     // Unlike the ticket (single use), the pass is a session credential: verify
-    // must not consume it. Two issues for the same triple are identical.
+    // must not consume it. But two issues for the same triple are NO LONGER the
+    // same value — the kernel is a fresh random token per pass, which is the
+    // rotation primitive's whole point (a deterministic pass could never be
+    // retired independently of its siblings).
     const c = codec();
-    expect(c.issue(SESSION_ID, USER_ID)).toBe(c.issue(SESSION_ID, USER_ID));
+    const a = c.issue(SESSION_ID, USER_ID);
+    const b = c.issue(SESSION_ID, USER_ID);
+    expect(a).not.toBe(b);
+    expect(c.verify(SESSION_ID, a)).toEqual({ userId: USER_ID });
+    expect(c.verify(SESSION_ID, b)).toEqual({ userId: USER_ID });
+    expect(c.verify(SESSION_ID, a)).toEqual({ userId: USER_ID });
+  });
+});
+
+// ── #427: the rotation capability — random token + server-side index ─────────
+//
+// The pass used to be a pure function of (deployment secret, sessionId, userId):
+// unforgeable, but with no per-token identity — revoking ONE holder meant
+// rotating the global key (killing every pass) or deleting the session row
+// (killing the session). The kernel is now a 128-bit random token; the server
+// keeps a token → (sessionId, userId) index, and the MAC frame covers the
+// TOKEN (not the session id): the index is the binding authority, so one entry
+// can be deleted to 401 exactly that pass while the session and every other
+// token keep working.
+
+describe("#427 rotation: the index binds each random token", () => {
+  test("the cookie value carries no session id and no userId material — the index owns the binding", () => {
+    const pass = codec().issue(SESSION_ID, USER_ID);
+    expect(pass).not.toContain(SESSION_ID);
+    expect(pass).not.toContain(USER_ID);
+    // And a pass issued for a userId that never rides the wire still verifies
+    // to it — the claim comes from the index, not from the cookie.
+    const longUser = "u".repeat(256);
+    const longPass = codec().issue(SESSION_ID, longUser);
+    expect(longPass).not.toContain(longUser);
+    expect(codec().verify(SESSION_ID, longPass)).toEqual({ userId: longUser });
+  });
+
+  test("an index lookup miss refuses even when the MAC frame is intact — never 'not found ⇒ let through'", () => {
+    // The fail-safe property AC demands: unknown/empty ⇒ 401. A token that is
+    // structurally perfect but absent from the index (revoked, restart-cleared,
+    // another deployment's) is 401 through the SAME judgment, by construction:
+    // the verify answer is the index hit, and there is no pass-through branch.
+    const ownIndex = createPreviewPassIndex();
+    const isolated = createPreviewPassCodec(SECRET, ownIndex);
+    const pass = isolated.issue(SESSION_ID, USER_ID);
+    isolated.revoke(SESSION_ID, pass); // the only entry is gone
+    expect(isolated.verify(SESSION_ID, pass)).toBeNull();
+  });
+
+  test("a fresh index (the restart state) refuses every outstanding pass", () => {
+    const pass = codec().issue(SESSION_ID, USER_ID);
+    // A new process = a new empty index (the #418 single-replica contract's
+    // in-memory state). The MAC frame still parses, the lookup misses: 401.
+    const restarted = createPreviewPassCodec(SECRET, createPreviewPassIndex());
+    expect(restarted.verify(SESSION_ID, pass)).toBeNull();
+    // Re-minting after the restart plants a fresh binding that verifies.
+    const replanted = restarted.issue(SESSION_ID, USER_ID);
+    expect(restarted.verify(SESSION_ID, replanted)).toEqual({
+      userId: USER_ID,
+    });
+  });
+
+  test("the index observable counts live tokens (test/observability only)", () => {
+    const index = createPreviewPassIndex();
+    const c = createPreviewPassCodec(SECRET, index);
+    expect(c.size()).toBe(0);
+    const a = c.issue(SESSION_ID, USER_ID);
+    expect(c.size()).toBe(1);
+    c.revoke(SESSION_ID, a);
+    expect(c.size()).toBe(0);
+  });
+});
+
+describe("#427 rotation: single-token revocation", () => {
+  test("revoking one token 401s it; the session and its other tokens are untouched", () => {
+    const c = codec();
+    const retireMe = c.issue(SESSION_ID, USER_ID);
+    const keepMe = c.issue(SESSION_ID, USER_ID);
+    expect(c.revoke(SESSION_ID, retireMe)).toBe(true);
+    expect(c.verify(SESSION_ID, retireMe)).toBeNull();
+    expect(c.verify(SESSION_ID, keepMe)).toEqual({ userId: USER_ID });
+    // The session itself is unharmed: a re-mint (the front-end's recovery
+    // path) opens again immediately.
+    const replanted = c.issue(SESSION_ID, USER_ID);
+    expect(c.verify(SESSION_ID, replanted)).toEqual({ userId: USER_ID });
+  });
+
+  test("revocation is session-guarded: the wrong session id refuses to retire a token", () => {
+    const c = codec();
+    const other = "cs-777788889999";
     const pass = c.issue(SESSION_ID, USER_ID);
+    expect(c.revoke(other, pass)).toBe(false);
     expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+  });
+
+  test("revoking an unknown token is a clean false — the predicate never throws", () => {
+    expect(codec().revoke(SESSION_ID, "no-such-token")).toBe(false);
+    expect(codec().revoke(SESSION_ID, "")).toBe(false);
+  });
+
+  test("N4-01: a malformed MAC part (`!!!`) never revokes — the shape gate runs before the index, the real pass stays alive", () => {
+    // The token slot names a LIVE index entry, but the value is not a
+    // well-formed pass: verify refuses it on the macPart charset, and
+    // revoke must refuse at the SAME shape gate instead of deleting the
+    // entry behind the token — otherwise a caller could retire a valid
+    // pass with a half-frame it never proved possession of.
+    const c = codec();
+    const pass = c.issue(SESSION_ID, USER_ID);
+    const [version, token] = pass.split(".");
+    const malformed = `${version}.${token}.!!!`;
+    expect(c.verify(SESSION_ID, malformed)).toBeNull();
+    expect(c.revoke(SESSION_ID, malformed)).toBe(false);
+    // Not deleted either: the original pass still verifies.
     expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+  });
+
+  test("N4-01: a charset-legal but non-16-byte token refuses — strict shape, never a bare lookup on a half-frame", () => {
+    const c = codec();
+    const wrongLengthToken = Buffer.alloc(17, 1).toString("base64url");
+    const macPart = Buffer.alloc(32, 1).toString("base64url"); // 43 chars
+    const candidate = `v1.${wrongLengthToken}.${macPart}`;
+    expect(c.verify(SESSION_ID, candidate)).toBeNull();
+    expect(c.revoke(SESSION_ID, candidate)).toBe(false);
+  });
+
+  test("#650: revoke and verify refuse the SAME mac frames — the 43-char charset test is a shape bound, not a length bound", () => {
+    // A 43-char base64url string is 32 bytes only when it is the canonical
+    // encoding; Node's decoder silently accepts hostile trailing bits, so
+    // these parse as a different length (or not at all) while passing the
+    // charset test revoke used to rely on alone. revoke now runs verify's
+    // decodeStrict + MAC_BYTES pair as well, so the two gates agree on
+    // every frame — the precondition for "a value this deployment's shape
+    // would refuse never reaches the index lookup".
+    const c = codec();
+    const pass = c.issue(SESSION_ID, USER_ID);
+    // The token slot must name a LIVE entry, or the assert below would pass
+    // on the index miss instead of on the MAC gate it exists to pin.
+    const [, token] = pass.split(".");
+    for (const macPart of ["_".repeat(43), "-".repeat(43)]) {
+      const candidate = `v1.${token}.${macPart}`;
+      expect(c.verify(SESSION_ID, candidate)).toBeNull();
+      expect(c.revoke(SESSION_ID, candidate)).toBe(false);
+      // The decisive part: a refused frame must not have retired the pass.
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    // The canonical 32-byte MAC still reaches the index: a known token
+    // revokes, so #650 tightened the frame without touching the semantics.
+    expect(c.revoke(SESSION_ID, pass)).toBe(true);
+    expect(c.revoke(SESSION_ID, pass)).toBe(false);
+  });
+
+  test("a legal value revokes true once; the second revoke is a clean false (N4-01 shape suite)", () => {
+    const c = codec();
+    const pass = c.issue(SESSION_ID, USER_ID);
+    expect(c.revoke(SESSION_ID, pass)).toBe(true);
+    expect(c.revoke(SESSION_ID, pass)).toBe(false);
+    expect(c.verify(SESSION_ID, pass)).toBeNull();
+  });
+});
+
+// ── #651: the per-session capacity bound (eviction) ──────────────────────────
+//
+// The index used to grow with every redemption and never evicted: an
+// authenticated client looping mint+redeem grew the process's memory
+// monotonically and every superseded token stayed live until revoked or
+// restart. The bound is per session and takes the OLDEST token, which is what
+// keeps the one invariant the small N needs: a session's CURRENT (latest) mint
+// is never the victim of its own mint.
+describe("#651: per-session capacity bound", () => {
+  /** A codec over an index of its own — never the process default, so a test
+   * with a tiny capacity cannot evict another test's entries. */
+  function bounded(capacity: number) {
+    const index = createPreviewPassIndex(capacity);
+    return { index, codec: createPreviewPassCodec(SECRET, index) };
+  }
+
+  test("minting past the bound evicts the OLDEST token of that session; the newest always verifies", () => {
+    const { codec: c } = bounded(3);
+    const first = c.issue(SESSION_ID, USER_ID);
+    const second = c.issue(SESSION_ID, USER_ID);
+    const third = c.issue(SESSION_ID, USER_ID);
+    // At the bound: every mint still verifies.
+    for (const pass of [first, second, third]) {
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    const fourth = c.issue(SESSION_ID, USER_ID); // the 4th over a bound of 3
+    // The oldest is gone, passively: the SAME index-miss judgment as an
+    // expired/restart-cleared pass — 401, no new shape.
+    expect(c.verify(SESSION_ID, first)).toBeNull();
+    // Everything from the eviction point onward stays live — and, the
+    // invariant: the CURRENT mint is one of them.
+    for (const pass of [second, third, fourth]) {
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    expect(c.verify(SESSION_ID, fourth)).toEqual({ userId: USER_ID });
+  });
+
+  test("the invariant holds at every step: after each mint the LATEST pass verifies", () => {
+    // The property, not an instance: whatever the capacity, the token the
+    // caller just received is never the one evicted by that same mint. A
+    // holder following the front-end path (mint, then present the newest)
+    // therefore never 401s because of eviction.
+    for (const capacity of [1, 2, 8]) {
+      const { codec: c } = bounded(capacity);
+      let latest = "";
+      for (let i = 0; i < capacity * 3; i++) {
+        latest = c.issue(SESSION_ID, USER_ID);
+        expect(c.verify(SESSION_ID, latest)).toEqual({ userId: USER_ID });
+      }
+      // And the index never exceeds the bound for that session.
+      expect(c.size()).toBeLessThanOrEqual(capacity);
+    }
+  });
+
+  test("eviction is per session: another session's mints never retire this session's passes", () => {
+    const { codec: c } = bounded(2);
+    const mine = [c.issue(SESSION_ID, USER_ID), c.issue(SESSION_ID, USER_ID)];
+    // A different session minting far past ITS bound must not touch mine.
+    for (let i = 0; i < 10; i++) c.issue(OTHER_SESSION_ID, USER_ID);
+    for (const pass of mine) {
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    // Each session is bounded independently — 2 + 2, not 2 total.
+    expect(c.size()).toBe(4);
+  });
+
+  test("revoke does not resurrect an evicted entry, and a re-mint does not bring the old token back", () => {
+    const { codec: c } = bounded(3);
+    const evicted = c.issue(SESSION_ID, USER_ID);
+    const alsoEvicted = c.issue(SESSION_ID, USER_ID);
+    const keep = c.issue(SESSION_ID, USER_ID);
+    c.issue(SESSION_ID, USER_ID); // the 4th: evicts `evicted`, not `keep`
+    expect(c.verify(SESSION_ID, evicted)).toBeNull();
+    expect(c.verify(SESSION_ID, keep)).toEqual({ userId: USER_ID });
+    // Revoking the evicted token is a clean false (nothing to delete), and it
+    // stays dead — the queue slot did not linger to be reused.
+    expect(c.revoke(SESSION_ID, evicted)).toBe(false);
+    expect(c.verify(SESSION_ID, evicted)).toBeNull();
+    // A re-mint plants a NEW token and evicts the next oldest (`alsoEvicted`),
+    // never resurrecting the already-evicted value.
+    const replanted = c.issue(SESSION_ID, USER_ID);
+    expect(replanted).not.toBe(evicted);
+    expect(c.verify(SESSION_ID, replanted)).toEqual({ userId: USER_ID });
+    expect(c.verify(SESSION_ID, evicted)).toBeNull();
+    expect(c.verify(SESSION_ID, alsoEvicted)).toBeNull();
+    // A sibling minted after the evicted one is still live: eviction walks the
+    // queue in mint order and stops at the bound.
+    expect(c.verify(SESSION_ID, keep)).toEqual({ userId: USER_ID });
+  });
+
+  test("revoking a live token frees its queue slot — the bound counts LIVE tokens, not historical mints", () => {
+    const { codec: c } = bounded(2);
+    const a = c.issue(SESSION_ID, USER_ID);
+    const b = c.issue(SESSION_ID, USER_ID);
+    expect(c.revoke(SESSION_ID, a)).toBe(true);
+    const d = c.issue(SESSION_ID, USER_ID); // 3rd mint, but only 2 live
+    // Nothing was evicted for the revoked slot: both survivors verify.
+    expect(c.verify(SESSION_ID, b)).toEqual({ userId: USER_ID });
+    expect(c.verify(SESSION_ID, d)).toEqual({ userId: USER_ID });
+    expect(c.size()).toBe(2);
+  });
+
+  test("the default bound is the documented 8, and a session at 8 keeps its oldest until the 9th mint", () => {
+    const c = codec(); // production default index path
+    const passes = Array.from({ length: PREVIEW_PASSES_PER_SESSION }, () =>
+      c.issue(SESSION_ID, USER_ID),
+    );
+    // Exactly at the bound: nothing evicted yet.
+    for (const pass of passes) {
+      expect(c.verify(SESSION_ID, pass)).toEqual({ userId: USER_ID });
+    }
+    c.issue(SESSION_ID, USER_ID); // the 9th
+    expect(c.verify(SESSION_ID, passes[0] ?? "")).toBeNull();
+    expect(c.verify(SESSION_ID, passes[1] ?? "")).toEqual({ userId: USER_ID });
+  });
+
+  // ── OCR-1: the ceiling is the QUEUE's, not the mint path's ────────────────
+  //
+  // `remember` has TWO push paths: a fresh token (a mint), and a token already
+  // in the index re-bound to a DIFFERENT session (a rebind). The rebind used to
+  // push and return before the trim, so planting tokens elsewhere and rebinding
+  // them onto one session grew that session past the capacity. A mint never
+  // reaches that branch (issue() always makes a fresh CSPRNG token), which is
+  // why the hole was unreachable in production — but the branch exists to
+  // defend against hand-planted state, and may not break the invariant itself.
+
+  test("OCR-1: rebinding hand-planted tokens onto one session evicts oldest-first, exactly like a mint", () => {
+    const { index } = bounded(3);
+    const rebound: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const token = `hand-planted-${i}`;
+      // A token can only reach the rebind branch if the index already holds it
+      // under ANOTHER session, so plant it on a session of its own first.
+      index.remember(token, { sessionId: `cs-plant-${i}`, userId: USER_ID });
+      index.remember(token, { sessionId: SESSION_ID, userId: USER_ID });
+      rebound.push(token);
+      // The invariant at EVERY step, not only at the end: the rebound session
+      // never holds more than the capacity (every live entry belongs to it —
+      // each planted session's queue empties and its key is dropped), and the
+      // token just bound is alive.
+      expect(index.size()).toBeLessThanOrEqual(3);
+      expect(index.lookup(token)).toEqual({
+        sessionId: SESSION_ID,
+        userId: USER_ID,
+      });
+    }
+    // Same oldest-first order as the mint path: the newest 3 rebound tokens are
+    // the survivors, the four before them left the map.
+    for (const gone of rebound.slice(0, 4)) {
+      expect(index.lookup(gone)).toBeUndefined();
+    }
+    for (const live of rebound.slice(4)) {
+      expect(index.lookup(live)).toEqual({
+        sessionId: SESSION_ID,
+        userId: USER_ID,
+      });
+    }
+    expect(index.size()).toBe(3);
+  });
+
+  test("OCR-1: repeated rebinds never push one session past the production bound of 8", () => {
+    // The Brief's literal claim, at the shipped N: 11 planted tokens rebound
+    // onto one session leave it holding exactly 8, the newest among them.
+    const index = createPreviewPassIndex();
+    const rebound: string[] = [];
+    const planted = PREVIEW_PASSES_PER_SESSION + 3;
+    for (let i = 0; i < planted; i++) {
+      const token = `hand-planted-default-${i}`;
+      index.remember(token, { sessionId: `cs-plant-${i}`, userId: USER_ID });
+      index.remember(token, { sessionId: SESSION_ID, userId: USER_ID });
+      rebound.push(token);
+      expect(index.size()).toBeLessThanOrEqual(PREVIEW_PASSES_PER_SESSION);
+    }
+    expect(index.size()).toBe(PREVIEW_PASSES_PER_SESSION);
+    expect(index.lookup(rebound[0] ?? "")).toBeUndefined();
+    const newest = rebound[rebound.length - 1] ?? "";
+    expect(index.lookup(newest)).toEqual({
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+    });
+  });
+
+  test("a capacity below 1 fails at construction — never a mint that evicts itself", () => {
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      expect(() => createPreviewPassIndex(bad)).toThrow(RangeError);
+    }
   });
 });
 

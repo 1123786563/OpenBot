@@ -54,6 +54,16 @@ export async function streamRun(
   makeEvents: () => Promise<AsyncIterable<RunStreamEvent>>,
   input: Pick<RunAgentInput, "runId" | "threadId">,
   send: (event: BaseEvent) => void,
+  /**
+   * The run's budget receipt, when the caller runs under a contract (R3-02).
+   *
+   * Deliberately BEFORE the terminal event on both paths, and the ordering is the
+   * contract: OpenBot's dial side reads the receipt as the proof of what this run was
+   * allowed to spend, and treats a terminal event that arrives without one as a broken
+   * contract — so a receipt sent afterwards would be a receipt its caller rejects. A
+   * failed run still reports: "stopped at its budget" is exactly what it spent.
+   */
+  receipt?: () => BaseEvent | null,
 ): Promise<"completed" | "failed"> {
   /*
    * One message id per stretch of prose.
@@ -222,6 +232,8 @@ export async function streamRun(
       send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
     }
 
+    const closing = receipt?.();
+    if (closing) send(closing);
     send({
       type: "RUN_FINISHED",
       threadId: input.threadId,
@@ -234,6 +246,8 @@ export async function streamRun(
     if (textOpen) {
       send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
     }
+    const closing = receipt?.();
+    if (closing) send(closing);
     send({
       type: "RUN_ERROR",
       message:

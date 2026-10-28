@@ -46,13 +46,19 @@ export function createMastraMessageIntentReconciler({
 }) {
   assertDataDatabase(data);
 
+  // SET TRANSACTION ISOLATION LEVEL 必须先于事务内任何查询：续跑循环会在
+  // 同一事务里带 actor 事实二次调用本函数，故隔离级语句每事务只发一次。
+  const isolationAnnounced = new WeakSet<object>();
   async function establishTenantContext(
     tx: Parameters<Parameters<DataDatabase["transaction"]>[0]>[0],
     tenantId: string,
     actorId?: string,
     principalId?: string,
   ) {
-    await tx.execute(sql`set transaction isolation level read committed`);
+    if (!isolationAnnounced.has(tx)) {
+      await tx.execute(sql`set transaction isolation level read committed`);
+      isolationAnnounced.add(tx);
+    }
     await tx.execute(sql`set local lock_timeout = '2s'`);
     await tx.execute(sql`set local statement_timeout = '5s'`);
     await tx.execute(

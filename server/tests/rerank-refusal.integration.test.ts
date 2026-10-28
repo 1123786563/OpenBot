@@ -9,7 +9,9 @@ import { createPayerAccount, payerKey } from "../src/billing/payer";
 import {
   GATEWAY_PRICE_SNAPSHOT_SOURCE,
   PRICE_DIMENSIONS,
+  WIRE_PRICED_DIMENSIONS,
   mapPriceDims,
+  type PriceDimension,
   type PriceSnapshotDims,
 } from "../src/gateway/price-snapshot";
 import { createEnterpriseGatewayPriceSnapshotStore } from "../src/gateway/price-snapshot";
@@ -185,21 +187,61 @@ async function seedRerankWorld(seedCredits = 10_000): Promise<RerankWorld> {
 }
 
 /**
+ * The dimensions the v1 wire has no field for, as THIS fixture writes them out by hand: free
+ * is a price, so the completed basis prices every one of them at an explicit "0". The list is
+ * deliberately literal — that is what lets `assertReservedDimCoverage` below mean something,
+ * because a vocabulary expansion that adds another wire-less dimension cannot be silently
+ * missed here.
+ */
+const FIXTURE_RESERVED_DIMENSIONS: readonly PriceDimension[] = [
+  "image_output",
+  "audio_input",
+  "audio_output",
+  "video",
+  "video_input",
+  "surcharge_tool_call",
+  "surcharge_a2a_call",
+];
+
+/**
+ * Check the fixture's hand-written reserved list against 03.2's own module — the complement of
+ * `WIRE_PRICED_DIMENSIONS` is the authoritative set of dimensions the v1 wire cannot price.
+ * Both directions are compared so a vocabulary that GROWS (a dimension this fixture never
+ * heard of) or SHRINKS (a dimension the wire now prices) is a red with the diff named, instead
+ * of the fixture quietly mispricing the basis.
+ */
+function assertReservedDimCoverage(covered: readonly PriceDimension[]): void {
+  const coveredSet = new Set<string>(covered);
+  const expected = new Set<string>(
+    PRICE_DIMENSIONS.filter(
+      (dimension) => !WIRE_PRICED_DIMENSIONS.includes(dimension),
+    ),
+  );
+  const missing = [...expected].filter((dim) => !coveredSet.has(dim)).sort();
+  const unexpected = [...coveredSet].filter((dim) => !expected.has(dim)).sort();
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      "rerank fixture reserved-dimension coverage drifted from price-snapshot.ts: " +
+        `missing [${missing.join(", ")}], ` +
+        `unexpected [${unexpected.join(", ")}]`,
+    );
+  }
+}
+
+/**
  * The dims one rerank snapshot carries: the raw wire pricing through 03.2's own mapping,
  * with the reserved dimensions (no wire field in v1, ever) overlaid at an explicit "0" —
- * free is a price, so the completed basis prices every dimension of the vocabulary.
+ * free is a price, so the completed basis prices every dimension of the vocabulary. Every
+ * build re-checks the hand-written reserved list against `price-snapshot.ts`'s derived set
+ * (R2-F1), so the fixture cannot fall behind the vocabulary unnoticed.
  */
 function rerankDimsOf(pricing: Record<string, string>): PriceSnapshotDims {
+  assertReservedDimCoverage(FIXTURE_RESERVED_DIMENSIONS);
   const mapped = mapPriceDims({ pricing });
   return Object.fromEntries(
     PRICE_DIMENSIONS.map((dimension) => [
       dimension,
-      dimension === "image_output" ||
-        dimension === "audio_input" ||
-        dimension === "audio_output" ||
-        dimension === "video" ||
-        dimension === "surcharge_tool_call" ||
-        dimension === "surcharge_a2a_call"
+      FIXTURE_RESERVED_DIMENSIONS.includes(dimension)
         ? { status: "known" as const, amount: "0" }
         : mapped[dimension],
     ]),

@@ -162,3 +162,30 @@ test("a source sync a connector's policy refuses answers 400 with the reason, no
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({ error: "Tool refused by policy." });
 });
+
+/*
+ * FIX-OCR1 (OCR-M3, #376): the tenancy resolver's WORKSPACE_FORBIDDEN — the selected
+ * workspace's membership is gone or suspended — is an authorization answer the same way
+ * TENANT_FORBIDDEN is (the hindsight face and the company-admin routes map it to 403), never
+ * a server fault for the 503 branch to log.
+ */
+test("a workspace the membership no longer backs answers 403, not a 503 fault", async () => {
+  const routes = createMemoryRoutes(
+    {} as MemoryStore,
+    {} as MemoryIngestion,
+    async (context, next) => {
+      context.set("actor", { id: "person" } as AuthenticatedActor);
+      await next();
+    },
+    {
+      companyScope: {
+        resolveScope: async () => {
+          throw new Error("WORKSPACE_FORBIDDEN");
+        },
+      },
+    },
+  );
+  const response = await routes.request("/", { method: "GET" });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: "WORKSPACE_FORBIDDEN" });
+});

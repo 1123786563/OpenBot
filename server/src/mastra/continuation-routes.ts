@@ -6,6 +6,7 @@ import { z } from "zod";
 // payload the client posted, so the same reply replays to the same id.
 import { canonicalJson } from "../ai-observability/datasets";
 import type { AppVariables } from "../auth/guards";
+import { getLogger } from "../../../shared/logger";
 import type { PlatformScope } from "../enterprise/contracts";
 import type {
   MastraContinuationInstall,
@@ -40,6 +41,8 @@ import {
  * approvals subsystem routes, out of this ticket's scope); a tool_result
  * decision against them refuses with the store's decision-shape gate.
  */
+
+const log = getLogger("server");
 
 /** The reply digest an idempotent re-apply converges on. */
 export function frontendToolResultReceiptId(input: {
@@ -157,11 +160,15 @@ export function createMastraContinuationRoutes(deps: {
     if (error instanceof z.ZodError) {
       return context.json({ error: "Supply a valid request." }, 400);
     }
+    // The unexpected branch never echoes the error text: a store or driver fault carries
+    // SQL fragments and internal addresses. It is logged here in full and answered with a
+    // bare code, so nothing implementation-specific leaves the process.
+    log.error(
+      { err: error, route: context.req.path },
+      "A continuation route failed unexpectedly.",
+    );
     return context.json(
-      {
-        error: "MASTRA_CONTINUATION_ROUTE_FAILED",
-        message: error instanceof Error ? error.message : String(error),
-      },
+      { error: "MASTRA_CONTINUATION_ROUTE_FAILED" },
       500,
     );
   });

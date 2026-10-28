@@ -11,6 +11,12 @@
  */
 export type PgError = { code: string; message: string };
 
+/** How deep to walk `cause` before giving up on finding a driver classification. */
+const MAX_CAUSE_DEPTH = 5;
+
+/** A real SQLSTATE (42P01, 23503, P0002) always carries a digit; driver codes do not. */
+const SQLSTATE = /^(?=.*\d)[0-9A-Z]{5}$/;
+
 export async function rejectionOf(
   run: () => Promise<unknown>,
 ): Promise<PgError> {
@@ -18,10 +24,9 @@ export async function rejectionOf(
     await run();
   } catch (error) {
     let candidate = error as Record<string, unknown> | undefined;
-    for (let depth = 0; candidate !== undefined && depth < 5; depth += 1) {
+    for (let depth = 0; candidate !== undefined && depth < MAX_CAUSE_DEPTH; depth += 1) {
       const sqlstate = [candidate.errno, candidate.code].find(
-        (value) =>
-          typeof value === "string" && /^[0-9A-Z]{5}$/.test(value as string),
+        (value) => typeof value === "string" && SQLSTATE.test(value as string),
       );
       if (
         typeof sqlstate === "string" &&
@@ -29,7 +34,10 @@ export async function rejectionOf(
       ) {
         return { code: sqlstate, message: candidate.message as string };
       }
-      candidate = candidate.cause as Record<string, unknown> | undefined;
+      // `?? undefined`: a null cause must end the walk, not crash on `candidate.errno`.
+      candidate = (candidate.cause ?? undefined) as
+        | Record<string, unknown>
+        | undefined;
     }
     throw new Error(
       `expected a PostgreSQL error with a SQLSTATE and message, got: ${String(error)}`,

@@ -352,6 +352,9 @@ export function createOpenMuseNotificationRows(
      * HTTP fence.
      */
     ownerDisabled: ownerDisabledRow,
+    // Deliberately no-ops: the §9 fence is the deletion marker D01 writes and
+    // ownerDisabledRow reads, so these rows have no per-module state to flip
+    // (the same empty-hook pattern the goals/ideas/memories/tasks rows use).
     async disableOwner() {},
     async restoreOwner() {},
   };

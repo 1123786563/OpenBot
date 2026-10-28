@@ -26,6 +26,36 @@ export interface ExecutionScope {
 }
 
 /**
+ * State an execution's ownership on a dial's headers — the ONE place the
+ * three-state contract is written (#656 D1; the craft gateway's scopeHeaders(),
+ * the serve client's buildHeaders() and the event bus's reader all consume it
+ * and do not restate it):
+ *
+ * - object: inject the two ownership headers onto `headers`, LAST — the caller's
+ *   token and bot id land before this call, and no caller-stated copy can
+ *   override the deployment's trust facts.
+ * - null: the deployment was asked and has NO scope — fail closed through the
+ *   injected rejector (this module stays free of server-side error classes; the
+ *   caller's layer decides what the refusal looks like). The rejector's
+ *   `() => never` type keeps "null throws" a fact of the helper, not a habit
+ *   of each call site.
+ * - undefined: the caller is not scope-managed (no execution surface wired) —
+ *   skip injection entirely and dial on; a missing surface is not a refusal.
+ */
+export function applyExecutionScopeHeaders(
+  headers: Record<string, string>,
+  scope: ExecutionScope | null | undefined,
+  onRefusal: () => never,
+): Record<string, string> {
+  if (scope === null) onRefusal();
+  if (scope) {
+    headers[EXECUTION_TENANT_HEADER] = scope.tenantId;
+    headers[EXECUTION_WORKSPACE_HEADER] = scope.workspaceId;
+  }
+  return headers;
+}
+
+/**
  * What a scope id may contain: lowercase letters, digits, dashes — the shape of the ids the
  * tenancy tables mint. Enforced rather than trusted because these values become directory names
  * inside native processes (`…/tenants/<t>/workspaces/<w>/bots/<b>`), so a crafted id must not be

@@ -3,12 +3,16 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import i18next from "i18next";
-import { connectAppRefusal } from "../../shared/connect-prompt";
+import {
+  connectAppRefusal,
+  refusalBody as markerRefusalBody,
+} from "../../shared/connect-prompt";
 import {
   afterAll,
   afterEach,
   beforeAll,
   expect,
+  spyOn,
   test,
 } from "../../tests/support/bun-test-compat";
 import {
@@ -22,6 +26,8 @@ import {
   ToolActivity,
   type ToolGroup,
 } from "../src/components/channels/tool-activity";
+import { markdownComponents } from "../src/lib/markdown";
+import * as toolResult from "../src/lib/plugins/tool-result";
 
 /**
  * The tool-activity group: the one line a run of adjacent connector and browser calls folds into,
@@ -215,6 +221,165 @@ test("an ordinary refusal folds like any other step; it asks nobody anything", (
   const grouped = groupToolSteps([refused, after]);
   expect(grouped).toHaveLength(1);
   expect(expectGroup(grouped[0]).steps).toEqual([refused, after]);
+});
+
+/*
+ * The verdict cache is FIFO-capped, so a long research session — more distinct results than the
+ * cap holds — rolls verdicts out as fast as they are written, and every frame used to re-parse the
+ * whole history it had already judged. The re-read is not owed to the semantics either:
+ * `refusalBody` decodes through `asText`, which rewrites a result only when it starts with a
+ * quote, and a refusal is either the marker itself or the JSON encoding of a string that starts
+ * with it. An ordinary vendor answer is known false from its first characters alone — no parse,
+ * no cache — and these two pins hold the claim: the verdicts at scale, and the parse they cost.
+ */
+test("a history longer than the verdict cache folds whole: no distinct ordinary result asks the person", () => {
+  // 600 distinct vendor answers, JSON-encoded the way the runtime carries them — none a refusal.
+  const steps = Array.from({ length: 600 }, (_, i) =>
+    search(`s${i}`, JSON.stringify(`vendor answer ${i}`)),
+  );
+  const grouped = groupToolSteps(steps);
+  expect(grouped).toHaveLength(1);
+  expect(expectGroup(grouped[0]).steps).toHaveLength(600);
+});
+
+test("a frame never re-parses history it has already judged, however far past the cache cap", () => {
+  const steps = Array.from({ length: 600 }, (_, i) =>
+    search(`r${i}`, JSON.stringify(`vendor answer ${i}`)),
+  );
+  const realParse = JSON.parse;
+  let parses = 0;
+  JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+    parses += 1;
+    return realParse(...args);
+  }) as typeof JSON.parse;
+  try {
+    // Two frames over the same history, the way a streaming reply re-renders: the second judges
+    // nothing the first did not, and an ordinary result is judged without a parse at all.
+    groupToolSteps(steps);
+    groupToolSteps(steps);
+  } finally {
+    JSON.parse = realParse;
+  }
+  expect(parses).toBe(0);
+});
+
+/*
+ * The FIFO bounds how many verdicts the cache holds, not how much text: a vendor's result reaches
+ * it merely by opening with `Refused.`, at any length. Results past the size cap are judged every
+ * frame and never stored — and a short refusal still buys its one parse and keeps it.
+ */
+test("a result past the verdict cache's size cap is judged every frame and never stored", () => {
+  // One character past the cap, JSON-encoded the way the runtime carries a refusal (the two
+  // quotes the encoding adds are why the repeat counts them in).
+  const oversized = JSON.stringify(
+    `Refused. ${"x".repeat(16_385 - "Refused. ".length - 2)}`,
+  );
+  expect(oversized.length).toBe(16_385);
+  const judged = search("judged", oversized);
+  // The verdict is still the right one: an ordinary refusal asks nobody, so it folds.
+  const after = search("after");
+  const grouped = groupToolSteps([judged, after]);
+  expect(grouped).toHaveLength(1);
+  expect(expectGroup(grouped[0]).steps).toEqual([judged, after]);
+  // Two frames over the same history: no cache entry can absorb the second one, so the result
+  // is re-judged on it — one decode-and-parse per frame, the price before the cache existed.
+  {
+    const realParse = JSON.parse;
+    let parses = 0;
+    JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+      parses += 1;
+      return realParse(...args);
+    }) as typeof JSON.parse;
+    try {
+      groupToolSteps([judged]);
+      groupToolSteps([judged]);
+    } finally {
+      JSON.parse = realParse;
+    }
+    expect(parses).toBe(2);
+  }
+  // A refusal short enough to be worth an entry still gets one, and the second frame reads it
+  // without parsing anything at all.
+  const short = search(
+    "short",
+    JSON.stringify("Refused. Short enough to be worth a cache entry."),
+  );
+  {
+    const realParse = JSON.parse;
+    let parses = 0;
+    JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+      parses += 1;
+      return realParse(...args);
+    }) as typeof JSON.parse;
+    try {
+      groupToolSteps([short]);
+      groupToolSteps([short]);
+    } finally {
+      JSON.parse = realParse;
+    }
+    expect(parses).toBe(1);
+  }
+});
+
+/*
+ * ServerToolLine used to strip its refusal through the connect codec's two-argument copy, over
+ * text it had decoded by hand; it now reads the one-sequence `refusalBody` from `tool-result`,
+ * like the fold and the card. The two strips agree only while decode-then-match keeps the same
+ * order in both, and this pin holds them to it over the shapes a result can arrive in.
+ */
+test("the transcript's refusal strip and the connect codec's agree on every shape a result arrives in", () => {
+  const refusal = JSON.stringify(
+    `Refused. ${connectAppRefusal({
+      serverId: "github",
+      title: "GitHub",
+      message: "Connect your GitHub account and ask again.",
+    })}`,
+  );
+  const results: (string | undefined)[] = [
+    undefined,
+    JSON.stringify("Refused. The policy does not allow that."),
+    "Refused. Bare text, carried without the runtime's encoding.",
+    `  ${refusal}`,
+    JSON.stringify("The answer was Refused. mid-sentence"),
+    '{"results":"a vendor envelope, not text"}',
+    '"Refused. unterminated',
+  ];
+  for (const result of results) {
+    expect(
+      markerRefusalBody(
+        result === undefined ? undefined : toolResult.asText(result),
+        toolResult.REFUSAL_MARKER,
+      ),
+    ).toBe(toolResult.refusalBody(result));
+  }
+  // The pin is not vacuous: the wire's own refusal yields its body, and look-alikes yield null.
+  expect(toolResult.refusalBody(refusal)).not.toBeNull();
+  expect(toolResult.refusalBody(results[4])).toBeNull();
+});
+
+/*
+ * A completed step's result used to be read twice over — once for the refusal verdict, once again
+ * for the body that verdict left behind — on every frame of every fold while a reply streams.
+ * `refusalAndAnswer` reads the envelope once and answers both questions; this pin counts what
+ * classifying a single completed step costs: its arguments, its answer, and its failure check,
+ * one parse each and no more.
+ */
+test("a completed step's result is decoded once for its verdict and its body, not once each", () => {
+  const realParse = JSON.parse;
+  let parses = 0;
+  JSON.parse = ((...args: Parameters<typeof JSON.parse>) => {
+    parses += 1;
+    return realParse(...args);
+  }) as typeof JSON.parse;
+  try {
+    const done = stepDetails(search("done", JSON.stringify("vendor answer")));
+    expect(done.refused).toBe(false);
+    expect(done.output).toBe("vendor answer");
+  } finally {
+    JSON.parse = realParse;
+  }
+  // The arguments, the answer, and the failure check — one decode each.
+  expect(parses).toBe(3);
 });
 
 test("grouping reads a real streamed conversation through the transcript projection", () => {
@@ -418,6 +583,120 @@ test("the untrusted envelope never reaches the reader, and the content inside it
   const shown = document.body.textContent ?? "";
   expect(shown.includes("CRITICAL: The following")).toBe(false);
   expect(shown.includes("<untrusted_data")).toBe(false);
+  page.restore();
+});
+
+/*
+ * The fold draws a vendor's answer with the same markdown machinery the transcript gives a Bot's
+ * prose, but without the single-tool path's fence around it: the text arrives from the MCP server,
+ * not from the app. A component in that machinery throwing must cost the one step its result and
+ * no more — the row degrades to the tool boundary's own local wording and the rest of the group,
+ * the fold, and the transcript around it go on. Injected the same way the failure really happens:
+ * a markdown component throwing on what the parser hands it, here on a link inside the answer.
+ */
+test("a step whose drawing throws degrades to the tool boundary's fallback and the rest of the group survives", async () => {
+  await i18next.changeLanguage("en");
+  const group = expectGroup(
+    groupToolSteps([
+      search(
+        "explodes",
+        "See [the source](https://example.com/doc) for the details.",
+      ),
+      search("fine", '{"results":"# Standup notes"}'),
+    ])[0],
+  );
+  const realAnchor = markdownComponents.a;
+  markdownComponents.a = () => {
+    throw new Error("pathological vendor markdown");
+  };
+  try {
+    const page = renderGroup(group);
+    page.openFold();
+    // The failed step is replaced by the boundary's own sentence — what failed, and the promise
+    // that nothing else was lost — instead of taking the whole transcript down with it.
+    const shown = document.body.textContent ?? "";
+    expect(shown.includes("could not be drawn")).toBe(true);
+    expect(shown.includes("The rest of this conversation is unaffected")).toBe(
+      true,
+    );
+    // The neighbour step's answer is still drawn, and the line the group folds from survives.
+    expect(page.view.getByText("Standup notes")).toBeTruthy();
+    expect(page.view.getByText("Used Notes")).toBeTruthy();
+    page.restore();
+  } finally {
+    markdownComponents.a = realAnchor;
+  }
+});
+
+/*
+ * Decoding is a failure mode the drawing case above cannot reach: `forDisplay` runs while a step's
+ * elements are being built, before any drawing starts, and it used to run in `StepRow`'s own
+ * render — ahead of the boundary, so a decode that threw escaped past it and took the whole
+ * transcript down. The known decode throws are caught inside `forDisplay` itself (the deep-JSON
+ * case below); this one pins the structure, injected the same way the drawing case injects its
+ * markdown component — here the decoder itself throws. What must survive is the neighbour's
+ * answer, the line the group folds from, and the promise the fallback states.
+ */
+test("a step whose decoding throws degrades to the tool boundary's fallback and the rest of the group survives", async () => {
+  await i18next.changeLanguage("en");
+  const group = expectGroup(
+    groupToolSteps([
+      search("explodes", '{"results":"# Never drawn"}'),
+      search("fine", '{"results":"# Standup notes"}'),
+    ])[0],
+  );
+  const realDecode = toolResult.forDisplay;
+  const decode = spyOn(toolResult, "forDisplay").mockImplementation(
+    (text: string) => {
+      if (text.includes("Never drawn")) throw new Error("pathological decode");
+      return realDecode(text);
+    },
+  );
+  try {
+    const page = renderGroup(group);
+    page.openFold();
+    // The failed step is replaced by the boundary's own sentence — what failed, and the promise
+    // that nothing else was lost — instead of taking the whole transcript down with it.
+    const shown = document.body.textContent ?? "";
+    expect(shown.includes("could not be drawn")).toBe(true);
+    expect(shown.includes("The rest of this conversation is unaffected")).toBe(
+      true,
+    );
+    expect(shown.includes("Never drawn")).toBe(false);
+    // The neighbour step's answer is still drawn, and the line the group folds from survives.
+    expect(page.view.getByText("Standup notes")).toBeTruthy();
+    expect(page.view.getByText("Used Notes")).toBeTruthy();
+    page.restore();
+  } finally {
+    decode.mockRestore();
+  }
+});
+
+/*
+ * The fold draws a step's output through forDisplay before the boundary mounts. A legal deep JSON
+ * string makes the stringify inside forDisplay throw RangeError during render, and with no
+ * fallback that error takes the whole group down with the one step. Drawn instead as the text that
+ * arrived — the original string fenced as JSON — and the group around it untouched.
+ */
+test("a step whose output is JSON too deep to redraw draws as the text that arrived and the group survives", async () => {
+  await i18next.changeLanguage("en");
+  const deep = `${"[".repeat(100000)}0${"]".repeat(100000)}`;
+  const group = expectGroup(
+    groupToolSteps([
+      search("deep", deep),
+      search("fine", '{"results":"# Standup notes"}'),
+    ])[0],
+  );
+  const page = renderGroup(group);
+  page.openFold();
+  const step = page.stepDisclosures()[0];
+  if (!step) throw new Error("no step disclosure");
+  fireEvent.click(summaryOf(step));
+  // The deep step's own text is on the page, and the neighbour's answer is still drawn.
+  const shown = document.body.textContent ?? "";
+  expect(shown.includes(deep.slice(0, 20))).toBe(true);
+  expect(page.view.getByText("Standup notes")).toBeTruthy();
+  expect(page.view.getByText("Used Notes")).toBeTruthy();
   page.restore();
 });
 

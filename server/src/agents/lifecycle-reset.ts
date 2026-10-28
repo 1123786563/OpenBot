@@ -40,7 +40,8 @@ import {
   routines,
   workItems,
 } from "../db/schema";
-import { lockDefaults, recordOptOut, sourceServerId } from "../memory/defaults";
+// MOD15 (#635)：M10 出口段迁移——defaults 三函数改经 M10 公开门面，环边落公开出口。
+import { lockDefaults, recordOptOut, sourceServerId } from "../memory/public";
 import { PROACTIVE_RUN_KIND } from "../proactive/engine";
 import type { AgentActor } from "./profile-types";
 import { WAKE_UP_KIND } from "./wake-up";

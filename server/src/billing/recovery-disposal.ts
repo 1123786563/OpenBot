@@ -355,14 +355,14 @@ export function createRecoveryDisposal(
       // evidence because the operator never sent an amount at all. Built over the
       // vocabulary itself so a new dimension joins by existing, never by this list.
       const actualUsage = Object.fromEntries(
-        PRICE_DIMENSIONS.map((dimension) => [
-          dimension,
-          dimension === "input"
-            ? (evidenceRow.usageInput ?? 0)
-            : dimension === "output"
-              ? (evidenceRow.usageOutput ?? 0)
-              : 0,
-        ]),
+        PRICE_DIMENSIONS.map((dimension) => {
+          let units = 0;
+          if (dimension === "input") units = evidenceRow.usageInput ?? 0;
+          else if (dimension === "output") {
+            units = evidenceRow.usageOutput ?? 0;
+          }
+          return [dimension, units];
+        }),
       ) as Record<(typeof PRICE_DIMENSIONS)[number], number>;
       const settleOutcome = await settleService.settle({
         reservationId: item.reservationId,
@@ -424,15 +424,23 @@ export function createRecoveryDisposal(
         .select({
           status: creditReservations.status,
           released: creditReservations.released,
+          releaseReason: creditReservations.releaseReason,
         })
         .from(creditReservations)
         .where(eq(creditReservations.id, item.reservationId))
         .limit(1);
-      if (reservationAfter?.status !== "released") {
+      if (
+        reservationAfter?.status !== "released" ||
+        // Symmetric with the compensation's own marker check: a hold released by ANOTHER
+        // gate (a platform compensation, a plain release) converged on some other act, and
+        // this disposal must not attribute it to this operator's release.
+        !reservationAfter.releaseReason?.startsWith("recovery_disposal:")
+      ) {
         // The recovery door's own refusal shape: a hold that was never `unknown` (or a
         // settle that landed first). Nothing moved on our say-so; say so.
         return refused("release_refused", {
           reservationStatus: reservationAfter?.status ?? "missing",
+          releaseReason: reservationAfter?.releaseReason ?? null,
           reason: "the reservation did not release",
         });
       }

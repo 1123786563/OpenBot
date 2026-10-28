@@ -601,6 +601,24 @@ describe("company management authorization (explicit cross-plane grants)", () =>
     expect(decisionJson.includes("memberEpoch")).toBe(false);
   });
 
+  test("a lowercase-method grant is normalized to the uppercase runtime lookup key", () => {
+    // 运行时查找键由 entranceIdOf 生成（大写 METHOD 形）；装配校验内部才
+    // toUpperCase——不归一登记键，小写授权能过装配校验却永远匹配不上判定。
+    const lowercaseRegistry = createManagementCrossGrantRegistry([
+      {
+        ...grant,
+        entrance: "post /api/enterprise/workspace-scope/admin/teams",
+      },
+    ]);
+    const decision = authorizeCompanyManagementAction({
+      actor: { kind: "platform_operator", subject: "platform-scanner" },
+      entrance,
+      tenantId: tenantA,
+      grants: lowercaseRegistry,
+    });
+    expect(decision.outcome).toBe("allow");
+  });
+
   test("grants bind subject, tenant and entrance exactly (no wildcard reuse)", () => {
     for (const mismatch of [
       { subject: "other-machine" },

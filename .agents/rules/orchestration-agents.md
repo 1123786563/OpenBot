@@ -7,14 +7,18 @@
 | 普通任务实现与 finding 整改      | claude               | `claude`                                     | 首次派发前为每个 Task 选定；整改默认交回原实施 Agent           |
 | 普通任务独立行为验证              | claude、kimi（同独立审核候选） | 准确 ID 由当前主机核实                                | 实施结束且检查点冻结后，按 DAG validator\_role 执行前/后端验收 |
 | 普通任务独立审核与整改复审           | claude、kimi          | Claude 为 `claude`；Kimi 的准确 ID 须由当前 Orca 主机核实 | 每轮审核启动前选定；不得由该检查点的实现者自审                    |
-| 已关闭 Issue 逐票只读审计与行为验收   | claude               | `claude`                                     | 每票独立 Brief 和会话；审核者只读业务代码与测试源文件             |
-| 已关闭 Issue 审计 finding 修复 | claude               | `claude`                                     | 审计裁决有效后派发独立修复 Brief；与审核者使用不同 Agent         |
+| 已关闭 Issue 逐票只读审计与行为验收   | claude、kimi、codex     | 准确 ID 由当前主机核实                            | 每票独立 Brief 和会话；必须不同于当前主控及可核实的历史实现者，只读业务代码与测试源文件 |
+| 已关闭 Issue 审计 finding 修复 | claude、kimi           | 准确 ID 由当前主机核实                            | 审计裁决有效后派发独立修复 Brief；与审核者使用不同 Agent         |
 | 已关闭 Issue 修复的独立复审       | claude               | `claude`                                     | 修复检查点固定后新开只读会话；与原审核者、修复者均独立                |
 | 集成分支完整终审（含审计修复）         | claude               | `claude`                                     | 全部任务集成并完成组合验证后另启终审会话                       |
 
-主编排者为每张审计票及每个 Task/审核轮次在 Brief 和 Ledger 记录选定角色、预期 Orca Agent ID、工作区、检查点与实际启动回执。后端/前端等专业职责写入 Brief，不用 Agent 产品名代替任务所有权。逐票审计 Agent 提供验收映射、实际验证和 finding；主编排者独立核对证据并裁决。已关闭 Issue 的审核者不得接手本票修复，修复者不得执行本票审核或批准自己的检查点；即使同用 `codex`，初审、修复复审和终审也须分别启动独立会话。修复复审对同一检查点给出 Spec compliance 与 code quality 结论；终审覆盖按 [checkpoints.md](checkpoints.md)映射的完整授权已提交及未提交内容。OCR 是主编排者执行的外层工具关卡，不列入 Agent 候选。
+独立性按实际执行主体判定：分别记录 agent_id（产品/provider）、session_id/handle、Dispatch、角色及实现贡献范围。候选产品只由上表定义，后文独立性条件不扩大候选；升级例外按下节处理。相同产品可以承担表中允许的不同阶段，但审核/验证会话须不同于被审检查点的实现会话及当前主控会话，以干净上下文启动，不继承其会话状态、不参与本次实现，并只经冻结 Brief/证据接收材料；仅换窗口或提示词角色不足以证明独立。逐票初审还须排除可核实的本票历史实现会话。原初审会话不接手修复，各阶段须逐项留证。非 Orca 同样核对可用工具实际回执；不为其强制制造 Orca ID/Dispatch。
 
-派发前读取当前版本的 `orca-cli` 和 `orchestration` 指南，核实目标执行主机支持所选 Agent 的准确 ID 和启动方式；示例命令中的 `<implementation-agent>`、`<review-agent>`、`<final-review-agent>` 均须替换为已核实的 ID。选定 Kimi 时必须取得当前主机的正面可用性证据，不能依据名称猜测其 ID。
+历史票的 session/Dispatch 或贡献记录已不存在时，主控先保存可检索范围、Git 作者/提交、现存 Run/评论和身份缺口。替代独立性证明必须同时包含：当前审核者的新会话/Brief 回执、其未参与本轮实现的贡献检查、现存记录中未发现其与历史实现会话重叠的检索证据，以及当前用户或已批准 Spec/ADR 中覆盖该范围的有权角色所作明确批准和 `approval_ref`。批准后可将该限制作为已披露的历史证据缺口继续验收，不宣称恢复了历史身份；检索不完整、发现实际贡献重叠或无有效批准时仍不能 verified。替代批准只豁免无法恢复的历史身份比对，不豁免当前主控、实现者、审核者之间的独立性和其他验收门禁。
+
+主编排者为每张审计票及每个 Task/审核轮次在 Brief 和 Ledger 记录选定角色、预期 Orca Agent ID、工作区、检查点与实际启动回执。后端/前端等专业职责写入 Brief，不用 Agent 产品名代替任务所有权。逐票审计 Agent 提供验收映射、实际验证和 finding；主编排者独立核对证据并裁决。已关闭 Issue 的审核者不得接手本票修复，修复者不得执行本票审核或批准自己的检查点；各阶段均须按候选表另启满足独立性要求的会话。修复复审对同一检查点给出 Spec compliance 与 code quality 结论；终审覆盖按 [checkpoints.md](checkpoints.md)映射的完整授权已提交及未提交内容。OCR 是主编排者执行的外层工具关卡，不列入 Agent 候选。
+
+Orca 派发前读取当前版本的 `orca-cli` 和 `orchestration` 指南，核实目标执行主机支持所选 Agent 的准确 ID 和启动方式；示例命令中的 `<implementation-agent>`、`<review-agent>`、`<final-review-agent>` 均须替换为已核实的 ID。选定 Kimi 时必须取得当前主机的正面可用性证据，不能依据名称猜测其 ID。
 
 启动后核对回执中的实际 Agent 身份、handle、Dispatch 和工作区，与 Ledger 中的预期值一致才接受结果。启动或身份不明时保持 `blocked/unverifiable` 并按[编排协议](orchestration-protocol.md)对账；不得把另一 Agent 的结果当成选定 Agent 的审核。确需改选时先记录原因、原检查点、交接范围与新预期身份；模型、推理等级和运行表面仅在已有明确用户要求且当前 Agent/主机支持时传入。
 

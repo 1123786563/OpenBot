@@ -263,6 +263,22 @@ export function authorizationUrlFor(input: {
   state: string;
   codeChallenge: string;
 }): string {
+  // The same catalogue check the redemption and registration make, and for
+  // the same reason: an endpoint that is not an address is this deployment's
+  // mistake, not a vendor outage, and only the log can tell them apart.
+  if (!URL.canParse(input.auth.authorizationUrl)) {
+    log.error(
+      {
+        type: "oauth-authorization-endpoint-unusable",
+        authorizationUrl: input.auth.authorizationUrl,
+        note: "This vendor's authorization endpoint is not a usable address, so nobody can connect it until the catalogue is fixed.",
+      },
+      "oauth-authorization-endpoint-unusable",
+    );
+    throw new Error(
+      "This vendor's authorization endpoint is not a usable address, so nobody can connect it until the catalogue is fixed.",
+    );
+  }
   const url = new URL(input.auth.authorizationUrl);
   const params = new URLSearchParams({
     client_id: input.clientId,
@@ -405,7 +421,20 @@ export async function redeemAuthorizationCode(input: {
     return null;
   }
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    // The commonest failure of all, and the only one that used to leave no
+    // trace: the operator learns which vendor answered what.
+    log.error(
+      {
+        type: "oauth-token-endpoint-refused",
+        tokenUrl: input.tokenUrl,
+        status: response.status,
+        note: "The vendor refused the code exchange. The person was sent back to Settings with a failure.",
+      },
+      "oauth-token-endpoint-refused",
+    );
+    return null;
+  }
 
   /*
    * Read defensively, because a 200 is not a promise of JSON.

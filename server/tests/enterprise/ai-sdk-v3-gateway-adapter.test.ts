@@ -1,6 +1,6 @@
-import { describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { streamText, tool } from "ai";
 import { z } from "zod";
+import { describe, expect, test } from "../../../tests/support/bun-test-compat";
 import { createAiSdkV3GatewayAdapter } from "../../src/enterprise/models/ai-sdk-v3-gateway-adapter";
 import { createModelGateway } from "../../src/enterprise/models/gateway";
 
@@ -1215,6 +1215,38 @@ test("non_2xx_response_surfaces_gateway_code", async () => {
   );
   await expect(model.doStream(options as never)).rejects.toThrow(
     /MODEL_GATEWAY_HTTP_400.*MODEL_ROUTE_UNAVAILABLE/,
+  );
+});
+
+test("non_2xx_gateway_message_rides_the_http_marker", async () => {
+  // F11-1 (#489): the direct-OpenAI name guard's refusal body carries the
+  // offending name in `message`; the thrown marker must keep it so the run
+  // failure tells the operator which mounted tool to check.
+  const gatewayError = () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "MASTRA_TOOL_NAME_INVALID",
+          message:
+            "github.get_current_user cannot be mounted on a direct-OpenAI provider (its function-name charset admits no dot)",
+        },
+      }),
+      {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  const model = createAiSdkV3GatewayAdapter({
+    routeRef: "r",
+    runTokenCeiling: 20,
+    issueCapability: async () => capability,
+    gateway: { handle: async () => gatewayError() },
+  });
+  await expect(model.doGenerate(options as never)).rejects.toThrow(
+    /MODEL_GATEWAY_HTTP_400 MASTRA_TOOL_NAME_INVALID: github\.get_current_user cannot be mounted on a direct-OpenAI provider \(its function-name charset admits no dot\)/,
+  );
+  await expect(model.doStream(options as never)).rejects.toThrow(
+    /MODEL_GATEWAY_HTTP_400 MASTRA_TOOL_NAME_INVALID: github\.get_current_user cannot be mounted on a direct-OpenAI provider \(its function-name charset admits no dot\)/,
   );
 });
 

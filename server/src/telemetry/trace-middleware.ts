@@ -9,7 +9,7 @@
  * throws or answers 5xx; a thrown error still propagates, so Hono's own error
  * handling sees exactly what it would have seen unwrapped.
  */
-import { context, SpanStatusCode, trace } from "@opentelemetry/api";
+import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import type { MiddlewareHandler } from "hono";
 import { extractRequestContext } from "../../../shared/trace";
 import type { RequestTrackingVariables } from "./request-tracking";
@@ -20,13 +20,26 @@ export function createTraceMiddleware(): MiddlewareHandler<{
   const tracer = trace.getTracer("openbot.http");
   return async (context_, next) => {
     const remote = extractRequestContext(context_.req.raw);
+    // SERVER, not the default INTERNAL: only a server span pairs with the caller's client
+    // span, and only server spans feed the http.server.* metrics and the SERVER sampling rules.
     const span = tracer.startSpan(
       `${context_.req.method} ${context_.req.path}`,
-      {},
+      {
+        kind: SpanKind.SERVER,
+        attributes: {
+          "http.request.method": context_.req.method,
+          "url.path": context_.req.path,
+        },
+      },
       remote,
     );
     try {
       await context.with(trace.setSpan(remote, span), next);
+      // The route template, once the router resolved it: naming spans after raw paths
+      // (`/api/users/123/orders/456`) makes every request its own series in the backend.
+      const routePath = context_.req.routePath;
+      if (routePath && routePath !== "*")
+        span.updateName(`${context_.req.method} ${routePath}`);
       const status = context_.res.status;
       span.setAttribute("http.response.status_code", status);
       if (status >= 500) span.setStatus({ code: SpanStatusCode.ERROR });

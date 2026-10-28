@@ -362,7 +362,10 @@ describe("the experiment migration touches only its own objects", () => {
       "ai_observation_experiments_frozen_coherence_check",
       "ai_observation_experiments_scope_name_uq",
       "ai_observation_experiments_scope_config_hash_frozen_uq",
-      "ai_observation_experiments_dataset_version_id_ai_observation_dataset_versions_id_fk",
+      // 0153's cross-migration FK edge into ai_observation_dataset_versions, renamed short
+      // by 403c9368f: the generated long name exceeds Postgres' 63-byte identifier limit,
+      // so the original spelling was unappliable.
+      "ai_observation_experiments_dataset_version_id_fk",
       "ai_observation_experiments_reject_update",
       "ai_observation_experiments_immutable",
       "ai_observation_experiments_reject_delete",

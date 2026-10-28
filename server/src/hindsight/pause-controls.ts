@@ -47,22 +47,34 @@ export type HindsightPauseState = {
 /**
  * The SQL-backed switches: one row per (tenant, principal), each pause the instant it took
  * effect, each resume clearing its own column and nothing else. An absent row answers "both
- * active" — the default is an unpaused memory life, not a locked one.
+ * active" — the default is an unpaused memory life, not a locked one. Each row also carries
+ * the person's user id (migration 0210, RFW1-1): the writer holds the server-issued
+ * `PlatformScope`, whose resolver selected the principal BY the session actor's user id, so
+ * the stored attribution is that same server-side fact — the column the legacy user gate
+ * below reads instead of touching the directory's row visibility.
  */
 export function createDrizzlePauseControls(
   database: Database,
   options: { now?: () => Date } = {},
 ): HindsightPauseControls & {
-  /** Pause learning: automatic candidate proposals stop from this instant on. */
+  /**
+   * Pause learning: automatic candidate proposals stop from this instant on. The user id is
+   * the trusted scope's own actor attribution, never a wire value.
+   */
   setLearningPaused(
     tenantId: string,
     principalId: string,
+    userId: string,
     paused: boolean,
   ): Promise<void>;
-  /** Pause usage: recall of confirmed content stops from this instant on. */
+  /**
+   * Pause usage: recall of confirmed content stops from this instant on. Same server-side
+   * user attribution as the learning switch.
+   */
   setUsagePaused(
     tenantId: string,
     principalId: string,
+    userId: string,
     paused: boolean,
   ): Promise<void>;
   getPauseState(
@@ -98,13 +110,13 @@ export function createDrizzlePauseControls(
         .limit(1);
       return (row?.usagePausedAt ?? null) !== null;
     },
-    async setLearningPaused(tenantId, principalId, paused) {
-      await upsert(tenantId, principalId, {
+    async setLearningPaused(tenantId, principalId, userId, paused) {
+      await upsert(tenantId, principalId, userId, {
         learningPausedAt: paused ? now() : null,
       });
     },
-    async setUsagePaused(tenantId, principalId, paused) {
-      await upsert(tenantId, principalId, {
+    async setUsagePaused(tenantId, principalId, userId, paused) {
+      await upsert(tenantId, principalId, userId, {
         usagePausedAt: paused ? now() : null,
       });
     },
@@ -130,6 +142,7 @@ export function createDrizzlePauseControls(
   async function upsert(
     tenantId: string,
     principalId: string,
+    userId: string,
     set: { learningPausedAt: Date | null } | { usagePausedAt: Date | null },
   ) {
     const at = now();
@@ -138,6 +151,7 @@ export function createDrizzlePauseControls(
       .values({
         tenantId,
         principalId,
+        userId,
         learningPausedAt:
           "learningPausedAt" in set ? set.learningPausedAt : null,
         usagePausedAt: "usagePausedAt" in set ? set.usagePausedAt : null,
@@ -181,3 +195,62 @@ export async function learningPausedFor(
   const identity = resolveHindsightBankScope(scope);
   return pause.learningPaused(identity.tenantId, identity.principalId);
 }
+
+/**
+ * The legacy surfaces' gate (#392 FIX-W1, F-G1-2/F-G1-3; fail-open fixed in FIX-W8/RFW1-1):
+ * the legacy memory store is the person's own, keyed by user id, and its callers (the legacy
+ * engine's personal-memory middleware, the memory tools, the connector sync) carry a session
+ * actor rather than a request-resolved `PlatformScope`. This bridge answers the same two
+ * switches from the SAME table, by the person attribution each row carries from its write
+ * time: the writer holds the server-issued scope, and the tenancy resolver selects the
+ * principal BY the session actor's user id, so the stored `user_id` is the same server-side
+ * fact a directory lookup would derive — nothing in a request body, query or header can name
+ * a tenant, principal, user or bank here, the same discipline `resolveHindsightBankScope`
+ * holds on the chain side.
+ *
+ * The read is deliberately a single-table lookup, NOT a join through `enterprise_principals`.
+ * That table is FORCE ROW LEVEL SECURITY with policies only for the ob_ent_* capability
+ * roles, so on the main application connection the enterprise form mandates (no superuser,
+ * no BYPASSRLS, no capability membership) the join answered zero rows and both gates
+ * silently failed open — a pause the person set was ignored, invisibly to every superuser
+ * test topology (RFW1-1). Reading the stored attribution instead keeps the answer
+ * independent of the directory's row visibility: there is no read-time identity resolution
+ * left to fail quietly, and a read that does fail throws — the seams refuse rather than
+ * proceed as if nothing were paused.
+ *
+ * The legacy store has no company column, so a pause the person set under ANY of their
+ * principal rows stops it: the switch says "stop using my memories", and the only store it can
+ * stop is the person-wide one. That is the fail-safe direction — a pause never leaks content —
+ * and resuming clears exactly the switch that was set, nothing else.
+ */
+export function createUserPauseGate(database: Database): {
+  learningPaused(ownerUserId: string): Promise<boolean>;
+  usagePaused(ownerUserId: string): Promise<boolean>;
+} {
+  async function statesFor(ownerUserId: string): Promise<{
+    learning: boolean;
+    usage: boolean;
+  }> {
+    const rows = await database
+      .select({
+        learningPausedAt: hindsightPauseControls.learningPausedAt,
+        usagePausedAt: hindsightPauseControls.usagePausedAt,
+      })
+      .from(hindsightPauseControls)
+      .where(eq(hindsightPauseControls.userId, ownerUserId));
+    return {
+      learning: rows.some((row) => row.learningPausedAt !== null),
+      usage: rows.some((row) => row.usagePausedAt !== null),
+    };
+  }
+  return {
+    async learningPaused(ownerUserId) {
+      return (await statesFor(ownerUserId)).learning;
+    },
+    async usagePaused(ownerUserId) {
+      return (await statesFor(ownerUserId)).usage;
+    },
+  };
+}
+
+export type HindsightUserPauseGate = ReturnType<typeof createUserPauseGate>;

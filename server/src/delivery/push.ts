@@ -57,13 +57,11 @@ export function createExpoPushTransport(
           url: `openbotmobile://${path}?${query}`,
         },
       });
-      const ticket = result.data;
-      if (
-        !ticket ||
-        typeof ticket !== "object" ||
-        Array.isArray(ticket) ||
-        !("status" in ticket)
-      )
+      const payload = result.data;
+      // Expo answers an ARRAY of tickets even for a single message — treating the shape
+      // as one object misfiles every healthy send as invalid_ticket.
+      const ticket = Array.isArray(payload) ? payload[0] : payload;
+      if (!ticket || typeof ticket !== "object" || !("status" in ticket))
         throw new DeliveryProviderError("Expo", "invalid_ticket");
       if (ticket.status === "error")
         throw new DeliveryProviderError(

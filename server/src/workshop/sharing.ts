@@ -94,12 +94,25 @@ export function createInProcessShareLimiter(
   limitPerMinute = 60,
   nowMs: () => number = Date.now,
 ): RateLimiter {
+  /** The key is attacker-chosen (a token hash), so the map itself is budgeted. */
+  const MAX_WINDOWS = 10_000;
   const windows = new Map<string, { start: number; count: number }>();
+  const evictExpired = (now: number) => {
+    for (const [key, window] of windows) {
+      if (now - window.start >= 60_000) windows.delete(key);
+    }
+  };
   return {
     async hit(key) {
       const now = nowMs();
       const window = windows.get(key);
       if (!window || now - window.start >= 60_000) {
+        // Full map: expired windows first, then refuse — a flood of fresh tokens must not be
+        // able to price honest callers out of memory on an anonymous endpoint.
+        if (windows.size >= MAX_WINDOWS) {
+          evictExpired(now);
+          if (windows.size >= MAX_WINDOWS) return false;
+        }
         windows.set(key, { start: now, count: 1 });
         return true;
       }
@@ -147,6 +160,10 @@ export function createShareService(options: {
   tokenFactory?: () => string;
 }): ShareService {
   const { store, signingKey } = options;
+  // An empty HMAC key still signs: every deployment that misconfigures this would mint
+  // signatures anyone with the algorithm can forge, so the mistake is fatal here instead.
+  if (!signingKey)
+    throw new Error("The workshop share signing key must not be empty.");
   const now = options.now ?? (() => new Date());
   const limiter = options.limiter ?? createInProcessShareLimiter();
   const newToken = options.tokenFactory ?? newShareToken;
@@ -157,15 +174,29 @@ export function createShareService(options: {
     scope: string,
   ): string =>
     createHmac("sha256", signingKey)
-      .update(`${channelId}:${artifactId}:${scope}`)
+      // Length-prefixed fields, so a triple whose ids contain colons cannot collide with
+      // another triple spelled differently.
+      .update(
+        [channelId, artifactId, scope]
+          .map((part) => `${part.length}:${part}`)
+          .join(""),
+      )
       .digest("base64url");
 
   return {
     async createShare(input) {
       const token = newToken();
       const tokenHash = hashShareToken(token);
+      // Absent means never-expiring. An EXPLICIT non-positive or non-integer value is a
+      // caller mistake, refused rather than widened into the most permissive outcome
+      // (a link that never expires).
+      if (
+        input.expiresInDays !== undefined &&
+        (!Number.isInteger(input.expiresInDays) || input.expiresInDays <= 0)
+      )
+        throw new Error("expiresInDays must be a positive whole number of days.");
       const expiresAt =
-        input.expiresInDays && input.expiresInDays > 0
+        input.expiresInDays !== undefined
           ? new Date(now().getTime() + input.expiresInDays * 86_400_000)
           : null;
       await store.setShare({

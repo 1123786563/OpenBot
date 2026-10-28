@@ -228,10 +228,13 @@ export async function attachAsyncJobProviderId(
       current !== undefined &&
       current.providerJobId === input.providerJobId
     ) {
+      // The row already carries exactly the requested value — the same end state the
+      // front idempotency check answers `alreadyKnown: true` for (1725: one race, one
+      // answer, whichever writer committed).
       return {
         status: "attached",
         job: asyncJobViewOf(current),
-        alreadyKnown: false,
+        alreadyKnown: true,
       };
     }
     return {

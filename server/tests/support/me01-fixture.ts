@@ -265,6 +265,13 @@ export async function countReceipts(
   dbName: string,
   runId: string,
 ): Promise<number> {
+  // Interpolated into `psql -tAc`: the run id is fixture-generated, so a plain
+  // character whitelist keeps that assumption load-bearing at the boundary.
+  if (!/^[A-Za-z0-9_.-]+$/.test(runId)) {
+    throw new Error(
+      `countReceipts: runId has characters outside [A-Za-z0-9_.-]: ${JSON.stringify(runId)}`,
+    );
+  }
   const escaped = runId.replace(/'/g, "''");
   const count = await psql(
     dbName,

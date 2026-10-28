@@ -1,4 +1,6 @@
 import "./preload";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { cleanup, renderHook } from "@testing-library/react";
 import {
   afterAll,
   afterEach,
@@ -8,13 +10,11 @@ import {
   spyOn,
   test,
 } from "../../tests/support/bun-test-compat";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { cleanup, renderHook } from "@testing-library/react";
+import { useAutoWatchScreen } from "../src/components/computer/use-auto-watch-screen";
 import {
   reportComputerActivity,
   withdrawComputerActivity,
 } from "../src/lib/copilot/computer-activity";
-import { useAutoWatchScreen } from "../src/components/computer/use-auto-watch-screen";
 
 /**
  * The live screen opening itself beside a conversation, and closing again when the call that

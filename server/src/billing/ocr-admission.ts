@@ -157,16 +157,17 @@ export function createOcrAdmission(dependencies: OcrAdmissionDependencies) {
       });
       if (!verdict.enabled) {
         const issue = verdict.issue;
+        let detail: Record<string, unknown> = {};
+        if (issue.code === "price_unknown") {
+          detail = { dimension: issue.dimension, reason: issue.reason };
+        } else if ("shape" in issue) {
+          detail = { shape: issue.shape };
+        }
         return {
           status: "refused",
           stage: "enablement",
           reasonCode: issue.code,
-          detail:
-            issue.code === "price_unknown"
-              ? { dimension: issue.dimension, reason: issue.reason }
-              : "shape" in issue
-                ? { shape: issue.shape }
-                : {},
+          detail,
         };
       }
 

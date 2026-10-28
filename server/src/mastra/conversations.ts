@@ -8,6 +8,10 @@ import type {
 } from "../enterprise/contracts";
 import { assertTrustedScope } from "../enterprise/tenancy/store";
 import type { MastraConversationBinding } from "./contracts";
+import {
+  type OpenBotAnswerBasisPointer,
+  parseStoredFullMessage,
+} from "./message-parts";
 import type { TenantMastraStorage } from "./tenant-storage";
 
 type BoundConversationService = Pick<
@@ -36,6 +40,15 @@ export function messageDTO(message: MastraDBMessage): MessageDTO {
       )
     : [];
   const seq = metadata.openbotSeq;
+  /*
+   * FIX-OCR3 (O3-H1): the answer-basis projection, read from the row's own stored
+   * envelope. Emitted only for rows that carry one, keyed by the ENGINE message id — the
+   * id the platform's thread history also answers by, so a browser restoring a transcript
+   * can match its rows without knowing this store's row ids. Tolerant here on purpose:
+   * this is the display projection, and a row whose envelope cannot be proven shows no
+   * basis (the strict corruption answer belongs to the rebuild path, not a status read).
+   */
+  const basisProjection = basisOfStoredMetadata(metadata);
   return {
     messageId: message.id,
     threadId: message.threadId ?? "",
@@ -44,7 +57,36 @@ export function messageDTO(message: MastraDBMessage): MessageDTO {
     content,
     attachments,
     createdAt: message.createdAt.toISOString(),
+    ...(basisProjection !== undefined
+      ? {
+          engineMessageId: basisProjection.engineMessageId,
+          basis: basisProjection.basis,
+        }
+      : {}),
   };
+}
+
+/** The engine id and basis pointers one stored row's envelope carries, or nothing. */
+function basisOfStoredMetadata(metadata: Record<string, unknown>):
+  | {
+      engineMessageId: string;
+      basis: readonly OpenBotAnswerBasisPointer[];
+    }
+  | undefined {
+  if (metadata.openbotParts === undefined) return undefined;
+  try {
+    const full = parseStoredFullMessage(metadata.openbotParts);
+    if (full.answerBasis === undefined) return undefined;
+    const engineMessageId =
+      full.engineMessageId ??
+      (typeof metadata.openbotEngineMessageId === "string"
+        ? metadata.openbotEngineMessageId
+        : undefined);
+    if (engineMessageId === undefined) return undefined;
+    return { engineMessageId, basis: full.answerBasis };
+  } catch {
+    return undefined;
+  }
 }
 
 export interface MastraConversationRepository {

@@ -90,13 +90,46 @@ function initiatorFromPayload(value: unknown): AuditInitiator | undefined {
   if (!value || typeof value !== "object") return undefined;
   const kind = (value as { kind?: unknown }).kind;
   if (kind === "person" || kind === "deployment") return { kind };
-  if (kind !== "routine" && kind !== "handoff") return undefined;
+  if (
+    kind !== "routine" &&
+    kind !== "handoff" &&
+    kind !== "responsibility" &&
+    kind !== "memory"
+  )
+    return undefined;
   const id = (value as { id?: unknown }).id;
   return typeof id === "string" && id ? { kind, id } : undefined;
 }
 
+/**
+ * The initiator a stored row carries in its own columns, narrowed back to the union.
+ *
+ * The gateway writes the initiator to `initiator_kind`/`initiator_id`, never into the payload, so
+ * a replay that read only the payload replayed every unattended action as a person.
+ */
+function initiatorFromColumns(
+  kind: string,
+  id: string | null,
+): AuditInitiator | undefined {
+  if (kind === "person") return { kind };
+  if (kind === "deployment") return { kind };
+  if (
+    (kind === "routine" ||
+      kind === "responsibility" ||
+      kind === "memory" ||
+      kind === "handoff") &&
+    typeof id === "string" &&
+    id
+  )
+    return { kind, id };
+  return undefined;
+}
+
 export function contextFromAuditPayload(
   payload: Record<string, unknown>,
+  // The row's own initiator columns, when the caller has them; the payload is the fallback for
+  // callers that only hold one.
+  initiator?: AuditInitiator,
 ): PolicyContext | null {
   const action = payload.action;
   const bot = payload.bot;
@@ -140,7 +173,9 @@ export function contextFromAuditPayload(
      * rather than hardcoding it means a replay stays honest the day those rows do carry one, and a
      * rule being tested against history is judged on what actually happened.
      */
-    initiator: policyInitiator(initiatorFromPayload(payload.initiator)),
+    initiator: policyInitiator(
+      initiator ?? initiatorFromPayload(payload.initiator),
+    ),
   };
 }
 
@@ -180,7 +215,10 @@ export function dryRunAgainstHistory(
       event.eventType === "computer.action_stopped"
     )
       continue;
-    const context = contextFromAuditPayload(event.payload);
+    const context = contextFromAuditPayload(
+      event.payload,
+      initiatorFromColumns(event.initiatorKind, event.initiatorId),
+    );
     if (!context) continue;
     report.scanned += 1;
 

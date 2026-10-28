@@ -23,6 +23,12 @@ WORKDIR /app
 COPY agent-sandbox/package.json agent-sandbox/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY agent-sandbox/src ./src
+# proxy.ts imports ../../shared/execution-scope. From /app/src the ../.. walks OUT of the
+# workdir to / — the module must live at /shared, not /app/shared (./shared here would leave
+# the image unstartable: "Cannot find module '../../shared/execution-scope'", FT-1). This
+# mirrors the repo-root bind mount shared/ → /shared:ro the FinalTest run needed before the
+# fix. .dockerignore's **/node_modules keeps shared/node_modules out of the layer.
+COPY shared /shared
 
 # Sessions' files and the generated opencode config live on volumes, not in the image.
 # The workspace/config dirs are chowned to UID 1000 because the container drops to it at runtime.

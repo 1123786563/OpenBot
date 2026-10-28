@@ -87,6 +87,9 @@ function audienceScope(audience: ShareAudience) {
 
 export function sharesWithOthers(input: PrivateShareInput) {
   return (
+    // An audience nobody can name is one nobody has proven owner-only ("as user ids where
+    // known"), so it shares: the gate asks rather than passes unasked.
+    input.audience.recipientUserIds.length === 0 ||
     input.audience.recipientUserIds.some((id) => id !== input.ownerUserId) ||
     input.audience.kind === "external"
   );
@@ -106,6 +109,9 @@ export function createPrivateShareCheck(deps: {
       const shared = new Set(input.origin.sharedWithUserIds);
       if (
         input.audience.kind !== "external" &&
+        // An unnamed audience cannot prove "everyone it goes to was already in the
+        // conversation", so it keeps the owner's decision.
+        input.audience.recipientUserIds.length > 0 &&
         input.audience.recipientUserIds.every(
           (id) => id === input.ownerUserId || shared.has(id),
         )

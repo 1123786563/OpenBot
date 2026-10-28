@@ -29,9 +29,16 @@ const SESSION_ID = "cs-assembly";
 const USER_ID = "u1";
 const encoder = new TextEncoder();
 
+const SCOPE_TENANT = "acme-co";
+const SCOPE_WORKSPACE = "team-1";
+
 const config = loadCraftConfig({
   OPENBOT_CRAFT_ENABLED: "true",
   OPENBOT_CRAFT_IDLE_REAPER_ENABLED: "false",
+  // #618: the deployment-level execution ownership the gateway must state on every
+  // sandbox request (MT050) — configured here exactly as a deployment configures it.
+  OPENBOT_CRAFT_SANDBOX_EXECUTION_TENANT_ID: SCOPE_TENANT,
+  OPENBOT_CRAFT_SANDBOX_EXECUTION_WORKSPACE_ID: SCOPE_WORKSPACE,
 });
 
 const DIRECTORY = sessionDirectory(SESSION_ID, config.sessionDirectoryMode);
@@ -48,11 +55,20 @@ const llm: CraftLLMProviderConfig = {
 /** The agent-sandbox gateway's /file verbs, backed by one in-memory tree. */
 function stubSandbox() {
   const files = new Map<string, Uint8Array>();
+  /** #618: what the gateway actually SENT — the assembly contract, observed on the wire. */
+  const scopeHeaders: Array<{
+    tenant: string | null;
+    workspace: string | null;
+  }> = [];
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url);
       const path = url.searchParams.get("path");
+      scopeHeaders.push({
+        tenant: request.headers.get("x-openbot-tenant-id"),
+        workspace: request.headers.get("x-openbot-workspace-id"),
+      });
       if (url.pathname === "/file" && path !== null) {
         if (request.method === "GET") {
           return Response.json(
@@ -74,6 +90,7 @@ function stubSandbox() {
   });
   return {
     files,
+    scopeHeaders,
     baseUrl: `http://${server.hostname}:${server.port}`,
     stop: () => server.stop(true),
   };
@@ -180,6 +197,17 @@ describe("createCraftRoutes assembly: resolver-only wiring converges", () => {
     });
     expect(reload.status).toBe(200);
     expect(await reload.json()).toEqual({ skills_stale: false });
+
+    // #618: every request the assembled gateway sent to the sandbox stated the
+    // deployment's execution ownership — the assembly threaded the config's pair into
+    // the gateway, not just the in-process test wiring.
+    expect(stub.scopeHeaders.length).toBeGreaterThan(0);
+    for (const sent of stub.scopeHeaders) {
+      expect(sent).toEqual({
+        tenant: SCOPE_TENANT,
+        workspace: SCOPE_WORKSPACE,
+      });
+    }
 
     expect(
       stub.files.get(`${DIRECTORY}/.opencode/skills/search/SKILL.md`),

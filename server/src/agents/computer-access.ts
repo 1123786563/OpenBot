@@ -1,5 +1,8 @@
+import { getLogger } from "../../../shared/logger";
 import type { AgentProfileStore } from "./profile-store";
 import type { AgentActor } from "./profile-types";
+
+const log = getLogger("server");
 
 /**
  * Who may watch, drive or take over a Bot's computer.
@@ -25,5 +28,15 @@ export function canUseComputer(
 /** The access check the computer routes and the live screen use, read from the profile store. */
 export function computerAccessCheck(store: Pick<AgentProfileStore, "get">) {
   return async (actor: AgentActor, botId: string) =>
-    canUseComputer(await store.get(actor, botId).catch(() => null), actor);
+    canUseComputer(
+      // Fail closed, but say why: a store outage must not read as an ordinary refusal.
+      await store.get(actor, botId).catch((error: unknown) => {
+        log.warn(
+          { err: error, botId, actorId: actor.id },
+          "Could not read the Bot profile; refusing computer access.",
+        );
+        return null;
+      }),
+      actor,
+    );
 }

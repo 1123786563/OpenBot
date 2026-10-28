@@ -128,15 +128,22 @@ async function readVerifiedResponse(
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
     let total = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_RESPONSE_BYTES) {
-        await reader.cancel().catch(() => {});
-        throw new BillingError("invalid_response");
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_RESPONSE_BYTES) {
+          throw new BillingError("invalid_response");
+        }
+        chunks.push(value);
       }
-      chunks.push(value);
+    } catch (error) {
+      // A body that died mid-transfer (network break, abort) is a transport failure, not an
+      // unknown exception: classified like the fetch itself so the retry table still applies.
+      await reader.cancel().catch(() => {});
+      if (error instanceof BillingError) throw error;
+      throw new BillingError("unreachable");
     }
     const merged = new Uint8Array(total);
     let offset = 0;

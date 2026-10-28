@@ -26,7 +26,12 @@ import {
   createExperimentComparisonService,
   ExperimentComparisonError,
 } from "../comparison";
-import { type BotManagementCheck, resolveObservationBot } from "../context";
+import {
+  type BotManagementCheck,
+  explicitObservationOwnership,
+  OBSERVATION_BOT_NOT_FOUND,
+  resolveObservationBot,
+} from "../context";
 import { ObservationScopeError } from "../contracts";
 import type { ObservationDatasetStore } from "../datasets";
 import { ExecutionError, type ObservationExecutionStore } from "../executions";
@@ -91,10 +96,15 @@ export function createExperimentComparisonRoutes(
         );
       }
       const actor = context.var.actor;
-      const ownership =
-        access.profile.ownerUserId === actor.id
-          ? ("owner" as const)
-          : ("admin" as const);
+      // Explicit, never inferred (OCR h10/m182): a caller the seam refuses to mint
+      // for is answered with the same unified not-found the manage gate uses.
+      const ownership = explicitObservationOwnership(actor, access.profile);
+      if (ownership === null) {
+        return Response.json(
+          { error: OBSERVATION_BOT_NOT_FOUND },
+          { status: 404 },
+        );
+      }
       const epoch = await deps.scopeEpoch(actor, access.botId);
       const scope = resolveObservationScope({
         actorId: actor.id,

@@ -41,12 +41,15 @@ export function turnBudgetStampJson(
 ): string {
   const softMs = nowMs + config.interactiveTurnSoftBudgetSeconds * 1000;
   const hardMs = nowMs + config.interactiveTurnHardCapSeconds * 1000;
+  const finalMs = Math.min(
+    // Clamped below stale: a margin larger than the hard cap would otherwise move
+    // the final notice past the stale line, and the plugin reads that as "never nag".
+    Math.max(softMs, hardMs - config.turnFinalNoticeMarginSeconds * 1000),
+    hardMs,
+  );
   return JSON.stringify({
     soft_deadline_epoch_ms: softMs,
-    final_deadline_epoch_ms: Math.max(
-      softMs,
-      hardMs - config.turnFinalNoticeMarginSeconds * 1000,
-    ),
+    final_deadline_epoch_ms: finalMs,
     stale_after_epoch_ms: hardMs,
   });
 }
@@ -77,10 +80,22 @@ export async function stampTurnDeadline(input: {
   const api = input.gateway.fileApiFor(input.botId);
   if (!api) return;
   try {
-    await api.writeFile(
-      turnBudgetStampPath(input.sessionId, input.config),
-      turnBudgetStampJson(input.config, input.nowMs ?? Date.now()),
-    );
+    // Bounded: the write dials the sandbox, and a hung (half-open) connection would park
+    // the whole turn start — the stamp is best-effort, so past the cap it degrades to the
+    // same warning a refused write gets.
+    await Promise.race([
+      api.writeFile(
+        turnBudgetStampPath(input.sessionId, input.config),
+        turnBudgetStampJson(input.config, input.nowMs ?? Date.now()),
+      ),
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error("The turn-budget stamp write timed out.")),
+          5_000,
+        );
+        (timer as { unref?: () => void }).unref?.();
+      }),
+    ]);
   } catch (error) {
     getLogger("server").warn(
       { error, sessionId: input.sessionId },
@@ -122,6 +137,8 @@ let cachedPluginSource: string | null = null;
  * materializes beside its AGENTS.md (the manager's template() precedent).
  */
 export async function turnBudgetPluginSource(): Promise<string> {
+  // A failed first read stays uncached: every later session materialization retries
+  // instead of caching the failure as "no plugin" for the life of the process.
   if (cachedPluginSource === null) {
     cachedPluginSource = await readFile(
       new URL("./templates/turn-budget.plugin.ts", import.meta.url),

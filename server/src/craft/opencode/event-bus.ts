@@ -11,8 +11,16 @@
  * consecutive failures and self-close) is preserved exactly.
  */
 
+import {
+  applyExecutionScopeHeaders,
+  type ExecutionScope,
+} from "../../../../shared/execution-scope";
 import { getLogger } from "../../../../shared/logger";
 import type { CraftConfig } from "../config";
+import {
+  refuseExecutionScope,
+  SandboxExecutionScopeUnavailableError,
+} from "../errors";
 
 type Json = Record<string, unknown>;
 
@@ -37,6 +45,17 @@ export class SubscriberQueue {
   droppedCount = 0;
 
   constructor(readonly maxSize: number) {}
+
+  /**
+   * The closed marker's push: a full queue drops the NEW item, and a slow consumer has no
+   * waiter while full, so a plain push would drop the marker itself and the consumer would
+   * drain its backlog without ever learning the bus closed. Evicting the head makes room.
+   */
+  pushForced(item: BusItem): void {
+    if (this.items.length >= this.maxSize) this.items.shift();
+    this.items.push(item);
+    this.drainWaiters();
+  }
 
   push(item: BusItem): boolean {
     if (this.items.length >= this.maxSize) {
@@ -89,8 +108,32 @@ export type PodEventBusOptions = {
   directory?: string | null;
   token?: string | null;
   botId?: string | null;
+  /**
+   * The execution ownership the SSE dial states beside the token (MT050, #618) —
+   * the triple semantics of object / null / undefined live in
+   * shared/execution-scope's applyExecutionScopeHeaders, the one source (#656
+   * D1); what this module adds is WHERE null refuses: subscribe() throws
+   * before any fetch (a null-scope bus must not spend its reconnect ladder
+   * redialing a dial the proxy refuses anyway), and the reader repeats the
+   * gate as its belt.
+   */
+  executionScope?: ExecutionScope | null;
   fetchImpl?: typeof fetch;
 };
+
+/**
+ * #618 (FR-F2): the proxy's scope-mismatch verdict on the SSE dial (403). An
+ * authorization decision never changes by redialing, so the reader treats it as terminal
+ * instead of feeding the reconnect ladder — subscribers get the closed sentinel (what the
+ * turn layer translates into a transport error), never a silent retry loop and never a
+ * stream that quietly "works".
+ */
+class EventStreamForbiddenError extends Error {
+  constructor() {
+    super("/event answered HTTP 403");
+    this.name = "EventStreamForbiddenError";
+  }
+}
 
 const RECONNECT_BACKOFF_INITIAL_MS = 1000;
 const RECONNECT_BACKOFF_MAX_MS = 30_000;
@@ -105,6 +148,7 @@ export class PodEventBus {
   private readonly directory: string | null;
   private readonly token: string | null;
   private readonly botId: string | null;
+  private readonly executionScope: ExecutionScope | null | undefined;
   private readonly doFetch: typeof fetch;
 
   private stopped = false;
@@ -129,6 +173,7 @@ export class PodEventBus {
     this.directory = options.directory ?? null;
     this.token = options.token ?? null;
     this.botId = options.botId ?? null;
+    this.executionScope = options.executionScope;
     this.doFetch = options.fetchImpl ?? fetch;
   }
 
@@ -147,6 +192,12 @@ export class PodEventBus {
   }
 
   subscribe(sessionId: string): PodSubscription {
+    // #618 fail-closed: refuse here, loudly — a null scope bus that started its reader
+    // would spend the reconnect budget retrying a dial the proxy refuses anyway, and
+    // the person's only signal would be a silent stream. The throw happens before any
+    // fetch, so no unattributed request can leave.
+    if (this.executionScope === null)
+      throw new SandboxExecutionScopeUnavailableError();
     const sub: PodSubscription = {
       sessionId,
       queue: new SubscriberQueue(SUBSCRIBER_QUEUE_MAXSIZE),
@@ -198,7 +249,7 @@ export class PodEventBus {
     this.subscribers.clear();
     for (const sub of all) {
       // Drop head to make room if full — slow consumers must not block close.
-      sub.queue.push(POD_EVENT_BUS_CLOSED);
+      sub.queue.pushForced(POD_EVENT_BUS_CLOSED);
     }
   }
 
@@ -215,10 +266,27 @@ export class PodEventBus {
       let hadSuccessfulRead = false;
       try {
         await this.readOneStream();
-        hadSuccessfulRead = this.streamReady;
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof EventStreamForbiddenError ||
+          // #618 (OCR#8): the belt's scope refusal is a deployment config fact —
+          // equally terminal, never something a redial can heal, so it must not
+          // feed the ladder either (the belt exists to be loud exactly here).
+          error instanceof SandboxExecutionScopeUnavailableError
+        ) {
+          // #618 (FR-F2): terminal — stop the reader and signal closed now; the
+          // ladder below is for transient stream failures, not authorization.
+          this.stopped = true;
+          this.signalSubscribersClosed();
+          return;
+        }
         // Stream error — reconnect below (with backoff).
       } finally {
+        // Collected BEFORE the clear: a stream that connected and delivered events
+        // and then died mid-flight counts as a success, or a healthy
+        // connect-run-break cycle would keep climbing the failure ladder until the
+        // bus closed itself under a living sandbox.
+        hadSuccessfulRead = this.streamReady;
         this.streamReady = false;
       }
 
@@ -249,21 +317,53 @@ export class PodEventBus {
       : `/${this.config.opencodeEventPath}`;
     const url = new URL(`${this.base}${path}`);
     if (this.directory) url.searchParams.set("directory", this.directory);
+    // Belt to subscribe()'s gate: the reader only starts through subscribe, but
+    // the refusal is repeated here so no future entrypoint can dial without it
+    // — through the shared helper now (#656 D1), the same triple semantics
+    // every dial family reads from the one source.
     const headers: Record<string, string> = {
       accept: "text/event-stream",
     };
     if (this.token) headers["x-sandbox-token"] = this.token;
     if (this.botId) headers["x-openbot-bot-id"] = this.botId;
-
-    const response = await this.doFetch(url.toString(), {
+    applyExecutionScopeHeaders(
       headers,
-      // The read timeout bounds how long a silent connection is tolerated before
-      // this fetch rejects and the loop reconnects.
-      signal: AbortSignal.timeout(
-        this.config.opencodeServeEventReadTimeoutSeconds * 1000,
-      ),
-    });
+      this.executionScope,
+      refuseExecutionScope,
+    );
+
+    // An IDLE clock, not a wall-clock one: the subscription is a long-lived SSE read, and an
+    // absolute timeout would keep cutting healthy streams that simply talk longer than the
+    // interval. The timer re-arms on every chunk, so it only fires when the bot went silent.
+    const idleMs = this.config.opencodeServeEventReadTimeoutSeconds * 1000;
+    const idle = new AbortController();
+    let idleTimer = setTimeout(() => idle.abort(), idleMs);
+    const rearmIdle = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => idle.abort(), idleMs);
+    };
+
+    let response: Response;
+    try {
+      response = await this.doFetch(url.toString(), {
+        headers,
+        signal: idle.signal,
+      });
+    } catch (error) {
+      clearTimeout(idleTimer);
+      throw error;
+    }
     if (!response.ok) {
+      clearTimeout(idleTimer);
+      // Release the body before throwing (#618 OCR r2): an unconsumed body pins its
+      // pool socket in undici until GC — and with the gateway's per-turn bus rebuilds
+      // (closed bus → new dial → 403 again) a scope-misconfigured deployment with live
+      // turns would leak one socket per turn. Covers both the terminal 403 and the
+      // retried non-403 throw; the success path consumes its body through the reader.
+      await response.body?.cancel().catch(() => undefined);
+      if (response.status === 403) {
+        throw new EventStreamForbiddenError();
+      }
       throw new Error(`/event answered HTTP ${response.status}`);
     }
     if (!response.body) {
@@ -279,6 +379,7 @@ export class PodEventBus {
         if (this.stopped) return;
         const chunk = await reader.read();
         if (chunk.done) return;
+        rearmIdle();
         buffer += decoder.decode(chunk.value, { stream: true });
         let separatorIndex = buffer.indexOf("\n\n");
         while (separatorIndex >= 0) {
@@ -290,6 +391,9 @@ export class PodEventBus {
         }
       }
     } finally {
+      // An idle abort surfaces from `reader.read()` as a rejection the reconnect
+      // ladder handles like any read failure.
+      clearTimeout(idleTimer);
       await reader.cancel().catch(() => undefined);
     }
   }

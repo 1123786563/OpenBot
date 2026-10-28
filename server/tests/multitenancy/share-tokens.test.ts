@@ -315,6 +315,22 @@ describeDb(
     );
 
     itDb(
+      "an omitted expiresInDays is rejected (no indefinite shares, AC2)",
+      async () => {
+        const { arrangement, ownerScope } = await sharedSessionOfOwner();
+        await expect(
+          thrownMessage(() =>
+            fixture.shareTokens.issueWorkshopShare(ownerScope, {
+              channelId: arrangement.channelId,
+              audience: "same-team",
+              shareAction: "preview",
+            }),
+          ),
+        ).resolves.toBe("WORKSHOP_SHARE_INPUT_INVALID: expiresInDays");
+      },
+    );
+
+    itDb(
       "the database layer structurally rejects cross-company audience rows (double fence)",
       async () => {
         const { arrangement, ownerScope } = await sharedSessionOfOwner();

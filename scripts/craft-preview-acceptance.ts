@@ -94,6 +94,13 @@ import {
   chromium,
   type Page,
 } from "playwright-core";
+import {
+  checkRangeCovered,
+  dockerPortPublishedPorts,
+  type PortRange,
+  publishedSpanSummary,
+  resolvePortRange,
+} from "./craft-port-range-preflight";
 
 // e2e.config 同款：先加载 .env，再读环境变量（DATABASE_URL 在里面）。必须
 // 在下方所有常量声明之前执行：loadEnvFile 只填充 process.env，声明顺序倒置
@@ -786,10 +793,23 @@ const api = {
       );
     const first = await attempt();
     // vite 代理偶发截断响应体（json() 失败 → body null；run3 实测，server 侧
-    // 同一请求 200 有体）：harness 层重试一次，不弱化任何断言。
+    // 同一请求 200 有体）：harness 层重试一次，不弱化任何断言。204/205 的无体
+    // 是协议规定的成功形态，不是截断——曾把同 id DELETE 的 204 当截断 1500ms
+    // 后重放成 404 假 FAIL（#659），无体成功状态码直接按完成处理。
+    if (first.status === 204 || first.status === 205) return first;
     if (first.body !== null && first.status < 500) return first;
     await new Promise((r) => setTimeout(r, 1500));
-    return await attempt();
+    const second = await attempt();
+    // 重放臂容忍（#659 辅方向）：首击已 2xx 完成而重放遇 404/410——幂等请求
+    // 重放时资源已不在（RFC 7231 §4.2.2），按首击成功返回，不产假 FAIL。
+    if (
+      first.status >= 200 &&
+      first.status < 300 &&
+      (second.status === 404 || second.status === 410)
+    ) {
+      return first;
+    }
+    return second;
   },
 };
 
@@ -1137,6 +1157,48 @@ try {
         );
       }
       return `preview ${TOPOLOGY} 拓扑就绪（base=${base}）`;
+    },
+  );
+
+  // ── 0b. 端口段一致性（#619 AC3）────────────────────────────────────────────
+  await step(
+    "pass",
+    "preflight: 配置端口段 ⊆ 运行中 sandbox 已发布段",
+    async () => {
+      // 解析规则与 compose / 预检脚本同一事实源（scripts/craft-port-range-preflight.ts）：
+      // 进程环境优先、其次 .env（本模块顶部已 loadEnvFile，loadEnvFile 不覆盖既有进程
+      // 环境，优先级与 compose 插值一致）、缺省 3010/3100。配置非法（倒置/非整数/越界）
+      // 在这里就 FAIL —— 一个不可能成立的段，不必等到会话预约撞上去才失败。
+      const resolution = resolvePortRange(process.env);
+      if (resolution.range === null) {
+        throw new Error(`端口段配置非法：${resolution.errors.join("；")}`);
+      }
+      const range = resolution.range as PortRange;
+      // AC3 的另一侧：配置说的不算，容器实际发布的才算。docker port 对不在运行的容器
+      // 非零退出（"No such container" / daemon 未起）—— 这里把它翻成「容器不在运行」的
+      // 明确失败与起栈命令，而不是静默跳过（头注「绝不静默 skip」的同一纪律）。
+      const published = dockerPortPublishedPorts(SANDBOX_CONTAINER);
+      if (published.status !== "ok") {
+        throw new Error(
+          `读不到容器 ${SANDBOX_CONTAINER} 的发布端口：${published.reason} —— 容器不在运行？先 docker compose up -d agent-sandbox（带上与 .env 一致的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END）；宿主 API server 也要重启，它在启动时读这对键`,
+        );
+      }
+      // 严格 ⊆：容器多发布几个端口不阻塞（别的 project 或更宽的旧段），配置段里有端口
+      // 未发布才是「栈与配置不一致」—— 正是 AC3 要 preflight 明确报错的形态。两侧段值、
+      // 容器名与修正命令一并进文案，FAIL 即可复跑。汇总先按配置段过滤再交给
+      // publishedSpanSummary（OCR-L2）：⊆ 语义下 missing 集合不变，但摘要的 min–max 不再
+      // 被段外端口（如固定的 SANDBOX_PORT 4300）拉宽 ——「端口数小于跨度即段内有洞」的
+      // 读法只对段内集合成立。
+      const inRange = published.ports.filter(
+        (port) => port >= range.start && port <= range.end,
+      );
+      const coverage = checkRangeCovered(range, inRange);
+      if (!coverage.ok) {
+        throw new Error(
+          `配置段 ${range.start}-${range.end} 有 ${coverage.missing.length} 个端口未被容器 ${SANDBOX_CONTAINER} 发布（如 ${coverage.missing.slice(0, 5).join("、")}）：栈与配置不一致 —— 容器实际发布（配置段内）${publishedSpanSummary(inRange)}。改 .env 的 OPENBOT_CRAFT_SANDBOX_NEXTJS_PORT_START/END 为目标段后 docker compose up -d agent-sandbox 重建发布，宿主 API server 一并重启（它在启动时读这对键）`,
+        );
+      }
+      return `段 ${range.start}-${range.end}（${range.end - range.start + 1} 端口）已全部由 ${SANDBOX_CONTAINER} 发布`;
     },
   );
 
@@ -1558,14 +1620,33 @@ try {
   // 即可通过 HTTP 门与 HMR 升级，无需票据、无需兑换。修复后凭据是部署密钥签名的
   // pass —— 本步骤在全新浏览器 context（无票据、无兑换、无主站登录）里种下明文
   // session id，断言两个面都拒绝：HTTP 401，HMR 升级不 commit。
+  //
+  // #653（N2-R1-03 + FinalTest Part B 两轮同源 FAIL）：旧形态在新开的页
+  // （about:blank，opaque origin）上直接 fetch/ws 绝对地址 —— 请求到不了服务器
+  // 就被浏览器就地拦下（Chrome PNA：non-secure context → loopback 地址空间），
+  // 「Failed to fetch」是浏览器工件，断言从未真实触过服务器。现先 goto 本轮
+  // 真实存在的 label 入口把页面 origin 对齐到预览 origin，同源 fetch/ws 不再
+  // 过 CORS/PNA。三个配套：
+  // ① goto 的落点是 gate 的 401 拒绝页，refusal.ts 给它挂了
+  //   `content-security-policy: default-src 'none'`（attach 步骤同族墙）——
+  //   本步考的是服务端 pass 门，不是拒绝页自身的 CSP，context 开 bypassCSP
+  //   只豁免这一面，网请求形状不变；
+  // ② HMR 的握手状态浏览器 ws API 读不到（onerror 不带 status），用 CDP
+  //   Network.webSocketHandshakeResponseReceived 抓升级被拒的真实 HTTP 状态，
+  //   不再只有笼统的「没 open」；
+  // ③ ws 地址收敛到模块级 hmrWsUrl（fix-ocr25 #5 的教训），本步不再自行
+  //   replace 拼 URL。伪造值不进任何日志/断言消息/回显检查输出（#360 纪律）。
   await step(
     "pass",
     "#358 修复：伪造明文 session-id cookie 在预览 origin 双面被拒（HTTP + HMR）",
     async () => {
-      const forged = await browser.newContext({ locale: "en-US" });
+      const forged = await browser.newContext({
+        locale: "en-US",
+        bypassCSP: true,
+      });
       try {
         // 种伪造 cookie：值 = session id 本身（修复前的合法凭据形状），
-        // Path=/ 覆盖包括 /<label>/… 在内的全部路径，与真攻击者的最简手写一致。
+        // url 路径覆盖包括 /<label>/… 在内的全部路径，与真攻击者的最简手写一致。
         // #416：种点跟随拓扑（host 形态种在预览 host 自己的 origin 上）。
         await forged.addCookies([
           {
@@ -1575,16 +1656,67 @@ try {
           },
         ]);
         const fpage = await forged.newPage();
-        // HTTP 面：预览页同源 fetch 自身受保护的 API —— 必须 401（修复前 200）。
-        const httpStatus = await fpage.evaluate(async (probeUrl) => {
+        // 先导航：页面 origin 落到预览 origin（#653 修法），落点必然是 gate 的
+        // 401 拒绝页 —— 文档面本身就是第一个被测面：伪造 cookie 不得 200/放行。
+        // goto 失败（网络/超时）就地报错，绝不静默。
+        let navResp: Awaited<ReturnType<Page["goto"]>> = null;
+        try {
+          navResp = await fpage.goto(`${sessionA.origin}/`, {
+            waitUntil: "domcontentloaded",
+            timeout: T,
+          });
+        } catch (error) {
+          throw new Error(
+            `伪造 context 导航预览入口失败（${sessionA.origin}/）：${error instanceof Error ? error.message : String(error)}`.slice(
+              0,
+              300,
+            ),
+          );
+        }
+        assert(
+          navResp !== null,
+          `goto 未返回响应：预览入口文档导航异常（${sessionA.origin}/）`,
+        );
+        const navStatus = navResp.status();
+        assert(
+          navStatus === 401,
+          `伪造 cookie 的文档导航被放行：status=${navStatus}，落点=${fpage.url().slice(0, 120)}（期望 gate 401 拒绝页）`,
+        );
+        // HTTP 面：同源 fetch 自身受保护的 API —— 必须 401（修复前 200）。
+        const probed = await fpage.evaluate(async (probeUrl) => {
           const r = await fetch(probeUrl, { credentials: "include" });
-          return r.status;
+          const body = await r.text().catch(() => "");
+          return { status: r.status, body: body.slice(0, 200) };
         }, `${sessionA.origin}/api/probe`);
         assert(
-          httpStatus === 401,
-          `伪造 cookie 的预览 HTTP 请求被放行：status=${httpStatus}（修复前此值为 200 —— 这就是要封住的旁路）`,
+          probed.status === 401,
+          `伪造 cookie 的预览 HTTP 请求被放行：status=${probed.status}（修复前此值为 200 —— 这就是要封住的旁路）`,
         );
-        // HMR 面：WebSocket 升级 —— 必须被拒（HTTP 401 响应，socket 不 commit）。
+        // #360 纪律：拒答正文不得回显伪造值（本消息同样不携带它）。
+        assert(
+          !probed.body.includes(sessionA.id),
+          "401 拒答正文回显了伪造凭据值",
+        );
+        // HMR 面：WebSocket 升级 —— 必须被拒。浏览器 ws API 读不到握手状态
+        // （onerror 无 status）；CDP 侧的实测形状（本 Chrome，#653 真机轮测得）：
+        // ws 握手的 401 不产生 Network.webSocketHandshakeResponseReceived，
+        // Chromium 直接以 Network.webSocketFrameError 携「HTTP Authentication
+        // failed; no valid credentials available」中止——这是 401 被浏览器网络栈
+        // 译成认证失败的证据。双信号捕获：握手状态（浏览器若给出）或 FrameError
+        // 文案，断言其一命中 401 语义；浏览器侧 outcome「不 open」兜底。
+        let wsStatus: number | null = null;
+        let wsFrameError: string | null = null;
+        const cdp = await fpage.context().newCDPSession(fpage);
+        cdp.on(
+          "Network.webSocketHandshakeResponseReceived",
+          (event: { response: { status: number } }) => {
+            wsStatus = event.response.status;
+          },
+        );
+        cdp.on("Network.webSocketFrameError", (event: { errorMessage: string }) => {
+          wsFrameError = event.errorMessage;
+        });
+        await cdp.send("Network.enable");
         const hmrOutcome = await fpage.evaluate(
           (wsUrl) =>
             new Promise<string>((resolve) => {
@@ -1603,14 +1735,28 @@ try {
               ws.onerror = () => done("refused");
               setTimeout(() => done("timeout"), 8_000);
             }),
-          `${sessionA.origin.replace(/^http/, "ws")}/_next/webpack-hmr`,
+          hmrWsUrl(sessionA.label),
         );
+        // CDP 事件可能晚于 evaluate 的 onerror 一拍到达，等一拍再取证据
+        await new Promise((r) => setTimeout(r, 500));
+        await cdp.detach().catch(() => {});
         assert(
           hmrOutcome !== "open",
           `伪造 cookie 的 HMR 升级被接受（outcome=${hmrOutcome}）—— CSWSH 面未封住`,
         );
+        const wsEvidence =
+          wsStatus === 401
+            ? `握手=401`
+            : wsFrameError !== null &&
+                /authentication failed|credentials/i.test(wsFrameError)
+              ? `握手拒（FrameError：${wsFrameError.slice(0, 80)}）`
+              : null;
+        assert(
+          wsEvidence !== null,
+          `HMR 升级未见 401 拒绝证据：outcome=${hmrOutcome}，握手状态=${wsStatus ?? "无事件"}，frameError=${wsFrameError ?? "无事件"}`,
+        );
         await shot("02b-forged-cookie-refused", fpage);
-        return `HTTP=${httpStatus}；HMR=${hmrOutcome}`;
+        return `导航=${navStatus}；HTTP=${probed.status}；HMR=${hmrOutcome}/${wsEvidence}`;
       } finally {
         await forged.close();
       }

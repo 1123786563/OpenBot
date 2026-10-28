@@ -33,6 +33,11 @@ export function createOpenMuseExternalAccessRevoker(deps: {
       return `${outcome.kind}:${outcome.id}:${outcome.outcome}`;
     });
     if (entries.length > 0 && deps.record) {
+      // Deliberately not caught: the vendor seats are already withdrawn, but
+      // the marker's bookkeeping is what the manifest reads — a failed write
+      // fails the step so the delete route's retry re-runs this idempotent
+      // revocation and records the entries, rather than silently dropping
+      // them from marker.resources for good.
       await deps.record(userId, entries);
     }
     return {

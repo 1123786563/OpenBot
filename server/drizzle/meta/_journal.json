@@ -1464,6 +1464,83 @@
       "when": 1792857702000,
       "tag": "0208_mastra_execution_continuations",
       "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1792857703000,
+      "tag": "0209_enterprise_scope_governance_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1792857704000,
+      "tag": "0210_enterprise_plugin_package_market_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1792857705000,
+      "tag": "0211_openmuse_tenancy_scope_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1792857705001,
+      "tag": "0212_hindsight_migration_quarantine_reasons",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1792857705002,
+      "tag": "0213_hindsight_pause_controls_user_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1792857705003,
+      "tag": "0214_personal_memories_company_attribution",
+      "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1792857705004,
+      "tag": "0215_memory_sources_company_attribution",
+      "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1792997459426,
+      "tag": "0216_enterprise_package_primary_key_names",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1793081097943,
+      "tag": "0217_enterprise_learning_memory_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1793081097944,
+      "tag": "0218_price_status_backfill_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1793081098944,
+      "tag": "0219_opik_stable_resource_scope",
+      "breakpoints": true
     }
   ]
 }

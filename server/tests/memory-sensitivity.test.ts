@@ -20,7 +20,7 @@ import { createPluginStore } from "../src/plugins/store";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 const database = createDatabase(testDatabaseUrl(), TEST_POOL);
-const prefix = `sensitivity-${randomUUID()}`;
+const prefix = `sensitivity-${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 const owner = `${prefix}-owner`;
 const bot = `${prefix}-bot`;
 const server = `${prefix}-connector`;

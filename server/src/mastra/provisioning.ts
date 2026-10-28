@@ -195,7 +195,16 @@ export class PostgresTenantProvisioner implements TenantStorageProvisioner {
       );
 
       const ownerUrl = new URL(this.dependencies.controlPlaneConnectionString);
-      ownerUrl.searchParams.set("options", `-c role=${owner}`);
+      // The base connection string may already carry `options` (statement_timeout,
+      // search_path, ...): the role GUC appends to them instead of replacing them, so
+      // the owner init connection keeps the deployment's own session settings.
+      const existingOptions = ownerUrl.searchParams.get("options");
+      ownerUrl.searchParams.set(
+        "options",
+        existingOptions
+          ? `${existingOptions} -c role=${owner}`
+          : `-c role=${owner}`,
+      );
       initialized = new PostgresStore({
         id: `tenant-owner-${input.storageKey}`,
         connectionString: ownerUrl.toString(),

@@ -7,6 +7,7 @@ import {
   PRICE_DIMENSION_UNITS,
   PRICE_DIM_UNKNOWN_REASONS,
   type PriceSnapshotDims,
+  WIRE_PRICED_DIMENSIONS,
 } from "../src/gateway/price-snapshot";
 import { GATEWAY_CATALOG_SOURCE } from "../src/gateway/catalog";
 
@@ -56,26 +57,25 @@ function unknown(reason: string) {
 }
 
 describe("the closed dimension vocabulary", () => {
-  test("covers input, output, reasoning, image, audio, cache, video and surcharges", () => {
-    expect([...PRICE_DIMENSIONS].sort()).toEqual(
-      [
-        "input",
-        "output",
-        "reasoning",
-        "image",
-        "image_output",
-        "audio_input",
-        "audio_output",
-        "cache_read",
-        "cache_write",
-        "video",
-        "surcharge_web_search",
-        "surcharge_per_request",
-      ].sort(),
-    );
+  test("is closed at fifteen distinct members — the count is the pin, the names single-source", () => {
+    // The vocabulary itself is the one spelling this file reads. What is pinned is
+    // the *closure*: fifteen members, each distinct. A sixteenth member is a billing
+    // decision that arrives with its own migration and trips this count on purpose,
+    // so growth is a review, not a drift. What this file never does is spell the
+    // names a second time — that second spelling is how the expectation went stale
+    // at twelve while the code had fifteen.
+    expect(PRICE_DIMENSIONS).toHaveLength(15);
+    expect(new Set(PRICE_DIMENSIONS).size).toBe(15);
   });
 
   test("every dimension names the unit its amount is denominated in", () => {
+    // The units record is the vocabulary's second runtime spelling (a Record keyed
+    // by every dimension); its keys must cover the vocabulary exactly, so a member
+    // added on one side only — or dropped on one side only — surfaces here rather
+    // than passing silently.
+    expect(Object.keys(PRICE_DIMENSION_UNITS).sort()).toEqual(
+      [...PRICE_DIMENSIONS].sort(),
+    );
     for (const dimension of PRICE_DIMENSIONS) {
       expect(PRICE_DIMENSION_UNITS[dimension].length).toBeGreaterThan(0);
     }
@@ -105,16 +105,30 @@ describe("mapping a fully priced datasheet entry", () => {
     // An explicit zero upstream is a *known* zero — free is a price, not the
     // absence of one.
     expect(dims.surcharge_per_request).toEqual(known("0"));
+    // And exactly those: the dims this entry prices are WIRE_PRICED_DIMENSIONS —
+    // the classification set the same single vocabulary derives — so a dimension
+    // that maps known but is not wire-priced (or the reverse) is a seam break,
+    // not a data difference.
+    const knownDims = PRICE_DIMENSIONS.filter(
+      (dimension) => dims[dimension].status === "known",
+    );
+    expect(knownDims.sort()).toEqual([...WIRE_PRICED_DIMENSIONS].sort());
   });
 
   test("dimensions the manifest does not price are unknown, never 0", () => {
     const dims = mapPriceDims(FULLY_PRICED_ENTRY);
-    // The wire `Pricing` object carries no image-output, audio or video
-    // fields; the datasheet's rates for them never reached this manifest.
-    expect(dims.image_output).toEqual(unknown("price_dim_no_source"));
-    expect(dims.audio_input).toEqual(unknown("price_dim_no_source"));
-    expect(dims.audio_output).toEqual(unknown("price_dim_no_source"));
-    expect(dims.video).toEqual(unknown("price_dim_no_source"));
+    // Exactly the dimensions outside WIRE_PRICED_DIMENSIONS — the v1 wire
+    // `Pricing` object carries no field for them (image output, both audio
+    // sides, video and input video, the tool-call and A2A surcharges) — derived
+    // from the same single source rather than spelled here, and each probed on
+    // its own: the datasheet's rates for them never reached this manifest.
+    const noWireDims = PRICE_DIMENSIONS.filter(
+      (dimension) => !WIRE_PRICED_DIMENSIONS.includes(dimension),
+    );
+    expect(noWireDims.length).toBeGreaterThan(0);
+    for (const dimension of noWireDims) {
+      expect(dims[dimension]).toEqual(unknown("price_dim_no_source"));
+    }
   });
 
   test("the mapped dims object carries every dimension of the vocabulary — none missing", () => {

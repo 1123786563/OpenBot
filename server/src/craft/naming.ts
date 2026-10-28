@@ -12,7 +12,7 @@
 import type { Database } from "../db/client";
 import type { CraftStore } from "./store";
 
-const MAX_NAME_LENGTH = 50;
+export const MAX_NAME_LENGTH = 50;
 const MAX_PROMPT_INPUT_CHARS = 500;
 
 const NAMING_SYSTEM_PROMPT =
@@ -71,11 +71,13 @@ export async function generateSessionName(
   deps: NamingDeps,
   sessionId: string,
 ): Promise<string> {
+  // The naming path must never break a session: a failed message read (a store error,
+  // a database hiccup) takes the fallback exactly like an empty thread would.
   const userMessage = await firstUserMessageText(
     deps.db,
     deps.store,
     sessionId,
-  );
+  ).catch(() => null);
   if (!userMessage) return fallbackName(sessionId);
 
   if (deps.generateName) {
@@ -83,12 +85,14 @@ export async function generateSessionName(
       const generated = (
         await deps.generateName(
           NAMING_SYSTEM_PROMPT,
+          // The replacer function keeps `$&`/`$'` in the user's words literal.
           NAMING_USER_PROMPT.replace(
             "{user_message}",
-            userMessage.slice(0, MAX_PROMPT_INPUT_CHARS),
+            () => userMessage.slice(0, MAX_PROMPT_INPUT_CHARS),
           ),
         )
       )
+        .replace(/\s+/g, " ")
         .trim()
         .replace(/^"|"$/g, "");
       if (!generated) return fallbackName(sessionId);

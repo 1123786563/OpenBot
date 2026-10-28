@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (
+    // field-sizing: content is Chromium 123+; Firefox/Safari fall back to the
+    // min-h-16 fixed height (internal scroll instead of auto-grow).
     <textarea
       data-slot="textarea"
       className={cn(

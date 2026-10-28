@@ -5,9 +5,13 @@
  * deployment must not be able to wire this up without answering "who may act as this Bot".
  */
 import { Hono, type MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { getLogger } from "../../../shared/logger";
 import type { BotAccessCheck } from "../agents/profile-policy";
 import type { AppVariables } from "../auth/guards";
 import type { CodeRunGateway } from "./gateway";
+
+const log = getLogger("server");
 
 export type CodeRunGatewayFactory = (context: {
   botId: string;
@@ -21,6 +25,19 @@ export function createCodeSandboxRoutes(
 ): Hono<{ Variables: AppVariables }> {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", requireUser);
+  // A task is prose, not a payload: the bound stays well above any real task so an
+  // authenticated caller cannot park a megabyte of JSON in the sandbox path.
+  app.use("*", bodyLimit({ maxSize: 65_536 }));
+
+  // Gateway, audit-store and access-check faults answer in the same { error } shape as
+  // everything this surface returns, never as a framework text 500.
+  app.onError((error, context) => {
+    log.error({ err: error }, "A code-run route failed.");
+    return context.json(
+      { error: "The code run could not be completed. Try again." },
+      500,
+    );
+  });
 
   app.post("/runs", async (context) => {
     const actor = context.var.actor;

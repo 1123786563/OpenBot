@@ -121,6 +121,18 @@ export type MemoryDefaults = ReturnType<typeof createMemoryDefaults>;
 export function createMemoryDefaults(options: {
   database: Database;
   ingestion: Pick<MemoryIngestion, "defaultSourceCandidates" | "sync">;
+  /**
+   * FIX-W13 (#376, FR2-2): the company a default source binds to, resolved from durable
+   * server state for the (person, Bot) — the same `resolveMemoryCompany` the hand-made
+   * binding and the migration backfill read. Present only in an enterprise deployment;
+   * absent, adoption creates exactly the owner-keyed rows it always did. When it is wired
+   * and the (person, Bot) has no provable company, adoption adopts nothing: an
+   * unattributable source would be born invisible to every company's scope.
+   */
+  companyFor?: (input: {
+    ownerUserId: string;
+    agentId: string;
+  }) => Promise<{ tenantId: string } | undefined>;
   /** OPENBOT_MEMORY_SOURCE_DEFAULTS, on unless switched off. */
   sources: boolean;
   /** OPENBOT_PROACTIVE_DEFAULTS, on unless switched off. */
@@ -176,6 +188,17 @@ export function createMemoryDefaults(options: {
   ): Promise<string[]> {
     if (!options.sources) return [];
     if (await options.publishedByAnother?.(ownerUserId, agentId)) return [];
+    /*
+     * FIX-W13 (FR2-2): a default source binds the same way a hand-made one does — the
+     * (person, Bot)'s own proven company, stamped on the row at creation and read by every
+     * later sync. An enterprise deployment that cannot prove one adopts nothing, fail
+     * closed; a deployment without the enterprise layer passes no resolver and adopts
+     * exactly the owner-keyed rows it always did.
+     */
+    const company = options.companyFor
+      ? await options.companyFor({ ownerUserId, agentId })
+      : undefined;
+    if (options.companyFor && !company) return [];
     const candidates = await options.ingestion.defaultSourceCandidates(
       ownerUserId,
       agentId,
@@ -211,6 +234,8 @@ export function createMemoryDefaults(options: {
         await transaction.insert(memorySources).values({
           id,
           ownerUserId,
+          // FIX-W13 (FR2-2): the binding's own company, resolved once above.
+          tenantId: company?.tenantId ?? null,
           agentId,
           toolRef: candidate.toolRef,
           title: candidate.title,

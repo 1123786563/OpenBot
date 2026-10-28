@@ -918,15 +918,17 @@ const reachedAsFor = (access: ServerAccess, actorId: string): string =>
 /**
  * The header a deployment's token goes out in, when that is not the default.
  *
- * THE TRI-STATE IS THE POINT. `tokenHeaderFor` in the catalogue answers "which header name
- * applies" and names `Authorization` for everything that did not opt into another; the transport
- * needs to know whether the request is a DEFAULT one, because the two branches shape the token
- * differently — the default adds the Bearer scheme the way it always has, and a vendor-named
- * header takes the key exactly as stored. So this reads the entry's reviewed optional field
- * directly and answers `undefined` for every default server, which is the one shape the
- * catalogue's answer cannot distinguish.
+ * THE TRI-STATE IS THE POINT. The catalogue records a vendor-named header only where a vendor
+ * reads its key from one (`auth.header`, reviewed per entry — Exa names `x-api-key`); everything
+ * else rides the default `Authorization`. The transport needs to know whether the request is a
+ * DEFAULT one, because the two branches shape the token differently — the default adds the
+ * Bearer scheme the way it always has, and a vendor-named header takes the key exactly as
+ * stored. So this reads the entry's reviewed optional field directly and answers `undefined`
+ * for every default server, the one distinction a header name alone cannot carry. The tri-state
+ * is pinned on this function by the catalogue and research unit suites, and end to end on the
+ * wire by the research-provider tests in `plugin-store.integration.test.ts`.
  */
-function deploymentTokenHeader(
+export function deploymentTokenHeader(
   entry: CatalogueEntry | null,
 ): string | undefined {
   return entry?.auth.kind === "deployment-bearer"

@@ -34,9 +34,11 @@ explicitly is reported noncompliant, never assumed fine.
 - `backup.sh` — controlled `pg_dump` backup with the retention sweep: a copy is deleted at
   the first run once it has existed for `HINDSIGHT_PRIVACY_BACKUP_RETENTION_DAYS` whole days
   (`find -mtime +N` only matches at N+1 whole days, so the sweep passes N−1; measured boundary:
-  29.0d/29.5d kept, exactly 30.0d deleted). The value resolves host environment → this
-  directory's `hindsight.env` → default 30, and only 1..30 are accepted (0 "keep nothing" is
-  not expressible by a scheduled sweep — rejected loudly; don't schedule the job instead).
+  29.0d/29.5d kept, exactly 30.0d deleted). The value must be declared explicitly in the host
+  environment or in this directory's `hindsight.env`; there is no implicit default — with neither
+  declared the script refuses to run rather than silently sweeping at 30 days. Only 1..30 are
+  accepted (0 "keep nothing" is not expressible by a scheduled sweep — rejected loudly; don't
+  schedule the job instead).
   pg_dump receives the database password over stdin, never as an exec argv/env declaration;
   archives are written owner-only (umask 077), integrity-checked (`gzip -t`) before their
   final name appears, and partial files are removed by an EXIT trap.
@@ -60,13 +62,65 @@ explicitly is reported noncompliant, never assumed fine.
   the real-instance allow/deny matrix in `server/tests/hindsight-bank-isolation.contract.test.ts`
   (`start` / `stop` / `status`).
 
+## Controlled-backup manifests (`HINDSIGHT_BACKUP_MANIFEST_DIR`)
+
+The cleanup evidence OpenBot shows a person ("受控副本清除完成") stands on the manifests
+`backup.sh` writes beside each adopted archive. OpenBot only looks at them when the
+deployment declares where they are:
+
+| Item | Value |
+| --- | --- |
+| Key | `HINDSIGHT_BACKUP_MANIFEST_DIR` in the **OpenBot server's** environment |
+| Value | absolute path of the directory `backup.sh` writes into (default: `deploy/hindsight/backups`) |
+| Where it is read | `server/src/hindsight/backup-registry.ts` (`backupManifestDirFromEnv`), **once when the server assembles** (`server/src/index.ts`) — the routes close over that value, so a changed declaration takes effect on the next server restart, not the next request |
+| Not read by | `backup.sh`, `hindsight.env`, the compose stack — the key belongs to OpenBot only |
+
+- **Directory.** It must be the directory the backup job writes **archives and manifests** into
+  (they are always siblings: `hindsight-<stamp>.sql.gz` + `hindsight-<stamp>.manifest.json`).
+  When OpenBot runs in a container, bind-mount that host directory read-only into the server and
+  declare the path as the container sees it. A directory that does not exist yet answers "no
+  evidence", never "cleared"; one that is present but unreadable fails the reconcile pass loudly
+  (logged by the server) instead of passing for an empty directory.
+- **Permissions.** The backup job runs `umask 077`, so the directory and its files are owner-only
+  (`0700` / `0600`). The OpenBot server user must be able to traverse the directory and read the
+  manifests (and stat the archives); either run both as the same user, or give the server user a
+  group with `g+rx` on the directory and `g+r` on the files. OpenBot reads the manifest JSON and
+  checks archive presence — it never opens, copies or moves an archive.
+- **Single authoritative location.** The declared directory is the only place a controlled copy
+  may live or leave from. An archive that disappears while its manifest stays is indistinguishable
+  from the retention sweep's deletion and is recorded as purge evidence; moving an archive to cold
+  storage without moving its manifest therefore claims a purge that did not happen. If archives
+  are archived elsewhere, move the manifest with them (and the copy returns to "outstanding").
+  Conversely a purged archive that reappears in the directory (re-mounted volume, copy restored
+  back) has its purge evidence withdrawn on the next reconcile — the claim follows the last
+  reconcile pass, it is not a permanent latch.
+- **Reconciliation entry points.** `GET /api/hindsight/cleanup` is a pure read and reconciles
+  nothing; `POST /api/hindsight/cleanup/verify` (the person's own action) and
+  `POST /api/hindsight/ops/backups/reconcile` (admin) run the pass. The report returned to a
+  person carries counts only; the directory path appears on the admin route alone.
+- **Freshness: what the claim stands on.** The registry only changes when a pass runs, so the
+  backup leg speaks for the directory as the **last** pass saw it, and the status's `observedAt`
+  is the instant behind the observation it answers from (the last recorded probe on a pure read;
+  now, when the verify action re-probes). Two states follow. *Before any pass* the registry is
+  empty, and with a confirmed deletion that is "no evidence", never "cleared" (`outstanding:
+  null`). *Between a backup and the next pass* a copy taken **before** a deletion's confirmation
+  that no pass has registered yet is invisible — while the copies the last pass saw as purged are
+  already recorded — so the claim can read "cleared" one pass too early, and `registered`
+  under-counts.
+- **Who schedules the pass.** OpenBot schedules nothing; a deployment that never reconciles keeps
+  the optimistic window above open indefinitely. Registering a new copy is therefore the
+  deployment's job: run the admin-gated `POST /api/hindsight/ops/backups/reconcile` at least as
+  often as `backup.sh` (the daily cron) — from an operator, or from a job holding an admin
+  session. The person's own `POST /api/hindsight/cleanup/verify` also runs a pass, but only when
+  they ask, so it is an action and not a schedule.
+
 ## Operating
 
 ```bash
 cp hindsight.env.example hindsight.env   # fill in real gateway URL/key and API key
 docker compose up -d
 curl -s -H "Authorization: Bearer $HINDSIGHT_API_TOKEN" http://127.0.0.1:8888/health
-./backup.sh            # daily via cron; prunes copies once they reach the 30-day window
+./backup.sh            # daily via cron; prunes copies once they reach the configured retention window
 ```
 
 **Linux hosts:** on Docker Engine ≥ 20.10 the compose file pins `host.docker.internal` to the
@@ -77,7 +131,7 @@ the name is provided natively. On engines or network setups without that mapping
 container (e.g. the `docker0` bridge IP). The mapping takes effect when the container is
 (re)created via `docker compose up -d`.
 
-Three-state health check (OpenBot side):
+Four-state health check (OpenBot side):
 
 ```bash
 bun test server/tests/hindsight-health.test.ts

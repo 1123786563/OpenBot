@@ -41,9 +41,6 @@ import type {
 } from "./batch-partial";
 import { createBatchPartialSettleService } from "./batch-partial";
 
-/** The unbilled-cancellation evidence kind — the provider's own acknowledgement. */
-export const BATCH_CANCEL_EVIDENCE_KIND = "cancelled_unbilled";
-
 /** One item's cancellation notification: usage when billed, evidence when unbilled. */
 export type BatchCancellationReport = Extract<
   BatchPartialItemReport,

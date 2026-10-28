@@ -38,7 +38,8 @@ import {
  * UTF-8 at all, claimed text/plain, are not text" fails the moment this is
  * removed.
  */
-const MIME_BY_LOWER_CLAIM = new Set<string>(ACCEPTED_TEXT_MIME);
+const ACCEPTED_TEXT_MIME_SET = new Set<string>(ACCEPTED_TEXT_MIME);
+const ACCEPTED_IMAGE_MIME_SET = new Set<string>(ACCEPTED_IMAGE_MIME);
 
 function hasSignature(
   bytes: Uint8Array,
@@ -50,9 +51,17 @@ function hasSignature(
 }
 
 function sniffImageType(bytes: Uint8Array): string | null {
-  if (hasSignature(bytes, [0x89, 0x50, 0x4e, 0x47])) return "image/png";
+  // PNG's signature is the full 8 bytes (the 4-byte prefix matches a polyglot's
+  // `\x89PNG` + arbitrary payload); GIF's is 6 ("GIF87a" or "GIF89a"); JPEG's SOI
+  // marker is the 3 bytes here. WEBP already checks both boxes.
+  if (hasSignature(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    return "image/png";
   if (hasSignature(bytes, [0xff, 0xd8, 0xff])) return "image/jpeg";
-  if (hasSignature(bytes, [0x47, 0x49, 0x46, 0x38])) return "image/gif";
+  if (
+    hasSignature(bytes, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) ||
+    hasSignature(bytes, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61])
+  )
+    return "image/gif";
   if (
     hasSignature(bytes, [0x52, 0x49, 0x46, 0x46]) &&
     hasSignature(bytes, [0x57, 0x45, 0x42, 0x50], 8)
@@ -124,7 +133,7 @@ function isValidUtf8(bytes: Uint8Array): boolean {
  * four image names in full, from a signature, and the four text names as far
  * as bytes can go, from the UTF-8 check. Those two lists are
  * `ACCEPTED_IMAGE_MIME`, imported from `shared/attachments.ts` because the
- * composer screens against the same one, and `MIME_BY_LOWER_CLAIM`, at the top
+ * composer screens against the same one, and `ACCEPTED_TEXT_MIME_SET`, at the top
  * of this file.
  */
 export function sniffMimeType(bytes: Uint8Array, claimed: string): string {
@@ -183,7 +192,7 @@ export function sniffMimeType(bytes: Uint8Array, claimed: string): string {
    * does and for the same reason: falling through to the guesses further
    * down would let a refused claim try its luck under a different name.
    */
-  if (MIME_BY_LOWER_CLAIM.has(normalizedClaim)) {
+  if (ACCEPTED_TEXT_MIME_SET.has(normalizedClaim)) {
     return isValidUtf8(bytes) ? normalizedClaim : "application/octet-stream";
   }
 
@@ -211,7 +220,7 @@ export function sniffMimeType(bytes: Uint8Array, claimed: string): string {
    * `sniffImageType` refuses every file of that type outright — a loud
    * failure, which is the right direction for this to break in.
    */
-  if ((ACCEPTED_IMAGE_MIME as readonly string[]).includes(normalizedClaim)) {
+  if (ACCEPTED_IMAGE_MIME_SET.has(normalizedClaim)) {
     return "application/octet-stream";
   }
 

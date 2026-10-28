@@ -30,6 +30,7 @@ import {
   createDegradedRecallFacade,
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
+  type DegradedSourceBoundSearch,
 } from "../src/hindsight/degraded-recall";
 import {
   createDrizzlePreferenceRecords,
@@ -882,6 +883,163 @@ describe("Hindsight 08 (#385): every entrance degrades identically", () => {
         .update(hindsightMemoryGrants)
         .set({ enabled: true })
         .where(eq(hindsightMemoryGrants.targetId, SOURCE_ONE));
+    }
+  });
+});
+
+/*
+ * FR-5 (#383/#385): the SQL fallback's authorization is read twice, and the deterministic
+ * interleave below proves the second read is real. The authority row load is held open by a
+ * manual promise; the load's entry is the proof point that the FIRST authorization read has
+ * already completed (it strictly precedes the load in the fallback), so a grant revoked after
+ * entry — and only after entry — lands exactly between the two reads. A row authorized at the
+ * start and revoked in that window must be dropped; a row that stays authorized must not be.
+ */
+describe("FR-5 (#383/#385): a revocation during the row read is caught by the second read", () => {
+  function heldSourceBoundSearch() {
+    const inner = createDrizzleDegradedSourceBoundSearch(database);
+    let signalEntry: () => void;
+    const entered = new Promise<void>((resolve) => (signalEntry = resolve));
+    let openGate: () => void;
+    const gate = new Promise<void>((resolve) => (openGate = resolve));
+    const search: DegradedSourceBoundSearch = {
+      async loadRecallEligible(tenantId, principalId) {
+        signalEntry();
+        await gate;
+        return inner.loadRecallEligible(tenantId, principalId);
+      },
+    };
+    return { search, entered, open: openGate };
+  }
+
+  /** The dead-service facade (degradation always entered) with the test's own search. */
+  function facadeWith(
+    sourceBoundSearch: DegradedSourceBoundSearch,
+  ): ReturnType<typeof createDegradedRecallFacade> {
+    return createDegradedRecallFacade(
+      deadServices.preferences,
+      deadServices.sourceBound,
+      createDrizzleDegradedPreferenceSearch(database),
+      sourceBoundSearch,
+      createDrizzleSourceBoundAuthorizations(database),
+      { now: clock },
+    );
+  }
+
+  test("a source revoked while the rows load is dropped from the degraded answer", async () => {
+    const scope = await makeTrustedScope(TENANT, WORKSPACE_A);
+    const { record: teamFact } =
+      await upServices.sourceBound.confirmSourceBoundMemory(scope, {
+        content: `双读窗口 团队事实 ${run}`,
+        restriction: { kind: "team", workspaceId: WORKSPACE_A },
+      });
+    const { record: sourceFact } =
+      await upServices.sourceBound.confirmSourceBoundMemory(scope, {
+        content: `双读窗口 来源事实 ${run}`,
+        restriction: { kind: "source", sourceId: SOURCE_ONE },
+      });
+
+    const held = heldSourceBoundSearch();
+    const facade = facadeWith(held.search);
+    const answerPromise = facade.recallSourceBoundMemories(scope, {
+      query: "双读窗口",
+    });
+    // The load has been entered, so the fallback's first authorization read is done; the
+    // revocation below lands strictly between that read and whatever comes after the load.
+    await held.entered;
+    await database
+      .update(hindsightMemoryGrants)
+      .set({ enabled: false })
+      .where(eq(hindsightMemoryGrants.targetId, SOURCE_ONE));
+    try {
+      held.open();
+      const answer = await answerPromise;
+      expect(answer.degraded).toBe(true);
+      const ids = answer.memories.map((item) => item.id);
+      expect(ids).not.toContain(sourceFact.id);
+      expect(ids).toContain(teamFact.id);
+    } finally {
+      await database
+        .update(hindsightMemoryGrants)
+        .set({ enabled: true })
+        .where(eq(hindsightMemoryGrants.targetId, SOURCE_ONE));
+    }
+  });
+
+  test("the asking Bot's grant revoked while the rows load drops its fact only", async () => {
+    const scope = await makeTrustedScope(TENANT, WORKSPACE_A);
+    const { record: teamFact } =
+      await upServices.sourceBound.confirmSourceBoundMemory(scope, {
+        content: `双读Bot 团队事实 ${run}`,
+        restriction: { kind: "team", workspaceId: WORKSPACE_A },
+      });
+    const { record: botFact } =
+      await upServices.sourceBound.confirmSourceBoundMemory(scope, {
+        content: `双读Bot 自己的事实 ${run}`,
+        restriction: { kind: "bot", agentId: BOT_ONE },
+      });
+
+    const held = heldSourceBoundSearch();
+    const facade = facadeWith(held.search);
+    const answerPromise = facade.recallSourceBoundMemories(scope, {
+      query: "双读Bot",
+      askingAgentId: BOT_ONE,
+    });
+    await held.entered;
+    await database
+      .update(hindsightMemoryGrants)
+      .set({ enabled: false })
+      .where(eq(hindsightMemoryGrants.targetId, BOT_ONE));
+    try {
+      held.open();
+      const answer = await answerPromise;
+      expect(answer.degraded).toBe(true);
+      const ids = answer.memories.map((item) => item.id);
+      expect(ids).not.toContain(botFact.id);
+      expect(ids).toContain(teamFact.id);
+    } finally {
+      await database
+        .update(hindsightMemoryGrants)
+        .set({ enabled: true })
+        .where(eq(hindsightMemoryGrants.targetId, BOT_ONE));
+    }
+  });
+
+  test("a workspace suspended while the rows load drops the team fact only", async () => {
+    const scope = await makeTrustedScope(TENANT, WORKSPACE_A);
+    const { record: teamFact } =
+      await upServices.sourceBound.confirmSourceBoundMemory(scope, {
+        content: `双读团队 团队事实 ${run}`,
+        restriction: { kind: "team", workspaceId: WORKSPACE_A },
+      });
+    const { record: sourceFact } =
+      await upServices.sourceBound.confirmSourceBoundMemory(scope, {
+        content: `双读团队 来源事实 ${run}`,
+        restriction: { kind: "source", sourceId: SOURCE_ONE },
+      });
+
+    const held = heldSourceBoundSearch();
+    const facade = facadeWith(held.search);
+    const answerPromise = facade.recallSourceBoundMemories(scope, {
+      query: "双读团队",
+    });
+    await held.entered;
+    await database
+      .update(enterpriseWorkspaceMemberships)
+      .set({ status: "suspended" })
+      .where(eq(enterpriseWorkspaceMemberships.workspaceId, WORKSPACE_A));
+    try {
+      held.open();
+      const answer = await answerPromise;
+      expect(answer.degraded).toBe(true);
+      const ids = answer.memories.map((item) => item.id);
+      expect(ids).not.toContain(teamFact.id);
+      expect(ids).toContain(sourceFact.id);
+    } finally {
+      await database
+        .update(enterpriseWorkspaceMemberships)
+        .set({ status: "active" })
+        .where(eq(enterpriseWorkspaceMemberships.workspaceId, WORKSPACE_A));
     }
   });
 });

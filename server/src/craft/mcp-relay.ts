@@ -102,7 +102,21 @@ export function createCraftMcpRelayApp(deps: CraftMcpRelayDeps): Hono {
     }
 
     // ── membership: the server must be in THAT session's resolved set ──────
-    const servers = await deps.sessionMcpServersFor(session).catch(() => []);
+    const servers = await deps.sessionMcpServersFor(session).catch(
+      (error: unknown) => {
+        // An empty set and a failed resolution both land on the same 403 below;
+        // without this line a transient failure is indistinguishable from a
+        // real revocation in the logs — and the agent does not retry a 403.
+        logger.warn(
+          {
+            sessionTag: sessionTag.slice(0, 8),
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "[craft] mcp relay: member resolution failed; refusing",
+        );
+        return [];
+      },
+    );
     const member = servers.some(
       (server) => craftMcpServerIdOfRelayUrl(server.url) === serverId,
     );
@@ -115,7 +129,21 @@ export function createCraftMcpRelayApp(deps: CraftMcpRelayDeps): Hono {
     }
 
     // ── the owner's connection (the credential stays on this side) ─────────
-    const connection = await deps.resolveConnection(session.userId, serverId);
+    // Wrapped like every other resolution above: a connector decrypt failure is
+    // an answered 403 here, not an uncontrolled 500 through the framework.
+    const connection = await deps
+      .resolveConnection(session.userId, serverId)
+      .catch((error: unknown) => {
+        logger.warn(
+          {
+            sessionTag: sessionTag.slice(0, 8),
+            serverId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "[craft] mcp relay: connection resolution failed; refusing",
+        );
+        return null;
+      });
     if (connection === null) {
       logger.warn(
         { sessionTag: sessionTag.slice(0, 8), serverId },
@@ -153,12 +181,27 @@ export function createCraftMcpRelayApp(deps: CraftMcpRelayDeps): Hono {
     }
 
     try {
-      const upstream = await doFetch(connection.url, {
-        method,
-        headers: upstreamHeaders,
-        body: method === "POST" ? await context.req.arrayBuffer() : undefined,
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-      });
+      // The timeout bounds the ROUND TRIP (connect plus response headers), not the body:
+      // a streamable-HTTP POST often answers a long-lived SSE stream that outlives any
+      // one timer, and aborting mid-stream would hand the client a truncated response.
+      const upstreamAbort = new AbortController();
+      const timeout = setTimeout(
+        () => upstreamAbort.abort(),
+        UPSTREAM_TIMEOUT_MS,
+      );
+      let upstream: Response;
+      try {
+        upstream = await doFetch(connection.url, {
+          method,
+          headers: upstreamHeaders,
+          body: method === "POST" ? await context.req.arrayBuffer() : undefined,
+          signal: upstreamAbort.signal,
+        });
+      } catch (error) {
+        clearTimeout(timeout);
+        throw error;
+      }
+      clearTimeout(timeout);
       const headers = new Headers();
       headers.set(
         "content-type",

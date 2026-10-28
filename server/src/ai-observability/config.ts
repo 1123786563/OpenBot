@@ -47,16 +47,31 @@ const text = (value: string | undefined): string | null => {
 
 /** Positive integer port, or the default. Anything unparsable keeps the default. */
 const port = (value: string | undefined, fallback: number): number => {
-  const parsed = Number.parseInt((value ?? "").trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65_535
-    ? parsed
-    : fallback;
+  // Whole-string digits only: Number.parseInt would read "9,174" as 9 and bind the wrong port.
+  const trimmed = (value ?? "").trim();
+  if (!/^\d+$/.test(trimmed)) return fallback;
+  const parsed = Number.parseInt(trimmed, 10);
+  return parsed > 0 && parsed <= 65_535 ? parsed : fallback;
+};
+
+/** An http(s) base URL, or `null`. Anything that does not parse cleanly stays unconfigured. */
+const url = (value: string | undefined): string | null => {
+  const trimmed = text(value);
+  if (trimmed === null) return null;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? trimmed
+      : null;
+  } catch {
+    return null;
+  }
 };
 
 export function opikConfigFromEnv(env: OpikEnvSource): OpikConfig {
   return {
     enabled: env.OPIK_ENABLED === "true",
-    baseUrl: text(env.OPIK_BASE_URL),
+    baseUrl: url(env.OPIK_BASE_URL),
     apiKey: text(env.OPIK_API_KEY),
     workspaceName: text(env.OPIK_WORKSPACE_NAME),
     port: port(env.OPIK_PORT, DEFAULT_PORT),

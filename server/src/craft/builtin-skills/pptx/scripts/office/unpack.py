@@ -29,6 +29,10 @@ SMART_QUOTE_REPLACEMENTS = {
     "\u2019": "&#x2019;",
 }
 
+# Refuse to expand a (possibly untrusted) Office file past this size: a crafted
+# zip bomb would otherwise fill the disk before any validator sees the content.
+MAX_UNPACKED_BYTES = 2 * 1024**3
+
 
 def unpack(
     input_file: str,
@@ -50,6 +54,13 @@ def unpack(
         output_path.mkdir(parents=True, exist_ok=True)
 
         with zipfile.ZipFile(input_path, "r") as zf:
+            unpacked_bytes = sum(info.file_size for info in zf.infolist())
+            if unpacked_bytes > MAX_UNPACKED_BYTES:
+                return (
+                    None,
+                    f"Error: {input_file} expands to {unpacked_bytes} bytes, "
+                    f"over the {MAX_UNPACKED_BYTES} byte limit",
+                )
             zf.extractall(output_path)
 
         xml_files = list(output_path.rglob("*.xml")) + list(output_path.rglob("*.rels"))
@@ -83,8 +94,8 @@ def _pretty_print_xml(xml_file: Path) -> None:
         content = xml_file.read_text(encoding="utf-8")
         dom = defusedxml.minidom.parseString(content)
         xml_file.write_bytes(dom.toprettyxml(indent="  ", encoding="utf-8"))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: could not pretty-print {xml_file.name}: {e}", file=sys.stderr)
 
 
 def _escape_smart_quotes(xml_file: Path) -> None:
@@ -93,8 +104,20 @@ def _escape_smart_quotes(xml_file: Path) -> None:
         for char, entity in SMART_QUOTE_REPLACEMENTS.items():
             content = content.replace(char, entity)
         xml_file.write_text(content, encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as e:
+        print(
+            f"Warning: could not escape smart quotes in {xml_file.name}: {e}",
+            file=sys.stderr,
+        )
+
+
+def _parse_bool(value: str) -> bool:
+    normalized = value.lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
 
 
 if __name__ == "__main__":
@@ -105,14 +128,14 @@ if __name__ == "__main__":
     parser.add_argument("output_directory", help="Output directory")
     parser.add_argument(
         "--merge-runs",
-        type=lambda x: x.lower() == "true",
+        type=_parse_bool,
         default=True,
         metavar="true|false",
         help="Merge adjacent runs with identical formatting (DOCX only, default: true)",
     )
     parser.add_argument(
         "--simplify-redlines",
-        type=lambda x: x.lower() == "true",
+        type=_parse_bool,
         default=True,
         metavar="true|false",
         help="Merge adjacent tracked changes from same author (DOCX only, default: true)",
@@ -127,5 +150,6 @@ if __name__ == "__main__":
     )
     print(message)
 
-    if "Error" in message:
+    # Prefix, not substring: an "Error"-containing path must not read as failure.
+    if message.startswith("Error"):
         sys.exit(1)

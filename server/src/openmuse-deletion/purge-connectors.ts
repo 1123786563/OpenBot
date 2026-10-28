@@ -1,3 +1,4 @@
+import { getLogger } from "../../../shared/logger";
 import type { OpenConnectorOAuthClient } from "../openmuse-connectors/client";
 import { PROVIDER_BY_CONNECTION_KIND } from "../openmuse-connectors/google-oauth";
 import type { OpenMuseGoogleRows } from "../openmuse-connectors/store";
@@ -8,6 +9,8 @@ import {
   OpenMusePurgeRefusedError,
   type StoredOpenMuseDeletionResource,
 } from "./store";
+
+const log = getLogger("server");
 
 /*
  * D07 (§9 cleanup): the manifest's connector rows drive vendor connection
@@ -92,7 +95,9 @@ export function createOpenMuseConnectorGrantPurger(deps: {
       // A gap row's externalKey is "" and its id names no connection row —
       // a tolerated no-op must never close it. It stays retryable and
       // operator-visible until a manifest rebuild re-enumerates the kind.
-      if (row.id === MODULE_GAP) {
+      // An empty alias is the dangerous condition itself (a vendor call
+      // aimed at nothing), so it widens the guard beyond the reserved id.
+      if (row.id === MODULE_GAP || row.externalKey === "") {
         await deps.rows.markRetryable(
           userId,
           row.kind,
@@ -120,13 +125,30 @@ export function createOpenMuseConnectorGrantPurger(deps: {
       } catch (error) {
         const lastError =
           error instanceof Error ? error.message : String(error);
-        await deps.rows.markRetryable(
-          userId,
-          row.kind,
-          row.id,
-          lastError,
-          row.externalKey,
-        );
+        try {
+          await deps.rows.markRetryable(
+            userId,
+            row.kind,
+            row.id,
+            lastError,
+            row.externalKey,
+          );
+        } catch (markError) {
+          // The bookkeeping write failing is a second fault, not the row's
+          // answer: log it and let the original refusal propagate (the row
+          // stays in its pending state for the next walk to retry).
+          log.error(
+            {
+              type: "openmuse-connector-purge-mark-failed",
+              userId,
+              kind: row.kind,
+              id: row.id,
+              error: markError instanceof Error ? markError.message : String(markError),
+            },
+            "openmuse-connector-purge-mark-failed",
+          );
+          throw error;
+        }
         report.retryable.push({
           id: row.id,
           externalKey: row.externalKey,

@@ -51,7 +51,7 @@ async function proceed(){button.disabled=true;try{
  if(transfer.ok){const grant=await transfer.json();if(typeof grant.electron_authorization_code!=='string')throw new Error('Sign-in did not return a code.');const target=new URL(config.redirect);target.searchParams.set('code',grant.electron_authorization_code);target.searchParams.set('state',config.state);location.replace(target.href);return;}
  if(transfer.status!==401)throw new Error('Your organization could not authorize this sign-in.');
  const response=await fetch('/api/auth/sign-in/social?'+query,{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({provider:config.provider,callbackURL:config.callback})});
- const result=await response.json();if(!response.ok||typeof result.url!=='string')throw new Error('Your organization could not start sign-in.');location.assign(result.url);
+ if(!response.ok)throw new Error('Your organization could not start sign-in.');const result=await response.json().catch(()=>null);if(!result||typeof result.url!=='string')throw new Error('Your organization could not start sign-in.');location.assign(result.url);
 }catch(error){status.textContent=error.message;button.disabled=false;}}
 button.addEventListener('click',proceed);
 </script></body></html>`,

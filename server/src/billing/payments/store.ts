@@ -546,14 +546,18 @@ export function createPaymentStore(database: Database): PaymentStore {
     },
 
     async recordAnomaly(event) {
-      // Targetless DO NOTHING: any uniqueness this insert trips — the (order_id, code) anomaly
-      // key above all — answers "already recorded", which is exactly what a channel
-      // redelivering a refused notification deserves (P2-2: Alipay retries a 409 up to eight
-      // times; each retry used to append a duplicate row). The FIRST row's detail stands.
+      // Targeted DO NOTHING against the (order_id, code) anomaly key above all — that is
+      // the uniqueness a channel redelivering a refused notification trips (P2-2: Alipay
+      // retries a 409 up to eight times; each retry used to append a duplicate row). The
+      // FIRST row's detail stands. Any OTHER uniqueness — a `pe-` id collision above all —
+      // now throws instead of being silently swallowed as "already recorded".
       await database
         .insert(paymentEvents)
         .values(eventInput({ ...event, kind: "anomaly", state: undefined }))
-        .onConflictDoNothing();
+        .onConflictDoNothing({
+          target: [paymentEvents.orderId, paymentEvents.code],
+          where: eq(paymentEvents.kind, "anomaly"),
+        });
     },
 
     async countAnomalies(orderId, code) {
@@ -584,7 +588,14 @@ export function createPaymentStore(database: Database): PaymentStore {
             detail: "",
           }),
         )
-        .onConflictDoNothing()
+        // The conflict target names the channel-transaction partial unique index exactly, as
+        // confirmPaid's insert does: ONLY a known-transaction conflict answers "already
+        // recorded"; any other uniqueness (a colliding `pe-` id above all) surfaces instead
+        // of being silently swallowed as one.
+        .onConflictDoNothing({
+          target: paymentEvents.channelTransactionId,
+          where: sql`${paymentEvents.kind} = 'fact' AND ${paymentEvents.state} = 'paid'`,
+        })
         .returning({ id: paymentEvents.id });
       return inserted.length > 0;
     },

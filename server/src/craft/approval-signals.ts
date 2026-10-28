@@ -73,13 +73,19 @@ function createRedisSignals(redis: RedisPort): CraftApprovalSignals {
       return Array.isArray(out) ? out.map((value) => String(value)) : [];
     },
     async sendWake(approvalId, decision) {
-      await redis.eval(
-        RPUSH_WITH_TTL,
-        1,
-        wakeKey(approvalId),
-        decision,
-        WAKE_TTL_SECONDS,
-      );
+      // Best-effort, never throws upstream: the decision is already recorded, so a KV
+      // failure may only cost the waiter its full window, never the answer itself.
+      try {
+        await redis.eval(
+          RPUSH_WITH_TTL,
+          1,
+          wakeKey(approvalId),
+          decision,
+          WAKE_TTL_SECONDS,
+        );
+      } catch {
+        // The caller logs its own warn; the contract here is only "never throw".
+      }
     },
     async takeWake(approvalId) {
       const out = await redis.eval(LPOP_ONE, 1, wakeKey(approvalId));

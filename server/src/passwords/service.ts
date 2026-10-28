@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { getLogger } from "../../../shared/logger";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import {
+  type AuditStore,
+  DEPLOYMENT_INITIATOR,
+  recordAuditEvent,
+} from "../audit";
 import { ComputerUnreachableError } from "../computer/client";
 import type { ActionActor, ComputerGateway } from "../computer/gateway";
 import type { SignInCodeResult, SignInFillResult } from "../computer/schema";
@@ -37,8 +41,9 @@ const log = getLogger("server");
  * sends along with the password is ignored. When the site, having taken the password, shows a
  * one-time-code field, the request moves to `code_required` and the form asks for the code the site
  * just sent; `submitCode` has the computer type it into the page that is waiting. A wrong code keeps
- * the request there, a site that fell back to its login page asks for the whole login again, and an
- * unanswered one expires like any other request.
+ * the request there — up to five wrong codes, after which the request closes failed, so the Bot's
+ * browser is never a machine for guessing codes at a site — a site that fell back to its login page
+ * asks for the whole login again, and an unanswered one expires like any other request.
  *
  * Whatever happens, the Bot is told the outcome and never the credential. The audit rows say which
  * site, which request and how it was answered; they carry no username, password or code.
@@ -79,6 +84,23 @@ const OPEN: readonly SignInStatus[] = [
  * request this long and no longer.
  */
 const FILLING_LEASE_MS = 120_000;
+
+/**
+ * How many refused verification codes one request may carry to the site. Every one it counts is
+ * a submission the site's page really received and turned away — an attempt that completed no
+ * submission counts nothing — so a request that has survived this many refusals closes as
+ * failed: the code step is not a guessing game the Bot plays against a site, and a person who is
+ * still stuck can take over the browser or start a new request.
+ */
+const MAX_CODE_ATTEMPTS = 5;
+
+/**
+ * What the refusal cap's close says — the one sentence the row's own outcome, the trail row and the
+ * thrown refusal all carry, so no reader meets three wordings for one act.
+ */
+const TOO_MANY_CODE_ATTEMPTS =
+  "The site has been shown too many incorrect verification codes, so this sign-in request is closed. Take over the browser to finish signing in, or start a new request.";
+
 const FINAL: readonly SignInStatus[] = [
   "signed_in",
   "failed",
@@ -125,16 +147,37 @@ const UNKNOWN_OUTCOME =
   "The sign-in attempt did not finish in time, so it is not known whether the login went through. Do not assume it did: check the site by taking over the browser, or start a new sign-in knowing this.";
 
 /**
+ * Who closes a request on the server's own motion — the lease-expired landing in `load`, where no
+ * caller's actor is in hand and none may be invented for it. The trail row says the deployment did
+ * this, not a person, and names no users row: the server is not one.
+ */
+const SERVER_ACTOR: ActionActor = {
+  id: "server",
+  initiator: DEPLOYMENT_INITIATOR,
+};
+
+/**
  * A string with every credential it could contain removed.
  *
  * Belt and braces: nothing on the fill path is supposed to echo a value, but an error message from a
  * page or a browser is not something this module wrote, and it is about to be stored and shown.
  */
+/** How much of a scrubbed page or error text is kept — diagnostics, not a transcript. */
+const SCRUBBED_LENGTH = 500;
+
 function scrub(text: string, secrets: (string | undefined)[]): string {
   let out = text;
-  for (const secret of secrets)
-    if (secret && secret.length >= 3) out = out.split(secret).join("[hidden]");
-  return out.slice(0, 500);
+  for (const secret of secrets) {
+    if (!secret || secret.length < 3) continue;
+    // The value and its percent-encoded form: a credential echoed back in a URL query
+    // (`?p%40ss=…` style) is the same secret, and only the raw form would be caught.
+    out = out
+      .split(secret)
+      .join("[hidden]")
+      .split(encodeURIComponent(secret))
+      .join("[hidden]");
+  }
+  return out.slice(0, SCRUBBED_LENGTH);
 }
 
 export function createSignInService(deps: SignInServiceDependencies) {
@@ -142,6 +185,19 @@ export function createSignInService(deps: SignInServiceDependencies) {
   const ttlMs = deps.ttlMs ?? DEFAULT_TTL_MS;
   const managerOn = async (owner: string) =>
     deps.passwordManagerEnabled ? deps.passwordManagerEnabled(owner) : true;
+  /*
+   * Refused verification codes per request, this process only. A durable tally would need a column
+   * no row has and no migration may be added for it; a restart therefore counts a fresh five within
+   * the same request — and so does a second process: this deployment is a cluster, not one server
+   * (handoff-runner's opening comment: any replica may take any hop), and one request's codes can
+   * land on any of them, so each replica counts its own five and the cap a request really meets is
+   * five per replica that serves it. The tally errs toward letting a person finish, never toward
+   * hiding a refusal already made, and every refusal is in the audit trail regardless — a cap
+   * derived from those rows (`computer.sign_in_failed`, step "code") would be the request's own
+   * count on every replica at once, but reading audit on the submit path is a later design, not a
+   * choice this tally silently makes.
+   */
+  const wrongCodes = new Map<string, number>();
 
   async function audit(
     eventType:
@@ -158,14 +214,23 @@ export function createSignInService(deps: SignInServiceDependencies) {
     payload: Record<string, unknown>,
   ) {
     if (!auditStore) return;
-    await recordAuditEvent(auditStore, {
-      eventType,
-      targetType,
-      targetId,
-      initiator: actor.initiator,
-      ...(actor.userId ? { actorUserId: actor.userId } : {}),
-      payload: { actor: actor.id, ...payload },
-    });
+    // An audit row is a bypass, never a gate: its failure must not fail the operation it
+    // describes — a failed audit after `signed_in` would otherwise strand the waiting turn.
+    try {
+      await recordAuditEvent(auditStore, {
+        eventType,
+        targetType,
+        targetId,
+        initiator: actor.initiator,
+        ...(actor.userId ? { actorUserId: actor.userId } : {}),
+        payload: { actor: actor.id, ...payload },
+      });
+    } catch (error) {
+      log.error(
+        { type: "sign-in-audit-failed", eventType, error },
+        "The sign-in audit row could not be written.",
+      );
+    }
   }
 
   /** The request, with an expired one closed on the way past. */
@@ -189,6 +254,28 @@ export function createSignInService(deps: SignInServiceDependencies) {
         resolvedAt: new Date(),
       });
       if (failed) {
+        /*
+         * Every ending has an audit row, written by whoever closed it: this close is the server's
+         * own act, so it writes its own row under the deployment's name rather than borrowing an
+         * attempt's actor `load` never sees. The failure sentence is the row's own outcome — an
+         * attempt that later reports a definite refusal adds its `superseded` row beside this one
+         * (the fill and enterCode gates), and neither stands in for the other; one is the row's
+         * final state, the other a failed attempt under it. No `step` is named: a lease that ran
+         * out cannot say whether the attempt died at the login or the code.
+         */
+        await audit(
+          "computer.sign_in_failed",
+          SERVER_ACTOR,
+          "computer",
+          failed.botId,
+          {
+            bot: failed.botId,
+            request: id,
+            site: failed.origin,
+            ...(failed.method ? { method: failed.method } : {}),
+            failure: UNKNOWN_OUTCOME,
+          },
+        );
         await resolved(failed);
         return failed;
       }
@@ -213,6 +300,9 @@ export function createSignInService(deps: SignInServiceDependencies) {
   }
 
   async function resolved(request: SignInRequestRecord) {
+    // The refusal tally dies with the request: no final state reopens, so a closed request can
+    // never be code-entered again and its count has nothing left to guard.
+    wrongCodes.delete(request.id);
     if (!deps.onResolved) return;
     try {
       await deps.onResolved(request);
@@ -326,7 +416,9 @@ export function createSignInService(deps: SignInServiceDependencies) {
    * Type the verification code a site asked for, and record how it went.
    *
    * Only from `code_required`. The code lives in this function's arguments and the one request to
-   * the computer, as a password does in `fill`.
+   * the computer, as a password does in `fill`. A refusal the site's page produced is counted per
+   * request; the fifth closes the request on the server's own motion, so the browser is never a
+   * machine for guessing codes at a site.
    */
   async function enterCode(
     owner: string,
@@ -335,15 +427,14 @@ export function createSignInService(deps: SignInServiceDependencies) {
     code: string,
   ): Promise<SignInRequestRecord> {
     const request = await load(owner, id);
-    if (request.status !== "code_required")
-      throw new SignInRefusedError(
-        request.status === "filling"
-          ? "This sign-in is already being entered."
-          : request.status === "pending" || request.status === "taken_over"
-            ? "The site is not asking for a verification code."
-            : "This sign-in request is no longer open.",
-        409,
-      );
+    if (request.status !== "code_required") {
+      let why = "This sign-in request is no longer open.";
+      if (request.status === "filling")
+        why = "This sign-in is already being entered.";
+      else if (request.status === "pending" || request.status === "taken_over")
+        why = "The site is not asking for a verification code.";
+      throw new SignInRefusedError(why, 409);
+    }
     const claimed = await store.transition(owner, id, ["code_required"], {
       status: "filling",
       fillingUntil: new Date(Date.now() + FILLING_LEASE_MS),
@@ -401,12 +492,65 @@ export function createSignInService(deps: SignInServiceDependencies) {
       );
     }
     if (failure) {
+      // The cap is for guesses the site actually received and actually judged, and only a
+      // submission the computer carried through with no error of its own is one: the site's page
+      // taking the code and turning it away. Every other failure counts nothing — an answer that
+      // completed no submission (the browser had left the origin, the page had lost its code
+      // field, the typing itself failed: the site never saw the code), a submission that did
+      // happen but no site here judged (the takeover answers, `submitted` and `error` together:
+      // the sign-in moved to another origin, and the verdict on that code — refusal or
+      // acceptance — belongs to the person finishing it there), and a delivery that provably
+      // never reached the computer (`failure` set by the catch above) is no submission either.
+      if (result?.submitted && !result.error) {
+        wrongCodes.set(id, (wrongCodes.get(id) ?? 0) + 1);
+        if ((wrongCodes.get(id) ?? 0) >= MAX_CODE_ATTEMPTS) {
+          /*
+           * The cap is the deployment's own act, not this attempt's: the row is closed failed with
+           * the cap's own sentence, and the trail row is written the way the lease-expired close
+           * writes its — the server's own actor, no step named, nothing marked superseded, one row
+           * that is the request's ending. The waiting turn is told, and a new request, or a
+           * takeover, is the person's own next act.
+           */
+          const closed = await store.transition(owner, id, ["filling"], {
+            status: "failed",
+            fillingUntil: null,
+            outcome: TOO_MANY_CODE_ATTEMPTS,
+            resolvedAt: new Date(),
+          });
+          if (closed) {
+            await audit(
+              "computer.sign_in_failed",
+              SERVER_ACTOR,
+              "computer",
+              closed.botId,
+              {
+                bot: closed.botId,
+                request: id,
+                site: closed.origin,
+                ...(closed.method ? { method: closed.method } : {}),
+                failure: TOO_MANY_CODE_ATTEMPTS,
+              },
+            );
+            await resolved(closed);
+            throw new SignInRefusedError(TOO_MANY_CODE_ATTEMPTS, 409);
+          }
+          // The row was closed under the attempt — a concurrent close, a lease that expired. The
+          // refusal below keeps its superseded row, exactly as for any other refusal, and the
+          // request is final either way: no further code exists to count. The tally this attempt
+          // just wrote dies here with the row it arrived too late to close.
+          wrongCodes.delete(id);
+        }
+      }
       const reopened = await store.transition(owner, id, ["filling"], {
         status: back,
         fillingUntil: null,
         outcome: failure,
         ...(back === "pending" ? { method: null } : {}),
       });
+      // A row this attempt cannot reopen is final, so its tally dies here too: the increment
+      // above ran after the closing side's `resolved` had already deleted it once, and no final
+      // row is ever code-entered again to clean it up later.
+      if (!reopened) wrongCodes.delete(id);
       /*
        * The refusal reaches the trail either way. A row this attempt reopened records the failure
        * as its own; a row closed under the attempt — a concurrent close, a lease that expired into
@@ -432,8 +576,11 @@ export function createSignInService(deps: SignInServiceDependencies) {
       resolvedAt: new Date(),
     });
     if (!done)
-      throw new Error(
+      // The site already accepted the step: a concurrent close is a conflict, not a
+      // generic 500 — the same classification every other refusal in this module carries.
+      throw new SignInRefusedError(
         "The sign-in request changed while it was being entered.",
+        409,
       );
     await audit("computer.sign_in_completed", actor, "computer", done.botId, {
       bot: done.botId,
@@ -570,8 +717,9 @@ export function createSignInService(deps: SignInServiceDependencies) {
         outcome: null,
       });
       if (!waiting)
-        throw new Error(
+        throw new SignInRefusedError(
           "The sign-in request changed while it was being entered.",
+          409,
         );
       await audit(
         "computer.sign_in_code_requested",
@@ -612,8 +760,11 @@ export function createSignInService(deps: SignInServiceDependencies) {
       resolvedAt: new Date(),
     });
     if (!done)
-      throw new Error(
+      // The site already accepted the step: a concurrent close is a conflict, not a
+      // generic 500 — the same classification every other refusal in this module carries.
+      throw new SignInRefusedError(
         "The sign-in request changed while it was being entered.",
+        409,
       );
     await audit("computer.sign_in_completed", actor, "computer", done.botId, {
       bot: done.botId,
@@ -736,6 +887,15 @@ export function createSignInService(deps: SignInServiceDependencies) {
       return view(await enterCode(owner, id, actor, code));
     },
 
+    /**
+     * How many refused verification codes one request has counted in this process. No route or
+     * caller reads it: it exists so the tests can pin what counts toward the cap and when the
+     * tally dies with the request.
+     */
+    codeRefusalTally(id: string) {
+      return wrongCodes.get(id) ?? 0;
+    },
+
     /** The person confirming one of their saved logins for this sign-in. */
     async useSaved(
       owner: string,
@@ -749,6 +909,13 @@ export function createSignInService(deps: SignInServiceDependencies) {
           403,
         );
       const request = await load(owner, id);
+      // Only an open request is fillable; checked BEFORE the decrypt, so a finished or
+      // filling request never holds plaintext it would just throw away.
+      if (request.status !== "pending")
+        throw new SignInRefusedError(
+          "This sign-in request is no longer open.",
+          409,
+        );
       const login = await store.login(owner, input.loginId);
       // Exactly this origin. A login saved for one site is never offered to, or typed into, another.
       if (!login || login.origin !== request.origin)

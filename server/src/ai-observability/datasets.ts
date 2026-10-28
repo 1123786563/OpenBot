@@ -250,6 +250,17 @@ function validateSaveInput(input: SaveDatasetVersionInput) {
     if (one.sourceBindingId !== undefined && one.sourceBindingId !== null) {
       reference(one.sourceBindingId);
     }
+    // The source ids ride the frozen cases verbatim and are synced upstream, so they
+    // meet the same credential scan the name does (the id-links precedent).
+    for (const id of [
+      one.sourceRunId,
+      one.sourceAttemptId,
+      one.sourceBindingId,
+    ]) {
+      if (typeof id === "string" && denyReason(id) !== undefined) {
+        throw new DatasetStoreError("DATASET_INPUT_INVALID", 400);
+      }
+    }
   }
   return name;
 }
@@ -263,7 +274,9 @@ export function createObservationDatasetStore(
       eq(aiObservationDatasets.scopeKey, scope.key),
     );
 
-  return {
+  // Held in a name so the object-literal methods reach getDataset without depending on
+  // how a caller binds `this` (a destructured or passed method reference would lose it).
+  const store: ObservationDatasetStore = {
     async saveVersion(scope, input) {
       assertObservationScope(scope);
       const name = validateSaveInput(input);
@@ -545,7 +558,7 @@ export function createObservationDatasetStore(
       if (updated[0]) return updated[0];
       // The guard refused. Either the dataset is absent, or it is synced and has nothing
       // to push through this state machine — read the row once more to say which.
-      const dataset = await this.getDataset(scope, datasetId);
+      const dataset = await store.getDataset(scope, datasetId);
       if (!dataset) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
       return dataset;
     },
@@ -641,11 +654,14 @@ export function createObservationDatasetStore(
           and(
             scopeDataset(scope, datasetId),
             eq(aiObservationDatasets.syncState, "syncing"),
+            // The sync machine is a writer, not an exemption (OCR m121), for failures
+            // too: retention's deletion decision wins a syncing row even mid-push.
+            notPendingDeletion("dataset", aiObservationDatasets.id),
           ),
         )
         .returning();
       if (updated[0]) return updated[0];
-      const dataset = await this.getDataset(scope, datasetId);
+      const dataset = await store.getDataset(scope, datasetId);
       if (!dataset) throw new DatasetStoreError("DATASET_NOT_FOUND", 404);
       throw new DatasetStoreError("DATASET_STATE_INVALID", 409);
     },
@@ -698,4 +714,5 @@ export function createObservationDatasetStore(
       });
     },
   };
+  return store;
 }

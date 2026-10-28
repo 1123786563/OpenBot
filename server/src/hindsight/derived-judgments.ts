@@ -144,6 +144,16 @@ export interface DerivedJudgmentStore {
     principalId: string,
     limit: number,
   ): Promise<DerivedJudgmentRow[]>;
+  /**
+   * Adopted rows (confirmed/edited), living, newest review first — the query-less context
+   * half's scan input (FIX-W11 A-1). Everything past the review state is the caller's gates,
+   * never the store's.
+   */
+  loadAdopted(
+    tenantId: string,
+    principalId: string,
+    limit: number,
+  ): Promise<DerivedJudgmentRow[]>;
   /** The unreviewed candidate a replayed lead would fold into, when one exists. */
   findByProposalDigest(
     tenantId: string,
@@ -886,12 +896,15 @@ export function createDrizzleDerivedJudgmentRecords(
         );
     },
     async expireUnreviewedBefore(cutoff) {
+      // One decision instant: updatedAt and reviewedAt name the same moment, so the
+      // row never reads "expired at X, updated at Y".
+      const decidedAt = new Date();
       const expired = await database
         .update(candidates)
         .set({
           reviewState: "expired",
-          updatedAt: new Date(),
-          reviewedAt: new Date(),
+          updatedAt: decidedAt,
+          reviewedAt: decidedAt,
         })
         .where(
           and(
@@ -939,6 +952,22 @@ export function createDrizzleDerivedJudgmentRecords(
           ),
         )
         .orderBy(desc(candidates.proposedAt))
+        .limit(limit);
+    },
+    async loadAdopted(tenantId, principalId, limit) {
+      return database
+        .select()
+        .from(candidates)
+        .where(
+          and(
+            eq(candidates.tenantId, tenantId),
+            eq(candidates.principalId, principalId),
+            inArray(candidates.reviewState, ["confirmed", "edited"]),
+            eq(candidates.enabled, true),
+            isNull(candidates.deletedAt),
+          ),
+        )
+        .orderBy(desc(candidates.reviewedAt), desc(candidates.updatedAt))
         .limit(limit);
     },
     async findByProposalDigest(tenantId, principalId, digest) {

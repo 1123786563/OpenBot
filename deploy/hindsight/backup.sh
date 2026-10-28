@@ -28,6 +28,18 @@
 # backups/.backup.lock — an overlapping run (cron overrun + manual invocation)
 # exits 1 instead of racing the dump and the retention sweep. flock is used
 # where available; see the lock comment in the body for the no-flock fallback.
+#
+# Controlled-backup registration (#391, server/src/hindsight/backup-registry.ts):
+# every adopted archive gets one manifest beside it,
+# `hindsight-<stamp>.manifest.json`, holding
+# {"backupId":"hindsight-<stamp>.sql.gz","takenAt":"<ISO 8601 dump-start>"}.
+# OpenBot reconciles those manifests into its cleanup-evidence registry when the
+# deployment declares HINDSIGHT_BACKUP_MANIFEST_DIR pointing at this directory.
+# Manifests are deliberately NOT swept with the archives: the retention sweep
+# deleting an archive while its manifest remains is the purge evidence the
+# cleanup claim stands on. A run that kills before the manifest is written
+# (inside the partial-write window) therefore leaves the archive registered
+# nowhere — the cleanup leg stays honestly uncleared rather than guessing.
 set -euo pipefail
 
 # Refuse to run under xtrace: `bash -x` echoes expanded command substitutions to
@@ -337,25 +349,34 @@ find "$BACKUP_DIR" -maxdepth 1 -name 'hindsight-*.sql.gz' -type f -mtime "+$((RE
 # but it does not run under SIGKILL (OOM killer, kill -9, power loss, kernel panic),
 # so a killed run's .hindsight-*.sql.gz.part — a gzip copy of the whole memory
 # database — would otherwise linger in backups/ forever, silently past the ≤30-day
-# privacy ceiling this script enforces. No -mtime guard here: the lock taken above
+# privacy ceiling this script enforces. The manifest's own partial name is swept the
+# same way: an abandoned half-written manifest must not read as a registration.
+# No -mtime guard here: the lock taken above
 # serializes runs, so any partial visible at this point belongs to a killed previous
 # run (this run's own partial is only created after the sweep), and an abandoned
 # partial has already outlived whatever window it started in.
-find "$BACKUP_DIR" -maxdepth 1 -name '.hindsight-*.sql.gz.part' -type f -delete
+find "$BACKUP_DIR" -maxdepth 1 \( -name '.hindsight-*.sql.gz.part' -o -name '.hindsight-*.manifest.json.part' \) -type f -delete
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+# The dump's start instant: content written before it can be in the copy, so it is
+# the conservative "taken before" moment the cleanup evidence measures against.
+TAKEN_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 TARGET="$BACKUP_DIR/hindsight-$STAMP.sql.gz"
 # Write to a hidden partial name first: the retention sweep matches
 # 'hindsight-*.sql.gz', which never matches this dot-prefixed, .part-suffixed name,
 # and the final filename only appears once the archive passed the integrity check.
 # The EXIT trap removes the partial on any failure so no corrupt leftover lingers.
 PART_TARGET="$BACKUP_DIR/.hindsight-$STAMP.sql.gz.part"
+# The registration manifest (see the header): written beside the archive only after
+# the integrity check, through its own partial name for the same reason.
+MANIFEST="$BACKUP_DIR/hindsight-$STAMP.manifest.json"
+MANIFEST_PART="$BACKUP_DIR/.hindsight-$STAMP.manifest.json.part"
 # Release the partial and, for the no-flock fallback, the lock file. The
 # flock-style lock is released by the kernel when fd 9 closes at exit and its
 # file is intentionally kept: deleting a lock file races a waiter that already
 # opened it. LOCK_STYLE is only ever "create" when THIS run holds the lock, so
 # a refused run never deletes another run's lock.
-trap 'rm -f "$PART_TARGET"; if [ "$LOCK_STYLE" = create ]; then rm -f "$LOCK_FILE"; fi' EXIT
+trap 'rm -f "$PART_TARGET" "$MANIFEST_PART"; if [ "$LOCK_STYLE" = create ]; then rm -f "$LOCK_FILE"; fi' EXIT
 
 # The embedded pg0 database runs inside the container as user `hindsight`. Its binaries
 # and credentials are NOT on the container's default PATH/env (pg_dump lives under
@@ -407,4 +428,12 @@ printf '%s\n' "$DB_PASSWORD" |
 gzip -t "$PART_TARGET"
 mv -f "$PART_TARGET" "$TARGET"
 
+# Register the adopted copy: one manifest, written atomically after the archive exists, so a
+# reader never sees a registration for an archive that failed its integrity check. `takenAt`
+# is the dump's start instant, not this one — a copy can only be trusted to miss content
+# written after it began.
+printf '{"backupId":"%s","takenAt":"%s"}\n' "hindsight-$STAMP.sql.gz" "$TAKEN_AT" > "$MANIFEST_PART"
+mv -f "$MANIFEST_PART" "$MANIFEST"
+
 echo "backup written: $TARGET (retention ${RETENTION_DAYS}d)"
+echo "backup registered: $MANIFEST"

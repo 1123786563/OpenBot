@@ -113,4 +113,4 @@ export const enterprisePersonalMemories = pgTable(
       using: sql`${table.tenantId} = nullif(current_setting('app.tenant_id', true), '')`,
     }),
   ],
-);
+).enableRLS();

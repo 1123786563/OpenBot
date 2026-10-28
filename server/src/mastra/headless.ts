@@ -577,6 +577,15 @@ export function createGovernedTurnRunner(
       throw cause;
     }
 
+    // Declared before any settleFailure call below: settleFailure's first line stops the
+    // renewal, and a call before this point would hit the binding while it is still in its
+    // temporal dead zone and turn the real failure into a ReferenceError.
+    let renewalTimer: ReturnType<typeof setInterval> | undefined;
+    const stopRenewal = () => {
+      if (renewalTimer === undefined) return;
+      clearInterval(renewalTimer);
+      renewalTimer = undefined;
+    };
     const carrier = await deps.governedExecutionFor({
       scope,
       agentId: record.agentId,
@@ -605,12 +614,6 @@ export function createGovernedTurnRunner(
       } catch {
         return false;
       }
-    };
-    let renewalTimer: ReturnType<typeof setInterval> | undefined;
-    const stopRenewal = () => {
-      if (renewalTimer === undefined) return;
-      clearInterval(renewalTimer);
-      renewalTimer = undefined;
     };
     renewalTimer = setInterval(() => {
       void renew().then((current) => {

@@ -299,7 +299,10 @@ async function digestTable(
           `from "${schema}"."${table}" t`,
       ),
     )
-    .catch(() => [])) as unknown as { rows: number; digest: string }[];
+    .catch((error) => {
+      if (isMissingRelationError(error)) return [];
+      throw error;
+    })) as unknown as { rows: number; digest: string }[];
   if (rows.length === 0) return null;
   return {
     table,
@@ -424,7 +427,10 @@ export async function runRollbackDrill(
             `select tenant_id::text as tenant_id, count(*)::int as rows from public."${table}" group by tenant_id`,
           ),
         )
-        .catch(() => [])) as unknown as { tenant_id: string; rows: number }[];
+        .catch((error) => {
+          if (isMissingRelationError(error)) return [];
+          throw error;
+        })) as unknown as { tenant_id: string; rows: number }[];
       if (perTenant.length === 0) continue;
       enumerableTables += 1;
       tenants = Math.max(tenants, perTenant.length);

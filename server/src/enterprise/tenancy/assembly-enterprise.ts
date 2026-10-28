@@ -67,6 +67,7 @@ export function createEnterpriseConversationEntryRoutes({
   /** 统一建立：工厂拒绝即路由拒绝，路由层零自己的可见性判断。 */
   async function establish(request: Request): Promise<DeploymentEntryBusiness> {
     const business = await factory.fromRequest(request);
+    // 工厂契约从不返回空（拒绝即抛 canonical 码）；此守卫是 fail-closed 哨兵。
     if (!business) throw new Error(ENTERPRISE_ENTRY_CONTEXT_REQUIRED);
     return business;
   }

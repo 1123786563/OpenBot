@@ -39,6 +39,9 @@ export const BASE_PATH: string = (() => {
 })();
 
 export function apiUrl(path: string): string {
+  // Absolute (or protocol-relative) targets are not this app's routes; splice
+  // nothing into them instead of producing "<mount>/https://..." garbage.
+  if (/^(https?:)?\/\//i.test(path)) return path;
   const suffix = path.startsWith("/") ? path : `/${path}`;
   return `${BASE_PATH}${suffix}`;
 }

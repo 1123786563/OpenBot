@@ -190,7 +190,7 @@ export interface WorkshopShareService {
       readonly audience: WorkshopShareAudience;
       readonly audienceWorkspaceId?: string;
       readonly shareAction: WorkshopShareAction;
-      readonly expiresInDays?: number;
+      readonly expiresInDays: number;
     },
   ): Promise<ShareIssueOutcome>;
 
@@ -343,14 +343,15 @@ export function createWorkshopShareService(deps: {
       if (!WORKSHOP_SHARE_AUDIENCES.includes(input.audience)) {
         throw new Error(WORKSHOP_SHARE_AUDIENCE_INVALID);
       }
-      if (input.expiresInDays !== undefined) {
-        if (
-          !Number.isInteger(input.expiresInDays) ||
-          input.expiresInDays < 1 ||
-          input.expiresInDays > 365
-        ) {
-          throw new Error(`${WORKSHOP_SHARE_INPUT_INVALID}: expiresInDays`);
-        }
+      // AC2「指定有效期」：无期限分享不允许——有效期必填（1..365）。
+      const expiresInDays = input.expiresInDays;
+      if (
+        typeof expiresInDays !== "number" ||
+        !Number.isInteger(expiresInDays) ||
+        expiresInDays < 1 ||
+        expiresInDays > 365
+      ) {
+        throw new Error(`${WORKSHOP_SHARE_INPUT_INVALID}: expiresInDays`);
       }
       // 会话属主门：无协会行/跨范围/撤权 = canonical not-found。
       const owned = await authorizeOwnerSession(scope, channelId);
@@ -398,10 +399,7 @@ export function createWorkshopShareService(deps: {
       }
       const token = newToken();
       const tokenHash = hashShareToken(token);
-      const expiresAt =
-        input.expiresInDays !== undefined
-          ? new Date(Date.now() + input.expiresInDays * 86_400_000)
-          : null;
+      const expiresAt = new Date(Date.now() + expiresInDays * 86_400_000);
       return operator.transaction(async (tx) => {
         await beginContext(tx, scope);
         const facts = await readMembershipFacts(tx, scope);

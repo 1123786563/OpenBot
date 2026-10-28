@@ -18,38 +18,24 @@ import { sweepWorkshopSchedules } from "../src/workshop/schedule-executor";
 const config = loadConfig(process.env);
 const database = createDatabase(process.env.DATABASE_URL ?? "");
 
-// The enqueue a firing hands the turn to: the workshop routes' own orchestrator path, reached
-// through the store the server mounts. Kept as a thin import so the script stays one pass.
+// The enqueue a firing hands the turn to: the turn row, reached through the store the server
+// mounts. NOT the orchestrator — its enqueue starts the run fire-and-forget, and this pass has
+// no gateway, so the run would fail the turn the moment it was created. The queued row is
+// picked up by the server's runner, which is the only party that owns a gateway.
 const { createWorkshopStore } = await import("../src/workshop/store");
-const { createTurnOrchestrator } = await import("../src/workshop/orchestrator");
-const { createInProcessTurnLock } = await import("../src/workshop/locks");
 
 const store = createWorkshopStore(database);
-const orchestrator = createTurnOrchestrator({
-  store,
-  lock: createInProcessTurnLock(),
-  gatewayFor: () => {
-    // A CronJob pass has no sandbox client and no gateway: the fired turn's gateway is the
-    // server's own (the turn row carries the session; the runner picks it up). Returning a
-    // refusing stub keeps the type honest while the enqueue path — this script's only need —
-    // works through the store.
-    throw new Error("The sweep script does not run turns itself.");
-  },
-  auditStore: undefined,
-});
 
 const report = await sweepWorkshopSchedules({
   db: database,
   enqueue: async (input) => {
-    const { turnId } = await orchestrator.enqueue({
+    const row = await store.enqueueTurn({
       sessionId: input.sessionId,
       prompt: input.prompt,
-      actorUserId: input.actorUserId,
-      botId: "workshop-schedule",
-      ownerUserId: input.actorUserId,
-      initiator: input.initiator,
+      // The orchestrator's own mapping: a routine initiator is a machine's turn.
+      initiator: "headless",
     });
-    return turnId;
+    return row.id;
   },
 });
 

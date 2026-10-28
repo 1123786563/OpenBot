@@ -172,6 +172,32 @@ export type EvaluationToolCall =
  */
 export type EvaluationToolClassifier = (toolName: string) => "read" | "write";
 
+/**
+ * What this deployment's catalogue knows about one tool name the freeze kept
+ * (FREV-04): the production description and JSON Schema the runtime offers the model
+ * for that tool, and the read/write effect the gate's second key decides on. Metadata
+ * only — it carries no handle to execute anything; the one execution seam stays
+ * `callTool`, and the schema is declared, never reached through.
+ */
+export type EvaluationToolSurface = Readonly<{
+  description: string;
+  parameters: Record<string, unknown>;
+  effect: "read" | "write";
+}>;
+
+/**
+ * The catalogue read the worker performs ONCE per execution (FREV-04), over the
+ * execution's frozen whitelist. The production wiring builds this over the plugin
+ * tool rows and `classifyTool` — the same pair the store's own `callTool` classifies
+ * a real call with, so the evaluation's read/write answer agrees with production's
+ * for the same tool. A name the deployment does not advertise is absent from the map,
+ * never guessed at; a resolver that throws answers nothing, and every name then falls
+ * back to the fail-closed write classifier.
+ */
+export type EvaluationToolSurfaceResolver = (
+  names: readonly string[],
+) => Promise<ReadonlyMap<string, EvaluationToolSurface>>;
+
 /** How many calls the gate refused, and the distinct tools it refused them for. */
 export type ToolGateTally = Readonly<{
   rejections: number;
@@ -276,6 +302,32 @@ export type EvaluationCaseContext = Readonly<{
    * learning or business-data handle in this context at all — isolation by construction.
    */
   callTool: (toolName: string) => Promise<EvaluationToolCall>;
+  /**
+   * The catalogue facts the worker resolved for this execution's frozen whitelist at
+   * claim time (FREV-04), answering synchronously out of that one preload: a map
+   * lookup, never a query and never an execution. The runner declares the model's
+   * tool surface from it — production description and schema where the deployment
+   * knows the tool, an honest generic declaration where it does not. Absent on
+   * assemblies that wired no catalogue resolver (and for names it did not resolve).
+   */
+  resolveToolSurface?: (toolName: string) => EvaluationToolSurface | undefined;
+  /**
+   * The task's cancellation signal (FREV-05): aborts the moment the execution row
+   * leaves running — a user cancel or a revocation settles it behind the worker's
+   * back — so a model or judge call already in flight is interrupted at its dial
+   * instead of running to completion against a settled execution. The worker derives
+   * it by watching the row, not from an in-process channel, because the settle can
+   * land in another process than the one running the case.
+   */
+  signal?: AbortSignal;
+  /**
+   * The current-eligibility re-check a runner performs before a new billed call it
+   * starts after a suspension point (FREV-05): the task's row still running AND live
+   * authorization for its actor — a fresh answer, because the admission that started
+   * the case is stale the moment the case's model call goes away. Fail-closed: a
+   * re-check that cannot be answered is not an admission.
+   */
+  recheckAdmission?: () => Promise<boolean>;
 }>;
 
 /** Runs one case to an honest outcome. The production runner is a later ticket's work. */
@@ -401,6 +453,17 @@ function reference(value: string): string {
     throw new ExecutionError("EXECUTION_INPUT_INVALID", 400);
   }
   return value;
+}
+
+/**
+ * One case output's projection (the T05 doctrine): model free text rides
+ * `projectSafeText` with `allowFreeText`, anything else is a fixture shape.
+ */
+function projectCaseOutput(output: unknown): SafeText | SafeValue | undefined {
+  if (output === undefined) return undefined;
+  if (typeof output === "string")
+    return projectSafeText(output, { allowFreeText: true });
+  return projectSafeFixture(output);
 }
 
 /** The statuses `recordCaseOutcome` accepts: every case outcome is final, never `in_flight`. */
@@ -607,12 +670,7 @@ export function createObservationExecutionStore(
           cases: cases.map((one) => ({
             index: one.index,
             status: one.status,
-            output:
-              one.output === undefined
-                ? undefined
-                : typeof one.output === "string"
-                  ? projectSafeText(one.output, { allowFreeText: true })
-                  : projectSafeFixture(one.output),
+            output: projectCaseOutput(one.output),
             ...(one.usage === undefined
               ? {}
               : { usage: projectSafeFixture(one.usage) }),
@@ -762,12 +820,7 @@ export function createObservationExecutionStore(
                   // row and a direct settle land the same contract.
                   ...(output === undefined
                     ? {}
-                    : {
-                        output:
-                          typeof output === "string"
-                            ? projectSafeText(output, { allowFreeText: true })
-                            : projectSafeFixture(output),
-                      }),
+                    : { output: projectCaseOutput(output) }),
                   ...(usage === undefined
                     ? {}
                     : { usage: projectSafeFixture(usage) }),
@@ -899,6 +952,15 @@ export type ObservationExecutionWorkerDeps = Readonly<{
   audit: Pick<AuditStore, "insert">;
   /** The production read/write classifier; wiring builds this over the plugin catalogue. */
   classify: EvaluationToolClassifier;
+  /**
+   * The deployment catalogue read (FREV-04): resolved once per execution over the
+   * frozen whitelist, before any case runs. When wired, a whitelisted name's effect
+   * is the catalogue's answer (production's own read/write classification) and the
+   * case runner declares tool schemas from it; a name the catalogue does not know
+   * falls back to `classify` — fail-closed write in production. Absent, `classify`
+   * alone decides, exactly as before.
+   */
+  resolveToolSurface?: EvaluationToolSurfaceResolver;
   /** Runs one frozen case to an honest outcome. The production runner is a later ticket. */
   runCase: EvaluationCaseRunner;
   /**
@@ -912,17 +974,61 @@ export type ObservationExecutionWorkerDeps = Readonly<{
   concurrency?: number;
   leaseMs?: number;
   pollMs?: number;
+  /**
+   * The cancel-watch cadence (FREV-05): how often a running case re-reads its
+   * execution row to learn a cancel or revocation settled it mid-case. A poll, by
+   * necessity — the settle can land in another process than the worker's.
+   */
+  cancelWatchMs?: number;
   owner?: string;
 }>;
 
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_LEASE_MS = 60_000;
 const DEFAULT_POLL_MS = 2_000;
+/** How often a running case's cancel-watch re-reads the execution row (FREV-05).
+ * OCR R5: 250ms meant ~4 PK reads/second per running case with no backoff; 1s still
+ * answers a cancel promptly while cutting the idle-load floor 4x (configurable via
+ * `cancelWatchMs` for tests that need it tighter). */
+const DEFAULT_CANCEL_WATCH_MS = 1_000;
 /** Distinct refused tool names the settle audit row carries; enough to steer a review. */
 const MAX_AUDITED_TOOL_NAMES = 32;
 
 /** Internal: the work-item lease was taken over; another owner owns the truth now. */
 class ExecutionLeaseLost extends Error {}
+
+/**
+ * The catalogue facts for one execution's frozen whitelist (FREV-04), read once at
+ * claim time. Only whitelisted names are asked about: the gate refuses every other
+ * name before its classifier is consulted, so nothing else needs an effect. An
+ * assembly with no resolver answers nothing (the pre-FREV-04 assembly, where the
+ * classifier alone decided), and a resolver that throws is logged and treated the
+ * same way — a catalogue read that cannot be answered narrows the evaluation's tool
+ * surface to what the fail-closed classifier permits, never widens it.
+ */
+async function toolSurfacesFor(
+  config: FrozenExperimentConfig,
+  deps: Pick<ObservationExecutionWorkerDeps, "resolveToolSurface">,
+): Promise<ReadonlyMap<string, EvaluationToolSurface>> {
+  const resolve = deps.resolveToolSurface;
+  if (resolve === undefined) return new Map();
+  const names = (config.readOnlyTools ?? [])
+    .filter((name) => name.state === "projected")
+    .map((name) => name.text);
+  if (names.length === 0) return new Map();
+  try {
+    return await resolve(names);
+  } catch (error) {
+    getLogger("server").warn(
+      {
+        type: "opik-execution-tool-surface-unresolved",
+        error: String(error),
+      },
+      "opik-execution-tool-surface-unresolved",
+    );
+    return new Map();
+  }
+}
 
 /**
  * The settle audit row: what ended, against which frozen experiment, how many cases
@@ -1065,6 +1171,7 @@ export function createObservationExecutionWorker(
   const queue = deps.queue ?? createWorkQueue(deps.database);
   const concurrency = deps.concurrency ?? DEFAULT_CONCURRENCY;
   const leaseMs = deps.leaseMs ?? DEFAULT_LEASE_MS;
+  const cancelWatchMs = deps.cancelWatchMs ?? DEFAULT_CANCEL_WATCH_MS;
   const owner = deps.owner ?? workOwner("opik-execution");
 
   const auditSettle = (
@@ -1212,7 +1319,16 @@ export function createObservationExecutionWorker(
       }
     };
 
-    const gate = createEvaluationToolGate(experiment.config, deps.classify);
+    // FREV-04: the catalogue read happens once per execution, before any case runs.
+    // The same surface answers both questions the gate and the runner ask — is this
+    // tool a read, and what does the model get told about it — so the two can never
+    // disagree about a name. A name the map does not carry keeps the fail-closed
+    // classifier's word (a write, in production).
+    const surfaces = await toolSurfacesFor(experiment.config, deps);
+    const gate = createEvaluationToolGate(
+      experiment.config,
+      (toolName) => surfaces.get(toolName)?.effect ?? deps.classify(toolName),
+    );
     const config = experiment.config;
     let lastTally = 0;
 
@@ -1253,38 +1369,128 @@ export function createObservationExecutionWorker(
           }
           continue;
         }
-        const outcome = await deps.runCase({
-          executionId: execution.id,
-          experimentId: execution.experimentId,
-          caseIndex: index,
-          frozenCase,
-          config,
-          scope: live,
-          callTool: async (toolName) =>
-            gate.call(toolName, [frozenCase.toolFixtures, config.toolFixtures]),
-        });
-        await store.recordCaseOutcome(
-          execution.id,
-          index,
-          outcome.status,
-          outcome.output,
-          outcome.usage,
-          outcome.judge,
-          outcome.reason,
-        );
+        /*
+         * FREV-05: a cancel or a revocation settles the row while the worker awaits
+         * this case, and the per-case re-authorization above cannot see it — the
+         * case is already away. The watch turns that database fact into the case's
+         * AbortSignal (the model call and the judge call both hold it), so the
+         * in-flight dial is interrupted rather than running to completion against
+         * a settled execution. A poll, because the settle can land in another
+         * process than this one; a read that cannot be answered is not a cancel
+         * (R3-27: infrastructure noise is not a case fact), so the watch logs and
+         * keeps polling while the case boundaries stay the hard gates.
+         */
+        const cancelWatch = new AbortController();
+        const watching = repeatAfterEach(async () => {
+          try {
+            const current = await store.loadById(execution.id);
+            // A row that is gone or left running is a settle this worker must
+            // stop awaiting: an absent row reads as "not running", fail closed.
+            if (current?.state !== "running") {
+              cancelWatch.abort();
+            }
+          } catch (error) {
+            log.warn(
+              {
+                type: "opik-execution-cancel-watch-failed",
+                executionId: execution.id,
+                error: String(error),
+              },
+              "opik-execution-cancel-watch-failed",
+            );
+          }
+        }, cancelWatchMs);
+        try {
+          const outcome = await deps.runCase({
+            executionId: execution.id,
+            experimentId: execution.experimentId,
+            caseIndex: index,
+            frozenCase,
+            config,
+            scope: live,
+            signal: cancelWatch.signal,
+            recheckAdmission: async () => {
+              // The judge wrapper's fresh answer (FREV-05): the row AND live
+              // authorization, read now — the eligibility that admitted this case
+              // can be withdrawn while its model call is away. A re-check that
+              // cannot be answered is not an admission: fail closed.
+              try {
+                const current = await store.loadById(execution.id);
+                if (current?.state !== "running") return false;
+                return (
+                  (await deps.reauthorize({
+                    actorId: execution.actorId,
+                    botId: execution.botId,
+                  })) !== null
+                );
+              } catch (error) {
+                log.warn(
+                  {
+                    type: "opik-execution-recheck-failed",
+                    executionId: execution.id,
+                    error: String(error),
+                  },
+                  "opik-execution-recheck-failed",
+                );
+                return false;
+              }
+            },
+            callTool: async (toolName) =>
+              gate.call(toolName, [
+                frozenCase.toolFixtures,
+                config.toolFixtures,
+              ]),
+            // The one catalogue preload this execution answered, as a synchronous
+            // lookup: inert metadata for the tool surface the runner declares.
+            ...(surfaces.size === 0
+              ? {}
+              : { resolveToolSurface: (name: string) => surfaces.get(name) }),
+          });
+          await store.recordCaseOutcome(
+            execution.id,
+            index,
+            outcome.status,
+            outcome.output,
+            outcome.usage,
+            outcome.judge,
+            outcome.reason,
+          );
+        } finally {
+          watching.stop();
+        }
         // The governance counter follows each case, so a run that dies mid-way has
         // already recorded the refusals that happened.
         const tally = gate.tally();
         const delta = tally.rejections - lastTally;
         if (delta > 0) {
-          await store.bumpToolRejections(execution.id, delta);
-          lastTally = tally.rejections;
+          try {
+            await store.bumpToolRejections(execution.id, delta);
+            lastTally = tally.rejections;
+          } catch (error) {
+            // A transient counter write must not terminalize a healthy execution (the
+            // R3-27 rule for renew): lastTally stays put, so the delta rides the next
+            // case's bump, and the settle audit reads the row, not this segment.
+            log.warn(
+              {
+                type: "opik-execution-rejection-bump-failed",
+                executionId: execution.id,
+                error: String(error),
+              },
+              "opik-execution-rejection-bump-failed",
+            );
+          }
         }
       }
       // Settled from the durable rows, not from memory: what ran is what the rows
       // say, whatever process started them.
       const settled = await store.settleCompletedFromOutcomes(execution.id);
-      if (settled) await auditSettle(execution, settled, gate.tally());
+      if (settled)
+        await auditSettle(execution, settled, {
+          // The row's counter is the truth across resumes and takeovers — the same
+          // rule the cancel seams audit by; the gate's names describe this segment.
+          rejections: settled.toolRejections,
+          rejectedTools: gate.tally().rejectedTools,
+        });
     } catch (error) {
       if (error instanceof ExecutionLeaseLost) {
         // Another owner holds the ticket; the truth is theirs to write.
