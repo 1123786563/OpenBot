@@ -1034,9 +1034,7 @@ export async function evaluateCleanupRelations(
     // catalog, registered explicitly, never guessed.
     const dynamicSpecs = new Map<string, TableSpec>();
     const discoveredTables = [
-      ...new Set(
-        edges.flatMap((edge) => [edge.childTable, edge.parentTable]),
-      ),
+      ...new Set(edges.flatMap((edge) => [edge.childTable, edge.parentTable])),
     ].filter((table) => !TABLE_SPECS[table]);
     if (discoveredTables.length > 0) {
       const primaryKeyRows = await tx.execute<{
@@ -1107,7 +1105,8 @@ export async function evaluateCleanupRelations(
         ...edge,
         discovered,
         matchesDeclaration:
-          !discovered && declaredShape!.onDelete === edge.onDelete,
+          declaredShape !== undefined &&
+          declaredShape.onDelete === edge.onDelete,
         evidence: `pg_constraint constraint ${edge.constraintName}: ${edge.childTable}.${edge.childColumn} -> ${edge.parentTable}.${edge.parentColumn} on delete ${edge.onDelete}; ${count[0].n} child rows ride it in the current data`,
       });
     }
