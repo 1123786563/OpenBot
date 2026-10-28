@@ -1,12 +1,13 @@
 import { serve } from "bun";
 import { Hono } from "hono";
 import { ExecutionScopeRegistry } from "../../shared/execution-scope";
+import { initProcessTracing, withTraceFetch } from "../../shared/trace";
 import {
   authorised,
   describeExecutionScope,
   statedScope,
 } from "./authorisation";
-import { environmentFor } from "./environment";
+import { computerMemoryBytes } from "./computer-memory-bytes";
 import {
   ComputerNotAnsweringError,
   DockerUnavailableError,
@@ -17,11 +18,10 @@ import {
   reset,
   stop,
 } from "./docker";
+import { environmentFor } from "./environment";
 import { registerEntry } from "./identity";
-import { namesFor } from "./names";
-import { computerMemoryBytes } from "./computer-memory-bytes";
 import { listenPort } from "./listen-port";
-import { initProcessTracing, withTraceFetch } from "../../shared/trace";
+import { namesFor } from "./names";
 
 /**
  * The container supervisor: the only thing here that holds the Docker socket.

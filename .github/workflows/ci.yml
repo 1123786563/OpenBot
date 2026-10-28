@@ -536,9 +536,9 @@ jobs:
         with:
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
-      - run: bunx e2e run --config e2e.unit.config.ts app/tests/build-cache.test.ts
+      - run: e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts
         env:
-          E2E_UNIT_SCOPE: app
+          E2E_BUN_ONLY: app/tests/build-cache.test.ts
 
   python-harness:
     name: python harness regressions
