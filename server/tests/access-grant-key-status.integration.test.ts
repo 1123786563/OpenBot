@@ -97,7 +97,9 @@ afterAll(async () => {
   await database
     .delete(botBindingOffers)
     .where(like(botBindingOffers.botId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -233,9 +235,9 @@ test("one revoke-all retires every active grant of the Bot and every key version
     revokedCount: number;
   };
   expect(body.revokedCount).toBe(2);
-  expect(
-    body.grants.map((row) => row.grantId).sort(),
-  ).toEqual([first.grantId, second.grantId].sort());
+  expect(body.grants.map((row) => row.grantId).sort()).toEqual(
+    [first.grantId, second.grantId].sort(),
+  );
 
   // Every key version the two grants held is retired with them, and the gateway was asked to
   // disable each remote key — the same retirement a one-grant press gets.
@@ -259,8 +261,8 @@ test("one revoke-all retires every active grant of the Bot and every key version
   const listedBody = (await listed.json()) as {
     grants: Array<{ grantId: string; status: string; activeKeys: unknown[] }>;
   };
-  const forBot = listedBody.grants.filter(
-    (row) => body.grants.some((g) => g.grantId === row.grantId),
+  const forBot = listedBody.grants.filter((row) =>
+    body.grants.some((g) => g.grantId === row.grantId),
   );
   expect(forBot.length).toBe(2);
   for (const row of forBot) {

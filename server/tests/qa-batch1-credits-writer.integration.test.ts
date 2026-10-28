@@ -28,7 +28,9 @@ afterAll(async () => {
   await database.$client.close();
 });
 
-function grantInput(overrides: Partial<Parameters<typeof writer.grantCredits>[0]> = {}) {
+function grantInput(
+  overrides: Partial<Parameters<typeof writer.grantCredits>[0]> = {},
+) {
   return {
     externalCustomerId: `${prefix}-customer`,
     source: "plan" as const,
@@ -90,10 +92,7 @@ test("probe a: the replay answer carries the first grant's facts, not the retrie
 });
 
 test("probe a: different keys race independently — six keys, six rows", async () => {
-  const inputs = Array.from(
-    { length: 6 },
-    () => grantInput(),
-  );
+  const inputs = Array.from({ length: 6 }, () => grantInput());
   const results = await Promise.all(
     inputs.map((input) => writer.grantCredits({ ...input })),
   );

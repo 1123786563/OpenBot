@@ -250,7 +250,9 @@ export function ResponsibilityDialog({
                     <IconCircleCheck />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle>{t("responsibilities.dialog.complete")}</ItemTitle>
+                    <ItemTitle>
+                      {t("responsibilities.dialog.complete")}
+                    </ItemTitle>
                     <ItemDescription>
                       {t("responsibilities.dialog.completeDescription")}
                     </ItemDescription>

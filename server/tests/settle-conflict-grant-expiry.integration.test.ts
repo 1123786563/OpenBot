@@ -405,7 +405,11 @@ test("a settle naming another payment account refuses as payer_conflict and neve
   // The account is fixed by the reservation server-side; naming another one — at the top
   // level or inside the evidence — is the tamper attempt, refused before any read.
   const topLevel = await settleService.settle({
-    ...settleRequestOf(reservationId, { input: 1000 }, `${prefix}-settle-pay-1`),
+    ...settleRequestOf(
+      reservationId,
+      { input: 1000 },
+      `${prefix}-settle-pay-1`,
+    ),
     [RESERVE_FORBIDDEN_ACCOUNT_KEY_FIELDS[0]]: "openbot-personal-someone-else",
   });
   expect(topLevel.status).toBe("refused");
@@ -417,7 +421,11 @@ test("a settle naming another payment account refuses as payer_conflict and neve
   );
 
   const nested = await settleService.settle({
-    ...settleRequestOf(reservationId, { input: 1000 }, `${prefix}-settle-pay-2`),
+    ...settleRequestOf(
+      reservationId,
+      { input: 1000 },
+      `${prefix}-settle-pay-2`,
+    ),
     evidence: {
       kind: "provider_usage_report",
       externalCustomerId: world.customerKey,
@@ -445,7 +453,11 @@ test("a duplicate settle with a different amount conflicts with a stable kind an
 
   // First settlement: 1 000 000 input + 100 000 output → $1.20 → 12 000 scaled units.
   const first = await settleService.settle(
-    settleRequestOf(reservationId, { input: 1_000_000, output: 100_000 }, `${prefix}-settle-amt-1`),
+    settleRequestOf(
+      reservationId,
+      { input: 1_000_000, output: 100_000 },
+      `${prefix}-settle-amt-1`,
+    ),
   );
   expect(first.status).toBe("settled");
   if (first.status !== "settled") return;
@@ -454,7 +466,11 @@ test("a duplicate settle with a different amount conflicts with a stable kind an
   // The duplicate names the SAME reservation with a DIFFERENT amount: a conflict with a
   // stable, machine-readable kind — never a top-up, never a second charge.
   const second = await settleService.settle(
-    settleRequestOf(reservationId, { input: 2_000_000, output: 100_000 }, `${prefix}-settle-amt-2`),
+    settleRequestOf(
+      reservationId,
+      { input: 2_000_000, output: 100_000 },
+      `${prefix}-settle-amt-2`,
+    ),
   );
   expect(second.status).toBe("refused");
   if (second.status !== "refused") return;
@@ -477,7 +493,11 @@ test("a duplicate settle with a different amount conflicts with a stable kind an
   // And the identical first message still replays to the first result afterwards — the
   // conflict changed nothing about idempotency.
   const replay = await settleService.settle(
-    settleRequestOf(reservationId, { input: 1_000_000, output: 100_000 }, `${prefix}-settle-amt-1`),
+    settleRequestOf(
+      reservationId,
+      { input: 1_000_000, output: 100_000 },
+      `${prefix}-settle-amt-1`,
+    ),
   );
   expect(replay.status).toBe("settled");
   if (replay.status !== "settled") return;
@@ -491,7 +511,10 @@ test("a settle against a released hold conflicts with a stable kind and the capa
   const reservationId = await reserveOrFail(world);
   const maximum = world.request.maximumCredits;
 
-  await fixtureCreditWriter.releaseReservation(reservationId, "test: released before settle");
+  await fixtureCreditWriter.releaseReservation(
+    reservationId,
+    "test: released before settle",
+  );
   const balanceAfterRelease = await fixtureCreditWriter.availableBalance(
     world.customerKey,
   );
@@ -502,7 +525,9 @@ test("a settle against a released hold conflicts with a stable kind and the capa
   expect(outcome.status).toBe("refused");
   if (outcome.status !== "refused") return;
   expect(outcome.reasonCode).toBe("settlement_conflict");
-  expect((outcome.detail as { kind?: string }).kind).toBe("reservation_released");
+  expect((outcome.detail as { kind?: string }).kind).toBe(
+    "reservation_released",
+  );
 
   // The refusal charged nothing and vacated nothing further: the released hold's capacity
   // is exactly where release left it.
@@ -527,14 +552,16 @@ test("a grant that expires mid-request still settles the admitted work against t
   // 12:00 passes while the request is in flight: the grant lapses AFTER the hold and its
   // allocations were written, BEFORE the settlement arrives.
   const grant = await expireGrant(world.seedGrantKey);
-  expect(
-    deriveGrantStatus(grant, Date.now()),
-  ).toBe("active"); // sanity before the clock move: the fixture seized a live grant
+  expect(deriveGrantStatus(grant, Date.now())).toBe("active"); // sanity before the clock move: the fixture seized a live grant
 
   // 12:01: the settlement arrives. The admitted work is billed — refusing it would erase
   // a cost that was really incurred. The charge lands on the very grant that lapsed.
   const outcome = await settleService.settle(
-    settleRequestOf(reservationId, { input: 1_000_000, output: 100_000 }, `${prefix}-settle-exp`),
+    settleRequestOf(
+      reservationId,
+      { input: 1_000_000, output: 100_000 },
+      `${prefix}-settle-exp`,
+    ),
   );
   expect(outcome.status).toBe("settled");
   if (outcome.status !== "settled") return;
@@ -546,7 +573,11 @@ test("a grant that expires mid-request still settles the admitted work against t
   // since: the work was admitted while it was live), and the row's derived life is now
   // `expired` — the settled charge does not resurrect it.
   const [after] = await database
-    .select({ used: creditGrants.used, total: creditGrants.total, expiresAt: creditGrants.expiresAt })
+    .select({
+      used: creditGrants.used,
+      total: creditGrants.total,
+      expiresAt: creditGrants.expiresAt,
+    })
     .from(creditGrants)
     .where(eq(creditGrants.idempotencyKey, world.seedGrantKey));
   expect(after?.used).toBe(12_000);
@@ -611,7 +642,11 @@ test("a hold spread across two grants still bills the lapsed grant's admitted sh
   // draw walks the allocations in expiry order: the LAPSED front grant absorbs its
   // admitted 300 000, the live back grant the remaining 100 000.
   const outcome = await settleService.settle(
-    settleRequestOf(reservationId, { input: 40_000_000 }, `${prefix}-settle-two`),
+    settleRequestOf(
+      reservationId,
+      { input: 40_000_000 },
+      `${prefix}-settle-two`,
+    ),
   );
   expect(outcome.status).toBe("settled");
   if (outcome.status !== "settled") return;
@@ -653,7 +688,10 @@ test("capacity a release hands back stays dead once its grant expires: new reque
   });
 
   // 11:59: the hold is released while the grant is still live — the full balance returns.
-  await fixtureCreditWriter.releaseReservation(reservationId, "test: released while live");
+  await fixtureCreditWriter.releaseReservation(
+    reservationId,
+    "test: released while live",
+  );
   expect(await fixtureCreditWriter.availableBalance(world.customerKey)).toBe(
     1_000_000,
   );
@@ -693,7 +731,10 @@ test("a reservation locked to a non-zero administrator rate version settles at t
   // Two administrator rates, recorded in order: version N at 50 credits/USD, version
   // N+1 at 300. The reservation locks version N — a NON-ZERO version, the recorded
   // history — not the environment rate (version 0) and never "whatever is newest".
-  const savedFirst = await rateStore.save({ numerator: "50", denominator: "1" }, `${prefix} admin v1`);
+  const savedFirst = await rateStore.save(
+    { numerator: "50", denominator: "1" },
+    `${prefix} admin v1`,
+  );
   expect(savedFirst.ok).toBe(true);
   if (!savedFirst.ok) return;
   const lockedVersion = savedFirst.rateVersion;
@@ -715,13 +756,20 @@ test("a reservation locked to a non-zero administrator rate version settles at t
   // A NEWER administrator rate lands after admission; the newest rate would bill 36 000,
   // the environment rate 12 000 — the locked version N bills $1.20 × 50 credits/USD =
   // 60 credits = 6 000 scaled units, and that is what the settlement must charge.
-  const savedSecond = await rateStore.save({ numerator: "300", denominator: "1" }, `${prefix} admin v2`);
+  const savedSecond = await rateStore.save(
+    { numerator: "300", denominator: "1" },
+    `${prefix} admin v2`,
+  );
   expect(savedSecond.ok).toBe(true);
   if (!savedSecond.ok) return;
   expect(savedSecond.rateVersion).toBe(lockedVersion + 1);
 
   const settled = await settleService.settle(
-    settleRequestOf(outcome0.reservationId, { input: 1_000_000, output: 100_000 }, `${prefix}-settle-rate`),
+    settleRequestOf(
+      outcome0.reservationId,
+      { input: 1_000_000, output: 100_000 },
+      `${prefix}-settle-rate`,
+    ),
   );
   expect(settled.status).toBe("settled");
   if (settled.status !== "settled") return;

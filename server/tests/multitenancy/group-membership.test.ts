@@ -19,7 +19,13 @@
 // DATABASE_URL）加三个受限角色 URL；缺配置时整套显式 skip（跳过原因
 // 写在用例名里，skipped 不计为通过），绝不回退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/e2e-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   notFoundVerdict,
@@ -119,14 +125,17 @@ describeDb("MT023 / Issue #66 — 群聊成员与 Bot 席位的作用域", () =>
       expect(created.outcome).toBe("allow");
     });
 
-    itDb("邀请跨公司用户（B 公司 principal）：canonical not-found", async () => {
-      const verdict = await fixture.group.inviteMember(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        groupId,
-        fixture.ids["principal-b1-member"],
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "邀请跨公司用户（B 公司 principal）：canonical not-found",
+      async () => {
+        const verdict = await fixture.group.inviteMember(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          groupId,
+          fixture.ids["principal-b1-member"],
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
 
     itDb("邀请不存在的 principal：逐字节同形（不泄露存在性）", async () => {
       const verdict = await fixture.group.inviteMember(
@@ -139,7 +148,11 @@ describeDb("MT023 / Issue #66 — 群聊成员与 Bot 席位的作用域", () =>
 
     itDb("跨公司 Bot 加席：canonical not-found（AC1 的 Bot 面）", async () => {
       const botId = NEXT.agentId();
-      const bScope = await scopeAs("b1-member", fixture.companyB, fixture.teamB1);
+      const bScope = await scopeAs(
+        "b1-member",
+        fixture.companyB,
+        fixture.teamB1,
+      );
       await fixture.ownership.createBot(bScope, {
         agentId: botId,
         displayName: "B 公司 Bot",
@@ -173,18 +186,21 @@ describeDb("MT023 / Issue #66 — 群聊成员与 Bot 席位的作用域", () =>
       expect(read.outcome).toBe("allow");
     });
 
-    itDb("群本身对跨团队（A2）与跨公司（B）读者 canonical not-found", async () => {
-      const a2 = await fixture.group.readGroup(
-        await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
-        groupId,
-      );
-      expect(isCanonicalNotFound(a2)).toBe(true);
-      const b1 = await fixture.group.readGroup(
-        await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
-        groupId,
-      );
-      expect(isCanonicalNotFound(b1)).toBe(true);
-    });
+    itDb(
+      "群本身对跨团队（A2）与跨公司（B）读者 canonical not-found",
+      async () => {
+        const a2 = await fixture.group.readGroup(
+          await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
+          groupId,
+        );
+        expect(isCanonicalNotFound(a2)).toBe(true);
+        const b1 = await fixture.group.readGroup(
+          await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
+          groupId,
+        );
+        expect(isCanonicalNotFound(b1)).toBe(true);
+      },
+    );
 
     itDb("非群成员（同团队）也不能邀请：canonical not-found", async () => {
       // company-admin 在 A1 有成员行但未入群——群内自治，非成员无门。
@@ -306,13 +322,16 @@ describeDb("MT023 / Issue #66 — 群聊成员与 Bot 席位的作用域", () =>
       );
       expect(removed.outcome).toBe("allow");
       const read = await fixture.group.readGroup(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1) &&
+        (await scopeAs("a1-owner", fixture.companyA, fixture.teamA1)) &&
           (await scopeAs("a1-other", fixture.companyA, fixture.teamA1)),
         groupId,
       );
       expect(isCanonicalNotFound(read)).toBe(true);
       // grant 行已物理消失（RLS 探针）。
-      const grants = await fixture.readGrantRowsAsData(fixture.companyA, groupId);
+      const grants = await fixture.readGrantRowsAsData(
+        fixture.companyA,
+        groupId,
+      );
       expect(grants).toEqual([fixture.ids["principal-a1-owner"]]);
     });
 
@@ -333,7 +352,7 @@ describeDb("MT023 / Issue #66 — 群聊成员与 Bot 席位的作用域", () =>
       );
       expect(invited.outcome).toBe("allow");
       const read = await fixture.group.readGroup(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1) &&
+        (await scopeAs("a1-owner", fixture.companyA, fixture.teamA1)) &&
           (await scopeAs("a1-other", fixture.companyA, fixture.teamA1)),
         groupId,
       );
@@ -397,23 +416,26 @@ describeDb("MT023 / Issue #66 — 群聊成员与 Bot 席位的作用域", () =>
       expect((read as { seats: string[] }).seats).toEqual([botId]);
     });
 
-    itDb("非 Bot owner 非 tenant_admin（a1-other）：GROUP_SEAT_FORBIDDEN", async () => {
-      // a1-other 先入群（席位操作者须是群成员）。
-      await fixture.group.inviteMember(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        groupId,
-        fixture.ids["principal-a1-other"],
-      );
-      const verdict = await fixture.group.addBotSeat(
-        await scopeAs("a1-other", fixture.companyA, fixture.teamA1),
-        groupId,
-        botId,
-      );
-      expect(verdict).toEqual({
-        outcome: "deny",
-        code: "GROUP_SEAT_FORBIDDEN",
-      });
-    });
+    itDb(
+      "非 Bot owner 非 tenant_admin（a1-other）：GROUP_SEAT_FORBIDDEN",
+      async () => {
+        // a1-other 先入群（席位操作者须是群成员）。
+        await fixture.group.inviteMember(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          groupId,
+          fixture.ids["principal-a1-other"],
+        );
+        const verdict = await fixture.group.addBotSeat(
+          await scopeAs("a1-other", fixture.companyA, fixture.teamA1),
+          groupId,
+          botId,
+        );
+        expect(verdict).toEqual({
+          outcome: "deny",
+          code: "GROUP_SEAT_FORBIDDEN",
+        });
+      },
+    );
 
     itDb("公司 tenant_admin 可加席（与发布管理门同形）", async () => {
       // company-admin 入群后行使席位管理（Bot 发布同款 tenant_admin 臂）。

@@ -122,7 +122,10 @@ describe("the compatibility report obeys the R4 report contract", () => {
         ["not_run", "passed", "failed", "blocked"],
         `${gate}.status`,
       ).toContain(report.gates[gate].status);
-      expect(report.gates[gate].evidence.length, `${gate}.evidence`).toBeGreaterThan(0);
+      expect(
+        report.gates[gate].evidence.length,
+        `${gate}.evidence`,
+      ).toBeGreaterThan(0);
       for (const ref of report.gates[gate].evidence) {
         expect(ref.length, `${gate}.evidence entries`).toBeGreaterThan(0);
       }

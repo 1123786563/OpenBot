@@ -206,7 +206,9 @@ test("me01 malformed provider stream surfaces an error terminal, never a fake su
     }
     const finishReason = await output.finishReason;
     expect(types).toContain("error");
-    expect(typeof finishReason === "string" && finishReason !== "stop").toBe(true);
+    expect(typeof finishReason === "string" && finishReason !== "stop").toBe(
+      true,
+    );
     expect(await countReceipts(database.dbName, "me01-bad-frame")).toBe(0);
     await store.close();
   } finally {

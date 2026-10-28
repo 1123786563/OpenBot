@@ -151,7 +151,11 @@ export function scopedAgentListQueryOptions(
             guarded(queryClient, open.userId, async () => {
               const response = await tryClient(
                 `/api/agents${hidden ? "?hidden=true" : ""}`,
-                { signal, fallbackKey: "agents.load", ...(open.selection ?? {}) },
+                {
+                  signal,
+                  fallbackKey: "agents.load",
+                  ...(open.selection ?? {}),
+                },
               );
               if (!response.ok) {
                 throw new Error("Coworkers could not be read.");

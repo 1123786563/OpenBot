@@ -172,9 +172,9 @@ describe("MT108 AC1 every trace/log/event is traceable to company, team and subj
       surface: "trace",
     });
     for (const surface of kinds) {
-      expect(
-        telemetryRecordAttributes({ attribution, surface }),
-      ).toEqual(expected);
+      expect(telemetryRecordAttributes({ attribution, surface })).toEqual(
+        expected,
+      );
     }
   });
 });
@@ -209,12 +209,15 @@ describe("MT108 AC2 attribution survives the language boundary and background pa
       principalId: "mt108-principal",
       actorId: "mt108-actor",
     };
-    const acrossAwaits = await withTelemetryAttribution(attribution, async () => {
-      await Promise.resolve();
-      const first = currentTelemetryAttribution();
-      await new Promise<void>((resolve) => setTimeout(resolve, 1));
-      return { first, afterTimer: currentTelemetryAttribution() };
-    });
+    const acrossAwaits = await withTelemetryAttribution(
+      attribution,
+      async () => {
+        await Promise.resolve();
+        const first = currentTelemetryAttribution();
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+        return { first, afterTimer: currentTelemetryAttribution() };
+      },
+    );
     expect(acrossAwaits.first).toEqual(attribution);
     expect(acrossAwaits.afterTimer).toEqual(attribution);
     // 离开携带域后回到 null——调用方交给发射门落 missing 标记。
@@ -274,7 +277,11 @@ describe("MT108 AC3 no credentials or secret-derivable values in attribution fie
   });
 
   test("bare identifiers pass; malformed ones (whitespace, empty, overlong) do not", () => {
-    for (const bare of ["acme", "tenant-42", "0b9f6a1e-1111-4111-8111-111111111111"]) {
+    for (const bare of [
+      "acme",
+      "tenant-42",
+      "0b9f6a1e-1111-4111-8111-111111111111",
+    ]) {
       expect(isAttributionIdentifier(bare)).toBe(true);
     }
     for (const malformed of ["", " acme", "ac me", "acme\n", "a".repeat(201)]) {
@@ -345,12 +352,14 @@ describe("MT108 AC4 missing attribution is marked, never defaulted", () => {
 
   test("the reader classifies attributed, missing and unmarked — unmarked is itself an anomaly", () => {
     expect(
-      attributionStatusOf(telemetryAttributesOf({
-        tenantId: "t",
-        workspaceId: "w",
-        principalId: "p",
-        actorId: "a",
-      })),
+      attributionStatusOf(
+        telemetryAttributesOf({
+          tenantId: "t",
+          workspaceId: "w",
+          principalId: "p",
+          actorId: "a",
+        }),
+      ),
     ).toBe("attributed");
     expect(
       attributionStatusOf(
@@ -366,9 +375,9 @@ describe("MT108 AC4 missing attribution is marked, never defaulted", () => {
   });
 
   test("a hand-built scope cannot mint attribution — the only fallback is the missing marker", () => {
-    expect(() =>
-      telemetryAttributionFromScope(HAND_BUILT_SCOPE),
-    ).toThrow("UNVERIFIED_SCOPE");
+    expect(() => telemetryAttributionFromScope(HAND_BUILT_SCOPE)).toThrow(
+      "UNVERIFIED_SCOPE",
+    );
   });
 });
 
@@ -478,13 +487,10 @@ describeDb("MT108 issuing entrance on a real trusted scope", () => {
     expect(attributes["openbot.tenant_id"]).toBe(tenantId);
     expect(attributes["openbot.run_id"]).toBe(WIRED_EXECUTION.runId);
     // 后台路径：同一归属穿越 await + timer 后仍在。
-    const carried = await withTelemetryAttribution(
-      attribution,
-      async () => {
-        await new Promise<void>((resolve) => setTimeout(resolve, 1));
-        return currentTelemetryAttribution();
-      },
-    );
+    const carried = await withTelemetryAttribution(attribution, async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      return currentTelemetryAttribution();
+    });
     expect(carried?.tenantId).toBe(tenantId);
   });
 

@@ -29,10 +29,7 @@ const TYPES = readFileSync(
   join(hereDir, "../src/billing/payments/types.ts"),
   "utf8",
 );
-const CONFIG = readFileSync(
-  join(hereDir, "../src/config.ts"),
-  "utf8",
-);
+const CONFIG = readFileSync(join(hereDir, "../src/config.ts"), "utf8");
 
 describe("probe e: the cycle grammar is one contract across three files", () => {
   test("the routes accept exactly the two monthly spellings", () => {
@@ -42,9 +39,7 @@ describe("probe e: the cycle grammar is one contract across three files", () => 
   });
 
   test("the catalog discloses exactly the same two spellings", () => {
-    expect(SERVICE).toContain(
-      'cycles: ["monthly", "recurring_monthly"]',
-    );
+    expect(SERVICE).toContain('cycles: ["monthly", "recurring_monthly"]');
     expect(TYPES).toContain(
       'cycles: readonly ("monthly" | "recurring_monthly")[]',
     );

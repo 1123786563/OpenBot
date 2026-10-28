@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
@@ -20,9 +25,7 @@ import {
   gatewayCatalogSyncState,
 } from "../src/db/schema";
 import { gatewayCustomers, gatewayVirtualKeys } from "../src/db/schema/gateway";
-import {
-  createCatalogFreshnessGate,
-} from "../src/gateway/catalog-freshness";
+import { createCatalogFreshnessGate } from "../src/gateway/catalog-freshness";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
 import {
   createGatewayCustomerProvisioner,
@@ -403,7 +406,10 @@ describe("05.6 key renewal re-validation", () => {
     const rows = await keyRowsFor(grant.grantId);
     expect(rows).toHaveLength(2);
     expect(
-      rows.map((row) => ({ version: row.credentialVersion, status: row.status })),
+      rows.map((row) => ({
+        version: row.credentialVersion,
+        status: row.status,
+      })),
     ).toEqual([
       { version: 1, status: "revoked" },
       { version: 2, status: "active" },
@@ -414,9 +420,8 @@ describe("05.6 key renewal re-validation", () => {
 
     // Remotely: the old key was deactivated (05.7's rule), the new one is live.
     expect(fake.deactivations).toHaveLength(1);
-    const oldRemoteId = (
-      await keyRowsFor(grant.grantId)
-    )[0]!.gatewayVirtualKeyId;
+    const oldRemoteId = (await keyRowsFor(grant.grantId))[0]!
+      .gatewayVirtualKeyId;
     expect(fake.deactivations[0]!.id).toBe(oldRemoteId);
     expect(fake.deactivations[0]!.body.is_active).toBe(false);
     const oldRemote = fake.keyById(oldRemoteId);

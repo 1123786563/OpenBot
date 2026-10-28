@@ -161,7 +161,9 @@ function previewHmrDeps(
     ),
     store: {
       async findSession(id: string, userId: string) {
-        return id === SESSION_ID && userId === owner && input.sessionExists !== false
+        return id === SESSION_ID &&
+          userId === owner &&
+          input.sessionExists !== false
           ? sessionRow(port)
           : undefined;
       },
@@ -1067,10 +1069,7 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
   function healthyTlsStatusFile(): string {
     const dir = mkdtempSync(join(tmpdir(), "openbot-tls-status-hmr-"));
     const statusFile = join(dir, "renewal-status.json");
-    writeFileSync(
-      statusFile,
-      JSON.stringify({ health: "ok", daysLeft: 45 }),
-    );
+    writeFileSync(statusFile, JSON.stringify({ health: "ok", daysLeft: 45 }));
     return statusFile;
   }
 

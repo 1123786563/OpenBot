@@ -35,7 +35,9 @@ export function GroupChat({ channelId }: { channelId: string }) {
   // carrying the pair, guarded by the generation — a reply that left under one selection never
   // lands in the scope that replaced it.
   const scope = useScopedCache();
-  const group = useQuery(scopedGroupQueryOptions(queryClient, scope, channelId));
+  const group = useQuery(
+    scopedGroupQueryOptions(queryClient, scope, channelId),
+  );
   const me = useQuery(currentUserQueryOptions()).data;
   const send = useMutation(
     sendGroupMessageMutationOptions(queryClient, channelId, scope),

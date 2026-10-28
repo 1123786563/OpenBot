@@ -460,9 +460,18 @@ describe("gateway readiness gate — the call-site inventory", () => {
     // app.ts does — to hand a resolved dependency to another service — never to answer
     // "is the gateway ready" themselves. Each entry names the ticket that needed it.
     const ALLOWED_ASSEMBLY_SITES: ReadonlyMap<string, string> = new Map([
-      ["/billing/reserve-bound.ts", "06.x reserve converts at the locked rate via the rate store"],
-      ["/bot-services/registry.ts", "#244/#245 key issuance reads the gateway endpoint at assembly"],
-      ["/index.ts", "startup wiring (#249 key-state sync and peers) hands controls to services"],
+      [
+        "/billing/reserve-bound.ts",
+        "06.x reserve converts at the locked rate via the rate store",
+      ],
+      [
+        "/bot-services/registry.ts",
+        "#244/#245 key issuance reads the gateway endpoint at assembly",
+      ],
+      [
+        "/index.ts",
+        "startup wiring (#249 key-state sync and peers) hands controls to services",
+      ],
     ]);
     const offenders = listTypeScriptFiles(srcRoot)
       .filter((path) => CONDITION_SOURCE_PATTERN.test(path) === false)

@@ -2,8 +2,14 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
-import { createBillingRoutes, createBillingWebhookRoutes } from "../src/billing/routes";
-import { createPaymentCallbackRoutes, createPaymentRoutes } from "../src/billing/payments/routes";
+import {
+  createBillingRoutes,
+  createBillingWebhookRoutes,
+} from "../src/billing/routes";
+import {
+  createPaymentCallbackRoutes,
+  createPaymentRoutes,
+} from "../src/billing/payments/routes";
 import type { BillingService } from "../src/billing/types";
 import type { PaymentService } from "../src/billing/payments/service";
 
@@ -56,7 +62,9 @@ const billingService = {
 
 const paymentService = {
   catalog: (canPurchase: boolean, activePlanCode: string | null) => ({
-    plans: [{ planCode: "pro", amountCents: 8800, currency: "CNY", periodMonths: 1 }],
+    plans: [
+      { planCode: "pro", amountCents: 8800, currency: "CNY", periodMonths: 1 },
+    ],
     canPurchase,
     activePlanCode,
     providers: ["alipay"],
@@ -74,7 +82,10 @@ function mountedApp(): Hono<{ Variables: AppVariables }> {
     "/api/billing/webhooks",
     createBillingWebhookRoutes({ service: billingService }),
   );
-  app.route("/api/billing", createBillingRoutes({ service: billingService, requireUser }));
+  app.route(
+    "/api/billing",
+    createBillingRoutes({ service: billingService, requireUser }),
+  );
   // The payment surfaces: the anonymous callback prefix FIRST, then the user group after the
   // billing user group on the shared prefix. Inverted, the sixth case below catches it.
   app.route(
@@ -123,7 +134,10 @@ describe("mount order regression (the six cases)", () => {
       headers: { "x-test-session": "1" },
     });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { plans: unknown[]; canPurchase: boolean };
+    const body = (await response.json()) as {
+      plans: unknown[];
+      canPurchase: boolean;
+    };
     expect(Array.isArray(body.plans)).toBe(true);
     expect(body.canPurchase).toBe(true);
   });

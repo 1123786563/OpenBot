@@ -70,7 +70,9 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 /** The conclusion's badge color: settled is information, no-charge is a release
  * candidate (for 08.9 to act on — never this page), unknown is the open question. */
-function conclusionClass(conclusion: RecoveryEvidenceView["conclusion"]): string {
+function conclusionClass(
+  conclusion: RecoveryEvidenceView["conclusion"],
+): string {
   if (conclusion === "settled_evidence") {
     return "bg-sky-100 text-sky-900 rounded px-2 py-0.5 text-xs font-medium";
   }
@@ -88,8 +90,7 @@ export function BillingRecoveryReviewCard() {
       client("/api/admin/billing/recovery-items", {
         fallbackKey: "billing.loadRecoveryReview",
       }).then(
-        (response) =>
-          response.json() as Promise<{ items: RecoveryItemView[] }>,
+        (response) => response.json() as Promise<{ items: RecoveryItemView[] }>,
       ),
   });
 
@@ -135,10 +136,7 @@ export function BillingRecoveryReviewCard() {
             </span>
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Fact
-              label={t("recoveryReview.account")}
-              value={item.accountRef}
-            />
+            <Fact label={t("recoveryReview.account")} value={item.accountRef} />
             <Fact
               label={t("recoveryReview.ceiling")}
               value={`${(item.maximumCredits / 100).toFixed(2)}`}

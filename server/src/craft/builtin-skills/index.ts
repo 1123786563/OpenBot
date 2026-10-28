@@ -90,15 +90,17 @@ async function loadBuiltinSkillTree(): Promise<BuiltinSkillTree> {
   const encoder = new TextEncoder();
   const walk = async (dir: URL, prefix: string): Promise<void> => {
     // Only a missing root is the documented no-skills deployment case.
-    const entries = await readdir(dir, { withFileTypes: true }).catch((error) => {
-      if (
-        prefix === "" &&
-        (error as NodeJS.ErrnoException).code === "ENOENT"
-      ) {
-        return [];
-      }
-      throw error;
-    });
+    const entries = await readdir(dir, { withFileTypes: true }).catch(
+      (error) => {
+        if (
+          prefix === "" &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        ) {
+          return [];
+        }
+        throw error;
+      },
+    );
     for (const entry of entries) {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       // Top-level files are this module's own source (index.ts), not skill

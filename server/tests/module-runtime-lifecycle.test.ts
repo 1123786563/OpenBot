@@ -170,7 +170,9 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     // as its four member stops (there is no separate group invocation today).
     for (const name of FROZEN_STOP_ORDER) {
       if (name === "listenerShutdownGroup") continue;
-      expect(events.some((e) => e === name || e.startsWith(`${name}:`))).toBe(true);
+      expect(events.some((e) => e === name || e.startsWith(`${name}:`))).toBe(
+        true,
+      );
     }
     for (const member of [
       "channelActivityListener",
@@ -209,7 +211,11 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
     const completion = lifecycle.stopRegistered();
     // The isolated throw did not block anything, and stopRegistered still
     // returns a completion promise.
-    expect(events).toEqual(["fine-before", "billingSweep-boom", "fine-after-isolate"]);
+    expect(events).toEqual([
+      "fine-before",
+      "billingSweep-boom",
+      "fine-after-isolate",
+    ]);
     expect(typeof (completion as Promise<unknown>).then).toBe("function");
 
     // Non-isolated: today's inline handler DIED mid-sequence (no exit(0), the
@@ -229,7 +235,7 @@ describe("MOD03 lifecycle registry semantics (real module)", () => {
         events2.push("never-reached");
       },
     });
-    let propagated: unknown = undefined;
+    let propagated: unknown;
     let threw = false;
     try {
       lifecycle2.stopRegistered();
@@ -371,19 +377,26 @@ describe("MOD03 runtime assembly (source pins)", () => {
     );
     // Between the import block and the interface there is nothing but
     // whitespace and the interface's doc comment.
-    const lifecycleImportEnd =
-      RUNTIME_SOURCE.indexOf('import { createRuntimeLifecycle } from "./lifecycle";');
-    const interfaceStart = RUNTIME_SOURCE.indexOf("export interface RuntimeAssembly {");
+    const lifecycleImportEnd = RUNTIME_SOURCE.indexOf(
+      'import { createRuntimeLifecycle } from "./lifecycle";',
+    );
+    const interfaceStart = RUNTIME_SOURCE.indexOf(
+      "export interface RuntimeAssembly {",
+    );
     expect(lifecycleImportEnd).toBeGreaterThan(-1);
     expect(interfaceStart).toBeGreaterThan(lifecycleImportEnd);
     const between = RUNTIME_SOURCE.slice(
-      lifecycleImportEnd + 'import { createRuntimeLifecycle } from "./lifecycle";'.length,
+      lifecycleImportEnd +
+        'import { createRuntimeLifecycle } from "./lifecycle";'.length,
       interfaceStart,
     );
     for (const line of between.split("\n")) {
       const trimmed = line.trim();
       expect(
-        trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*"),
+        trimmed === "" ||
+          trimmed.startsWith("//") ||
+          trimmed.startsWith("/*") ||
+          trimmed.startsWith("*"),
       ).toBe(true);
     }
   });
@@ -404,8 +417,12 @@ describe("MOD03 runtime assembly (source pins)", () => {
     );
     // The final group keeps today's tail exactly: the four listener stops,
     // the optional one via `?.`, retention wrapped in Promise.resolve.
-    expect(RUNTIME_SOURCE).toMatch(/Promise\.allSettled\(\[\s*\n\s*channelActivityListener\.stop\(\),\s*\n\s*policyListener\.stop\(\),/);
-    expect(RUNTIME_SOURCE).toContain("workOfferedListener?.stop() ?? Promise.resolve()");
+    expect(RUNTIME_SOURCE).toMatch(
+      /Promise\.allSettled\(\[\s*\n\s*channelActivityListener\.stop\(\),\s*\n\s*policyListener\.stop\(\),/,
+    );
+    expect(RUNTIME_SOURCE).toContain(
+      "workOfferedListener?.stop() ?? Promise.resolve()",
+    );
     expect(RUNTIME_SOURCE).toContain("Promise.resolve(retentionSweeps.stop())");
     // The old `.finally(() => process.exit(0))` moved to the lifecycle's
     // signal wrapper — it must NOT be back in the assembly.
@@ -421,7 +438,9 @@ describe("MOD03 runtime assembly (source pins)", () => {
     }
     // The workOfferedListener stays inside the group expression with its `?.`
     // — never registered as an entry of its own.
-    expect(RUNTIME_SOURCE).not.toMatch(/lifecycle\.hold\(\{ name: "workOfferedListener"/);
+    expect(RUNTIME_SOURCE).not.toMatch(
+      /lifecycle\.hold\(\{ name: "workOfferedListener"/,
+    );
   });
 
   test("the shutdown install keeps its anchor: after startHttpServer, before the listening log", () => {
@@ -439,7 +458,9 @@ describe("MOD03 runtime assembly (source pins)", () => {
 
   test("startup failure rolls back via stopRegistered, then rethrows (W2 wiring)", () => {
     const catchBlock = RUNTIME_SOURCE.indexOf("  } catch (error) {");
-    const rollback = RUNTIME_SOURCE.indexOf("await lifecycle.stopRegistered();");
+    const rollback = RUNTIME_SOURCE.indexOf(
+      "await lifecycle.stopRegistered();",
+    );
     // The first `    throw error;` AFTER the rollback call is the W2 rethrow
     // (the moved body has its own inner catches with the same shape).
     const rethrow = RUNTIME_SOURCE.indexOf("    throw error;", rollback);
@@ -456,13 +477,14 @@ describe("MOD03 real boot smoke (env-adaptive, never faked)", () => {
     // The Node worker's PATH may not carry bun; resolve the way Bun itself
     // installs (BUN_INSTALL, ~/.bun/bin) plus Homebrew, else PATH.
     const bunCandidates = [
-      process.env.BUN_INSTALL ? join(process.env.BUN_INSTALL, "bin", "bun") : undefined,
+      process.env.BUN_INSTALL
+        ? join(process.env.BUN_INSTALL, "bin", "bun")
+        : undefined,
       join(process.env.HOME ?? "", ".bun", "bin", "bun"),
       "/opt/homebrew/bin/bun",
       "/usr/local/bin/bun",
     ].filter((p): p is string => typeof p === "string");
-    const bunPath =
-      bunCandidates.find((p) => existsSync(p)) ?? "bun";
+    const bunPath = bunCandidates.find((p) => existsSync(p)) ?? "bun";
     const child = spawn(bunPath, ["src/index.ts"], {
       cwd: serverRoot,
       env: {

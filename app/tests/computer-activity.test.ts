@@ -1,5 +1,10 @@
 import "./preload";
-import { beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import {
   activityFor,
   clearActivity,

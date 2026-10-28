@@ -18,7 +18,13 @@
 // DATABASE_URL）加三个受限角色 URL；缺配置时整套显式 skip（跳过原因
 // 写在用例名里，skipped 不计为通过），绝不回退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/e2e-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   MARKETPLACE_RECEIPT_KIND,
@@ -156,11 +162,9 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
     proposedAgentId: string = NEXT_ID(),
   ) => {
     const scope = await scopeAs(identity, tenantId, workspaceId);
-    const verdict = await fixture.marketplace.installFromCatalog(
-      scope,
-      slug,
-      { proposedAgentId },
-    );
+    const verdict = await fixture.marketplace.installFromCatalog(scope, slug, {
+      proposedAgentId,
+    });
     if (verdict.outcome === "allow" && !verdict.replay) {
       agentIds.push(proposedAgentId);
     }
@@ -254,67 +258,81 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
   describeDb("AC2 安装归属当前公司与团队；另一公司看不到、不能升级", () => {
     let agentA: string;
 
-    itDb("a1-owner 安装 expert-x：回执与产物归属 A/A1（RLS 探针）", async () => {
-      const { verdict } = await installAs(
-        "a1-owner",
-        fixture.companyA,
-        fixture.teamA1,
-        "expert-x",
-      );
-      agentA = agentIds[agentIds.length - 1];
-      expect(verdict).toEqual({
-        outcome: "allow",
-        replay: false,
-        agentId: agentA,
-      });
+    itDb(
+      "a1-owner 安装 expert-x：回执与产物归属 A/A1（RLS 探针）",
+      async () => {
+        const { verdict } = await installAs(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+          "expert-x",
+        );
+        agentA = agentIds[agentIds.length - 1];
+        expect(verdict).toEqual({
+          outcome: "allow",
+          replay: false,
+          agentId: agentA,
+        });
 
-      const receipts = await fixture.readReceiptRowsAsData(fixture.companyA);
-      expect(receipts.length).toBe(1);
-      expect(receipts[0]).toEqual({
-        id: agentA,
-        displayName: `${MARKETPLACE_RECEIPT_PREFIX}expert-x`,
-        revision: 1,
-        status: "active",
-      });
-      const products = await fixture.readOwnershipRowsAsData(fixture.companyA);
-      expect(products.length).toBe(1);
-      expect(products[0].agentId).toBe(agentA);
-      expect(products[0].revision).toBe(1);
-      expect(products[0].config).toEqual({ tone: "concise", lang: "zh" });
-    });
+        const receipts = await fixture.readReceiptRowsAsData(fixture.companyA);
+        expect(receipts.length).toBe(1);
+        expect(receipts[0]).toEqual({
+          id: agentA,
+          displayName: `${MARKETPLACE_RECEIPT_PREFIX}expert-x`,
+          revision: 1,
+          status: "active",
+        });
+        const products = await fixture.readOwnershipRowsAsData(
+          fixture.companyA,
+        );
+        expect(products.length).toBe(1);
+        expect(products[0].agentId).toBe(agentA);
+        expect(products[0].revision).toBe(1);
+        expect(products[0].config).toEqual({ tone: "concise", lang: "zh" });
+      },
+    );
 
-    itDb("listInstalls 按 RLS 租户过滤：B 公司视角为空，A 公司视角一条", async () => {
-      const fromB = await fixture.marketplace.listInstalls(
-        await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
-      );
-      expect(fromB).toEqual([]);
-      const fromA = await fixture.marketplace.listInstalls(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-      );
-      expect(fromA.length).toBe(1);
-      expect(fromA[0].agentId).toBe(agentA);
-      expect(fromA[0].expertSlug).toBe("expert-x");
-      expect(fromA[0].installedVersion).toBe(1);
-      expect(fromA[0].workspaceId).toBe(fixture.teamA1);
-    });
+    itDb(
+      "listInstalls 按 RLS 租户过滤：B 公司视角为空，A 公司视角一条",
+      async () => {
+        const fromB = await fixture.marketplace.listInstalls(
+          await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
+        );
+        expect(fromB).toEqual([]);
+        const fromA = await fixture.marketplace.listInstalls(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+        );
+        expect(fromA.length).toBe(1);
+        expect(fromA[0].agentId).toBe(agentA);
+        expect(fromA[0].expertSlug).toBe("expert-x");
+        expect(fromA[0].installedVersion).toBe(1);
+        expect(fromA[0].workspaceId).toBe(fixture.teamA1);
+      },
+    );
 
-    itDb("B 公司直接升级 A 的回执 ref：canonical not-found（不可见，不泄露存在）", async () => {
-      const verdict = await fixture.marketplace.executeMarketplaceAction(
-        await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
-        agentA,
-        "upgrade",
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "B 公司直接升级 A 的回执 ref：canonical not-found（不可见，不泄露存在）",
+      async () => {
+        const verdict = await fixture.marketplace.executeMarketplaceAction(
+          await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
+          agentA,
+          "upgrade",
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
 
-    itDb("同公司另一团队（A2）升级 A1 的回执：canonical not-found", async () => {
-      const verdict = await fixture.marketplace.executeMarketplaceAction(
-        await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
-        agentA,
-        "upgrade",
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "同公司另一团队（A2）升级 A1 的回执：canonical not-found",
+      async () => {
+        const verdict = await fixture.marketplace.executeMarketplaceAction(
+          await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
+          agentA,
+          "upgrade",
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
 
     itDb("B 公司决定面（decideMarketplaceAction）同样 not-found", async () => {
       const decision = await fixture.marketplace.decideMarketplaceAction(
@@ -418,14 +436,20 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
       fixture.rebindCatalog(CATALOG_V1);
     });
 
-    itDb("可见但非管理（a1-other）：MARKETPLACE_FORBIDDEN，不泄露额外信息", async () => {
-      const verdict = await fixture.marketplace.executeMarketplaceAction(
-        await scopeAs("a1-other", fixture.companyA, fixture.teamA1),
-        agentA,
-        "upgrade",
-      );
-      expect(verdict).toEqual({ outcome: "deny", code: "MARKETPLACE_FORBIDDEN" });
-    });
+    itDb(
+      "可见但非管理（a1-other）：MARKETPLACE_FORBIDDEN，不泄露额外信息",
+      async () => {
+        const verdict = await fixture.marketplace.executeMarketplaceAction(
+          await scopeAs("a1-other", fixture.companyA, fixture.teamA1),
+          agentA,
+          "upgrade",
+        );
+        expect(verdict).toEqual({
+          outcome: "deny",
+          code: "MARKETPLACE_FORBIDDEN",
+        });
+      },
+    );
 
     itDb("公司 tenant_admin 按明确管理权限放行（每事务重验）", async () => {
       const decision = await fixture.marketplace.decideMarketplaceAction(
@@ -445,12 +469,7 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
     let agentB: string;
 
     beforeAll(async () => {
-      await installAs(
-        "a1-owner",
-        fixture.companyA,
-        fixture.teamA1,
-        "expert-z",
-      );
+      await installAs("a1-owner", fixture.companyA, fixture.teamA1, "expert-z");
       agentA = agentIds[agentIds.length - 1];
       await installAs(
         "b1-member",
@@ -462,35 +481,40 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
       expect(agentA).not.toBe(agentB);
     });
 
-    itDb("目录升到 v2 后只升 A：A 到 v2/config-v2，B 仍 v1/config-v1", async () => {
-      fixture.rebindCatalog(CATALOG_V2);
-      const upgraded = await fixture.marketplace.executeMarketplaceAction(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        agentA,
-        "upgrade",
-      );
-      expect(upgraded).toEqual({
-        outcome: "allow",
-        alreadyCurrent: false,
-        agentId: agentA,
-        version: 2,
-      });
+    itDb(
+      "目录升到 v2 后只升 A：A 到 v2/config-v2，B 仍 v1/config-v1",
+      async () => {
+        fixture.rebindCatalog(CATALOG_V2);
+        const upgraded = await fixture.marketplace.executeMarketplaceAction(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          agentA,
+          "upgrade",
+        );
+        expect(upgraded).toEqual({
+          outcome: "allow",
+          alreadyCurrent: false,
+          agentId: agentA,
+          version: 2,
+        });
 
-      const productsA = await fixture.readOwnershipRowsAsData(fixture.companyA);
-      const aRow = productsA.find((row) => row.agentId === agentA);
-      expect(aRow?.revision).toBe(2);
-      expect(aRow?.config).toEqual({ mode: "pro" });
+        const productsA = await fixture.readOwnershipRowsAsData(
+          fixture.companyA,
+        );
+        const aRow = productsA.find((row) => row.agentId === agentA);
+        expect(aRow?.revision).toBe(2);
+        expect(aRow?.config).toEqual({ mode: "pro" });
 
-      const productsB = await fixture.readOwnershipRowsAsData(fixture.companyB);
-      const bRow = productsB.find((row) => row.agentId === agentB);
-      expect(bRow?.revision).toBe(1);
-      expect(bRow?.config).toEqual({ mode: "basic" });
+        const productsB = await fixture.readOwnershipRowsAsData(
+          fixture.companyB,
+        );
+        const bRow = productsB.find((row) => row.agentId === agentB);
+        expect(bRow?.revision).toBe(1);
+        expect(bRow?.config).toEqual({ mode: "basic" });
 
-      const receiptsB = await fixture.readReceiptRowsAsData(fixture.companyB);
-      expect(
-        receiptsB.find((row) => row.id === agentB)?.revision,
-      ).toBe(1);
-    });
+        const receiptsB = await fixture.readReceiptRowsAsData(fixture.companyB);
+        expect(receiptsB.find((row) => row.id === agentB)?.revision).toBe(1);
+      },
+    );
 
     itDb("A 卸载不影响 B：B 回执与产物完好", async () => {
       const uninstalled = await fixture.marketplace.executeMarketplaceAction(
@@ -514,18 +538,21 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
       expect(fromB[0].agentId).toBe(agentB);
     });
 
-    itDb("卸载后的回执不再出现在 listInstalls；再次升级 not-found", async () => {
-      const fromA = await fixture.marketplace.listInstalls(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-      );
-      expect(fromA.find((r) => r.agentId === agentA)).toBeUndefined();
-      const verdict = await fixture.marketplace.executeMarketplaceAction(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        agentA,
-        "upgrade",
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "卸载后的回执不再出现在 listInstalls；再次升级 not-found",
+      async () => {
+        const fromA = await fixture.marketplace.listInstalls(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+        );
+        expect(fromA.find((r) => r.agentId === agentA)).toBeUndefined();
+        const verdict = await fixture.marketplace.executeMarketplaceAction(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          agentA,
+          "upgrade",
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -553,28 +580,31 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
       });
       // 幂等不双开：该回执的产物行只有一条（重复安装没有第二行）。
       const products = await fixture.readOwnershipRowsAsData(fixture.companyA);
-      expect(
-        products.filter((row) => row.agentId === firstAgent).length,
-      ).toBe(1);
+      expect(products.filter((row) => row.agentId === firstAgent).length).toBe(
+        1,
+      );
     });
 
-    itDb("产物 agentId 被他公司占用 → BOT_ID_UNAVAILABLE（同码不泄露占用方）", async () => {
-      const contested = NEXT_ID();
-      await installAs(
-        "b1-member",
-        fixture.companyB,
-        fixture.teamB1,
-        "expert-y",
-        contested,
-      );
-      await expect(
-        fixture.marketplace.installFromCatalog(
-          await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
+    itDb(
+      "产物 agentId 被他公司占用 → BOT_ID_UNAVAILABLE（同码不泄露占用方）",
+      async () => {
+        const contested = NEXT_ID();
+        await installAs(
+          "b1-member",
+          fixture.companyB,
+          fixture.teamB1,
           "expert-y",
-          { proposedAgentId: contested },
-        ),
-      ).rejects.toThrow("BOT_ID_UNAVAILABLE");
-    });
+          contested,
+        );
+        await expect(
+          fixture.marketplace.installFromCatalog(
+            await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
+            "expert-y",
+            { proposedAgentId: contested },
+          ),
+        ).rejects.toThrow("BOT_ID_UNAVAILABLE");
+      },
+    );
 
     itDb("未知 slug：目录是公共常量，大方拒绝不装", async () => {
       const verdict = await fixture.marketplace.installFromCatalog(
@@ -582,7 +612,10 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
         "expert-not-in-catalog",
         { proposedAgentId: NEXT_ID() },
       );
-      expect(verdict).toEqual({ outcome: "deny", code: "MARKETPLACE_SLUG_UNKNOWN" });
+      expect(verdict).toEqual({
+        outcome: "deny",
+        code: "MARKETPLACE_SLUG_UNKNOWN",
+      });
     });
 
     itDb("受限角色全程在场（决策路径不经过超级用户）", async () => {
@@ -593,15 +626,18 @@ describeDb("MT020 / Issue #63 — 专家/模板安装与回执归属", () => {
       }
     });
 
-    itDb("回执行 kind 固定为 marketplace-install（不与他域资源混同）", async () => {
-      const receipts = await fixture.readReceiptRowsAsData(fixture.companyB);
-      expect(receipts.length).toBeGreaterThan(0);
-      expect(
-        receipts.every((row) =>
-          row.displayName.startsWith(MARKETPLACE_RECEIPT_PREFIX),
-        ),
-      ).toBe(true);
-      expect(MARKETPLACE_RECEIPT_KIND).toBe("marketplace-install");
-    });
+    itDb(
+      "回执行 kind 固定为 marketplace-install（不与他域资源混同）",
+      async () => {
+        const receipts = await fixture.readReceiptRowsAsData(fixture.companyB);
+        expect(receipts.length).toBeGreaterThan(0);
+        expect(
+          receipts.every((row) =>
+            row.displayName.startsWith(MARKETPLACE_RECEIPT_PREFIX),
+          ),
+        ).toBe(true);
+        expect(MARKETPLACE_RECEIPT_KIND).toBe("marketplace-install");
+      },
+    );
   });
 });

@@ -156,9 +156,7 @@
   "tasks": [
     {
       "id": "T01.01",
-      "source_tasks": [
-        "P01"
-      ],
+      "source_tasks": ["P01"],
       "epic": "T01",
       "title": "让 Bun 清单与实际执行严格对账",
       "depends_on": [],
@@ -183,9 +181,7 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §1；acceptance M3、V-B；ADR0008",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "M3"
-      ],
+      "finding_ids": ["M3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.01/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/e2e-manifest-contract.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -196,14 +192,10 @@
     },
     {
       "id": "T01.02",
-      "source_tasks": [
-        "P01"
-      ],
+      "source_tasks": ["P01"],
       "epic": "T01",
       "title": "为 BA 套件提供独立数据库角色与真实 HTTP 夹具",
-      "depends_on": [
-        "T01.01"
-      ],
+      "depends_on": ["T01.01"],
       "owned_files": [
         "tests/support/bun-suite-env.ts",
         "tests/bun-suites.test.ts",
@@ -225,13 +217,9 @@
       "kind": "node",
       "owner_role": "backend_implementer",
       "refs": "acceptance V-B；P01 fixture约定",
-      "extra_tests": [
-        "server/tests/better-auth/fixture-contract.test.ts"
-      ],
+      "extra_tests": ["server/tests/better-auth/fixture-contract.test.ts"],
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "M3"
-      ],
+      "finding_ids": ["M3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.02/green E2E_BUN_ONLY=server/tests/better-auth:T01.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.02/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suite-env.test.ts",
@@ -243,14 +231,10 @@
     },
     {
       "id": "T01.03",
-      "source_tasks": [
-        "P01"
-      ],
+      "source_tasks": ["P01"],
       "epic": "T01",
       "title": "证明固定版 BA 同连接事务与邀请原错误保留",
-      "depends_on": [
-        "T01.02"
-      ],
+      "depends_on": ["T01.02"],
       "owned_files": [
         "server/package.json",
         "app/package.json",
@@ -280,33 +264,22 @@
       "owner_role": "backend_implementer",
       "refs": "Spec §5.2/5.2.1；interfaces §3；H1/L1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-01",
-        "F-03",
-        "H1",
-        "L1"
-      ],
+      "finding_ids": ["F-01", "F-03", "H1", "L1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.03/green E2E_BUN_ONLY=server/tests/better-auth:T01.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs",
         "node scripts/check-better-auth-adapter-writes.mjs"
       ],
-      "interface_fragments": [
-        "tx"
-      ],
+      "interface_fragments": ["tx"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T01.03.md"
     },
     {
       "id": "T01.04",
-      "source_tasks": [
-        "P01"
-      ],
+      "source_tasks": ["P01"],
       "epic": "T01",
       "title": "证明延迟 hook 与邮件吞错均可被提交围栏控制",
-      "depends_on": [
-        "T01.03"
-      ],
+      "depends_on": ["T01.03"],
       "owned_files": [
         "server/src/auth/directory/transaction-adapter.ts",
         "server/src/auth/directory/contracts.ts",
@@ -328,31 +301,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §3.1/5.1；F3/H1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F3",
-        "F-08",
-        "H1"
-      ],
+      "finding_ids": ["F3", "F-08", "H1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.04/green E2E_BUN_ONLY=server/tests/better-auth:T01.04 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "tx"
-      ],
+      "interface_fragments": ["tx"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T01.04.md"
     },
     {
       "id": "T01.05",
-      "source_tasks": [
-        "P01"
-      ],
+      "source_tasks": ["P01"],
       "epic": "T01",
       "title": "证明普通成员的精确团队命令无需管理员会话",
-      "depends_on": [
-        "T01.03"
-      ],
+      "depends_on": ["T01.03"],
       "owned_files": [
         "server/src/auth/directory/team-extension.ts",
         "server/src/auth/directory/contracts.ts"
@@ -377,22 +340,16 @@
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.05/green E2E_BUN_ONLY=server/tests/better-auth:T01.05 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "tx"
-      ],
+      "interface_fragments": ["tx"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T01.05.md"
     },
     {
       "id": "T01.06",
-      "source_tasks": [
-        "P01"
-      ],
+      "source_tasks": ["P01"],
       "epic": "T01",
       "title": "证明 OIDC 原始签名证据可绑定公司挑战",
-      "depends_on": [
-        "T01.02"
-      ],
+      "depends_on": ["T01.02"],
       "owned_files": [
         "server/src/auth/sso-evidence.ts",
         "server/tests/better-auth/support/oidc-idp.ts"
@@ -412,30 +369,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5 SsoEvidenceBridge；H2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H2"
-      ],
+      "finding_ids": ["H2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.06/green E2E_BUN_ONLY=server/tests/better-auth:T01.06 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "proof"
-      ],
+      "interface_fragments": ["proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T01.06.md"
     },
     {
       "id": "T01.07",
-      "source_tasks": [
-        "P01"
-      ],
+      "source_tasks": ["P01"],
       "epic": "T01",
       "title": "证明 SAML 原断言与 RelayState 可用于公司证明",
-      "depends_on": [
-        "T01.02",
-        "T01.06"
-      ],
+      "depends_on": ["T01.02", "T01.06"],
       "owned_files": [
         "server/src/auth/sso-evidence.ts",
         "server/tests/better-auth/support/saml-idp.ts"
@@ -455,29 +403,21 @@
       "owner_role": "backend_implementer",
       "refs": "Spec §9.1；interfaces §5；H2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H2"
-      ],
+      "finding_ids": ["H2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.07/green E2E_BUN_ONLY=server/tests/better-auth:T01.07 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "proof"
-      ],
+      "interface_fragments": ["proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T01.07.md"
     },
     {
       "id": "T01.08",
-      "source_tasks": [
-        "P02"
-      ],
+      "source_tasks": ["P02"],
       "epic": "T01",
       "title": "固定 BA UI 来源并接入现有 React Provider",
-      "depends_on": [
-        "T01.03"
-      ],
+      "depends_on": ["T01.03"],
       "owned_files": [
         "app/package.json",
         "bun.lock",
@@ -500,9 +440,7 @@
       "owner_role": "frontend_implementer",
       "refs": "P02；Spec §8/12",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "F-07"
-      ],
+      "finding_ids": ["F-07"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.08/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts app/src/lib/auth/ui-compatibility.test.tsx",
         "node scripts/e2e-coverage-audit.mjs",
@@ -514,14 +452,10 @@
     },
     {
       "id": "T01.09",
-      "source_tasks": [
-        "P02"
-      ],
+      "source_tasks": ["P02"],
       "epic": "T01",
       "title": "接通固定 UI 的 Organization 与账户 client adapter",
-      "depends_on": [
-        "T01.08"
-      ],
+      "depends_on": ["T01.08"],
       "owned_files": [
         "app/src/lib/auth/client.ts",
         "app/src/lib/auth/organization-plugin.tsx",
@@ -542,9 +476,7 @@
       "owner_role": "frontend_implementer",
       "refs": "P02；interfaces §1",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "F-07"
-      ],
+      "finding_ids": ["F-07"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.09/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts app/src/lib/auth/ui-client-adapters.test.tsx",
         "node scripts/e2e-coverage-audit.mjs",
@@ -556,16 +488,10 @@
     },
     {
       "id": "T01.10",
-      "source_tasks": [
-        "P01",
-        "P17",
-        "P20"
-      ],
+      "source_tasks": ["P01", "P17", "P20"],
       "epic": "T01",
       "title": "先交付子模块测试的根调度与固定白名单合同",
-      "depends_on": [
-        "T01.01"
-      ],
+      "depends_on": ["T01.01"],
       "owned_files": [
         "tests/better-auth-foreign.test.ts",
         "tests/support/better-auth-foreign.ts",
@@ -589,9 +515,7 @@
       "owner_role": "backend_implementer",
       "refs": "ADR0008；P01/P17/P20；子模块生产消费者之前的测试合同",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "M3"
-      ],
+      "finding_ids": ["M3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T01.10/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign-driver.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -602,17 +526,10 @@
     },
     {
       "id": "T02.01",
-      "source_tasks": [
-        "P03"
-      ],
+      "source_tasks": ["P03"],
       "epic": "T02",
       "title": "扩展 BA 目录与稳定业务 ID 映射",
-      "depends_on": [
-        "T01.04",
-        "T01.05",
-        "T01.06",
-        "T01.07"
-      ],
+      "depends_on": ["T01.04", "T01.05", "T01.06", "T01.07"],
       "owned_files": [
         "server/src/db/schema/auth-directory.ts",
         "server/src/db/schema/index.ts",
@@ -644,14 +561,10 @@
     },
     {
       "id": "T02.02",
-      "source_tasks": [
-        "P03"
-      ],
+      "source_tasks": ["P03"],
       "epic": "T02",
       "title": "建立 Principal 身份代际与持久资格 clock",
-      "depends_on": [
-        "T02.01"
-      ],
+      "depends_on": ["T02.01"],
       "owned_files": [
         "server/src/db/schema/core.ts",
         "server/src/db/schema/auth-eligibility.ts",
@@ -674,9 +587,7 @@
       "owner_role": "backend_implementer",
       "refs": "Spec §4.2/4.4；interfaces §2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-09"
-      ],
+      "finding_ids": ["F-09"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.02/green E2E_BUN_ONLY=server/tests/better-auth:T02.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -687,14 +598,10 @@
     },
     {
       "id": "T02.03",
-      "source_tasks": [
-        "P03"
-      ],
+      "source_tasks": ["P03"],
       "epic": "T02",
       "title": "建立命令终结、authority 与 outbox 持久模型",
-      "depends_on": [
-        "T02.02"
-      ],
+      "depends_on": ["T02.02"],
       "owned_files": [
         "server/src/db/schema/auth-directory.ts",
         "server/src/db/schema/index.ts",
@@ -715,9 +622,7 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2/3.3；H4",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H4"
-      ],
+      "finding_ids": ["H4"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.03/green E2E_BUN_ONLY=server/tests/better-auth:T02.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -728,14 +633,10 @@
     },
     {
       "id": "T02.04",
-      "source_tasks": [
-        "P03"
-      ],
+      "source_tasks": ["P03"],
       "epic": "T02",
       "title": "为长期授权与个人模型凭据追加来源代际",
-      "depends_on": [
-        "T02.02"
-      ],
+      "depends_on": ["T02.02"],
       "owned_files": [
         "server/src/db/schema/auth-directory.ts",
         "server/src/db/schema/enterprise-credentials.ts",
@@ -758,9 +659,7 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §3/5.3；F1；P03",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F1"
-      ],
+      "finding_ids": ["F1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.04/green E2E_BUN_ONLY=server/tests/better-auth:T02.04 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -771,14 +670,10 @@
     },
     {
       "id": "T02.05",
-      "source_tasks": [
-        "P03"
-      ],
+      "source_tasks": ["P03"],
       "epic": "T02",
       "title": "建立公司认证 challenge 与 proof 存储",
-      "depends_on": [
-        "T02.03"
-      ],
+      "depends_on": ["T02.03"],
       "owned_files": [
         "server/src/db/schema/auth-assurance.ts",
         "server/src/db/schema/index.ts",
@@ -810,16 +705,10 @@
     },
     {
       "id": "T02.06",
-      "source_tasks": [
-        "P03"
-      ],
+      "source_tasks": ["P03"],
       "epic": "T02",
       "title": "落实受限连接、DML guard 与延迟约束",
-      "depends_on": [
-        "T02.03",
-        "T02.04",
-        "T02.05"
-      ],
+      "depends_on": ["T02.03", "T02.04", "T02.05"],
       "owned_files": [
         "server/src/enterprise/tenancy/connections.ts",
         "server/src/db/schema/auth-directory.ts",
@@ -841,9 +730,7 @@
       "owner_role": "backend_implementer",
       "refs": "Spec §5.2.1/10；P03",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-10"
-      ],
+      "finding_ids": ["F-10"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.06/green E2E_BUN_ONLY=server/tests/better-auth:T02.06 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -854,14 +741,10 @@
     },
     {
       "id": "T02.07",
-      "source_tasks": [
-        "P04"
-      ],
+      "source_tasks": ["P04"],
       "epic": "T02",
       "title": "实现无公司前提的 PrincipalRegistry",
-      "depends_on": [
-        "T02.06"
-      ],
+      "depends_on": ["T02.06"],
       "owned_files": [
         "server/src/auth/directory/principal-registry.ts",
         "server/src/auth/directory/contracts.ts"
@@ -892,16 +775,10 @@
     },
     {
       "id": "T02.08",
-      "source_tasks": [
-        "P04"
-      ],
+      "source_tasks": ["P04"],
       "epic": "T02",
       "title": "完成 Directory 同事务命令 executor 与 finalizer",
-      "depends_on": [
-        "T02.07",
-        "T02.10",
-        "T02.12"
-      ],
+      "depends_on": ["T02.07", "T02.10", "T02.12"],
       "owned_files": [
         "server/src/auth/directory/executor.ts",
         "server/src/auth/directory/finalizer.ts",
@@ -923,34 +800,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2/3；Spec §5.2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-01",
-        "H1"
-      ],
+      "finding_ids": ["F-01", "H1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.08/green E2E_BUN_ONLY=server/tests/better-auth:T02.08 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands",
-        "tx"
-      ],
+      "interface_fragments": ["commands", "tx"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T02.08.md"
     },
     {
       "id": "T02.09",
-      "source_tasks": [
-        "P04"
-      ],
+      "source_tasks": ["P04"],
       "epic": "T02",
       "title": "建立独立 Identity 命令与恢复事务内核",
-      "depends_on": [
-        "T02.07",
-        "T02.10",
-        "T02.12",
-        "T02.08"
-      ],
+      "depends_on": ["T02.07", "T02.10", "T02.12", "T02.08"],
       "owned_files": [
         "server/src/auth/directory/identity.ts",
         "server/src/auth/directory/contracts.ts",
@@ -971,29 +835,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2.1/5.1；F1/F3",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F3"
-      ],
+      "finding_ids": ["F3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.09/green E2E_BUN_ONLY=server/tests/better-auth:T02.09 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "identity"
-      ],
+      "interface_fragments": ["identity"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T02.09.md"
     },
     {
       "id": "T02.10",
-      "source_tasks": [
-        "P04"
-      ],
+      "source_tasks": ["P04"],
       "epic": "T02",
       "title": "产出 authority 分支与关闭的 CompanyAssurance",
-      "depends_on": [
-        "T02.06"
-      ],
+      "depends_on": ["T02.06"],
       "owned_files": [
         "server/src/auth/directory/authority.ts",
         "server/src/auth/company-assurance.ts",
@@ -1014,32 +870,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §3.3/5；H4/L3",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H4",
-        "L3"
-      ],
+      "finding_ids": ["H4", "L3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.10/green E2E_BUN_ONLY=server/tests/better-auth:T02.10 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "authority",
-        "proof"
-      ],
+      "interface_fragments": ["authority", "proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T02.10.md"
     },
     {
       "id": "T02.11",
-      "source_tasks": [
-        "P04"
-      ],
+      "source_tasks": ["P04"],
       "epic": "T02",
       "title": "为原生 Admin/Organization 入口建立强制分类与读 gate",
-      "depends_on": [
-        "T02.08",
-        "T02.09"
-      ],
+      "depends_on": ["T02.08", "T02.09"],
       "owned_files": [
         "server/src/auth/directory/ingress.ts",
         "server/src/auth/directory/read-gate.ts",
@@ -1062,32 +907,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §3.1/3.2；H1/H3/M1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-01",
-        "H3",
-        "M1"
-      ],
+      "finding_ids": ["F-01", "H3", "M1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.11/green E2E_BUN_ONLY=server/tests/better-auth:T02.11 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "native"
-      ],
+      "interface_fragments": ["native"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T02.11.md"
     },
     {
       "id": "T02.12",
-      "source_tasks": [
-        "P04"
-      ],
+      "source_tasks": ["P04"],
       "epic": "T02",
       "title": "提供事务内 outbox 与 callback 完成 receipt 围栏",
-      "depends_on": [
-        "T02.06",
-        "T01.04"
-      ],
+      "depends_on": ["T02.06", "T01.04"],
       "owned_files": [
         "server/src/auth/directory/outbox.ts",
         "server/src/auth/directory/contracts.ts"
@@ -1109,11 +943,7 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §3.1/5.1；F3/H1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F3",
-        "F-08",
-        "H1"
-      ],
+      "finding_ids": ["F3", "F-08", "H1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.12/green E2E_BUN_ONLY=server/tests/better-auth:T02.12 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -1124,19 +954,11 @@
     },
     {
       "id": "T02.13",
-      "source_tasks": [
-        "P25"
-      ],
+      "source_tasks": ["P25"],
       "epic": "T02",
       "title": "交付 M0 目录与授权来源只读盘点",
-      "depends_on": [
-        "T02.08",
-        "T02.09",
-        "T02.11"
-      ],
-      "owned_files": [
-        "server/scripts/better-auth/inventory.ts"
-      ],
+      "depends_on": ["T02.08", "T02.09", "T02.11"],
+      "owned_files": ["server/scripts/better-auth/inventory.ts"],
       "contract": "inventory CLI默认dry-run、显式目标URL/phase；输出稳定user/principal/company/team映射、owner/payer/授权来源、未知归属与撤权高水位；不读取秘密、不执行通知或修复。 同时产出legacy目录写入者静态清单：覆盖UI/API/CLI/SCIM/JIT/startup及非路由写入者(t:deletion-semantics.ts的operator直删团队行/停用成员、root-backfill.ts的raw SQL insert principals/memberships、server/scripts/enterprise-runtime-seed.ts启动种子)，逐项写明处置阶段，清单外写入者被扫描发现即失败；BA organization.slug回填的派生/归一化/碰撞/幂等规则(interfaces §2)纳入前置盘点。",
       "actions": [
         "复用既有inventory入口模型并新增BA专属只读输出",
@@ -1153,11 +975,7 @@
       "owner_role": "backend_implementer",
       "refs": "P25；Spec §13.2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-04",
-        "F-05",
-        "H4"
-      ],
+      "finding_ids": ["F-04", "F-05", "H4"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.13/green E2E_BUN_ONLY=server/tests/better-auth:T02.13 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -1168,14 +986,10 @@
     },
     {
       "id": "T02.14",
-      "source_tasks": [
-        "P25"
-      ],
+      "source_tasks": ["P25"],
       "epic": "T02",
       "title": "实现 M1 expand 与 M2 停写回填工具",
-      "depends_on": [
-        "T02.13"
-      ],
+      "depends_on": ["T02.13"],
       "owned_files": [
         "server/scripts/better-auth/migrate-directory.ts",
         "server/src/auth/directory/authority.ts"
@@ -1196,31 +1010,21 @@
       "owner_role": "backend_implementer",
       "refs": "Spec §13.2；interfaces §3.3/5.3；H4",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-02",
-        "F-05",
-        "H4"
-      ],
+      "finding_ids": ["F-02", "F-05", "H4"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.14/green E2E_BUN_ONLY=server/tests/better-auth:T02.14 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "authority"
-      ],
+      "interface_fragments": ["authority"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T02.14.md"
     },
     {
       "id": "T02.15",
-      "source_tasks": [
-        "P25"
-      ],
+      "source_tasks": ["P25"],
       "epic": "T02",
       "title": "交付 M3 对账与后续任务可复用 authority 矩阵",
-      "depends_on": [
-        "T02.14"
-      ],
+      "depends_on": ["T02.14"],
       "owned_files": [
         "server/scripts/better-auth/verify-directory.ts",
         "server/tests/better-auth/support/authority-matrix.ts"
@@ -1240,29 +1044,21 @@
       "owner_role": "backend_implementer",
       "refs": "P25；H4；acceptance BA15/BA19",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H4"
-      ],
+      "finding_ids": ["H4"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T02.15/green E2E_BUN_ONLY=server/tests/better-auth:T02.15 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "authority"
-      ],
+      "interface_fragments": ["authority"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T02.15.md"
     },
     {
       "id": "T03.01",
-      "source_tasks": [
-        "P05"
-      ],
+      "source_tasks": ["P05"],
       "epic": "T03",
       "title": "让真实 Scope gate 比较持久身份和两层资格版本",
-      "depends_on": [
-        "T02.15"
-      ],
+      "depends_on": ["T02.15"],
       "owned_files": [
         "server/src/enterprise/contracts.ts",
         "server/src/enterprise/tenancy/store.ts",
@@ -1285,31 +1081,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §4；P05；L2/L3",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H4",
-        "L2",
-        "L3"
-      ],
+      "finding_ids": ["H4", "L2", "L3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T03.01/green E2E_BUN_ONLY=server/tests/better-auth:T03.01 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "scope"
-      ],
+      "interface_fragments": ["scope"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T03.01.md"
     },
     {
       "id": "T03.02",
-      "source_tasks": [
-        "P05"
-      ],
+      "source_tasks": ["P05"],
       "epic": "T03",
       "title": "提供稳定 ID 的公司团队发现和选择校验接口",
-      "depends_on": [
-        "T03.01"
-      ],
+      "depends_on": ["T03.01"],
       "owned_files": [
         "shared/auth-directory.ts",
         "server/src/enterprise/tenancy/workspace-scope-routes.ts",
@@ -1332,29 +1118,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §3.3/4；H3/H4",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "L2"
-      ],
+      "finding_ids": ["L2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T03.02/green E2E_BUN_ONLY=server/tests/better-auth:T03.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "scope"
-      ],
+      "interface_fragments": ["scope"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T03.02.md"
     },
     {
       "id": "T03.03",
-      "source_tasks": [
-        "P06"
-      ],
+      "source_tasks": ["P06"],
       "epic": "T03",
       "title": "从平台入口原子开通公司并固定 payer",
-      "depends_on": [
-        "T03.02"
-      ],
+      "depends_on": ["T03.02"],
       "owned_files": [
         "server/src/auth/directory/lifecycle.ts",
         "server/src/enterprise/tenancy/provision.ts",
@@ -1378,9 +1156,7 @@
       "owner_role": "backend_implementer",
       "refs": "P06；Spec §7/11",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-05"
-      ],
+      "finding_ids": ["F-05"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T03.03/green E2E_BUN_ONLY=server/tests/better-auth:T03.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -1391,14 +1167,10 @@
     },
     {
       "id": "T03.04",
-      "source_tasks": [
-        "P06"
-      ],
+      "source_tasks": ["P06"],
       "epic": "T03",
       "title": "实现公司暂停恢复及安全删除申请",
-      "depends_on": [
-        "T03.03"
-      ],
+      "depends_on": ["T03.03"],
       "owned_files": [
         "server/src/auth/directory/lifecycle.ts",
         "server/src/enterprise/tenancy/company-admin-routes.ts",
@@ -1430,16 +1202,10 @@
     },
     {
       "id": "T03.05",
-      "source_tasks": [
-        "P07"
-      ],
+      "source_tasks": ["P07"],
       "epic": "T03",
       "title": "实现 Web 唯一公司团队切换协调器",
-      "depends_on": [
-        "T01.09",
-        "T03.02",
-        "T03.04"
-      ],
+      "depends_on": ["T01.09", "T03.02", "T03.04"],
       "owned_files": [
         "app/src/lib/enterprise/tenant/selection.ts",
         "app/src/routes/_authed/tenant/selection.tsx",
@@ -1466,22 +1232,16 @@
         "node scripts/e2e-coverage-audit.mjs",
         "bun run --cwd app typecheck"
       ],
-      "interface_fragments": [
-        "scope"
-      ],
+      "interface_fragments": ["scope"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T03.05.md"
     },
     {
       "id": "T03.06",
-      "source_tasks": [
-        "P07"
-      ],
+      "source_tasks": ["P07"],
       "epic": "T03",
       "title": "让 Web 缓存多标签和长流随选择代际清理",
-      "depends_on": [
-        "T03.05"
-      ],
+      "depends_on": ["T03.05"],
       "owned_files": [
         "app/src/lib/enterprise/tenant/scoped-cache.ts",
         "app/src/lib/enterprise/tenant/stream-scope.ts",
@@ -1508,22 +1268,16 @@
         "node scripts/e2e-coverage-audit.mjs",
         "bun run --cwd app typecheck"
       ],
-      "interface_fragments": [
-        "scope"
-      ],
+      "interface_fragments": ["scope"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T03.06.md"
     },
     {
       "id": "T03.07",
-      "source_tasks": [
-        "P07"
-      ],
+      "source_tasks": ["P07"],
       "epic": "T03",
       "title": "接通真实 Web 壳和公司团队空态",
-      "depends_on": [
-        "T03.06"
-      ],
+      "depends_on": ["T03.06"],
       "owned_files": [
         "app/src/routes/_authed/_app.tsx",
         "app/src/routes/_authed/tenant/selection.tsx",
@@ -1551,23 +1305,16 @@
         "node scripts/e2e-coverage-audit.mjs",
         "bun run --cwd app typecheck"
       ],
-      "interface_fragments": [
-        "scope"
-      ],
+      "interface_fragments": ["scope"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T03.07.md"
     },
     {
       "id": "T04.01",
-      "source_tasks": [
-        "P08"
-      ],
+      "source_tasks": ["P08"],
       "epic": "T04",
       "title": "实现邀请创建取消重发与本人窄读",
-      "depends_on": [
-        "T03.04",
-        "T02.11"
-      ],
+      "depends_on": ["T03.04", "T02.11"],
       "owned_files": [
         "server/src/auth/directory/membership.ts",
         "server/src/auth/directory/read-routes.ts",
@@ -1589,29 +1336,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2/3.2；P08",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-03"
-      ],
+      "finding_ids": ["F-03"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.01/green E2E_BUN_ONLY=server/tests/better-auth:T04.01 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands"
-      ],
+      "interface_fragments": ["commands"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.01.md"
     },
     {
       "id": "T04.02",
-      "source_tasks": [
-        "P08"
-      ],
+      "source_tasks": ["P08"],
       "epic": "T04",
       "title": "实现邀请接受拒绝和首次主体原子建立",
-      "depends_on": [
-        "T04.01"
-      ],
+      "depends_on": ["T04.01"],
       "owned_files": [
         "server/src/auth/directory/membership.ts",
         "server/src/auth/directory/principal-registry.ts",
@@ -1638,22 +1377,16 @@
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.02/green E2E_BUN_ONLY=server/tests/better-auth:T04.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands"
-      ],
+      "interface_fragments": ["commands"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.02.md"
     },
     {
       "id": "T04.03",
-      "source_tasks": [
-        "P08"
-      ],
+      "source_tasks": ["P08"],
       "epic": "T04",
       "title": "实现成员暂停移除恢复和最后 owner 保护",
-      "depends_on": [
-        "T04.02"
-      ],
+      "depends_on": ["T04.02"],
       "owned_files": [
         "server/src/auth/directory/membership.ts",
         "server/src/enterprise/tenancy/workspace-admin.ts",
@@ -1676,30 +1409,21 @@
       "owner_role": "backend_implementer",
       "refs": "P08；Spec §4.3/5.4/6",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-04"
-      ],
+      "finding_ids": ["F-04"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.03/green E2E_BUN_ONLY=server/tests/better-auth:T04.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands"
-      ],
+      "interface_fragments": ["commands"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.03.md"
     },
     {
       "id": "T04.04",
-      "source_tasks": [
-        "P08"
-      ],
+      "source_tasks": ["P08"],
       "epic": "T04",
       "title": "完成验证邮箱真实邮件与邀请前置闭环",
-      "depends_on": [
-        "T04.02",
-        "T02.12"
-      ],
+      "depends_on": ["T04.02", "T02.12"],
       "owned_files": [
         "server/src/auth/mail.ts",
         "server/src/auth/index.ts",
@@ -1725,31 +1449,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.1；P08；F3/H1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F3",
-        "F-08"
-      ],
+      "finding_ids": ["F3", "F-08"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.04/green E2E_BUN_ONLY=server/tests/better-auth:T04.04 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands"
-      ],
+      "interface_fragments": ["commands"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.04.md"
     },
     {
       "id": "T04.05",
-      "source_tasks": [
-        "P08"
-      ],
+      "source_tasks": ["P08"],
       "epic": "T04",
       "title": "完成请求密码重置的 token 与邮件原子登记",
-      "depends_on": [
-        "T04.04",
-        "T02.09"
-      ],
+      "depends_on": ["T04.04", "T02.09"],
       "owned_files": [
         "server/src/auth/password-recovery.ts",
         "server/src/auth/mail.ts",
@@ -1772,30 +1486,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.1唯一顺序1；F3/H1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F3"
-      ],
+      "finding_ids": ["F3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.05/green E2E_BUN_ONLY=server/tests/better-auth:T04.05 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands",
-        "reset"
-      ],
+      "interface_fragments": ["commands", "reset"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.05.md"
     },
     {
       "id": "T04.06",
-      "source_tasks": [
-        "P08"
-      ],
+      "source_tasks": ["P08"],
       "epic": "T04",
       "title": "完成原生密码重置唯一消费与安全代际终结",
-      "depends_on": [
-        "T04.05"
-      ],
+      "depends_on": ["T04.05"],
       "owned_files": [
         "server/src/auth/password-recovery.ts",
         "server/src/auth/directory/identity.ts",
@@ -1818,31 +1523,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2.1/5.1唯一顺序2；F3",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F3"
-      ],
+      "finding_ids": ["F3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.06/green E2E_BUN_ONLY=server/tests/better-auth:T04.06 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands",
-        "reset"
-      ],
+      "interface_fragments": ["commands", "reset"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.06.md"
     },
     {
       "id": "T04.07",
-      "source_tasks": [
-        "P09"
-      ],
+      "source_tasks": ["P09"],
       "epic": "T04",
       "title": "提供公司管理员授予撤销团队管理 Grant 的接口",
-      "depends_on": [
-        "T04.03",
-        "T02.04"
-      ],
+      "depends_on": ["T04.03", "T02.04"],
       "owned_files": [
         "server/src/auth/directory/team-grants.ts",
         "server/src/auth/directory/executor.ts",
@@ -1869,24 +1564,16 @@
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.07/green E2E_BUN_ONLY=server/tests/better-auth:T04.07 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands",
-        "tx"
-      ],
+      "interface_fragments": ["commands", "tx"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.07.md"
     },
     {
       "id": "T04.08",
-      "source_tasks": [
-        "P09"
-      ],
+      "source_tasks": ["P09"],
       "epic": "T04",
       "title": "接通指定团队管理员成员增删命令",
-      "depends_on": [
-        "T04.07",
-        "T01.05"
-      ],
+      "depends_on": ["T04.07", "T01.05"],
       "owned_files": [
         "server/src/auth/directory/team-extension.ts",
         "server/src/auth/directory/executor.ts",
@@ -1910,33 +1597,21 @@
       "owner_role": "backend_implementer",
       "refs": "Spec §6.4；P09；BA17",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-06",
-        "H4",
-        "L2"
-      ],
+      "finding_ids": ["F-06", "H4", "L2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.08/green E2E_BUN_ONLY=server/tests/better-auth:T04.08 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands",
-        "tx"
-      ],
+      "interface_fragments": ["commands", "tx"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.08.md"
     },
     {
       "id": "T04.09",
-      "source_tasks": [
-        "P10"
-      ],
+      "source_tasks": ["P10"],
       "epic": "T04",
       "title": "接通公司资料与团队管理真实页面",
-      "depends_on": [
-        "T03.07",
-        "T04.08"
-      ],
+      "depends_on": ["T03.07", "T04.08"],
       "owned_files": [
         "app/src/components/company-admin/company-admin-area.tsx",
         "app/src/routes/_authed/organization/$view.tsx",
@@ -1963,22 +1638,16 @@
         "node scripts/e2e-coverage-audit.mjs",
         "bun run --cwd app typecheck"
       ],
-      "interface_fragments": [
-        "commands"
-      ],
+      "interface_fragments": ["commands"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T04.09.md"
     },
     {
       "id": "T04.10",
-      "source_tasks": [
-        "P10"
-      ],
+      "source_tasks": ["P10"],
       "epic": "T04",
       "title": "接通人员角色与团队管理 Grant UI",
-      "depends_on": [
-        "T04.09"
-      ],
+      "depends_on": ["T04.09"],
       "owned_files": [
         "app/src/routes/_authed/tenant/admin/people.tsx",
         "app/src/lib/enterprise/tenant/directory.ts",
@@ -2012,15 +1681,10 @@
     },
     {
       "id": "T04.11",
-      "source_tasks": [
-        "P10"
-      ],
+      "source_tasks": ["P10"],
       "epic": "T04",
       "title": "完成公开邀请落地与登录换账号恢复",
-      "depends_on": [
-        "T04.10",
-        "T04.04"
-      ],
+      "depends_on": ["T04.10", "T04.04"],
       "owned_files": [
         "app/src/routes/accept-invitation.tsx",
         "app/src/lib/enterprise/tenant/directory.ts",
@@ -2053,15 +1717,10 @@
     },
     {
       "id": "T04.12",
-      "source_tasks": [
-        "P10"
-      ],
+      "source_tasks": ["P10"],
       "epic": "T04",
       "title": "隔离默认与 BA Web 浏览器套件并审计 target",
-      "depends_on": [
-        "T04.11",
-        "T01.01"
-      ],
+      "depends_on": ["T04.11", "T01.01"],
       "owned_files": [
         "e2e.config.ts",
         "e2e.better-auth.config.ts",
@@ -2086,10 +1745,7 @@
       "owner_role": "frontend_implementer",
       "refs": "acceptance V-I；F4；附属浏览器文件tests/e2e/better-auth/web/directory.e2e.ts",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "F4",
-        "M3"
-      ],
+      "finding_ids": ["F4", "M3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T04.12/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/e2e-browser-isolation.test.ts",
         "node scripts/e2e-coverage-audit.mjs",
@@ -2102,16 +1758,10 @@
     },
     {
       "id": "T05.01",
-      "source_tasks": [
-        "P11"
-      ],
+      "source_tasks": ["P11"],
       "epic": "T05",
       "title": "实现公司追加认证 challenge 的持久绑定",
-      "depends_on": [
-        "T04.03",
-        "T02.05",
-        "T03.01"
-      ],
+      "depends_on": ["T04.03", "T02.05", "T03.01"],
       "owned_files": [
         "server/src/auth/company-assurance.ts",
         "server/src/auth/company-auth-routes.ts",
@@ -2132,30 +1782,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5；H2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H2"
-      ],
+      "finding_ids": ["H2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.01/green E2E_BUN_ONLY=server/tests/better-auth:T05.01 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "proof"
-      ],
+      "interface_fragments": ["proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.01.md"
     },
     {
       "id": "T05.02",
-      "source_tasks": [
-        "P11"
-      ],
+      "source_tasks": ["P11"],
       "epic": "T05",
       "title": "接通 OIDC 公司证明原始证据回调",
-      "depends_on": [
-        "T05.01",
-        "T01.06"
-      ],
+      "depends_on": ["T05.01", "T01.06"],
       "owned_files": [
         "server/src/auth/company-assurance.ts",
         "server/src/auth/company-auth-routes.ts",
@@ -2176,30 +1817,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5；P11；H2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H2"
-      ],
+      "finding_ids": ["H2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.02/green E2E_BUN_ONLY=server/tests/better-auth:T05.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "proof"
-      ],
+      "interface_fragments": ["proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.02.md"
     },
     {
       "id": "T05.03",
-      "source_tasks": [
-        "P11"
-      ],
+      "source_tasks": ["P11"],
       "epic": "T05",
       "title": "接通 SAML 公司证明自有 SP 与 ACS",
-      "depends_on": [
-        "T05.01",
-        "T01.07"
-      ],
+      "depends_on": ["T05.01", "T01.07"],
       "owned_files": [
         "server/src/auth/company-assurance.ts",
         "server/src/auth/company-auth-routes.ts",
@@ -2220,30 +1852,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5；P11；H2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H2"
-      ],
+      "finding_ids": ["H2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.03/green E2E_BUN_ONLY=server/tests/better-auth:T05.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "proof"
-      ],
+      "interface_fragments": ["proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.03.md"
     },
     {
       "id": "T05.04",
-      "source_tasks": [
-        "P11"
-      ],
+      "source_tasks": ["P11"],
       "epic": "T05",
       "title": "在目录与业务 gate 中实时验证公司证明",
-      "depends_on": [
-        "T05.02",
-        "T05.03"
-      ],
+      "depends_on": ["T05.02", "T05.03"],
       "owned_files": [
         "server/src/auth/company-assurance.ts",
         "server/src/auth/guards.ts",
@@ -2266,32 +1889,21 @@
       "owner_role": "backend_implementer",
       "refs": "Spec §9.1；interfaces §5；H3",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H2",
-        "H3",
-        "L3"
-      ],
+      "finding_ids": ["H2", "H3", "L3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.04/green E2E_BUN_ONLY=server/tests/better-auth:T05.04 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "proof"
-      ],
+      "interface_fragments": ["proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.04.md"
     },
     {
       "id": "T05.05",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "把 SCIM 全方法接入原子目录命令",
-      "depends_on": [
-        "T05.04",
-        "T04.08"
-      ],
+      "depends_on": ["T05.04", "T04.08"],
       "owned_files": [
         "server/src/auth/scim.ts",
         "server/src/auth/index.ts",
@@ -2317,31 +1929,21 @@
       "owner_role": "backend_implementer",
       "refs": "P12；Spec §8；H1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-02",
-        "H1"
-      ],
+      "finding_ids": ["F-02", "H1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.05/green E2E_BUN_ONLY=server/tests/better-auth:T05.05 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands"
-      ],
+      "interface_fragments": ["commands"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.05.md"
     },
     {
       "id": "T05.06",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "把 JIT 与批准组规则接入单次团队能力",
-      "depends_on": [
-        "T05.05",
-        "T04.04"
-      ],
+      "depends_on": ["T05.05", "T04.04"],
       "owned_files": [
         "server/src/auth/index.ts",
         "server/src/auth/roles.ts",
@@ -2368,33 +1970,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2/3；P12；H1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-02",
-        "F-04",
-        "F-08",
-        "H1"
-      ],
+      "finding_ids": ["F-02", "F-04", "F-08", "H1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.06/green E2E_BUN_ONLY=server/tests/better-auth:T05.06 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "commands"
-      ],
+      "interface_fragments": ["commands"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.06.md"
     },
     {
       "id": "T05.07",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "接通全局禁用恢复角色与会话撤销真实入口",
-      "depends_on": [
-        "T05.06",
-        "T02.09"
-      ],
+      "depends_on": ["T05.06", "T02.09"],
       "owned_files": [
         "server/src/auth/directory/identity.ts",
         "server/src/auth/directory/ingress.ts",
@@ -2419,31 +2009,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2.1/3.2；F1/H1/M1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F1",
-        "M1"
-      ],
+      "finding_ids": ["F1", "M1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.07/green E2E_BUN_ONLY=server/tests/better-auth:T05.07 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "identity"
-      ],
+      "interface_fragments": ["identity"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.07.md"
     },
     {
       "id": "T05.08",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "接通平台用户创建资料编辑与管理员密码重置",
-      "depends_on": [
-        "T05.07",
-        "T04.06"
-      ],
+      "depends_on": ["T05.07", "T04.06"],
       "owned_files": [
         "server/src/auth/directory/identity.ts",
         "server/src/auth/directory/ingress.ts",
@@ -2464,29 +2044,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §2.1/3.2；M1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "M1"
-      ],
+      "finding_ids": ["M1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.08/green E2E_BUN_ONLY=server/tests/better-auth:T05.08 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "identity"
-      ],
+      "interface_fragments": ["identity"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.08.md"
     },
     {
       "id": "T05.09",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "固定跨部署 issuer+subject 与原生回调身份",
-      "depends_on": [
-        "T05.07"
-      ],
+      "depends_on": ["T05.07"],
       "owned_files": [
         "server/src/auth/organization.ts",
         "server/src/auth/organization-store.ts",
@@ -2519,15 +2091,10 @@
     },
     {
       "id": "T05.10",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "让个人模型授权保存实时身份来源并安全重授权",
-      "depends_on": [
-        "T05.07",
-        "T02.04"
-      ],
+      "depends_on": ["T05.07", "T02.04"],
       "owned_files": [
         "server/src/bot-services/access-grants.ts",
         "server/src/bot-services/types.ts",
@@ -2549,9 +2116,7 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.3；F1",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F1"
-      ],
+      "finding_ids": ["F1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.10/green E2E_BUN_ONLY=server/tests/better-auth:T05.10 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -2562,14 +2127,10 @@
     },
     {
       "id": "T05.11",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "封闭已挂载 Bot Service claim 与 renew 身份旁路",
-      "depends_on": [
-        "T05.10"
-      ],
+      "depends_on": ["T05.10"],
       "owned_files": [
         "server/src/gateway/key-issuance.ts",
         "server/src/gateway/key-renewal.ts",
@@ -2591,9 +2152,7 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.3；F1；P12",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F1"
-      ],
+      "finding_ids": ["F1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.11/green E2E_BUN_ONLY=server/tests/better-auth:T05.11 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -2604,14 +2163,10 @@
     },
     {
       "id": "T05.12",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "实现移动企业模式一次性 PKCE session 交接",
-      "depends_on": [
-        "T05.09"
-      ],
+      "depends_on": ["T05.09"],
       "owned_files": [
         "server/src/auth/mobile-session.ts",
         "server/src/auth/mobile-session-routes.ts",
@@ -2636,31 +2191,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.2；F2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.12/green E2E_BUN_ONLY=server/tests/better-auth:T05.12 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.12.md"
     },
     {
       "id": "T05.13",
-      "source_tasks": [
-        "P12"
-      ],
+      "source_tasks": ["P12"],
       "epic": "T05",
       "title": "实现 BFF 每次动作的在线身份范围准入",
-      "depends_on": [
-        "T05.12",
-        "T05.04",
-        "T03.02"
-      ],
+      "depends_on": ["T05.12", "T05.04", "T03.02"],
       "owned_files": [
         "server/src/auth/mobile-session.ts",
         "server/src/auth/mobile-session-routes.ts"
@@ -2680,32 +2225,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.2；F2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.13/green E2E_BUN_ONLY=server/tests/better-auth:T05.13 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.13.md"
     },
     {
       "id": "T05.14",
-      "source_tasks": [
-        "P13"
-      ],
+      "source_tasks": ["P13"],
       "epic": "T05",
       "title": "接通 Web 账户验证与忘记重置密码页面",
-      "depends_on": [
-        "T04.11",
-        "T04.06",
-        "T05.08",
-        "T04.12"
-      ],
+      "depends_on": ["T04.11", "T04.06", "T05.08", "T04.12"],
       "owned_files": [
         "app/src/routes/verify-email.tsx",
         "app/src/routes/forgot-password.tsx",
@@ -2728,32 +2262,23 @@
       "owner_role": "frontend_implementer",
       "refs": "P13；F3；附属浏览器文件tests/e2e/better-auth/web/session.e2e.ts",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "F3"
-      ],
+      "finding_ids": ["F3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.14/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts app/tests/better-auth/account-recovery.test.tsx",
         "node scripts/e2e-coverage-audit.mjs",
         "bun run --cwd app typecheck",
         "./node_modules/.bin/e2e run --config e2e.better-auth.config.ts tests/e2e/better-auth/web/session.e2e.ts"
       ],
-      "interface_fragments": [
-        "reset"
-      ],
+      "interface_fragments": ["reset"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.14.md"
     },
     {
       "id": "T05.15",
-      "source_tasks": [
-        "P13"
-      ],
+      "source_tasks": ["P13"],
       "epic": "T05",
       "title": "接通 Web 公司追加认证与受控恢复交互",
-      "depends_on": [
-        "T05.14",
-        "T05.04"
-      ],
+      "depends_on": ["T05.14", "T05.04"],
       "owned_files": [
         "app/src/lib/auth/company-assurance.ts",
         "app/src/lib/auth/queries.ts",
@@ -2781,23 +2306,16 @@
         "node scripts/e2e-coverage-audit.mjs",
         "bun run --cwd app typecheck"
       ],
-      "interface_fragments": [
-        "proof"
-      ],
+      "interface_fragments": ["proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T05.15.md"
     },
     {
       "id": "T05.16",
-      "source_tasks": [
-        "P13"
-      ],
+      "source_tasks": ["P13"],
       "epic": "T05",
       "title": "接通平台用户管理与会话安全页面",
-      "depends_on": [
-        "T05.15",
-        "T05.08"
-      ],
+      "depends_on": ["T05.15", "T05.08"],
       "owned_files": [
         "app/src/routes/_authed/admin/people.tsx",
         "app/src/routes/_authed/settings/connected-accounts/index.tsx",
@@ -2819,9 +2337,7 @@
       "owner_role": "frontend_implementer",
       "refs": "P13；M1",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "M1"
-      ],
+      "finding_ids": ["M1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T05.16/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts app/tests/better-auth/platform-account-admin.test.tsx",
         "node scripts/e2e-coverage-audit.mjs",
@@ -2833,16 +2349,10 @@
     },
     {
       "id": "T06.01",
-      "source_tasks": [
-        "P14"
-      ],
+      "source_tasks": ["P14"],
       "epic": "T06",
       "title": "让私有 Bot 与团队发布使用真实资源动作授权",
-      "depends_on": [
-        "T04.08",
-        "T05.07",
-        "T03.01"
-      ],
+      "depends_on": ["T04.08", "T05.07", "T03.01"],
       "owned_files": [
         "server/src/enterprise/tenancy/resource-policy.ts",
         "server/src/enterprise/tenancy/resource-visibility.ts",
@@ -2876,14 +2386,10 @@
     },
     {
       "id": "T06.02",
-      "source_tasks": [
-        "P14"
-      ],
+      "source_tasks": ["P14"],
       "epic": "T06",
       "title": "让会话与 Channel 操作检查创建者和对象动作",
-      "depends_on": [
-        "T06.01"
-      ],
+      "depends_on": ["T06.01"],
       "owned_files": [
         "server/src/enterprise/tenancy/conversation-actions.ts",
         "server/src/channels/routes.ts",
@@ -2915,16 +2421,10 @@
     },
     {
       "id": "T06.03",
-      "source_tasks": [
-        "P14"
-      ],
+      "source_tasks": ["P14"],
       "epic": "T06",
       "title": "在凭据 use 和明文披露前比较授权来源代际",
-      "depends_on": [
-        "T06.01",
-        "T02.04",
-        "T04.03"
-      ],
+      "depends_on": ["T06.01", "T02.04", "T04.03"],
       "owned_files": [
         "server/src/enterprise/tenancy/credential-ownership.ts",
         "server/src/db/schema/enterprise-credentials.ts"
@@ -2955,15 +2455,10 @@
     },
     {
       "id": "T06.04",
-      "source_tasks": [
-        "P14"
-      ],
+      "source_tasks": ["P14"],
       "epic": "T06",
       "title": "让 Memory 召回保留来源授权和个人隔离",
-      "depends_on": [
-        "T06.02",
-        "T06.03"
-      ],
+      "depends_on": ["T06.02", "T06.03"],
       "owned_files": [
         "server/src/enterprise/tenancy/personal-memory.ts",
         "server/src/memory/routes.ts"
@@ -2994,14 +2489,10 @@
     },
     {
       "id": "T06.05",
-      "source_tasks": [
-        "P14"
-      ],
+      "source_tasks": ["P14"],
       "epic": "T06",
       "title": "隔离插件安装实例与 Skills Components 资源",
-      "depends_on": [
-        "T06.01"
-      ],
+      "depends_on": ["T06.01"],
       "owned_files": [
         "server/src/enterprise/tenancy/plugin-catalog.ts",
         "server/src/enterprise/tenancy/skills-components.ts",
@@ -3033,14 +2524,10 @@
     },
     {
       "id": "T06.06",
-      "source_tasks": [
-        "P15"
-      ],
+      "source_tasks": ["P15"],
       "epic": "T06",
       "title": "实现逐 pull 准入的敏感文件下载代理",
-      "depends_on": [
-        "T06.02"
-      ],
+      "depends_on": ["T06.02"],
       "owned_files": [
         "server/src/enterprise/tenancy/sensitive-download.ts",
         "server/src/enterprise/tenancy/attachments.ts",
@@ -3062,9 +2549,7 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5；M2；BA14",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "M2"
-      ],
+      "finding_ids": ["M2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T06.06/green E2E_BUN_ONLY=server/tests/better-auth:T06.06 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -3075,15 +2560,10 @@
     },
     {
       "id": "T06.07",
-      "source_tasks": [
-        "P15"
-      ],
+      "source_tasks": ["P15"],
       "epic": "T06",
       "title": "把旧文件和产物路由逐项接入在线下载代理",
-      "depends_on": [
-        "T06.06",
-        "T06.16"
-      ],
+      "depends_on": ["T06.06", "T06.16"],
       "owned_files": [
         "server/src/channels/attachments.ts",
         "server/src/craft/file-routes.ts",
@@ -3107,9 +2587,7 @@
       "owner_role": "backend_implementer",
       "refs": "P15；BA14/BA15；旧URL失效由T06.16先交付",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "M2"
-      ],
+      "finding_ids": ["M2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T06.07/green E2E_BUN_ONLY=server/tests/better-auth:T06.07 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -3120,15 +2598,10 @@
     },
     {
       "id": "T06.08",
-      "source_tasks": [
-        "P16"
-      ],
+      "source_tasks": ["P16"],
       "epic": "T06",
       "title": "持久化 Run 的原始身份范围证明与 payer",
-      "depends_on": [
-        "T06.03",
-        "T05.04"
-      ],
+      "depends_on": ["T06.03", "T05.04"],
       "owned_files": [
         "server/src/enterprise/runs/service.ts",
         "server/src/enterprise/runs/store.ts",
@@ -3162,14 +2635,10 @@
     },
     {
       "id": "T06.09",
-      "source_tasks": [
-        "P16"
-      ],
+      "source_tasks": ["P16"],
       "epic": "T06",
       "title": "在 Worker 领取重试恢复时重建持久 Run 范围",
-      "depends_on": [
-        "T06.08"
-      ],
+      "depends_on": ["T06.08"],
       "owned_files": [
         "server/src/enterprise/tenancy/worker-assembly.ts",
         "server/src/enterprise/tenancy/job-control.ts",
@@ -3203,16 +2672,10 @@
     },
     {
       "id": "T06.10",
-      "source_tasks": [
-        "P16"
-      ],
+      "source_tasks": ["P16"],
       "epic": "T06",
       "title": "在工具和凭据租约新动作前验证来源能力",
-      "depends_on": [
-        "T06.09",
-        "T06.03",
-        "T06.17"
-      ],
+      "depends_on": ["T06.09", "T06.03", "T06.17"],
       "owned_files": [
         "server/src/enterprise/tenancy/credential-lease.ts",
         "server/src/enterprise/tenancy/tool-invocation.ts",
@@ -3244,15 +2707,10 @@
     },
     {
       "id": "T06.11",
-      "source_tasks": [
-        "P16"
-      ],
+      "source_tasks": ["P16"],
       "epic": "T06",
       "title": "为实际网关提供个人 Key 在线身份准入",
-      "depends_on": [
-        "T05.11",
-        "T06.08"
-      ],
+      "depends_on": ["T05.11", "T06.08"],
       "owned_files": [
         "server/src/gateway/identity-admission.ts",
         "server/src/billing/credit-reserve.ts",
@@ -3275,9 +2733,7 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.3；F1；与T06.12的wire合同在本Issue冻结",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F1"
-      ],
+      "finding_ids": ["F1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T06.11/green E2E_BUN_ONLY=server/tests/better-auth:T06.11 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -3288,15 +2744,10 @@
     },
     {
       "id": "T06.12",
-      "source_tasks": [
-        "P16"
-      ],
+      "source_tasks": ["P16"],
       "epic": "T06",
       "title": "在部署启用的 Bifrost dispatch 前接在线身份准入",
-      "depends_on": [
-        "T06.11",
-        "T01.10"
-      ],
+      "depends_on": ["T06.11", "T01.10"],
       "owned_files": [
         "bifrost/plugins/governance/main.go",
         "bifrost/plugins/governance/creditadmission.go",
@@ -3319,9 +2770,7 @@
       "owner_role": "backend_implementer",
       "refs": "P16；F1；配置文件须由实际部署冻结为本Issue附属manifest",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F1"
-      ],
+      "finding_ids": ["F1"],
       "commands": [
         "BA_FOREIGN_SUITE=T06.12 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T06.12/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -3332,15 +2781,10 @@
     },
     {
       "id": "T06.13",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T06",
       "title": "隔离浏览器沙箱池与外部可变状态",
-      "depends_on": [
-        "T06.10",
-        "T06.18"
-      ],
+      "depends_on": ["T06.10", "T06.18"],
       "owned_files": [
         "server/src/enterprise/tenancy/computer-allocation.ts",
         "server/src/enterprise/tenancy/execution-surfaces.ts",
@@ -3373,14 +2817,10 @@
     },
     {
       "id": "T06.14",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T06",
       "title": "让入站 webhook OAuth callback 和事件订阅固定归属",
-      "depends_on": [
-        "T06.13"
-      ],
+      "depends_on": ["T06.13"],
       "owned_files": [
         "server/src/enterprise/tenancy/inbound-attribution.ts",
         "server/src/enterprise/tenancy/oauth-state.ts",
@@ -3416,15 +2856,10 @@
     },
     {
       "id": "T06.15",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T06",
       "title": "隔离公司观测审计元数据与私有内容导出",
-      "depends_on": [
-        "T06.14",
-        "T06.02"
-      ],
+      "depends_on": ["T06.14", "T06.02"],
       "owned_files": [
         "server/src/enterprise/tenancy/observability-authz.ts",
         "server/src/enterprise/tenancy/telemetry-usage.ts",
@@ -3459,14 +2894,10 @@
     },
     {
       "id": "T06.16",
-      "source_tasks": [
-        "P15"
-      ],
+      "source_tasks": ["P15"],
       "epic": "T06",
       "title": "交付旧对象 URL 失效适配与 Computer 预览代理",
-      "depends_on": [
-        "T06.06"
-      ],
+      "depends_on": ["T06.06"],
       "owned_files": [
         "server/src/craft/storage/object-store.ts",
         "server/src/computer/routes.ts",
@@ -3487,9 +2918,7 @@
       "owner_role": "backend_implementer",
       "refs": "P15；BA14/BA15；只开发与隔离环境演练",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "M2"
-      ],
+      "finding_ids": ["M2"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T06.16/green E2E_BUN_ONLY=server/tests/better-auth:T06.16 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -3500,14 +2929,10 @@
     },
     {
       "id": "T06.17",
-      "source_tasks": [
-        "P16"
-      ],
+      "source_tasks": ["P16"],
       "epic": "T06",
       "title": "为共享审批持久化来源代际并在消费时重验",
-      "depends_on": [
-        "T06.09"
-      ],
+      "depends_on": ["T06.09"],
       "owned_files": [
         "server/src/enterprise/tenancy/shared-approvals.ts",
         "server/src/db/schema/enterprise-shared-approvals.ts",
@@ -3540,14 +2965,10 @@
     },
     {
       "id": "T06.18",
-      "source_tasks": [
-        "P16"
-      ],
+      "source_tasks": ["P16"],
       "epic": "T06",
       "title": "封闭 Host 与外部执行租约的离线撤权窗口",
-      "depends_on": [
-        "T06.10"
-      ],
+      "depends_on": ["T06.10"],
       "owned_files": [
         "server/src/enterprise/tenancy/host-access.ts",
         "server/src/enterprise/tenancy/execution-surfaces.ts",
@@ -3580,16 +3001,10 @@
     },
     {
       "id": "T07.01",
-      "source_tasks": [
-        "P18"
-      ],
+      "source_tasks": ["P18"],
       "epic": "T07",
       "title": "让公司财务入口消费独立财务 Grant",
-      "depends_on": [
-        "T06.08",
-        "T06.15",
-        "T02.04"
-      ],
+      "depends_on": ["T06.08", "T06.15", "T02.04"],
       "owned_files": [
         "server/src/billing/payer-company.ts",
         "server/src/billing/payer-binding.ts",
@@ -3623,15 +3038,10 @@
     },
     {
       "id": "T07.02",
-      "source_tasks": [
-        "P18"
-      ],
+      "source_tasks": ["P18"],
       "epic": "T07",
       "title": "验证团队共用公司余额与禁用后历史费用归属",
-      "depends_on": [
-        "T07.01",
-        "T05.11"
-      ],
+      "depends_on": ["T07.01", "T05.11"],
       "owned_files": [
         "server/src/billing/payer-accounts.ts",
         "server/src/billing/credit-reserve.ts",
@@ -3653,9 +3063,7 @@
       "owner_role": "backend_implementer",
       "refs": "P18；F1；BA11/BA12",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F1"
-      ],
+      "finding_ids": ["F1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.02/green E2E_BUN_ONLY=server/tests/better-auth:T07.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -3666,15 +3074,10 @@
     },
     {
       "id": "T07.03",
-      "source_tasks": [
-        "P18"
-      ],
+      "source_tasks": ["P18"],
       "epic": "T07",
       "title": "在成员接受与真实资源动作 enforce 容量配额",
-      "depends_on": [
-        "T07.02",
-        "T04.03"
-      ],
+      "depends_on": ["T07.02", "T04.03"],
       "owned_files": [
         "server/src/auth/directory/membership.ts",
         "server/src/auth/directory/lifecycle.ts",
@@ -3708,14 +3111,10 @@
     },
     {
       "id": "T07.04",
-      "source_tasks": [
-        "P18"
-      ],
+      "source_tasks": ["P18"],
       "epic": "T07",
       "title": "统一身份目录业务审计的失败与脱敏合同",
-      "depends_on": [
-        "T07.03"
-      ],
+      "depends_on": ["T07.03"],
       "owned_files": [
         "server/src/audit.ts",
         "server/src/enterprise/tenancy/audit-domains.ts",
@@ -3748,18 +3147,10 @@
     },
     {
       "id": "T07.05",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T07",
       "title": "实现 OpenMuse 企业 session 与原 Workspace 映射",
-      "depends_on": [
-        "T05.13",
-        "T06.02",
-        "T06.04",
-        "T07.01",
-        "T01.10"
-      ],
+      "depends_on": ["T05.13", "T06.02", "T06.04", "T07.01", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/server/src/enterprise.ts",
         "apps/openmuse/apps/server/src/config.ts",
@@ -3785,31 +3176,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.2完整路由/DTO；F2",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.05 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.05/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.05.md"
     },
     {
       "id": "T07.06",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T07",
       "title": "接通企业 BFF 的真实 CopilotKit 流与运行准入",
-      "depends_on": [
-        "T07.05",
-        "T06.10",
-        "T01.10"
-      ],
+      "depends_on": ["T07.05", "T06.10", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/server/src/enterprise.ts",
         "apps/openmuse/apps/server/src/app.ts",
@@ -3833,32 +3214,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.2；F2；P17",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.06 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.06/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.06.md"
     },
     {
       "id": "T07.07",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T07",
       "title": "接通 BFF 媒体票据在线读取与公司追加认证代理",
-      "depends_on": [
-        "T07.06",
-        "T06.06",
-        "T05.04",
-        "T01.10"
-      ],
+      "depends_on": ["T07.06", "T06.06", "T05.04", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/server/src/enterprise.ts",
         "apps/openmuse/apps/server/src/app.ts",
@@ -3881,31 +3251,21 @@
       "owner_role": "backend_implementer",
       "refs": "interfaces §5.2；F2；内容/浏览器/OAuth明确后继T07.17–T07.19",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F2",
-        "M2"
-      ],
+      "finding_ids": ["F2", "M2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.07 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.07/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.07.md"
     },
     {
       "id": "T07.08",
-      "source_tasks": [
-        "P19"
-      ],
+      "source_tasks": ["P19"],
       "epic": "T07",
       "title": "让 Desktop 唯一选择状态与本地缓存保持一致",
-      "depends_on": [
-        "T05.15",
-        "T07.04"
-      ],
+      "depends_on": ["T05.15", "T07.04"],
       "owned_files": [
         "desktop/src/App.tsx",
         "desktop/src/CompanySelection.tsx",
@@ -3938,15 +3298,10 @@
     },
     {
       "id": "T07.09",
-      "source_tasks": [
-        "P19"
-      ],
+      "source_tasks": ["P19"],
       "epic": "T07",
       "title": "固定 Desktop 原生登录与追加认证 callback 意图",
-      "depends_on": [
-        "T07.08",
-        "T05.09"
-      ],
+      "depends_on": ["T07.08", "T05.09"],
       "owned_files": [
         "desktop/src-tauri/src/organization_auth.rs",
         "desktop/src-tauri/src/org_context.rs",
@@ -3973,25 +3328,16 @@
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.09/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts desktop/src/OrgSwitchCleanup.test.tsx",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "proof"
-      ],
+      "interface_fragments": ["proof"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.09.md"
     },
     {
       "id": "T07.10",
-      "source_tasks": [
-        "P20"
-      ],
+      "source_tasks": ["P20"],
       "epic": "T07",
       "title": "接通真实 Mobile App 的企业 PKCE 登录与 MuseApi",
-      "depends_on": [
-        "T07.07",
-        "T05.14",
-        "T07.19",
-        "T01.10"
-      ],
+      "depends_on": ["T07.07", "T05.14", "T07.19", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/mobile/App.tsx",
         "apps/openmuse/apps/mobile/src/api.ts",
@@ -4015,31 +3361,21 @@
       "owner_role": "frontend_implementer",
       "refs": "P20；interfaces §5.2；F2",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.10 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.10/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.10.md"
     },
     {
       "id": "T07.11",
-      "source_tasks": [
-        "P20"
-      ],
+      "source_tasks": ["P20"],
       "epic": "T07",
       "title": "让 Mobile 选择切换与 CopilotKit 流共享同一 session",
-      "depends_on": [
-        "T07.10",
-        "T03.06",
-        "T01.10"
-      ],
+      "depends_on": ["T07.10", "T03.06", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/mobile/App.tsx",
         "apps/openmuse/apps/mobile/src/chat.tsx",
@@ -4063,30 +3399,21 @@
       "owner_role": "frontend_implementer",
       "refs": "P20；BA13；F2",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.11 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.11/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.11.md"
     },
     {
       "id": "T07.12",
-      "source_tasks": [
-        "P20"
-      ],
+      "source_tasks": ["P20"],
       "epic": "T07",
       "title": "接通 Mobile 公司追加认证深链与 PDF 媒体读取",
-      "depends_on": [
-        "T07.11",
-        "T01.10"
-      ],
+      "depends_on": ["T07.11", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/mobile/src/openbot/company-assurance.ts",
         "apps/openmuse/apps/mobile/src/details.tsx",
@@ -4110,31 +3437,21 @@
       "owner_role": "frontend_implementer",
       "refs": "P20；F2；BA14/BA20",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.12 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.12/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "proof",
-        "bff"
-      ],
+      "interface_fragments": ["proof", "bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.12.md"
     },
     {
       "id": "T07.13",
-      "source_tasks": [
-        "P20"
-      ],
+      "source_tasks": ["P20"],
       "epic": "T07",
       "title": "为真实 Mobile App 增加隔离浏览器入口和五链路验收",
-      "depends_on": [
-        "T07.12",
-        "T04.12"
-      ],
+      "depends_on": ["T07.12", "T04.12"],
       "owned_files": [
         "e2e.better-auth-mobile.config.ts",
         "tests/config/e2e-engine-suites.json",
@@ -4157,34 +3474,23 @@
       "owner_role": "frontend_implementer",
       "refs": "acceptance V-I/V-N；F2/F4",
       "validator_role": "frontend_validator",
-      "finding_ids": [
-        "F2",
-        "F4"
-      ],
+      "finding_ids": ["F2", "F4"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.13/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/e2e/better-auth/mobile/app.e2e.ts",
         "node scripts/e2e-coverage-audit.mjs",
         "node scripts/e2e-coverage-audit.mjs --engine-list",
         "./node_modules/.bin/e2e run --config e2e.better-auth-mobile.config.ts tests/e2e/better-auth/mobile/app.e2e.ts"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.13.md"
     },
     {
       "id": "T07.14",
-      "source_tasks": [
-        "P21"
-      ],
+      "source_tasks": ["P21"],
       "epic": "T07",
       "title": "把 Web Bot 和 Channel query mutation 接统一范围代际",
-      "depends_on": [
-        "T05.16",
-        "T06.02",
-        "T03.06"
-      ],
+      "depends_on": ["T05.16", "T06.02", "T03.06"],
       "owned_files": [
         "app/src/lib/channels/queries.ts",
         "app/src/lib/channels/mutations.ts",
@@ -4219,17 +3525,10 @@
     },
     {
       "id": "T07.15",
-      "source_tasks": [
-        "P21"
-      ],
+      "source_tasks": ["P21"],
       "epic": "T07",
       "title": "把 Memory Craft Workshop 与审批页面接范围和下载合同",
-      "depends_on": [
-        "T07.14",
-        "T06.04",
-        "T06.07",
-        "T06.10"
-      ],
+      "depends_on": ["T07.14", "T06.04", "T06.07", "T06.10"],
       "owned_files": [
         "app/src/lib/memory.ts",
         "app/src/lib/craft/client.ts",
@@ -4265,16 +3564,10 @@
     },
     {
       "id": "T07.16",
-      "source_tasks": [
-        "P21"
-      ],
+      "source_tasks": ["P21"],
       "epic": "T07",
       "title": "接通财务分权与观测页面并补真实业务浏览器矩阵",
-      "depends_on": [
-        "T07.15",
-        "T07.04",
-        "T06.15"
-      ],
+      "depends_on": ["T07.15", "T07.04", "T06.15"],
       "owned_files": [
         "app/src/lib/billing/scoped.ts",
         "app/src/lib/billing/queries.ts",
@@ -4312,15 +3605,10 @@
     },
     {
       "id": "T07.17",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T07",
       "title": "让 BFF 邮件日历草稿会话和审批消费受控 namespace",
-      "depends_on": [
-        "T07.07",
-        "T01.10"
-      ],
+      "depends_on": ["T07.07", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/server/src/enterprise.ts",
         "apps/openmuse/apps/server/src/app.ts",
@@ -4344,32 +3632,21 @@
       "owner_role": "backend_implementer",
       "refs": "P17；F2；原OpenMuse数据合同保持",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.17 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.17/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.17.md"
     },
     {
       "id": "T07.18",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T07",
       "title": "让 BFF 浏览器与 Computer 控制逐动作在线准入",
-      "depends_on": [
-        "T07.17",
-        "T06.13",
-        "T06.18",
-        "T01.10"
-      ],
+      "depends_on": ["T07.17", "T06.13", "T06.18", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/server/src/enterprise.ts",
         "apps/openmuse/apps/server/src/app.ts",
@@ -4394,31 +3671,21 @@
       "owner_role": "backend_implementer",
       "refs": "P17；F2；BA09/BA14",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.18 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.18/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.18.md"
     },
     {
       "id": "T07.19",
-      "source_tasks": [
-        "P17"
-      ],
+      "source_tasks": ["P17"],
       "epic": "T07",
       "title": "把 BFF Google OAuth 与附件导入绑定原始企业意图",
-      "depends_on": [
-        "T07.18",
-        "T06.14",
-        "T01.10"
-      ],
+      "depends_on": ["T07.18", "T06.14", "T01.10"],
       "owned_files": [
         "apps/openmuse/apps/server/src/enterprise.ts",
         "apps/openmuse/apps/server/src/app.ts",
@@ -4442,24 +3709,18 @@
       "owner_role": "backend_implementer",
       "refs": "P17；F2；BA20",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F2"
-      ],
+      "finding_ids": ["F2"],
       "commands": [
         "BA_FOREIGN_SUITE=T07.19 E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T07.19/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-foreign.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "bff"
-      ],
+      "interface_fragments": ["bff"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T07.19.md"
     },
     {
       "id": "T08.01",
-      "source_tasks": [
-        "P22"
-      ],
+      "source_tasks": ["P22"],
       "epic": "T08",
       "title": "扩充最终迁移模型并实现 M3→M4 原子权威切换",
       "depends_on": [
@@ -4492,29 +3753,21 @@
       "owner_role": "backend_implementer",
       "refs": "P22；Spec §13；H4",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "H4"
-      ],
+      "finding_ids": ["H4"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T08.01/green E2E_BUN_ONLY=server/tests/better-auth:T08.01 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
       ],
-      "interface_fragments": [
-        "authority"
-      ],
+      "interface_fragments": ["authority"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T08.01.md"
     },
     {
       "id": "T08.02",
-      "source_tasks": [
-        "P22"
-      ],
+      "source_tasks": ["P22"],
       "epic": "T08",
       "title": "实现不重置 clock 的投影重建与旧能力核验",
-      "depends_on": [
-        "T08.01"
-      ],
+      "depends_on": ["T08.01"],
       "owned_files": [
         "server/scripts/better-auth/rebuild-projections.ts",
         "server/src/enterprise/tenancy/backfill-consistency.ts",
@@ -4536,9 +3789,7 @@
       "owner_role": "backend_implementer",
       "refs": "P22；BA15/BA19",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-04"
-      ],
+      "finding_ids": ["F-04"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T08.02/green E2E_BUN_ONLY=server/tests/better-auth:T08.02 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -4549,14 +3800,10 @@
     },
     {
       "id": "T08.03",
-      "source_tasks": [
-        "P22"
-      ],
+      "source_tasks": ["P22"],
       "epic": "T08",
       "title": "实现可信撤权高水位恢复与明确回退界限",
-      "depends_on": [
-        "T08.02"
-      ],
+      "depends_on": ["T08.02"],
       "owned_files": [
         "server/scripts/better-auth/rehearse-recovery.ts",
         "server/src/enterprise/tenancy/rollback-procedure.ts",
@@ -4577,9 +3824,7 @@
       "owner_role": "backend_implementer",
       "refs": "P22；Spec §13.3；BA19",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F1"
-      ],
+      "finding_ids": ["F1"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T08.03/green E2E_BUN_ONLY=server/tests/better-auth:T08.03 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs"
@@ -4590,14 +3835,10 @@
     },
     {
       "id": "T08.04",
-      "source_tasks": [
-        "P23"
-      ],
+      "source_tasks": ["P23"],
       "epic": "T08",
       "title": "建立实际路由消费者与测试证据的版本化覆盖清单",
-      "depends_on": [
-        "T08.03"
-      ],
+      "depends_on": ["T08.03"],
       "owned_files": [
         "tests/config/better-auth-surfaces.json",
         "scripts/check-better-auth-surfaces.ts",
@@ -4620,35 +3861,22 @@
       "owner_role": "backend_implementer",
       "refs": "P23；H3/M1/F4",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F4",
-        "F-01",
-        "F-03",
-        "H3",
-        "M1",
-        "M3"
-      ],
+      "finding_ids": ["F4", "F-01", "F-03", "H3", "M1", "M3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T08.04/green ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/better-auth-surface-audit.test.ts",
         "node scripts/e2e-coverage-audit.mjs",
         "node scripts/check-better-auth-adapter-writes.mjs"
       ],
-      "interface_fragments": [
-        "native"
-      ],
+      "interface_fragments": ["native"],
       "read_context_budget": "12–24k tokens；最多8主文件+2测试/辅助；大型文件仅目标函数",
       "document": "docs/plans/tickets/better-auth/T08.04.md"
     },
     {
       "id": "T08.05",
-      "source_tasks": [
-        "P23"
-      ],
+      "source_tasks": ["P23"],
       "epic": "T08",
       "title": "完成真实启动和 Worker 装配拒绝旁路",
-      "depends_on": [
-        "T08.04"
-      ],
+      "depends_on": ["T08.04"],
       "owned_files": [
         "server/src/enterprise/tenancy/directory-readiness.ts",
         "server/src/config.ts",
@@ -4676,12 +3904,7 @@
       "owner_role": "backend_implementer",
       "refs": "P23；BA08/BA09/BA16；附属assembly文件由此任务冻结",
       "validator_role": "backend_validator",
-      "finding_ids": [
-        "F-01",
-        "F-02",
-        "F-03",
-        "H3"
-      ],
+      "finding_ids": ["F-01", "F-02", "F-03", "H3"],
       "commands": [
         "E2E_UNIT_OUTPUT=.archive/runs/ba-execution/verification/T08.05/green E2E_BUN_ONLY=server/tests/better-auth:T08.05 ./node_modules/.bin/e2e run --config e2e.unit.config.ts tests/bun-suites.test.ts",
         "node scripts/e2e-coverage-audit.mjs",
@@ -4693,14 +3916,10 @@
     },
     {
       "id": "T08.06",
-      "source_tasks": [
-        "P24"
-      ],
+      "source_tasks": ["P24"],
       "epic": "T08",
       "title": "独立验收真实数据库 IdP 邮件下载和实际网关",
-      "depends_on": [
-        "T08.05"
-      ],
+      "depends_on": ["T08.05"],
       "owned_files": [],
       "contract": "只读业务代码/测试源，仅写verification报告；复用同检查点有效证据，补BA01–BA12/BA14–BA19、14finding及第三轮F-01–F-10、OIDC/SAML签名及已启用真实IdP、真实收信、旧URL存储响应、Bifrost dispatch证据，缺环境blocked。",
       "actions": [
@@ -4725,14 +3944,10 @@
     },
     {
       "id": "T08.07",
-      "source_tasks": [
-        "P24"
-      ],
+      "source_tasks": ["P24"],
       "epic": "T08",
       "title": "独立验收真实 Web Desktop Mobile 与原生回调",
-      "depends_on": [
-        "T08.05"
-      ],
+      "depends_on": ["T08.05"],
       "owned_files": [],
       "contract": "只写verification报告；BA13/BA20真App/真实支持平台与辅助store证据分别计数；浏览器collector/target/preflight、App五链路最终route/actor/scope、native深链/换账号/撤权全部匹配同版构建。",
       "actions": [
@@ -4757,15 +3972,10 @@
     },
     {
       "id": "T08.08",
-      "source_tasks": [
-        "P24"
-      ],
+      "source_tasks": ["P24"],
       "epic": "T08",
       "title": "完成全范围独立 Review OCR 与发布准备交接",
-      "depends_on": [
-        "T08.06",
-        "T08.07"
-      ],
+      "depends_on": ["T08.06", "T08.07"],
       "owned_files": [],
       "contract": "仅写归档，不改生产/测试源；fresh reviewer给Spec compliance/code quality；主控OCR --audience agent覆盖原始BASE..HEAD+全部未提交及子模块源码，修复另建编号SDD计划。无有效critical/high/medium且必需验收齐全才形成发布准备包，不自动M6。",
       "actions": [
@@ -4792,12 +4002,7 @@
   "requirements": {
     "BA-R01": {
       "requirement": "BA-R01 身份/业务 ID/payer 保留",
-      "original_tasks": [
-        "P03",
-        "P06",
-        "P12",
-        "P22"
-      ],
+      "original_tasks": ["P03", "P06", "P12", "P22"],
       "tasks": [
         "T02.01",
         "T02.02",
@@ -4820,21 +4025,11 @@
         "T08.02",
         "T08.03"
       ],
-      "acceptance": [
-        "BA01",
-        "BA15"
-      ]
+      "acceptance": ["BA01", "BA15"]
     },
     "BA-R02": {
       "requirement": "BA-R02 目录唯一写权威与原子性",
-      "original_tasks": [
-        "P01",
-        "P03",
-        "P04",
-        "P08",
-        "P12",
-        "P23"
-      ],
+      "original_tasks": ["P01", "P03", "P04", "P08", "P12", "P23"],
       "tasks": [
         "T01.01",
         "T01.02",
@@ -4874,21 +4069,11 @@
         "T08.04",
         "T08.05"
       ],
-      "acceptance": [
-        "BA08",
-        "BA09",
-        "BA18"
-      ]
+      "acceptance": ["BA08", "BA09", "BA18"]
     },
     "BA-R03": {
       "requirement": "BA-R03 公司/邀请/角色/owner 生命周期",
-      "original_tasks": [
-        "P04",
-        "P06",
-        "P08",
-        "P10",
-        "P13"
-      ],
+      "original_tasks": ["P04", "P06", "P08", "P10", "P13"],
       "tasks": [
         "T02.07",
         "T02.08",
@@ -4912,21 +4097,11 @@
         "T05.15",
         "T05.16"
       ],
-      "acceptance": [
-        "BA04",
-        "BA05",
-        "BA06"
-      ]
+      "acceptance": ["BA04", "BA05", "BA06"]
     },
     "BA-R04": {
       "requirement": "BA-R04 管理/财务/内容分权",
-      "original_tasks": [
-        "P08",
-        "P09",
-        "P10",
-        "P14",
-        "P18"
-      ],
+      "original_tasks": ["P08", "P09", "P10", "P14", "P18"],
       "tasks": [
         "T04.01",
         "T04.02",
@@ -4950,21 +4125,11 @@
         "T07.03",
         "T07.04"
       ],
-      "acceptance": [
-        "BA03",
-        "BA04",
-        "BA17"
-      ]
+      "acceptance": ["BA03", "BA04", "BA17"]
     },
     "BA-R05": {
       "requirement": "BA-R05 显式范围、切换/流/缓存",
-      "original_tasks": [
-        "P05",
-        "P07",
-        "P19",
-        "P20",
-        "P21"
-      ],
+      "original_tasks": ["P05", "P07", "P19", "P20", "P21"],
       "tasks": [
         "T01.10",
         "T03.01",
@@ -4982,10 +4147,7 @@
         "T07.15",
         "T07.16"
       ],
-      "acceptance": [
-        "BA02",
-        "BA13"
-      ]
+      "acceptance": ["BA02", "BA13"]
     },
     "BA-R06": {
       "requirement": "BA-R06 即时新准入撤权与持久版本",
@@ -5049,23 +4211,11 @@
         "T08.02",
         "T08.03"
       ],
-      "acceptance": [
-        "BA06",
-        "BA07",
-        "BA14",
-        "BA19"
-      ]
+      "acceptance": ["BA06", "BA07", "BA14", "BA19"]
     },
     "BA-R07": {
       "requirement": "BA-R07 SSO/SCIM 与会话公司证明",
-      "original_tasks": [
-        "P11",
-        "P12",
-        "P13",
-        "P16",
-        "P19",
-        "P20"
-      ],
+      "original_tasks": ["P11", "P12", "P13", "P16", "P19", "P20"],
       "tasks": [
         "T01.10",
         "T05.01",
@@ -5098,21 +4248,11 @@
         "T07.12",
         "T07.13"
       ],
-      "acceptance": [
-        "BA10",
-        "BA20"
-      ]
+      "acceptance": ["BA10", "BA20"]
     },
     "BA-R08": {
       "requirement": "BA-R08 全业务与启用外部能力隔离",
-      "original_tasks": [
-        "P14",
-        "P15",
-        "P16",
-        "P17",
-        "P21",
-        "P23"
-      ],
+      "original_tasks": ["P14", "P15", "P16", "P17", "P21", "P23"],
       "tasks": [
         "T01.10",
         "T06.01",
@@ -5145,21 +4285,11 @@
         "T08.04",
         "T08.05"
       ],
-      "acceptance": [
-        "BA02",
-        "BA03",
-        "BA09",
-        "BA14",
-        "BA16"
-      ]
+      "acceptance": ["BA02", "BA03", "BA09", "BA14", "BA16"]
     },
     "BA-R09": {
       "requirement": "BA-R09 固定发起范围与付款",
-      "original_tasks": [
-        "P06",
-        "P16",
-        "P18"
-      ],
+      "original_tasks": ["P06", "P16", "P18"],
       "tasks": [
         "T03.03",
         "T03.04",
@@ -5175,10 +4305,7 @@
         "T07.03",
         "T07.04"
       ],
-      "acceptance": [
-        "BA11",
-        "BA12"
-      ]
+      "acceptance": ["BA11", "BA12"]
     },
     "BA-R10": {
       "requirement": "BA-R10 BA UI 与现有客户端/账户恢复/空态",
@@ -5242,23 +4369,11 @@
         "T07.18",
         "T07.19"
       ],
-      "acceptance": [
-        "BA01",
-        "BA05",
-        "BA13",
-        "BA17"
-      ]
+      "acceptance": ["BA01", "BA05", "BA13", "BA17"]
     },
     "BA-R11": {
       "requirement": "BA-R11 平台/审计/容量/财务控制",
-      "original_tasks": [
-        "P04",
-        "P06",
-        "P08",
-        "P12",
-        "P13",
-        "P18"
-      ],
+      "original_tasks": ["P04", "P06", "P08", "P12", "P13", "P18"],
       "tasks": [
         "T02.07",
         "T02.08",
@@ -5291,12 +4406,7 @@
         "T07.03",
         "T07.04"
       ],
-      "acceptance": [
-        "BA04",
-        "BA05",
-        "BA08",
-        "BA12"
-      ]
+      "acceptance": ["BA04", "BA05", "BA08", "BA12"]
     },
     "BA-R12": {
       "requirement": "BA-R12 迁移/恢复/单权威切换门槛",
@@ -5345,23 +4455,12 @@
         "T08.07",
         "T08.08"
       ],
-      "acceptance": [
-        "BA15",
-        "BA16",
-        "BA18",
-        "BA19"
-      ]
+      "acceptance": ["BA15", "BA16", "BA18", "BA19"]
     }
   },
   "acceptance": {
     "BA01": {
-      "original_tasks": [
-        "P02",
-        "P08",
-        "P12",
-        "P13",
-        "P22"
-      ],
+      "original_tasks": ["P02", "P08", "P12", "P13", "P22"],
       "tasks": [
         "T01.08",
         "T01.09",
@@ -5390,11 +4489,7 @@
       "criterion": "原账户/会话/account/password/历史 Run/订单/付款方不重复；已启用登录与客户端正向；密码部署真实 request-reset→邮件→设密码→重新登录，纯 SSO 保持关闭"
     },
     "BA02": {
-      "original_tasks": [
-        "P05",
-        "P07",
-        "P14"
-      ],
+      "original_tasks": ["P05", "P07", "P14"],
       "tasks": [
         "T03.01",
         "T03.02",
@@ -5410,10 +4505,7 @@
       "criterion": "A/B、伪 selector、A tenant+B team、猜 ID；显式目标不跟随 active"
     },
     "BA03": {
-      "original_tasks": [
-        "P14",
-        "P21"
-      ],
+      "original_tasks": ["P14", "P21"],
       "tasks": [
         "T06.01",
         "T06.02",
@@ -5427,12 +4519,7 @@
       "criterion": "公共 Bot 正向、同团队私有/凭据拒绝、共享动作/依赖不扩大"
     },
     "BA04": {
-      "original_tasks": [
-        "P06",
-        "P08",
-        "P12",
-        "P18"
-      ],
+      "original_tasks": ["P06", "P08", "P12", "P18"],
       "tasks": [
         "T03.03",
         "T03.04",
@@ -5459,14 +4546,7 @@
       "criterion": "最后 owner 并发、跨公司身份角色、财务/内容/平台分权"
     },
     "BA05": {
-      "original_tasks": [
-        "P04",
-        "P06",
-        "P08",
-        "P10",
-        "P13",
-        "P18"
-      ],
+      "original_tasks": ["P04", "P06", "P08", "P10", "P13", "P18"],
       "tasks": [
         "T02.07",
         "T02.08",
@@ -5497,12 +4577,7 @@
       "criterion": "初始化失败保持 provisioning；无 Principal 新用户验证邮箱后接受邀请，同事务唯一主体/clock/投影；邀请状态/角色/并发席位、真实提交后邮件"
     },
     "BA06": {
-      "original_tasks": [
-        "P05",
-        "P08",
-        "P15",
-        "P16"
-      ],
+      "original_tasks": ["P05", "P08", "P15", "P16"],
       "tasks": [
         "T03.01",
         "T03.02",
@@ -5526,15 +4601,7 @@
       "criterion": "真实共享/排他锁时序；撤权先提交后新业务/敏感动作拒绝"
     },
     "BA07": {
-      "original_tasks": [
-        "P03",
-        "P04",
-        "P05",
-        "P09",
-        "P14",
-        "P16",
-        "P18"
-      ],
+      "original_tasks": ["P03", "P04", "P05", "P09", "P14", "P16", "P18"],
       "tasks": [
         "T02.01",
         "T02.02",
@@ -5572,13 +4639,7 @@
       "criterion": "删除再加入/恢复不复活旧 Scope/资源及财务 Grant/审批/lease、凭据动作及个人凭据；新 Scope 也不能凭旧来源签新 lease/解密；幂等不增版"
     },
     "BA08": {
-      "original_tasks": [
-        "P01",
-        "P04",
-        "P08",
-        "P12",
-        "P23"
-      ],
+      "original_tasks": ["P01", "P04", "P08", "P12", "P23"],
       "tasks": [
         "T01.01",
         "T01.02",
@@ -5615,12 +4676,7 @@
       "criterion": "Principal/BA/clock/投影/审计/outbox 每阶段故障全回滚；Identity 的 User/Principal/代际/session/proof 同样全回滚；BA 权威下 HTTP/auth.api/SCIM/JIT/Admin/CLI/startup 无信封不可写；延迟 hook 不丢、不用全局连接补写，SCIM HTTP 首建故障 roles/SCIM投影/member/clock 全回滚"
     },
     "BA09": {
-      "original_tasks": [
-        "P03",
-        "P05",
-        "P14",
-        "P23"
-      ],
+      "original_tasks": ["P03", "P05", "P14", "P23"],
       "tasks": [
         "T02.01",
         "T02.02",
@@ -5641,13 +4697,7 @@
       "criterion": "真实受限角色/RLS/复合 FK、池复用、存储/授权故障及 schema mismatch"
     },
     "BA10": {
-      "original_tasks": [
-        "P01",
-        "P04",
-        "P11",
-        "P12",
-        "P23"
-      ],
+      "original_tasks": ["P01", "P04", "P11", "P12", "P23"],
       "tasks": [
         "T01.01",
         "T01.02",
@@ -5682,10 +4732,7 @@
       "criterion": "密码/A IdP session 不满足 B proof；SCIM A deactivate 保留 B；无邀请/无 Principal 首次 provisioning；批准规则团队加入、撤规则/跨公司/能力跨请求拒绝；每个原生目录 GET 的暂停成员/暂停公司/缺 proof 反例；OIDC/SAML 签名断言时间与 state/RelayState 绑定；已启用真实 IdP/SCIM 测试租户；SSO 回调携带 provider.organizationId 不创建 member（organizationProvisioning 禁用）"
     },
     "BA11": {
-      "original_tasks": [
-        "P16",
-        "P18"
-      ],
+      "original_tasks": ["P16", "P18"],
       "tasks": [
         "T06.08",
         "T06.09",
@@ -5702,10 +4749,7 @@
       "criterion": "真 Run/Job 领取重放/重试/恢复/离职保持 payer，proof 到期挂起，外部事实不重复"
     },
     "BA12": {
-      "original_tasks": [
-        "P18",
-        "P21"
-      ],
+      "original_tasks": ["P18", "P21"],
       "tasks": [
         "T07.01",
         "T07.02",
@@ -5718,12 +4762,7 @@
       "criterion": "多团队同余额并发、个人 Key/账户分离、财务动作与用量账本对账"
     },
     "BA13": {
-      "original_tasks": [
-        "P07",
-        "P19",
-        "P20",
-        "P21"
-      ],
+      "original_tasks": ["P07", "P19", "P20", "P21"],
       "tasks": [
         "T01.10",
         "T03.05",
@@ -5742,12 +4781,7 @@
       "criterion": "真实 Mobile App/MuseApi/CopilotKit/媒体接线及 Web 多标签、Desktop、启用 iOS/Android 的真实回调/切换/登出/撤权；适配层测试不能替代 native"
     },
     "BA14": {
-      "original_tasks": [
-        "P14",
-        "P15",
-        "P17",
-        "P21"
-      ],
+      "original_tasks": ["P14", "P15", "P17", "P21"],
       "tasks": [
         "T01.10",
         "T06.01",
@@ -5774,12 +4808,7 @@
       "criterion": "实际存储旧 URL/CDN、代理新请求/HEAD/Range/批次、lease、沙箱/浏览器/Memory/观测"
     },
     "BA15": {
-      "original_tasks": [
-        "P03",
-        "P04",
-        "P22",
-        "P25"
-      ],
+      "original_tasks": ["P03", "P04", "P22", "P25"],
       "tasks": [
         "T02.01",
         "T02.02",
@@ -5803,11 +4832,7 @@
       "criterion": "同名/重复 workspace ID 保留、集合/哈希/FK/payer/owner、legacy/ba/paused 读写、M3→M4 同请求矩阵和真实备份恢复/回退；legacy tenant 回填获得按 interfaces §2 规则派生的确定性唯一 slug"
     },
     "BA16": {
-      "original_tasks": [
-        "P17",
-        "P23",
-        "P24"
-      ],
+      "original_tasks": ["P17", "P23", "P24"],
       "tasks": [
         "T01.10",
         "T06.13",
@@ -5828,11 +4853,7 @@
       "criterion": "固定版所有 Admin/Organization 读写逐项处置，删除/模拟登录/动态角色后端拒绝；全部实际路由/consumer/client/启用 provider 有正反证据；无未知例外"
     },
     "BA17": {
-      "original_tasks": [
-        "P01",
-        "P09",
-        "P10"
-      ],
+      "original_tasks": ["P01", "P09", "P10"],
       "tasks": [
         "T01.01",
         "T01.02",
@@ -5852,11 +4873,7 @@
       "criterion": "从公司管理 API 授予/撤销/重授新团队 Grant 后，普通 member 仅甲团队成功，乙/公司角色/外部邀请/原生 BA 入口拒绝；不得自行委派，双身份/规则来源审计"
     },
     "BA18": {
-      "original_tasks": [
-        "P01",
-        "P04",
-        "P08"
-      ],
+      "original_tasks": ["P01", "P04", "P08"],
       "tasks": [
         "T01.01",
         "T01.02",
@@ -5882,10 +4899,7 @@
       "criterion": "实际 adapter 合法中间顺序可提交；缺 member/缺终结/故障无半份状态或提前邮件"
     },
     "BA19": {
-      "original_tasks": [
-        "P03",
-        "P22"
-      ],
+      "original_tasks": ["P03", "P22"],
       "tasks": [
         "T02.01",
         "T02.02",
@@ -5900,13 +4914,7 @@
       "criterion": "保留旧/新 Grant/审批/lease 及凭据授权来源，移除再加、重建不改 clock；内部自洽的旧恢复点无可信撤权高水位也拒绝重开；缺失/倒退/丢 tombstone 阻断"
     },
     "BA20": {
-      "original_tasks": [
-        "P11",
-        "P12",
-        "P13",
-        "P19",
-        "P20"
-      ],
+      "original_tasks": ["P11", "P12", "P13", "P19", "P20"],
       "tasks": [
         "T01.10",
         "T05.01",
@@ -5979,121 +4987,59 @@
       "criterion": "真实reset邮件/唯一消费/3600秒/安全代际及旧session/proof/能力失效；吞错和迟到callback不能半提交"
     },
     "F4": {
-      "tasks": [
-        "T04.12",
-        "T07.13",
-        "T08.04"
-      ],
+      "tasks": ["T04.12", "T07.13", "T08.04"],
       "criterion": "默认/BA Web/BA Mobile互斥收集，强制origin/digest/target preflight；零网络负例"
     },
     "F-01": {
-      "tasks": [
-        "T01.03",
-        "T02.08",
-        "T02.11",
-        "T08.04",
-        "T08.05"
-      ],
+      "tasks": ["T01.03", "T02.08", "T02.11", "T08.04", "T08.05"],
       "criterion": "原生HTTP目录写由ingress转auth.api于外层事务；executor禁止auth.handler；直写清单扫描一致；handler可达写端点为失败"
     },
     "F-02": {
-      "tasks": [
-        "T05.05",
-        "T05.06",
-        "T02.14",
-        "T08.05"
-      ],
+      "tasks": ["T05.05", "T05.06", "T02.14", "T08.05"],
       "criterion": "organizationProvisioning disabled硬前提并在缺失/false配置下启动拒绝；ingress拒客户端organizationId；回调不产生member；M2核验sso_providers.organization_id为空"
     },
     "F-03": {
-      "tasks": [
-        "T01.03",
-        "T04.01",
-        "T08.04",
-        "T08.05"
-      ],
+      "tasks": ["T01.03", "T04.01", "T08.04", "T08.05"],
       "criterion": "固定版不经ALS直写清单逐项处置；resend不走原生分支；包升级清单外直写失败"
     },
     "F-04": {
-      "tasks": [
-        "T02.13",
-        "T04.03",
-        "T05.06",
-        "T08.02"
-      ],
+      "tasks": ["T02.13", "T04.03", "T05.06", "T08.02"],
       "criterion": "legacy目录写入者静态清单为必需产物；deletion-semantics/root-backfill/enterprise-runtime-seed逐项处置"
     },
     "F-05": {
-      "tasks": [
-        "T02.13",
-        "T02.14",
-        "T03.03"
-      ],
+      "tasks": ["T02.13", "T02.14", "T03.03"],
       "criterion": "BA slug按interfaces §2派生/归一化/碰撞/幂等；重放不重派；check-slug同规则"
     },
     "F-06": {
-      "tasks": [
-        "T04.08"
-      ],
+      "tasks": ["T04.08"],
       "criterion": "不新增同形DELETE成员路由；path ID固定OpenBot principalId，服务端解析BA userId"
     },
     "F-07": {
-      "tasks": [
-        "T01.08",
-        "T01.09"
-      ],
+      "tasks": ["T01.08", "T01.09"],
       "criterion": "组织组件不调X类原生GET；ui-source.json逐组件声明注入adapter或不复用"
     },
     "F-08": {
-      "tasks": [
-        "T01.04",
-        "T02.12",
-        "T04.04",
-        "T05.06"
-      ],
+      "tasks": ["T01.04", "T02.12", "T04.04", "T05.06"],
       "criterion": "link-account dispatchVerificationEmail按通知类转为事务内outbox；真实启用配置callback验证提交/回滚/幂等重试，缺转换器启动拒绝，生产SSO再复验"
     },
     "F-09": {
-      "tasks": [
-        "T02.02"
-      ],
+      "tasks": ["T02.02"],
       "criterion": "既有epoch integer与新建bigint版本列逐列固定，Number.isSafeInteger比较不失效"
     },
     "F-10": {
-      "tasks": [
-        "T02.06"
-      ],
+      "tasks": ["T02.06"],
       "criterion": "auth-writer→principals、data→clocks/assurance最小GRANT；缺授权启动/反例失败"
     },
     "H1": {
-      "tasks": [
-        "T01.03",
-        "T01.04",
-        "T02.08",
-        "T02.12",
-        "T05.05",
-        "T05.06"
-      ],
+      "tasks": ["T01.03", "T01.04", "T02.08", "T02.12", "T05.05", "T05.06"],
       "criterion": "pendingHooks分类且不丢；原子写进finalizer、通知进outbox；全局连接写拒绝；事务配置不依赖SCIM开关"
     },
     "H2": {
-      "tasks": [
-        "T01.06",
-        "T01.07",
-        "T05.01",
-        "T05.02",
-        "T05.03",
-        "T05.04"
-      ],
+      "tasks": ["T01.06", "T01.07", "T05.01", "T05.02", "T05.03", "T05.04"],
       "criterion": "签名OIDC/SAML真实认证时间/强度及state/nonce/RelayState/InResponseTo，固定版本不可行则阻断"
     },
     "H3": {
-      "tasks": [
-        "T02.11",
-        "T05.04",
-        "T08.04",
-        "T08.05"
-      ],
+      "tasks": ["T02.11", "T05.04", "T08.04", "T08.05"],
       "criterion": "每个原生Organization GET均有暂停成员/暂停公司/缺证明反例或后端关闭"
     },
     "H4": {
@@ -6110,54 +5056,27 @@
       "criterion": "M0/M1保留legacy、M2/M3目录停写、M4原子切换；每个迁入gate任务双authority回归；工具前移"
     },
     "M1": {
-      "tasks": [
-        "T02.11",
-        "T05.07",
-        "T05.08",
-        "T05.16",
-        "T08.04"
-      ],
+      "tasks": ["T02.11", "T05.07", "T05.08", "T05.16", "T08.04"],
       "criterion": "51原生HTTP+无path addMember逐项处置；create/profile/password/批撤session走Identity；删除/模拟登录后端拒绝"
     },
     "M2": {
-      "tasks": [
-        "T06.06",
-        "T06.07",
-        "T06.16",
-        "T07.07"
-      ],
+      "tasks": ["T06.06", "T06.07", "T06.16", "T07.07"],
       "criterion": "HWM0串行pull/一次enqueue<=262144字节，实际Bun/Hono缓冲计数及慢客户端反例"
     },
     "M3": {
-      "tasks": [
-        "T01.01",
-        "T01.02",
-        "T01.10",
-        "T04.12",
-        "T08.04"
-      ],
+      "tasks": ["T01.01", "T01.02", "T01.10", "T04.12", "T08.04"],
       "criterion": "files=flatten(groups)、稳定组、BA五URL独立注入；子模块真实驱动，不以登记代替执行"
     },
     "L1": {
-      "tasks": [
-        "T01.03"
-      ],
+      "tasks": ["T01.03"],
       "criterion": "邀请补偿不以25P02掩盖首个SQLSTATE，最终整事务回滚"
     },
     "L2": {
-      "tasks": [
-        "T03.01",
-        "T03.02",
-        "T04.08"
-      ],
+      "tasks": ["T03.01", "T03.02", "T04.08"],
       "criterion": "tenancy/store、scope-gate、revocation、workspace-admin、workspace-scope-routes真实路径逐项核验"
     },
     "L3": {
-      "tasks": [
-        "T02.10",
-        "T03.01",
-        "T05.04"
-      ],
+      "tasks": ["T02.10", "T03.01", "T05.04"],
       "criterion": "CompanyAssurance类型/关闭实现先产出，消费者必须注入，legacy不退化"
     }
   }

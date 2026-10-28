@@ -59,7 +59,11 @@ function fakeState() {
       // The CAS: a live provisioning row for this bot already means somebody won.
       const existing = liveOf(input.botId);
       if (existing?.status === "provisioning") {
-        return { id: existing.id, attemptNumber: existing.attemptNumber, won: false };
+        return {
+          id: existing.id,
+          attemptNumber: existing.attemptNumber,
+          won: false,
+        };
       }
       // A live ready/sleeping row is replaced by a fresh provision attempt.
       if (existing) rows.delete(existing.id);
@@ -116,12 +120,20 @@ function build(initial: string[] = [], clockMs = 0) {
 describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
   test("provision is idempotent: a ready sandbox answers its address again", async () => {
     const { supervisor, state } = build();
-    const first = await supervisor.provision({ botId: "alpha", ownerUserId: "u1" });
+    const first = await supervisor.provision({
+      botId: "alpha",
+      ownerUserId: "u1",
+    });
     expect(first.address).toBe(ADDRESS("alpha").address);
-    const second = await supervisor.provision({ botId: "alpha", ownerUserId: "u1" });
+    const second = await supervisor.provision({
+      botId: "alpha",
+      ownerUserId: "u1",
+    });
     expect(second.address).toBe(first.address);
     // One row, one attempt: the second call was a read, not a rewalk.
-    expect([...state.rows.values()].filter((row) => row.botId === "alpha")).toHaveLength(1);
+    expect(
+      [...state.rows.values()].filter((row) => row.botId === "alpha"),
+    ).toHaveLength(1);
   });
 
   test("a sleeping sandbox wakes without a new row or container", async () => {
@@ -130,7 +142,10 @@ describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
     await supervisor.reap("beta");
     expect(await supervisor.status("beta")).toEqual({ kind: "sleeping" });
 
-    const woke = await supervisor.provision({ botId: "beta", ownerUserId: "u1" });
+    const woke = await supervisor.provision({
+      botId: "beta",
+      ownerUserId: "u1",
+    });
     expect(woke.address).toBe(ADDRESS("beta").address);
     // The same row, moved back: not a fresh attempt.
     const rows = [...state.rows.values()].filter((row) => row.botId === "beta");
@@ -145,12 +160,21 @@ describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
     await supervisor.stop("gamma");
 
     expect(await supervisor.status("gamma")).toEqual({ kind: "absent" });
-    expect(memory.calls.filter((call) => call.verb === "remove" && call.botId === "gamma")).toHaveLength(1);
+    expect(
+      memory.calls.filter(
+        (call) => call.verb === "remove" && call.botId === "gamma",
+      ),
+    ).toHaveLength(1);
 
     // Full rewalk: a NEW row at the next attempt number.
-    const again = await supervisor.provision({ botId: "gamma", ownerUserId: "u1" });
+    const again = await supervisor.provision({
+      botId: "gamma",
+      ownerUserId: "u1",
+    });
     expect(again.address).toBe(ADDRESS("gamma").address);
-    const rows = [...state.rows.values()].filter((row) => row.botId === "gamma");
+    const rows = [...state.rows.values()].filter(
+      (row) => row.botId === "gamma",
+    );
     expect(rows.at(-1)?.attemptNumber).toBe(2);
     expect(await supervisor.status("gamma")).toMatchObject({ kind: "ready" });
   });
@@ -167,7 +191,13 @@ describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
   test("the type exposes exactly four verbs and no container surface (pinned)", async () => {
     const { supervisor } = build();
     // The five verbs exist (C4 added the idle sweep to the original four)...
-    for (const verb of ["provision", "status", "reap", "stop", "reapIdleSupervision"] as const) {
+    for (const verb of [
+      "provision",
+      "status",
+      "reap",
+      "stop",
+      "reapIdleSupervision",
+    ] as const) {
       expect(typeof supervisor[verb]).toBe("function");
     }
     // ...and nothing else: no container ids, no image names, no runtime handles. The keys of
@@ -185,14 +215,21 @@ describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
       "remove",
       "recreate",
     ];
-    expect(runtimeViewKeys.sort()).toEqual(["listBotIds", "recreate", "remove"]);
+    expect(runtimeViewKeys.sort()).toEqual([
+      "listBotIds",
+      "recreate",
+      "remove",
+    ]);
   });
 
   test("the idle sweep sleeps a ready sandbox whose heartbeat is stale (C4)", async () => {
     const { supervisor } = build();
     await supervisor.provision({ botId: "stale", ownerUserId: "u1" });
     // Time passes past the idle budget; the sweep runs.
-    const report = await supervisor.reapIdleSupervision({ nowMs: 10 * 60_000, idleMs: 60_000 });
+    const report = await supervisor.reapIdleSupervision({
+      nowMs: 10 * 60_000,
+      idleMs: 60_000,
+    });
     expect(report.slept).toEqual(["stale"]);
     expect(report.fresh).toBe(0);
     expect(await supervisor.status("stale")).toEqual({ kind: "sleeping" });
@@ -206,7 +243,10 @@ describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
     const busyRow = state.liveOf("busy");
     expect(busyRow).toBeDefined();
     await state.state.heartbeat(busyRow!.id, new Date(9 * 60_000));
-    const report = await supervisor.reapIdleSupervision({ nowMs: 10 * 60_000, idleMs: 60_000 });
+    const report = await supervisor.reapIdleSupervision({
+      nowMs: 10 * 60_000,
+      idleMs: 60_000,
+    });
     expect(report.slept).toEqual(["idle"]); // The stale one slept...
     expect(report.fresh).toBe(1); // ...and the fresh one is a count, never a name.
     expect(await supervisor.status("busy")).toMatchObject({ kind: "ready" });
@@ -215,8 +255,14 @@ describe("SandboxSupervisor (C3: four verbs, no containers in sight)", () => {
   test("after the sweep sleeps it, provision wakes the sandbox without a new row (C4)", async () => {
     const { supervisor, state } = build();
     await supervisor.provision({ botId: "wake", ownerUserId: "u1" });
-    await supervisor.reapIdleSupervision({ nowMs: 10 * 60_000, idleMs: 60_000 });
-    const woke = await supervisor.provision({ botId: "wake", ownerUserId: "u1" });
+    await supervisor.reapIdleSupervision({
+      nowMs: 10 * 60_000,
+      idleMs: 60_000,
+    });
+    const woke = await supervisor.provision({
+      botId: "wake",
+      ownerUserId: "u1",
+    });
     expect(woke.address).toBe(ADDRESS("wake").address);
     // The wake moved the SAME row: no fresh attempt, the container never left.
     const rows = [...state.rows.values()].filter((row) => row.botId === "wake");

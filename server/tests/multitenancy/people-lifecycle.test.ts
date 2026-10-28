@@ -23,7 +23,13 @@
 // 环境契约：同 scim-directory.test.ts——缺显式 env 整套显式 skip，绝不回退
 // 开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import {
   type CompanyOffboardReport,
   type CompanyPeopleLifecycleService,

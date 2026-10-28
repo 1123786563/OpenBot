@@ -81,9 +81,10 @@ function useSandboxStatus(sessionId: string): SandboxDisplayStatus {
   const prefix = scope.status === "open" ? scope.prefix : [];
   const unscopedFetching =
     useIsFetching({ queryKey: craftKeys.session(sessionId) }) > 0;
-  const scopedFetching = useIsFetching({
-    queryKey: [...prefix, ...craftKeys.session(sessionId)],
-  }) > 0;
+  const scopedFetching =
+    useIsFetching({
+      queryKey: [...prefix, ...craftKeys.session(sessionId)],
+    }) > 0;
   const sessionFetching = unscopedFetching || scopedFetching;
 
   // onyx's reconciler, shrunk to its load-bearing line: when the sandbox first answers

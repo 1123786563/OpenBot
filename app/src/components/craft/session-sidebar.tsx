@@ -52,8 +52,7 @@ export function SessionSidebar() {
     .filter((session) => session.origin === "INTERACTIVE")
     .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at));
 
-  const pair =
-    scope.status === "open" ? (scope.selection ?? {}) : undefined;
+  const pair = scope.status === "open" ? (scope.selection ?? {}) : undefined;
 
   const create = useMutation({
     mutationFn: () => createSession(pair),

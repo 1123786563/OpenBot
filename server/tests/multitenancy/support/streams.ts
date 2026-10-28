@@ -266,10 +266,7 @@ export async function createStreamFixture(): Promise<StreamFixture> {
       }
     }
     if (failures.length) {
-      throw new AggregateError(
-        failures,
-        "Stream fixture disposal failed.",
-      );
+      throw new AggregateError(failures, "Stream fixture disposal failed.");
     }
   };
 
@@ -400,9 +397,7 @@ export async function createStreamFixture(): Promise<StreamFixture> {
 
       async suspendCompanyMembership(tenantId, principalId) {
         await suspendMembership(operator, {
-          operationId: id(
-            `suspend-${principalId}-${randomUUID().slice(0, 6)}`,
-          ),
+          operationId: id(`suspend-${principalId}-${randomUUID().slice(0, 6)}`),
           operator: principalId,
           tenantId,
           principalId,
@@ -455,4 +450,3 @@ export async function createStreamFixture(): Promise<StreamFixture> {
     throw error;
   }
 }
-

@@ -215,10 +215,9 @@ function embeddingReserveRequest(
     },
     snapshotVersion,
     rateVersion: 0,
-    boundEvidence:
-      extra.boundEvidence ?? [
-        { kind: "self_enforced_input_refusal", maximumTokens: 60_000 },
-      ],
+    boundEvidence: extra.boundEvidence ?? [
+      { kind: "self_enforced_input_refusal", maximumTokens: 60_000 },
+    ],
     maximumCredits: 500,
     idempotencyKey: extra.idempotencyKey ?? `${prefix}-idem-${snapshotVersion}`,
   };
@@ -248,7 +247,9 @@ test("an embedding cell whose dims do not price completely refuses with the clas
   // unknown. That classification, verbatim, is what the refusal must carry.
   const v1 = await appendSnapshot(world, EMBEDDING_V1_PRICING);
 
-  const outcome = await reserveService.reserve(embeddingReserveRequest(world, v1));
+  const outcome = await reserveService.reserve(
+    embeddingReserveRequest(world, v1),
+  );
 
   expect(outcome).toEqual({
     status: "refused",
@@ -299,7 +300,9 @@ test("the embeddings input bound is a closed evidence kind, and estimates still 
   // discipline that admits the embeddings kind is the same one that keeps estimates out.
   const estimate = await reserveService.reserve(
     embeddingReserveRequest(world, v2, {
-      boundEvidence: [{ kind: "conservative_token_estimate", maximumTokens: 60_000 }],
+      boundEvidence: [
+        { kind: "conservative_token_estimate", maximumTokens: 60_000 },
+      ],
       idempotencyKey: `${prefix}-idem-estimate`,
     }),
   );
@@ -314,7 +317,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

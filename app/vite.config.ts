@@ -131,10 +131,14 @@ const serving = {
     // mount and Casdoor callback — so outside the smoke these prefixes fall through to it, or
     // every sign-in dies in the proxy with a refused connection.
     "/api/enterprise": {
-      target: enterpriseLocal ? "http://localhost:3101" : `http://localhost:${apiPort.port}`,
+      target: enterpriseLocal
+        ? "http://localhost:3101"
+        : `http://localhost:${apiPort.port}`,
     },
     "/api/auth": {
-      target: enterpriseLocal ? "http://localhost:3101" : `http://localhost:${apiPort.port}`,
+      target: enterpriseLocal
+        ? "http://localhost:3101"
+        : `http://localhost:${apiPort.port}`,
     },
     "/api": {
       target: `http://localhost:${apiPort.port}`,

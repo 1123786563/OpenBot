@@ -114,9 +114,11 @@ function pricedDims(): PriceSnapshotDims {
 
 /** The v1-wire basis: image_output has no wire field — the tier table it fills is empty. */
 function v1Dims(): PriceSnapshotDims {
-  return { ...pricedDims(), image_output: { status: "unknown", reason: "price_dim_no_source" } };
+  return {
+    ...pricedDims(),
+    image_output: { status: "unknown", reason: "price_dim_no_source" },
+  };
 }
-
 
 type Door = {
   reserveCalls: { request: unknown }[];
@@ -189,7 +191,6 @@ function admissionInput(
   };
 }
 
-
 // ── AC3: the entrypoint enumeration, grounded in the gateway's own routes ──
 
 test("the entrypoint registry enumerates the gateway's actual image routes, each with its anchor", () => {
@@ -197,7 +198,9 @@ test("the entrypoint registry enumerates the gateway's actual image routes, each
   // generations and edits with stream variants, variations without one — and nothing
   // else: no entrypoint exists that the registry does not name.
   expect(
-    IMAGE_ENTRYPOINTS.map((entry) => `${entry.route}${entry.stream ? " (stream)" : ""}`),
+    IMAGE_ENTRYPOINTS.map(
+      (entry) => `${entry.route}${entry.stream ? " (stream)" : ""}`,
+    ),
   ).toEqual([
     "/v1/images/generations",
     "/v1/images/generations (stream)",
@@ -284,7 +287,11 @@ test("an entrance the registry does not wire is hard-refused with its own code",
   // one of the wired image entrypoints, so it refuses — hard, named, and unbudgeted
   // exactly because nothing after this point would have priced it.
   const outcome = await admitImageEntrypoint({
-    ...admissionInput("upscale" as ImageEntrypointKind, { image: pngDataUrl(64, 64) }, pricedDims()),
+    ...admissionInput(
+      "upscale" as ImageEntrypointKind,
+      { image: pngDataUrl(64, 64) },
+      pricedDims(),
+    ),
     reserve: door.reserve,
     dispatch: door.dispatch,
   });
@@ -331,7 +338,8 @@ test("a variation reserves exactly what a generation carrying the same input res
   // conversion, never a second semantics for the second entrance.
   expect(variation.status).toBe("dispatched");
   expect(generation.status).toBe("dispatched");
-  if (variation.status !== "dispatched" || generation.status !== "dispatched") return;
+  if (variation.status !== "dispatched" || generation.status !== "dispatched")
+    return;
   expect(variationDoor.dispatchCalls).toHaveLength(1);
   expect(generationDoor.dispatchCalls).toHaveLength(1);
   expect(variation.maximumCredits).toBe(generation.maximumCredits);
@@ -339,7 +347,10 @@ test("a variation reserves exactly what a generation carrying the same input res
   // The ceiling both holds locked: 2 × $0.04 + 1 × $0.005 = $0.085 → 850 scaled units
   // at the fixture rate — 足额, and identical between the two entrances.
   const expected = computeReservationCeiling({
-    dims: { ...pricedDims(), image_output: { status: "known", amount: "0.04" } },
+    dims: {
+      ...pricedDims(),
+      image_output: { status: "known", amount: "0.04" },
+    },
     quantities: {
       ...Object.fromEntries(PRICE_DIMENSIONS.map((d) => [d, 0])),
       image_output: 2,
@@ -366,7 +377,9 @@ test("a variation reserves exactly what a generation carrying the same input res
   const generationReserve = generationDoor.reserveCalls[0].request as {
     maximumCredits: number;
   };
-  expect(variationReserve.maximumCredits).toBe(generationReserve.maximumCredits);
+  expect(variationReserve.maximumCredits).toBe(
+    generationReserve.maximumCredits,
+  );
 });
 
 test("an edit entrance prices its input images through the same shared ceiling", async () => {

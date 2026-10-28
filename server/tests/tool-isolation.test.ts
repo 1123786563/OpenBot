@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import { createToolAdmissionService } from "../src/billing/tool-admission";
 import { TOOL_IDENTITY_ENTRY_IDS } from "../src/billing/tool-surcharge-pricing";
-import {
-  createCreditReserveService,
-} from "../src/billing/credit-reserve";
+import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
@@ -95,7 +98,11 @@ const UNPRICED_DIMS = mapPriceDims({
 function makeDispatch() {
   let calls = 0;
   const seen: { entry: string; tool: string; free: boolean }[] = [];
-  const dispatch = async (input: { entry: string; tool: string; free: boolean }) => {
+  const dispatch = async (input: {
+    entry: string;
+    tool: string;
+    free: boolean;
+  }) => {
     calls += 1;
     seen.push(input);
   };
@@ -184,7 +191,12 @@ async function seedWorld(
     options.basis === "unpriced"
       ? UNPRICED_DIMS
       : options.basis === "free"
-        ? dimsOf({ ...PRICED_AMOUNTS, surcharge_web_search: "0", surcharge_tool_call: "0", surcharge_a2a_call: "0" })
+        ? dimsOf({
+            ...PRICED_AMOUNTS,
+            surcharge_web_search: "0",
+            surcharge_tool_call: "0",
+            surcharge_a2a_call: "0",
+          })
         : dimsOf(PRICED_AMOUNTS);
   await database.insert(gatewayModelCatalogRefs).values({
     provider,
@@ -230,10 +242,7 @@ async function seedWorld(
 let callCounter = 0;
 
 /** One admission request through the door, defaults on a valid priced world. */
-function admissionBody(
-  world: World,
-  overrides: Record<string, unknown> = {},
-) {
+function admissionBody(world: World, overrides: Record<string, unknown> = {}) {
   const n = ++callCounter;
   return {
     toolCallIdempotencyKey: `${prefix}-call-${n}`,
@@ -268,7 +277,9 @@ function doorWith(
 }
 
 afterAll(async () => {
-  await database.delete(toolCallCharges).where(like(toolCallCharges.grantId, `${prefix}%`));
+  await database
+    .delete(toolCallCharges)
+    .where(like(toolCallCharges.grantId, `${prefix}%`));
   await database.execute(
     sql`DELETE FROM credit_reservations WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -287,10 +298,18 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
-  await database.delete(accessGrants).where(like(accessGrants.grantId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
-  await database.delete(gatewayModelCatalogRefs).where(like(gatewayModelCatalogRefs.provider, `${prefix}%`));
-  await database.delete(gatewayModelOpenScopes).where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
+  await database
+    .delete(accessGrants)
+    .where(like(accessGrants.grantId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(gatewayModelCatalogRefs)
+    .where(like(gatewayModelCatalogRefs.provider, `${prefix}%`));
+  await database
+    .delete(gatewayModelOpenScopes)
+    .where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
 });
 
 describe("B20.4 (#344) the refusal matrix — every entrance, unpriced basis (AC-1/AC-2)", () => {
@@ -449,7 +468,9 @@ describe("B20.4 (#344) isolation — the personal key cannot reach company scope
     const door = doorWith(dispatch, audit);
 
     for (const field of ["workspaceId", "teamId", "WORKSPACEID"]) {
-      const outcome = await door.admit(admissionBody(world, { [field]: "acme" }));
+      const outcome = await door.admit(
+        admissionBody(world, { [field]: "acme" }),
+      );
       expect(outcome).toMatchObject({
         status: "refused",
         stage: "isolation",
@@ -477,7 +498,9 @@ describe("B20.4 (#344) isolation — the personal key cannot reach company scope
     const companyTools = new Set(["company-report", "company-ledger"]);
     const door = doorWith(dispatch, audit, (tool) => companyTools.has(tool));
 
-    const denied = await door.admit(admissionBody(world, { tool: "company-report" }));
+    const denied = await door.admit(
+      admissionBody(world, { tool: "company-report" }),
+    );
     expect(denied).toMatchObject({
       status: "refused",
       stage: "isolation",
@@ -499,7 +522,9 @@ describe("B20.4 (#344) isolation — the personal key cannot reach company scope
     });
 
     // A personal tool on the same door still admits — the policy narrows, never widens.
-    const allowed = await door.admit(admissionBody(world, { tool: "personal-notes" }));
+    const allowed = await door.admit(
+      admissionBody(world, { tool: "personal-notes" }),
+    );
     expect(allowed).toMatchObject({ status: "admitted" });
   });
 

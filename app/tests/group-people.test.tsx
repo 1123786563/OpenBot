@@ -1,8 +1,20 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { GroupPeopleButton } from "@/components/channels/group-people";
 import { authKeys } from "@/lib/auth/queries";
@@ -74,10 +86,11 @@ function draw() {
   // The scoped transcript entry itself, seeded for the same reason: this Node runner does not
   // reliably paint the notification a freshly settled query sends, and the button under test
   // reads the row (the member writes below still go through the real mutation factories).
-  client.setQueryData(
-    [...scopedCachePrefix("me", null), "groups", "group-1"],
-    { bots: [], people, messages: [] },
-  );
+  client.setQueryData([...scopedCachePrefix("me", null), "groups", "group-1"], {
+    bots: [],
+    people,
+    messages: [],
+  });
   const view = render(
     <QueryClientProvider client={client}>
       <GroupPeopleButton channelId="group-1" />

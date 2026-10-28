@@ -256,10 +256,7 @@ export async function createAttachmentFixture(): Promise<AttachmentFixture> {
       }
     }
     if (failures.length) {
-      throw new AggregateError(
-        failures,
-        "Attachment fixture disposal failed.",
-      );
+      throw new AggregateError(failures, "Attachment fixture disposal failed.");
     }
   };
 
@@ -395,9 +392,7 @@ export async function createAttachmentFixture(): Promise<AttachmentFixture> {
 
       async suspendCompanyMembership(tenantId, principalId) {
         await suspendMembership(operator, {
-          operationId: id(
-            `suspend-${principalId}-${randomUUID().slice(0, 6)}`,
-          ),
+          operationId: id(`suspend-${principalId}-${randomUUID().slice(0, 6)}`),
           operator: principalId,
           tenantId,
           principalId,
@@ -451,4 +446,3 @@ export async function createAttachmentFixture(): Promise<AttachmentFixture> {
     throw error;
   }
 }
-

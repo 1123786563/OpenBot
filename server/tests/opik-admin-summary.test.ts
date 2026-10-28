@@ -398,13 +398,7 @@ describe("the T01 mount seam (Part 2 wiring)", () => {
     // boundary; this pin keeps the promise from silently returning without
     // the filter that would enforce it.
     const source = readFileSync(
-      join(
-        hereDir,
-        "..",
-        "src",
-        "ai-observability",
-        "admin-summary.ts",
-      ),
+      join(hereDir, "..", "src", "ai-observability", "admin-summary.ts"),
       "utf8",
     );
     expect(source).not.toMatch(/a creator may not/);

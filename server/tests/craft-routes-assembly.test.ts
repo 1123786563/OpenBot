@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import type { ConnectableApp } from "../src/craft/agent-instructions";

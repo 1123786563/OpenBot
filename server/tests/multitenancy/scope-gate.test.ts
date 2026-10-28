@@ -20,7 +20,13 @@
 // x-openbot-tenant / x-openbot-workspace 仅作选择。裁决 #2：本栈不存在
 // conversations-v1 策略，本文件不引入任何新策略版本。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import { createWorkspaceGate } from "../../src/enterprise/tenancy/scope-gate";
 import { assertTrustedScope } from "../../src/enterprise/tenancy/store";

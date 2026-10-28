@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from "../../tests/support/e2e-compat";
 import type { RunAgentInput } from "@ag-ui/client";
 import { MastraAgent } from "@ag-ui/mastra";
 import { buildAGUITextResponse, LLMock } from "@copilotkit/aimock";
@@ -493,7 +501,9 @@ describe("a built-in Bot", () => {
         }
       )?.messages ?? []
     )
-      .filter((message) => message.role === "system" || message.role === "developer")
+      .filter(
+        (message) => message.role === "system" || message.role === "developer",
+      )
       .map((message) => String(message.content))
       .join("\n");
     /*

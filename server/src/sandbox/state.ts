@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   type SandboxInstanceStatus,

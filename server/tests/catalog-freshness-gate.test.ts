@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
 import {
@@ -377,17 +382,25 @@ describe("the pure freshness verdict (controlled clock, no database)", () => {
 describe("the freshness window configuration", () => {
   test("unset or empty answers the default 15 minutes", () => {
     expect(
-      catalogFreshnessWindowConfig({ [BIFROST_CATALOG_FRESHNESS_WINDOW_MS_VARIABLE]: undefined }),
+      catalogFreshnessWindowConfig({
+        [BIFROST_CATALOG_FRESHNESS_WINDOW_MS_VARIABLE]: undefined,
+      }),
     ).toBe(15 * 60 * 1000);
-    expect(catalogFreshnessWindowConfig({})).toBe(DEFAULT_CATALOG_FRESHNESS_WINDOW_MS);
+    expect(catalogFreshnessWindowConfig({})).toBe(
+      DEFAULT_CATALOG_FRESHNESS_WINDOW_MS,
+    );
     expect(
-      catalogFreshnessWindowConfig({ [BIFROST_CATALOG_FRESHNESS_WINDOW_MS_VARIABLE]: "  " }),
+      catalogFreshnessWindowConfig({
+        [BIFROST_CATALOG_FRESHNESS_WINDOW_MS_VARIABLE]: "  ",
+      }),
     ).toBe(DEFAULT_CATALOG_FRESHNESS_WINDOW_MS);
   });
 
   test("a deployment's own cap parses through", () => {
     expect(
-      catalogFreshnessWindowConfig({ [BIFROST_CATALOG_FRESHNESS_WINDOW_MS_VARIABLE]: "1800000" }),
+      catalogFreshnessWindowConfig({
+        [BIFROST_CATALOG_FRESHNESS_WINDOW_MS_VARIABLE]: "1800000",
+      }),
     ).toBe(30 * 60 * 1000);
   });
 
@@ -406,7 +419,11 @@ describe("the gate over the database", () => {
   test("stale verdict names the affected model ref, never model-not-found", async () => {
     const world = await seedWorld();
     const verdict = await assertCatalogFresh(database, {
-      modelRef: { provider: world.provider, model: world.model, capability: "chat" },
+      modelRef: {
+        provider: world.provider,
+        model: world.model,
+        capability: "chat",
+      },
       now: atMinute(16),
       windowMs: FRESH_WINDOW_MS,
     });
@@ -415,7 +432,11 @@ describe("the gate over the database", () => {
       expect(verdict.reasonCode).toBe("catalog_stale");
       expect(verdict.reasonCode).not.toBe("model_not_open");
       expect(verdict.detail.modelRef).toBe(
-        modelRefKey({ provider: world.provider, model: world.model, capability: "chat" }),
+        modelRefKey({
+          provider: world.provider,
+          model: world.model,
+          capability: "chat",
+        }),
       );
     }
   });
@@ -425,7 +446,11 @@ describe("the gate over the database", () => {
     const syncStore = createEnterpriseGatewayCatalogSyncStore(database);
     await syncStore.recordSyncSuccess({ syncedAt: atMinute(17).toISOString() });
     const verdict = await assertCatalogFresh(database, {
-      modelRef: { provider: world.provider, model: world.model, capability: "chat" },
+      modelRef: {
+        provider: world.provider,
+        model: world.model,
+        capability: "chat",
+      },
       now: atMinute(18),
       windowMs: FRESH_WINDOW_MS,
     });
@@ -455,7 +480,11 @@ describe("the gate over the database", () => {
       windowMs: FRESH_WINDOW_MS,
       now: () => atMinute(16),
     });
-    const ref = { provider: world.provider, model: world.model, capability: "chat" };
+    const ref = {
+      provider: world.provider,
+      model: world.model,
+      capability: "chat",
+    };
     expect(await gate.isCatalogFresh(ref)).toBe(false);
     await createEnterpriseGatewayCatalogSyncStore(database).recordSyncSuccess({
       syncedAt: atMinute(17).toISOString(),
@@ -493,17 +522,25 @@ describe("admission under the controlled clock (reserve service integration)", (
       expect(outcome.reasonCode).not.toBe("model_not_open");
       expect(outcome.reasonCode).not.toBe("price_basis_not_found");
       expect(outcome.detail.modelRef).toBe(
-        modelRefKey({ provider: world.provider, model: world.model, capability: "chat" }),
+        modelRefKey({
+          provider: world.provider,
+          model: world.model,
+          capability: "chat",
+        }),
       );
     }
-    expect((await reservationRows(world.customerKey)).length).toBe(before.length);
+    expect((await reservationRows(world.customerKey)).length).toBe(
+      before.length,
+    );
   });
 
   test("a widened window applies to new requests immediately", async () => {
     const world = await seedWorld();
     // Same world, same clock instant: the deployment raised its cap to 30 minutes;
     // the very next request is judged by the new cap — no restart, no state change.
-    const outcome = await gateService(16, 30 * 60 * 1000).reserve(world.request);
+    const outcome = await gateService(16, 30 * 60 * 1000).reserve(
+      world.request,
+    );
     expect(outcome.status).toBe("reserved");
   });
 
@@ -521,7 +558,8 @@ describe("existing reservations are never repriced", () => {
   test("a reservation locked fresh settles on its locked basis while the catalog is stale", async () => {
     const world = await seedWorld();
     const reserved = await gateService(1).reserve(world.request);
-    if (reserved.status !== "reserved") throw new Error("fixture reserve failed");
+    if (reserved.status !== "reserved")
+      throw new Error("fixture reserve failed");
     // The admission locked THIS basis — the outcome carries it, and settlement
     // below consumes exactly it.
     expect(reserved.snapshotVersion).toBe(1);
@@ -560,7 +598,8 @@ describe("existing reservations are never repriced", () => {
   test("after a recovery sync the locked v1 basis is admitted again — never pushed to latest", async () => {
     const world = await seedWorld();
     const reserved = await gateService(1).reserve(world.request);
-    if (reserved.status !== "reserved") throw new Error("fixture reserve failed");
+    if (reserved.status !== "reserved")
+      throw new Error("fixture reserve failed");
     expect(reserved.snapshotVersion).toBe(1);
 
     const syncStore = createEnterpriseGatewayCatalogSyncStore(database);
@@ -582,7 +621,8 @@ describe("existing reservations are never repriced", () => {
   test("a stale catalog never blocks settlement of an existing reservation", async () => {
     const world = await seedWorld();
     const reserved = await gateService(1).reserve(world.request);
-    if (reserved.status !== "reserved") throw new Error("fixture reserve failed");
+    if (reserved.status !== "reserved")
+      throw new Error("fixture reserve failed");
 
     // Stale the catalog deliberately, then release the hold: recovery-adjacent
     // paths work on stale state, and the gate only ever gates ADMISSION.

@@ -193,7 +193,10 @@ export const setApprovalPreferences = (
     fallbackKey: "approvals.savePreference",
     ...(scope ?? {}),
   });
-export const createApprovalRule = (input: ApprovalRuleInput, scope?: ScopePair) =>
+export const createApprovalRule = (
+  input: ApprovalRuleInput,
+  scope?: ScopePair,
+) =>
   client("/api/approvals/rules", {
     method: "POST",
     body: input,

@@ -164,8 +164,9 @@ test("rotation mints a fresh secret and retires the old one with no gap", async 
   expect(second.botServiceCredential.secret).not.toEqual(secretOne);
   expect(raw.split(second.botServiceCredential.secret).length - 1).toBe(1);
 
-  expect(await registry.authenticate(second.botServiceCredential.secret))
-    .toMatchObject({ botId });
+  expect(
+    await registry.authenticate(second.botServiceCredential.secret),
+  ).toMatchObject({ botId });
   await expect(registry.authenticate(secretOne)).rejects.toThrow();
 });
 
@@ -178,8 +179,10 @@ test("revocation is final and immediate", async () => {
   ).toMatchObject({ status: 200 });
 
   const status = await admin.request(`/${botId}/credentials`);
-  expect(((await status.json()) as { botServiceCredential: { live: boolean } })
-    .botServiceCredential.live).toBe(false);
+  expect(
+    ((await status.json()) as { botServiceCredential: { live: boolean } })
+      .botServiceCredential.live,
+  ).toBe(false);
   await expect(registry.authenticate(secret)).rejects.toThrow();
 
   // Nothing live to revoke twice.
@@ -215,7 +218,9 @@ test("the trail records issue, rotate and revoke against the bot — never the s
     .from(auditEvents)
     .where(eq(auditEvents.eventType, "credential.created"));
   expect(
-    vaultRows.some((row) => (row.payload as { keyId?: string }).keyId === botId),
+    vaultRows.some(
+      (row) => (row.payload as { keyId?: string }).keyId === botId,
+    ),
   ).toBe(true);
   const fragment = secret.slice(secret.length - 24);
   const trail = await database
@@ -255,9 +260,10 @@ test("concurrent issues leave exactly one live credential and both callers hones
   // Exactly one of the two plaintexts still authenticates.
   const outcomes = await Promise.all(
     [...secrets].map((secret) =>
-      registry
-        .authenticate(secret)
-        .then(() => true, () => false),
+      registry.authenticate(secret).then(
+        () => true,
+        () => false,
+      ),
     ),
   );
   expect(outcomes.filter(Boolean)).toHaveLength(1);

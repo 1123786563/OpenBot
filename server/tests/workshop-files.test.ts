@@ -42,11 +42,15 @@ function sessionRow(): WorkshopSessionRow {
 }
 
 function fakeAudit() {
-  const events: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  const events: Array<{ eventType: string; payload: Record<string, unknown> }> =
+    [];
   return {
     events,
     store: {
-      async insert(event: { eventType: string; payload: Record<string, unknown> }) {
+      async insert(event: {
+        eventType: string;
+        payload: Record<string, unknown>;
+      }) {
         events.push(event);
       },
     } as never,
@@ -98,12 +102,11 @@ describe("listTree", () => {
       "data/nested/plot.png",
     ]);
     const tree = await listTree(optionsFor(store, client), "ws_1");
-    const names = (node: { name: string; children?: Array<{ name: string }> }) =>
-      [node.name, ...(node.children ?? []).flatMap(names)];
-    expect(tree.map((node) => node.type)).toEqual([
-      "file",
-      "directory",
-    ]);
+    const names = (node: {
+      name: string;
+      children?: Array<{ name: string }>;
+    }) => [node.name, ...(node.children ?? []).flatMap(names)];
+    expect(tree.map((node) => node.type)).toEqual(["file", "directory"]);
     const data = tree.find((node) => node.type === "directory")!;
     expect(data.name).toBe("data");
     expect(data.children!.map((child) => child.name)).toEqual([

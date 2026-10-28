@@ -1915,7 +1915,10 @@ describe("crash recovery (abandoned executing rows)", () => {
     // The crash window's aftermath, hand-seeded: recovery flipped the row
     // but no attempt exists. The old ConflictError wedged this row forever.
     fixture.rows.actions.push(
-      seededAction({ status: "outcome_unknown", decidedAt: new Date(nowMs - 60_000) }),
+      seededAction({
+        status: "outcome_unknown",
+        decidedAt: new Date(nowMs - 60_000),
+      }),
     );
     const wedged = fixture.rows.actions[0]!;
     currentActor = actorAdmin;
@@ -1937,7 +1940,10 @@ describe("crash recovery (abandoned executing rows)", () => {
   test("round 6 M36: reconcile's settle writes completedAt and the confirmed providerRef on the action row", async () => {
     const fixture = fixtureFor();
     fixture.rows.actions.push(
-      seededAction({ status: "outcome_unknown", decidedAt: new Date(nowMs - 60_000) }),
+      seededAction({
+        status: "outcome_unknown",
+        decidedAt: new Date(nowMs - 60_000),
+      }),
     );
     const action = fixture.rows.actions[0]!;
     fixture.rows.attempts.push({
@@ -1958,7 +1964,9 @@ describe("crash recovery (abandoned executing rows)", () => {
     });
     currentActor = actorOne;
     expect(answer.status).toBe(200);
-    const row = fixture.rows.actions.find((candidate) => candidate.id === action.id);
+    const row = fixture.rows.actions.find(
+      (candidate) => candidate.id === action.id,
+    );
     expect(row?.providerRef).toBe("provider-event-9");
     expect(row?.completedAt).not.toBeNull();
   });

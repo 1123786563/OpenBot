@@ -15,10 +15,7 @@ import type { PackageCatalogue } from "../../plugin-packages/catalogue";
 import type { PlatformScope } from "../contracts";
 import { assertClassifiedCompanyEntrance } from "../tenancy/admin-separation";
 import type { CompanyAdminContext } from "../tenancy/workspace-admin";
-import type {
-  PackageInternalErrorCode,
-  PackageService,
-} from "./contracts";
+import type { PackageInternalErrorCode, PackageService } from "./contracts";
 import {
   isPackageStorageFailure,
   packageErrorCodeOf,

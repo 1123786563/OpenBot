@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   RESEARCH_TOOLS,
   type ResearchRole,
@@ -9,11 +8,7 @@ import type { AuditInitiator } from "../audit";
 import { type GrantedTool, parametersFor } from "@openbot/toolkit/granted-tool";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import { markUntrusted } from "../untrusted-content";
-import {
-  type CatalogueEntry,
-  catalogueEntry,
-  researchRoleFor,
-} from "./catalogue";
+import { type CatalogueEntry, catalogueEntry } from "./catalogue";
 import type { SelectableSkill } from "./selection";
 import {
   isDeploymentFault,

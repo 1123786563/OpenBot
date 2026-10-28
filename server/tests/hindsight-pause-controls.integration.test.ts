@@ -37,9 +37,7 @@ import {
   derivedJudgmentDocumentIdFor,
 } from "../src/hindsight/derived-judgments";
 import { createDerivedJudgmentReviewService } from "../src/hindsight/judgment-review";
-import {
-  createDrizzlePauseControls,
-} from "../src/hindsight/pause-controls";
+import { createDrizzlePauseControls } from "../src/hindsight/pause-controls";
 import {
   createDrizzlePreferenceRecords,
   createPreferenceRecallService,
@@ -223,21 +221,21 @@ async function makeTrustedScope(
 }
 
 beforeAll(async () => {
-  await database.insert(users).values([
-    { id: USER_EMP, email: `emp-${run}@example.invalid` },
-  ]);
+  await database
+    .insert(users)
+    .values([{ id: USER_EMP, email: `emp-${run}@example.invalid` }]);
   await database
     .insert(enterpriseTenants)
     .values([{ id: TENANT, name: `Pause ${run}` }]);
-  await database.insert(enterprisePrincipals).values([
-    { id: PRINCIPAL_EMP, userId: USER_EMP },
-  ]);
-  await database.insert(enterpriseMemberships).values([
-    { tenantId: TENANT, principalId: PRINCIPAL_EMP, role: "member" },
-  ]);
-  await database.insert(enterpriseWorkspaces).values([
-    { tenantId: TENANT, id: WORKSPACE_A, name: `Pause A ${run}` },
-  ]);
+  await database
+    .insert(enterprisePrincipals)
+    .values([{ id: PRINCIPAL_EMP, userId: USER_EMP }]);
+  await database
+    .insert(enterpriseMemberships)
+    .values([{ tenantId: TENANT, principalId: PRINCIPAL_EMP, role: "member" }]);
+  await database
+    .insert(enterpriseWorkspaces)
+    .values([{ tenantId: TENANT, id: WORKSPACE_A, name: `Pause A ${run}` }]);
   await database.insert(enterpriseWorkspaceMemberships).values([
     {
       tenantId: TENANT,
@@ -266,9 +264,13 @@ beforeAll(async () => {
   const sourceBoundRecords = createDrizzleSourceBoundRecords(database);
   const authorizations = createDrizzleSourceBoundAuthorizations(database);
   const judgmentRecords = createDrizzleDerivedJudgmentRecords(database);
-  preferences = createPreferenceRecallService(preferenceRecords, serviceConfig, {
-    pause,
-  });
+  preferences = createPreferenceRecallService(
+    preferenceRecords,
+    serviceConfig,
+    {
+      pause,
+    },
+  );
   scoped = createSourceBoundRecallService(
     sourceBoundRecords,
     authorizations,
@@ -341,7 +343,9 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
       status: 200,
       body: {
         results: [
-          { document_id: preferenceDocumentIdFor(TENANT, preference.record.id) },
+          {
+            document_id: preferenceDocumentIdFor(TENANT, preference.record.id),
+          },
         ],
       },
     });
@@ -409,9 +413,9 @@ describe("Hindsight 14 (#392) — pause-learning and pause-usage", () => {
     const resumed = await facade.recallGenericPreferences(scope, {
       query: "pause matrix",
     });
-    expect(
-      resumed.memories.map((memory) => memory.id),
-    ).toContain(preference.record.id);
+    expect(resumed.memories.map((memory) => memory.id)).toContain(
+      preference.record.id,
+    );
     expect(resumed.degraded).toBe(false);
     const resumedJudgments = await review.recallDerivedJudgments(scope, {
       query: "pause matrix",

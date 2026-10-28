@@ -124,10 +124,10 @@ export function createServerApprovalService(deps: {
       // the tool as soon as the call arrives. A call that is not saved yet is waited for briefly; one
       // that never appears is refused below.
       if (!routineIntelligence)
-      throw new ApprovalRefusedError(
-        "Resuming a computer tool needs an Intelligence deployment.",
-      );
-    let history = await routineIntelligence.getThreadMessages({
+        throw new ApprovalRefusedError(
+          "Resuming a computer tool needs an Intelligence deployment.",
+        );
+      let history = await routineIntelligence.getThreadMessages({
         threadId: snapshot.threadId,
         userId: ownerUserId,
       });

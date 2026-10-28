@@ -52,22 +52,10 @@ import { createOpenMuseGoogleRows } from "../../src/openmuse-connectors/store";
 import { createShareService } from "../../src/workshop/sharing";
 import { createWorkshopStore } from "../../src/workshop/store";
 import { enterpriseRuntimeDatabaseUrlFrom } from "../support/enterprise-database";
-import {
-  createOpenMuseActivityFixture,
-  type OpenMuseActivityFixture,
-} from "./support/openmuse-activity-notifications";
-import {
-  createOpenMusePersonalFixture,
-  type OpenMusePersonalFixture,
-} from "./support/openmuse-personal";
-import {
-  createPersonalShareFixture,
-  type PersonalShareFixture,
-} from "./support/personal-share";
-import {
-  createPurgeRestoreFixture,
-  type PurgeRestoreFixture,
-} from "./support/purge-restore";
+import { createOpenMuseActivityFixture } from "./support/openmuse-activity-notifications";
+import { createOpenMusePersonalFixture } from "./support/openmuse-personal";
+import { createPersonalShareFixture } from "./support/personal-share";
+import { createPurgeRestoreFixture } from "./support/purge-restore";
 import {
   adapterFromScenarios,
   requireEntrance,
@@ -75,10 +63,7 @@ import {
 } from "./support/coverage-matrix";
 import type { IsolationObservation } from "./support/scenarios";
 import { registerIsolationDomain } from "./support/scenarios";
-import {
-  createVoiceMobileFixture,
-  type VoiceMobileFixture,
-} from "./support/voice-mobile-bff";
+import { createVoiceMobileFixture } from "./support/voice-mobile-bff";
 
 // ---------------------------------------------------------------------------
 // 环境探针：缺 env 显式 skip（带理由），绝不静默回退
@@ -143,9 +128,9 @@ const ACTOR_CLASSES = {
 
 const createdDisposables: Array<() => Promise<void>> = [];
 
-function lazy<T extends { dispose(): Promise<void> } | { dispose?(): Promise<void> }>(
-  create: () => Promise<T>,
-): () => Promise<T> {
+function lazy<
+  T extends { dispose(): Promise<void> } | { dispose?(): Promise<void> },
+>(create: () => Promise<T>): () => Promise<T> {
   let promise: Promise<T> | undefined;
   return () =>
     (promise ??= create().then((fixture) => {
@@ -334,9 +319,7 @@ const craftWorkshopScenarios: ScenarioMap = {
     });
     const asB = await fx.crafts.findSession(row.id, fx.userB);
     const emptySeat = await fx.crafts.getEmptySessionForUser(fx.userB);
-    return denyObservation(
-      asB === undefined && emptySeat?.id !== row.id,
-    );
+    return denyObservation(asB === undefined && emptySeat?.id !== row.id);
   },
 
   // PUT /api/craft/sessions/:sessionId/name —— 更名（守卫在读侧：非属主
@@ -613,9 +596,7 @@ const craftWorkshopScenarios: ScenarioMap = {
       createdBy: fx.userA,
     });
     const liveRead = await fx.shares.resolveShareActor(handle.token);
-    const expiredRead = await fx.shares.resolveShareActor(
-      expiredHandle.token,
-    );
+    const expiredRead = await fx.shares.resolveShareActor(expiredHandle.token);
     return denyObservation(
       expiredRead === null && liveRead !== null,
       [],
@@ -647,7 +628,8 @@ const craftWorkshopScenarios: ScenarioMap = {
       artifactId,
       scope: "preview_download",
     });
-    const signature = new URL(url, "https://mt136.invalid").searchParams.get("s") ?? "";
+    const signature =
+      new URL(url, "https://mt136.invalid").searchParams.get("s") ?? "";
     const verified = fx.shares.verifyArtifactUrl(
       channelId,
       artifactId,
@@ -655,8 +637,7 @@ const craftWorkshopScenarios: ScenarioMap = {
       signature,
     );
     return {
-      positiveControlPassed:
-        actor?.scope === "preview_download" && verified,
+      positiveControlPassed: actor?.scope === "preview_download" && verified,
       denied: false,
       leakedRecords: [],
       forbiddenEffects: [],
@@ -685,7 +666,8 @@ const craftWorkshopScenarios: ScenarioMap = {
       artifactId,
       scope: "preview",
     });
-    const signature = new URL(url, "https://mt136.invalid").searchParams.get("s") ?? "";
+    const signature =
+      new URL(url, "https://mt136.invalid").searchParams.get("s") ?? "";
     const reshaped = fx.shares.verifyArtifactUrl(
       channelId,
       artifactId,
@@ -738,8 +720,7 @@ const personalSharesScenarios: ScenarioMap = {
       team: "team-a1",
     });
     // 非属主（同团队他人）不能分享他人的资源：SHARE_ACTOR_NOT_OWNER 拒绝。
-    const impostor =
-      fx.base.isolation.identities["a1-other"].principalId ?? "";
+    const impostor = fx.base.isolation.identities["a1-other"].principalId ?? "";
     const ownerPrincipal =
       fx.base.isolation.identities["a1-member"].principalId ?? "";
     let refused = false;
@@ -821,26 +802,21 @@ const personalSharesScenarios: ScenarioMap = {
       tenantId: fx.base.isolation.ids["company-b"],
       workspaceId: fx.base.isolation.ids["team-b1"],
     });
-    const verdict = await fx.decisions.decide(
-      bScope,
-      resource.resourceId,
-    );
+    const verdict = await fx.decisions.decide(bScope, resource.resourceId);
     let nonOwnerRevokeRefused = false;
     try {
       await fx.shares.revoke({
         tenantId: resource.tenantId,
         resourceId: resource.resourceId,
-        actorPrincipalId: fx.base.isolation.identities["a1-other"]
-          .principalId ?? "",
+        actorPrincipalId:
+          fx.base.isolation.identities["a1-other"].principalId ?? "",
         audiencePrincipalId: ownerPrincipal,
         action: "read",
       });
     } catch {
       nonOwnerRevokeRefused = true;
     }
-    return denyObservation(
-      verdict.outcome === "deny" && nonOwnerRevokeRefused,
-    );
+    return denyObservation(verdict.outcome === "deny" && nonOwnerRevokeRefused);
   },
 };
 
@@ -872,11 +848,11 @@ const seedAndPinPersonal = async (
   }
   return objectId;
 };
-const seedAndPinGoal = (fx?: unknown, title = "mt136 goal") =>
+const seedAndPinGoal = (_fx?: unknown, title = "mt136 goal") =>
   seedAndPinPersonal("goal", title);
-const seedAndPinIdea = (fx?: unknown, title = "mt136 idea") =>
+const seedAndPinIdea = (_fx?: unknown, title = "mt136 idea") =>
   seedAndPinPersonal("idea", title);
-const seedAndPinMemory = (fx?: unknown, title = "mt136 memory") =>
+const seedAndPinMemory = (_fx?: unknown, title = "mt136 memory") =>
   seedAndPinPersonal("memory", title);
 
 const openMusePersonalScenarios: ScenarioMap = {
@@ -914,9 +890,7 @@ const openMusePersonalScenarios: ScenarioMap = {
       limit: 50,
     });
     const read = await fx.service.readPersonalObject(bScope, "goal", goalId);
-    const leaked = objects.filter(
-      (item) => item.ownership.objectId === goalId,
-    );
+    const leaked = objects.filter((item) => item.ownership.objectId === goalId);
     return denyObservation(
       isResourceNotFoundVerdict(read) && leaked.length === 0,
       leaked,
@@ -954,9 +928,7 @@ const openMusePersonalScenarios: ScenarioMap = {
     const { objects } = await fx.service.listPersonalObjects(bScope, "idea", {
       limit: 50,
     });
-    const leaked = objects.filter(
-      (item) => item.ownership.objectId === ideaId,
-    );
+    const leaked = objects.filter((item) => item.ownership.objectId === ideaId);
     return denyObservation(leaked.length === 0, leaked);
   },
 
@@ -968,11 +940,7 @@ const openMusePersonalScenarios: ScenarioMap = {
       fx.ids["company-a"],
       fx.ids["team-a1"],
     );
-    const read = await fx.service.readPersonalObject(
-      scope,
-      "memory",
-      memoryId,
-    );
+    const read = await fx.service.readPersonalObject(scope, "memory", memoryId);
     return {
       positiveControlPassed:
         read.outcome === "allow" && read.record.id === memoryId,
@@ -1663,154 +1631,157 @@ const coverage = () =>
     runId: "mt136",
   }));
 
-describeDb("MT136 / Issue #179 — 覆盖证据：Craft/Workshop、OpenMuse 与删除恢复", () => {
-  itDb(
-    "计划内全部入口在矩阵 runner 输出中 covered（正向与越权两侧都过）",
-    async () => {
-      const report = await coverage();
-      const byId = new Map(report.entrances.map((entry) => [entry.id, entry]));
-      const failures: string[] = [];
-      for (const entranceId of Object.keys(PLAN)) {
-        const entry = byId.get(entranceId);
-        if (!entry) {
-          failures.push(`${entranceId}: not in report`);
-          continue;
+describeDb(
+  "MT136 / Issue #179 — 覆盖证据：Craft/Workshop、OpenMuse 与删除恢复",
+  () => {
+    itDb(
+      "计划内全部入口在矩阵 runner 输出中 covered（正向与越权两侧都过）",
+      async () => {
+        const report = await coverage();
+        const byId = new Map(
+          report.entrances.map((entry) => [entry.id, entry]),
+        );
+        const failures: string[] = [];
+        for (const entranceId of Object.keys(PLAN)) {
+          const entry = byId.get(entranceId);
+          if (!entry) {
+            failures.push(`${entranceId}: not in report`);
+            continue;
+          }
+          if (entry.status !== "covered") {
+            failures.push(
+              `${entranceId}: ${entry.status} (positive=${entry.positive.status}/${entry.positive.reasons.join("|")}; denial=${entry.denial.status}/${entry.denial.reasons.join("|")})`,
+            );
+          }
         }
-        if (entry.status !== "covered") {
-          failures.push(
-            `${entranceId}: ${entry.status} (positive=${entry.positive.status}/${entry.positive.reasons.join("|")}; denial=${entry.denial.status}/${entry.denial.reasons.join("|")})`,
-          );
-        }
-      }
-      expect(failures).toEqual([]);
-      expect(report.schemaVersion).toBe(1);
-      expect(() => JSON.parse(JSON.stringify(report))).not.toThrow();
-      const classes = new Map(
-        report.matrix.classes.map((entry) => [entry.id, entry]),
-      );
-      expect(
-        classes.get("company-a-team-a1-only")?.entrancesCovered,
-      ).toBeGreaterThan(0);
-      expect(classes.get("cross-company")?.entrancesCovered).toBeGreaterThan(0);
-      expect(
-        classes.get("company-a-team-a2-only")?.entrancesCovered,
-      ).toBeGreaterThan(0);
-      // 整库覆盖不因本票完成（未映射入口保持诚实 uncovered）。
-      expect(report.overall).toBe("coverage-incomplete");
-    },
-    600_000,
-  );
+        expect(failures).toEqual([]);
+        expect(report.schemaVersion).toBe(1);
+        expect(() => JSON.parse(JSON.stringify(report))).not.toThrow();
+        const classes = new Map(
+          report.matrix.classes.map((entry) => [entry.id, entry]),
+        );
+        expect(
+          classes.get("company-a-team-a1-only")?.entrancesCovered,
+        ).toBeGreaterThan(0);
+        expect(classes.get("cross-company")?.entrancesCovered).toBeGreaterThan(
+          0,
+        );
+        expect(
+          classes.get("company-a-team-a2-only")?.entrancesCovered,
+        ).toBeGreaterThan(0);
+        // 整库覆盖不因本票完成（未映射入口保持诚实 uncovered）。
+        expect(report.overall).toBe("coverage-incomplete");
+      },
+      600_000,
+    );
 
-  itDb(
-    "删除语义分离：purge/restore manifest 语义在真实数据库上成立（路径级直接钉住）",
-    async () => {
-      const fx = await purgeRestore();
-      const companyA = fx.base.isolation.ids["company-a"];
-      const teamA1 = fx.base.isolation.ids["team-a1"];
-      const companyB = fx.base.isolation.ids["company-b"];
-      const teamB1 = fx.base.isolation.ids["team-b1"];
-      const targetA = await fx.seedResource({
-        tenantId: companyA,
-        workspaceId: teamA1,
-        displayName: "mt136 dual a",
-      });
-      const witnessB = await fx.seedResource({
-        tenantId: companyB,
-        workspaceId: teamB1,
-        displayName: "mt136 dual b",
-      });
-      const admin = await fx.scopeAs("a1-member", companyA, teamA1);
-      // 客户端载荷被拒：manifest 是服务端生成 + 签名的（不可伪造）。
-      let clientPayloadRefused = false;
-      try {
-        await fx.purge.buildPurgeManifest(admin, {
+    itDb(
+      "删除语义分离：purge/restore manifest 语义在真实数据库上成立（路径级直接钉住）",
+      async () => {
+        const fx = await purgeRestore();
+        const companyA = fx.base.isolation.ids["company-a"];
+        const teamA1 = fx.base.isolation.ids["team-a1"];
+        const companyB = fx.base.isolation.ids["company-b"];
+        const teamB1 = fx.base.isolation.ids["team-b1"];
+        const targetA = await fx.seedResource({
+          tenantId: companyA,
+          workspaceId: teamA1,
+          displayName: "mt136 dual a",
+        });
+        const witnessB = await fx.seedResource({
+          tenantId: companyB,
+          workspaceId: teamB1,
+          displayName: "mt136 dual b",
+        });
+        const admin = await fx.scopeAs("a1-member", companyA, teamA1);
+        // 客户端载荷被拒：manifest 是服务端生成 + 签名的（不可伪造）。
+        let clientPayloadRefused = false;
+        try {
+          await fx.purge.buildPurgeManifest(admin, {
+            operation: "purge",
+            workspaceId: teamA1,
+            itemRefs: [targetA],
+          } as never);
+        } catch {
+          clientPayloadRefused = true;
+        }
+        const built = await fx.purge.buildPurgeManifest(admin, {
           operation: "purge",
           workspaceId: teamA1,
-          itemRefs: [targetA],
-        } as never);
-      } catch {
-        clientPayloadRefused = true;
-      }
-      const built = await fx.purge.buildPurgeManifest(admin, {
-        operation: "purge",
-        workspaceId: teamA1,
-      });
-      expect(built.outcome).toBe("allow");
-      const executed = await fx.purge.executePurge(admin, {
-        manifestId: (built as { manifestId: string }).manifestId,
-      });
-      expect(clientPayloadRefused).toBe(true);
-      expect(executed.outcome).toBe("allow");
-      // Track A（公司清理）只触及本公司：B 的见证行原样存活；Track B
-      //（全局账号删除）是独立显式授权面（MT067 双轨），不经本入口。
-      expect(await fx.statusOf(companyA, targetA)).toBe("deleted");
-      expect(await fx.statusOf(companyB, witnessB)).toBe("active");
-    },
-    240_000,
-  );
+        });
+        expect(built.outcome).toBe("allow");
+        const executed = await fx.purge.executePurge(admin, {
+          manifestId: (built as { manifestId: string }).manifestId,
+        });
+        expect(clientPayloadRefused).toBe(true);
+        expect(executed.outcome).toBe("allow");
+        // Track A（公司清理）只触及本公司：B 的见证行原样存活；Track B
+        //（全局账号删除）是独立显式授权面（MT067 双轨），不经本入口。
+        expect(await fx.statusOf(companyA, targetA)).toBe("deleted");
+        expect(await fx.statusOf(companyB, witnessB)).toBe("active");
+      },
+      240_000,
+    );
 
-  itDb(
-    "企业面分享授权（MT058 语义：属主唯一签发/撤销、受众判定门）路径级直接钉住",
-    async () => {
-      // 这些证据没有一对一的 HTTP 入口映射（企业面分享是资源平面的判定
-      // 门，Craft/Workshop 的 HTTP 分享入口在 craft-workshop 域已映射），
-      // 按 MT135 先例以路径级用例直接钉住并在此披露。
-      const grantPositive = await personalSharesScenarios[
-        "shares.grant.positive"
-      ]();
-      expect(grantPositive.positiveControlPassed).toBe(true);
-      const grantDenial = await personalSharesScenarios[
-        "shares.grant.denial"
-      ]();
-      expect(grantDenial.denied).toBe(true);
-      expect(grantDenial.leakedRecords).toEqual([]);
-      const revokePositive = await personalSharesScenarios[
-        "shares.revoke.positive"
-      ]();
-      expect(revokePositive.positiveControlPassed).toBe(true);
-      const revokeDenial = await personalSharesScenarios[
-        "shares.revoke.denial"
-      ]();
-      expect(revokeDenial.denied).toBe(true);
-    },
-    240_000,
-  );
+    itDb(
+      "企业面分享授权（MT058 语义：属主唯一签发/撤销、受众判定门）路径级直接钉住",
+      async () => {
+        // 这些证据没有一对一的 HTTP 入口映射（企业面分享是资源平面的判定
+        // 门，Craft/Workshop 的 HTTP 分享入口在 craft-workshop 域已映射），
+        // 按 MT135 先例以路径级用例直接钉住并在此披露。
+        const grantPositive =
+          await personalSharesScenarios["shares.grant.positive"]();
+        expect(grantPositive.positiveControlPassed).toBe(true);
+        const grantDenial =
+          await personalSharesScenarios["shares.grant.denial"]();
+        expect(grantDenial.denied).toBe(true);
+        expect(grantDenial.leakedRecords).toEqual([]);
+        const revokePositive =
+          await personalSharesScenarios["shares.revoke.positive"]();
+        expect(revokePositive.positiveControlPassed).toBe(true);
+        const revokeDenial =
+          await personalSharesScenarios["shares.revoke.denial"]();
+        expect(revokeDenial.denied).toBe(true);
+      },
+      240_000,
+    );
 
-  itDb(
-    "未映射的 craft/openmuse 闭环入口保留在缺口清单（漂移可见，不虚报覆盖）",
-    async () => {
-      const report = await coverage();
-      const gapIds = new Set(report.gaps.map((gap) => gap.entranceId));
-      // 本票未提供证据的入口保持 uncovered（例：craft 上传/快照/恢复、
-      // scheduled-tasks、openmuse 邮件/日历——见报告诚实边界）。
-      expect(gapIds.has("POST /api/craft/sessions/:sessionId/upload")).toBe(
-        true,
-      );
-      expect(gapIds.has("POST /api/craft/sessions/:sessionId/snapshot")).toBe(
-        true,
-      );
-      expect(gapIds.has("GET /api/mobile/openmuse-mail")).toBe(true);
-      for (const gap of report.gaps) {
-        if (Object.hasOwn(PLAN, gap.entranceId)) {
-          throw new Error(
-            `planned entrance leaked into gap list: ${gap.entranceId}`,
-          );
+    itDb(
+      "未映射的 craft/openmuse 闭环入口保留在缺口清单（漂移可见，不虚报覆盖）",
+      async () => {
+        const report = await coverage();
+        const gapIds = new Set(report.gaps.map((gap) => gap.entranceId));
+        // 本票未提供证据的入口保持 uncovered（例：craft 上传/快照/恢复、
+        // scheduled-tasks、openmuse 邮件/日历——见报告诚实边界）。
+        expect(gapIds.has("POST /api/craft/sessions/:sessionId/upload")).toBe(
+          true,
+        );
+        expect(gapIds.has("POST /api/craft/sessions/:sessionId/snapshot")).toBe(
+          true,
+        );
+        expect(gapIds.has("GET /api/mobile/openmuse-mail")).toBe(true);
+        for (const gap of report.gaps) {
+          if (Object.hasOwn(PLAN, gap.entranceId)) {
+            throw new Error(
+              `planned entrance leaked into gap list: ${gap.entranceId}`,
+            );
+          }
         }
-      }
-    },
-    240_000,
-  );
+      },
+      240_000,
+    );
 
-  itDb(
-    "覆盖报告产物（可选写出：MT_COVERAGE_REPORT_OUT 指定路径）",
-    async () => {
-      const out = process.env.MT_COVERAGE_REPORT_OUT?.trim();
-      const report = await coverage();
-      if (!out) return;
-      await mkdir(dirname(out), { recursive: true });
-      await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
-      expect(report.summary.coveredEntrances).toBe(Object.keys(PLAN).length);
-    },
-    240_000,
-  );
-});
+    itDb(
+      "覆盖报告产物（可选写出：MT_COVERAGE_REPORT_OUT 指定路径）",
+      async () => {
+        const out = process.env.MT_COVERAGE_REPORT_OUT?.trim();
+        const report = await coverage();
+        if (!out) return;
+        await mkdir(dirname(out), { recursive: true });
+        await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
+        expect(report.summary.coveredEntrances).toBe(Object.keys(PLAN).length);
+      },
+      240_000,
+    );
+  },
+);

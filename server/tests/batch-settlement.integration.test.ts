@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createBatchSubmitService } from "../src/billing/batch-submit";
 import {
   createBatchSettleService,
@@ -115,7 +120,10 @@ function dimsOf(amounts: Record<string, string>) {
 
 let dispatchCounter = 0;
 const dispatch = async () =>
-  ({ kind: "answered", providerBatchId: `prov-batch-${++dispatchCounter}` }) as const;
+  ({
+    kind: "answered",
+    providerBatchId: `prov-batch-${++dispatchCounter}`,
+  }) as const;
 
 async function resolveBasis(basis: {
   provider: string;
@@ -284,7 +292,8 @@ async function seedSettledWorld(
       },
     ],
   });
-  if (submitted.status !== "submitted") throw new Error("fixture submit failed");
+  if (submitted.status !== "submitted")
+    throw new Error("fixture submit failed");
 
   return {
     userId,
@@ -305,9 +314,21 @@ const terminalReport = () => ({
   batchId: "" as string,
   source: "poll" as const,
   items: [
-    { customId: "req-1", terminalState: "completed" as const, usage: { video: 30 } },
-    { customId: "req-2", terminalState: "completed" as const, usage: { video: 10 } },
-    { customId: "req-3", terminalState: "failed" as const, usage: { image: 1 } },
+    {
+      customId: "req-1",
+      terminalState: "completed" as const,
+      usage: { video: 30 },
+    },
+    {
+      customId: "req-2",
+      terminalState: "completed" as const,
+      usage: { video: 10 },
+    },
+    {
+      customId: "req-3",
+      terminalState: "failed" as const,
+      usage: { image: 1 },
+    },
   ],
 });
 
@@ -318,12 +339,15 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM batch_items WHERE batch_id IN (SELECT batch_id FROM batch_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );
-  await database
-    .delete(batchJobs)
-    .where(like(batchJobs.grantId, `${prefix}%`));
+  await database.delete(batchJobs).where(like(batchJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -409,7 +433,9 @@ describe("18.2 AC-3 — the unused share of the hold hands back", () => {
 
     expect(outcome.releasedCredits).toBe(world.cap - 5100);
 
-    const balanceAfter = await fixtureWriter.availableBalance(world.customerKey);
+    const balanceAfter = await fixtureWriter.availableBalance(
+      world.customerKey,
+    );
     expect(balanceAfter).toBe(world.balanceBefore - 5100);
 
     const [hold] = await database

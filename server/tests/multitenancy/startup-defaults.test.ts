@@ -23,7 +23,13 @@
 // skipped 不计为通过），绝不回退开发库。真实 PostgreSQL（受限角色 + RLS），
 // 零授权 mock。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { createApp } from "../../src/app";
 import { loadConfig } from "../../src/config";
 import type { ResolvedRuntimeConfig } from "../../src/enterprise/tenancy/runtime-config";

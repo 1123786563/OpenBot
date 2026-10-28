@@ -20,7 +20,6 @@ import {
 } from "../audit";
 import type { CodeRunGateway, StreamingRun } from "../codesandbox/gateway";
 import type { SandboxArtifact, TranslatedEvent } from "../codesandbox/types";
-import { indexArtifacts } from "./artifacts";
 import type { TurnLease, TurnLock } from "./locks";
 import type { WorkshopStore } from "./store";
 
@@ -209,7 +208,7 @@ export function createTurnOrchestrator(
           // recorded, exactly the shape the gateway guarantees for the run row.
           if (
             event.family === "unknown" &&
-            event.payload["refused"] !== undefined
+            event.payload.refused !== undefined
           ) {
             break;
           }

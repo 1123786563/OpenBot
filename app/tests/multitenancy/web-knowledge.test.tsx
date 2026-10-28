@@ -2,7 +2,13 @@ import "../preload";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { SCOPE_HEADER_ALLOWED_PATHS } from "../../src/lib/client";
 import { SCOPE_STREAM_ALLOWED_PATHS } from "../../src/lib/enterprise/tenant/stream-scope";

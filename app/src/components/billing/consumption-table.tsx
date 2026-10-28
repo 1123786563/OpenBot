@@ -155,7 +155,9 @@ export function ConsumptionTable({
                           })}
                           {" · "}
                           {t("creditsPage.feeSplitSurcharge", {
-                            amount: credits(entry.feeBreakdown.surchargeCredits),
+                            amount: credits(
+                              entry.feeBreakdown.surchargeCredits,
+                            ),
                           })}
                         </p>
                       ) : null}

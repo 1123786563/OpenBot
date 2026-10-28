@@ -16,10 +16,7 @@ const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
 function composeFile() {
-  return readFileSync(
-    join(hereDir, "..", "docker-compose.yml"),
-    "utf8",
-  );
+  return readFileSync(join(hereDir, "..", "docker-compose.yml"), "utf8");
 }
 
 function optionalComposeFile(name: string) {
@@ -239,7 +236,6 @@ test("provides PostgreSQL for local development", () => {
   // biome-ignore lint/suspicious/noTemplateCurlyInString: the literal `${...}` is the fixture — this asserts on unexpanded placeholder text, so a real template would break the test.
   expect(compose).toContain("${POSTGRES_PORT:-5432}:5432");
 });
-
 
 /**
  * Every published port is settable, and defaults to the number the documentation gives.
@@ -672,10 +668,7 @@ for (const { name, services } of optionalStacks) {
  * behind.
  */
 test("reference/compose.md indexes every optional stack and the shared invocation", () => {
-  const doc = readFileSync(
-    join(hereDir, "..", "docs", "compose.md"),
-    "utf8",
-  );
+  const doc = readFileSync(join(hereDir, "..", "docs", "compose.md"), "utf8");
   for (const { name } of optionalStacks) {
     expect(doc).toContain(`docker/compose/${name}.yml`);
   }

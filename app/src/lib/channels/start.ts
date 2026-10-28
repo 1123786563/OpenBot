@@ -88,7 +88,9 @@ export function useStartChannel() {
   const createGroup = useMutation(
     createGroupMutationOptions(queryClient, scope),
   );
-  const deleteChannel = useMutation(deleteChannelMutationOptions(queryClient, scope));
+  const deleteChannel = useMutation(
+    deleteChannelMutationOptions(queryClient, scope),
+  );
 
   const start = async (agentId: string, text: string) => {
     const channel = await createChannel.mutateAsync([agentId]);

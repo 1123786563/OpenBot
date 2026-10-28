@@ -216,8 +216,7 @@ export async function createToolFixture(): Promise<ToolFixture> {
     ids[`user-${planned.identity}`] = id(`user-${planned.identity}`);
     ids[`principal-${planned.identity}`] = id(`principal-${planned.identity}`);
   }
-  const principalOf = (identity: ToolIdentity) =>
-    ids[`principal-${identity}`];
+  const principalOf = (identity: ToolIdentity) => ids[`principal-${identity}`];
   const userOf = (identity: ToolIdentity) => ids[`user-${identity}`];
 
   const setupDatabase = createDatabase(setupUrl, { max: 2 });
@@ -284,10 +283,7 @@ export async function createToolFixture(): Promise<ToolFixture> {
       }
     }
     if (failures.length) {
-      throw new AggregateError(
-        failures,
-        "Tool fixture disposal failed.",
-      );
+      throw new AggregateError(failures, "Tool fixture disposal failed.");
     }
   };
 
@@ -452,9 +448,7 @@ export async function createToolFixture(): Promise<ToolFixture> {
 
       async suspendCompanyMembership(tenantId, principalId) {
         await suspendMembership(operator, {
-          operationId: id(
-            `suspend-${principalId}-${randomUUID().slice(0, 6)}`,
-          ),
+          operationId: id(`suspend-${principalId}-${randomUUID().slice(0, 6)}`),
           operator: principalId,
           tenantId,
           principalId,
@@ -473,4 +467,3 @@ export async function createToolFixture(): Promise<ToolFixture> {
     throw error;
   }
 }
-

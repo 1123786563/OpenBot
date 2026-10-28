@@ -1,4 +1,4 @@
-import { type QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { tenantKeys } from "./queries";
 import { type ScopeSelection, selectionKeys } from "./selection";

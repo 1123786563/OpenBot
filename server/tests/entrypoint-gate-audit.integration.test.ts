@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import {
   FAMILY_BYPASS_EVIDENCE,
   FAMILY_REFUSAL_EVIDENCE,
@@ -21,7 +26,10 @@ import { createBatchSubmitService } from "../src/billing/batch-submit";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount } from "../src/billing/payer";
-import { resolveConsumptionPayerBinding, restorePayerBinding } from "../src/billing/payer-binding";
+import {
+  resolveConsumptionPayerBinding,
+  restorePayerBinding,
+} from "../src/billing/payer-binding";
 import { resolveWorkbenchPayerBinding } from "../src/billing/workbench-payer";
 import { createRealtimeSessionService } from "../src/billing/realtime-session";
 import { createRealtimeUnitService } from "../src/billing/realtime-unit";
@@ -95,7 +103,9 @@ const FULL_AMOUNTS: Record<PriceDimension, string> = {
 };
 
 function dims(
-  overrides: Partial<Record<PriceDimension, PriceSnapshotDims[PriceDimension]>> = {},
+  overrides: Partial<
+    Record<PriceDimension, PriceSnapshotDims[PriceDimension]>
+  > = {},
 ): PriceSnapshotDims {
   const base = {} as Record<PriceDimension, PriceSnapshotDims[PriceDimension]>;
   for (const dimension of PRICE_DIMENSIONS) {
@@ -130,9 +140,12 @@ describe("Bifrost 22.2 (#353): the four-way audit table", () => {
 
   test("every named evidence suite and payer module exists in this repository — the evidence is复核-able", () => {
     const paths = new Set<string>();
-    for (const evidence of Object.values(FAMILY_REFUSAL_EVIDENCE)) paths.add(evidence.suite);
-    for (const evidence of Object.values(FAMILY_BYPASS_EVIDENCE)) paths.add(evidence.suite);
-    for (const resolution of Object.values(PAYER_RESOLUTION)) paths.add(resolution.module);
+    for (const evidence of Object.values(FAMILY_REFUSAL_EVIDENCE))
+      paths.add(evidence.suite);
+    for (const evidence of Object.values(FAMILY_BYPASS_EVIDENCE))
+      paths.add(evidence.suite);
+    for (const resolution of Object.values(PAYER_RESOLUTION))
+      paths.add(resolution.module);
     expect(paths.size).toBeGreaterThanOrEqual(15);
     for (const path of paths) {
       expect(existsSync(join(repoRoot, path)), path).toBe(true);
@@ -145,12 +158,15 @@ describe("Bifrost 22.2 (#353): the four-way audit table", () => {
     // the receipts contradict. Every family states its verdict; a baseline-red verdict
     // names what the audit's claim rests on instead.
     for (const [family, evidence] of Object.entries(FAMILY_REFUSAL_EVIDENCE)) {
-      expect(["green", "baseline-red"], family).toContain(evidence.lastRun.verdict);
+      expect(["green", "baseline-red"], family).toContain(
+        evidence.lastRun.verdict,
+      );
       expect(evidence.lastRun.note.length, family).toBeGreaterThan(10);
       if (evidence.lastRun.verdict === "baseline-red") {
         // The note names its cause — the fixture-drift class or another named class.
         expect(
-          evidence.lastRun.note.includes("drift") || evidence.lastRun.note.includes("class"),
+          evidence.lastRun.note.includes("drift") ||
+            evidence.lastRun.note.includes("class"),
           family,
         ).toBe(true);
         // And the claim's real carrier is named — the live drive or a green sibling.
@@ -163,7 +179,9 @@ describe("Bifrost 22.2 (#353): the four-way audit table", () => {
       }
     }
     for (const [family, evidence] of Object.entries(FAMILY_BYPASS_EVIDENCE)) {
-      expect(["green", "baseline-red"], family).toContain(evidence.lastRun.verdict);
+      expect(["green", "baseline-red"], family).toContain(
+        evidence.lastRun.verdict,
+      );
       expect(evidence.lastRun.note.length, family).toBeGreaterThan(3);
     }
   });
@@ -183,13 +201,21 @@ describe("the pure-door refusal drives: 余额不足时供应商调用数为 0",
       rate: RATE,
       grantId: "grant-audit-image",
       payer: { kind: "personal", id: "user-audit-image" },
-      model: { provider: "prov-audit", model: "img-audit", capability: "image" },
+      model: {
+        provider: "prov-audit",
+        model: "img-audit",
+        capability: "image",
+      },
       snapshotVersion: 1,
       rateVersion: 0,
       idempotencyKey: "idem-audit-image",
       reserve: async () => {
         reserveCalls += 1;
-        return { status: "refused", reasonCode: "insufficient_credits", detail: {} };
+        return {
+          status: "refused",
+          reasonCode: "insufficient_credits",
+          detail: {},
+        };
       },
       dispatch: async () => {
         dispatchCalls += 1;
@@ -220,7 +246,10 @@ describe("the pure-door refusal drives: 余额不足时供应商调用数为 0",
     const outcome = await entry.admit({
       request: {
         model: "m",
-        document: { type: "document_url", document_url: "https://example.test/doc" },
+        document: {
+          type: "document_url",
+          document_url: "https://example.test/doc",
+        },
         params: { pages: [1, 2, 3] },
       },
       grantId: "grant-audit-ocr",
@@ -255,7 +284,11 @@ describe("the pure-door refusal drives: 余额不足时供应商调用数为 0",
       rate: RATE,
       grantId: "grant-audit-rerank",
       payer: { kind: "personal", id: "user-audit-rerank" },
-      model: { provider: "prov-audit", model: "rerank-audit", capability: "rerank" },
+      model: {
+        provider: "prov-audit",
+        model: "rerank-audit",
+        capability: "rerank",
+      },
       snapshotVersion: 1,
       rateVersion: 0,
       idempotencyKey: "idem-audit-rerank",
@@ -266,7 +299,6 @@ describe("the pure-door refusal drives: 余额不足时供应商调用数为 0",
       reasonCode: "insufficient_credits",
     });
   });
-
 });
 
 // ── the live database segment: the doors production wires, on TEST_DATABASE_URL ──
@@ -390,7 +422,11 @@ describe("the live-door refusal matrix (TEST_DATABASE_URL)", () => {
     const outcome = await reserveService.reserve({
       grantId: world.grantId,
       payer: { kind: "personal", id: world.userId },
-      model: { provider: world.provider, model: world.model, capability: "chat" },
+      model: {
+        provider: world.provider,
+        model: world.model,
+        capability: "chat",
+      },
       snapshotVersion: 1,
       rateVersion: 0,
       boundEvidence: [{ kind: "provider_max_tokens", maximumTokens: 4096 }],
@@ -426,7 +462,11 @@ describe("the live-door refusal matrix (TEST_DATABASE_URL)", () => {
       submitIdempotencyKey: `${prefix}-async-${world.n}`,
       grantId: world.grantId,
       payer: { kind: "personal", id: world.userId },
-      model: { provider: world.provider, model: world.model, capability: "chat" },
+      model: {
+        provider: world.provider,
+        model: world.model,
+        capability: "chat",
+      },
       snapshotVersion: 1,
       rateVersion: 0,
       entries: [
@@ -457,7 +497,10 @@ describe("the live-door refusal matrix (TEST_DATABASE_URL)", () => {
       reserve: (request) => reserveService.reserve(request),
       dispatch: async () => {
         dispatchCalls += 1;
-        return { kind: "answered" as const, providerBatchId: `prov-batch-${world.n}` };
+        return {
+          kind: "answered" as const,
+          providerBatchId: `prov-batch-${world.n}`,
+        };
       },
       resolveBasis,
     });
@@ -465,13 +508,21 @@ describe("the live-door refusal matrix (TEST_DATABASE_URL)", () => {
       submitIdempotencyKey: `${prefix}-batch-${world.n}`,
       grantId: world.grantId,
       payer: { kind: "personal", id: world.userId },
-      model: { provider: world.provider, model: world.model, capability: "chat" },
+      model: {
+        provider: world.provider,
+        model: world.model,
+        capability: "chat",
+      },
       snapshotVersion: 1,
       rateVersion: 0,
       items: [
         {
           customId: "req-1",
-          model: { provider: world.provider, model: world.model, capability: "chat" },
+          model: {
+            provider: world.provider,
+            model: world.model,
+            capability: "chat",
+          },
           quantities: { input: 5_000_000, output: 5_000_000 },
         },
       ],
@@ -504,7 +555,11 @@ describe("the live-door refusal matrix (TEST_DATABASE_URL)", () => {
     const establishment = await sessions.establish({
       grantId: world.grantId,
       payer: { kind: "personal", id: world.userId },
-      model: { provider: world.provider, model: world.model, capability: "realtime" },
+      model: {
+        provider: world.provider,
+        model: world.model,
+        capability: "realtime",
+      },
       snapshotVersion: 1,
       rateVersion: 0,
     });
@@ -574,7 +629,11 @@ describe("the live-door refusal matrix (TEST_DATABASE_URL)", () => {
       tool: "audit-tool",
       grantId: world.grantId,
       payer: { kind: "personal", id: world.userId },
-      model: { provider: world.provider, model: world.model, capability: "chat" },
+      model: {
+        provider: world.provider,
+        model: world.model,
+        capability: "chat",
+      },
       snapshotVersion: 1,
       rateVersion: 0,
     });
@@ -586,7 +645,9 @@ describe("the live-door refusal matrix (TEST_DATABASE_URL)", () => {
     expect(dispatchCalls).toBe(0);
     // The refused identity row carries no reservation (no hold formed) and its own refusal
     // reason — the durable fact, not a ledger write.
-    const { toolCallCharges } = await import("../src/db/schema/credit-reservations");
+    const { toolCallCharges } = await import(
+      "../src/db/schema/credit-reservations"
+    );
     const rows = await database
       .select()
       .from(toolCallCharges)
@@ -650,8 +711,12 @@ function controlledDirectoryDatabase(
 }
 
 async function mintTrustedScope(input: { tenantId: string; actorId: string }) {
-  const { verifyDirectoryDatabase } = await import("../src/enterprise/tenancy/connections");
-  const { createScopeResolver } = await import("../src/enterprise/tenancy/store");
+  const { verifyDirectoryDatabase } = await import(
+    "../src/enterprise/tenancy/connections"
+  );
+  const { createScopeResolver } = await import(
+    "../src/enterprise/tenancy/store"
+  );
   const directory = await verifyDirectoryDatabase(
     controlledDirectoryDatabase([
       {
@@ -665,7 +730,10 @@ async function mintTrustedScope(input: { tenantId: string; actorId: string }) {
     ]),
   );
   const resolver = createScopeResolver(directory, {
-    authenticate: async () => ({ actorId: input.actorId, entrypoint: "web" as const }),
+    authenticate: async () => ({
+      actorId: input.actorId,
+      entrypoint: "web" as const,
+    }),
     selectTenant: () => input.tenantId,
     selectWorkspace: () => `${input.tenantId}-ws`,
   });
@@ -679,7 +747,11 @@ describe("the payer resolution audit (AC13: 付款账户来源正确且不可指
       grantId: world.grantId,
       // The forged claim: someone else's account on a grant that is not theirs.
       payer: { kind: "personal", id: `${world.userId}-someone-else` },
-      model: { provider: world.provider, model: world.model, capability: "chat" },
+      model: {
+        provider: world.provider,
+        model: world.model,
+        capability: "chat",
+      },
       snapshotVersion: 1,
       rateVersion: 0,
       boundEvidence: [{ kind: "provider_max_tokens", maximumTokens: 4096 }],
@@ -697,7 +769,9 @@ describe("the payer resolution audit (AC13: 付款账户来源正确且不可指
     // tenancy middleware, and the account it answers is the company's, never the
     // principal's personal account. A hand-built scope (the bypass attempt) is refused
     // before any account is touched — 22.2's 旁路 half for the workbench lane.
-    const { resolvePayerForCompanyContext } = await import("../src/billing/payer-company");
+    const { resolvePayerForCompanyContext } = await import(
+      "../src/billing/payer-company"
+    );
     const tenantId = `${prefix}-tenant`;
     // A hand-built scope is the bypass attempt: refused before any account is touched —
     // the company lane has no fallback at all.
@@ -710,12 +784,17 @@ describe("the payer resolution audit (AC13: 付款账户来源正确且不可指
       aclEpoch: 1,
       entrypoint: "web",
     } as const;
-    await expect(resolveWorkbenchPayerBinding(database, handBuilt)).rejects.toThrow();
+    await expect(
+      resolveWorkbenchPayerBinding(database, handBuilt),
+    ).rejects.toThrow();
     expect(() => resolvePayerForCompanyContext(handBuilt)).toThrow();
     // A GENUINELY trusted scope — server-issued by the real resolver over a controlled
     // directory answering one active membership — binds the company account (the same
     // technique company-payer-e2e uses).
-    const scope = await mintTrustedScope({ tenantId, actorId: `${prefix}-actor` });
+    const scope = await mintTrustedScope({
+      tenantId,
+      actorId: `${prefix}-actor`,
+    });
     const binding = await resolveWorkbenchPayerBinding(database, scope);
     expect(binding.payer).toEqual({ kind: "company", id: tenantId });
     const companyRef = resolvePayerForCompanyContext(scope);
@@ -732,7 +811,10 @@ describe("the payer resolution audit (AC13: 付款账户来源正确且不可指
     // No request binding (the personal-key lane's default): the deployment binding is
     // the payer — the account the grant resolution already fixed.
     expect(
-      resolveConsumptionPayerBinding({ requestBinding: undefined, deploymentBinding: personal }),
+      resolveConsumptionPayerBinding({
+        requestBinding: undefined,
+        deploymentBinding: personal,
+      }),
     ).toEqual(personal);
     // A coherent request binding (the workbench middleware's own, established from a
     // trusted scope) wins: the company the scope named is the account the call bills.
@@ -742,17 +824,26 @@ describe("the payer resolution audit (AC13: 付款账户来源正确且不可指
     });
     const company = restorePayerBinding(companyAccount);
     expect(
-      resolveConsumptionPayerBinding({ requestBinding: company, deploymentBinding: personal }),
+      resolveConsumptionPayerBinding({
+        requestBinding: company,
+        deploymentBinding: personal,
+      }),
     ).toEqual(company);
     // The ambient binding discipline holds the fixity: inside the company binding the
     // current binding IS the company — a mid-flight switch is not a thing the seam offers.
-    const { currentPayerBinding, withPayerBinding } = await import("../src/billing/payer-binding");
-    expect(withPayerBinding(company, () => currentPayerBinding())).toEqual(company);
+    const { currentPayerBinding, withPayerBinding } = await import(
+      "../src/billing/payer-binding"
+    );
+    expect(withPayerBinding(company, () => currentPayerBinding())).toEqual(
+      company,
+    );
   });
 });
 
 afterAll(async () => {
-  const { toolCallCharges } = await import("../src/db/schema/credit-reservations");
+  const { toolCallCharges } = await import(
+    "../src/db/schema/credit-reservations"
+  );
   await database.execute(
     sql`DELETE FROM realtime_units WHERE session_id IN (SELECT session_id FROM realtime_sessions WHERE grant_id LIKE ${`${prefix}%`})`,
   );
@@ -763,7 +854,12 @@ afterAll(async () => {
   await database.delete(batchJobs).where(like(batchJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -774,14 +870,20 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${`openbot-%${prefix}%`}`,
   );
-  await database.delete(toolCallCharges).where(like(toolCallCharges.grantId, `${prefix}%`));
-  await database.delete(accessGrants).where(like(accessGrants.grantId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
-  await database.delete(gatewayModelCatalogRefs).where(
-    like(gatewayModelCatalogRefs.provider, `${prefix}%`),
-  );
-  await database.delete(gatewayModelOpenScopes).where(
-    like(gatewayModelOpenScopes.provider, `${prefix}%`),
-  );
+  await database
+    .delete(toolCallCharges)
+    .where(like(toolCallCharges.grantId, `${prefix}%`));
+  await database
+    .delete(accessGrants)
+    .where(like(accessGrants.grantId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(gatewayModelCatalogRefs)
+    .where(like(gatewayModelCatalogRefs.provider, `${prefix}%`));
+  await database
+    .delete(gatewayModelOpenScopes)
+    .where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
   await database.$client.close();
 });

@@ -1,6 +1,9 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { client } from "@/lib/client";
-import { cacheWriteGate, type ScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
+import {
+  cacheWriteGate,
+  type ScopedCache,
+} from "@/lib/enterprise/tenant/scoped-cache";
 import {
   type AgentProfile,
   type AgentVisibility,

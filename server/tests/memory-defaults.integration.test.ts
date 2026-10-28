@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { getLogger } from "../../shared/logger";
@@ -618,22 +625,16 @@ describe("a revoked connection keeps upstream's row-existence semantics (#489 F0
       // gone; nothing further to tidy on a row another deployment owns.
     }
     if (suiteCreatedServerRow)
-      await database
-        .delete(mcpServers)
-        .where(eq(mcpServers.id, oauthServerId));
-    await database
-      .delete(agents)
-      .where(inArray(agents.id, [revokedBot]));
-    await database
-      .delete(users)
-      .where(inArray(users.id, [revokedOwner]));
+      await database.delete(mcpServers).where(eq(mcpServers.id, oauthServerId));
+    await database.delete(agents).where(inArray(agents.id, [revokedBot]));
+    await database.delete(users).where(inArray(users.id, [revokedOwner]));
   });
 
   test("the store reports the row as revoked, not as gone (T6's seam)", async () => {
     await connectRevoked(revokedOwner);
-    await expect(plugins.connectionsFor(revokedOwner)).resolves.toMatchObject(
-      [{ serverId: oauthServerId, revoked: true }],
-    );
+    await expect(plugins.connectionsFor(revokedOwner)).resolves.toMatchObject([
+      { serverId: oauthServerId, revoked: true },
+    ]);
   });
 
   test("authorize still passes on a revoked row's existence, still refuses on no row", async () => {
@@ -661,7 +662,9 @@ describe("a revoked connection keeps upstream's row-existence semantics (#489 F0
         agentId: revokedBot,
         toolRef: oauthRef,
       }),
-    ).rejects.toThrow(new MemoryRefusedError("Reconnect this app to use its memories."));
+    ).rejects.toThrow(
+      new MemoryRefusedError("Reconnect this app to use its memories."),
+    );
   });
 
   test("default candidates follow the same row fact while the row exists", async () => {

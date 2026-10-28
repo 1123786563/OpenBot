@@ -33,7 +33,13 @@
 // skipped 不计为通过），绝不回退开发库。MT029 迁移（两张新表 + FORCE RLS +
 // 最小授权）经 MT003 工具（migrate-test.ts）真实执行，本文件不自己 DDL。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { sql } from "drizzle-orm";

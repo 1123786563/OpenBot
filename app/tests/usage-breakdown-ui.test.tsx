@@ -140,6 +140,8 @@ test("the two parts never drift from the total: what is shown sums to the row", 
       feeBreakdown: { modelCredits, surchargeCredits },
     }),
   ]);
-  expect(view.getByText(`模型 ${modelCredits} · 附加 ${surchargeCredits}`)).toBeTruthy();
+  expect(
+    view.getByText(`模型 ${modelCredits} · 附加 ${surchargeCredits}`),
+  ).toBeTruthy();
   expect(modelCredits + surchargeCredits).toBe(credits);
 });

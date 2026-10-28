@@ -1,5 +1,12 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import { ObservabilityPlaceholder } from "../src/components/ai-observability/placeholder";

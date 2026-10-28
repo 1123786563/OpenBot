@@ -1,4 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { inArray, sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
 import { createAuditStore } from "../src/audit";
@@ -214,43 +220,43 @@ afterAll(async () => {
   // Children first, mirroring the FK graph the modules evaluate. The engine's own accounting
   // smoke cleans after itself; everything seeded here lands in this teardown.
   await database.execute(
-    sql`DELETE FROM credit_reservation_allocations WHERE id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM credit_reservation_allocations WHERE id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM credit_reservations WHERE id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM credit_reservations WHERE id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM credit_ledger WHERE id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM credit_ledger WHERE id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM credit_grants WHERE id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM credit_grants WHERE id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM billing_webhook_events WHERE event_id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM billing_webhook_events WHERE event_id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM usage_outbox WHERE event_id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM usage_outbox WHERE event_id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM payment_events WHERE id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM payment_events WHERE id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM payment_orders WHERE id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM payment_orders WHERE id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM billing_subscriptions WHERE external_customer_id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM billing_subscriptions WHERE external_customer_id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM payer_accounts WHERE id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM payer_accounts WHERE id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM billing_customers WHERE external_id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM billing_customers WHERE external_id LIKE ${`b351-%${run}`}`,
   );
   await database.execute(
-    sql`DELETE FROM billing_customers WHERE external_id LIKE ${"b351-%" + run}`,
+    sql`DELETE FROM billing_customers WHERE external_id LIKE ${`b351-%${run}`}`,
   );
   // audit_events is append-only by database trigger: this run's rows stay, scoped by
   // execution id, and no assertion reads absolute counts.
@@ -767,11 +773,7 @@ describe("AC-2/AC-3/AC-4: the authorized execution, its report and its receipt",
     expect(report.postVerification.passed).toBe(true);
     expect(report.postVerification.protectedSurface.unchanged).toBe(true);
     expect(report.postVerification.protectedSurface.tables).toEqual(
-      expect.arrayContaining([
-        "users",
-        "sessions",
-        "agents",
-      ]),
+      expect.arrayContaining(["users", "sessions", "agents"]),
     );
   });
 

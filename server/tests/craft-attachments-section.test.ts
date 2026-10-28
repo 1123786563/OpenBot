@@ -193,14 +193,20 @@ describe("setupSessionWorkspace attachments section", () => {
     const { api, files } = memoryFileApi({
       [`${DIRECTORY}/attachments/existing.pdf`]: new Uint8Array([1, 2, 3]),
     });
-    await setupSessionWorkspace({ ...api, mkdir: async () => undefined }, setupInput);
+    await setupSessionWorkspace(
+      { ...api, mkdir: async () => undefined },
+      setupInput,
+    );
     const agentsMd = await readText(files, `${DIRECTORY}/AGENTS.md`);
     expect(agentsMd.endsWith(`\n\n${ATTACHMENTS_SECTION_CONTENT}`)).toBe(true);
   });
 
   test("a session without attachments keeps the plain AGENTS.md", async () => {
     const { api, files } = memoryFileApi();
-    await setupSessionWorkspace({ ...api, mkdir: async () => undefined }, setupInput);
+    await setupSessionWorkspace(
+      { ...api, mkdir: async () => undefined },
+      setupInput,
+    );
     const agentsMd = await readText(files, `${DIRECTORY}/AGENTS.md`);
     expect(agentsMd.includes(ATTACHMENTS_HEADING)).toBe(false);
   });
@@ -214,7 +220,10 @@ describe("setupSessionWorkspace attachments section", () => {
       if (path.endsWith("/AGENTS.md")) throw new Error("read blew up");
       return original(path);
     };
-    await setupSessionWorkspace({ ...api, mkdir: async () => undefined }, setupInput); // must not throw
+    await setupSessionWorkspace(
+      { ...api, mkdir: async () => undefined },
+      setupInput,
+    ); // must not throw
     expect(files.has(`${DIRECTORY}/opencode.json`)).toBe(true);
   });
 });

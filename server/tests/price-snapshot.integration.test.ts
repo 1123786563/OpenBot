@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
@@ -39,7 +44,9 @@ const store = createEnterpriseGatewayPriceSnapshotStore(database);
  * One raw statement as a real promise: drizzle's execute answers a thenable
  * query builder, which expect().rejects does not accept.
  */
-function rawExec(query: Parameters<typeof database.execute>[0]): Promise<unknown> {
+function rawExec(
+  query: Parameters<typeof database.execute>[0],
+): Promise<unknown> {
   return (async () => database.execute(query))();
 }
 
@@ -47,7 +54,9 @@ function rawExec(query: Parameters<typeof database.execute>[0]): Promise<unknown
  * Assert one raw statement is refused by the append-only triggers. Drizzle wraps the driver
  * error ("Failed query: ...") with the real refusal on `cause`, so the match goes through it.
  */
-async function expectAppendOnlyRefusal(query: Parameters<typeof database.execute>[0]) {
+async function expectAppendOnlyRefusal(
+  query: Parameters<typeof database.execute>[0],
+) {
   const error = await rawExec(query).then(
     () => undefined,
     (caught: unknown) => caught,
@@ -66,7 +75,11 @@ function uniqueProvider(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
-function ref(provider: string, model = "gpt-4o", capability = "chat"): ModelRef {
+function ref(
+  provider: string,
+  model = "gpt-4o",
+  capability = "chat",
+): ModelRef {
   return { provider, model, capability };
 }
 
@@ -167,7 +180,10 @@ describe("appending and reading back", () => {
     const openai = ref(`openai-${suffix}`);
     const azure = ref(`azure-${suffix}`);
     const dims = fullyPricedDims();
-    await store.appendSnapshots([appendInput(openai, dims), appendInput(azure, dims)]);
+    await store.appendSnapshots([
+      appendInput(openai, dims),
+      appendInput(azure, dims),
+    ]);
 
     // A change to one provider's prices leaves the other's history alone.
     await store.appendSnapshots([
@@ -289,11 +305,18 @@ describe("the database carries the rules the application states", () => {
 });
 
 describe("the sync service maps the last-good catalog and appends what changed", () => {
-  function catalogEntry(provider: string, pricing: Record<string, unknown>): CatalogStoredRef {
+  function catalogEntry(
+    provider: string,
+    pricing: Record<string, unknown>,
+  ): CatalogStoredRef {
     return {
       ref: { provider, model: "gpt-4o", capability: "chat" },
       capabilitySource: "supported_methods",
-      rawEntry: { id: `${provider}/gpt-4o`, supported_methods: ["chat"], pricing },
+      rawEntry: {
+        id: `${provider}/gpt-4o`,
+        supported_methods: ["chat"],
+        pricing,
+      },
       configVersion: 7,
       fetchedAt: "2026-10-17T03:00:00.000Z",
     };
@@ -381,7 +404,9 @@ describe("the sync service maps the last-good catalog and appends what changed",
       status: "failed",
       reasonCode: "price_sync_catalog_unavailable",
     });
-    expect((await store.latestPriceSnapshot(ref(provider)))?.snapshotVersion).toBe(1);
+    expect(
+      (await store.latestPriceSnapshot(ref(provider)))?.snapshotVersion,
+    ).toBe(1);
   });
 
   test("a broken rate state fails the sync with its own code — never a guessed zero", async () => {
@@ -467,7 +492,10 @@ describe("the sync service maps the last-good catalog and appends what changed",
       capability: "chat",
     });
     // The exact bytes the catalog kept price the model — canonicalized, not re-interpreted.
-    expect(latest?.dims.input).toEqual({ status: "known", amount: "0.0000025" });
+    expect(latest?.dims.input).toEqual({
+      status: "known",
+      amount: "0.0000025",
+    });
     expect(latest?.dims.output).toEqual({ status: "known", amount: "0.00001" });
     expect(latest?.dims.surcharge_per_request).toEqual({
       status: "known",
@@ -478,7 +506,9 @@ describe("the sync service maps the last-good catalog and appends what changed",
       amount: "0.00000125",
     });
     // And the catalog table the sync read from is left exactly as 03.1 wrote it.
-    expect(await database.select().from(gatewayModelCatalogRefs)).toHaveLength(1);
+    expect(await database.select().from(gatewayModelCatalogRefs)).toHaveLength(
+      1,
+    );
   });
 });
 

@@ -187,8 +187,7 @@ export async function createSkillFixture(): Promise<SkillFixture> {
     ids[`user-${planned.identity}`] = id(`user-${planned.identity}`);
     ids[`principal-${planned.identity}`] = id(`principal-${planned.identity}`);
   }
-  const principalOf = (identity: SkillIdentity) =>
-    ids[`principal-${identity}`];
+  const principalOf = (identity: SkillIdentity) => ids[`principal-${identity}`];
   const userOf = (identity: SkillIdentity) => ids[`user-${identity}`];
 
   const setupDatabase = createDatabase(setupUrl, { max: 2 });
@@ -252,10 +251,7 @@ export async function createSkillFixture(): Promise<SkillFixture> {
       }
     }
     if (failures.length) {
-      throw new AggregateError(
-        failures,
-        "Tool fixture disposal failed.",
-      );
+      throw new AggregateError(failures, "Tool fixture disposal failed.");
     }
   };
 
@@ -384,7 +380,6 @@ export async function createSkillFixture(): Promise<SkillFixture> {
         return resolver.resolve(request);
       },
 
-
       async seedConversation({ tenantId, workspaceId, principalId, threadId }) {
         // Disclosed stand-in (MT011 precedent): the canonical producer is the
         // conversations service; here it is data-function-arrangement only.
@@ -393,12 +388,9 @@ export async function createSkillFixture(): Promise<SkillFixture> {
         );
       },
 
-
       async suspendCompanyMembership(tenantId, principalId) {
         await suspendMembership(operator, {
-          operationId: id(
-            `suspend-${principalId}-${randomUUID().slice(0, 6)}`,
-          ),
+          operationId: id(`suspend-${principalId}-${randomUUID().slice(0, 6)}`),
           operator: principalId,
           tenantId,
           principalId,
@@ -417,4 +409,3 @@ export async function createSkillFixture(): Promise<SkillFixture> {
     throw error;
   }
 }
-

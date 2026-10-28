@@ -3156,9 +3156,7 @@ function multitenancyConfig(environment: Environment): {
     enabled,
     ...(inventoryPath ? { inventoryPath } : {}),
     ...(waiversPath ? { waiversPath } : {}),
-    ...(quarantineDefaultWorkspaceId
-      ? { quarantineDefaultWorkspaceId }
-      : {}),
+    ...(quarantineDefaultWorkspaceId ? { quarantineDefaultWorkspaceId } : {}),
   };
 }
 

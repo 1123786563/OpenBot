@@ -53,8 +53,14 @@ const database = createDatabase(testDatabaseUrl(), TEST_POOL);
 const prefix = `b10-308-${randomUUID().slice(0, 8)}`;
 const writer = createCreditWriter(database);
 const snapshotStore = createEnterpriseGatewayPriceSnapshotStore(database);
-const environmentRate = { numerator: 100n, denominator: 1n } satisfies ConversionRate;
-const settleSpeech = createSpeechSettlementService({ database, environmentRate });
+const environmentRate = {
+  numerator: 100n,
+  denominator: 1n,
+} satisfies ConversionRate;
+const settleSpeech = createSpeechSettlementService({
+  database,
+  environmentRate,
+});
 
 let seedCounter = 0;
 
@@ -132,7 +138,10 @@ async function seedSpeechWorld(
 }
 
 /** One held speech reservation locked at the cell's current snapshot version. */
-async function holdFor(world: SpeechWorld, maximumCents: number): Promise<string> {
+async function holdFor(
+  world: SpeechWorld,
+  maximumCents: number,
+): Promise<string> {
   const snapshot = await snapshotStore.latestPriceSnapshot({
     provider: world.provider,
     model: world.model,
@@ -197,11 +206,20 @@ function interrupt(
     { settle: (request) => settleSpeech.settle(request) },
     {
       reservationId,
-      requested: { inputCharacters: 100, voiceTier: "alloy", durationCapSeconds: 60 },
-      priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+      requested: {
+        inputCharacters: 100,
+        voiceTier: "alloy",
+        durationCapSeconds: 60,
+      },
+      priced: {
+        perInputCharacterUsd: "0.000015",
+        perOutputSecondUsd: "0.0005",
+      },
       // The interruption point's own evidence: the server-held buffer, or its absence.
       ...(chunks === "no-buffer" ? {} : { chunks }),
-      ...(chunks === "no-buffer" ? { interruptionReason: "client disconnected before any audio arrived" } : {}),
+      ...(chunks === "no-buffer"
+        ? { interruptionReason: "client disconnected before any audio arrived" }
+        : {}),
       settledBy: "bifrost-playback",
       idempotencyKey,
     },
@@ -217,14 +235,20 @@ test("the collector sums the buffered chunks' own stated durations exactly", () 
   expect(usage).toEqual({
     outcome: "confirmed",
     actualSeconds: "25",
-    evidence: { kind: "artifact_metadata", reference: "interrupted-buffer:3 chunks" },
+    evidence: {
+      kind: "artifact_metadata",
+      reference: "interrupted-buffer:3 chunks",
+    },
   });
 
   // Fractional tails stay exact: 10 + 10 + 5.5 = 25.5, never a float.
   const fractional = collectInterruptedSpeechUsage({
     chunks: [wavOf(10), wavOf(10), wavOf(5.5)],
   });
-  expect(fractional).toMatchObject({ outcome: "confirmed", actualSeconds: "25.5" });
+  expect(fractional).toMatchObject({
+    outcome: "confirmed",
+    actualSeconds: "25.5",
+  });
 });
 
 test("an empty or unreadable buffer confirms nothing", () => {
@@ -356,7 +380,10 @@ test("a buffer beyond the certified cap is a defect, never a bill and never a cl
   expect(outcome).toMatchObject({
     status: "refused",
     reasonCode: "request_invalid",
-    detail: { field: "result.actualSeconds", reason: "actual_exceeds_certified_spec" },
+    detail: {
+      field: "result.actualSeconds",
+      reason: "actual_exceeds_certified_spec",
+    },
   });
   expect(await writer.availableBalance(world.customerKey)).toBe(held);
   expect(
@@ -374,7 +401,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

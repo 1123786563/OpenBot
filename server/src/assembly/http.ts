@@ -19,7 +19,6 @@
  * ones createApp carried; they moved with their code.
  */
 
-
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -275,14 +274,9 @@ import {
 import type { createWorkshopPublicRoutes } from "../workshop/public-routes";
 import type { WorkshopRoutesFactory } from "../workshop/routes";
 
-
 import type { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
 // Type-only: no runtime edge back into app.ts (the values above arrive as deps).
-import type {
-  createDeploymentRequireUser,
-  DeploymentToolCaller,
-} from "../app";
-
+import type { createDeploymentRequireUser, DeploymentToolCaller } from "../app";
 
 const log = getLogger("server");
 

@@ -79,7 +79,11 @@ export type AsyncJobReviewRow = AsyncJobViewRow & {
   /** The hold's own state, verbatim (reserved/unknown/settled/released). */
   reservationStatus: "reserved" | "unknown" | "settled" | "released";
   /** 17.7's cancellation conclusion, when a cancel was ever asked. */
-  cancelConclusion: "released_on_evidence" | "hold_kept" | "hold_unknown" | null;
+  cancelConclusion:
+    | "released_on_evidence"
+    | "hold_kept"
+    | "hold_unknown"
+    | null;
 };
 
 /** The task-dimension filters the admin review accepts — all optional, all exact. */
@@ -102,9 +106,16 @@ export function asyncJobDisplayStateOf(input: {
   dispatchState: "submitted" | "dispatch_unconfirmed";
   holdStatus: "reserved" | "unknown" | "settled" | "released";
   unknownReason: string | null;
-  cancelConclusion: "released_on_evidence" | "hold_kept" | "hold_unknown" | null;
+  cancelConclusion:
+    | "released_on_evidence"
+    | "hold_kept"
+    | "hold_unknown"
+    | null;
 }): { status: AsyncJobDisplayState; statusReason: string | null } {
-  if (input.cancelConclusion === "released_on_evidence" || input.holdStatus === "released") {
+  if (
+    input.cancelConclusion === "released_on_evidence" ||
+    input.holdStatus === "released"
+  ) {
     return {
       status: "cancelled",
       statusReason:
@@ -156,7 +167,11 @@ type JoinedRow = {
   maximum: number;
   applied: number | null;
   unknownReason: string | null;
-  cancelConclusion: "released_on_evidence" | "hold_kept" | "hold_unknown" | null;
+  cancelConclusion:
+    | "released_on_evidence"
+    | "hold_kept"
+    | "hold_unknown"
+    | null;
 };
 
 function toViewRow(row: JoinedRow): AsyncJobReviewRow {
@@ -166,14 +181,19 @@ function toViewRow(row: JoinedRow): AsyncJobReviewRow {
     unknownReason: row.unknownReason,
     cancelConclusion: row.cancelConclusion,
   });
-  const settled =
-    row.holdStatus === "settled" ? (row.applied ?? 0) : 0;
+  const settled = row.holdStatus === "settled" ? (row.applied ?? 0) : 0;
   const pending =
-    row.holdStatus === "reserved" || row.holdStatus === "unknown" ? row.maximum : 0;
+    row.holdStatus === "reserved" || row.holdStatus === "unknown"
+      ? row.maximum
+      : 0;
   return {
     jobId: row.jobId,
     providerJobId: row.providerJobId,
-    model: { provider: row.provider, model: row.model, capability: row.capability },
+    model: {
+      provider: row.provider,
+      model: row.model,
+      capability: row.capability,
+    },
     createdAt: row.createdAt.toISOString(),
     dispatchedAt: row.dispatchedAt ? row.dispatchedAt.toISOString() : null,
     status: state.status,
@@ -222,9 +242,9 @@ export type AsyncJobsViewReader = {
   ): Promise<AsyncJobReviewRow[]>;
 };
 
-export function createAsyncJobsViewService(
-  dependencies: { database: Database },
-): AsyncJobsViewReader {
+export function createAsyncJobsViewService(dependencies: {
+  database: Database;
+}): AsyncJobsViewReader {
   const { database } = dependencies;
   return {
     async asyncJobsForPayer(payer) {
@@ -246,8 +266,11 @@ export function createAsyncJobsViewService(
         .limit(ASYNC_JOBS_VIEW_LIMIT);
       return rows.map((row) => {
         const review = toViewRow(row);
-        const { reservationStatus: _reservationStatus, cancelConclusion: _cancelConclusion, ...view } =
-          review;
+        const {
+          reservationStatus: _reservationStatus,
+          cancelConclusion: _cancelConclusion,
+          ...view
+        } = review;
         return view;
       });
     },

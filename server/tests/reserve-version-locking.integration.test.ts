@@ -29,9 +29,7 @@ import {
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../src/db/schema";
-import {
-  creditReservations,
-} from "../src/db/schema/credit-reservations";
+import { creditReservations } from "../src/db/schema/credit-reservations";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -86,7 +84,11 @@ const V1_AMOUNTS = {
 } as const;
 
 /** Version 2 prices: input and output quadruple (the world changes after the lock). */
-const V2_AMOUNTS = { ...V1_AMOUNTS, input: "0.000004", output: "0.000006" } as const;
+const V2_AMOUNTS = {
+  ...V1_AMOUNTS,
+  input: "0.000004",
+  output: "0.000006",
+} as const;
 
 /** The per-dimension maximum quantities the admitted bound evidence certifies. */
 const QUANTITIES: ReservationBoundQuantities = {
@@ -317,7 +319,10 @@ test("a reserved hold persists the model ref, snapshotVersion and rateVersion it
 });
 
 test("a reservation written without a lock (the pre-06.5 shape) carries no basis, and stays legal", async () => {
-  const customerKey = payerKey({ kind: "personal", id: (await seedWorld()).userId });
+  const customerKey = payerKey({
+    kind: "personal",
+    id: (await seedWorld()).userId,
+  });
   await fixtureCreditWriter.reserveCredits({
     externalCustomerId: customerKey,
     idempotencyKey: `${prefix}-legacy-${++seedCounter}`,
@@ -349,7 +354,9 @@ test("after the price and the rate both change, the locked basis still resolves 
     quantities: QUANTITIES,
     rate: ENVIRONMENT_RATE,
   });
-  expect(admitted.ok && admitted.maximumCredits).toBe(world.request.maximumCredits);
+  expect(admitted.ok && admitted.maximumCredits).toBe(
+    world.request.maximumCredits,
+  );
 
   // The world changes: version 2 of the price snapshot, and an administrator's new rate.
   await snapshotStore.appendSnapshots([
@@ -375,11 +382,13 @@ test("after the price and the rate both change, the locked basis still resolves 
     capability: "chat",
   });
   expect(latest?.snapshotVersion).toBe(2);
-  expect(latest?.dims.input.status === "known" && latest.dims.input.amount).toBe(
-    "0.000004",
-  );
+  expect(
+    latest?.dims.input.status === "known" && latest.dims.input.amount,
+  ).toBe("0.000004");
   const currentRate = await rateStore.readConversionRate();
-  expect(currentRate.configured && currentRate.rateVersion).toBe(saved.ok ? saved.rateVersion : null);
+  expect(currentRate.configured && currentRate.rateVersion).toBe(
+    saved.ok ? saved.rateVersion : null,
+  );
 
   // The LOCKED basis resolves the original combination, exactly as admitted.
   expect(basis).not.toBeNull();
@@ -617,11 +626,35 @@ test("the table's completeness CHECK refuses a half-locked row at the database l
 
   // Partial locks, every one of which must die on credit_reservations_lock_completeness_check.
   const halfLocks: Array<Parameters<typeof insertWithBasis>[0]> = [
-    { provider: `${prefix}-chk-prov`, model: null, capability: null, snapshotVersion: null, rateVersion: null },
-    { provider: `${prefix}-chk-prov`, model: "chk-model", capability: "chat", snapshotVersion: null, rateVersion: null },
-    { provider: null, model: null, capability: null, snapshotVersion: 1, rateVersion: 0 },
+    {
+      provider: `${prefix}-chk-prov`,
+      model: null,
+      capability: null,
+      snapshotVersion: null,
+      rateVersion: null,
+    },
+    {
+      provider: `${prefix}-chk-prov`,
+      model: "chk-model",
+      capability: "chat",
+      snapshotVersion: null,
+      rateVersion: null,
+    },
+    {
+      provider: null,
+      model: null,
+      capability: null,
+      snapshotVersion: 1,
+      rateVersion: 0,
+    },
     // The shape three-valued logic defeats most quietly: the provider absent, the rest present.
-    { provider: null, model: "chk-model", capability: "chat", snapshotVersion: 1, rateVersion: 0 },
+    {
+      provider: null,
+      model: "chk-model",
+      capability: "chat",
+      snapshotVersion: 1,
+      rateVersion: 0,
+    },
   ];
   for (const basis of halfLocks) {
     expect(await violation(insertWithBasis(basis))).toEqual({

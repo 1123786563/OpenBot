@@ -685,9 +685,7 @@ describe("the built-in observation bypass (metered path)", () => {
           })
         ).stream,
       );
-      await drain(
-        (await wrapped.doStream({ prompt: undefined })).stream,
-      );
+      await drain((await wrapped.doStream({ prompt: undefined })).stream);
     } finally {
       setBuiltinModelSpanObserver(undefined);
     }

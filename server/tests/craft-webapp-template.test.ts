@@ -215,9 +215,13 @@ describe("lib/base-path.ts — the client-side face of the mount", () => {
       BASE_PATH: string;
       withSlash: string;
       withoutSlash: string;
-    }>("lib/base-path.ts", "(m) => ({ BASE_PATH: m.BASE_PATH, withSlash: m.apiUrl('/api/tasks'), withoutSlash: m.apiUrl('api/tasks') })", {
-      NEXT_PUBLIC_BASE_PATH: "/abc123label",
-    });
+    }>(
+      "lib/base-path.ts",
+      "(m) => ({ BASE_PATH: m.BASE_PATH, withSlash: m.apiUrl('/api/tasks'), withoutSlash: m.apiUrl('api/tasks') })",
+      {
+        NEXT_PUBLIC_BASE_PATH: "/abc123label",
+      },
+    );
     expect(evaluated.BASE_PATH).toBe("/abc123label");
     expect(evaluated.withSlash).toBe("/abc123label/api/tasks");
     expect(evaluated.withoutSlash).toBe("/abc123label/api/tasks");
@@ -309,7 +313,11 @@ describe("lib/base-path.ts — the client-side face of the mount", () => {
 // able to rot into silence.
 describe("whitelist parity lock (fix-ocr22 #11): one pattern, three copies, zero drift", () => {
   /** Pull a regex literal out of a source file by an anchor, flags and all. */
-  function extractLiteral(source: string, anchor: RegExp, what: string): RegExp {
+  function extractLiteral(
+    source: string,
+    anchor: RegExp,
+    what: string,
+  ): RegExp {
     const match = anchor.exec(source);
     if (!match) {
       throw new Error(`parity lock: could not locate ${what} in its source`);

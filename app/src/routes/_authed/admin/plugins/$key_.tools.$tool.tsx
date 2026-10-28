@@ -48,7 +48,9 @@ function RouteComponent() {
   // The plugin config face is the scope's own answer (MT094 / Issue #137, AC2).
   const scope = useScopedCache();
   const plugins = useQuery(scopedPluginsPageQueryOptions(queryClient, scope));
-  const { data: agents } = useQuery(scopedAgentListQueryOptions(queryClient, scope));
+  const { data: agents } = useQuery(
+    scopedAgentListQueryOptions(queryClient, scope),
+  );
   /* The ones this person has hidden, so a grant one of them holds still has its switch here. */
   const { data: hiddenAgents } = useQuery(
     scopedAgentListQueryOptions(queryClient, scope, true),

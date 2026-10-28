@@ -1,5 +1,11 @@
 import "./preload";
-import { afterEach, beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { accountModePreview, grantPlugin } from "../src/lib/plugins/mutations";
 import { personalConnections } from "../src/lib/plugins/queries";
 import { describeApproval } from "../src/lib/plugins/shared-use";

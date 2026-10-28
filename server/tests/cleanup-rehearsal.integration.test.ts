@@ -1,4 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -68,7 +74,13 @@ const personalKey = `b350-pers-${run}`;
 const companyKey = `b350-co-${run}`;
 const unknownKey = `b350-unk-${run}`;
 const flightKey = `b350-flt-${run}`;
-const fixtureKeys = [candidateKey, personalKey, companyKey, unknownKey, flightKey];
+const fixtureKeys = [
+  candidateKey,
+  personalKey,
+  companyKey,
+  unknownKey,
+  flightKey,
+];
 
 const companyPayerId = `b350-co-tenant-${run}`;
 const candidateDeploymentId = `b350-deploy-${run}`;
@@ -106,21 +118,37 @@ let estateBefore: EstateDump;
 
 afterAll(async () => {
   // Children first, mirroring the estate's own topology.
-  await database.delete(usageOutbox).where(inArray(usageOutbox.eventId, [candidateOutboxId]));
-  await database.delete(billingWebhookEvents).where(inArray(billingWebhookEvents.eventId, [webhookHitId]));
-  await database.delete(paymentEvents).where(inArray(paymentEvents.orderId, [candidateOrderId, companyOrderId]));
-  await database.delete(paymentOrders).where(inArray(paymentOrders.id, [candidateOrderId, companyOrderId]));
-  await database.delete(creditChargeRemainders).where(eq(creditChargeRemainders.externalCustomerId, candidateKey));
+  await database
+    .delete(usageOutbox)
+    .where(inArray(usageOutbox.eventId, [candidateOutboxId]));
+  await database
+    .delete(billingWebhookEvents)
+    .where(inArray(billingWebhookEvents.eventId, [webhookHitId]));
+  await database
+    .delete(paymentEvents)
+    .where(inArray(paymentEvents.orderId, [candidateOrderId, companyOrderId]));
+  await database
+    .delete(paymentOrders)
+    .where(inArray(paymentOrders.id, [candidateOrderId, companyOrderId]));
+  await database
+    .delete(creditChargeRemainders)
+    .where(eq(creditChargeRemainders.externalCustomerId, candidateKey));
   // billing_customers cascades to payer_accounts, subscriptions, grants, ledger,
   // reservations and their allocations — including any row a drill added mid-flight.
-  await database.delete(billingCustomers).where(inArray(billingCustomers.externalId, fixtureKeys));
+  await database
+    .delete(billingCustomers)
+    .where(inArray(billingCustomers.externalId, fixtureKeys));
   await database.$client.close();
 });
 
 /** The full message chain of an error, cause included — drizzle wraps the PostgresError. */
 function errorText(error: unknown): string {
   const parts: string[] = [];
-  for (let current = error; current; current = (current as { cause?: unknown }).cause) {
+  for (
+    let current = error;
+    current;
+    current = (current as { cause?: unknown }).cause
+  ) {
     parts.push(current instanceof Error ? current.message : String(current));
   }
   return parts.join(": ");
@@ -144,11 +172,36 @@ beforeAll(async () => {
       .values({ externalId: key, name: `b5-350 fixture ${key}` });
   }
   await database.insert(payerAccounts).values([
-    { id: companyMappingId, kind: "company", payerId: companyPayerId, externalCustomerId: companyKey },
-    { id: candidateMappingId, kind: "legacy_deployment", payerId: candidateDeploymentId, externalCustomerId: candidateKey },
-    { id: personalMappingId, kind: "personal", payerId: `b350-personal-${run}`, externalCustomerId: personalKey },
-    { id: unknownMappingId, kind: "unknown_owner", payerId: `b350-unknown-${run}`, externalCustomerId: unknownKey },
-    { id: flightMappingId, kind: "legacy_deployment", payerId: flightDeploymentId, externalCustomerId: flightKey },
+    {
+      id: companyMappingId,
+      kind: "company",
+      payerId: companyPayerId,
+      externalCustomerId: companyKey,
+    },
+    {
+      id: candidateMappingId,
+      kind: "legacy_deployment",
+      payerId: candidateDeploymentId,
+      externalCustomerId: candidateKey,
+    },
+    {
+      id: personalMappingId,
+      kind: "personal",
+      payerId: `b350-personal-${run}`,
+      externalCustomerId: personalKey,
+    },
+    {
+      id: unknownMappingId,
+      kind: "unknown_owner",
+      payerId: `b350-unknown-${run}`,
+      externalCustomerId: unknownKey,
+    },
+    {
+      id: flightMappingId,
+      kind: "legacy_deployment",
+      payerId: flightDeploymentId,
+      externalCustomerId: flightKey,
+    },
   ]);
 
   // The candidate key: the full legacy stack, settled hold included (settled IS cleanable).
@@ -181,7 +234,8 @@ beforeAll(async () => {
     expiresAt: future,
   });
   if (!reserved.reserved) throw new Error("candidate fixture hold was refused");
-  await writer.settleReservation({    reservationId: reserved.reservationId,
+  await writer.settleReservation({
+    reservationId: reserved.reservationId,
     actual: { numerator: 500n, denominator: 100n },
     title: `b5-350 fixture settle ${run}`,
   });
@@ -285,7 +339,8 @@ beforeAll(async () => {
     maximumCents: 1_500,
     expiresAt: future,
   });
-  if (!flightReserved.reserved) throw new Error("flight fixture hold was refused");
+  if (!flightReserved.reserved)
+    throw new Error("flight fixture hold was refused");
   flightHold = { reservationId: flightReserved.reservationId };
 
   // The reviewed scope the drills execute against, and the untouched estate baseline.
@@ -336,8 +391,8 @@ describe("cleanup rehearsal (b5-350, group 21.6)", () => {
     expect(report.injectedFailureAfterTable).toBe("credit_grants");
     expect(report.stepsCompletedBeforeFailure).toBeGreaterThanOrEqual(1);
     // The estate is byte-identical after the failed run.
-    const estateAfter = await import("../src/billing/cleanup-rehearsal").then((m) =>
-      m.dumpCleanupEstate(database),
+    const estateAfter = await import("../src/billing/cleanup-rehearsal").then(
+      (m) => m.dumpCleanupEstate(database),
     );
     expect(JSON.stringify(estateAfter)).toBe(JSON.stringify(estateBefore));
   });
@@ -376,8 +431,8 @@ describe("cleanup rehearsal (b5-350, group 21.6)", () => {
     expect(concurrentGrantInserted).toBe(true);
 
     // Nothing was deleted: the candidate's stack is intact, and the new row survives.
-    const estateAfter = await import("../src/billing/cleanup-rehearsal").then((m) =>
-      m.dumpCleanupEstate(database),
+    const estateAfter = await import("../src/billing/cleanup-rehearsal").then(
+      (m) => m.dumpCleanupEstate(database),
     );
     const beforeIds = dumpIds(estateBefore);
     const afterIds = dumpIds(estateAfter);
@@ -389,7 +444,9 @@ describe("cleanup rehearsal (b5-350, group 21.6)", () => {
     // never part of the failed transaction), so the fresh classification now names one more
     // record and the scope grows to 13: the clean run deletes it too.
     const scopeAfterDrill = await buildCleanupDryRun(database, evidenceInput);
-    expect(scopeAfterDrill.basis.candidatesIn).toBe(scopeBefore.basis.candidatesIn + 1);
+    expect(scopeAfterDrill.basis.candidatesIn).toBe(
+      scopeBefore.basis.candidatesIn + 1,
+    );
     expect(scopeAfterDrill.toDelete.totalRows).toBe(13);
   });
 
@@ -428,13 +485,15 @@ describe("cleanup rehearsal (b5-350, group 21.6)", () => {
       report.execution.deletedByTable.map((entry) => [entry.table, entry.rows]),
     );
     expect(deletedByTable).toEqual(
-      Object.fromEntries(scope.toDelete.byTable.map((group) => [group.table, group.rows])),
+      Object.fromEntries(
+        scope.toDelete.byTable.map((group) => [group.table, group.rows]),
+      ),
     );
     expect(report.execution.deletedIdsMatchScope).toBe(true);
 
     // Every scoped row is gone from the live data; the report's post-verification agrees.
-    const estateAfter = await import("../src/billing/cleanup-rehearsal").then((m) =>
-      m.dumpCleanupEstate(database),
+    const estateAfter = await import("../src/billing/cleanup-rehearsal").then(
+      (m) => m.dumpCleanupEstate(database),
     );
     const afterIds = dumpIds(estateAfter);
     for (const record of scope.toDelete.records) {
@@ -444,12 +503,12 @@ describe("cleanup rehearsal (b5-350, group 21.6)", () => {
 
     // --- AC-c: kept rows untouched, concurrent records alive, in-flight duty untouched.
     expect(report.postVerification.keptRowsUntouched).toBe(true);
-    expect(report.postVerification.concurrentRowsSurviving).toBeGreaterThanOrEqual(3);
+    expect(
+      report.postVerification.concurrentRowsSurviving,
+    ).toBeGreaterThanOrEqual(3);
     expect(afterIds.has(`credit_grants/b350-cnew-${run}`)).toBe(false); // scoped by the fresh run
     expect(afterIds.has(`billing_customers/${newAccountKey}`)).toBe(true);
-    expect(
-      afterIds.has(`payer_accounts/b350-pa-new-${run}`),
-    ).toBe(true);
+    expect(afterIds.has(`payer_accounts/b350-pa-new-${run}`)).toBe(true);
     const flightReservation = await database
       .select({ id: creditReservations.id, status: creditReservations.status })
       .from(creditReservations)
@@ -458,14 +517,15 @@ describe("cleanup rehearsal (b5-350, group 21.6)", () => {
     expect(flightReservation[0]?.status).toBe("reserved");
 
     // --- AC-d: the smoke ran for the kept and the rebuilt personal account.
-    expect(report.accountingSmoke.map((smoke) => smoke.externalCustomerId)).toEqual([
-      personalKey,
-      newAccountKey,
-    ]);
+    expect(
+      report.accountingSmoke.map((smoke) => smoke.externalCustomerId),
+    ).toEqual([personalKey, newAccountKey]);
     for (const smoke of report.accountingSmoke) {
       expect(smoke.chargedCents).toBeGreaterThan(0);
       expect(smoke.appliedCents).toBe(smoke.chargedCents);
-      expect(smoke.releasedCents).toBe(smoke.reservedCents - smoke.appliedCents);
+      expect(smoke.releasedCents).toBe(
+        smoke.reservedCents - smoke.appliedCents,
+      );
       expect(smoke.availableBeforeCents - smoke.availableAfterCents).toBe(
         smoke.appliedCents + (smoke.owedUnitAfter - smoke.owedUnitBefore),
       );

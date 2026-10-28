@@ -355,25 +355,24 @@ export function removeGithubBindingMutationOptions(queryClient: QueryClient) {
  * The scope the writes here submit under (MT086 / Issue #129, AC1): an open scope's selection
  * rides the request, and a pending one submits nothing.
  */
-function scopePair(
-  scope: ScopedCache | undefined,
-): ScopePair | undefined {
+function scopePair(scope: ScopedCache | undefined): ScopePair | undefined {
   return scope !== undefined && scope.status === "open"
     ? (scope.selection ?? {})
     : undefined;
 }
 
-const settleResponsibilities = (queryClient: QueryClient, scope?: ScopedCache) => () =>
-  Promise.all([
-    queryClient.invalidateQueries({ queryKey: responsibilityKeys.all }),
-    ...(scope !== undefined && scope.status === "open"
-      ? [
-          queryClient.invalidateQueries({
-            queryKey: [...scope.prefix, ...responsibilityKeys.all],
-          }),
-        ]
-      : []),
-  ]);
+const settleResponsibilities =
+  (queryClient: QueryClient, scope?: ScopedCache) => () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: responsibilityKeys.all }),
+      ...(scope !== undefined && scope.status === "open"
+        ? [
+            queryClient.invalidateQueries({
+              queryKey: [...scope.prefix, ...responsibilityKeys.all],
+            }),
+          ]
+        : []),
+    ]);
 
 export function createResponsibilityMutationOptions(
   queryClient: QueryClient,

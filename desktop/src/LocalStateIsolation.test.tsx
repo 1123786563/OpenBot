@@ -5,7 +5,13 @@
 // own store — the same discipline, applied to the webview's localStorage, whose partitions
 // nothing had drawn before.
 
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { within } from "@testing-library/react";
@@ -72,7 +78,7 @@ test("two organizations' local states are not readable from each other (AC1)", (
   expect(readLocalState(STORAGE(), ORG_B, "media-index")).toEqual({
     status: "absent",
   });
-  expect(readLocalState(STORAGE(), ORG_A, "globex-only", )).toEqual({
+  expect(readLocalState(STORAGE(), ORG_A, "globex-only")).toEqual({
     status: "absent",
   });
 });
@@ -137,13 +143,10 @@ test("corrupt, foreign-version and moved records are never interpreted (AC2)", (
 });
 
 test("expired state degrades to re-choose, never to its old value (AC2)", () => {
-  writeLocalState(
-    STORAGE(),
-    ORG_A,
-    "handoff",
-    "acme handoff",
-    { expiresAtMs: 1_000, nowMs: 0 },
-  );
+  writeLocalState(STORAGE(), ORG_A, "handoff", "acme handoff", {
+    expiresAtMs: 1_000,
+    nowMs: 0,
+  });
   expect(readLocalState(STORAGE(), ORG_A, "handoff", 2_000)).toEqual({
     status: "expired",
   });
@@ -194,10 +197,19 @@ test("another user's slots are a different person's, in both namespaces (AC1/AC3
   expect(readLocalState(STORAGE(), otherUser, "draft")).toEqual({
     status: "absent",
   });
-  writeLocalState(STORAGE(), { kind: "personal", userId: "user-2" }, "model-pick", "theirs");
+  writeLocalState(
+    STORAGE(),
+    { kind: "personal", userId: "user-2" },
+    "model-pick",
+    "theirs",
+  );
   expect(clearPersonalState(STORAGE(), "user-1")).toBe(0);
   expect(
-    readLocalState(STORAGE(), { kind: "personal", userId: "user-2" }, "model-pick"),
+    readLocalState(
+      STORAGE(),
+      { kind: "personal", userId: "user-2" },
+      "model-pick",
+    ),
   ).toEqual({ status: "present", value: "theirs" });
 });
 
@@ -257,7 +269,8 @@ test("a draft restores for its own scope, is absent for the other org, and degra
     ),
   );
   expect(
-    (within(globex.container).getByLabelText("Draft") as HTMLInputElement).value,
+    (within(globex.container).getByLabelText("Draft") as HTMLInputElement)
+      .value,
   ).toBe("");
   globex.unmount();
 
@@ -265,12 +278,13 @@ test("a draft restores for its own scope, is absent for the other org, and degra
   STORAGE().setItem(localStateKey(ORG_A, "draft"), "{corrupted");
   const damaged = render(<DraftPad scope={ORG_A} />);
   await waitFor(() =>
-    expect(
-      within(damaged.container).getByTestId("restored").textContent,
-    ).toBe("choose again"),
+    expect(within(damaged.container).getByTestId("restored").textContent).toBe(
+      "choose again",
+    ),
   );
   expect(
-    (within(damaged.container).getByLabelText("Draft") as HTMLInputElement).value,
+    (within(damaged.container).getByLabelText("Draft") as HTMLInputElement)
+      .value,
   ).toBe("");
   // Typing again overwrites the damage — the re-choose path really recovers.
   await act(async () => {

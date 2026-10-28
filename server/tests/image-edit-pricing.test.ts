@@ -222,12 +222,12 @@ describe("imageEditSpecOf", () => {
       issue: { code: "image_spec_indeterminable", field: "mask" },
     });
     // A payload that is not an image this server can read.
-    expect(imageEditSpecOf({ image: "data:image/png;base64,aGVsbG8=" })).toEqual(
-      {
-        ok: false,
-        issue: { code: "image_spec_indeterminable", field: "image" },
-      },
-    );
+    expect(
+      imageEditSpecOf({ image: "data:image/png;base64,aGVsbG8=" }),
+    ).toEqual({
+      ok: false,
+      issue: { code: "image_spec_indeterminable", field: "image" },
+    });
     // An edit with no input images at all is not an edit.
     expect(imageEditSpecOf({ n: 1 })).toEqual({
       ok: false,

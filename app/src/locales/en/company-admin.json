@@ -171,6 +171,19 @@
     },
     "refused": "The company books are open to an explicitly authorized finance reader only — being an administrator is not enough.",
     "failed": "The company books could not be read.",
-    "entryRefused": "Billing management is open to explicitly authorized subjects only."
+    "entryRefused": "Billing management is open to explicitly authorized subjects only.",
+    "payments": {
+      "title": "Payments",
+      "description": "Payments this company made, newest first.",
+      "empty": "No payments yet. The first order will appear here.",
+      "column": {
+        "plan": "Plan",
+        "amount": "Amount",
+        "payer": "Payer",
+        "status": "Status",
+        "fulfillment": "Fulfillment",
+        "paidAt": "Paid at"
+      }
+    }
   }
 }

@@ -106,7 +106,10 @@ describe("computeReservationCeiling — full-dimension conversion", () => {
     //          + $0.002 + $0.0001 + $0.002 + $0.003 = $5.9191 → ×100 credits/$ ×100 scale
     //          = 59 191 units exactly.
     expect(outcome.maximumCredits).toBe(59_191);
-    expect(outcome.exactScaledUnits).toEqual({ numerator: 59_191n, denominator: 1n });
+    expect(outcome.exactScaledUnits).toEqual({
+      numerator: 59_191n,
+      denominator: 1n,
+    });
   });
 
   test("each dimension's term is exactly its quantity × its own price", () => {
@@ -124,7 +127,12 @@ describe("computeReservationCeiling — full-dimension conversion", () => {
     // Only the reserved (not-yet-on-wire) dimensions carry quantity: they price too.
     const reserved = computeReservationCeiling({
       dims: knownDims(FULL_DIMS),
-      quantities: quantities({ image_output: 1, audio_input: 60, audio_output: 30, video: 10 }),
+      quantities: quantities({
+        image_output: 1,
+        audio_input: 60,
+        audio_output: 30,
+        video: 10,
+      }),
       rate: RATE_100,
     });
     expect(reserved.ok).toBe(true);
@@ -145,7 +153,10 @@ describe("computeReservationCeiling — full-dimension conversion", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.maximumCredits).toBe(0);
-    expect(outcome.exactScaledUnits).toEqual({ numerator: 0n, denominator: 1n });
+    expect(outcome.exactScaledUnits).toEqual({
+      numerator: 0n,
+      denominator: 1n,
+    });
   });
 });
 
@@ -160,7 +171,10 @@ describe("computeReservationCeiling — the 足额 (sufficient) rounding directi
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.maximumCredits).toBe(1);
-    expect(outcome.exactScaledUnits).toEqual({ numerator: 1n, denominator: 1000n });
+    expect(outcome.exactScaledUnits).toEqual({
+      numerator: 1n,
+      denominator: 1000n,
+    });
   });
 
   test("a fraction introduced by the conversion rate's denominator rounds UP too", () => {
@@ -173,7 +187,10 @@ describe("computeReservationCeiling — the 足额 (sufficient) rounding directi
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.maximumCredits).toBe(1);
-    expect(outcome.exactScaledUnits).toEqual({ numerator: 1n, denominator: 300n });
+    expect(outcome.exactScaledUnits).toEqual({
+      numerator: 1n,
+      denominator: 300n,
+    });
   });
 
   test("an exact whole cost keeps its exact value — the ceiling never overshoots by a unit", () => {
@@ -186,11 +203,18 @@ describe("computeReservationCeiling — the 足额 (sufficient) rounding directi
     if (!outcome.ok) return;
     // $0.0015 → 15 scaled units exactly; 足额 means the LEAST sufficient integer, not +1.
     expect(outcome.maximumCredits).toBe(15);
-    expect(outcome.exactScaledUnits).toEqual({ numerator: 15n, denominator: 1n });
+    expect(outcome.exactScaledUnits).toEqual({
+      numerator: 15n,
+      denominator: 1n,
+    });
   });
 
   test("for every case: exact ≤ ceiling < exact + 1 — never under, never a unit over", () => {
-    const cases: { dims: PriceSnapshotDims; quantities: ReservationBoundQuantities; rate: ConversionRate }[] = [
+    const cases: {
+      dims: PriceSnapshotDims;
+      quantities: ReservationBoundQuantities;
+      rate: ConversionRate;
+    }[] = [
       {
         dims: knownDims(FULL_DIMS),
         quantities: FULL_QUANTITIES,
@@ -207,8 +231,15 @@ describe("computeReservationCeiling — the 足额 (sufficient) rounding directi
         rate: { numerator: 7n, denominator: 13n },
       },
       {
-        dims: knownDims({ ...FULL_DIMS, cache_write: "0.0000015", surcharge_web_search: "0.001" }),
-        quantities: quantities({ cache_write: 123_457, surcharge_web_search: 3 }),
+        dims: knownDims({
+          ...FULL_DIMS,
+          cache_write: "0.0000015",
+          surcharge_web_search: "0.001",
+        }),
+        quantities: quantities({
+          cache_write: 123_457,
+          surcharge_web_search: 3,
+        }),
         rate: { numerator: 250n, denominator: 7n },
       },
     ];
@@ -217,7 +248,10 @@ describe("computeReservationCeiling — the 足额 (sufficient) rounding directi
       expect(outcome.ok).toBe(true);
       if (!outcome.ok) continue;
       const { maximumCredits, exactScaledUnits } = outcome;
-      const aboveExact = ceilingMinusExactNumerator(maximumCredits, exactScaledUnits);
+      const aboveExact = ceilingMinusExactNumerator(
+        maximumCredits,
+        exactScaledUnits,
+      );
       expect(aboveExact >= 0n).toBe(true); // 上限 ≥ 实际可能成本: never under
       expect(aboveExact < exactScaledUnits.denominator).toBe(true); // tighter than +1: 足额
       expect(Number.isSafeInteger(maximumCredits)).toBe(true);
@@ -281,7 +315,10 @@ describe("computeReservationCeiling — refusals", () => {
     });
     expect(negative.ok).toBe(false);
     if (negative.ok) return;
-    expect(negative.issue).toEqual({ code: "quantity_invalid", dimension: "video" });
+    expect(negative.issue).toEqual({
+      code: "quantity_invalid",
+      dimension: "video",
+    });
 
     const fractional = computeReservationCeiling({
       dims: knownDims(FULL_DIMS),
@@ -290,7 +327,10 @@ describe("computeReservationCeiling — refusals", () => {
     });
     expect(fractional.ok).toBe(false);
     if (fractional.ok) return;
-    expect(fractional.issue).toEqual({ code: "quantity_invalid", dimension: "image" });
+    expect(fractional.issue).toEqual({
+      code: "quantity_invalid",
+      dimension: "image",
+    });
 
     const incomplete = quantities({ input: 5 });
     delete (incomplete as Record<string, unknown>).output;
@@ -301,7 +341,10 @@ describe("computeReservationCeiling — refusals", () => {
     });
     expect(missing.ok).toBe(false);
     if (missing.ok) return;
-    expect(missing.issue).toEqual({ code: "quantity_invalid", dimension: "output" });
+    expect(missing.issue).toEqual({
+      code: "quantity_invalid",
+      dimension: "output",
+    });
   });
 
   test("a rate with a zero or negative term refuses — it is not an exchange", () => {
@@ -336,7 +379,11 @@ describe("computeReservationCeiling — refusals", () => {
   test("a ceiling exactly inside the 32-bit bound passes — the boundary is inclusive", () => {
     // $214 748 + $0.00000648 → exact 2 147 480 000.0648 → ceiling 2 147 480 001 ≤ 2^31−1.
     const inside = computeReservationCeiling({
-      dims: knownDims({ ...FULL_DIMS, input: "1", surcharge_per_request: "0.00000648" }),
+      dims: knownDims({
+        ...FULL_DIMS,
+        input: "1",
+        surcharge_per_request: "0.00000648",
+      }),
       quantities: quantities({ input: 214_748, surcharge_per_request: 1 }),
       rate: RATE_100,
     });

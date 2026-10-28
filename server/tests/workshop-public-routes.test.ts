@@ -1,7 +1,6 @@
 import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createWorkshopPublicRoutes } from "../src/workshop/public-routes";
 import {
-  createInProcessShareLimiter,
   createShareService,
   hashShareToken,
   newShareToken,
@@ -11,7 +10,6 @@ import { STATIC_CSP } from "../src/workshop/preview";
 import { createRequire } from "node:module";
 
 const nodeRequire = createRequire(import.meta.url);
-
 
 /**
  * The public door's contract (B15b): the token is the only key, the answer is static and

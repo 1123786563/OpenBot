@@ -1,4 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
   classifyCleanup,
@@ -149,12 +155,7 @@ const amountMarker = 987654321;
 
 /** The operator-vouched registries: the four legacy orders, nothing else. */
 const evidenceInput = {
-  testOrderIds: [
-    cleanOrderId,
-    flightOrderId,
-    activeSubOrderId,
-    openOrderId,
-  ],
+  testOrderIds: [cleanOrderId, flightOrderId, activeSubOrderId, openOrderId],
   testUserIds: [],
 };
 
@@ -187,8 +188,11 @@ async function dumpLegacyTables(): Promise<Record<string, unknown>> {
 /** The report without its volatile metadata: the repeatability comparison form. */
 function stripVolatile(report: CleanupDryRunReport) {
   const { generatedAt: _generatedAt, basis, ...rest } = report;
-  const { classificationGeneratedAt: _c, relationsGeneratedAt: _r, ...basisRest } =
-    basis;
+  const {
+    classificationGeneratedAt: _c,
+    relationsGeneratedAt: _r,
+    ...basisRest
+  } = basis;
   return { ...rest, basis: basisRest };
 }
 
@@ -208,24 +212,33 @@ afterAll(async () => {
         openOrderId,
       ]),
     );
-  await database.delete(paymentOrders).where(
-    inArray(paymentOrders.id, [
-      cleanOrderId,
-      flightOrderId,
-      activeSubOrderId,
-      openOrderId,
-    ]),
-  );
-  await database.delete(usageOutbox).where(
-    inArray(usageOutbox.eventId, [
-      cleanOutboxId,
-      activeSubOutboxId,
-      openOutboxId,
-    ]),
-  );
-  await database.delete(billingWebhookEvents).where(
-    inArray(billingWebhookEvents.eventId, [cleanWebhookId, activeSubWebhookId]),
-  );
+  await database
+    .delete(paymentOrders)
+    .where(
+      inArray(paymentOrders.id, [
+        cleanOrderId,
+        flightOrderId,
+        activeSubOrderId,
+        openOrderId,
+      ]),
+    );
+  await database
+    .delete(usageOutbox)
+    .where(
+      inArray(usageOutbox.eventId, [
+        cleanOutboxId,
+        activeSubOutboxId,
+        openOutboxId,
+      ]),
+    );
+  await database
+    .delete(billingWebhookEvents)
+    .where(
+      inArray(billingWebhookEvents.eventId, [
+        cleanWebhookId,
+        activeSubWebhookId,
+      ]),
+    );
   await database
     .delete(creditReservationAllocations)
     .where(
@@ -244,36 +257,46 @@ afterAll(async () => {
         flightReservedId,
       ]),
     );
-  await database.delete(creditLedger).where(
-    inArray(creditLedger.id, [companyLedgerId, cleanLedgerId, flightLedgerId]),
-  );
-  await database.delete(creditGrants).where(
-    inArray(creditGrants.id, [
-      companyGrantId,
-      personalGrantId,
-      cleanGrantId,
-      ...cleanSpareGrantIds,
-      unknownGrantId,
-      flightGrantId,
-    ]),
-  );
-  await database.delete(creditChargeRemainders).where(
-    inArray(creditChargeRemainders.externalCustomerId, fixtureKeys),
-  );
-  await database.delete(billingSubscriptions).where(
-    inArray(billingSubscriptions.externalCustomerId, fixtureKeys),
-  );
-  await database.delete(payerAccounts).where(
-    inArray(payerAccounts.id, [
-      companyMappingId,
-      personalMappingId,
-      cleanMappingId,
-      unknownMappingId,
-      flightMappingId,
-      activeSubMappingId,
-      openOrderMappingId,
-    ]),
-  );
+  await database
+    .delete(creditLedger)
+    .where(
+      inArray(creditLedger.id, [
+        companyLedgerId,
+        cleanLedgerId,
+        flightLedgerId,
+      ]),
+    );
+  await database
+    .delete(creditGrants)
+    .where(
+      inArray(creditGrants.id, [
+        companyGrantId,
+        personalGrantId,
+        cleanGrantId,
+        ...cleanSpareGrantIds,
+        unknownGrantId,
+        flightGrantId,
+      ]),
+    );
+  await database
+    .delete(creditChargeRemainders)
+    .where(inArray(creditChargeRemainders.externalCustomerId, fixtureKeys));
+  await database
+    .delete(billingSubscriptions)
+    .where(inArray(billingSubscriptions.externalCustomerId, fixtureKeys));
+  await database
+    .delete(payerAccounts)
+    .where(
+      inArray(payerAccounts.id, [
+        companyMappingId,
+        personalMappingId,
+        cleanMappingId,
+        unknownMappingId,
+        flightMappingId,
+        activeSubMappingId,
+        openOrderMappingId,
+      ]),
+    );
   await database
     .delete(billingCustomers)
     .where(inArray(billingCustomers.externalId, fixtureKeys));
@@ -682,9 +705,7 @@ beforeAll(async () => {
 
 /** The report's to-delete group for one table. */
 function deleteGroupOf(table: string) {
-  const group = report.toDelete.byTable.find(
-    (entry) => entry.table === table,
-  );
+  const group = report.toDelete.byTable.find((entry) => entry.table === table);
   expect(group).toBeDefined();
   return group!;
 }
@@ -716,7 +737,9 @@ describe("the cleanup dry-run is read-only and repeatable", () => {
 describe("the dry-run report carries the three review lists with row counts", () => {
   test("to-delete is exactly 21.3's safe candidate set, grouped and counted", () => {
     expect(report.toDelete.totalRows).toBe(27);
-    expect(report.toDelete.records).toHaveLength(relations.safeCandidates.length);
+    expect(report.toDelete.records).toHaveLength(
+      relations.safeCandidates.length,
+    );
     expect([...report.toDelete.records].sort(JSONTextOrder)).toEqual(
       [...relations.safeCandidates]
         .map((entry) => ({
@@ -740,7 +763,9 @@ describe("the dry-run report carries the three review lists with row counts", ()
     );
     expect(cleanFootprint!.rows).toBe(17);
     expect(
-      report.toDelete.byExternalCustomer.map((entry) => entry.rows).sort((a, b) => a - b),
+      report.toDelete.byExternalCustomer
+        .map((entry) => entry.rows)
+        .sort((a, b) => a - b),
     ).toEqual([2, 3, 5, 17]);
     // Samples are deterministic: sorted prefixes of the group, bounded by the limit.
     const grantGroup = deleteGroupOf("credit_grants");
@@ -757,15 +782,31 @@ describe("the dry-run report carries the three review lists with row counts", ()
         class: "company_history",
         rows: 7,
         byTable: [
-          { table: "billing_customers", rows: 1, sampleRecordIds: [companyKey] },
-          { table: "payer_accounts", rows: 1, sampleRecordIds: [companyMappingId] },
+          {
+            table: "billing_customers",
+            rows: 1,
+            sampleRecordIds: [companyKey],
+          },
+          {
+            table: "payer_accounts",
+            rows: 1,
+            sampleRecordIds: [companyMappingId],
+          },
           {
             table: "billing_subscriptions",
             rows: 1,
             sampleRecordIds: [companySubscriptionId],
           },
-          { table: "credit_grants", rows: 1, sampleRecordIds: [companyGrantId] },
-          { table: "credit_ledger", rows: 1, sampleRecordIds: [companyLedgerId] },
+          {
+            table: "credit_grants",
+            rows: 1,
+            sampleRecordIds: [companyGrantId],
+          },
+          {
+            table: "credit_ledger",
+            rows: 1,
+            sampleRecordIds: [companyLedgerId],
+          },
           {
             table: "credit_reservations",
             rows: 1,
@@ -782,9 +823,21 @@ describe("the dry-run report carries the three review lists with row counts", ()
         class: "personal_records",
         rows: 3,
         byTable: [
-          { table: "billing_customers", rows: 1, sampleRecordIds: [personalKey] },
-          { table: "payer_accounts", rows: 1, sampleRecordIds: [personalMappingId] },
-          { table: "credit_grants", rows: 1, sampleRecordIds: [personalGrantId] },
+          {
+            table: "billing_customers",
+            rows: 1,
+            sampleRecordIds: [personalKey],
+          },
+          {
+            table: "payer_accounts",
+            rows: 1,
+            sampleRecordIds: [personalMappingId],
+          },
+          {
+            table: "credit_grants",
+            rows: 1,
+            sampleRecordIds: [personalGrantId],
+          },
         ],
       },
     ]);
@@ -831,7 +884,11 @@ describe("the dry-run report carries the three review lists with row counts", ()
             rows: 1,
             sampleRecordIds: [unknownMappingId],
           },
-          { table: "credit_grants", rows: 1, sampleRecordIds: [unknownGrantId] },
+          {
+            table: "credit_grants",
+            rows: 1,
+            sampleRecordIds: [unknownGrantId],
+          },
           {
             table: "credit_charge_remainders",
             rows: 1,
@@ -877,9 +934,9 @@ describe("the dry-run report carries the three review lists with row counts", ()
       report.externalAnchors.openOrders.sample.map((entry) => entry.orderId),
     ).toEqual([openOrderId]);
     // Scoped to the cleanup's keys: the company key's live subscription is not listed.
-    expect(
-      JSON.stringify(report.externalAnchors),
-    ).not.toContain(companySubscriptionId);
+    expect(JSON.stringify(report.externalAnchors)).not.toContain(
+      companySubscriptionId,
+    );
   });
 });
 
@@ -909,8 +966,9 @@ describe("the scope hash is bound to the manifest content and versions", () => {
       expect(drifted.toDelete.totalRows).toBe(before.toDelete.totalRows + 1);
       // The grant group's sample is unchanged — the new row sorts beyond it.
       expect(
-        drifted.toDelete.byTable.find((entry) => entry.table === "credit_grants")
-          ?.sampleRecordIds,
+        drifted.toDelete.byTable.find(
+          (entry) => entry.table === "credit_grants",
+        )?.sampleRecordIds,
       ).toEqual(
         before.toDelete.byTable.find((entry) => entry.table === "credit_grants")
           ?.sampleRecordIds,
@@ -921,7 +979,9 @@ describe("the scope hash is bound to the manifest content and versions", () => {
       expect(verdict.valid).toBe(false);
       expect(verdict.differences.join("\n")).toMatch(/scope hash/i);
     } finally {
-      await database.delete(creditGrants).where(eq(creditGrants.id, driftGrantId));
+      await database
+        .delete(creditGrants)
+        .where(eq(creditGrants.id, driftGrantId));
     }
   });
 
@@ -945,7 +1005,14 @@ describe("the scope hash is bound to the manifest content and versions", () => {
     const hash = computeCleanupScopeHash(classification, bumped);
     expect(hash).not.toBe(report.binding.scopeHash);
     const verdict = verifyCleanupScopeConfirmation(
-      { ...report.binding, scopeHash: hash, manifestVersions: { ...report.binding.manifestVersions, relations: 2 as unknown as 1 } },
+      {
+        ...report.binding,
+        scopeHash: hash,
+        manifestVersions: {
+          ...report.binding.manifestVersions,
+          relations: 2 as unknown as 1,
+        },
+      },
       report,
     );
     expect(verdict.valid).toBe(false);
@@ -1023,9 +1090,9 @@ describe("the report is safe to hand to an administrator", () => {
         sha256: "0".repeat(64),
       },
     };
-    expect(() =>
-      assembleCleanupDryRunReport(tampered, relations),
-    ).toThrow(/evidence sha256/i);
+    expect(() => assembleCleanupDryRunReport(tampered, relations)).toThrow(
+      /evidence sha256/i,
+    );
   });
 
   test("the sample limit is honored", async () => {
@@ -1044,4 +1111,3 @@ function JSONTextOrder(a: unknown, b: unknown) {
   const right = JSON.stringify(b);
   return left < right ? -1 : left > right ? 1 : 0;
 }
-

@@ -16,11 +16,7 @@ import {
 } from "../src/gateway/price-snapshot";
 import { createEnterpriseGatewayPriceSnapshotStore } from "../src/gateway/price-snapshot";
 import { createDatabase } from "../src/db/client";
-import {
-  accessGrants,
-  botServices,
-  payerAccounts,
-} from "../src/db/schema";
+import { accessGrants, botServices, payerAccounts } from "../src/db/schema";
 import {
   creditReservations,
   creditSettlementDetails,
@@ -55,7 +51,10 @@ const writer = createCreditWriter(database);
 const snapshotStore = createEnterpriseGatewayPriceSnapshotStore(database);
 const settleImage = createImageSettlementService({
   database,
-  environmentRate: { numerator: 100n, denominator: 1n } satisfies ConversionRate,
+  environmentRate: {
+    numerator: 100n,
+    denominator: 1n,
+  } satisfies ConversionRate,
 });
 
 let seedCounter = 0;
@@ -338,7 +337,11 @@ test("the user's consumption detail shows the image spec, count and amount", asy
       quality: "hd",
       inputImages: 0,
     },
-    result: { outcome: "generated", count: 2, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 2,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-cv`,
   });
@@ -370,7 +373,11 @@ test("a hold locked at v1 prices at v1 even after v2 lands; a v2 hold prices at 
   // The price moves: version 2 prices the same cell's generated images at $0.08.
   const { appended } = await snapshotStore.appendSnapshots([
     {
-      ref: { provider: world.provider, model: world.model, capability: "image" },
+      ref: {
+        provider: world.provider,
+        model: world.model,
+        capability: "image",
+      },
       dims: imageDimsOf("0.08"),
       fetchedAt: new Date().toISOString(),
       source: GATEWAY_PRICE_SNAPSHOT_SOURCE,
@@ -384,14 +391,22 @@ test("a hold locked at v1 prices at v1 even after v2 lands; a v2 hold prices at 
   const v1Outcome = await settleImage.settle({
     reservationId: v1Hold,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "generated", count: 1, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 1,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-v1`,
   });
   const v2Outcome = await settleImage.settle({
     reservationId: v2Hold,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "generated", count: 1, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 1,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-v2`,
   });
@@ -412,7 +427,10 @@ test("a result nobody can read settles nothing and keeps the hold occupied as un
   const outcome = await settleImage.settle({
     reservationId,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "unknown", reason: "stream cut before the image payload" },
+    result: {
+      outcome: "unknown",
+      reason: "stream cut before the image payload",
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-unk`,
   });
@@ -441,7 +459,11 @@ test("a pure v1 basis (no generated-image price) refuses the settlement as price
   const outcome = await settleImage.settle({
     reservationId,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "generated", count: 1, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 1,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-noprice`,
   });
@@ -466,7 +488,11 @@ test("input images ride the input-image dimension; a report beyond the spec is a
   const settled = await settleImage.settle({
     reservationId,
     requested: { count: 1, size: null, quality: null, inputImages: 2 },
-    result: { outcome: "generated", count: 1, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 1,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-edit`,
   });
@@ -479,7 +505,11 @@ test("input images ride the input-image dimension; a report beyond the spec is a
   const defect = await settleImage.settle({
     reservationId: `${reservationId}-none`,
     requested: { count: 1, size: null, quality: null, inputImages: 0 },
-    result: { outcome: "generated", count: 5, evidence: { kind: "provider_usage_report" } },
+    result: {
+      outcome: "generated",
+      count: 5,
+      evidence: { kind: "provider_usage_report" },
+    },
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-defect`,
   });
@@ -499,7 +529,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

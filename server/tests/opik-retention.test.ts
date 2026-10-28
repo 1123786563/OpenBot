@@ -34,10 +34,7 @@ const hereDir = dirname(herePath);
  */
 
 const manifest = (await Bun.file(
-  join(
-    hereDir,
-    "../src/ai-observability/opik-contract/47-manifest.json",
-  ),
+  join(hereDir, "../src/ai-observability/opik-contract/47-manifest.json"),
 ).json()) as VerifiedOpikContract;
 
 /** A verified contract minus one capability: what a deployment looks like without it. */

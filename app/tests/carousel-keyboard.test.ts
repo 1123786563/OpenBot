@@ -1,5 +1,10 @@
 import "./preload";
-import { afterAll, beforeAll, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { carouselKeyboardAction } from "../src/components/ui/carousel";
 

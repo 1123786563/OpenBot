@@ -30,9 +30,28 @@ describe("summarizeCapacity", () => {
 
   test("reward grantCount counts exactly the grants that still have remaining", () => {
     const summary = summarizeCapacity([
-      grant({ id: "cg-a", source: "promo", total: 5_000, used: 5_000, free: 0 }),
-      grant({ id: "cg-b", source: "signin", total: 5_000, used: 0, free: 5_000 }),
-      grant({ id: "cg-c", source: "promo", total: 5_000, used: 0, held: 5_000, free: 0 }),
+      grant({
+        id: "cg-a",
+        source: "promo",
+        total: 5_000,
+        used: 5_000,
+        free: 0,
+      }),
+      grant({
+        id: "cg-b",
+        source: "signin",
+        total: 5_000,
+        used: 0,
+        free: 5_000,
+      }),
+      grant({
+        id: "cg-c",
+        source: "promo",
+        total: 5_000,
+        used: 0,
+        held: 5_000,
+        free: 0,
+      }),
     ]);
     expect(summary.rewards.grantCount).toBe(1);
     expect(summary.rewards.remaining).toBe(50);

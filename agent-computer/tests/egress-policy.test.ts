@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { connect, type Socket } from "node:net";
 import {

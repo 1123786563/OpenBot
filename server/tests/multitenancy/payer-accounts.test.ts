@@ -18,7 +18,13 @@
 // 环境契约：专用企业测试库，缺显式 env 整套显式 skip，绝不回退开发库、skipped
 // 不计通过。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { asc, eq, sql } from "drizzle-orm";
 import { createCreditWriter } from "../../src/billing/credits-writer";
 import { creditGrants, creditLedger } from "../../src/db/schema/credits";

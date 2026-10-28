@@ -20,9 +20,7 @@
     },
     {
       "name": "agent-mastra/src",
-      "files": [
-        "agent-mastra/src/mastra/index.test.ts"
-      ]
+      "files": ["agent-mastra/src/mastra/index.test.ts"]
     },
     {
       "name": "agent-sandbox/tests",
@@ -34,9 +32,7 @@
     },
     {
       "name": "app/src",
-      "files": [
-        "app/src/lib/i18n/ai-observability.test.ts"
-      ]
+      "files": ["app/src/lib/i18n/ai-observability.test.ts"]
     },
     {
       "name": "app/tests part 1",
@@ -192,33 +188,23 @@
     },
     {
       "name": "desktop/scripts",
-      "files": [
-        "desktop/scripts/desktop-version.test.ts"
-      ]
+      "files": ["desktop/scripts/desktop-version.test.ts"]
     },
     {
       "name": "desktop/src",
-      "files": [
-        "desktop/src/telemetry.test.ts"
-      ]
+      "files": ["desktop/src/telemetry.test.ts"]
     },
     {
       "name": "scripts/processes.test.ts",
-      "files": [
-        "scripts/processes.test.ts"
-      ]
+      "files": ["scripts/processes.test.ts"]
     },
     {
       "name": "scripts/start-restart-guard.test.ts",
-      "files": [
-        "scripts/start-restart-guard.test.ts"
-      ]
+      "files": ["scripts/start-restart-guard.test.ts"]
     },
     {
       "name": "scripts/tls-pipeline.test.ts",
-      "files": [
-        "scripts/tls-pipeline.test.ts"
-      ]
+      "files": ["scripts/tls-pipeline.test.ts"]
     },
     {
       "name": "server/tests part 1",
@@ -722,9 +708,7 @@
     },
     {
       "name": "server/tests/billing-credits-writer",
-      "files": [
-        "server/tests/billing-credits-writer.integration.test.ts"
-      ]
+      "files": ["server/tests/billing-credits-writer.integration.test.ts"]
     },
     {
       "name": "server/tests/gateway-probe",
@@ -862,9 +846,7 @@
     },
     {
       "name": "shared/harnesses.test.ts",
-      "files": [
-        "shared/harnesses.test.ts"
-      ]
+      "files": ["shared/harnesses.test.ts"]
     },
     {
       "name": "server/tests/multitenancy/package chain",
@@ -886,39 +868,27 @@
     },
     {
       "name": "server/tests/multitenancy/package-withdraw-contention",
-      "files": [
-        "server/tests/multitenancy/package-withdraw-contention.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/package-withdraw-contention.test.ts"]
     },
     {
       "name": "server/tests/multitenancy/package-migration",
-      "files": [
-        "server/tests/multitenancy/package-migration.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/package-migration.test.ts"]
     },
     {
       "name": "server/tests/multitenancy/tool-invocation",
-      "files": [
-        "server/tests/multitenancy/tool-invocation.test.ts"
-      ]
+      "files": ["server/tests/multitenancy/tool-invocation.test.ts"]
     },
     {
       "name": "server/tests/package-dispatch-call",
-      "files": [
-        "server/tests/package-dispatch-call.test.ts"
-      ]
+      "files": ["server/tests/package-dispatch-call.test.ts"]
     },
     {
       "name": "server/tests/package-index-ops",
-      "files": [
-        "server/tests/package-index-ops.test.ts"
-      ]
+      "files": ["server/tests/package-index-ops.test.ts"]
     },
     {
       "name": "server/tests/package-entrypoints",
-      "files": [
-        "server/tests/package-entrypoints.test.ts"
-      ]
+      "files": ["server/tests/package-entrypoints.test.ts"]
     }
   ],
   "files": [
@@ -1616,8 +1586,5 @@
     "server/tests/multitenancy/execution-guarantees.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/execution-guarantees.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier",
     "server/tests/multitenancy/observability-authz.test.ts": "COLLECTION_ERROR: failed to collect server/tests/multitenancy/observability-authz.test.ts: ocrfix-f-manifest-regen/server/tests/multitenancy/support/bots-ownership.ts:97:14: 'readonly' type modifier "
   },
-  "directoryIslands": [
-    "server/tests/multitenancy",
-    "app/tests/multitenancy"
-  ]
+  "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"]
 }

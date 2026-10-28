@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createBatchSubmitService } from "../src/billing/batch-submit";
 import { createBatchPartialSettleService } from "../src/billing/batch-partial";
 import {
@@ -91,7 +96,10 @@ function dimsOf(amounts: Record<string, string>) {
 
 let dispatchCounter = 0;
 const dispatch = async () =>
-  ({ kind: "answered", providerBatchId: `prov-batch-${++dispatchCounter}` }) as const;
+  ({
+    kind: "answered",
+    providerBatchId: `prov-batch-${++dispatchCounter}`,
+  }) as const;
 
 async function resolveBasis(basis: {
   provider: string;
@@ -255,7 +263,8 @@ async function seedCancelWorld(): Promise<World> {
     rateVersion: 0,
     items,
   });
-  if (submitted.status !== "submitted") throw new Error("fixture submit failed");
+  if (submitted.status !== "submitted")
+    throw new Error("fixture submit failed");
 
   return {
     userId,
@@ -273,18 +282,39 @@ async function seedCancelWorld(): Promise<World> {
  * 2 cancelled — one unbilled with evidence, one EXECUTED with real usage.
  */
 const stitchReports = () => [
-  { kind: "terminal" as const, customId: "req-1", terminalState: "completed" as const, usage: { video: 4 } },
-  { kind: "terminal" as const, customId: "req-2", terminalState: "completed" as const, usage: { video: 4 } },
-  { kind: "terminal" as const, customId: "req-3", terminalState: "failed" as const, usage: { video: 2 } },
+  {
+    kind: "terminal" as const,
+    customId: "req-1",
+    terminalState: "completed" as const,
+    usage: { video: 4 },
+  },
+  {
+    kind: "terminal" as const,
+    customId: "req-2",
+    terminalState: "completed" as const,
+    usage: { video: 4 },
+  },
+  {
+    kind: "terminal" as const,
+    customId: "req-3",
+    terminalState: "failed" as const,
+    usage: { video: 2 },
+  },
   {
     kind: "absent" as const,
     customId: "req-4",
-    evidence: { kind: "not_dispatched" as const, reference: "provider-batch-status:request_counts.total=5" },
+    evidence: {
+      kind: "not_dispatched" as const,
+      reference: "provider-batch-status:request_counts.total=5",
+    },
   },
   {
     kind: "cancelled" as const,
     customId: "req-5",
-    evidence: { kind: "cancelled_unbilled" as const, reference: "provider-cancel-ack:req-5" },
+    evidence: {
+      kind: "cancelled_unbilled" as const,
+      reference: "provider-cancel-ack:req-5",
+    },
   },
   // The executed cancellation: the provider ran 6 units, then the cancel landed — the
   // cost is real and must settle (不丢账), never release.
@@ -301,12 +331,15 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM batch_items WHERE batch_id IN (SELECT batch_id FROM batch_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );
-  await database
-    .delete(batchJobs)
-    .where(like(batchJobs.grantId, `${prefix}%`));
+  await database.delete(batchJobs).where(like(batchJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -369,7 +402,9 @@ describe("18.4 — the group's seam stitch", () => {
     // not-dispatched item released ON their evidence, never the whole batch.
     expect(outcome.releasedCredits).toBe(world.cap - 1600);
 
-    const balanceAfter = await fixtureWriter.availableBalance(world.customerKey);
+    const balanceAfter = await fixtureWriter.availableBalance(
+      world.customerKey,
+    );
     expect(balanceAfter).toBe(world.balanceBefore - 1600);
 
     // The detail lines carry exactly the 4 billed items (incl. the executed cancel).
@@ -546,8 +581,12 @@ describe("18.4 AC-4 — the view distinguishes cancellation from failure", () =>
     const view = await readBatchCancelView(database, world.batchId);
     if (view === undefined) throw new Error("cancel view missing");
     const failed = view.items.find((item) => item.customId === "req-3");
-    const cancelledUnbilled = view.items.find((item) => item.customId === "req-5");
-    const cancelledBilled = view.items.find((item) => item.customId === "req-6");
+    const cancelledUnbilled = view.items.find(
+      (item) => item.customId === "req-5",
+    );
+    const cancelledBilled = view.items.find(
+      (item) => item.customId === "req-6",
+    );
     if (!failed || !cancelledUnbilled || !cancelledBilled) {
       throw new Error("view items missing");
     }

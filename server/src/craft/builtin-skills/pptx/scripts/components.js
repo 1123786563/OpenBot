@@ -18,7 +18,7 @@
 // overflow. pptxgenjs is resolved from the sandbox's global npm root
 // (NODE_PATH is not set in the sandbox).
 
-const { execFileSync } = require("child_process");
+const { execFileSync } = require("node:child_process");
 
 // --- Layout constants (LAYOUT_16x9, inches) ---------------------------------
 const PAGE = { W: 10, H: 5.625 };
@@ -175,7 +175,7 @@ function estLines(text, usableWIn, sizePt, bold) {
 function truncate(text, maxChars) {
   const s = String(text).trim();
   if (s.length <= maxChars) return s;
-  return s.slice(0, Math.max(maxChars - 1, 1)).trimEnd() + "…";
+  return `${s.slice(0, Math.max(maxChars - 1, 1)).trimEnd()}…`;
 }
 
 // Shrink font size (never below minSize) until the text fits the box at ~1.2
@@ -209,7 +209,7 @@ function fitLine(text, opts) {
 // --- Theme ---------------------------------------------------------------------
 
 function makeTheme(opts) {
-  if (!opts || !opts.primary)
+  if (!opts?.primary)
     throw new Error("makeTheme requires at least { primary }");
   const primary = normColor(opts.primary, "primary");
   const secondary = normColor(
@@ -304,7 +304,7 @@ function defaultTheme() {
   });
 }
 
-function createPresentation(theme, meta = {}) {
+function createPresentation(_theme, meta = {}) {
   const pptxgen = requirePptxgen();
   const pres = new pptxgen();
   pres.layout = "LAYOUT_16x9";
@@ -440,7 +440,7 @@ function addBodyBullets(slide, theme, items, { x, y, w, h, color, size = 14 }) {
   });
 }
 
-function placeVisual(slide, theme, visual, region) {
+function placeVisual(slide, _theme, visual, region) {
   if (!visual || visual.type === "none" || !visual.type) return;
   if (visual.type === "image" || visual.type === "chart") {
     const img = {
@@ -1126,7 +1126,7 @@ function quoteSlide(pres, theme, { quote, attribution } = {}) {
   });
   hr(slide, theme.hairline, MARGIN, bottomRuleY, CONTENT_W);
   if (attribution) {
-    slide.addText("— " + truncate(attribution, 70), {
+    slide.addText(`— ${truncate(attribution, 70)}`, {
       x: MARGIN,
       y: bottomRuleY + gapAttr,
       w: CONTENT_W,
@@ -1282,7 +1282,7 @@ function quadrant(
     [cx + (x1 - cx) / 2, cy + (y1 - cy) / 2],
   ];
   cells.slice(0, 4).forEach((cell, i) => {
-    if (!cell || !cell.label) return;
+    if (!cell?.label) return;
     const [ccx, ccy] = centers[i];
     const cellW = 3.2;
     const fit = fitBlock(cell.label, {

@@ -138,7 +138,9 @@ export type SelectItems<T> =
 function isGroupedItems<T>(
   items: SelectItems<T> | undefined,
 ): items is readonly SelectItemGroup<T>[] {
-  return Array.isArray(items) && items.length > 0 && "items" in (items[0] ?? {});
+  return (
+    Array.isArray(items) && items.length > 0 && "items" in (items[0] ?? {})
+  );
 }
 
 /** Base UI's `serializeValue`, kept verbatim: object values fall back to JSON, never "[object]". */
@@ -174,7 +176,8 @@ function resolveSelectedLabel(
   itemToStringLabel?: (value: never) => string,
 ): React.ReactNode {
   const fallback = () => stringifyAsLabel(value, itemToStringLabel);
-  if (itemToStringLabel && value != null) return itemToStringLabel(value as never);
+  if (itemToStringLabel && value != null)
+    return itemToStringLabel(value as never);
   if (value && typeof value === "object" && "label" in value) {
     const label = (value as { label?: React.ReactNode }).label;
     if (label != null) return label;
@@ -229,7 +232,12 @@ function stringifyAsValue(
   if (itemToStringValue && value != null) {
     return itemToStringValue(value as never) ?? "";
   }
-  if (value && typeof value === "object" && "value" in value && "label" in value) {
+  if (
+    value &&
+    typeof value === "object" &&
+    "value" in value &&
+    "label" in value
+  ) {
     return serializeValue((value as { value?: unknown }).value);
   }
   return serializeValue(value);
@@ -247,7 +255,8 @@ function textValueFor(
   const fromChildren = textFromNode(children);
   if (fromChildren !== undefined) return fromChildren;
   const label = resolveSelectedLabel(value, items, itemToStringLabel);
-  if (typeof label === "string" || typeof label === "number") return String(label);
+  if (typeof label === "string" || typeof label === "number")
+    return String(label);
   return undefined;
 }
 
@@ -369,15 +378,16 @@ function Select<T>({
     [isControlled, onValueChange],
   );
 
-  const selectionKeys: CollectionKey | readonly CollectionKey[] | null = multiple
-    ? Array.isArray(current)
-      ? current.map((entry) => keyForValue(entry))
-      : current == null
-        ? []
-        : [keyForValue(current)]
-    : current == null || Array.isArray(current)
-      ? null
-      : keyForValue(current);
+  const selectionKeys: CollectionKey | readonly CollectionKey[] | null =
+    multiple
+      ? Array.isArray(current)
+        ? current.map((entry) => keyForValue(entry))
+        : current == null
+          ? []
+          : [keyForValue(current)]
+      : current == null || Array.isArray(current)
+        ? null
+        : keyForValue(current);
 
   const handleChange = (next: CollectionKey | CollectionKey[] | null) => {
     if (multiple) {
@@ -554,8 +564,10 @@ type HeroPlacement =
  * left/right: the app is LTR, and React Aria's logical placement is chosen from the locale.
  */
 function placementFor(side: Side, align: Align): HeroPlacement {
-  if (side === "inline-start") return align === "end" ? "left bottom" : "left top";
-  if (side === "inline-end") return align === "end" ? "right bottom" : "right top";
+  if (side === "inline-start")
+    return align === "end" ? "left bottom" : "left top";
+  if (side === "inline-end")
+    return align === "end" ? "right bottom" : "right top";
   if (side === "left") return align === "end" ? "left bottom" : "left top";
   if (side === "right") return align === "end" ? "right bottom" : "right top";
   if (align === "center") return side;
@@ -602,7 +614,10 @@ function SelectContent({
   alignOffset = 0,
   alignItemWithTrigger = true,
   ...props
-}: Omit<React.ComponentProps<typeof SelectPrimitive.Popover>, "placement" | "offset" | "crossOffset"> & {
+}: Omit<
+  React.ComponentProps<typeof SelectPrimitive.Popover>,
+  "placement" | "offset" | "crossOffset"
+> & {
   side?: Side;
   sideOffset?: number;
   align?: Align;
@@ -692,7 +707,9 @@ function SelectItem({
   return (
     <ListBoxItem
       data-slot="select-item"
-      id={value === null || value === undefined ? undefined : keyForValue(value)}
+      id={
+        value === null || value === undefined ? undefined : keyForValue(value)
+      }
       textValue={text}
       isDisabled={disabled}
       className={cn(
@@ -730,10 +747,7 @@ function SelectItem({
  * A section heading renders in place and can be drawn as the old rule; it is hidden from
  * assistive technology because a divider carries no meaning inside a listbox.
  */
-function SelectSeparator({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
+function SelectSeparator({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <ListBoxSection aria-hidden>
       <Header className="p-0">

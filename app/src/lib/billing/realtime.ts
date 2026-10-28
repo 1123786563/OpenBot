@@ -79,8 +79,7 @@ async function readSessions(
 export const realtimeSessionsQueryOptions = queryOptions({
   queryKey: realtimeKeys.sessions,
   staleTime: 0,
-  queryFn: () =>
-    readSessions("Your realtime sessions could not be loaded."),
+  queryFn: () => readSessions("Your realtime sessions could not be loaded."),
 });
 
 /** The scoped half: the same read filed under the scope in force (MT097's contract). */

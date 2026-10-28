@@ -20,7 +20,13 @@
 // skipped 不计为通过），绝不回退开发库。MT077 迁移（三张策略/安装表 +
 // 最小 RLS）经 MT003 工具（migrate-test.ts）真实执行，本文件不自己 DDL。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -892,10 +898,7 @@ describeDb("MT077 / Issue #120 — 策略分层归属与收窄覆盖", () => {
       "module source hygiene: no environment inputs, catalog freezing is structural, install writes never name the catalog",
       async () => {
         const source = readFileSync(
-          join(
-            hereDir,
-            "../../src/enterprise/tenancy/routing-policy.ts",
-          ),
+          join(hereDir, "../../src/enterprise/tenancy/routing-policy.ts"),
           "utf8",
         );
         expect(source).not.toContain("process.env");

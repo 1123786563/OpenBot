@@ -358,7 +358,9 @@ export function CompanySelection({
 
       <fieldset className="picker" disabled={busy}>
         <legend>
-          {state.kind === "chosen" ? "Change the choice" : "Choose where to work"}
+          {state.kind === "chosen"
+            ? "Change the choice"
+            : "Choose where to work"}
         </legend>
         {catalog.status === "pending" && (
           <p className="footnote">

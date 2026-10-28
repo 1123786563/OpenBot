@@ -163,7 +163,10 @@ export function createBillingStatementRoutes(deps: {
    * MOD10（Issue #630）C3：账务查询门面的 statements 三读（可选）。注入后
    * 三 handler 经门面；缺省回退直用 `statements`（两臂行为等价）。
    */
-  accountQuery?: Pick<BillingAccountQuery, "planUsage" | "invoices" | "invoice">;
+  accountQuery?: Pick<
+    BillingAccountQuery,
+    "planUsage" | "invoices" | "invoice"
+  >;
   /** MOD10 C1 双路：读作用域的 Payer 解析经门面 `resolvePayer.personal`。 */
   resolvePayer?: Pick<BillingResolvePayer, "personal">;
 }) {
@@ -398,9 +401,9 @@ export function createBillingCreditRoutes(deps: {
       context.var.actor,
     );
     return context.json({
-      jobs: await (
-        deps.accountQuery ?? deps.asyncJobsView
-      ).asyncJobsForPayer(payer),
+      jobs: await (deps.accountQuery ?? deps.asyncJobsView).asyncJobsForPayer(
+        payer,
+      ),
     });
   });
 
@@ -1095,7 +1098,9 @@ export function createBillingAdminRoutes(deps: {
           filters: {
             ...(filter.jobId !== undefined ? { jobId: filter.jobId } : {}),
             ...(status !== undefined ? { status } : {}),
-            ...(filter.payerId !== undefined ? { payerId: filter.payerId } : {}),
+            ...(filter.payerId !== undefined
+              ? { payerId: filter.payerId }
+              : {}),
           },
           resultCount: jobs.length,
         },

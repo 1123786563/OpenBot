@@ -9,7 +9,11 @@ const base = () => ({
 });
 
 // e2e 没有 test.each：参数化用例在模块求值时用循环同步注册，标题里带上取值。
-const requiredKeys = ["WORKER_SHARED_SECRET", "SERVER_INTERNAL_URL", "DATABASE_URL"] as const;
+const requiredKeys = [
+  "WORKER_SHARED_SECRET",
+  "SERVER_INTERNAL_URL",
+  "DATABASE_URL",
+] as const;
 
 describe("worker env", () => {
   test("parses a complete environment", () => {
@@ -52,7 +56,8 @@ describe("worker env", () => {
   ]) {
     test(`strips trailing slashes from ${JSON.stringify(raw)}`, () => {
       expect(
-        loadWorkerEnv({ ...base(), SERVER_INTERNAL_URL: raw }).serverInternalUrl,
+        loadWorkerEnv({ ...base(), SERVER_INTERNAL_URL: raw })
+          .serverInternalUrl,
       ).toBe(normalised);
     });
   }

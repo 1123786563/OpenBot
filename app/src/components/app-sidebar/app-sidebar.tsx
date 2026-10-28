@@ -49,7 +49,10 @@ import {
 } from "@/components/ui/sidebar";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { type ChannelSummary, scopedChannelListQueryOptions } from "@/lib/channels/queries";
+import {
+  type ChannelSummary,
+  scopedChannelListQueryOptions,
+} from "@/lib/channels/queries";
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import { appConfig } from "@/lib/generated/application-config";

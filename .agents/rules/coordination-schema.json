@@ -4,7 +4,14 @@
   "title": "OpenBot coordination v3 (local schema; no remote resolution required)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "kind", "revision", "host_id", "updated_at", "records"],
+  "required": [
+    "schema_version",
+    "kind",
+    "revision",
+    "host_id",
+    "updated_at",
+    "records"
+  ],
   "properties": {
     "schema_version": { "const": 3 },
     "kind": { "enum": ["claims", "daily"] },
@@ -50,24 +57,25 @@
       "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
     },
     "nullable_sha": {
-      "anyOf": [
-        { "$ref": "#/$defs/sha" },
-        { "type": "null" }
-      ]
+      "anyOf": [{ "$ref": "#/$defs/sha" }, { "type": "null" }]
     },
     "evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "sha256", "content_kind", "checkpoint_id", "snapshot_generation", "attempt"],
+      "required": [
+        "path",
+        "sha256",
+        "content_kind",
+        "checkpoint_id",
+        "snapshot_generation",
+        "attempt"
+      ],
       "properties": {
         "path": { "type": "string", "minLength": 1 },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "content_kind": { "enum": ["file", "manifest"] },
         "checkpoint_id": {
-          "anyOf": [
-            { "type": "string", "minLength": 1 },
-            { "type": "null" }
-          ]
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
         },
         "snapshot_generation": {
           "type": ["integer", "null"],
@@ -96,10 +104,7 @@
       ]
     },
     "nullable_evidence": {
-      "anyOf": [
-        { "$ref": "#/$defs/evidence" },
-        { "type": "null" }
-      ]
+      "anyOf": [{ "$ref": "#/$defs/evidence" }, { "type": "null" }]
     },
     "relation_snapshot": {
       "type": "object",
@@ -118,7 +123,23 @@
     "claim": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["resource_key", "mode", "owner_run", "coordinator", "host", "task", "attempt", "token", "generation", "state", "created_at", "heartbeat_at", "expires_at", "evidence", "relation_snapshot"],
+      "required": [
+        "resource_key",
+        "mode",
+        "owner_run",
+        "coordinator",
+        "host",
+        "task",
+        "attempt",
+        "token",
+        "generation",
+        "state",
+        "created_at",
+        "heartbeat_at",
+        "expires_at",
+        "evidence",
+        "relation_snapshot"
+      ],
       "properties": {
         "resource_key": { "type": "string", "minLength": 1 },
         "mode": { "enum": ["read", "write", "aggregate"] },
@@ -129,7 +150,9 @@
         "attempt": { "type": "integer", "minimum": 0 },
         "token": { "type": "string", "format": "uuid" },
         "generation": { "type": "integer", "minimum": 0 },
-        "state": { "enum": ["reserved", "running", "settling", "unverifiable"] },
+        "state": {
+          "enum": ["reserved", "running", "settling", "unverifiable"]
+        },
         "created_at": { "type": "string", "format": "date-time" },
         "heartbeat_at": { "type": "string", "format": "date-time" },
         "expires_at": { "type": "string", "format": "date-time" },
@@ -138,10 +161,7 @@
           "items": { "$ref": "#/$defs/evidence" }
         },
         "relation_snapshot": {
-          "anyOf": [
-            { "$ref": "#/$defs/relation_snapshot" },
-            { "type": "null" }
-          ]
+          "anyOf": [{ "$ref": "#/$defs/relation_snapshot" }, { "type": "null" }]
         }
       },
       "allOf": [
@@ -161,7 +181,14 @@
     "daily": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repo_identity", "next_class", "slot_sequence", "consecutive_recovery", "capacity", "issues"],
+      "required": [
+        "repo_identity",
+        "next_class",
+        "slot_sequence",
+        "consecutive_recovery",
+        "capacity",
+        "issues"
+      ],
       "properties": {
         "repo_identity": { "type": "string", "pattern": "^[^/]+/[^/]+/[^/]+$" },
         "next_class": { "enum": ["recovery", "new", "revalidate"] },
@@ -208,12 +235,7 @@
         "target": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "repository",
-            "ref",
-            "sha",
-            "gitlinks"
-          ],
+          "required": ["repository", "ref", "sha", "gitlinks"],
           "properties": {
             "repository": {
               "type": "string",
@@ -231,11 +253,7 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "path",
-                  "repository",
-                  "sha"
-                ],
+                "required": ["path", "repository", "sha"],
                 "properties": {
                   "path": {
                     "type": "string",
@@ -256,10 +274,7 @@
         "policy": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "revision",
-            "manifest"
-          ],
+          "required": ["revision", "manifest"],
           "properties": {
             "revision": {
               "type": "integer",
@@ -284,7 +299,16 @@
       "additionalProperties": false,
       "required": ["kind", "subject", "expected", "observed", "source_ref"],
       "properties": {
-        "kind": { "enum": ["authorization", "dependency", "environment", "target", "api_retry", "evidence"] },
+        "kind": {
+          "enum": [
+            "authorization",
+            "dependency",
+            "environment",
+            "target",
+            "api_retry",
+            "evidence"
+          ]
+        },
         "subject": { "type": "string", "minLength": 1 },
         "expected": { "type": ["string", "number", "boolean", "null"] },
         "observed": { "type": ["string", "number", "boolean", "null"] },
@@ -323,20 +347,36 @@
       }
     },
     "validation_state": {
-      "enum": ["queued", "auditing", "finding_confirmed", "repairing", "revalidating", "verified", "not_required", "blocked", "failed", "unproven", "intake_incomplete", "aggregate_pending"]
+      "enum": [
+        "queued",
+        "auditing",
+        "finding_confirmed",
+        "repairing",
+        "revalidating",
+        "verified",
+        "not_required",
+        "blocked",
+        "failed",
+        "unproven",
+        "intake_incomplete",
+        "aggregate_pending"
+      ]
     },
     "child": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["issue", "target_sha", "requirements_fingerprint", "checkpoint", "validation_state"],
+      "required": [
+        "issue",
+        "target_sha",
+        "requirements_fingerprint",
+        "checkpoint",
+        "validation_state"
+      ],
       "properties": {
         "issue": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" },
         "target_sha": { "$ref": "#/$defs/nullable_sha" },
         "requirements_fingerprint": {
-          "anyOf": [
-            { "$ref": "#/$defs/requirement_fp" },
-            { "type": "null" }
-          ]
+          "anyOf": [{ "$ref": "#/$defs/requirement_fp" }, { "type": "null" }]
         },
         "checkpoint": { "$ref": "#/$defs/nullable_evidence" },
         "validation_state": { "$ref": "#/$defs/validation_state" }
@@ -360,16 +400,54 @@
     "event": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["event_id", "slot_sequence", "action", "result", "attempt", "at", "refs", "run_id", "class_at_selection", "capacity_at_selection", "slot_kind"],
+      "required": [
+        "event_id",
+        "slot_sequence",
+        "action",
+        "result",
+        "attempt",
+        "at",
+        "refs",
+        "run_id",
+        "class_at_selection",
+        "capacity_at_selection",
+        "slot_kind"
+      ],
       "properties": {
         "event_id": { "type": "string", "format": "uuid" },
         "slot_sequence": { "type": ["integer", "null"], "minimum": 1 },
-        "action": { "enum": ["slot_selected", "dispatch_started", "settled", "state_changed", "evidence_invalidated", "scope_changed", "policy_changed"] },
+        "action": {
+          "enum": [
+            "slot_selected",
+            "dispatch_started",
+            "settled",
+            "state_changed",
+            "evidence_invalidated",
+            "scope_changed",
+            "policy_changed"
+          ]
+        },
         "run_id": { "type": "string", "minLength": 1 },
-        "class_at_selection": { "enum": ["recovery", "new", "revalidate", null] },
+        "class_at_selection": {
+          "enum": ["recovery", "new", "revalidate", null]
+        },
         "capacity_at_selection": { "type": ["integer", "null"], "minimum": 1 },
         "slot_kind": { "enum": ["audit", "label", "close", "delivery", null] },
-        "result": { "enum": ["recorded", "not_settled", "verified", "not_required", "failed", "blocked", "unproven", "intake_incomplete", "aggregate_pending", "corrected", "skipped"] },
+        "result": {
+          "enum": [
+            "recorded",
+            "not_settled",
+            "verified",
+            "not_required",
+            "failed",
+            "blocked",
+            "unproven",
+            "intake_incomplete",
+            "aggregate_pending",
+            "corrected",
+            "skipped"
+          ]
+        },
         "attempt": { "type": "integer", "minimum": 0 },
         "at": { "type": "string", "format": "date-time" },
         "refs": {
@@ -381,7 +459,9 @@
       "allOf": [
         {
           "if": {
-            "properties": { "action": { "enum": ["slot_selected", "dispatch_started"] } },
+            "properties": {
+              "action": { "enum": ["slot_selected", "dispatch_started"] }
+            },
             "required": ["action"]
           },
           "then": {
@@ -394,31 +474,98 @@
             "required": ["action"]
           },
           "then": {
-            "properties": { "result": { "not": { "enum": ["not_settled", "recorded"] } } }
+            "properties": {
+              "result": { "not": { "enum": ["not_settled", "recorded"] } }
+            }
           }
         },
         {
-          "if": { "properties": { "action": { "enum": ["slot_selected", "dispatch_started", "settled"] } } },
-          "then": { "properties": {
-            "slot_sequence": { "type": "integer", "minimum": 1 },
-            "class_at_selection": { "enum": ["recovery", "new", "revalidate"] },
-            "capacity_at_selection": { "type": "integer", "minimum": 1 },
-            "slot_kind": { "enum": ["audit", "label", "close", "delivery"] }
-          } },
-          "else": { "properties": {
-            "slot_sequence": { "type": "null" },
-            "class_at_selection": { "type": "null" },
-            "capacity_at_selection": { "type": "null" },
-            "slot_kind": { "type": "null" },
-            "result": { "const": "recorded" }
-          } }
+          "if": {
+            "properties": {
+              "action": {
+                "enum": ["slot_selected", "dispatch_started", "settled"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "slot_sequence": { "type": "integer", "minimum": 1 },
+              "class_at_selection": {
+                "enum": ["recovery", "new", "revalidate"]
+              },
+              "capacity_at_selection": { "type": "integer", "minimum": 1 },
+              "slot_kind": { "enum": ["audit", "label", "close", "delivery"] }
+            }
+          },
+          "else": {
+            "properties": {
+              "slot_sequence": { "type": "null" },
+              "class_at_selection": { "type": "null" },
+              "capacity_at_selection": { "type": "null" },
+              "slot_kind": { "type": "null" },
+              "result": { "const": "recorded" }
+            }
+          }
         }
       ]
     },
     "issue": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["issue", "class", "eligible_since", "last_slot", "enqueue_sequence", "target_sha", "requirements_fingerprint", "validation_state", "delivery_state", "repair_rounds_total", "label_action", "run", "workspace", "checkpoint", "review", "decision", "human_review_state", "human_review", "delivery", "label", "close", "wait_reason", "resume_condition", "input_fingerprint", "retry_after", "next_action", "aggregate_children", "history", "label_action_reason", "label_next_action", "label_wait_reason", "label_input_fingerprint", "label_resume_condition", "label_retry_after", "label_intent", "close_action", "close_action_reason", "close_next_action", "close_wait_reason", "close_input_fingerprint", "close_resume_condition", "close_retry_after", "close_intent", "audit_epoch", "delivery_action", "delivery_action_reason", "delivery_next_action", "delivery_wait_reason", "delivery_input_fingerprint", "delivery_resume_condition", "delivery_retry_after", "delivery_intent"],
+      "required": [
+        "issue",
+        "class",
+        "eligible_since",
+        "last_slot",
+        "enqueue_sequence",
+        "target_sha",
+        "requirements_fingerprint",
+        "validation_state",
+        "delivery_state",
+        "repair_rounds_total",
+        "label_action",
+        "run",
+        "workspace",
+        "checkpoint",
+        "review",
+        "decision",
+        "human_review_state",
+        "human_review",
+        "delivery",
+        "label",
+        "close",
+        "wait_reason",
+        "resume_condition",
+        "input_fingerprint",
+        "retry_after",
+        "next_action",
+        "aggregate_children",
+        "history",
+        "label_action_reason",
+        "label_next_action",
+        "label_wait_reason",
+        "label_input_fingerprint",
+        "label_resume_condition",
+        "label_retry_after",
+        "label_intent",
+        "close_action",
+        "close_action_reason",
+        "close_next_action",
+        "close_wait_reason",
+        "close_input_fingerprint",
+        "close_resume_condition",
+        "close_retry_after",
+        "close_intent",
+        "audit_epoch",
+        "delivery_action",
+        "delivery_action_reason",
+        "delivery_next_action",
+        "delivery_wait_reason",
+        "delivery_input_fingerprint",
+        "delivery_resume_condition",
+        "delivery_retry_after",
+        "delivery_intent"
+      ],
       "properties": {
         "issue": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" },
         "class": { "enum": ["recovery", "new", "revalidate", null] },
@@ -429,45 +576,51 @@
           ]
         },
         "last_slot": {
-          "anyOf": [
-            { "type": "integer", "minimum": 1 },
-            { "type": "null" }
-          ]
+          "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
         },
         "enqueue_sequence": { "type": "integer", "minimum": 0 },
         "target_sha": { "$ref": "#/$defs/nullable_sha" },
         "requirements_fingerprint": {
-          "anyOf": [
-            { "$ref": "#/$defs/requirement_fp" },
-            { "type": "null" }
-          ]
+          "anyOf": [{ "$ref": "#/$defs/requirement_fp" }, { "type": "null" }]
         },
         "validation_state": { "$ref": "#/$defs/validation_state" },
-        "delivery_state": { "enum": ["none", "repair_prepared", "integration_pending", "delivered"] },
+        "delivery_state": {
+          "enum": [
+            "none",
+            "repair_prepared",
+            "integration_pending",
+            "delivered"
+          ]
+        },
         "repair_rounds_total": { "type": "integer", "minimum": 0 },
-        "label_action": { "enum": ["none", "label_pending", "applied_valid", "stale", "label_correction_pending", "corrected"] },
+        "label_action": {
+          "enum": [
+            "none",
+            "label_pending",
+            "applied_valid",
+            "stale",
+            "label_correction_pending",
+            "corrected"
+          ]
+        },
         "run": { "$ref": "#/$defs/nullable_evidence" },
         "workspace": { "$ref": "#/$defs/nullable_evidence" },
         "checkpoint": { "$ref": "#/$defs/nullable_evidence" },
         "review": { "$ref": "#/$defs/nullable_evidence" },
         "decision": { "$ref": "#/$defs/nullable_evidence" },
-        "human_review_state": { "enum": ["none", "pending", "approved", "rejected"] },
+        "human_review_state": {
+          "enum": ["none", "pending", "approved", "rejected"]
+        },
         "human_review": { "$ref": "#/$defs/nullable_evidence" },
         "delivery": { "$ref": "#/$defs/nullable_evidence" },
         "label": { "$ref": "#/$defs/nullable_evidence" },
         "close": { "$ref": "#/$defs/nullable_evidence" },
         "wait_reason": {
-          "anyOf": [
-            { "type": "string", "minLength": 1 },
-            { "type": "null" }
-          ]
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
         },
         "resume_condition": { "$ref": "#/$defs/resume" },
         "input_fingerprint": {
-          "anyOf": [
-            { "$ref": "#/$defs/input_fp" },
-            { "type": "null" }
-          ]
+          "anyOf": [{ "$ref": "#/$defs/input_fp" }, { "type": "null" }]
         },
         "retry_after": {
           "anyOf": [
@@ -494,10 +647,22 @@
         },
         "label_resume_condition": { "$ref": "#/$defs/resume" },
         "label_retry_after": {
-          "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+          "anyOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
         },
         "label_intent": { "$ref": "#/$defs/nullable_evidence" },
-        "close_action": { "enum": ["none", "close_pending", "applied_valid", "stale", "close_correction_pending", "corrected"] },
+        "close_action": {
+          "enum": [
+            "none",
+            "close_pending",
+            "applied_valid",
+            "stale",
+            "close_correction_pending",
+            "corrected"
+          ]
+        },
         "close_action_reason": { "type": ["string", "null"] },
         "close_next_action": { "type": ["string", "null"] },
         "close_wait_reason": {
@@ -508,11 +673,23 @@
         },
         "close_resume_condition": { "$ref": "#/$defs/resume" },
         "close_retry_after": {
-          "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+          "anyOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
         },
         "close_intent": { "$ref": "#/$defs/nullable_evidence" },
         "audit_epoch": { "$ref": "#/$defs/nullable_evidence" },
-        "delivery_action": { "enum": ["none", "delivery_pending", "applied_valid", "stale", "delivery_correction_pending", "corrected"] },
+        "delivery_action": {
+          "enum": [
+            "none",
+            "delivery_pending",
+            "applied_valid",
+            "stale",
+            "delivery_correction_pending",
+            "corrected"
+          ]
+        },
         "delivery_action_reason": { "type": ["string", "null"] },
         "delivery_next_action": { "type": ["string", "null"] },
         "delivery_wait_reason": {
@@ -523,7 +700,10 @@
         },
         "delivery_resume_condition": { "$ref": "#/$defs/resume" },
         "delivery_retry_after": {
-          "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+          "anyOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
         },
         "delivery_intent": { "$ref": "#/$defs/nullable_evidence" }
       },
@@ -572,10 +752,36 @@
                 },
                 "then": {
                   "anyOf": [
-                    { "properties": { "label_action": { "enum": ["stale", "label_correction_pending"] } } },
-                    { "properties": { "close_action": { "enum": ["stale", "close_correction_pending"] } } },
-                    { "properties": { "delivery_action": { "enum": ["delivery_pending", "stale", "delivery_correction_pending"] } } },
-                    { "properties": { "delivery_state": { "const": "integration_pending" } } }
+                    {
+                      "properties": {
+                        "label_action": {
+                          "enum": ["stale", "label_correction_pending"]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "close_action": {
+                          "enum": ["stale", "close_correction_pending"]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "delivery_action": {
+                          "enum": [
+                            "delivery_pending",
+                            "stale",
+                            "delivery_correction_pending"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "delivery_state": { "const": "integration_pending" }
+                      }
+                    }
                   ]
                 }
               }
@@ -584,7 +790,9 @@
         },
         {
           "if": {
-            "properties": { "human_review_state": { "enum": ["approved", "rejected"] } },
+            "properties": {
+              "human_review_state": { "enum": ["approved", "rejected"] }
+            },
             "required": ["human_review_state"]
           },
           "then": {
@@ -603,10 +811,40 @@
                 },
                 "then": {
                   "anyOf": [
-                    { "properties": { "label_action": { "enum": ["stale", "label_correction_pending"] } } },
-                    { "properties": { "close_action": { "enum": ["close_pending", "stale", "close_correction_pending"] } } },
-                    { "properties": { "delivery_action": { "enum": ["delivery_pending", "stale", "delivery_correction_pending"] } } },
-                    { "properties": { "delivery_state": { "const": "integration_pending" } } }
+                    {
+                      "properties": {
+                        "label_action": {
+                          "enum": ["stale", "label_correction_pending"]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "close_action": {
+                          "enum": [
+                            "close_pending",
+                            "stale",
+                            "close_correction_pending"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "delivery_action": {
+                          "enum": [
+                            "delivery_pending",
+                            "stale",
+                            "delivery_correction_pending"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "delivery_state": { "const": "integration_pending" }
+                      }
+                    }
                   ]
                 }
               }
@@ -624,12 +862,23 @@
         },
         {
           "if": {
-            "properties": { "delivery_state": { "const": "integration_pending" } },
+            "properties": {
+              "delivery_state": { "const": "integration_pending" }
+            },
             "required": ["delivery_state"]
           },
           "then": {
             "properties": {
-              "validation_state": { "enum": ["verified", "revalidating", "blocked", "failed", "unproven", "intake_incomplete"] },
+              "validation_state": {
+                "enum": [
+                  "verified",
+                  "revalidating",
+                  "blocked",
+                  "failed",
+                  "unproven",
+                  "intake_incomplete"
+                ]
+              },
               "checkpoint": { "$ref": "#/$defs/evidence" },
               "review": { "$ref": "#/$defs/evidence" }
             }
@@ -723,10 +972,25 @@
             "required": ["label_wait_reason"]
           },
           "then": {
-            "properties": { "label_input_fingerprint": { "$ref": "#/$defs/input_fp" } },
+            "properties": {
+              "label_input_fingerprint": { "$ref": "#/$defs/input_fp" }
+            },
             "anyOf": [
-              { "properties": { "label_resume_condition": { "properties": { "all": { "minItems": 1 } } } } },
-              { "properties": { "label_retry_after": { "type": "string", "format": "date-time" } } }
+              {
+                "properties": {
+                  "label_resume_condition": {
+                    "properties": { "all": { "minItems": 1 } }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "label_retry_after": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
             ]
           }
         },
@@ -737,7 +1001,9 @@
           },
           "then": {
             "properties": {
-              "label_resume_condition": { "properties": { "all": { "maxItems": 0 } } },
+              "label_resume_condition": {
+                "properties": { "all": { "maxItems": 0 } }
+              },
               "label_retry_after": { "type": "null" }
             }
           }
@@ -748,10 +1014,25 @@
             "required": ["close_wait_reason"]
           },
           "then": {
-            "properties": { "close_input_fingerprint": { "$ref": "#/$defs/input_fp" } },
+            "properties": {
+              "close_input_fingerprint": { "$ref": "#/$defs/input_fp" }
+            },
             "anyOf": [
-              { "properties": { "close_resume_condition": { "properties": { "all": { "minItems": 1 } } } } },
-              { "properties": { "close_retry_after": { "type": "string", "format": "date-time" } } }
+              {
+                "properties": {
+                  "close_resume_condition": {
+                    "properties": { "all": { "minItems": 1 } }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "close_retry_after": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
             ]
           }
         },
@@ -762,7 +1043,9 @@
           },
           "then": {
             "properties": {
-              "close_resume_condition": { "properties": { "all": { "maxItems": 0 } } },
+              "close_resume_condition": {
+                "properties": { "all": { "maxItems": 0 } }
+              },
               "close_retry_after": { "type": "null" }
             }
           }
@@ -773,10 +1056,25 @@
             "required": ["delivery_wait_reason"]
           },
           "then": {
-            "properties": { "delivery_input_fingerprint": { "$ref": "#/$defs/input_fp" } },
+            "properties": {
+              "delivery_input_fingerprint": { "$ref": "#/$defs/input_fp" }
+            },
             "anyOf": [
-              { "properties": { "delivery_resume_condition": { "properties": { "all": { "minItems": 1 } } } } },
-              { "properties": { "delivery_retry_after": { "type": "string", "format": "date-time" } } }
+              {
+                "properties": {
+                  "delivery_resume_condition": {
+                    "properties": { "all": { "minItems": 1 } }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "delivery_retry_after": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
             ]
           }
         },
@@ -787,14 +1085,18 @@
           },
           "then": {
             "properties": {
-              "delivery_resume_condition": { "properties": { "all": { "maxItems": 0 } } },
+              "delivery_resume_condition": {
+                "properties": { "all": { "maxItems": 0 } }
+              },
               "delivery_retry_after": { "type": "null" }
             }
           }
         },
         {
           "if": {
-            "properties": { "class": { "enum": ["recovery", "new", "revalidate"] } },
+            "properties": {
+              "class": { "enum": ["recovery", "new", "revalidate"] }
+            },
             "required": ["class"]
           },
           "then": {
@@ -846,11 +1148,7 @@
           "if": {
             "properties": {
               "delivery_action": {
-                "enum": [
-                  "applied_valid",
-                  "stale",
-                  "corrected"
-                ]
+                "enum": ["applied_valid", "stale", "corrected"]
               }
             }
           },

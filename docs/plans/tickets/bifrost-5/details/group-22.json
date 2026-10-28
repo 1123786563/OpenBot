@@ -1,197 +1,246 @@
 {
- "group": "22",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC01–AC19 全部）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（30 项决定与 19 条验收标准的映射）",
-  "docs/adr/0001-conservative-input-bound.md、0002-per-user-bot-model-access.md、0003-bifrost-openbot-credit-admission.md、0004-company-team-tenancy.md",
-  "AGENTS.md（完成标准：Evidence over claims；OCR 外层审查与 SDD 修复循环）"
- ],
- "anchors": {
-  "entry-enumeration": "Bifrost 侧：plugins/governance/main.go 的全部 hook（PreRequestHook、PreLLMHook、PostLLMHook、HTTPTransport*Hook、PreMCPHook/PostMCPHook、PreMCPConnectionHook、PreA2AHook/PostA2AHook）、core/providers/* 的路由与能力标志、framework/jobaccounting/*（batch/video/sweeper）；OpenBot 侧：server/src/copilot.ts 的模型调用与门禁、server/src/billing/routes.ts 的各路由组、agent-trpc 与其他 agent-* 运行时的模型入口",
-  "evidence-store": "组 07.7 的输出封顶证据、组 14.3 的音频路径证据、组 11.6/12.4/13.4/19.2/20.4 的能力可用性与入口清单",
-  "test-entrypoints": "package.json（test、test:ci、typecheck、lint、format:check）、scripts/test-ci.ts、e2e.config.ts 与 tests/ 下的 e2e 框架、server/tests/support/database.ts（TEST_DATABASE_URL）",
-  "go-tests": "bifrost/plugins/governance/... 与 bifrost/framework/jobaccounting/... 的 go test（含 -race）",
-  "review": "AGENTS.md 的 OCR 外层审查流程（ocr review --audience agent --from <BASE> --to <HEAD> / workspace 模式）与 Superpowers 的独立 reviewer 结论"
- },
- "verification_common": [
-  "bun run typecheck",
-  "bunx biome lint --error-on-warnings .",
-  "cd bifrost/plugins/governance && go test -race ./..."
- ],
- "tickets": {
-  "22.1": {
-   "slug": "entrypoint-enumeration",
-   "contracts": {
-    "consumes": ["各组终点 Ticket 的交付（01.8、02.8、03.11、04.8、05.10、06.12、07.12、08.10、09.3、09.4、10.6、11.6、12.4、13.4、14.4、15.8、16.3、17.8、18.4、19.4、20.4、21.7）", "20.4 与 12.4 的入口清单证据"],
-    "produces": [
-     "完整入口清单：所有可触发供应商模型调用的路径（HTTP 路由、hook、实时、异步、批量、视频、工具/MCP/A2A、内置运行时、订阅 harness），每条标注是否经过准入",
-     "清单以代码证据为准（hook 注册点、路由表、provider 调用点），不以 Ticket 标题或文档推定",
-     "未接入准入的入口列为阻塞项，不得放行"
-    ]
-   },
-   "steps": [
-    "从 Bifrost 的 hook 注册点与 provider 调用点反向枚举全部推理入口",
-    "从 OpenBot 侧枚举模型调用发起点（工作台、agent 运行时、内部服务）",
-    "为每条入口标注：是否经过 Reserve、是否有硬拒绝、付款账户来源",
-    "把未接入准入的入口列为阻塞项并给出具体位置",
-    "先写失败测试：入口清单与自动化枚举结果一致（新增入口未登记时测试失败）"
-   ],
-   "criteria": [
-    "入口清单覆盖全部可触发供应商调用的路径，且有代码证据",
-    "每条入口都标注准入状态与付款账户来源",
-    "存在未接入准入的入口时被列为阻塞项，不放行",
-    "新增入口未登记到清单时自动化检查失败"
-   ],
-   "tests": ["自动化入口枚举与清单一致性测试", "未准入入口阻塞断言", "新增入口漏登记失败测试"],
-   "verification": ["bun test server/tests/entrypoint-enumeration.test.ts", "cd bifrost/plugins/governance && go test -run Entrypoints ./..."],
-   "owned_scope": ["入口枚举清单与其自动化检查", "验收记录文档"],
-   "resume_hint": "别按 Ticket 标题推定覆盖：以 hook 注册点和 provider 调用点为准反向枚举，漏一个入口就等于留一条免费通道。"
+  "group": "22",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC01–AC19 全部）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（30 项决定与 19 条验收标准的映射）",
+    "docs/adr/0001-conservative-input-bound.md、0002-per-user-bot-model-access.md、0003-bifrost-openbot-credit-admission.md、0004-company-team-tenancy.md",
+    "AGENTS.md（完成标准：Evidence over claims；OCR 外层审查与 SDD 修复循环）"
+  ],
+  "anchors": {
+    "entry-enumeration": "Bifrost 侧：plugins/governance/main.go 的全部 hook（PreRequestHook、PreLLMHook、PostLLMHook、HTTPTransport*Hook、PreMCPHook/PostMCPHook、PreMCPConnectionHook、PreA2AHook/PostA2AHook）、core/providers/* 的路由与能力标志、framework/jobaccounting/*（batch/video/sweeper）；OpenBot 侧：server/src/copilot.ts 的模型调用与门禁、server/src/billing/routes.ts 的各路由组、agent-trpc 与其他 agent-* 运行时的模型入口",
+    "evidence-store": "组 07.7 的输出封顶证据、组 14.3 的音频路径证据、组 11.6/12.4/13.4/19.2/20.4 的能力可用性与入口清单",
+    "test-entrypoints": "package.json（test、test:ci、typecheck、lint、format:check）、scripts/test-ci.ts、e2e.config.ts 与 tests/ 下的 e2e 框架、server/tests/support/database.ts（TEST_DATABASE_URL）",
+    "go-tests": "bifrost/plugins/governance/... 与 bifrost/framework/jobaccounting/... 的 go test（含 -race）",
+    "review": "AGENTS.md 的 OCR 外层审查流程（ocr review --audience agent --from <BASE> --to <HEAD> / workspace 模式）与 Superpowers 的独立 reviewer 结论"
   },
-  "22.2": {
-   "slug": "per-entrypoint-gate-and-payer-audit",
-   "contracts": {
-    "consumes": ["22.1 的入口清单", "02.5 的不切换语义", "07.3/16.3/20.4 的拒绝与旁路证据"],
-    "produces": [
-     "逐入口核查结果：准入门禁生效、付款账户正确、拒绝路径可触发、无直连供应商旁路",
-     "核查证据（命令、输出摘要、代码版本），可被独立复核",
-     "发现缺陷时生成修复项并回到对应 Ticket 的语义边界处理，不在本 Ticket 静默修补"
-    ]
-   },
-   "steps": [
-    "对清单中每条入口执行四类核查：门禁、payer、拒绝、旁路",
-    "记录核查命令与结果摘要，绑定当时代码版本",
-    "发现缺陷时开修复项（引用对应 Ticket 的验收标准），不静默改语义",
-    "先写失败测试：逐入口的余额不足场景下供应商调用数为 0"
-   ],
-   "criteria": [
-    "每条入口都通过门禁、payer、拒绝与旁路四类核查",
-    "核查证据绑定代码版本且可独立复核",
-    "发现的缺陷都有对应修复项与验收标准引用",
-    "任何入口都不存在直连供应商的旁路"
-   ],
-   "tests": ["逐入口余额不足拒绝矩阵测试", "payer 正确性断言", "旁路不存在断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/entrypoint-gate-audit.integration.test.ts"],
-   "owned_scope": ["核查脚本与证据记录", "对应测试与验收记录"],
-   "resume_hint": "核查失败不要就地放宽语义：开修复项回到对应 Ticket，否则会破坏已批准的 AC 映射。"
-  },
-  "22.3": {
-   "slug": "conformance-evidence-text-image-audio",
-   "contracts": {
-    "consumes": ["22.2 的核查结果", "07.7 的输出封顶证据", "12.x/13.x/14.x 的能力证据"],
-    "produces": [
-     "文本、图像、音频三族的 conformance 证据：上限可强制性、真实 usage 可得性、取消/尾部行为，绑定 provider/model/调用方式与验证环境",
-     "配置或版本变更使受影响证据失效的规则",
-     "缺真实供应商环境的能力明确标记为未验证/不可启用，不编造证据"
-    ]
-   },
-   "steps": [
-    "汇总三族已有证据，补齐缺口（每个启用的 model + 调用方式都要有证据）",
-    "为证据绑定 provider/model/调用方式/价格版本/验证环境/实际结果",
-    "实现证据失效规则：相关配置或版本变更后标记失效",
-    "缺环境时用本地确定性测试完成可完成部分，其余标记未验证并列出所需环境",
-    "先写失败测试：启用但缺证据的能力被标记不可用"
-   ],
-   "criteria": [
-    "三族中每个启用的能力都有绑定版本的 conformance 证据",
-    "证据包含验证环境与实际结果，可复现",
-    "配置或版本变更后受影响证据失效",
-    "缺真实环境的能力标记为未验证/不可启用，不编造证据"
-   ],
-   "tests": ["证据完整性检查测试", "证据失效规则测试", "未验证能力不可用断言"],
-   "verification": ["bun test server/tests/conformance-evidence.test.ts"],
-   "owned_scope": ["conformance 证据汇总与失效规则", "验收记录文档"],
-   "resume_hint": "证据不是“测试 exit 0”，而是具体上限/usage/尾部行为的可复现结果；接手检查每条证据是否含环境与数值。"
-  },
-  "22.4": {
-   "slug": "conformance-evidence-embedding-realtime-async-tools",
-   "contracts": {
-    "consumes": ["22.2 的核查结果", "11.6/15.8/16.3/17.8/18.4/19.4/20.4 的能力与入口证据"],
-    "produces": [
-     "Embedding/Rerank/OCR、实时（WS/WebRTC）、异步/批量/视频、工具附加费四组的 conformance 证据，结构与 22.3 一致",
-     "实时族的单元门控与尾部约束证据、异步族的终态与取消证据、工具族的附加费用与旁路证据",
-     "同样的证据失效规则与未验证标记"
-    ]
-   },
-   "steps": [
-    "按 22.3 的证据结构汇总其余能力族，逐族补齐缺口",
-    "实时族重点验证单元门控、耗尽停止、关停尾部；异步族验证终态结算与取消未知保持预留",
-    "工具族验证附加费用计价与逐入口无旁路",
-    "缺环境的能力标记未验证并列出所需条件",
-    "先写失败测试：每个启用的能力都有对应证据记录"
-   ],
-   "criteria": [
-    "其余能力族中每个启用的能力都有绑定版本的证据",
-    "实时、异步与工具族的关键约束各有专门证据条目",
-    "证据失效规则与 22.3 一致",
-    "缺真实环境的能力标记为未验证/不可启用"
-   ],
-   "tests": ["各族证据完整性测试", "关键约束专项证据断言", "未验证标记断言"],
-   "verification": ["bun test server/tests/conformance-evidence-extended.test.ts"],
-   "owned_scope": ["其余能力族证据汇总", "验收记录文档"],
-   "resume_hint": "与 22.3 共用同一证据结构与存储；不要为这几族另建一套格式，否则 22.5 无法统一核验。"
-  },
-  "22.5": {
-   "slug": "full-spec-acceptance-run",
-   "contracts": {
-    "consumes": ["22.3/22.4 的证据", "父 Spec #5 的 AC01–AC19", "各组缝合 Ticket 的端到端用例"],
-    "produces": [
-     "AC 验收矩阵：AC01–AC19 每条对应具体行为证据、执行命令、结果与代码版本",
-     "跨进程故障场景结果（重启、并发、重放、时钟推进、断线）",
-     "未通过项清单与阻塞原因；skip 不计为通过"
-    ]
-   },
-   "steps": [
-    "把 19 条 AC 映射到具体可执行场景与命令，逐条执行并记录结果",
-    "包含跨进程故障场景：杀进程重启、双 worker 并发、重复投递、时钟推进、客户端断线",
-    "对未通过项记录阻塞原因与影响的 AC，不降级判定",
-    "输出验收矩阵，绑定代码版本与执行时间",
-    "先确认矩阵中每条 AC 都有至少一个可复现命令，再执行"
-   ],
-   "criteria": [
-    "AC01–AC19 每条都有绑定代码版本的可复现结果",
-    "跨进程故障场景全部执行并记录结果",
-    "skip 或因环境缺失未执行的项不计为通过",
-    "未通过项有明确阻塞原因与影响范围"
-   ],
-   "tests": ["AC 矩阵可执行性检查", "跨进程故障场景集成测试", "skip 不计通过的断言"],
-   "verification": [
-    "TEST_DATABASE_URL=... bun run test:ci",
-    "bun test server/tests/acceptance-matrix.integration.test.ts"
-   ],
-   "owned_scope": ["AC 验收矩阵与执行脚本", "验收记录文档"],
-   "resume_hint": "矩阵里出现 skip 就是未完成；接手先补齐可执行性，再谈通过率。"
-  },
-  "22.6": {
-   "slug": "version-pinning-review-and-ocr",
-   "contracts": {
-    "consumes": ["22.5 的验收矩阵", "AGENTS.md 的 Review 与 OCR 流程", "OpenBot 与 Bifrost 的实际交付版本"],
-    "produces": [
-     "版本固定记录：OpenBot 提交/检查点与 Bifrost 子模块提交，作为交付基线",
-     "独立 Review 结论（Spec compliance + code quality）与全范围 OCR 报告（含未提交改动的 workspace 模式覆盖）",
-     "部署就绪结论：覆盖范围、遗留限制、未验证能力清单与所需环境；组 22 与整个 Spec 的终点"
-    ]
-   },
-   "steps": [
-    "记录 OpenBot 与 Bifrost（子模块）的交付版本与检查点哈希",
-    "按 AGENTS.md 执行独立 Review 与 OCR：已提交范围用实际 BASE/HEAD，未提交改动用 workspace 模式，两者都覆盖",
-    "对 critical/high/medium finding 核实证据并按 SDD 修复循环处理，保存每轮报告",
-    "汇总部署就绪结论：已验证能力、未验证能力与所需环境、遗留限制",
-    "先确认 OCR 覆盖完整（退出码 0 但覆盖不足不算通过），再给结论"
-   ],
-   "criteria": [
-    "OpenBot 与 Bifrost 的交付版本被明确固定并记录",
-    "独立 Review 给出 Spec compliance 与 code quality 两个结论",
-    "OCR 覆盖全部交付范围（含未提交改动），无有效 critical/high/medium 遗留",
-    "部署就绪结论明确列出未验证能力与遗留限制，不以“测试通过”代替证据"
-   ],
-   "tests": ["交付范围核验（最终 diff 只含授权范围）", "OCR 覆盖完整性检查", "就绪结论文档完整性断言"],
-   "verification": [
-    "git rev-parse HEAD && git -C bifrost rev-parse HEAD",
-    "ocr review --audience agent --background 'Bifrost 严格积分计费交付范围' --from <BASE> --to <HEAD> --output docs/plans/tickets/bifrost-5/ocr/<round>.md",
-    "bun run test:ci"
-   ],
-   "owned_scope": ["版本固定与 Review/OCR 记录", "部署就绪结论文档"],
-   "resume_hint": "OCR exit 0 不等于覆盖完整：核对报告覆盖的文件范围与跳过项；覆盖不足时补跑，不能据此宣布完成。"
+  "verification_common": [
+    "bun run typecheck",
+    "bunx biome lint --error-on-warnings .",
+    "cd bifrost/plugins/governance && go test -race ./..."
+  ],
+  "tickets": {
+    "22.1": {
+      "slug": "entrypoint-enumeration",
+      "contracts": {
+        "consumes": [
+          "各组终点 Ticket 的交付（01.8、02.8、03.11、04.8、05.10、06.12、07.12、08.10、09.3、09.4、10.6、11.6、12.4、13.4、14.4、15.8、16.3、17.8、18.4、19.4、20.4、21.7）",
+          "20.4 与 12.4 的入口清单证据"
+        ],
+        "produces": [
+          "完整入口清单：所有可触发供应商模型调用的路径（HTTP 路由、hook、实时、异步、批量、视频、工具/MCP/A2A、内置运行时、订阅 harness），每条标注是否经过准入",
+          "清单以代码证据为准（hook 注册点、路由表、provider 调用点），不以 Ticket 标题或文档推定",
+          "未接入准入的入口列为阻塞项，不得放行"
+        ]
+      },
+      "steps": [
+        "从 Bifrost 的 hook 注册点与 provider 调用点反向枚举全部推理入口",
+        "从 OpenBot 侧枚举模型调用发起点（工作台、agent 运行时、内部服务）",
+        "为每条入口标注：是否经过 Reserve、是否有硬拒绝、付款账户来源",
+        "把未接入准入的入口列为阻塞项并给出具体位置",
+        "先写失败测试：入口清单与自动化枚举结果一致（新增入口未登记时测试失败）"
+      ],
+      "criteria": [
+        "入口清单覆盖全部可触发供应商调用的路径，且有代码证据",
+        "每条入口都标注准入状态与付款账户来源",
+        "存在未接入准入的入口时被列为阻塞项，不放行",
+        "新增入口未登记到清单时自动化检查失败"
+      ],
+      "tests": [
+        "自动化入口枚举与清单一致性测试",
+        "未准入入口阻塞断言",
+        "新增入口漏登记失败测试"
+      ],
+      "verification": [
+        "bun test server/tests/entrypoint-enumeration.test.ts",
+        "cd bifrost/plugins/governance && go test -run Entrypoints ./..."
+      ],
+      "owned_scope": ["入口枚举清单与其自动化检查", "验收记录文档"],
+      "resume_hint": "别按 Ticket 标题推定覆盖：以 hook 注册点和 provider 调用点为准反向枚举，漏一个入口就等于留一条免费通道。"
+    },
+    "22.2": {
+      "slug": "per-entrypoint-gate-and-payer-audit",
+      "contracts": {
+        "consumes": [
+          "22.1 的入口清单",
+          "02.5 的不切换语义",
+          "07.3/16.3/20.4 的拒绝与旁路证据"
+        ],
+        "produces": [
+          "逐入口核查结果：准入门禁生效、付款账户正确、拒绝路径可触发、无直连供应商旁路",
+          "核查证据（命令、输出摘要、代码版本），可被独立复核",
+          "发现缺陷时生成修复项并回到对应 Ticket 的语义边界处理，不在本 Ticket 静默修补"
+        ]
+      },
+      "steps": [
+        "对清单中每条入口执行四类核查：门禁、payer、拒绝、旁路",
+        "记录核查命令与结果摘要，绑定当时代码版本",
+        "发现缺陷时开修复项（引用对应 Ticket 的验收标准），不静默改语义",
+        "先写失败测试：逐入口的余额不足场景下供应商调用数为 0"
+      ],
+      "criteria": [
+        "每条入口都通过门禁、payer、拒绝与旁路四类核查",
+        "核查证据绑定代码版本且可独立复核",
+        "发现的缺陷都有对应修复项与验收标准引用",
+        "任何入口都不存在直连供应商的旁路"
+      ],
+      "tests": [
+        "逐入口余额不足拒绝矩阵测试",
+        "payer 正确性断言",
+        "旁路不存在断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/entrypoint-gate-audit.integration.test.ts"
+      ],
+      "owned_scope": ["核查脚本与证据记录", "对应测试与验收记录"],
+      "resume_hint": "核查失败不要就地放宽语义：开修复项回到对应 Ticket，否则会破坏已批准的 AC 映射。"
+    },
+    "22.3": {
+      "slug": "conformance-evidence-text-image-audio",
+      "contracts": {
+        "consumes": [
+          "22.2 的核查结果",
+          "07.7 的输出封顶证据",
+          "12.x/13.x/14.x 的能力证据"
+        ],
+        "produces": [
+          "文本、图像、音频三族的 conformance 证据：上限可强制性、真实 usage 可得性、取消/尾部行为，绑定 provider/model/调用方式与验证环境",
+          "配置或版本变更使受影响证据失效的规则",
+          "缺真实供应商环境的能力明确标记为未验证/不可启用，不编造证据"
+        ]
+      },
+      "steps": [
+        "汇总三族已有证据，补齐缺口（每个启用的 model + 调用方式都要有证据）",
+        "为证据绑定 provider/model/调用方式/价格版本/验证环境/实际结果",
+        "实现证据失效规则：相关配置或版本变更后标记失效",
+        "缺环境时用本地确定性测试完成可完成部分，其余标记未验证并列出所需环境",
+        "先写失败测试：启用但缺证据的能力被标记不可用"
+      ],
+      "criteria": [
+        "三族中每个启用的能力都有绑定版本的 conformance 证据",
+        "证据包含验证环境与实际结果，可复现",
+        "配置或版本变更后受影响证据失效",
+        "缺真实环境的能力标记为未验证/不可启用，不编造证据"
+      ],
+      "tests": [
+        "证据完整性检查测试",
+        "证据失效规则测试",
+        "未验证能力不可用断言"
+      ],
+      "verification": ["bun test server/tests/conformance-evidence.test.ts"],
+      "owned_scope": ["conformance 证据汇总与失效规则", "验收记录文档"],
+      "resume_hint": "证据不是“测试 exit 0”，而是具体上限/usage/尾部行为的可复现结果；接手检查每条证据是否含环境与数值。"
+    },
+    "22.4": {
+      "slug": "conformance-evidence-embedding-realtime-async-tools",
+      "contracts": {
+        "consumes": [
+          "22.2 的核查结果",
+          "11.6/15.8/16.3/17.8/18.4/19.4/20.4 的能力与入口证据"
+        ],
+        "produces": [
+          "Embedding/Rerank/OCR、实时（WS/WebRTC）、异步/批量/视频、工具附加费四组的 conformance 证据，结构与 22.3 一致",
+          "实时族的单元门控与尾部约束证据、异步族的终态与取消证据、工具族的附加费用与旁路证据",
+          "同样的证据失效规则与未验证标记"
+        ]
+      },
+      "steps": [
+        "按 22.3 的证据结构汇总其余能力族，逐族补齐缺口",
+        "实时族重点验证单元门控、耗尽停止、关停尾部；异步族验证终态结算与取消未知保持预留",
+        "工具族验证附加费用计价与逐入口无旁路",
+        "缺环境的能力标记未验证并列出所需条件",
+        "先写失败测试：每个启用的能力都有对应证据记录"
+      ],
+      "criteria": [
+        "其余能力族中每个启用的能力都有绑定版本的证据",
+        "实时、异步与工具族的关键约束各有专门证据条目",
+        "证据失效规则与 22.3 一致",
+        "缺真实环境的能力标记为未验证/不可启用"
+      ],
+      "tests": ["各族证据完整性测试", "关键约束专项证据断言", "未验证标记断言"],
+      "verification": [
+        "bun test server/tests/conformance-evidence-extended.test.ts"
+      ],
+      "owned_scope": ["其余能力族证据汇总", "验收记录文档"],
+      "resume_hint": "与 22.3 共用同一证据结构与存储；不要为这几族另建一套格式，否则 22.5 无法统一核验。"
+    },
+    "22.5": {
+      "slug": "full-spec-acceptance-run",
+      "contracts": {
+        "consumes": [
+          "22.3/22.4 的证据",
+          "父 Spec #5 的 AC01–AC19",
+          "各组缝合 Ticket 的端到端用例"
+        ],
+        "produces": [
+          "AC 验收矩阵：AC01–AC19 每条对应具体行为证据、执行命令、结果与代码版本",
+          "跨进程故障场景结果（重启、并发、重放、时钟推进、断线）",
+          "未通过项清单与阻塞原因；skip 不计为通过"
+        ]
+      },
+      "steps": [
+        "把 19 条 AC 映射到具体可执行场景与命令，逐条执行并记录结果",
+        "包含跨进程故障场景：杀进程重启、双 worker 并发、重复投递、时钟推进、客户端断线",
+        "对未通过项记录阻塞原因与影响的 AC，不降级判定",
+        "输出验收矩阵，绑定代码版本与执行时间",
+        "先确认矩阵中每条 AC 都有至少一个可复现命令，再执行"
+      ],
+      "criteria": [
+        "AC01–AC19 每条都有绑定代码版本的可复现结果",
+        "跨进程故障场景全部执行并记录结果",
+        "skip 或因环境缺失未执行的项不计为通过",
+        "未通过项有明确阻塞原因与影响范围"
+      ],
+      "tests": [
+        "AC 矩阵可执行性检查",
+        "跨进程故障场景集成测试",
+        "skip 不计通过的断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun run test:ci",
+        "bun test server/tests/acceptance-matrix.integration.test.ts"
+      ],
+      "owned_scope": ["AC 验收矩阵与执行脚本", "验收记录文档"],
+      "resume_hint": "矩阵里出现 skip 就是未完成；接手先补齐可执行性，再谈通过率。"
+    },
+    "22.6": {
+      "slug": "version-pinning-review-and-ocr",
+      "contracts": {
+        "consumes": [
+          "22.5 的验收矩阵",
+          "AGENTS.md 的 Review 与 OCR 流程",
+          "OpenBot 与 Bifrost 的实际交付版本"
+        ],
+        "produces": [
+          "版本固定记录：OpenBot 提交/检查点与 Bifrost 子模块提交，作为交付基线",
+          "独立 Review 结论（Spec compliance + code quality）与全范围 OCR 报告（含未提交改动的 workspace 模式覆盖）",
+          "部署就绪结论：覆盖范围、遗留限制、未验证能力清单与所需环境；组 22 与整个 Spec 的终点"
+        ]
+      },
+      "steps": [
+        "记录 OpenBot 与 Bifrost（子模块）的交付版本与检查点哈希",
+        "按 AGENTS.md 执行独立 Review 与 OCR：已提交范围用实际 BASE/HEAD，未提交改动用 workspace 模式，两者都覆盖",
+        "对 critical/high/medium finding 核实证据并按 SDD 修复循环处理，保存每轮报告",
+        "汇总部署就绪结论：已验证能力、未验证能力与所需环境、遗留限制",
+        "先确认 OCR 覆盖完整（退出码 0 但覆盖不足不算通过），再给结论"
+      ],
+      "criteria": [
+        "OpenBot 与 Bifrost 的交付版本被明确固定并记录",
+        "独立 Review 给出 Spec compliance 与 code quality 两个结论",
+        "OCR 覆盖全部交付范围（含未提交改动），无有效 critical/high/medium 遗留",
+        "部署就绪结论明确列出未验证能力与遗留限制，不以“测试通过”代替证据"
+      ],
+      "tests": [
+        "交付范围核验（最终 diff 只含授权范围）",
+        "OCR 覆盖完整性检查",
+        "就绪结论文档完整性断言"
+      ],
+      "verification": [
+        "git rev-parse HEAD && git -C bifrost rev-parse HEAD",
+        "ocr review --audience agent --background 'Bifrost 严格积分计费交付范围' --from <BASE> --to <HEAD> --output docs/plans/tickets/bifrost-5/ocr/<round>.md",
+        "bun run test:ci"
+      ],
+      "owned_scope": ["版本固定与 Review/OCR 记录", "部署就绪结论文档"],
+      "resume_hint": "OCR exit 0 不等于覆盖完整：核对报告覆盖的文件范围与跳过项；覆盖不足时补跑，不能据此宣布完成。"
+    }
   }
- }
 }

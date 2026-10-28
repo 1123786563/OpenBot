@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
 import { describe, expect, test } from "../../tests/support/bun-test-compat";
 import { createRealtimeSessionService } from "../src/billing/realtime-session";
-import {
-  createRealtimeUnitService,
-} from "../src/billing/realtime-unit";
+import { createRealtimeUnitService } from "../src/billing/realtime-unit";
 import { createCreditSettleService } from "../src/billing/credit-settle";
 import type { ConversionRate } from "../src/gateway/conversion-rate";
 import { createCreditWriter } from "../src/billing/credits-writer";
@@ -194,7 +192,9 @@ async function seedOneUnitSession(): Promise<World> {
     rateVersion: 0,
   });
   if (establishment.status !== "established") {
-    throw new Error(`fixture session did not establish: ${JSON.stringify(establishment)}`);
+    throw new Error(
+      `fixture session did not establish: ${JSON.stringify(establishment)}`,
+    );
   }
 
   return {
@@ -234,7 +234,10 @@ async function reservationCount(world: World) {
     .select({ id: creditReservations.id })
     .from(creditReservations)
     .where(
-      eq(creditReservations.externalCustomerId, `openbot-personal-${world.userId}`),
+      eq(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${world.userId}`,
+      ),
     );
   return rows.length;
 }
@@ -243,7 +246,9 @@ async function ledgerCount(world: World) {
   const rows = await database
     .select({ id: creditLedger.id })
     .from(creditLedger)
-    .where(eq(creditLedger.externalCustomerId, `openbot-personal-${world.userId}`));
+    .where(
+      eq(creditLedger.externalCustomerId, `openbot-personal-${world.userId}`),
+    );
   return rows.length;
 }
 
@@ -312,7 +317,8 @@ describe("Bifrost 15.5 (#318): balance exhaustion stops the session's later unit
     const service = unitService();
 
     const first = await service.openUnit(world.openBody("unit-1"));
-    if (first.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (first.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
     await service.openUnit(world.openBody("unit-2")); // the stop
 
     const settled = await settleService.settle({
@@ -371,7 +377,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

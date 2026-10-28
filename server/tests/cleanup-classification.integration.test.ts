@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { eq, inArray } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import {
@@ -16,9 +21,7 @@ import {
   billingWebhookEvents,
   payerAccounts,
 } from "../src/db/schema/billing";
-import {
-  creditChargeRemainders,
-} from "../src/db/schema/credit-reservations";
+import { creditChargeRemainders } from "../src/db/schema/credit-reservations";
 import { creditGrants } from "../src/db/schema/credits";
 import { paymentEvents, paymentOrders } from "../src/db/schema/payment";
 import { usageOutbox } from "../src/db/schema/usage-outbox";
@@ -119,7 +122,9 @@ afterAll(async () => {
     .where(inArray(usageOutbox.externalCustomerId, fixtureKeys));
   await database
     .delete(billingWebhookEvents)
-    .where(inArray(billingWebhookEvents.eventId, [webhookHitId, webhookMissId]));
+    .where(
+      inArray(billingWebhookEvents.eventId, [webhookHitId, webhookMissId]),
+    );
   // billing_customers cascades to payer_accounts, subscriptions, grants, ledger,
   // reservations (and their allocations) and remainders.
   await database
@@ -194,7 +199,8 @@ describe("the legacy billing classification separates keep, candidate and quaran
       maximumCents: 800,
       expiresAt: new Date("2027-01-01T00:00:00Z"),
     });
-    if (!personalHold.reserved) throw new Error("fixture personal hold was refused");
+    if (!personalHold.reserved)
+      throw new Error("fixture personal hold was refused");
 
     // Company: a grant and one order that carries BOTH test markers — its id is in the
     // test-order registry and it was created by the registered test user. Company history
@@ -317,7 +323,8 @@ describe("the legacy billing classification separates keep, candidate and quaran
       maximumCents: 800,
       expiresAt: new Date("2027-01-01T00:00:00Z"),
     });
-    if (!settledHold.reserved) throw new Error("fixture settled hold was refused");
+    if (!settledHold.reserved)
+      throw new Error("fixture settled hold was refused");
     await writer.settleReservation({
       reservationId: settledHold.reservationId,
       actual: { numerator: 250n, denominator: 1n },
@@ -389,7 +396,9 @@ describe("the legacy billing classification separates keep, candidate and quaran
     expect(companyOrder?.testFeatures).toContain(
       `test_order_number:${companyOrderId}`,
     );
-    expect(companyOrder?.testFeatures).toContain(`test_user_marker:${testUser}`);
+    expect(companyOrder?.testFeatures).toContain(
+      `test_user_marker:${testUser}`,
+    );
 
     // ...and is still not a candidate: rule R1 outranks any test marker.
     const candidateIds = new Set(
@@ -456,7 +465,9 @@ describe("the legacy billing classification separates keep, candidate and quaran
     const grantLinked = classification.candidates.find(
       (record) => record.recordId === legacyTestIdOrder,
     );
-    expect(grantLinked?.attributionSource).toContain(`plan:${legacyTestIdOrder}`);
+    expect(grantLinked?.attributionSource).toContain(
+      `plan:${legacyTestIdOrder}`,
+    );
     const ownerPaired = classification.candidates.find(
       (record) => record.recordId === legacyOrderByUser,
     );
@@ -618,9 +629,9 @@ describe("the legacy billing classification separates keep, candidate and quaran
 
     // The classification covers exactly the enumerated legacy table set (the 21.1 contract).
     const enumeration = await enumerateCleanupManifest(database);
-    expect(new Set(classification.records.map((record) => record.table))).toEqual(
-      new Set(enumeration.tables.map((table) => table.table)),
-    );
+    expect(
+      new Set(classification.records.map((record) => record.table)),
+    ).toEqual(new Set(enumeration.tables.map((table) => table.table)));
 
     // AC4: an honest manifest re-derives to itself.
     const verdict = await reclassifyFromManifest(database, classification);

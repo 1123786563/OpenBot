@@ -1,4 +1,9 @@
-import { afterAll, beforeAll, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { PostgresStore } from "@mastra/pg";
 import { eq, sql } from "drizzle-orm";

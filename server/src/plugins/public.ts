@@ -189,9 +189,10 @@ export async function readSecretForUse(
  * 建 ToolAccess 门面。纯对象创建，零缓存：每次判定都是当次 store 读，grant 或
  * 连接的增减下一次调用即可见（`grantedTools` 同一理由的读时求值）。
  */
-export function createToolAccess<TApprovals = undefined>(
-  deps: { store: ToolAccessStore; approvals?: TApprovals },
-): ToolAccess<TApprovals> {
+export function createToolAccess<TApprovals = undefined>(deps: {
+  store: ToolAccessStore;
+  approvals?: TApprovals;
+}): ToolAccess<TApprovals> {
   const { store, approvals } = deps;
 
   const connectionFold = async (

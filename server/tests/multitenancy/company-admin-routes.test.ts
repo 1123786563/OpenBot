@@ -17,9 +17,7 @@
 
 import { describe, expect, test } from "../../../tests/support/bun-test-compat";
 import type { Hono } from "hono";
-import {
-  classifyManagementPlane,
-} from "../../src/enterprise/tenancy/admin-separation";
+import { classifyManagementPlane } from "../../src/enterprise/tenancy/admin-separation";
 import {
   createCompanyAdminRoutes,
   createUnavailableCompanyAdminRoutes,
@@ -52,7 +50,8 @@ function depsOf(mode: Mode): CompanyAdminRouteDeps {
   const calls: string[] = [];
   const deps: CompanyAdminRouteDeps = {
     authorizer: {
-      authenticate: () => Promise.resolve({ actorId: "user-1", entrypoint: "web" }),
+      authenticate: () =>
+        Promise.resolve({ actorId: "user-1", entrypoint: "web" }),
       resolveAdminContext: async () => {
         if (mode === "admin-refused") throw new Error("TENANT_ADMIN_REQUIRED");
         return ADMIN_CONTEXT;
@@ -201,13 +200,10 @@ async function call(
   path: string,
   init?: RequestInit,
 ): Promise<{ status: number; body: unknown; text: string }> {
-  const response = await app.request(
-    path,
-    {
-      ...init,
-      headers: { "x-openbot-tenant": "acme", ...(init?.headers ?? {}) },
-    },
-  );
+  const response = await app.request(path, {
+    ...init,
+    headers: { "x-openbot-tenant": "acme", ...(init?.headers ?? {}) },
+  });
   const text = await response.text();
   let body: unknown = null;
   try {
@@ -242,9 +238,9 @@ describe("MT095/096/097 company admin routes (Issues #138-#140)", () => {
       expect(classifyManagementPlane({ method, path })).toBe("company");
     }
     // 平台面入口不在本面：部署级 people 管理属 /api/admin/**（AC4 #138 的分类半边）。
-    expect(classifyManagementPlane({ method: "GET", path: "/api/admin/people" })).toBe(
-      "platform",
-    );
+    expect(
+      classifyManagementPlane({ method: "GET", path: "/api/admin/people" }),
+    ).toBe("platform");
   });
 
   test("an unmounted drift (a path outside the company prefix) is not a company entrance", () => {
@@ -298,11 +294,9 @@ describe("MT095/096/097 company admin routes (Issues #138-#140)", () => {
 
   test("promote/demote/offboard submit to the company scope and map their sentinels (AC3 #138)", async () => {
     const deps = depsOf("admin-ok");
-    const promote = await call(
-      appOf(deps),
-      "/admin/people/prin-2/promote",
-      { method: "POST" },
-    );
+    const promote = await call(appOf(deps), "/admin/people/prin-2/promote", {
+      method: "POST",
+    });
     expect(promote.status).toBe(200);
     expect(deps.__calls).toContain("people.promote");
 
@@ -443,9 +437,9 @@ describe("MT095/096/097 company admin routes (Issues #138-#140)", () => {
     const result = await call(appOf(deps), "/admin/audit-events/export");
     expect(result.status).toBe(500);
     // 拒绝体是 JSON 错误信封，绝不是一个 CSV 文件。
-    expect(
-      (result.body as { error: { code: string } }).error.code,
-    ).toBe("internal");
+    expect((result.body as { error: { code: string } }).error.code).toBe(
+      "internal",
+    );
   });
 
   // -----------------------------------------------------------------------
@@ -483,8 +477,12 @@ describe("MT095/096/097 company admin routes (Issues #138-#140)", () => {
           balanceUnits: 1000,
           usage: {
             companyTotal: { heldUnits: 40, chargedUnits: 300 },
-            byTeam: [{ workspaceId: "acme-finance", heldUnits: 40, chargedUnits: 200 }],
-            byUser: [{ principalId: "prin-a", heldUnits: 40, chargedUnits: 200 }],
+            byTeam: [
+              { workspaceId: "acme-finance", heldUnits: 40, chargedUnits: 200 },
+            ],
+            byUser: [
+              { principalId: "prin-a", heldUnits: 40, chargedUnits: 200 },
+            ],
           },
         };
       },

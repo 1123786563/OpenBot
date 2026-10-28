@@ -1887,7 +1887,7 @@ const PACKAGE_INSTALL_TASK: TaskMigrationSpec = {
     {
       slug: "package_hardening_case_insensitive",
       impact:
-        "R5-4（OCR round5，追加步骤，不改已入账步骤）：package_hardening 的三个递归秘密载体 CHECK（revision config / plans canonical_input / changes diff）的 like_regex 补 flag \"i\"——键名大小写变体（\"Token\"/\"API_KEY\"/\"SecretRef\"）此前可穿透 DB 级防线，与 PKG04 强化函数（package_expert_create_function_hardening）属同一漏洞家族。约束名不变，仅 DROP+重建；CHECK 只约束新写入，既有行不受影响。",
+        'R5-4（OCR round5，追加步骤，不改已入账步骤）：package_hardening 的三个递归秘密载体 CHECK（revision config / plans canonical_input / changes diff）的 like_regex 补 flag "i"——键名大小写变体（"Token"/"API_KEY"/"SecretRef"）此前可穿透 DB 级防线，与 PKG04 强化函数（package_expert_create_function_hardening）属同一漏洞家族。约束名不变，仅 DROP+重建；CHECK 只约束新写入，既有行不受影响。',
       objects: [
         "enterprise_package_revisions",
         "enterprise_package_plans",

@@ -14,8 +14,9 @@ const root = resolve(import.meta.dirname, "..");
 const manifestPath = join(root, "tests/config/e2e-bun-suites.json");
 const groupSize = 24;
 const flag = (name, fallback) =>
-  process.argv.find((entry) => entry.startsWith(`--${name}=`))?.slice(name.length + 3) ??
-  fallback;
+  process.argv
+    .find((entry) => entry.startsWith(`--${name}=`))
+    ?.slice(name.length + 3) ?? fallback;
 const maxFixesPerScope = Number(flag("fixes", "40"));
 const ALL_SCOPES = [
   "shared",
@@ -77,12 +78,16 @@ function regroup(files, artifacts) {
 }
 
 function listScope(scope) {
-  return spawnSync("./node_modules/.bin/e2e", ["list", "--config", "e2e.unit.config.ts"], {
-    cwd: root,
-    encoding: "utf8",
-    env: { ...process.env, E2E_UNIT_SCOPE: scope },
-    timeout: Number(flag("timeout", "900000")),
-  });
+  return spawnSync(
+    "./node_modules/.bin/e2e",
+    ["list", "--config", "e2e.unit.config.ts"],
+    {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, E2E_UNIT_SCOPE: scope },
+      timeout: Number(flag("timeout", "900000")),
+    },
+  );
 }
 
 const added = [];
@@ -118,7 +123,11 @@ for (const scope of scopes) {
     const artifacts = new Set(manifest.artifacts ?? []);
     if (files.has(file) || artifacts.has(file)) {
       status = "blocked";
-      blocked.push({ scope, file, reason: `${reason} — already bucketed, the exclusion did not take` });
+      blocked.push({
+        scope,
+        file,
+        reason: `${reason} — already bucketed, the exclusion did not take`,
+      });
       break;
     }
     if (ARTIFACT.test(file)) {
@@ -130,12 +139,19 @@ for (const scope of scopes) {
     } else {
       status = "blocked";
       blocked.push({ scope, file, reason });
-      console.log(`${scope}: stopping — ${file} is a harness gap, not a runtime boundary\n  ${reason}`);
+      console.log(
+        `${scope}: stopping — ${file} is a harness gap, not a runtime boundary\n  ${reason}`,
+      );
       break;
     }
     const groups = regroup([...files], [...artifacts]);
-    spawnSync("node", ["scripts/e2e-apply-partition.mjs"], { cwd: root, encoding: "utf8" });
-    console.log(`${scope}: + ${file} → ${added.at(-1).bucket} (${groups} groups)`);
+    spawnSync("node", ["scripts/e2e-apply-partition.mjs"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    console.log(
+      `${scope}: + ${file} → ${added.at(-1).bucket} (${groups} groups)`,
+    );
   }
   if (status === "clean") clean.push(scope);
 }
@@ -147,4 +163,5 @@ writeFileSync(
 console.log(
   `\nclean scopes: ${clean.length}/${scopes.length} · moved ${added.length} file(s) · blocked ${blocked.length}`,
 );
-for (const entry of blocked) console.log(`  BLOCKED ${entry.file} — ${entry.reason}`);
+for (const entry of blocked)
+  console.log(`  BLOCKED ${entry.file} — ${entry.reason}`);

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
   createAsyncJobStatusService,
@@ -23,7 +28,10 @@ import {
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../src/db/schema";
-import { asyncJobs, creditReservations } from "../src/db/schema/credit-reservations";
+import {
+  asyncJobs,
+  creditReservations,
+} from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -109,7 +117,9 @@ type World = {
 let seedCounter = 0;
 
 /** One world: one user with one submitted (answered) async job. */
-async function seedJobWorld(options: { dispatch?: "answer" | "lose" } = {}): Promise<World> {
+async function seedJobWorld(
+  options: { dispatch?: "answer" | "lose" } = {},
+): Promise<World> {
   const n = ++seedCounter;
   const userId = `${prefix}-user-${n}`;
   const botId = `${prefix}-bot-${n}`;
@@ -204,7 +214,8 @@ async function seedJobWorld(options: { dispatch?: "answer" | "lose" } = {}): Pro
     rateVersion: 0,
     entries: [{ quantities: { video: 60, surcharge_per_request: 1 } }],
   });
-  if (outcome.status !== "submitted") throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
+  if (outcome.status !== "submitted")
+    throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
 
   return {
     userId,
@@ -220,7 +231,10 @@ async function seedJobWorld(options: { dispatch?: "answer" | "lose" } = {}): Pro
 }
 
 /** A second user's grant — a stranger to every seedJobWorld job. */
-async function seedStrangerGrant(): Promise<{ grantId: string; userId: string }> {
+async function seedStrangerGrant(): Promise<{
+  grantId: string;
+  userId: string;
+}> {
   const n = ++seedCounter;
   const userId = `${prefix}-stranger-${n}`;
   const botId = `${prefix}-strangerbot-${n}`;
@@ -248,12 +262,15 @@ async function seedStrangerGrant(): Promise<{ grantId: string; userId: string }>
 const status = createAsyncJobStatusService({ database });
 
 afterAll(async () => {
-  await database
-    .delete(asyncJobs)
-    .where(like(asyncJobs.grantId, `${prefix}%`));
+  await database.delete(asyncJobs).where(like(asyncJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -294,7 +311,10 @@ describe("17.4 AC-1 — the owner reads the job", () => {
       { submitIdempotencyKey: world.submitKey },
       { providerJobId: world.providerJobId },
     ]) {
-      const answer = await status.queryStatus({ grantId: world.grantId, ...selector });
+      const answer = await status.queryStatus({
+        grantId: world.grantId,
+        ...selector,
+      });
       expect(answer.kind).toBe("answered");
       if (answer.kind !== "answered") return;
       expect(answer.outcome.status).toBe("found");
@@ -366,7 +386,10 @@ describe("17.4 AC-2 — a foreign query cannot tell what exists", () => {
 
     // All four answers are the SAME bare refusal — no field differs, so nothing about
     // which jobs exist under another account can be inferred from the answer's shape.
-    expect(foreign).toEqual({ kind: "answered", outcome: { status: "not_found" } });
+    expect(foreign).toEqual({
+      kind: "answered",
+      outcome: { status: "not_found" },
+    });
     expect(foreignBySubmitKey).toEqual(foreign);
     expect(missing).toEqual(foreign);
     expect(noGrant).toEqual(foreign);

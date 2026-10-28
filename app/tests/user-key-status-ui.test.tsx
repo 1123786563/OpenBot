@@ -1,5 +1,11 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
@@ -182,9 +188,7 @@ test("one Revoke-all press revokes that Bot's every valid version and the rows r
   expect(buttons).toHaveLength(1);
   fireEvent.click(buttons[0]);
 
-  await waitFor(() =>
-    expect(revokeAllCalls).toEqual([{ botId: "bot-a" }]),
-  );
+  await waitFor(() => expect(revokeAllCalls).toEqual([{ botId: "bot-a" }]));
   expect(revocations).toEqual([]);
 
   // The refetched truth: the grant reads revoked, its key versions are gone from the row —
@@ -195,13 +199,18 @@ test("one Revoke-all press revokes that Bot's every valid version and the rows r
     expect(row?.textContent).not.toContain("v2");
     expect(row?.textContent).not.toContain("v3");
   });
-  expect(view.queryByRole("button", { name: /Revoke all versions/ })).toBeNull();
+  expect(
+    view.queryByRole("button", { name: /Revoke all versions/ }),
+  ).toBeNull();
 });
 
 test("a list that fails to load is an error on screen, never an empty list", async () => {
   serving();
   global.fetch = (async () =>
-    Response.json({ error: "not signed in" }, { status: 401 })) as unknown as typeof fetch;
+    Response.json(
+      { error: "not signed in" },
+      { status: 401 },
+    )) as unknown as typeof fetch;
   const view = draw(<ModelAccessAuthorizations />);
 
   // The failure is said, out loud, with the alert role — and the empty-state text never

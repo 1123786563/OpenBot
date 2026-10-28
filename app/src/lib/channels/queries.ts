@@ -196,10 +196,15 @@ export function scopedChannelDetailQueryOptions(
             guarded(queryClient, open.userId, async () => {
               const response = await tryClient(
                 `/api/channels/${encodeURIComponent(channelId)}`,
-                { signal, fallbackKey: "channels.loadOne", ...(open.selection ?? {}) },
+                {
+                  signal,
+                  fallbackKey: "channels.loadOne",
+                  ...(open.selection ?? {}),
+                },
               );
               if (!response.ok) {
-                if (response.status === 404) throw new ChannelUnavailableError();
+                if (response.status === 404)
+                  throw new ChannelUnavailableError();
                 throw new Error(DETAIL_FALLBACK);
               }
               const body = (await response.json().catch(() => null)) as {

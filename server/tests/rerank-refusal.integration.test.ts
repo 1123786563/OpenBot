@@ -324,7 +324,9 @@ test("a rerank cell missing its billed dimensions refuses at the entry, naming t
   const v1 = await appendSnapshot(world, RERANK_V1_PRICING);
   const callsBefore = reserveCalls;
 
-  const outcome = await admission.admit(admissionInput(world, v1, RERANK_V1_PRICING));
+  const outcome = await admission.admit(
+    admissionInput(world, v1, RERANK_V1_PRICING),
+  );
 
   // The entry's own refusal: 11.3's verdict verbatim — the FIRST missing billed
   // dimension (input, closed precedence) with its per-dimension reason, so an
@@ -354,7 +356,9 @@ test("a rerank cell missing its billed dimensions refuses at the entry, naming t
     },
     snapshotVersion: v1,
     rateVersion: 0,
-    boundEvidence: [{ kind: "self_enforced_input_refusal", maximumTokens: 60_000 }],
+    boundEvidence: [
+      { kind: "self_enforced_input_refusal", maximumTokens: 60_000 },
+    ],
     maximumCredits: 500,
     idempotencyKey: `${prefix}-door-${v1}`,
   });
@@ -375,7 +379,9 @@ test("the same request admits once the price basis completes", async () => {
   await appendSnapshot(world, RERANK_V1_PRICING); // v1: the refused world above
   const v2 = await appendSnapshot(world, RERANK_COMPLETE_PRICING);
 
-  const outcome = await admission.admit(admissionInput(world, v2, RERANK_COMPLETE_PRICING));
+  const outcome = await admission.admit(
+    admissionInput(world, v2, RERANK_COMPLETE_PRICING),
+  );
 
   expect(outcome.status).toBe("admitted");
   if (outcome.status !== "admitted") return;
@@ -390,7 +396,8 @@ test("the same request admits once the price basis completes", async () => {
   expect(outcome.maximumCredits).toBe(reservation.maximum);
   expect(outcome.maximumCredits).toBeGreaterThanOrEqual(
     Math.ceil(
-      (outcome.inputTokens * 0.00000002 + RERANK_REQUEST.documents.length * 0.0001) *
+      (outcome.inputTokens * 0.00000002 +
+        RERANK_REQUEST.documents.length * 0.0001) *
         100 *
         100,
     ),
@@ -441,7 +448,9 @@ test("an enabled verdict over an empty account still dispatches nothing", async 
   const world = await seedRerankWorld(3);
   const v2 = await appendSnapshot(world, RERANK_COMPLETE_PRICING);
 
-  const outcome = await admission.admit(admissionInput(world, v2, RERANK_COMPLETE_PRICING));
+  const outcome = await admission.admit(
+    admissionInput(world, v2, RERANK_COMPLETE_PRICING),
+  );
 
   expect(outcome).toMatchObject({
     status: "refused",
@@ -456,7 +465,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

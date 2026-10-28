@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
   createAsyncDispatchRecoveryService,
   listUnconfirmedAsyncJobs,
 } from "../src/billing/async-job-recovery";
-import {
-  readAsyncJobByProviderJobId,
-} from "../src/billing/async-job-identity";
+import { readAsyncJobByProviderJobId } from "../src/billing/async-job-identity";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
@@ -28,7 +31,10 @@ import {
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../src/db/schema";
-import { asyncJobs, creditReservations } from "../src/db/schema/credit-reservations";
+import {
+  asyncJobs,
+  creditReservations,
+} from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -173,7 +179,9 @@ type AsyncSubmitServiceShape = {
 
 let seedCounter = 0;
 
-async function seedWorld(options: { balanceCents?: number } = {}): Promise<World> {
+async function seedWorld(
+  options: { balanceCents?: number } = {},
+): Promise<World> {
   const n = ++seedCounter;
   const userId = `${prefix}-user-${n}`;
   const botId = `${prefix}-bot-${n}`;
@@ -277,12 +285,15 @@ async function seedWorld(options: { balanceCents?: number } = {}): Promise<World
 }
 
 afterAll(async () => {
-  await database
-    .delete(asyncJobs)
-    .where(like(asyncJobs.grantId, `${prefix}%`));
+  await database.delete(asyncJobs).where(like(asyncJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -491,9 +502,7 @@ describe("17.3 AC-4 — a failed lookup keeps the unknown and the hold", () => {
 
     // The unconfirmed walk still lists the job — the sweep will ask again.
     const unconfirmed = await listUnconfirmedAsyncJobs(database);
-    expect(
-      unconfirmed.some((job) => job.jobId === outcome.jobId),
-    ).toBe(true);
+    expect(unconfirmed.some((job) => job.jobId === outcome.jobId)).toBe(true);
 
     // A second attempt answers the same way: nothing moved.
     const repeat = await recovery.recoverLostDispatch(outcome.jobId);

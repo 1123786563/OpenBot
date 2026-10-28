@@ -124,4 +124,3 @@ try {
 GlobalRegistrator.register();
 await import("../src/lib/i18n");
 GlobalRegistrator.unregister();
-

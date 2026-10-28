@@ -34,13 +34,18 @@ afterAll(async () => {
       ),
     );
     await database.delete(paymentOrders).where(
-      inArray(paymentOrders.id, orders.map((order) => order.id)),
+      inArray(
+        paymentOrders.id,
+        orders.map((order) => order.id),
+      ),
     );
   }
   await database.$client.close();
 });
 
-function orderInput(overrides: Partial<Parameters<typeof store.insertOrder>[0]> = {}) {
+function orderInput(
+  overrides: Partial<Parameters<typeof store.insertOrder>[0]> = {},
+) {
   return {
     planCode: `qa-plan-${randomUUID().slice(0, 8)}`,
     provider: "alipay" as const,
@@ -106,7 +111,9 @@ test("probe b: the same plan on DIFFERENT providers contends for the one deploym
   expect(rows[0].status).toBe("pending");
 
   // Free the deployment slot for the next test.
-  expect(await store.cancelOrder(alipay.order.id, alipay.order.version)).toBe(true);
+  expect(await store.cancelOrder(alipay.order.id, alipay.order.version)).toBe(
+    true,
+  );
 });
 
 test("probe b: a terminal order frees the pair — a fresh pending order opens after cancel", async () => {
@@ -173,6 +180,11 @@ test("probe c: two orders racing the SAME channel transaction — one claims, on
   const facts = await database
     .select({ id: paymentEvents.id })
     .from(paymentEvents)
-    .where(like(paymentEvents.channelTransactionId ?? paymentEvents.id, transactionId));
+    .where(
+      like(
+        paymentEvents.channelTransactionId ?? paymentEvents.id,
+        transactionId,
+      ),
+    );
   expect(facts).toHaveLength(1);
 });

@@ -32,10 +32,7 @@ const herePath = fileURLToPath(import.meta.url);
 const hereDir = dirname(herePath);
 
 const manifest = (await Bun.file(
-  join(
-    hereDir,
-    "../src/ai-observability/opik-contract/47-manifest.json",
-  ),
+  join(hereDir, "../src/ai-observability/opik-contract/47-manifest.json"),
 ).json()) as VerifiedOpikContract;
 
 const trusted = resolveObservationScope({

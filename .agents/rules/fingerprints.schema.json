@@ -13,18 +13,10 @@
     "authority": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "kind",
-        "reference",
-        "scope",
-        "content_sha256"
-      ],
+      "required": ["kind", "reference", "scope", "content_sha256"],
       "properties": {
         "kind": {
-          "enum": [
-            "current-user",
-            "delegated"
-          ]
+          "enum": ["current-user", "delegated"]
         },
         "reference": {
           "type": "string",
@@ -147,22 +139,14 @@
           "minLength": 1
         },
         "kind": {
-          "enum": [
-            "spec",
-            "adr",
-            "context",
-            "approval"
-          ]
+          "enum": ["spec", "adr", "context", "approval"]
         },
         "sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },
         "approval_ref": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "authority": {
           "anyOf": [
@@ -186,21 +170,14 @@
     "dependency": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "identity",
-        "state",
-        "interface_sha256"
-      ],
+      "required": ["identity", "state", "interface_sha256"],
       "properties": {
         "identity": {
           "type": "string",
           "pattern": "^[^/#]+/[^/#]+/[^/#]+#[1-9][0-9]*$"
         },
         "state": {
-          "enum": [
-            "open",
-            "closed"
-          ]
+          "enum": ["open", "closed"]
         },
         "interface_sha256": {
           "type": "string",
@@ -211,13 +188,7 @@
     "condition": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "kind",
-        "subject",
-        "expected",
-        "observed",
-        "source_ref"
-      ],
+      "required": ["kind", "subject", "expected", "observed", "source_ref"],
       "properties": {
         "kind": {
           "enum": [
@@ -234,20 +205,10 @@
           "minLength": 1
         },
         "expected": {
-          "type": [
-            "string",
-            "number",
-            "boolean",
-            "null"
-          ]
+          "type": ["string", "number", "boolean", "null"]
         },
         "observed": {
-          "type": [
-            "string",
-            "number",
-            "boolean",
-            "null"
-          ]
+          "type": ["string", "number", "boolean", "null"]
         },
         "source_ref": {
           "type": "string",
@@ -346,29 +307,16 @@
         "target": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "repository",
-            "ref",
-            "sha"
-          ],
+          "required": ["repository", "ref", "sha"],
           "properties": {
             "repository": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "ref": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "sha": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
             }
           }
@@ -395,11 +343,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "id",
-              "accessible",
-              "sha256"
-            ],
+            "required": ["id", "accessible", "sha256"],
             "properties": {
               "id": {
                 "type": "string",

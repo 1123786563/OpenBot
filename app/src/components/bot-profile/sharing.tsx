@@ -7,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { Fragment, useId, useRef, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   PageEmpty,
@@ -432,9 +432,7 @@ function Assignments({ bot }: { bot: TeamBot }) {
   const { t } = useTranslation("agents");
   const queryClient = useQueryClient();
   const scope = useScopedCache();
-  const remove = useMutation(
-    assignTeamBotMutationOptions(queryClient, scope),
-  );
+  const remove = useMutation(assignTeamBotMutationOptions(queryClient, scope));
   const [assigning, setAssigning] = useState(false);
   const assigned = bot.assignments ?? [];
   return (
@@ -504,9 +502,7 @@ function AssignDialog({ bot, onClose }: { bot: TeamBot; onClose: () => void }) {
   const queryClient = useQueryClient();
   const scope = useScopedCache();
   const formId = useId();
-  const assign = useMutation(
-    assignTeamBotMutationOptions(queryClient, scope),
-  );
+  const assign = useMutation(assignTeamBotMutationOptions(queryClient, scope));
   const [group, setGroup] = useState("");
   return (
     <Dialog onOpenChange={(next) => !next && onClose()} open>

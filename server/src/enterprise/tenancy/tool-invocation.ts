@@ -188,8 +188,7 @@ export function createToolInvocationService(channels: {
           )
           .limit(1);
         if (
-          !member ||
-          member.companyStatus !== "active" ||
+          member?.companyStatus !== "active" ||
           member.companyEpoch !== scope.memberEpoch ||
           member.teamStatus !== "active"
         ) {
@@ -258,7 +257,7 @@ export function createToolInvocationService(channels: {
             ),
           )
           .limit(1);
-        if (!credential || credential.status !== "active") {
+        if (credential?.status !== "active") {
           // 不存在与不可见同形（AC4）。
           return notFoundVerdict();
         }

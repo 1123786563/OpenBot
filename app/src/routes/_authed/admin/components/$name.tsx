@@ -11,7 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminComponentPreview } from "@/components/component-preview";
@@ -149,11 +149,7 @@ function RouteComponent() {
               {t("components.noSuch.hint")}
             </EmptyDescription>
           </EmptyHeader>
-          <ButtonLink
-            to="/admin/components"
-            size="sm"
-            variant="outline"
-          >
+          <ButtonLink to="/admin/components" size="sm" variant="outline">
             {t("components.noSuch.back")}
           </ButtonLink>
         </Empty>

@@ -1,4 +1,9 @@
-import { beforeEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { createHash } from "node:crypto";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";

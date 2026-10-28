@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createCredits } from "../src/billing/credits";
 import {
   createCreditReserveService,
@@ -243,7 +248,12 @@ const window = { from: null, to: null, page: 1 };
 afterAll(async () => {
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -281,7 +291,11 @@ describe("20.3 AC-1/AC-2 — the fee split and its ledger reconciliation", () =>
     const world = await seedWorld();
     // input 100_000 × $0.000001 = $0.10 (1000 scaled) + surcharge_per_request 1 ×
     // $0.0001 = $0.0001 (1 scaled exactly) → 1001 scaled total; parts 1000 + 1.
-    await settleOf(world, { input: 100_000, surcharge_per_request: 1 }, "split");
+    await settleOf(
+      world,
+      { input: 100_000, surcharge_per_request: 1 },
+      "split",
+    );
 
     const page = await credits.consumption(window, {
       kind: "personal",
@@ -307,15 +321,16 @@ describe("20.3 AC-1/AC-2 — the fee split and its ledger reconciliation", () =>
     const rows = await database
       .select()
       .from(creditSettlementDimensionBreakdown)
-      .where(
-        eq(creditSettlementDimensionBreakdown.ledgerId, ledgerRow.id),
-      );
-    expect(
-      rows.map((row) => row.dimension).sort(),
-    ).toEqual(["input", "surcharge_per_request"]);
+      .where(eq(creditSettlementDimensionBreakdown.ledgerId, ledgerRow.id));
+    expect(rows.map((row) => row.dimension).sort()).toEqual([
+      "input",
+      "surcharge_per_request",
+    ]);
     // The rows' units sum to the ledger row's scaled credits — the write-time invariant,
     // read back from the table itself.
-    expect(rows.reduce((sum, row) => sum + row.units, 0)).toBe(ledgerRow.credits);
+    expect(rows.reduce((sum, row) => sum + row.units, 0)).toBe(
+      ledgerRow.credits,
+    );
   });
 
   test("a settlement without surcharge usage splits with a zero surcharge side", async () => {
@@ -339,7 +354,8 @@ describe("20.3 AC-1/AC-2 — the fee split and its ledger reconciliation", () =>
       ...world.request,
       idempotencyKey: `${world.request.idempotencyKey}-x`,
     });
-    if (reserved.status !== "reserved") throw new Error("fixture reserve refused");
+    if (reserved.status !== "reserved")
+      throw new Error("fixture reserve refused");
     // A split naming a different total than the settlement priced: 1 scaled unit claimed
     // where the actual cost is 100 scaled — a caller defect, refused loudly.
     await expect(
@@ -370,7 +386,8 @@ describe("20.3 AC-4 — no split is no line", () => {
       ...world.request,
       idempotencyKey: `${world.request.idempotencyKey}-direct`,
     });
-    if (reserved.status !== "reserved") throw new Error("fixture reserve refused");
+    if (reserved.status !== "reserved")
+      throw new Error("fixture reserve refused");
     await fixtureWriter.settleReservation({
       reservationId: reserved.reservationId,
       actual: { numerator: 250n, denominator: 1n },

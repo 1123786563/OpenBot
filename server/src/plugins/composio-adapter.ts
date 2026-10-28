@@ -1,9 +1,7 @@
 import { Composio } from "@composio/core";
 import {
-  type AuthConfigOutcome,
   type BrokerApp,
   type BrokerConnection,
-  type BrokerField,
   BrokerRefusalError,
   type ComposioBroker,
   type ConnectedAppBroker,
@@ -14,7 +12,6 @@ import {
 import {
   type ComposioAction,
   type ComposioActions,
-  type ComposioResult,
   LISTING_LIMIT,
   vendorSentence,
 } from "./composio";

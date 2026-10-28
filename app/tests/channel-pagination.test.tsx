@@ -1,5 +1,12 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -116,7 +123,14 @@ beforeAll(() => {
       // The scoped roster read (MT087) waits for the scope source; the per-test respond() owns
       // every OTHER answer, so the auth read is answered here, once, for all of them.
       if (url === "/api/me") {
-        return Response.json({ user: { id: "user", email: "user@example.com", role: "user", onboarding: null } });
+        return Response.json({
+          user: {
+            id: "user",
+            email: "user@example.com",
+            role: "user",
+            onboarding: null,
+          },
+        });
       }
       requests.push(url);
       return respond();
@@ -201,12 +215,18 @@ function renderSidebar() {
    * The sidebar reads the roster through the scoped key (MT087): under no selection that is the
    * personal context's own subtree, so the preset lands where the sidebar actually reads.
    */
-  queryClient.setQueryData([...scopedCachePrefix("user", null), ...channelKeys.list()], {
-    pages: [
-      { channels: [channel("Recent conversation")], nextCursor: "older/page" },
-    ],
-    pageParams: [""],
-  });
+  queryClient.setQueryData(
+    [...scopedCachePrefix("user", null), ...channelKeys.list()],
+    {
+      pages: [
+        {
+          channels: [channel("Recent conversation")],
+          nextCursor: "older/page",
+        },
+      ],
+      pageParams: [""],
+    },
+  );
   const routeTree = createRootRoute({
     component: () => (
       <SidebarProvider>

@@ -1,5 +1,10 @@
 import "./preload";
-import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { QueryClient } from "@tanstack/react-query";
 import {
   cancelPurchase,
@@ -211,4 +216,3 @@ test("the poll read passes the paid order's fulfillment state through untouched"
     queryClient.fetchQuery(purchaseOrderQueryOptions(paid.orderId)),
   ).resolves.toEqual({ order: paid });
 });
-

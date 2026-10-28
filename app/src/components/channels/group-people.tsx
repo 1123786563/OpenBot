@@ -40,7 +40,9 @@ export function GroupPeopleButton({ channelId }: { channelId: string }) {
   // The member list and every membership write ride the scope this screen holds (MT087): the
   // roster offered is the server's answer under the scope in force, and the writes carry the pair.
   const scope = useScopedCache();
-  const group = useQuery(scopedGroupQueryOptions(queryClient, scope, channelId));
+  const group = useQuery(
+    scopedGroupQueryOptions(queryClient, scope, channelId),
+  );
   const me = useQuery(currentUserQueryOptions()).data;
   const add = useMutation(
     addGroupMemberMutationOptions(queryClient, channelId, scope),

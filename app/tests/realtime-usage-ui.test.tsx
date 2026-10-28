@@ -6,7 +6,14 @@ import "./preload";
  * registration below are the bun:test shapes; the e2e-compat runner cannot collect app
  * suites in this worktree, so the file pins the runner that actually executes.
  */
-import { afterAll, afterEach, beforeAll, expect, mock, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  mock,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render } from "@testing-library/react";
@@ -45,7 +52,10 @@ mock.module("@/components/ui/dialog", () => {
     return (
       <div data-testid="dialog-root">
         {children}
-        <button type="button" onClick={() => (onOpenChange ? onOpenChange(false) : close())}>
+        <button
+          type="button"
+          onClick={() => (onOpenChange ? onOpenChange(false) : close())}
+        >
           close
         </button>
       </div>
@@ -62,8 +72,11 @@ mock.module("@/components/ui/dialog", () => {
       {children}
     </div>
   );
-  const DialogClose = ({ render }: { render?: React.ReactElement<Record<string, unknown>> }) =>
-    render ? cloneElement(render, { "data-dialog-close": "true" }) : null;
+  const DialogClose = ({
+    render,
+  }: {
+    render?: React.ReactElement<Record<string, unknown>>;
+  }) => (render ? cloneElement(render, { "data-dialog-close": "true" }) : null);
   return {
     Dialog,
     DialogTrigger: DialogTriggerMock,
@@ -165,7 +178,11 @@ const STOPPED: SessionFixture = {
   state: "open",
   stopped: true,
   closed: false,
-  abnormal: { kind: "stopped", reason: "insufficient_credits", at: "2026-10-22T07:31:00.000Z" },
+  abnormal: {
+    kind: "stopped",
+    reason: "insufficient_credits",
+    at: "2026-10-22T07:31:00.000Z",
+  },
   units: { settled: 0, holding: 0, unknown: 0, refused: 1 },
   consumedCents: 0,
   pendingCents: 0,
@@ -180,7 +197,11 @@ const CLOSED_UNMAPPED: SessionFixture = {
   state: "closed",
   stopped: false,
   closed: true,
-  abnormal: { kind: "closed", reason: "a_future_code", at: "2026-10-22T06:05:00.000Z" },
+  abnormal: {
+    kind: "closed",
+    reason: "a_future_code",
+    at: "2026-10-22T06:05:00.000Z",
+  },
   units: { settled: 0, holding: 0, unknown: 1, refused: 0 },
   consumedCents: 0,
   pendingCents: 5_000,
@@ -285,7 +306,9 @@ test("实时会话行渲染消费、待结算与异常原因，原始代码不�
   // The healthy session: its consumption and the amount awaiting settlement, formatted as
   // credits from the server's ×100 integers (12.34 and 100).
   const healthy = rows.find(
-    (row) => row.getAttribute("data-session-state") === "open" && row.textContent?.includes("12.34"),
+    (row) =>
+      row.getAttribute("data-session-state") === "open" &&
+      row.textContent?.includes("12.34"),
   );
   expect(healthy).toBeDefined();
   expect(healthy?.textContent).toContain("100");
@@ -312,14 +335,16 @@ test("空载荷渲染空句，不伪造行", async () => {
 });
 
 test("实时面不可用时整节隐藏，不把错误装扮成空列表", async () => {
-  installFetchStub({ status: 503, body: { error: "Realtime usage is unavailable." } });
+  installFetchStub({
+    status: 503,
+    body: { error: "Realtime usage is unavailable." },
+  });
   const view = renderView();
   await view.findByText("个人积分账户");
   // The realtime section is absent — no title, no empty sentence, no error dressed as data.
   expect(view.queryByText("实时会话")).toBeNull();
   expect(view.queryByText("暂无实时会话。")).toBeNull();
 });
-
 
 /*
  * BP07 (#375): a quarantined account's capabilities are unavailable, said as the fixed

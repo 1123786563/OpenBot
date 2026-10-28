@@ -1,6 +1,11 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
@@ -17,7 +22,10 @@ import {
   type PayerBinding,
 } from "../src/billing/payer-binding";
 import { currentWorkbenchScope } from "../src/billing/workbench-payer";
-import { createPayerAccount, readPayerAccountForKey } from "../src/billing/payer";
+import {
+  createPayerAccount,
+  readPayerAccountForKey,
+} from "../src/billing/payer";
 import { deploymentExternalCustomerId } from "../src/billing/service";
 import { USAGE_IDEMPOTENCY_KEY_PREFIX } from "../src/billing/types";
 import { createCreditUsageTarget } from "../src/billing/usage-delivery";
@@ -149,9 +157,12 @@ describe("restorePayerBinding rebuilds the binding from the mapping row", () => 
 describe("the request context carries exactly one binding", () => {
   test("no binding outside a request", async () => {
     expect(currentPayerBinding()).toBeUndefined();
-    await withPayerBinding(bindPayer({ kind: "personal", id: `usr_${run}` }), async () => {
-      expect(currentPayerBinding()?.payer.id).toBe(`usr_${run}`);
-    });
+    await withPayerBinding(
+      bindPayer({ kind: "personal", id: `usr_${run}` }),
+      async () => {
+        expect(currentPayerBinding()?.payer.id).toBe(`usr_${run}`);
+      },
+    );
     expect(currentPayerBinding()).toBeUndefined();
   });
 
@@ -411,9 +422,17 @@ describe("settlement and the carried remainder land on the bound account", () =>
     // The settlement's ledger row and the account's carried remainder are both on the
     // bound account's key — never the bystander's, never the deployment's.
     const [ledgerRow] = await database
-      .select({ customer: creditLedger.externalCustomerId, credits: creditLedger.credits })
+      .select({
+        customer: creditLedger.externalCustomerId,
+        credits: creditLedger.credits,
+      })
       .from(creditLedger)
-      .where(eq(creditLedger.idempotencyKey, `reservation:${reservation.reservationId}`))
+      .where(
+        eq(
+          creditLedger.idempotencyKey,
+          `reservation:${reservation.reservationId}`,
+        ),
+      )
       .limit(1);
     expect(ledgerRow?.customer).toBe(bound.key);
 
@@ -465,7 +484,10 @@ describe("the deployment's own payer binding is made once, explicitly", () => {
       id: deploymentId,
     });
     track(first.externalCustomerId);
-    expect(first.payer).toEqual({ kind: "legacy_deployment", id: deploymentId });
+    expect(first.payer).toEqual({
+      kind: "legacy_deployment",
+      id: deploymentId,
+    });
     expect(first.externalCustomerId).toBe(
       deploymentExternalCustomerId(deploymentId),
     );
@@ -625,7 +647,10 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
    */
   let gateRunnerPromise:
     | Promise<
-        (deps: unknown, input: unknown) => Promise<{
+        (
+          deps: unknown,
+          input: unknown,
+        ) => Promise<{
           finish: (usage: {
             inputTokens?: number;
             outputTokens?: number;
@@ -669,7 +694,10 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
         }
         if (c === "/" && next === "*") {
           i += 2;
-          while (i < source.length && !(source[i] === "*" && source[i + 1] === "/"))
+          while (
+            i < source.length &&
+            !(source[i] === "*" && source[i + 1] === "/")
+          )
             i += 1;
           i += 2;
           continue;
@@ -713,7 +741,9 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
         i += 1;
       }
       if (close < 0) {
-        throw new Error("the gate's arrow body never closes; index.ts changed shape");
+        throw new Error(
+          "the gate's arrow body never closes; index.ts changed shape",
+        );
       }
       const body = source.slice(open + 1, close);
 
@@ -723,7 +753,10 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
       const AsyncFunction = Object.getPrototypeOf(async () => {})
         .constructor as new (
         ...args: string[]
-      ) => (deps: unknown, input: unknown) => Promise<{
+      ) => (
+        deps: unknown,
+        input: unknown,
+      ) => Promise<{
         finish: (usage: {
           inputTokens?: number;
           outputTokens?: number;
@@ -765,18 +798,21 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
     const eventId = `evt_${run}_gate_refused`;
 
     let thrown: unknown;
-    await withPayerBinding(bindPayer({ kind: "personal", id: short.id }), async () => {
-      try {
-        await gateCall(scope, {
-          eventId,
-          occurredAt: new Date(),
-          modelId: null,
-          client: "web",
-        });
-      } catch (error) {
-        thrown = error;
-      }
-    });
+    await withPayerBinding(
+      bindPayer({ kind: "personal", id: short.id }),
+      async () => {
+        try {
+          await gateCall(scope, {
+            eventId,
+            occurredAt: new Date(),
+            modelId: null,
+            client: "web",
+          });
+        } catch (error) {
+          thrown = error;
+        }
+      },
+    );
 
     // The refusal is the billing-owned error, on the bound account's own facts.
     expect(thrown).toBeInstanceOf(CreditInsufficientError);
@@ -827,7 +863,10 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
           client: "web",
           // 09.1: the gate's outbox write names the Bot that ran the call and the
           // person it ran for.
-          attribution: { userId: `usr_${run}_gate_bot`, botId: `bot_${run}_gate` },
+          attribution: {
+            userId: `usr_${run}_gate_bot`,
+            botId: `bot_${run}_gate`,
+          },
         }),
     );
 
@@ -861,7 +900,11 @@ describe("the consumption gate itself: extracted from index.ts and executed", ()
     });
 
     // An unknown-outcome failure keeps the hold and leaves evidence on the SAME account.
-    await lifecycle.fail({ reason: "stream_error", inputTokens: 1, outputTokens: 2 });
+    await lifecycle.fail({
+      reason: "stream_error",
+      inputTokens: 1,
+      outputTokens: 2,
+    });
     expect(scope.unsettledRecords.at(-1)).toMatchObject({
       externalCustomerId: bound.key,
       reason: "stream_error",
@@ -973,7 +1016,9 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
      */
     const codeOnly = (source: string): string =>
       source
-        .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "))
+        .replace(/\/\*[\s\S]*?\*\//g, (comment) =>
+          comment.replace(/[^\n]/g, " "),
+        )
         .replace(/\/\/[^\n]*/g, (comment) => comment.replace(/[^\n]/g, " "));
     const referencing: string[] = [];
     for (const file of files) {
@@ -982,7 +1027,9 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
         referencing.push(file);
       }
     }
-    const names = referencing.map((file) => file.replace(`${srcRoot}/`, "")).sort();
+    const names = referencing
+      .map((file) => file.replace(`${srcRoot}/`, ""))
+      .sort();
     expect(names).toEqual([
       "billing/payer-legacy.ts", // 02.2 legacy attribution
       "billing/payer.ts", // the payer layer's legacy_deployment branch
@@ -1017,16 +1064,24 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
   test("the gate body itself has no second payer resolution: one resolve, one reserve, no foreign key identifier", async () => {
     const { readFile } = await import("node:fs/promises");
     const join = (await import("node:path")).join;
-    const source = await readFile(join(hereDir, "..", "src", "index.ts"), "utf8");
+    const source = await readFile(
+      join(hereDir, "..", "src", "index.ts"),
+      "utf8",
+    );
 
     // Anchor on the raw source first (unique), then scan ONLY from there: the scanner
     // below is string/comment aware but not regex-literal aware, and the file above the
     // gate is 3800 lines of assembly that owes the test nothing.
     const anchor = "setModelUsageGate(async";
     const anchorAt = source.indexOf(anchor);
-    if (anchorAt < 0) throw new Error("setModelUsageGate(async (input) => {…) not found in index.ts");
+    if (anchorAt < 0)
+      throw new Error(
+        "setModelUsageGate(async (input) => {…) not found in index.ts",
+      );
     if (source.indexOf(anchor, anchorAt + 1) >= 0)
-      throw new Error("setModelUsageGate(async appears more than once in index.ts");
+      throw new Error(
+        "setModelUsageGate(async appears more than once in index.ts",
+      );
 
     /*
      * Scan text emitting only code: string-literal contents and comments become spaces,
@@ -1051,7 +1106,8 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
         if (c === "/" && next === "*") {
           blank(text[i++]);
           blank(text[i++]);
-          while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) blank(text[i++]);
+          while (i < text.length && !(text[i] === "*" && text[i + 1] === "/"))
+            blank(text[i++]);
           blank(text[i++]);
           blank(text[i++]);
           continue;
@@ -1159,7 +1215,11 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
     const resolveAt = gateBody.indexOf("resolveConsumptionPayerBinding(");
     let depth = 0;
     let resolveEnd = -1;
-    for (let i = resolveAt + "resolveConsumptionPayerBinding".length; i < gateBody.length; i++) {
+    for (
+      let i = resolveAt + "resolveConsumptionPayerBinding".length;
+      i < gateBody.length;
+      i++
+    ) {
       if (gateBody[i] === "(") depth += 1;
       else if (gateBody[i] === ")") {
         depth -= 1;
@@ -1169,7 +1229,8 @@ describe("the call-site inventory: the deployment key has no new paths", () => {
         }
       }
     }
-    if (resolveEnd < 0) throw new Error("unbalanced resolveConsumptionPayerBinding call");
+    if (resolveEnd < 0)
+      throw new Error("unbalanced resolveConsumptionPayerBinding call");
     const gateOutsideResolve =
       gateBody.slice(0, resolveAt) + gateBody.slice(resolveEnd + 1);
 

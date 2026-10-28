@@ -759,7 +759,11 @@ describe("the built-in observation bypass", () => {
       );
       emit(ev({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '{"path":' }));
       emit(
-        ev({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '"/etc/hosts"}' }),
+        ev({
+          type: "TOOL_CALL_ARGS",
+          toolCallId: "c1",
+          delta: '"/etc/hosts"}',
+        }),
       );
       emit(ev({ type: "TOOL_CALL_END", toolCallId: "c1" }));
       const value = await toolStepObservationForTests.observeExecution(
@@ -1569,7 +1573,8 @@ describe("per-run tool-step cell isolation and execute-side discipline (OCR R5-4
     expect(b?.receiptObserved).toBe(false);
   });
 
-  test("an execute the run performs settles THAT run's cell, never a concurrent run's", async () => {    const facts: BuiltinToolStepFact[] = [];
+  test("an execute the run performs settles THAT run's cell, never a concurrent run's", async () => {
+    const facts: BuiltinToolStepFact[] = [];
     setBuiltinToolStepObserver((fact) => facts.push(fact));
     // Run A's source stands in for the runtime: it proposes the call, then
     // really executes it from inside the run (where the execute's ambient

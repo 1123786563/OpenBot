@@ -195,7 +195,9 @@ async function seedSession(): Promise<World> {
     rateVersion: 0,
   });
   if (establishment.status !== "established") {
-    throw new Error(`fixture session did not establish: ${JSON.stringify(establishment)}`);
+    throw new Error(
+      `fixture session did not establish: ${JSON.stringify(establishment)}`,
+    );
   }
 
   return {
@@ -232,7 +234,9 @@ async function ledgerCount(world: World) {
   const rows = await database
     .select({ id: creditLedger.id })
     .from(creditLedger)
-    .where(eq(creditLedger.externalCustomerId, `openbot-personal-${world.userId}`));
+    .where(
+      eq(creditLedger.externalCustomerId, `openbot-personal-${world.userId}`),
+    );
   return rows.length;
 }
 
@@ -255,7 +259,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -291,7 +298,8 @@ describe("Bifrost 15.7 (#320): the shutdown tail settles once, within the bound"
     const world = await seedSession();
     const service = unitService();
     const opened = await service.openUnit(world.openBody("unit-1"));
-    if (opened.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (opened.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
     await service.markProcessing(opened.unit.unitId);
 
     const body = {
@@ -325,7 +333,8 @@ describe("Bifrost 15.7 (#320): the shutdown tail settles once, within the bound"
     const world = await seedSession();
     const service = unitService();
     const opened = await service.openUnit(world.openBody("unit-1"));
-    if (opened.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (opened.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
     await service.markProcessing(opened.unit.unitId);
 
     // The shutdown unknowns the holding unit (15.6); the hold is kept.
@@ -343,7 +352,10 @@ describe("Bifrost 15.7 (#320): the shutdown tail settles once, within the bound"
     const settled = await service.settleUnit({
       unitId: opened.unit.unitId,
       actualUsage: usageOf({ input: 800, output: 300 }),
-      evidence: { kind: "provider_usage_report", reference: "tail-after-shutdown" },
+      evidence: {
+        kind: "provider_usage_report",
+        reference: "tail-after-shutdown",
+      },
       settledBy: "realtime-relay",
       idempotencyKey: `${prefix}-tail-3`,
     });
@@ -358,7 +370,10 @@ describe("Bifrost 15.7 (#320): the shutdown tail settles once, within the bound"
     const replay = await service.settleUnit({
       unitId: opened.unit.unitId,
       actualUsage: usageOf({ input: 800, output: 300 }),
-      evidence: { kind: "provider_usage_report", reference: "tail-after-shutdown" },
+      evidence: {
+        kind: "provider_usage_report",
+        reference: "tail-after-shutdown",
+      },
       settledBy: "realtime-relay",
       idempotencyKey: `${prefix}-tail-4`,
     });
@@ -370,7 +385,8 @@ describe("Bifrost 15.7 (#320): the shutdown tail settles once, within the bound"
     const world = await seedSession();
     const service = unitService();
     const opened = await service.openUnit(world.openBody("unit-1"));
-    if (opened.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (opened.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
 
     // 2,000,000 input tokens at the fixture basis cost well over the 100.00 bound.
     const overage = await service.settleUnit({
@@ -405,7 +421,8 @@ describe("Bifrost 15.7 (#320): the shutdown tail settles once, within the bound"
       changedBy: "test",
     });
     const opened = await service.openUnit(world.openBody("unit-1"));
-    if (opened.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (opened.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
 
     // An evidence kind outside the closed vocabulary is refused before anything moves.
     const badEvidence = await service.settleUnit({

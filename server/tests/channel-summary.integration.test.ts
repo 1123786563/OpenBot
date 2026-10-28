@@ -1,4 +1,10 @@
-import { afterAll, afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { FIRING_FRAME, frameFiring } from "@openbot/shared/routine-firing";

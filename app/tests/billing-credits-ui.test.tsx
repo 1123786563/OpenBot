@@ -1,6 +1,12 @@
 import "./preload";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import type * as React from "react";
 import { cloneElement, createContext, useContext } from "react";
 import type {
@@ -752,8 +758,9 @@ test("UpgradeDialog says the pending-purchase refusal in the reader's language",
   // plain waitFor does not repaint the post-click read in this runner).
   await until(
     () =>
-      view.queryByText("已有一笔待支付订单，请先完成支付或取消该订单后再购买") !==
-      null,
+      view.queryByText(
+        "已有一笔待支付订单，请先完成支付或取消该订单后再购买",
+      ) !== null,
     4000,
     "localized refusal",
   );

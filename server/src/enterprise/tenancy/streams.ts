@@ -347,8 +347,7 @@ export function createStreamSubscriptionService(channels: {
       )
       .limit(1);
     if (
-      !row ||
-      row.status !== "active" ||
+      row?.status !== "active" ||
       row.visibility !== null ||
       row.workspaceId !== scope.workspaceId
     ) {
@@ -615,7 +614,7 @@ export function createStreamSubscriptionService(channels: {
           )
           .limit(1);
         // 另一公司的映射行在 RLS 租户臂之外不可见：canonical not-found。
-        if (!row || row.status !== "active") return notFoundVerdict();
+        if (row?.status !== "active") return notFoundVerdict();
         if (row.workspaceId !== scope.workspaceId) return notFoundVerdict();
         const alive = await readSubscriberFacts(tx, scope);
         if (!alive) return notFoundVerdict();
@@ -647,7 +646,7 @@ export function createStreamSubscriptionService(channels: {
             ),
           )
           .limit(1);
-        if (!row || row.status !== "active") return notFoundVerdict();
+        if (row?.status !== "active") return notFoundVerdict();
         if (row.workspaceId !== scope.workspaceId) return notFoundVerdict();
         const alive = await readSubscriberFacts(tx, scope);
         if (!alive) return notFoundVerdict();

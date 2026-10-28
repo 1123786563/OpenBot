@@ -1,7 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { PageEmpty, PageSection, PageShell } from "@/components/layout/page-shell";
+import {
+  PageEmpty,
+  PageSection,
+  PageShell,
+} from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -10,10 +14,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  type ConsumptionRange,
-  ConsumptionTable,
-} from "./consumption-table";
+import { type ConsumptionRange, ConsumptionTable } from "./consumption-table";
 import { CreditGrantList } from "./credit-grant-list";
 import { PersonalBalanceCard } from "./personal-balance-card";
 import { RealtimeSessionsCard } from "./realtime-sessions-card";
@@ -23,13 +24,9 @@ import { WelcomeBanner } from "./welcome-banner";
 import {
   type ConsumptionWindow,
   catalogQueryOptions,
-  creditsConsumptionQueryOptions,
-  creditsGrantsQueryOptions,
-  creditsSummaryQueryOptions,
   type PlanCatalogEntry,
 } from "@/lib/billing/credits";
 import { BillingUnavailableError } from "@/lib/billing/invoices";
-import { entitlementsQueryOptions } from "@/lib/billing/queries";
 import {
   scopedCreditsConsumptionQueryOptions,
   scopedCreditsGrantsQueryOptions,
@@ -113,9 +110,7 @@ export function UsageCreditsView({
   const summary = useQuery(
     scopedCreditsSummaryQueryOptions(queryClient, scope),
   );
-  const grants = useQuery(
-    scopedCreditsGrantsQueryOptions(queryClient, scope),
-  );
+  const grants = useQuery(scopedCreditsGrantsQueryOptions(queryClient, scope));
   const catalog = useQuery(catalogQueryOptions);
   /*
    * Same discipline as the bill list's window: `windowFor` reads the clock, and an unmemoized

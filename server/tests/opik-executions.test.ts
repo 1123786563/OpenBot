@@ -295,10 +295,7 @@ describe("the revocation seam composition (R5-25)", () => {
     // exactly one place and no injected fake can observe it (the R2-59
     // precedent); the export half stays first so the T34 §6 behavior and its
     // ordering are unchanged.
-    const source = readFileSync(
-      join(hereDir, "..", "src", "index.ts"),
-      "utf8",
-    );
+    const source = readFileSync(join(hereDir, "..", "src", "index.ts"), "utf8");
     expect(source).toMatch(
       /aiObservabilityCancelForActor:\s*async\s*\(actorId\)\s*=>\s*\{[\s\S]*?observationExportStore\.cancelForActor\(actorId\)[\s\S]*?cancelExecutionsForActor\(/,
     );

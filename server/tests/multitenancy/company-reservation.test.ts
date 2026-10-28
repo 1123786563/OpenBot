@@ -10,7 +10,13 @@
 // 既有 writer（credits-writer）是只读消费的权威路径：本套件任何用例都不修改它；
 // 结算回归走 writer 原路径，证明公司预扣没有分叉扣费实现。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { eq, sql } from "drizzle-orm";
 import { createCompanyReservationService } from "../../src/billing/company-reservation";
 import { billingCustomers } from "../../src/db/schema/billing";

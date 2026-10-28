@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
-import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
-  createAsyncTerminalSettleService,
-  type AsyncTerminalSettleOutcome,
-} from "../src/billing/async-terminal";
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
+import { createAsyncSubmitService } from "../src/billing/async-job-submit";
+import { createAsyncTerminalSettleService } from "../src/billing/async-terminal";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createCredits } from "../src/billing/credits";
@@ -244,7 +246,8 @@ async function seedJobWorld(certifiedUnits: number): Promise<World> {
     rateVersion: 0,
     entries: [{ quantities: { video: certifiedUnits } }],
   });
-  if (outcome.status !== "submitted") throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
+  if (outcome.status !== "submitted")
+    throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
 
   return {
     userId,
@@ -332,12 +335,15 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM async_settle_triggers WHERE job_id IN (SELECT job_id FROM async_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );
-  await database
-    .delete(asyncJobs)
-    .where(like(asyncJobs.grantId, `${prefix}%`));
+  await database.delete(asyncJobs).where(like(asyncJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
