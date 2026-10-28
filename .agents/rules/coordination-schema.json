@@ -180,7 +180,7 @@
       "required": ["kind", "run_id", "repo_identity", "capacity", "max_parallel_tasks", "reserve_label_slots", "source_issues", "target", "scope", "policy_sha256", "parallel_implementation_approval", "max_run_minutes", "max_run_repair_rounds"],
       "properties": {
         "kind": { "const": "daily-run-v1" },
-        "run_id": { "type": "string", "format": "uuid" },
+        "run_id": { "type": "string", "minLength": 1 },
         "repo_identity": { "type": "string", "pattern": "^[^/]+/[^/]+/[^/]+$" },
         "capacity": { "type": "integer", "minimum": 1 },
         "max_parallel_tasks": { "type": "integer", "minimum": 1, "maximum": 4 },
@@ -208,7 +208,7 @@
       "properties": {
         "kind": { "const": "repair-wave-v1" },
         "wave_id": { "type": "string", "format": "uuid" },
-        "run_id": { "type": "string", "format": "uuid" },
+        "run_id": { "type": "string", "minLength": 1 },
         "audit_issue": { "type": "string", "pattern": "^[^#]+#[1-9][0-9]*$" },
         "round_number": { "type": "integer", "minimum": 1, "maximum": 5 },
         "previous_wave": { "$ref": "#/$defs/nullable_evidence" },
@@ -233,7 +233,11 @@
           }
         },
         "policy_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
-      }
+      },
+      "allOf": [{
+        "if": { "properties": { "round_number": { "minimum": 2 } } },
+        "then": { "properties": { "previous_wave": { "$ref": "#/$defs/evidence" } } }
+      }]
     },
     "audit_epoch_manifest": {
       "type": "object",
