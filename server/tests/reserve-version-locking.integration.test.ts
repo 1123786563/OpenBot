@@ -1,25 +1,20 @@
-import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
+import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import {
-  computeReservationCeiling,
-  lockedBasisOfReservation,
-  resolveLockedReservationBasis,
-  type ReservationBoundQuantities,
-  type ReservationLockedBasis,
-} from "../src/billing/reserve-bound";
-import {
-  createCreditReserveService,
   type CreditReserveRequest,
+  createCreditReserveService,
 } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
-import type { ConversionRate } from "../src/gateway/conversion-rate";
-import { createConversionRateStore } from "../src/gateway/conversion-rate-store";
 import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  createEnterpriseGatewayPriceSnapshotStore,
-} from "../src/gateway/price-snapshot";
+  computeReservationCeiling,
+  lockedBasisOfReservation,
+  type ReservationBoundQuantities,
+  type ReservationLockedBasis,
+  resolveLockedReservationBasis,
+} from "../src/billing/reserve-bound";
+import { createSpeechSettlementService } from "../src/billing/speech-settlement";
 import { createDatabase } from "../src/db/client";
 import {
   accessGrants,
@@ -29,10 +24,14 @@ import {
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../src/db/schema";
-import {
-  creditReservations,
-} from "../src/db/schema/credit-reservations";
+import { creditReservations } from "../src/db/schema/credit-reservations";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import type { ConversionRate } from "../src/gateway/conversion-rate";
+import { createConversionRateStore } from "../src/gateway/conversion-rate-store";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -86,7 +85,11 @@ const V1_AMOUNTS = {
 } as const;
 
 /** Version 2 prices: input and output quadruple (the world changes after the lock). */
-const V2_AMOUNTS = { ...V1_AMOUNTS, input: "0.000004", output: "0.000006" } as const;
+const V2_AMOUNTS = {
+  ...V1_AMOUNTS,
+  input: "0.000004",
+  output: "0.000006",
+} as const;
 
 /** The per-dimension maximum quantities the admitted bound evidence certifies. */
 const QUANTITIES: ReservationBoundQuantities = {
@@ -255,6 +258,11 @@ async function reservationRowOf(
 
 afterAll(async () => {
   // Credit-side columns carry the DERIVED account key (`openbot-personal-<prefix>…`).
+  // The speech line details key on reservation ids (cr-…) without a cascade: clear them
+  // through the account's own reservations before those go.
+  await database.execute(
+    sql`DELETE FROM credit_speech_settlement_details WHERE reservation_id IN (SELECT id FROM credit_reservations WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`})`,
+  );
   await database
     .delete(creditReservations)
     .where(
@@ -317,7 +325,10 @@ test("a reserved hold persists the model ref, snapshotVersion and rateVersion it
 });
 
 test("a reservation written without a lock (the pre-06.5 shape) carries no basis, and stays legal", async () => {
-  const customerKey = payerKey({ kind: "personal", id: (await seedWorld()).userId });
+  const customerKey = payerKey({
+    kind: "personal",
+    id: (await seedWorld()).userId,
+  });
   await fixtureCreditWriter.reserveCredits({
     externalCustomerId: customerKey,
     idempotencyKey: `${prefix}-legacy-${++seedCounter}`,
@@ -349,7 +360,9 @@ test("after the price and the rate both change, the locked basis still resolves 
     quantities: QUANTITIES,
     rate: ENVIRONMENT_RATE,
   });
-  expect(admitted.ok && admitted.maximumCredits).toBe(world.request.maximumCredits);
+  expect(admitted.ok && admitted.maximumCredits).toBe(
+    world.request.maximumCredits,
+  );
 
   // The world changes: version 2 of the price snapshot, and an administrator's new rate.
   await snapshotStore.appendSnapshots([
@@ -375,11 +388,13 @@ test("after the price and the rate both change, the locked basis still resolves 
     capability: "chat",
   });
   expect(latest?.snapshotVersion).toBe(2);
-  expect(latest?.dims.input.status === "known" && latest.dims.input.amount).toBe(
-    "0.000004",
-  );
+  expect(
+    latest?.dims.input.status === "known" && latest.dims.input.amount,
+  ).toBe("0.000004");
   const currentRate = await rateStore.readConversionRate();
-  expect(currentRate.configured && currentRate.rateVersion).toBe(saved.ok ? saved.rateVersion : null);
+  expect(currentRate.configured && currentRate.rateVersion).toBe(
+    saved.ok ? saved.rateVersion : null,
+  );
 
   // The LOCKED basis resolves the original combination, exactly as admitted.
   expect(basis).not.toBeNull();
@@ -617,11 +632,35 @@ test("the table's completeness CHECK refuses a half-locked row at the database l
 
   // Partial locks, every one of which must die on credit_reservations_lock_completeness_check.
   const halfLocks: Array<Parameters<typeof insertWithBasis>[0]> = [
-    { provider: `${prefix}-chk-prov`, model: null, capability: null, snapshotVersion: null, rateVersion: null },
-    { provider: `${prefix}-chk-prov`, model: "chk-model", capability: "chat", snapshotVersion: null, rateVersion: null },
-    { provider: null, model: null, capability: null, snapshotVersion: 1, rateVersion: 0 },
+    {
+      provider: `${prefix}-chk-prov`,
+      model: null,
+      capability: null,
+      snapshotVersion: null,
+      rateVersion: null,
+    },
+    {
+      provider: `${prefix}-chk-prov`,
+      model: "chk-model",
+      capability: "chat",
+      snapshotVersion: null,
+      rateVersion: null,
+    },
+    {
+      provider: null,
+      model: null,
+      capability: null,
+      snapshotVersion: 1,
+      rateVersion: 0,
+    },
     // The shape three-valued logic defeats most quietly: the provider absent, the rest present.
-    { provider: null, model: "chk-model", capability: "chat", snapshotVersion: 1, rateVersion: 0 },
+    {
+      provider: null,
+      model: "chk-model",
+      capability: "chat",
+      snapshotVersion: 1,
+      rateVersion: 0,
+    },
   ];
   for (const basis of halfLocks) {
     expect(await violation(insertWithBasis(basis))).toEqual({
@@ -629,6 +668,56 @@ test("the table's completeness CHECK refuses a half-locked row at the database l
       constraint: "credit_reservations_lock_completeness_check",
     });
   }
+});
+
+test("the wire's speechSpec is parsed, frozen with the hold, and corroborated at settlement", async () => {
+  // OCR r2 #3: the Reserve wire contract names speechSpec, but validateRequest never
+  // read it — any admission carrying the certified spec had it silently dropped, the
+  // five columns froze NULL, and every downstream settlement died as
+  // speech_spec_not_locked. The wire→hold→settle path below is the proof it now parses.
+  const world = await seedWorld();
+  const outcome = await service.reserve({
+    ...world.request,
+    idempotencyKey: `${prefix}-idem-speech-wire`,
+    speechSpec: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+      perInputCharacterUsd: "0.000015",
+      perOutputSecondUsd: "0.0002", // this world's audio_output price
+    },
+  });
+  expect(outcome.status).toBe("reserved");
+  if (outcome.status !== "reserved") return;
+  const row = await reservationRowOf(`${prefix}-idem-speech-wire`);
+  expect(row.specInputCharacters).toBe(100);
+  expect(row.specVoiceTier).toBe("alloy");
+  expect(row.specDurationCapSeconds).toBe(60);
+  expect(row.specPerInputCharacterUsd).toBe("0.000015");
+  expect(row.specPerOutputSecondUsd).toBe("0.0002");
+
+  // And the settlement the wire-admitted hold feeds corroborates against the frozen
+  // spec and bills — the full wire → hold → settle path, once.
+  const settled = await createSpeechSettlementService({
+    database,
+    environmentRate: ENVIRONMENT_RATE,
+  }).settle({
+    reservationId: outcome.reservationId,
+    requested: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+    },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0002" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: { kind: "provider_usage_report", reference: "tts-256-wire" },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-speech-wire`,
+  });
+  expect(settled.status).toBe("settled");
 });
 
 test("ReservationLockedBasis is the complete five-field basis (ref + both versions)", () => {

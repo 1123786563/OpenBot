@@ -344,12 +344,14 @@ export function createCredits(deps: {
           botName: row.botName,
           // 12.2's line detail: a capability settlement's entry shows what was consumed —
           // the image spec and counts, distinguishable from every other capability — with
-          // the amount this entry already carries. Other rows carry no line at all.
+          // the amount this entry already carries. `kind` is the discriminator consumers
+          // narrow on. Other rows carry no line at all.
           lineDetail:
             row.lineCapability === "image" &&
             row.lineRequestedCount !== null &&
             row.lineGeneratedCount !== null
               ? {
+                  kind: "image",
                   capability: row.lineCapability,
                   image: {
                     size: row.lineSize,
@@ -365,6 +367,7 @@ export function createCredits(deps: {
                 ? // 13.2's speech line: the characters in, the seconds out — the entry a
                   // speech consumption shows, distinguishable from image and chat.
                   {
+                    kind: "speech",
                     capability: row.speechCapability,
                     speech: {
                       inputCharacters: row.speechInputCharacters,
@@ -381,6 +384,7 @@ export function createCredits(deps: {
                     // terminal state that ended the job, distinguishable from every
                     // synchronous capability's entry.
                     {
+                      kind: "async_job",
                       capability: row.asyncCapability ?? "unknown",
                       asyncJob: {
                         jobId: row.asyncJobId,

@@ -1,7 +1,11 @@
-import type {
-  SpeechSettlementOutcome,
-  SpeechSettleRequest,
+import { addRational, type Rational, reduceRational } from "./rational";
+import {
+  SPEECH_EVIDENCE_MAX_WAV_CONTAINERS,
+  SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES,
+  type SpeechSettlementOutcome,
+  type SpeechSettleRequest,
 } from "./speech-settlement";
+import { readWavDurationSecondsExact } from "./transcription-pricing";
 
 /*
  * The speech interruption path (Bifrost 13.3, #308): what a playback or stream cut owes,
@@ -44,8 +48,14 @@ export type InterruptedSpeechUsage =
       outcome: "confirmed";
       /** The confirmed seconds — an exact decimal string, summed from chunk metadata. */
       actualSeconds: string;
-      /** The buffered-audio evidence, in the settle result's own closed vocabulary. */
-      evidence: { kind: "artifact_metadata"; reference: string };
+      /** The buffered-audio evidence, in the settle result's own closed vocabulary —
+       * carrying each chunk's own container header so the settle surface can RE-MEASURE
+       * the same statements (13.2's tightened evidence rule: measured, not believed). */
+      evidence: {
+        kind: "artifact_metadata";
+        reference: string;
+        metadata: { container: "wav"; bytesBase64: string[] };
+      };
     }
   | {
       outcome: "unconfirmed";
@@ -70,97 +80,55 @@ export function collectInterruptedSpeechUsage(input: {
   }
   // Exact rational sum: each chunk contributes dataSize/byteRate in lowest BigInt terms;
   // one unreadable chunk makes the whole total uncertifiable, because a confirmed total
-  // is only as good as every piece of it.
-  let numerator = 0n;
-  let denominator = 1n;
+  // is only as good as every piece of it. The parse and the sum are the SHARED tools
+  // (rational.ts / readWavDurationSecondsExact) the settle surface re-measures with —
+  // one arithmetic on both ends of the evidence.
+  let sum: Rational = { numerator: 0n, denominator: 1n };
+  const containerHeaders: string[] = [];
+  // The evidence-carrying budget, single-sourced with the settle surface's own shape
+  // validation (R1-M1): a buffer past it confirms nothing — unknown (06.8) at the settle,
+  // never an over-budget request the settle surface must refuse as malformed.
+  if (input.chunks.length > SPEECH_EVIDENCE_MAX_WAV_CONTAINERS) {
+    return {
+      outcome: "unconfirmed",
+      reason: "more buffered chunks than the settle evidence can carry",
+    };
+  }
   for (const chunk of input.chunks) {
-    const measured = chunkSeconds(chunk);
+    const measured = readWavDurationSecondsExact(chunk);
     if (measured === null) {
       return {
         outcome: "unconfirmed",
         reason: "a buffered chunk is not a readable audio container",
       };
     }
-    numerator =
-      numerator * measured.denominator + measured.numerator * denominator;
-    denominator = denominator * measured.denominator;
+    if (measured.headerEnd > SPEECH_EVIDENCE_MAX_WAV_HEADER_BYTES) {
+      return {
+        outcome: "unconfirmed",
+        reason:
+          "a buffered chunk's container header exceeds the settle evidence's carry budget",
+      };
+    }
+    sum = addRational(sum, {
+      numerator: measured.numerator,
+      denominator: measured.denominator,
+    });
+    // The chunk's own container header rides the evidence: the settle surface re-measures
+    // the very statements this sum was built from, never a number it must take on faith.
+    containerHeaders.push(
+      Buffer.from(chunk.subarray(0, measured.headerEnd)).toString("base64"),
+    );
   }
-  const reduced = reduce(numerator, denominator);
+  const reduced = sum;
   return {
     outcome: "confirmed",
     actualSeconds: terminatingDecimal(reduced),
     evidence: {
       kind: "artifact_metadata",
       reference: `interrupted-buffer:${input.chunks.length} chunks`,
+      metadata: { container: "wav", bytesBase64: containerHeaders },
     },
   };
-}
-
-/**
- * One chunk's own stated duration as an exact rational, or null when unreadable. The
- * same two integers 14.1's whole-file meter reads (`data` size over `fmt ` byte rate),
- * kept as the rational they ARE instead of the float the meter divides into — the sum
- * stays exact chunk over chunk.
- */
-function chunkSeconds(bytes: Uint8Array): {
-  numerator: bigint;
-  denominator: bigint;
-} | null {
-  // The 14.1 meter reads whole-file durations; for exactness the same two integers the
-  // parser reads (data size, byte rate) are re-read here as the rational they ARE.
-  const view =
-    bytes.byteLength >= bytes.length
-      ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-      : null;
-  if (view === null || bytes.length < 44) return null;
-  const tag = (offset: number) =>
-    String.fromCharCode(
-      bytes[offset],
-      bytes[offset + 1],
-      bytes[offset + 2],
-      bytes[offset + 3],
-    );
-  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return null;
-  let offset = 12;
-  let byteRate: bigint | null = null;
-  let dataSize: bigint | null = null;
-  while (offset + 8 <= bytes.length) {
-    const id = tag(offset);
-    const size = BigInt(view.getUint32(offset + 4, true));
-    const body = offset + 8;
-    if (id === "fmt " && size >= 16n && body + 16 <= bytes.length) {
-      byteRate = BigInt(view.getUint32(body + 8, true));
-    } else if (id === "data") {
-      dataSize = size;
-      break;
-    }
-    offset = body + Number(size) + (Number(size) % 2);
-  }
-  if (byteRate === null || dataSize === null || byteRate <= 0n) return null;
-  return { numerator: dataSize, denominator: byteRate };
-}
-
-function gcd(a: bigint, b: bigint): bigint {
-  let x = a;
-  let y = b;
-  while (y !== 0n) {
-    const next = x % y;
-    x = y;
-    y = next;
-  }
-  return x;
-}
-
-function reduce(
-  numerator: bigint,
-  denominator: bigint,
-): {
-  numerator: bigint;
-  denominator: bigint;
-} {
-  if (numerator === 0n) return { numerator: 0n, denominator: 1n };
-  const divisor = gcd(numerator, denominator);
-  return { numerator: numerator / divisor, denominator: denominator / divisor };
 }
 
 /**
@@ -169,10 +137,7 @@ function reduce(
  * digits rounded UP — the exact-decimal wire shape the settle contract reads, and the
  * one rounding direction strict billing allows (never below the measured value).
  */
-function terminatingDecimal(value: {
-  numerator: bigint;
-  denominator: bigint;
-}): string {
+function terminatingDecimal(value: Rational): string {
   let denominator = value.denominator;
   let twos = 0n;
   let fives = 0n;
@@ -187,7 +152,10 @@ function terminatingDecimal(value: {
   if (denominator !== 1n) {
     // Not terminating: scale to nine fractional digits, rounding up.
     const scale = 10n ** 9n;
-    const scaled = reduce(value.numerator * scale, value.denominator);
+    const scaled = reduceRational({
+      numerator: value.numerator * scale,
+      denominator: value.denominator,
+    });
     const wholes = scaled.numerator / scaled.denominator;
     const roundUp = scaled.numerator % scaled.denominator === 0n ? 0n : 1n;
     const digits = (wholes + roundUp).toString().padStart(10, "0");

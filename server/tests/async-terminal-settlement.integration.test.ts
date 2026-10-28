@@ -1,24 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
-import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
-  createAsyncTerminalSettleService,
-  type AsyncTerminalSettleOutcome,
-} from "../src/billing/async-terminal";
-import { createCreditReserveService } from "../src/billing/credit-reserve";
-import { createCreditWriter } from "../src/billing/credits-writer";
-import { createCredits } from "../src/billing/credits";
-import { createPayerAccount, payerKey } from "../src/billing/payer";
-import { readCapacity } from "../src/billing/capacity";
-import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import type { AuditEventInput } from "../src/audit";
-import {
-  GATEWAY_PRICE_SNAPSHOT_SOURCE,
-  PRICE_DIMENSIONS,
-  createEnterpriseGatewayPriceSnapshotStore,
-  type PriceDimension,
-} from "../src/gateway/price-snapshot";
+import { createAsyncSubmitService } from "../src/billing/async-job-submit";
+import { createAsyncTerminalSettleService } from "../src/billing/async-terminal";
+import { readCapacity } from "../src/billing/capacity";
+import { createCreditReserveService } from "../src/billing/credit-reserve";
+import { createCredits } from "../src/billing/credits";
+import { createCreditWriter } from "../src/billing/credits-writer";
+import { createPayerAccount, payerKey } from "../src/billing/payer";
+import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
 import { createDatabase } from "../src/db/client";
 import {
   accessGrants,
@@ -35,6 +31,12 @@ import {
 } from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
+import {
+  createEnterpriseGatewayPriceSnapshotStore,
+  GATEWAY_PRICE_SNAPSHOT_SOURCE,
+  PRICE_DIMENSIONS,
+  type PriceDimension,
+} from "../src/gateway/price-snapshot";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
 /*
@@ -244,7 +246,8 @@ async function seedJobWorld(certifiedUnits: number): Promise<World> {
     rateVersion: 0,
     entries: [{ quantities: { video: certifiedUnits } }],
   });
-  if (outcome.status !== "submitted") throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
+  if (outcome.status !== "submitted")
+    throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
 
   return {
     userId,
@@ -332,12 +335,15 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM async_settle_triggers WHERE job_id IN (SELECT job_id FROM async_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );
-  await database
-    .delete(asyncJobs)
-    .where(like(asyncJobs.grantId, `${prefix}%`));
+  await database.delete(asyncJobs).where(like(asyncJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -548,6 +554,7 @@ describe("17.6 AC-4 — the consumption entry names its job", () => {
     const entry = page.entries[0];
     expect(entry.requestId).toBe(world.jobId);
     expect(entry.lineDetail).toMatchObject({
+      kind: "async_job",
       capability: "video",
       asyncJob: {
         jobId: world.jobId,
