@@ -1041,12 +1041,19 @@ describe("the legacy billing relations evaluation maps associations from live da
       .filter((edge) => !edge.matchesDeclaration)
       .map((edge) => edge.constraintName)
       .sort();
-    expect(undeclared).toEqual([
+    const discoveredNames = manifest.fkEdges
+      .filter((edge) => edge.discovered)
+      .map((edge) => edge.constraintName)
+      .sort();
+    expect(discoveredNames).toEqual([
       "credit_recovery_alerts_item_id_credit_recovery_items_id_fk",
       "credit_recovery_items_resolution_evidence_id_fkey",
       "credit_recovery_queries_item_id_credit_recovery_items_id_fk",
     ]);
-    expect(manifest.summary.declarationMismatches).toBe(3);
+    // The invariant holds again: 0 mismatches means the declaration agrees with the data;
+    // discoveries are counted separately, so real drift cannot drown among them.
+    expect(manifest.summary.declarationMismatches).toBe(0);
+    expect(manifest.summary.discoveredEdges).toBe(3);
     expect(manifest.fkEdges).toHaveLength(DECLARED_EDGES.length + 3);
   });
 
@@ -1366,6 +1373,38 @@ describe("the legacy billing relations evaluation maps associations from live da
     // Two evaluations agree on everything but the generation timestamp (21.4's hash input).
   });
 
+  test("a declared edge whose delete behavior drifted is a mismatch, not a discovery", async () => {
+    // Restores exactly after itself: the drift FK is the declared customer→ledger cascade
+    // recreated as RESTRICT. The mismatch count must isolate this one drift — discovered
+    // edges stay out of the counter (OCR round-2, maint·medium).
+    await database.execute(
+      sql`ALTER TABLE credit_ledger DROP CONSTRAINT credit_ledger_ext_customer_id_fk`,
+    );
+    await database.execute(
+      sql`ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_ext_customer_id_fk FOREIGN KEY (external_customer_id) REFERENCES billing_customers(external_id) ON DELETE RESTRICT`,
+    );
+    try {
+      const evaluated = await evaluateCleanupRelations(database, classification);
+      const drifted = evaluated.fkEdges.find(
+        (edge) =>
+          edge.childTable === "credit_ledger" &&
+          edge.childColumn === "external_customer_id",
+      );
+      expect(drifted).toBeDefined();
+      expect(drifted!.discovered).toBe(false);
+      expect(drifted!.matchesDeclaration).toBe(false);
+      expect(evaluated.summary.declarationMismatches).toBe(1);
+      expect(evaluated.summary.discoveredEdges).toBe(3);
+    } finally {
+      await database.execute(
+        sql`ALTER TABLE credit_ledger DROP CONSTRAINT credit_ledger_ext_customer_id_fk`,
+      );
+      await database.execute(
+        sql`ALTER TABLE credit_ledger ADD CONSTRAINT credit_ledger_ext_customer_id_fk FOREIGN KEY (external_customer_id) REFERENCES billing_customers(external_id) ON DELETE CASCADE`,
+      );
+    }
+  });
+
   test("a second evaluation reproduces the manifest deterministically", async () => {
     const second = await evaluateCleanupRelations(database, classification);
     const stripMeta = (value: CleanupRelationsManifest) => {
@@ -1399,6 +1438,154 @@ describe("the legacy billing relations evaluation maps associations from live da
     await expect(evaluateCleanupRelations(database, drifted)).rejects.toThrow(
       new RegExp(`credit_grants/b347-missing-${run}[^]*no longer exists`),
     );
+  });
+
+  test("a SET NULL child table outside the static universe does not crash the probe", async () => {
+    // OCR report bug 1: the edges filter loads child tables of reachable parents even when
+    // the edge is SET NULL (no cascade reach), so a drift table born empty at spec time is
+    // traversed without a probe spec. The evaluation must treat the discovered table as
+    // part of its universe, name the child row, and keep the fail-closed verdict.
+    const snChildId = `${run}-sn-child`;
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_sn (id text PRIMARY KEY, hold_id text REFERENCES credit_reservations(id) ON DELETE SET NULL)`,
+    );
+    try {
+      await database.execute(
+        sql`INSERT INTO b5r_t1_sn (id, hold_id) VALUES (${snChildId}, ${flightSettledId})`,
+      );
+      const evaluated = await evaluateCleanupRelations(database, classification);
+      const hold = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_reservations" &&
+          entry.recordId === flightSettledId,
+      );
+      expect(hold).toBeDefined();
+      expect(hold!.removed).toBe(true);
+      expect(
+        hold!.retainedImpact.some(
+          (impact) =>
+            impact.table === "b5r_t1_sn" &&
+            impact.recordId === snChildId &&
+            impact.effect === "set_null_mutate" &&
+            impact.protection === "retained",
+        ),
+      ).toBe(true);
+    } finally {
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_sn`);
+    }
+  });
+
+  test("a row of an estate table that was empty at classify time is retained", async () => {
+    // OCR report bug 2: classification coverage is the ESTATE's table set, not the set of
+    // tables that happened to have records. A row written into an estate table after the
+    // classification snapshot is unclassified — it defaults to protected like any other
+    // uncovered row, never inherits a cleanable verdict from an empty-at-classify table.
+    // The row rides an existing customer key to satisfy the FK; the classification snapshot
+    // predates it, so within this evaluation it is the unclassified drift row. The table's
+    // recordId IS the customer key.
+    await database.insert(creditChargeRemainders).values({
+      externalCustomerId: resolutionKey,
+      numerator: "1",
+      denominator: "3",
+    });
+    try {
+      const tampered = {
+        ...classification,
+        records: classification.records.filter(
+          (record) => record.table !== "credit_charge_remainders",
+        ),
+        candidates: classification.candidates.filter(
+          (record) => record.table !== "credit_charge_remainders",
+        ),
+      };
+      const lateClassification = {
+        ...tampered,
+        candidates: [
+          ...tampered.candidates,
+          {
+            table: "credit_charge_remainders",
+            recordId: resolutionKey,
+            externalCustomerId: resolutionKey,
+            attributionSource: "test_order_number",
+            class: "confirmed_obsolete_test" as const,
+            testFeatures: [],
+            inFlight: false,
+            observedAt: null,
+            isolationReason: null,
+          },
+        ],
+      };
+      const evaluated = await evaluateCleanupRelations(
+        database,
+        lateClassification,
+      );
+      const lateRow = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_charge_remainders" &&
+          entry.recordId === resolutionKey,
+      );
+      expect(lateRow).toBeDefined();
+      expect(lateRow!.removed).toBe(true);
+      expect(
+        lateRow!.retainedImpact.some(
+          (impact) =>
+            impact.protection === "retained" &&
+            impact.class === "unclassified",
+        ),
+      ).toBe(true);
+    } finally {
+      await database
+        .delete(creditChargeRemainders)
+        .where(eq(creditChargeRemainders.externalCustomerId, resolutionKey));
+    }
+  });
+
+  test("a cascade-discovered table's rows are retained, never deletion surface", async () => {
+    // OCR report bug 3: a table the catalog discovery added to the universe has no
+    // adjudication entry — its rows must default to protected (same direction as
+    // "classification does not cover defaults to protected"), pulling any candidate whose
+    // cascade would reach them, instead of riding the deletion scope as cleanable.
+    const h1Id = `${run}-dh1`;
+    const h2Id = `${run}-dh2`;
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_dh1 (id text PRIMARY KEY, hold_id text NOT NULL REFERENCES credit_reservations(id) ON DELETE CASCADE)`,
+    );
+    await database.execute(
+      sql`CREATE TABLE b5r_t1_dh2 (id text PRIMARY KEY, h1_id text NOT NULL REFERENCES b5r_t1_dh1(id) ON DELETE CASCADE)`,
+    );
+    try {
+      await database.execute(
+        sql`INSERT INTO b5r_t1_dh1 (id, hold_id) VALUES (${h1Id}, ${flightSettledId})`,
+      );
+      await database.execute(
+        sql`INSERT INTO b5r_t1_dh2 (id, h1_id) VALUES (${h2Id}, ${h1Id})`,
+      );
+      const evaluated = await evaluateCleanupRelations(database, classification);
+      const hold = evaluated.evaluations.find(
+        (entry) =>
+          entry.table === "credit_reservations" &&
+          entry.recordId === flightSettledId,
+      );
+      expect(hold).toBeDefined();
+      expect(hold!.removed).toBe(true);
+      for (const [table, recordId] of [
+        ["b5r_t1_dh1", h1Id],
+        ["b5r_t1_dh2", h2Id],
+      ] as const) {
+        expect(
+          hold!.retainedImpact.some(
+            (impact) =>
+              impact.table === table &&
+              impact.recordId === recordId &&
+              impact.protection === "retained" &&
+              impact.class === "unclassified",
+          ),
+        ).toBe(true);
+      }
+    } finally {
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_dh2`);
+      await database.execute(sql`DROP TABLE IF EXISTS b5r_t1_dh1`);
+    }
   });
 
   test("a directly inserted unclassified estate child is retained", async () => {
