@@ -13,6 +13,7 @@ import {
   type CreditReserveRequest,
 } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
+import { createSpeechSettlementService } from "../src/billing/speech-settlement";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
 import type { ConversionRate } from "../src/gateway/conversion-rate";
 import { createConversionRateStore } from "../src/gateway/conversion-rate-store";
@@ -255,6 +256,11 @@ async function reservationRowOf(
 
 afterAll(async () => {
   // Credit-side columns carry the DERIVED account key (`openbot-personal-<prefix>…`).
+  // The speech line details key on reservation ids (cr-…) without a cascade: clear them
+  // through the account's own reservations before those go.
+  await database.execute(
+    sql`DELETE FROM credit_speech_settlement_details WHERE reservation_id IN (SELECT id FROM credit_reservations WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`})`,
+  );
   await database
     .delete(creditReservations)
     .where(
@@ -631,8 +637,57 @@ test("the table's completeness CHECK refuses a half-locked row at the database l
   }
 });
 
-test("ReservationLockedBasis is the complete five-field basis (ref + both versions)", () => {
-  const basis: ReservationLockedBasis = {
+test("the wire's speechSpec is parsed, frozen with the hold, and corroborated at settlement", async () => {
+  // OCR r2 #3: the Reserve wire contract names speechSpec, but validateRequest never
+  // read it — any admission carrying the certified spec had it silently dropped, the
+  // five columns froze NULL, and every downstream settlement died as
+  // speech_spec_not_locked. The wire→hold→settle path below is the proof it now parses.
+  const world = await seedWorld();
+  const outcome = await service.reserve({
+    ...world.request,
+    idempotencyKey: `${prefix}-idem-speech-wire`,
+    speechSpec: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+      perInputCharacterUsd: "0.000015",
+      perOutputSecondUsd: "0.0002", // this world's audio_output price
+    },
+  });
+  expect(outcome.status).toBe("reserved");
+  if (outcome.status !== "reserved") return;
+  const row = await reservationRowOf(`${prefix}-idem-speech-wire`);
+  expect(row.specInputCharacters).toBe(100);
+  expect(row.specVoiceTier).toBe("alloy");
+  expect(row.specDurationCapSeconds).toBe(60);
+  expect(row.specPerInputCharacterUsd).toBe("0.000015");
+  expect(row.specPerOutputSecondUsd).toBe("0.0002");
+
+  // And the settlement the wire-admitted hold feeds corroborates against the frozen
+  // spec and bills — the full wire → hold → settle path, once.
+  const settled = await createSpeechSettlementService({
+    database,
+    environmentRate: ENVIRONMENT_RATE,
+  }).settle({
+    reservationId: outcome.reservationId,
+    requested: {
+      inputCharacters: 100,
+      voiceTier: "alloy",
+      durationCapSeconds: 60,
+    },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0002" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: { kind: "provider_usage_report", reference: "tts-256-wire" },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-speech-wire`,
+  });
+  expect(settled.status).toBe("settled");
+});
+
+test("ReservationLockedBasis is the complete five-field basis (ref + both versions)", () => {  const basis: ReservationLockedBasis = {
     provider: "prov",
     model: "model",
     capability: "chat",

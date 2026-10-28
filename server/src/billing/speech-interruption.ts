@@ -4,6 +4,8 @@ import {
   type SpeechSettlementOutcome,
   type SpeechSettleRequest,
 } from "./speech-settlement";
+import { readWavDurationSecondsExact } from "./transcription-pricing";
+import { addRational, reduceRational, type Rational } from "./rational";
 
 /*
  * The speech interruption path (Bifrost 13.3, #308): what a playback or stream cut owes,
@@ -78,9 +80,10 @@ export function collectInterruptedSpeechUsage(input: {
   }
   // Exact rational sum: each chunk contributes dataSize/byteRate in lowest BigInt terms;
   // one unreadable chunk makes the whole total uncertifiable, because a confirmed total
-  // is only as good as every piece of it.
-  let numerator = 0n;
-  let denominator = 1n;
+  // is only as good as every piece of it. The parse and the sum are the SHARED tools
+  // (rational.ts / readWavDurationSecondsExact) the settle surface re-measures with —
+  // one arithmetic on both ends of the evidence.
+  let sum: Rational = { numerator: 0n, denominator: 1n };
   const containerHeaders: string[] = [];
   // The evidence-carrying budget, single-sourced with the settle surface's own shape
   // validation (R1-M1): a buffer past it confirms nothing — unknown (06.8) at the settle,
@@ -92,7 +95,7 @@ export function collectInterruptedSpeechUsage(input: {
     };
   }
   for (const chunk of input.chunks) {
-    const measured = chunkSeconds(chunk);
+    const measured = readWavDurationSecondsExact(chunk);
     if (measured === null) {
       return {
         outcome: "unconfirmed",
@@ -106,16 +109,17 @@ export function collectInterruptedSpeechUsage(input: {
           "a buffered chunk's container header exceeds the settle evidence's carry budget",
       };
     }
-    numerator =
-      numerator * measured.denominator + measured.numerator * denominator;
-    denominator = denominator * measured.denominator;
+    sum = addRational(sum, {
+      numerator: measured.numerator,
+      denominator: measured.denominator,
+    });
     // The chunk's own container header rides the evidence: the settle surface re-measures
     // the very statements this sum was built from, never a number it must take on faith.
     containerHeaders.push(
       Buffer.from(chunk.subarray(0, measured.headerEnd)).toString("base64"),
     );
   }
-  const reduced = reduce(numerator, denominator);
+  const reduced = sum;
   return {
     outcome: "confirmed",
     actualSeconds: terminatingDecimal(reduced),
@@ -180,39 +184,13 @@ function chunkSeconds(bytes: Uint8Array): {
   };
 }
 
-function gcd(a: bigint, b: bigint): bigint {
-  let x = a;
-  let y = b;
-  while (y !== 0n) {
-    const next = x % y;
-    x = y;
-    y = next;
-  }
-  return x;
-}
-
-function reduce(
-  numerator: bigint,
-  denominator: bigint,
-): {
-  numerator: bigint;
-  denominator: bigint;
-} {
-  if (numerator === 0n) return { numerator: 0n, denominator: 1n };
-  const divisor = gcd(numerator, denominator);
-  return { numerator: numerator / divisor, denominator: denominator / divisor };
-}
-
 /**
  * The exact-decimal string of a non-negative rational whose denominator terminates
  * (powers of 2 and 5 only); any other denominator is represented at nine fractional
  * digits rounded UP — the exact-decimal wire shape the settle contract reads, and the
  * one rounding direction strict billing allows (never below the measured value).
  */
-function terminatingDecimal(value: {
-  numerator: bigint;
-  denominator: bigint;
-}): string {
+function terminatingDecimal(value: Rational): string {
   let denominator = value.denominator;
   let twos = 0n;
   let fives = 0n;

@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
 import { afterAll, expect, test } from "../../tests/support/bun-test-compat";
 import { createCredits } from "../src/billing/credits";
-import { createCreditWriter } from "../src/billing/credits-writer";
+import {
+  CreditReservationConflictError,
+  createCreditWriter,
+} from "../src/billing/credits-writer";
+import type { SpeechGenerationResult } from "../src/billing/speech-settlement";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
 import { createSpeechSettlementService } from "../src/billing/speech-settlement";
 import { createDatabase } from "../src/db/client";
@@ -336,9 +340,11 @@ test("fractional seconds price exactly — artifact metadata is a verifiable sou
     result: {
       outcome: "synthesized",
       actualSeconds: "25.5",
-      // The audio container's own statement, carried for the server to re-measure.
+      // The audio container's own statement, carried for the server to re-measure; the
+      // reference names the server-side collection record the headers came from.
       evidence: {
         kind: "artifact_metadata",
+        reference: "tts-307-frac-artifact",
         metadata: {
           container: "wav",
           bytesBase64: [wavMetadataBase64("25.5")],
@@ -687,7 +693,14 @@ test("a provider usage report without a reference is no evidence anyone may bill
 
   // A usage report nobody can trace is a label, not evidence (AC2): the result claims
   // synthesized, but nothing verifiable stands under it — the hold goes to unknown
-  // (06.8), settles nothing, releases nothing.
+  // (06.8), settles nothing, releases nothing. The reference is now REQUIRED by the
+  // type; this hostile/legacy wire shape is constructed widened on purpose to pin the
+  // runtime's graceful unknown answer instead of a crash.
+  const hostileResult = {
+    outcome: "synthesized",
+    actualSeconds: "25",
+    evidence: { kind: "provider_usage_report" },
+  } as unknown as SpeechGenerationResult;
   const outcome = await settleSpeech.settle({
     reservationId,
     requested: {
@@ -696,11 +709,7 @@ test("a provider usage report without a reference is no evidence anyone may bill
       durationCapSeconds: 60,
     },
     priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
-    result: {
-      outcome: "synthesized",
-      actualSeconds: "25",
-      evidence: { kind: "provider_usage_report" },
-    },
+    result: hostileResult,
     settledBy: "bifrost",
     idempotencyKey: `${prefix}-settle-noref`,
   });
@@ -740,6 +749,7 @@ test("artifact metadata that disagrees with the reported seconds is a conflict, 
       actualSeconds: "30",
       evidence: {
         kind: "artifact_metadata",
+        reference: "tts-307-wav-mismatch",
         metadata: {
           container: "wav",
           bytesBase64: [wavMetadataBase64("25.5")],
@@ -787,6 +797,7 @@ test("artifact metadata that states no readable duration keeps the hold unknown"
       actualSeconds: "25",
       evidence: {
         kind: "artifact_metadata",
+        reference: "tts-307-wav-garbage",
         metadata: {
           container: "wav",
           bytesBase64: [
@@ -831,6 +842,7 @@ test("a non-terminating duration at 44.1kHz is the collector's own 9-digit ceil 
       actualSeconds: "0.04643991",
       evidence: {
         kind: "artifact_metadata",
+        reference: "tts-307-44k1-artifact",
         metadata: {
           container: "wav",
           bytesBase64: [wavMetadataBase64("0.04643991", 88200, 4096)],
@@ -874,6 +886,7 @@ test("a claim below the measured duration is a conflict in the other direction",
       actualSeconds: "0.04",
       evidence: {
         kind: "artifact_metadata",
+        reference: "tts-307-44k1-short",
         metadata: {
           container: "wav",
           bytesBase64: [wavMetadataBase64("0.04643991", 88200, 4096)],
@@ -924,6 +937,207 @@ test("a row carrying only a voice tier is refused by the database, not laundered
   expect(String((cause as Error | undefined)?.message)).toMatch(
     /credit_reservations_speech_spec_check/,
   );
+});
+
+test("self-attested artifact bytes without a server-side reference settle nothing", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+  const held = await writer.availableBalance(world.customerKey);
+
+  // OCR r2 security: the carried header bytes are the CALLER's — without a reference to
+  // the server-side collection record they came from, a fabricated WAV header
+  // "re-measures" perfectly and bills whatever it claims. Unknown (06.8), full capacity
+  // occupied; the internal collector path carries the reference it minted and is
+  // unaffected.
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: {
+        kind: "artifact_metadata",
+        metadata: {
+          container: "wav",
+          bytesBase64: [wavMetadataBase64("25")],
+        },
+      },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-self-attested`,
+  });
+
+  expect(outcome).toEqual({ status: "unknown", reservationId });
+  const [reservation] = await database
+    .select()
+    .from(creditReservations)
+    .where(eq(creditReservations.id, reservationId));
+  expect(reservation.status).toBe("unknown");
+  expect(await writer.availableBalance(world.customerKey)).toBe(held);
+  expect(
+    await database
+      .select()
+      .from(creditLedger)
+      .where(eq(creditLedger.externalCustomerId, world.customerKey)),
+  ).toHaveLength(0);
+});
+
+test("a null metadata blob is a malformed request, not a server fault", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const reservationId = await holdFor(world, 315);
+
+  // OCR r2 bug: `"metadata": null` passed the `!== undefined` guard and crashed the
+  // settle on a null property read — an external 500 for what the contract answers as
+  // request_invalid.
+  const outcome = await settleSpeech.settle({
+    reservationId,
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: {
+        kind: "artifact_metadata",
+        reference: "tts-307-null-meta",
+        metadata: null,
+      } as unknown as SpeechGenerationResult,
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-null-meta`,
+  });
+
+  expect(outcome).toMatchObject({
+    status: "refused",
+    reasonCode: "request_invalid",
+  });
+  expect(
+    await database
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.id, reservationId)),
+  ).toMatchObject([{ status: "reserved" }]);
+});
+
+test("a frozen per-second price the settle surface contradicts is refused", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const snapshot = await snapshotStore.latestPriceSnapshot({
+    provider: world.provider,
+    model: world.model,
+    capability: "speech",
+  });
+  expect(snapshot).toBeDefined();
+  // A direct-writer hold whose frozen per-second price deliberately contradicts the
+  // cell's locked dims — the shape of a corrupt admission. The carried price matches the
+  // LOCK (so the lock corroboration passes); the frozen spec is the second authority
+  // that must refuse it, or the column is dead data pretending to be a check.
+  const reserved = await writer.reserveCredits({
+    externalCustomerId: world.customerKey,
+    idempotencyKey: `${prefix}-hold-frozen-second`,
+    maximumCents: 315,
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    lockedBasis: {
+      provider: world.provider,
+      model: world.model,
+      capability: "speech",
+      snapshotVersion: snapshot!.snapshotVersion,
+      rateVersion: 0,
+    },
+    speechSpec: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+      perInputCharacterUsd: "0.000015",
+      perOutputSecondUsd: "0.0009",
+    },
+  });
+  expect(reserved.reserved).toBe(true);
+  if (!reserved.reserved) return;
+
+  const outcome = await settleSpeech.settle({
+    reservationId: reserved.reservationId,
+    requested: {
+      inputCharacters: 100,
+      voiceTier: null,
+      durationCapSeconds: 60,
+    },
+    priced: { perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.0005" },
+    result: {
+      outcome: "synthesized",
+      actualSeconds: "25",
+      evidence: { kind: "provider_usage_report", reference: "tts-307-second" },
+    },
+    settledBy: "bifrost",
+    idempotencyKey: `${prefix}-settle-frozen-second`,
+  });
+
+  expect(outcome).toMatchObject({
+    status: "refused",
+    reasonCode: "price_basis_not_found",
+    detail: { stage: "spec_not_corroborated" },
+  });
+  expect(
+    await database
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.id, reserved.reservationId)),
+  ).toMatchObject([{ status: "reserved" }]);
+});
+
+test("a spec quantity beyond the int4 column bound is a caller bug, refused at the seam", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  // OCR r2 bug: 2^31 is a safe integer, so the shape check passed and the INSERT died
+  // on the database's integer bound mid-transaction. The seam refuses it first, with
+  // the same explicit TypeError the ceiling amount gets.
+  await expect(
+    writer.reserveCredits({
+      externalCustomerId: world.customerKey,
+      idempotencyKey: `${prefix}-hold-int4`,
+      maximumCents: 315,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      speechSpec: {
+        inputCharacters: 2_147_483_648,
+        voiceTier: null,
+        durationCapSeconds: 60,
+        perInputCharacterUsd: "0.000015",
+        perOutputSecondUsd: "0.0005",
+      },
+    }),
+  ).rejects.toThrow(TypeError);
+});
+
+test("a replayed reserve carrying a different speech spec is a conflict, not a stale hold", async () => {
+  const world = await seedSpeechWorld("0.0005");
+  const key = `${prefix}-hold-replay-spec`;
+  const first = await writer.reserveCredits({
+    externalCustomerId: world.customerKey,
+    idempotencyKey: key,
+    maximumCents: 315,
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    speechSpec: { ...FROZEN_SPEC },
+  });
+  expect(first.reserved).toBe(true);
+
+  // Same key, different certified spec: answering the original hold would freeze the
+  // original spec and doom the settle to spec_not_corroborated with a hold only
+  // recovery could free. The replay is a conflict, like a different amount.
+  await expect(
+    writer.reserveCredits({
+      externalCustomerId: world.customerKey,
+      idempotencyKey: key,
+      maximumCents: 315,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      speechSpec: { ...FROZEN_SPEC, inputCharacters: 120 },
+    }),
+  ).rejects.toThrow(CreditReservationConflictError);
 });
 
 afterAll(async () => {
