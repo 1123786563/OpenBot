@@ -743,7 +743,7 @@ jobs:
       # The enterprise roles are a migration precondition, not a migration concern.
       - name: Enterprise role prerequisites
         working-directory: server
-        run: docker exec ${{ job.services.postgres.id }} psql -U openbot -d postgres -f - < ops/enterprise/roles.sql
+        run: docker exec -i ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U openbot -d postgres -f - < ops/enterprise/roles.sql
       - name: Fresh database migrates
         working-directory: server
         run: bun scripts/migrate.ts
