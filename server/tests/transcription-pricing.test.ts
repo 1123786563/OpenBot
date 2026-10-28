@@ -58,6 +58,7 @@ function completeDims(named: Record<string, string>) {
         dimension === "audio_input" ||
         dimension === "audio_output" ||
         dimension === "video" ||
+        dimension === "video_input" ||
         dimension === "image_output" ||
         dimension === "surcharge_tool_call" ||
         dimension === "surcharge_a2a_call"
