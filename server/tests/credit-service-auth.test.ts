@@ -52,7 +52,9 @@ const runStartedAt = new Date();
  * The billing protocol surface under test. 06.2 mounts Reserve on this same factory; here the
  * probe route stands in for the guarded surface, exactly the way 04.2's smoke route does.
  */
-const protocolApp = new Hono<{ Variables: AppVariables & CreditServiceVariables }>();
+const protocolApp = new Hono<{
+  Variables: AppVariables & CreditServiceVariables;
+}>();
 protocolApp.route(
   "/api/credit-protocol",
   creditProtocolRoutes({ authenticate, auditStore }),
@@ -82,13 +84,11 @@ function userSessionStandIn(
   };
 }
 
-const sessionApp = new Hono<
-  { Variables: AppVariables & CreditServiceVariables }
->();
-sessionApp.get(
-  "/api/user-probe",
-  userSessionStandIn("user"),
-  (context) => context.json({ ok: true }),
+const sessionApp = new Hono<{
+  Variables: AppVariables & CreditServiceVariables;
+}>();
+sessionApp.get("/api/user-probe", userSessionStandIn("user"), (context) =>
+  context.json({ ok: true }),
 );
 sessionApp.route(
   "/api/credit-protocol",
@@ -102,7 +102,9 @@ afterAll(async () => {
   await database
     .delete(credentials)
     .where(like(credentials.keyId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -158,9 +160,7 @@ test("a call with no credential at all is refused the same way", async () => {
     protocolApp.request("/api/credit-protocol", { method: "POST" }),
   );
   const rows = await refusedRows();
-  const missing = rows.filter(
-    (row) => row.payload.reason === "missing-header",
-  );
+  const missing = rows.filter((row) => row.payload.reason === "missing-header");
   expect(missing.length).toBe(1);
 });
 

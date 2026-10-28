@@ -35,10 +35,9 @@ function missingItemText(
   t: ReturnType<typeof useTranslation<"admin">>["t"],
   code: string,
 ): string {
-  const key = AUDIO_MISSING_ITEM_CODES[code as keyof typeof AUDIO_MISSING_ITEM_CODES];
-  return key
-    ? t(`gateway.audio.missing.${key}`)
-    : code;
+  const key =
+    AUDIO_MISSING_ITEM_CODES[code as keyof typeof AUDIO_MISSING_ITEM_CODES];
+  return key ? t(`gateway.audio.missing.${key}`) : code;
 }
 
 export function AudioPathAvailability({
@@ -67,12 +66,18 @@ export function AudioPathAvailability({
                     {t("gateway.audio.available")}
                   </span>
                 ) : (
-                  <span className="text-destructive" data-testid="audio-path-state">
+                  <span
+                    className="text-destructive"
+                    data-testid="audio-path-state"
+                  >
                     {t("gateway.audio.unavailable")}
                   </span>
                 )
               ) : (
-                <span className="text-muted-foreground" data-testid="audio-path-state">
+                <span
+                  className="text-muted-foreground"
+                  data-testid="audio-path-state"
+                >
                   {t("gateway.audio.notAnEntrance")}
                 </span>
               )}{" "}
@@ -89,20 +94,20 @@ export function AudioPathAvailability({
                 {missingItemText(t, item.code)}
               </ItemDescription>
             ))}
-            {path.exists ? (
-              path.bases.map((basis) => (
-                <ItemDescription key={basis.ref}>
-                  {basis.enableable
-                    ? t("gateway.audio.basisEnableable", { ref: basis.ref })
-                    : t("gateway.audio.basisMissingDims", {
-                        ref: basis.ref,
-                        dimensions: basis.missingDimensions
-                          .map((dimension) => dimension.dimension)
-                          .join("、"),
-                      })}
-                </ItemDescription>
-              ))
-            ) : null}
+            {path.exists
+              ? path.bases.map((basis) => (
+                  <ItemDescription key={basis.ref}>
+                    {basis.enableable
+                      ? t("gateway.audio.basisEnableable", { ref: basis.ref })
+                      : t("gateway.audio.basisMissingDims", {
+                          ref: basis.ref,
+                          dimensions: basis.missingDimensions
+                            .map((dimension) => dimension.dimension)
+                            .join("、"),
+                        })}
+                  </ItemDescription>
+                ))
+              : null}
           </ItemContent>
         </Item>
       ))}

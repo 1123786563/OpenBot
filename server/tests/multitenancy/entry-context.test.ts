@@ -15,7 +15,13 @@
 // 缺配置整套显式 skip（跳过原因写在用例名里，skipped 不计为通过），绝不回退
 // 开发库。真实 PostgreSQL（三受限角色 + RLS），零授权 mock。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import {

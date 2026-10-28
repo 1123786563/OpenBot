@@ -191,8 +191,7 @@ export async function createGroupFixture(): Promise<GroupFixture> {
     ids[`user-${planned.identity}`] = id(`user-${planned.identity}`);
     ids[`principal-${planned.identity}`] = id(`principal-${planned.identity}`);
   }
-  const principalOf = (identity: GroupIdentity) =>
-    ids[`principal-${identity}`];
+  const principalOf = (identity: GroupIdentity) => ids[`principal-${identity}`];
   const userOf = (identity: GroupIdentity) => ids[`user-${identity}`];
 
   const setupDatabase = createDatabase(setupUrl, { max: 2 });
@@ -263,10 +262,7 @@ export async function createGroupFixture(): Promise<GroupFixture> {
       }
     }
     if (failures.length) {
-      throw new AggregateError(
-        failures,
-        "Group fixture disposal failed.",
-      );
+      throw new AggregateError(failures, "Group fixture disposal failed.");
     }
   };
 
@@ -405,7 +401,13 @@ export async function createGroupFixture(): Promise<GroupFixture> {
         });
       },
 
-      async seedUnrelatedResource({ tenantId, workspaceId, id, kind, displayName }) {
+      async seedUnrelatedResource({
+        tenantId,
+        workspaceId,
+        id,
+        kind,
+        displayName,
+      }) {
         await recordRole(operator, "operator");
         await operator.transaction(async (tx) => {
           await tx.execute(sql`set transaction isolation level read committed`);
@@ -457,4 +459,3 @@ export async function createGroupFixture(): Promise<GroupFixture> {
     throw error;
   }
 }
-

@@ -167,13 +167,10 @@ async function aesKey(encodedKey: string) {
       `The credential encryption key must decode to 16, 24 or 32 bytes; got ${raw.length}.`,
     );
   }
-  return crypto.subtle.importKey(
-    "raw",
-    raw,
-    { name: "AES-GCM" },
-    false,
-    ["encrypt", "decrypt"],
-  );
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
 }
 
 function parseEnvelope(value: string): CredentialEnvelope {

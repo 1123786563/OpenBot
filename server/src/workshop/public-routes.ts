@@ -24,9 +24,7 @@ import { STATIC_CSP } from "./preview";
 export type PublicWorkshopInput = {
   /** B14's service: the one door in, and the signed artifact URLs. */
   sharing: {
-    resolveShareActor(
-      token: string,
-    ): Promise<{
+    resolveShareActor(token: string): Promise<{
       channelId: string;
       botId: string;
       scope: "preview" | "preview_download";

@@ -182,7 +182,6 @@ function TypeIcon({ type }: { type: WorkshopArtifactType }) {
       return <IconWorld className={className} />;
     case "dataset":
       return <IconDatabase className={className} />;
-    case "file":
     default:
       return <IconCode className={className} />;
   }

@@ -150,9 +150,7 @@ describe("resolveObservationScope", () => {
       authorizationKey(actorA, "agent", 1),
     );
     // The two key families can never collide, whatever the ids carry.
-    expect(resourceScopeKey("wb-auth")).not.toBe(
-      authorizationKey("", "", 0),
-    );
+    expect(resourceScopeKey("wb-auth")).not.toBe(authorizationKey("", "", 0));
     for (const actor of [actorA, "wb", "wb-auth"]) {
       for (const bot of ["agent-1", "wb", "wb-auth"]) {
         expect(resourceScopeKey(bot)).not.toBe(authorizationKey(actor, bot, 1));

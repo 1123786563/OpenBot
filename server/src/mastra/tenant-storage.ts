@@ -274,7 +274,9 @@ export function createTenantMastraStorage(
       // `statement_timeout` only bounds SQL; `operation()` runs plain JS between statements, and
       // an idle-in-transaction hang would hold the advisory lock (and this single-connection
       // lockStore) for ever. The floor is generous: the critical section is conversation writes.
-      await client.query("SET LOCAL idle_in_transaction_session_timeout = '30s'");
+      await client.query(
+        "SET LOCAL idle_in_transaction_session_timeout = '30s'",
+      );
       await client.query(
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
         [
@@ -400,7 +402,8 @@ export function createTenantMastraStorage(
           );
           // The entries stay registered while a close failed: dropping them would leak the
           // pools AND leave nothing for the retry above to close.
-          if (failures.length === 0) for (const [key] of entries) stores.delete(key);
+          if (failures.length === 0)
+            for (const [key] of entries) stores.delete(key);
           if (failures.length) {
             failed = true;
             throw new AggregateError(

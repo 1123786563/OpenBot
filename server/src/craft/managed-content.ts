@@ -174,7 +174,10 @@ async function defaultWebTemplateFiles(): Promise<
   await walk(root, "").catch((error) => {
     // An unreadable template tree must be visible: an empty/partial set cached here
     // would silently hydrate every session with missing web-template files.
-    logger.warn({ error, root: String(root) }, "[craft] failed to walk web templates");
+    logger.warn(
+      { error, root: String(root) },
+      "[craft] failed to walk web templates",
+    );
   });
   webTemplateFilesCache = files;
   return files;
@@ -289,7 +292,10 @@ export async function materializeManagedContent(
     // A delete is destructive: only paths anchored at the managed root, the same
     // containment the three write legs below are required to pass.
     if (containedRelativePath(old) === null) {
-      logger.warn({ path: old, root }, "[craft] stale skill path failed containment; not deleting");
+      logger.warn(
+        { path: old, root },
+        "[craft] stale skill path failed containment; not deleting",
+      );
       skillsHydrated = false;
       continue;
     }

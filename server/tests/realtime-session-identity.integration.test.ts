@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import {
   createRealtimeSessionService,
   REALTIME_SESSION_ID_PREFIX,
@@ -98,13 +103,18 @@ type World = {
   grantId: string;
   provider: string;
   model: string;
-  establishBody: (overrides?: Record<string, unknown>) => Record<string, unknown>;
+  establishBody: (
+    overrides?: Record<string, unknown>,
+  ) => Record<string, unknown>;
 };
 
 let seedCounter = 0;
 
 async function seedWorld(
-  options: { grantStatus?: "active" | "revoked"; scopeState?: "open" | "closed" } = {},
+  options: {
+    grantStatus?: "active" | "revoked";
+    scopeState?: "open" | "closed";
+  } = {},
 ): Promise<World> {
   const n = ++seedCounter;
   const userId = `${prefix}-user-${n}`;
@@ -212,7 +222,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -407,9 +420,7 @@ describe("Bifrost 15.1 (#314): the identity fixes at establishment", () => {
     await database
       .update(gatewayModelOpenScopes)
       .set({ state: "closed" })
-      .where(
-        like(gatewayModelOpenScopes.provider, world.provider),
-      );
+      .where(like(gatewayModelOpenScopes.provider, world.provider));
     await createEnterpriseGatewayPriceSnapshotStore(database).appendSnapshots([
       {
         ref: {

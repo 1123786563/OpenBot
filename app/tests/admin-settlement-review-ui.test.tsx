@@ -1,5 +1,11 @@
 import "./preload";
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
@@ -41,7 +47,11 @@ afterAll(async () => {
 
 const originalFetch = global.fetch;
 
-type CapturedRequest = { url: string; method: string | undefined; body: unknown };
+type CapturedRequest = {
+  url: string;
+  method: string | undefined;
+  body: unknown;
+};
 
 function installFetchStub(responder: () => Response) {
   const requests: CapturedRequest[] = [];
@@ -150,7 +160,9 @@ test("严格只读：卡片只发一个裸 GET，页面没有任何按钮或写�
 });
 
 test("空队列渲染空态，失败渲染服务器的句子而不是静默重置", async () => {
-  installFetchStub(() => json({ generatedAt: "2026-10-20T08:00:00Z", items: [] }));
+  installFetchStub(() =>
+    json({ generatedAt: "2026-10-20T08:00:00Z", items: [] }),
+  );
   const empty = renderCard();
   expect(await empty.findByTestId("recovery-review-empty")).toBeTruthy();
   cleanup();

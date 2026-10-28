@@ -19,7 +19,13 @@
 // DATABASE_URL）加三个受限角色 URL；缺配置时整套显式 skip（跳过原因
 // 写在用例名里，skipped 不计为通过），绝不回退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   notFoundVerdict,
@@ -85,13 +91,13 @@ describeDb("MT033 / Issue #76 — 技能与组件发布作用域", () => {
     identity: SkillIdentity,
     tenantId: string,
     workspaceId: string,
-  ): Promise<PlatformScope> =>
-    fixture.scopeAs(identity, tenantId, workspaceId);
+  ): Promise<PlatformScope> => fixture.scopeAs(identity, tenantId, workspaceId);
 
   const NEXT = (() => {
     let n = 0;
     return {
-      name: (kind: string) => `mt033-${kind}-${String((n += 1)).padStart(3, "0")}`,
+      name: (kind: string) =>
+        `mt033-${kind}-${String((n += 1)).padStart(3, "0")}`,
     };
   })();
 
@@ -154,26 +160,29 @@ describeDb("MT033 / Issue #76 — 技能与组件发布作用域", () => {
       expect(verdict).toEqual({ outcome: "deny", code: "SKILL_READ_ONLY" });
     });
 
-    itDb("非成员不可见：跨团队（A2）与跨公司（B）读 canonical not-found", async () => {
-      const name = NEXT.name("skill");
-      await publishSkillA1(name);
-      const fromA2 = await fixture.skills.readSkill(
-        await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
-        name,
-      );
-      expect(isCanonicalNotFound(fromA2)).toBe(true);
-      const fromB = await fixture.skills.readSkill(
-        await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
-        name,
-      );
-      expect(isCanonicalNotFound(fromB)).toBe(true);
-      // 未发布过的名字（同团队）与不存在同形。
-      const ghost = await fixture.skills.readSkill(
-        await scopeAs("a1-other", fixture.companyA, fixture.teamA1),
-        NEXT.name("skill"),
-      );
-      expect(isCanonicalNotFound(ghost)).toBe(true);
-    });
+    itDb(
+      "非成员不可见：跨团队（A2）与跨公司（B）读 canonical not-found",
+      async () => {
+        const name = NEXT.name("skill");
+        await publishSkillA1(name);
+        const fromA2 = await fixture.skills.readSkill(
+          await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
+          name,
+        );
+        expect(isCanonicalNotFound(fromA2)).toBe(true);
+        const fromB = await fixture.skills.readSkill(
+          await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
+          name,
+        );
+        expect(isCanonicalNotFound(fromB)).toBe(true);
+        // 未发布过的名字（同团队）与不存在同形。
+        const ghost = await fixture.skills.readSkill(
+          await scopeAs("a1-other", fixture.companyA, fixture.teamA1),
+          NEXT.name("skill"),
+        );
+        expect(isCanonicalNotFound(ghost)).toBe(true);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -206,46 +215,52 @@ describeDb("MT033 / Issue #76 — 技能与组件发布作用域", () => {
       });
     });
 
-    itDb("组件作者携成员的会话调用 canonical not-found（作者身份不放大）", async () => {
-      const name = NEXT.name("component");
-      await fixture.skills.publishComponent(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        { name },
-      );
-      const threadId = `mt033-thread-${NEXT.name("x")}`;
-      await fixture.seedConversation({
-        tenantId: fixture.companyA,
-        workspaceId: fixture.teamA1,
-        principalId: fixture.ids["principal-a1-other"],
-        threadId,
-      });
-      // 作者发起，但会话属于成员——数据权限按调用者（作者）判：不可见。
-      const verdict = await fixture.skills.invokeComponentFunction(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        { name, functionName: "loadRows", threadId },
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "组件作者携成员的会话调用 canonical not-found（作者身份不放大）",
+      async () => {
+        const name = NEXT.name("component");
+        await fixture.skills.publishComponent(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          { name },
+        );
+        const threadId = `mt033-thread-${NEXT.name("x")}`;
+        await fixture.seedConversation({
+          tenantId: fixture.companyA,
+          workspaceId: fixture.teamA1,
+          principalId: fixture.ids["principal-a1-other"],
+          threadId,
+        });
+        // 作者发起，但会话属于成员——数据权限按调用者（作者）判：不可见。
+        const verdict = await fixture.skills.invokeComponentFunction(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          { name, functionName: "loadRows", threadId },
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
 
-    itDb("成员携他人（作者）会话调用 canonical not-found（同形不泄露）", async () => {
-      const name = NEXT.name("component");
-      await fixture.skills.publishComponent(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        { name },
-      );
-      const threadId = `mt033-thread-${NEXT.name("x")}`;
-      await fixture.seedConversation({
-        tenantId: fixture.companyA,
-        workspaceId: fixture.teamA1,
-        principalId: fixture.ids["principal-a1-owner"],
-        threadId,
-      });
-      const verdict = await fixture.skills.invokeComponentFunction(
-        await scopeAs("a1-other", fixture.companyA, fixture.teamA1),
-        { name, functionName: "loadRows", threadId },
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "成员携他人（作者）会话调用 canonical not-found（同形不泄露）",
+      async () => {
+        const name = NEXT.name("component");
+        await fixture.skills.publishComponent(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          { name },
+        );
+        const threadId = `mt033-thread-${NEXT.name("x")}`;
+        await fixture.seedConversation({
+          tenantId: fixture.companyA,
+          workspaceId: fixture.teamA1,
+          principalId: fixture.ids["principal-a1-owner"],
+          threadId,
+        });
+        const verdict = await fixture.skills.invokeComponentFunction(
+          await scopeAs("a1-other", fixture.companyA, fixture.teamA1),
+          { name, functionName: "loadRows", threadId },
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

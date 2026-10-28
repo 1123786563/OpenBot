@@ -229,8 +229,12 @@ export function ScheduledTaskEditor({
     enabled: taskId !== undefined,
   });
 
-  const [form, setForm] = useState<ScheduledTaskDraft>(() => draft ?? emptyForm());
-  const [seeded, setSeeded] = useState(() => draft !== undefined || taskId === undefined);
+  const [form, setForm] = useState<ScheduledTaskDraft>(
+    () => draft ?? emptyForm(),
+  );
+  const [seeded, setSeeded] = useState(
+    () => draft !== undefined || taskId === undefined,
+  );
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 

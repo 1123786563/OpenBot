@@ -299,9 +299,9 @@ export function createAccountReconciler(
         .from(creditReservations)
         .where(eq(creditReservations.status, "unknown"));
       const namedReservations = new Set(
+        // Only the candidates this scan can name — the recovery-items table grows with
+        // history, and the scan needs membership for these holds alone.
         (
-          // Only the candidates this scan can name — the recovery-items table grows with
-          // history, and the scan needs membership for these holds alone.
           await database
             .select({ reservationId: creditRecoveryItems.reservationId })
             .from(creditRecoveryItems)

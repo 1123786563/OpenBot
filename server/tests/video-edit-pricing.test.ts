@@ -224,7 +224,10 @@ test("an unreadable input rate is named as unreadable, never laundered to free",
 test("the output tier keeps its own refusal — an unpriced output refuses even with inputs priced", () => {
   const withUnknownOutput = {
     ...editDims("0.01", "0.002"),
-    video: { status: "unknown" as const, reason: "price_dim_no_source" as const },
+    video: {
+      status: "unknown" as const,
+      reason: "price_dim_no_source" as const,
+    },
   } as PriceSnapshotDims;
   const verdict = enable({
     dims: withUnknownOutput,

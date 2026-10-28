@@ -149,7 +149,8 @@ describe("resolveObservationBot", () => {
       (await resolveObservationBot(managementCheck(rows), admin, "agent-1")).ok,
     ).toBe(true);
     expect(
-      (await resolveObservationBot(managementCheck(rows), stranger, "agent-1")).ok,
+      (await resolveObservationBot(managementCheck(rows), stranger, "agent-1"))
+        .ok,
     ).toBe(false);
   });
 });

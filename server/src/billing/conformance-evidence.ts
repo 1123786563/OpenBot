@@ -917,7 +917,10 @@ export const DELIVERED_FINGERPRINTS: Readonly<Record<string, string>> = {
 /** A record whose bound files changed (or vanished), or whose fingerprint was never recorded. */
 export type StaleEvidence = {
   id: string;
-  reason: "fingerprint-mismatch" | "bound-file-missing" | "fingerprint-unrecorded";
+  reason:
+    | "fingerprint-mismatch"
+    | "bound-file-missing"
+    | "fingerprint-unrecorded";
   detail: string;
 };
 

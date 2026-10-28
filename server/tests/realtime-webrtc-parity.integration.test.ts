@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createRealtimeSessionService } from "../src/billing/realtime-session";
 import { createRealtimeUnitService } from "../src/billing/realtime-unit";
 import { createCreditSettleService } from "../src/billing/credit-settle";
@@ -310,7 +315,10 @@ async function driveRevocationTimeline(world: World, entrance: Entrance) {
   const settled = await service.settleUnit({
     unitId: unknownUnit?.unitId ?? "",
     actualUsage: usageOf({ input: 600, output: 200 }),
-    evidence: { kind: "provider_usage_report", reference: `parity-${entrance}` },
+    evidence: {
+      kind: "provider_usage_report",
+      reference: `parity-${entrance}`,
+    },
     settledBy: "realtime-relay",
     idempotencyKey: `${prefix}-${entrance}-tail-1`,
   });
@@ -322,7 +330,10 @@ async function driveRevocationTimeline(world: World, entrance: Entrance) {
   const replay = await service.settleUnit({
     unitId: unknownUnit?.unitId ?? "",
     actualUsage: usageOf({ input: 600, output: 200 }),
-    evidence: { kind: "provider_usage_report", reference: `parity-${entrance}` },
+    evidence: {
+      kind: "provider_usage_report",
+      reference: `parity-${entrance}`,
+    },
     settledBy: "realtime-relay",
     idempotencyKey: `${prefix}-${entrance}-tail-2`,
   });
@@ -339,7 +350,9 @@ describe("Bifrost 16.2 (#323): both entrances answer the same timeline identical
     const world = await seedWorld();
     const ws = await driveRevocationTimeline(world, "websocket");
     const rtc = await driveRevocationTimeline(world, "webrtc");
-    expect(ws?.settled.settle.chargedCredits).toBe(rtc?.settled.settle.chargedCredits);
+    expect(ws?.settled.settle.chargedCredits).toBe(
+      rtc?.settled.settle.chargedCredits,
+    );
     // Two sessions, one each, both tails charged once: exactly two ledger rows.
     expect(await ledgerCount(world)).toBe(2);
   });
@@ -356,7 +369,9 @@ describe("Bifrost 16.2 (#323): both entrances answer the same timeline identical
     }
     const stoppedEntrances: Entrance[] = [];
     for (const entrance of ["websocket", "webrtc"] as const) {
-      const refused = await service.openUnit(world.openBody(entrance, "next-1"));
+      const refused = await service.openUnit(
+        world.openBody(entrance, "next-1"),
+      );
       expect(refused.status).toBe("refused");
       if (refused.status !== "refused") return;
       expect(refused.reasonCode).toBe("insufficient_credits");
@@ -412,9 +427,9 @@ describe("Bifrost 16.2 (#323): both entrances answer the same timeline identical
     expect(wsUnits.map((unit) => unit.refusalReason)).toEqual(
       rtcUnits.map((unit) => unit.refusalReason),
     );
-    expect(
-      wsUnits.map((unit) => unit.reservationId !== null),
-    ).toEqual(rtcUnits.map((unit) => unit.reservationId !== null));
+    expect(wsUnits.map((unit) => unit.reservationId !== null)).toEqual(
+      rtcUnits.map((unit) => unit.reservationId !== null),
+    );
   });
 });
 
@@ -428,7 +443,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

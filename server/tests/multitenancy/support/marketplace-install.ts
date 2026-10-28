@@ -101,9 +101,7 @@ export interface MarketplaceFixture {
       status: string;
     }>[]
   >;
-  readOwnershipRowsAsData(
-    tenantId: string,
-  ): Promise<
+  readOwnershipRowsAsData(tenantId: string): Promise<
     readonly Readonly<{
       agentId: string;
       status: string;
@@ -499,4 +497,3 @@ export async function createMarketplaceFixture(
     throw error;
   }
 }
-

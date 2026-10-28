@@ -18,7 +18,13 @@
 // DATABASE_URL）加三个受限角色 URL；缺配置时整套显式 skip（跳过原因
 // 写在用例名里，skipped 不计为通过），绝不回退开发库。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   notFoundVerdict,
@@ -88,8 +94,7 @@ describeDb("MT025 / Issue #68 — 事件流订阅与线程映射归属", () => {
     identity: StreamIdentity,
     tenantId: string,
     workspaceId: string,
-  ): Promise<PlatformScope> =>
-    fixture.scopeAs(identity, tenantId, workspaceId);
+  ): Promise<PlatformScope> => fixture.scopeAs(identity, tenantId, workspaceId);
 
   /** 为 identity 建（自家）会话并开订阅，返回订阅 id。 */
   const openOnOwnThread = async (
@@ -163,46 +168,55 @@ describeDb("MT025 / Issue #68 — 事件流订阅与线程映射归属", () => {
         body: { type: "message", status: "ok", message: "hello" },
       });
     });
-
-
   });
 
   // -------------------------------------------------------------------------
   // AC2：事件正文不含无权内容（含错误与状态事件）
   // -------------------------------------------------------------------------
   describeDb("AC2 事件正文白名单闭形", () => {
-    itDb("正文只有 type/status/message 三键（错误与状态事件同形）", async () => {
-      const { subscriptionId } = await openOnOwnThread(
-        "a1-owner",
-        fixture.companyA,
-        fixture.teamA1,
-      );
-      const scope = await scopeAs("a1-owner", fixture.companyA, fixture.teamA1);
-      const errorEvent = await fixture.streams.pushEvent(scope, subscriptionId, {
-        type: "error",
-        status: "failed",
-        message: "工具调用失败",
-      });
-      expect(errorEvent).toEqual({
-        outcome: "delivered",
-        body: { type: "error", status: "failed", message: "工具调用失败" },
-      });
-      expect(Object.keys((errorEvent as { body: object }).body).sort()).toEqual([
-        "message",
-        "status",
-        "type",
-      ]);
-      const statusEvent = await fixture.streams.pushEvent(scope, subscriptionId, {
-        type: "status",
-        status: "ok",
-        message: "运行中",
-      });
-      expect(Object.keys((statusEvent as { body: object }).body).sort()).toEqual([
-        "message",
-        "status",
-        "type",
-      ]);
-    });
+    itDb(
+      "正文只有 type/status/message 三键（错误与状态事件同形）",
+      async () => {
+        const { subscriptionId } = await openOnOwnThread(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+        );
+        const scope = await scopeAs(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+        );
+        const errorEvent = await fixture.streams.pushEvent(
+          scope,
+          subscriptionId,
+          {
+            type: "error",
+            status: "failed",
+            message: "工具调用失败",
+          },
+        );
+        expect(errorEvent).toEqual({
+          outcome: "delivered",
+          body: { type: "error", status: "failed", message: "工具调用失败" },
+        });
+        expect(
+          Object.keys((errorEvent as { body: object }).body).sort(),
+        ).toEqual(["message", "status", "type"]);
+        const statusEvent = await fixture.streams.pushEvent(
+          scope,
+          subscriptionId,
+          {
+            type: "status",
+            status: "ok",
+            message: "运行中",
+          },
+        );
+        expect(
+          Object.keys((statusEvent as { body: object }).body).sort(),
+        ).toEqual(["message", "status", "type"]);
+      },
+    );
 
     itDb("构造面无法夹带：非法正文（含多余字段语义）被响亮拒绝", async () => {
       const { subscriptionId } = await openOnOwnThread(
@@ -225,18 +239,21 @@ describeDb("MT025 / Issue #68 — 事件流订阅与线程映射归属", () => {
       ).rejects.toThrow("STREAM_EVENT_BODY_INVALID");
     });
 
-    itDb("订阅行事实不含无权内容：displayName 只承载自家 threadId", async () => {
-      const { subscriptionId, threadId } = await openOnOwnThread(
-        "a1-owner",
-        fixture.companyA,
-        fixture.teamA1,
-      );
-      const rows = await fixture.readStreamRowsAsData(fixture.companyA);
-      const row = rows.find((candidate) => candidate.id === subscriptionId);
-      expect(row?.displayName).toBe(threadId);
-      expect(row?.workspaceId).toBe(fixture.teamA1);
-      expect(row?.displayName.startsWith("mt025-thread")).toBe(true);
-    });
+    itDb(
+      "订阅行事实不含无权内容：displayName 只承载自家 threadId",
+      async () => {
+        const { subscriptionId, threadId } = await openOnOwnThread(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+        );
+        const rows = await fixture.readStreamRowsAsData(fixture.companyA);
+        const row = rows.find((candidate) => candidate.id === subscriptionId);
+        expect(row?.displayName).toBe(threadId);
+        expect(row?.workspaceId).toBe(fixture.teamA1);
+        expect(row?.displayName.startsWith("mt025-thread")).toBe(true);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -272,43 +289,52 @@ describeDb("MT025 / Issue #68 — 事件流订阅与线程映射归属", () => {
       expect(boundB.outcome).toBe("allow");
     });
 
-    itDb("A 公司按外部串读到自己的 thread；B 公司读到自己的（各不相见）", async () => {
-      const fromA = await fixture.streams.readThreadByExternal(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        externalId,
-      );
-      expect(fromA.outcome).toBe("allow");
-      const fromB = await fixture.streams.readThreadByExternal(
-        await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
-        externalId,
-      );
-      expect(fromB.outcome).toBe("allow");
-      expect((fromA as { threadId: string }).threadId).not.toBe(
-        (fromB as { threadId: string }).threadId,
-      );
-    });
+    itDb(
+      "A 公司按外部串读到自己的 thread；B 公司读到自己的（各不相见）",
+      async () => {
+        const fromA = await fixture.streams.readThreadByExternal(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          externalId,
+        );
+        expect(fromA.outcome).toBe("allow");
+        const fromB = await fixture.streams.readThreadByExternal(
+          await scopeAs("b1-member", fixture.companyB, fixture.teamB1),
+          externalId,
+        );
+        expect(fromB.outcome).toBe("allow");
+        expect((fromA as { threadId: string }).threadId).not.toBe(
+          (fromB as { threadId: string }).threadId,
+        );
+      },
+    );
 
-    itDb("未绑定的外部串：canonical not-found（不泄露别家是否绑定）", async () => {
-      const verdict = await fixture.streams.readThreadByExternal(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        "slack-not-bound-anywhere",
-      );
-      expect(isCanonicalNotFound(verdict)).toBe(true);
-    });
+    itDb(
+      "未绑定的外部串：canonical not-found（不泄露别家是否绑定）",
+      async () => {
+        const verdict = await fixture.streams.readThreadByExternal(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          "slack-not-bound-anywhere",
+        );
+        expect(isCanonicalNotFound(verdict)).toBe(true);
+      },
+    );
 
-    itDb("续订同读取同门：另一公司的串无法续订他家的（各家只续自家）", async () => {
-      const renewA = await fixture.streams.renewSubscriptionByExternal(
-        await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
-        externalId,
-      );
-      expect(renewA.outcome).toBe("allow");
-      const renewGhost = await fixture.streams.renewSubscriptionByExternal(
-        await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
-        externalId,
-      );
-      // A2 团队不在映射归属范围内：canonical not-found。
-      expect(isCanonicalNotFound(renewGhost)).toBe(true);
-    });
+    itDb(
+      "续订同读取同门：另一公司的串无法续订他家的（各家只续自家）",
+      async () => {
+        const renewA = await fixture.streams.renewSubscriptionByExternal(
+          await scopeAs("a1-owner", fixture.companyA, fixture.teamA1),
+          externalId,
+        );
+        expect(renewA.outcome).toBe("allow");
+        const renewGhost = await fixture.streams.renewSubscriptionByExternal(
+          await scopeAs("a2-member", fixture.companyA, fixture.teamA2),
+          externalId,
+        );
+        // A2 团队不在映射归属范围内：canonical not-found。
+        expect(isCanonicalNotFound(renewGhost)).toBe(true);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -346,63 +372,67 @@ describeDb("MT025 / Issue #68 — 事件流订阅与线程映射归属", () => {
 
       // 旧范围订阅已被取消（visibility → 'private'），新订阅活跃。
       const rows = await fixture.readStreamRowsAsData(fixture.companyA);
-      expect(
-        rows.find((row) => row.id === firstId)?.visibility,
-      ).toBe("private");
+      expect(rows.find((row) => row.id === firstId)?.visibility).toBe(
+        "private",
+      );
       const secondId = (second as { subscriptionId: string }).subscriptionId;
-      expect(
-        rows.find((row) => row.id === secondId)?.visibility,
-      ).toBe(null);
-      expect(
-        rows.find((row) => row.id === secondId)?.workspaceId,
-      ).toBe(fixture.teamA2);
+      expect(rows.find((row) => row.id === secondId)?.visibility).toBe(null);
+      expect(rows.find((row) => row.id === secondId)?.workspaceId).toBe(
+        fixture.teamA2,
+      );
     });
 
-    itDb("取消后的旧订阅不产生跨范围推送（同 workspace 推送也 not-found）", async () => {
-      const a1Thread = nextThread();
-      await fixture.seedConversation({
-        tenantId: fixture.companyA,
-        workspaceId: fixture.teamA1,
-        principalId: fixture.ids["principal-a1a2-member"],
-        threadId: a1Thread,
-      });
-      const first = await fixture.streams.openSubscription(
-        await scopeAs("a1a2-member", fixture.companyA, fixture.teamA1),
-        { threadId: a1Thread },
-      );
-      const firstId = (first as { subscriptionId: string }).subscriptionId;
-      // 切到 A2 开一条（驱动收旧），再回 A1 推旧订阅。
-      const a2Thread = nextThread();
-      await fixture.seedConversation({
-        tenantId: fixture.companyA,
-        workspaceId: fixture.teamA2,
-        principalId: fixture.ids["principal-a1a2-member"],
-        threadId: a2Thread,
-      });
-      await fixture.streams.openSubscription(
-        await scopeAs("a1a2-member", fixture.companyA, fixture.teamA2),
-        { threadId: a2Thread },
-      );
-      const pushed = await fixture.streams.pushEvent(
-        await scopeAs("a1a2-member", fixture.companyA, fixture.teamA1),
-        firstId,
-        { type: "message", status: "ok", message: "after switch" },
-      );
-      expect(isCanonicalNotFound(pushed)).toBe(true);
-    });
+    itDb(
+      "取消后的旧订阅不产生跨范围推送（同 workspace 推送也 not-found）",
+      async () => {
+        const a1Thread = nextThread();
+        await fixture.seedConversation({
+          tenantId: fixture.companyA,
+          workspaceId: fixture.teamA1,
+          principalId: fixture.ids["principal-a1a2-member"],
+          threadId: a1Thread,
+        });
+        const first = await fixture.streams.openSubscription(
+          await scopeAs("a1a2-member", fixture.companyA, fixture.teamA1),
+          { threadId: a1Thread },
+        );
+        const firstId = (first as { subscriptionId: string }).subscriptionId;
+        // 切到 A2 开一条（驱动收旧），再回 A1 推旧订阅。
+        const a2Thread = nextThread();
+        await fixture.seedConversation({
+          tenantId: fixture.companyA,
+          workspaceId: fixture.teamA2,
+          principalId: fixture.ids["principal-a1a2-member"],
+          threadId: a2Thread,
+        });
+        await fixture.streams.openSubscription(
+          await scopeAs("a1a2-member", fixture.companyA, fixture.teamA2),
+          { threadId: a2Thread },
+        );
+        const pushed = await fixture.streams.pushEvent(
+          await scopeAs("a1a2-member", fixture.companyA, fixture.teamA1),
+          firstId,
+          { type: "message", status: "ok", message: "after switch" },
+        );
+        expect(isCanonicalNotFound(pushed)).toBe(true);
+      },
+    );
 
-    itDb("同 workspace 的既有订阅不收（收旧只针对其他 workspace）", async () => {
-      const first = await openOnOwnThread(
-        "a1-owner",
-        fixture.companyA,
-        fixture.teamA1,
-      );
-      await openOnOwnThread("a1-owner", fixture.companyA, fixture.teamA1);
-      const rows = await fixture.readStreamRowsAsData(fixture.companyA);
-      expect(
-        rows.find((row) => row.id === first.subscriptionId)?.visibility,
-      ).toBe(null);
-    });
+    itDb(
+      "同 workspace 的既有订阅不收（收旧只针对其他 workspace）",
+      async () => {
+        const first = await openOnOwnThread(
+          "a1-owner",
+          fixture.companyA,
+          fixture.teamA1,
+        );
+        await openOnOwnThread("a1-owner", fixture.companyA, fixture.teamA1);
+        const rows = await fixture.readStreamRowsAsData(fixture.companyA);
+        expect(
+          rows.find((row) => row.id === first.subscriptionId)?.visibility,
+        ).toBe(null);
+      },
+    );
 
     itDb("显式取消后推送 not-found；未取消的订阅仍 delivered", async () => {
       const first = await openOnOwnThread(
@@ -438,37 +468,39 @@ describeDb("MT025 / Issue #68 — 事件流订阅与线程映射归属", () => {
   // -------------------------------------------------------------------------
   // 撤权用例置于套件末尾：MT006 停用是持久事实（恢复走 MT007 恢复面，
   // 本套件无恢复通道），被撤权身份不再被后续用例复用。
-    itDb("撤权后推送：closed（停止推送并关闭连接）", async () => {
-      const { subscriptionId } = await openOnOwnThread(
-        "a1-other",
-        fixture.companyA,
-        fixture.teamA1,
-      );
-      // 撤权前签发的 scope（旧 memberEpoch）——已建立的订阅连接持有
-      // 的正是这个事实快照。
-      const staleScope = await scopeAs(
-        "a1-other",
-        fixture.companyA,
-        fixture.teamA1,
-      );
-      await fixture.suspendCompanyMembership(
-        fixture.companyA,
-        fixture.ids["principal-a1-other"],
-      );
-      // 新签发面立即死亡（scope resolver 拒发）。
-      await expect(
-        scopeAs("a1-other", fixture.companyA, fixture.teamA1),
-      ).rejects.toThrow("TENANT_FORBIDDEN");
-      // 旧 scope 的下一次推送：订阅者事实重验失败 → 停止推送并关闭。
-      const pushed = await fixture.streams.pushEvent(staleScope, subscriptionId, {
-        type: "message",
-        status: "ok",
-        message: "late",
-      });
-      expect(pushed).toEqual({ outcome: "closed" });
+  itDb("撤权后推送：closed（停止推送并关闭连接）", async () => {
+    const { subscriptionId } = await openOnOwnThread(
+      "a1-other",
+      fixture.companyA,
+      fixture.teamA1,
+    );
+    // 撤权前签发的 scope（旧 memberEpoch）——已建立的订阅连接持有
+    // 的正是这个事实快照。
+    const staleScope = await scopeAs(
+      "a1-other",
+      fixture.companyA,
+      fixture.teamA1,
+    );
+    await fixture.suspendCompanyMembership(
+      fixture.companyA,
+      fixture.ids["principal-a1-other"],
+    );
+    // 新签发面立即死亡（scope resolver 拒发）。
+    await expect(
+      scopeAs("a1-other", fixture.companyA, fixture.teamA1),
+    ).rejects.toThrow("TENANT_FORBIDDEN");
+    // 旧 scope 的下一次推送：订阅者事实重验失败 → 停止推送并关闭。
+    const pushed = await fixture.streams.pushEvent(staleScope, subscriptionId, {
+      type: "message",
+      status: "ok",
+      message: "late",
     });
+    expect(pushed).toEqual({ outcome: "closed" });
+  });
 
-    itDb("撤权者的订阅经他人（同团队 active）推送：不 delivered（订阅是个人事实）", async () => {
+  itDb(
+    "撤权者的订阅经他人（同团队 active）推送：不 delivered（订阅是个人事实）",
+    async () => {
       // a1-other 已被上一用例撤权（持久事实）：本用例改用 a1-owner
       // （此后无复用）驱动同一结论。
       const { subscriptionId } = await openOnOwnThread(
@@ -486,7 +518,8 @@ describeDb("MT025 / Issue #68 — 事件流订阅与线程映射归属", () => {
         { type: "status", status: "ok", message: "sweep" },
       );
       expect(admin.outcome).not.toBe("delivered");
-    });
+    },
+  );
 
   itDb("受限角色全程在场（决策路径不经过超级用户）", async () => {
     const calls = fixture.restrictedCalls();

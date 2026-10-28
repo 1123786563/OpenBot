@@ -54,7 +54,11 @@ function legitBody() {
   return {
     grantId: "grant-bypass-test",
     payer: { kind: "personal", id: "user-bypass-test" },
-    model: { provider: "openai", model: "gpt-realtime", capability: "realtime" },
+    model: {
+      provider: "openai",
+      model: "gpt-realtime",
+      capability: "realtime",
+    },
     snapshotVersion: 1,
     rateVersion: 0,
   };
@@ -153,9 +157,15 @@ describe("Bifrost 16.3 (#324): the establishment door refuses and audits bypass 
     const service = door(store);
 
     // A bad payer claim, and an account-identity field: both refused, neither audited here.
-    const badPayer = await service.establish({ ...legitBody(), payer: { kind: "personal" } });
+    const badPayer = await service.establish({
+      ...legitBody(),
+      payer: { kind: "personal" },
+    });
     expect(badPayer.status).toBe("refused");
-    const accountField = await service.establish({ ...legitBody(), userId: "someone-else" });
+    const accountField = await service.establish({
+      ...legitBody(),
+      userId: "someone-else",
+    });
     expect(accountField.status).toBe("refused");
     expect(events).toHaveLength(0);
   });
@@ -164,7 +174,10 @@ describe("Bifrost 16.3 (#324): the establishment door refuses and audits bypass 
     // The contract view is the frozen identity; the test pins its shape against the bypass
     // vocabulary so a future field cannot quietly hand a client a replayable credential.
     const service = door();
-    const outcome = await service.establish({ ...legitBody(), clientSecret: "x" });
+    const outcome = await service.establish({
+      ...legitBody(),
+      clientSecret: "x",
+    });
     expect(outcome.status).toBe("refused");
 
     // The record shape itself (what restore answers for an established row) — asserted by

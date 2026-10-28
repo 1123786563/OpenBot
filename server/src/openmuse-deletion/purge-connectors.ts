@@ -143,7 +143,10 @@ export function createOpenMuseConnectorGrantPurger(deps: {
               userId,
               kind: row.kind,
               id: row.id,
-              error: markError instanceof Error ? markError.message : String(markError),
+              error:
+                markError instanceof Error
+                  ? markError.message
+                  : String(markError),
             },
             "openmuse-connector-purge-mark-failed",
           );

@@ -126,7 +126,9 @@ async function report(): Promise<number> {
     unusable += 1;
   }
   if (unusable === 0) {
-    console.log("\nEvery database the driven tier reads is answering. Nothing to bring up.");
+    console.log(
+      "\nEvery database the driven tier reads is answering. Nothing to bring up.",
+    );
     return 0;
   }
   console.error(
@@ -168,7 +170,9 @@ async function up(): Promise<number> {
     IMAGE,
   ]);
   if (!started.ok) {
-    console.error(`::error::${name} did not start: ${started.err.split("\n").slice(-2).join(" ")}`);
+    console.error(
+      `::error::${name} did not start: ${started.err.split("\n").slice(-2).join(" ")}`,
+    );
     console.error(
       `If the image is the problem, pull it or point at another: OPENBOT_TEST_DB_IMAGE=pgvector/pgvector:pg17 bun scripts/test-db.ts --up`,
     );
@@ -180,7 +184,17 @@ async function up(): Promise<number> {
   // connections as soon as the proxy is up, which is seconds before Postgres finishes
   // initialising, and a suite told "reachable" then still fails on a cold server.
   const ready = () =>
-    spawn(["docker", "exec", "-e", "PGPASSWORD=openbot", name, "pg_isready", "-q", "-U", "openbot"]);
+    spawn([
+      "docker",
+      "exec",
+      "-e",
+      "PGPASSWORD=openbot",
+      name,
+      "pg_isready",
+      "-q",
+      "-U",
+      "openbot",
+    ]);
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (ready().ok) {
       // POSTGRES_DB makes one database; the enterprise guard refuses any name that is not
@@ -198,7 +212,9 @@ async function up(): Promise<number> {
         "openbot_enterprise_test",
       ]);
       if (!created.ok && !/already exists/.test(created.err)) {
-        console.error(`::error::${name} came up but the enterprise database was not created: ${created.err}`);
+        console.error(
+          `::error::${name} came up but the enterprise database was not created: ${created.err}`,
+        );
         return 1;
       }
       console.log(`${name} is listening on 127.0.0.1:${port}`);
@@ -221,20 +237,36 @@ async function up(): Promise<number> {
     }
     await Bun.sleep(1000);
   }
-  console.error(`::error::${name} started but never accepted a connection on ${port}.`);
-  console.error(`Inspect it with: docker logs ${name} — then bun scripts/test-db.ts --down`);
+  console.error(
+    `::error::${name} started but never accepted a connection on ${port}.`,
+  );
+  console.error(
+    `Inspect it with: docker logs ${name} — then bun scripts/test-db.ts --down`,
+  );
   return 1;
 }
 
 async function down(): Promise<number> {
-  const listed = spawn(["docker", "ps", "-a", "--filter", `name=${PREFIX}`, "--format", "{{.Names}}"]);
+  const listed = spawn([
+    "docker",
+    "ps",
+    "-a",
+    "--filter",
+    `name=${PREFIX}`,
+    "--format",
+    "{{.Names}}",
+  ]);
   if (!listed.ok) {
     console.error(`::error::docker ps failed: ${listed.err}`);
     return 1;
   }
-  const names = listed.out.split("\n").filter((line) => line.startsWith(PREFIX));
+  const names = listed.out
+    .split("\n")
+    .filter((line) => line.startsWith(PREFIX));
   if (names.length === 0) {
-    console.log(`Nothing named ${PREFIX}* to remove. Containers from other sessions were left alone.`);
+    console.log(
+      `Nothing named ${PREFIX}* to remove. Containers from other sessions were left alone.`,
+    );
     return 0;
   }
   for (const name of names) {
@@ -248,4 +280,10 @@ async function down(): Promise<number> {
   return 0;
 }
 
-process.exit(command === "--up" ? await up() : command === "--down" ? await down() : await report());
+process.exit(
+  command === "--up"
+    ? await up()
+    : command === "--down"
+      ? await down()
+      : await report(),
+);

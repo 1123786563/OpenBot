@@ -44,20 +44,33 @@ describe("Bifrost 22.6 (#357): the delivery baseline", () => {
     expect(DELIVERY_BASELINE.openbot.baseCommit).toMatch(/^[0-9a-f]{40}$/);
     expect(DELIVERY_BASELINE.openbot.branch).toBe("1123786563/bf20");
     expect(DELIVERY_BASELINE.openbot.commitPolicy).toBe("uncommitted-delivery");
-    expect(DELIVERY_BASELINE.openbot.preexistingIncrement.gitStatusEntries).toBeGreaterThan(200);
-    expect(DELIVERY_BASELINE.openbot.preexistingIncrement.snapshotSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      DELIVERY_BASELINE.openbot.preexistingIncrement.gitStatusEntries,
+    ).toBeGreaterThan(200);
+    expect(
+      DELIVERY_BASELINE.openbot.preexistingIncrement.snapshotSha256,
+    ).toMatch(/^[0-9a-f]{64}$/);
     expect(DELIVERY_BASELINE.openbot.migrationHead).toMatch(/^0206_/);
     expect(DELIVERY_BASELINE.bifrost.commit).toMatch(/^[0-9a-f]{40}$/);
     expect(DELIVERY_BASELINE.bifrost.policy).toBe("zero-commit");
     expect(DELIVERY_BASELINE.tickets.batch).toEqual([
-      "#352", "#353", "#354", "#355", "#356", "#357",
+      "#352",
+      "#353",
+      "#354",
+      "#355",
+      "#356",
+      "#357",
     ]);
     expect(DELIVERY_BASELINE.tickets.parent).toBe("#5");
   });
 
   test("the plan and report the baseline names exist", () => {
-    expect(existsSync(join(repoRoot, DELIVERY_BASELINE.tickets.plan))).toBe(true);
-    expect(existsSync(join(repoRoot, DELIVERY_BASELINE.tickets.report))).toBe(true);
+    expect(existsSync(join(repoRoot, DELIVERY_BASELINE.tickets.plan))).toBe(
+      true,
+    );
+    expect(existsSync(join(repoRoot, DELIVERY_BASELINE.tickets.report))).toBe(
+      true,
+    );
   });
 
   test("the independent review carries BOTH conclusions and names the final gate's owner", () => {
@@ -65,8 +78,12 @@ describe("Bifrost 22.6 (#357): the delivery baseline", () => {
     expect(REVIEW_RECORD.specCompliance.summary.length).toBeGreaterThan(40);
     expect(REVIEW_RECORD.codeQuality.verdict.length).toBeGreaterThan(3);
     expect(REVIEW_RECORD.codeQuality.summary.length).toBeGreaterThan(40);
-    expect(REVIEW_RECORD.finalIndependentReview.status).toBe("pending-final-commit");
-    expect(REVIEW_RECORD.finalIndependentReview.owner.length).toBeGreaterThan(10);
+    expect(REVIEW_RECORD.finalIndependentReview.status).toBe(
+      "pending-final-commit",
+    );
+    expect(REVIEW_RECORD.finalIndependentReview.owner.length).toBeGreaterThan(
+      10,
+    );
   });
 
   test("the OCR checklist's first entry covers the UNCOMMITTED scope in workspace mode", () => {
@@ -85,7 +102,10 @@ describe("Bifrost 22.6 (#357): the delivery baseline", () => {
   });
 
   test("the increment manifest exists, is non-empty, and stays inside the authorized write scopes", () => {
-    const manifestPath = join(repoRoot, DELIVERY_BASELINE.openbot.incrementManifest);
+    const manifestPath = join(
+      repoRoot,
+      DELIVERY_BASELINE.openbot.incrementManifest,
+    );
     expect(existsSync(manifestPath)).toBe(true);
     const entries = readFileSync(manifestPath, "utf8")
       .split("\n")
@@ -94,7 +114,9 @@ describe("Bifrost 22.6 (#357): the delivery baseline", () => {
     expect(entries.length).toBeGreaterThanOrEqual(8);
     for (const entry of entries) {
       const path = entry.replace(/^[A-Z?]+\s+/, "");
-      const authorized = AUTHORIZED_PREFIXES.some((prefix) => path.startsWith(prefix));
+      const authorized = AUTHORIZED_PREFIXES.some((prefix) =>
+        path.startsWith(prefix),
+      );
       expect(authorized, path).toBe(true);
     }
   });
@@ -102,7 +124,9 @@ describe("Bifrost 22.6 (#357): the delivery baseline", () => {
   test("the readiness conclusion lists unverified capabilities and residual limits by name", () => {
     expect(READINESS_CONCLUSION.verified.length).toBeGreaterThanOrEqual(4);
     expect(READINESS_CONCLUSION.unverified.length).toBeGreaterThanOrEqual(3);
-    expect(READINESS_CONCLUSION.residualLimitations.length).toBeGreaterThanOrEqual(3);
+    expect(
+      READINESS_CONCLUSION.residualLimitations.length,
+    ).toBeGreaterThanOrEqual(3);
     for (const item of READINESS_CONCLUSION.unverified) {
       expect(item.length).toBeGreaterThan(15);
     }

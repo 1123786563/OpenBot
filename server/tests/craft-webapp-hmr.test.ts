@@ -161,7 +161,9 @@ function previewHmrDeps(
     ),
     store: {
       async findSession(id: string, userId: string) {
-        return id === SESSION_ID && userId === owner && input.sessionExists !== false
+        return id === SESSION_ID &&
+          userId === owner &&
+          input.sessionExists !== false
           ? sessionRow(port)
           : undefined;
       },
@@ -1004,10 +1006,7 @@ describe("webappHmrSocketHandlers — the client↔upstream bridge", () => {
 // the seam's single entry condition — and the seam file is pinned at the
 // source level, the same shape the qa-batch1 pins use.
 describe("the preview seam's HMR wiring (fix-ocr18 #3 — source pin)", () => {
-  const source = readFileSync(
-    join(hereDir, "../src/craft/preview.ts"),
-    "utf8",
-  );
+  const source = readFileSync(join(hereDir, "../src/craft/preview.ts"), "utf8");
 
   test("the preview-origin branch dispatches upgrades through its OWN deps", () => {
     // The preview branch (the front door's `dispatch`, gated on the origin's
@@ -1072,10 +1071,7 @@ describe("the preview HMR upgrade's Origin gate (fix-ocr28 #1 — CSWSH)", () =>
   function healthyTlsStatusFile(): string {
     const dir = mkdtempSync(join(tmpdir(), "openbot-tls-status-hmr-"));
     const statusFile = join(dir, "renewal-status.json");
-    writeFileSync(
-      statusFile,
-      JSON.stringify({ health: "ok", daysLeft: 45 }),
-    );
+    writeFileSync(statusFile, JSON.stringify({ health: "ok", daysLeft: 45 }));
     return statusFile;
   }
 

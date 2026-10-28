@@ -1,9 +1,6 @@
 import "../preload";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import {
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -301,7 +298,9 @@ describe("MT091 AC1 — craft and workshop reads are the scope's own answer", ()
 
     await waitFor(() =>
       expect(
-        view.getByText("This session is not available in the current workspace."),
+        view.getByText(
+          "This session is not available in the current workspace.",
+        ),
       ).toBeTruthy(),
     );
     // The invisible semantic leaks nothing about the other company's session.
@@ -316,11 +315,16 @@ describe("MT091 AC1 — craft and workshop reads are the scope's own answer", ()
         : undefined,
     );
     const queryClient = freshClient();
-    const view = draw(queryClient, <WorkshopPanel channelId="ch-1" botId="bot-1" />);
+    const view = draw(
+      queryClient,
+      <WorkshopPanel channelId="ch-1" botId="bot-1" />,
+    );
 
     await waitFor(() =>
       expect(
-        view.getByText("This workshop is not available in the current workspace."),
+        view.getByText(
+          "This workshop is not available in the current workspace.",
+        ),
       ).toBeTruthy(),
     );
 
@@ -337,7 +341,10 @@ describe("MT091 AC1 — craft and workshop reads are the scope's own answer", ()
       if (path !== "/api/craft/sessions") return undefined;
       return jsonResponse(200, {
         sessions: [
-          session("s-acme", current === ACME ? "Acme landing page" : "Globex ops run"),
+          session(
+            "s-acme",
+            current === ACME ? "Acme landing page" : "Globex ops run",
+          ),
         ],
       });
     });
@@ -348,7 +355,10 @@ describe("MT091 AC1 — craft and workshop reads are the scope's own answer", ()
     );
 
     // The switch seam itself, exactly as the selection page drives it.
-    window.localStorage.setItem(selectionStorageKey(USER), JSON.stringify(GLOBEX));
+    window.localStorage.setItem(
+      selectionStorageKey(USER),
+      JSON.stringify(GLOBEX),
+    );
     await act(async () => {
       selectWorkspaceScope(queryClient, USER, ACME, GLOBEX);
     });
@@ -371,7 +381,13 @@ describe("MT091 AC1 — craft and workshop reads are the scope's own answer", ()
 
 describe("MT091 AC2 — issuance and revocation reflect immediately", () => {
   test("the preview pass is minted under the scope in force", async () => {
-    serve(() => jsonResponse(200, { ticket: "t", origin: "http://p", expiresAt: "2026-10-22T00:00:00Z" }));
+    serve(() =>
+      jsonResponse(200, {
+        ticket: "t",
+        origin: "http://p",
+        expiresAt: "2026-10-22T00:00:00Z",
+      }),
+    );
     await issuePreviewTicket("s-1", ACME_PAIR);
     const mint = asked.find((ask) =>
       ask.input.endsWith("/api/craft/sessions/s-1/preview-ticket"),
@@ -405,7 +421,9 @@ describe("MT091 AC2 — issuance and revocation reflect immediately", () => {
     await act(async () => {
       shareTab.click();
     });
-    expect(await view.findByText("Sharing is live, until 11/1/2026, 12:00:00 AM.")).toBeTruthy();
+    expect(
+      await view.findByText("Sharing is live, until 11/1/2026, 12:00:00 AM."),
+    ).toBeTruthy();
 
     // The real page flow: revoke asks once, then confirms.
     await act(async () => {
@@ -467,8 +485,8 @@ describe("MT091 AC3 — execution and scheduling writes carry the pair", () => {
     expect(headerOf(start?.init, "x-openbot-tenant")).toBe("acme");
 
     await cancelWorkshopTurn("ch-1", "t-1", ACME_PAIR);
-    const cancel = asked.find((ask) =>
-      ask.input === "/api/workshop/ch-1/turns/t-1/cancel",
+    const cancel = asked.find(
+      (ask) => ask.input === "/api/workshop/ch-1/turns/t-1/cancel",
     );
     expect(cancel?.init?.method).toBe("POST");
     expect(headerOf(cancel?.init, "x-openbot-workspace")).toBe("acme-finance");
@@ -488,11 +506,10 @@ describe("MT091 AC3 — execution and scheduling writes carry the pair", () => {
     expect(headerOf(create?.init, "x-openbot-tenant")).toBe("acme");
 
     await runScheduledTaskNow("task-1", ACME_PAIR);
-    const runNow = asked.find((ask) =>
-      ask.input === "/api/craft/scheduled-tasks/task-1/run-now",
+    const runNow = asked.find(
+      (ask) => ask.input === "/api/craft/scheduled-tasks/task-1/run-now",
     );
     expect(runNow?.init?.method).toBe("POST");
     expect(headerOf(runNow?.init, "x-openbot-tenant")).toBe("acme");
   });
 });
-

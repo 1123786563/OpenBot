@@ -194,7 +194,9 @@ async function seedSession(): Promise<World> {
     rateVersion: 0,
   });
   if (establishment.status !== "established") {
-    throw new Error(`fixture session did not establish: ${JSON.stringify(establishment)}`);
+    throw new Error(
+      `fixture session did not establish: ${JSON.stringify(establishment)}`,
+    );
   }
 
   return {
@@ -232,7 +234,9 @@ async function ledgerCount(world: World) {
   const rows = await database
     .select({ id: creditLedger.id })
     .from(creditLedger)
-    .where(eq(creditLedger.externalCustomerId, `openbot-personal-${world.userId}`));
+    .where(
+      eq(creditLedger.externalCustomerId, `openbot-personal-${world.userId}`),
+    );
   return rows.length;
 }
 
@@ -246,7 +250,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -283,7 +290,8 @@ describe("Bifrost 15.6 (#319): revocation stops later units and shuts the sessio
     const service = unitService();
 
     const first = await service.openUnit(world.openBody("unit-1"));
-    if (first.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (first.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
     await service.markProcessing(first.unit.unitId);
 
     await database
@@ -354,7 +362,8 @@ describe("Bifrost 15.6 (#319): revocation stops later units and shuts the sessio
     const service = unitService();
 
     const first = await service.openUnit(world.openBody("unit-1"));
-    if (first.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (first.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
     await database
       .update(accessGrants)
       .set({ status: "revoked", revokedAt: new Date() })
@@ -387,7 +396,10 @@ describe("Bifrost 15.6 (#319): revocation stops later units and shuts the sessio
     const units = unitService();
     await units.openUnit(world.openBody("unit-1"));
 
-    const closed = await sessionService().close(world.sessionId, "client_disconnected");
+    const closed = await sessionService().close(
+      world.sessionId,
+      "client_disconnected",
+    );
     expect(closed?.state).toBe("closed");
     expect(closed?.closeReason).toBe("client_disconnected");
 

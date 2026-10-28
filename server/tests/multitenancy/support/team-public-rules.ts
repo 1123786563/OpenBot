@@ -437,7 +437,10 @@ export async function createTeamPublicRulesFixture(): Promise<TeamPublicRulesFix
         failures.push(error);
       }
       if (failures.length > 0) {
-        throw new AggregateError(failures, "team-public-rules fixture dispose failed");
+        throw new AggregateError(
+          failures,
+          "team-public-rules fixture dispose failed",
+        );
       }
     },
   };

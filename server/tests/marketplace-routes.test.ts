@@ -2,7 +2,10 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { Hono } from "hono";
 import { createMarketplaceRoutes } from "../src/marketplace/routes";
 import type { MarketplaceStore } from "../src/marketplace/store";
-import { CATALOGUE_EXPERTS, CATALOGUE_SKILLS } from "../src/marketplace/catalogue";
+import {
+  CATALOGUE_EXPERTS,
+  CATALOGUE_SKILLS,
+} from "../src/marketplace/catalogue";
 
 /**
  * The marketplace routes, over stub stores.
@@ -14,7 +17,11 @@ import { CATALOGUE_EXPERTS, CATALOGUE_SKILLS } from "../src/marketplace/catalogu
  * wins.
  */
 
-const ACTOR = { id: "user-1", email: "person@example.com", role: "user" as const };
+const ACTOR = {
+  id: "user-1",
+  email: "person@example.com",
+  role: "user" as const,
+};
 
 /** A requireUser that answers as {@link ACTOR}, standing in for the auth middleware. */
 const requireUser = async (
@@ -146,13 +153,18 @@ describe("marketplace routes", () => {
   });
 
   test("installing an expert creates one Bot, ships its skills, and answers the same Bot twice", async () => {
-    const { app, installs, createdBots, granted, installedSkills } = buildApp({});
+    const { app, installs, createdBots, granted, installedSkills } = buildApp(
+      {},
+    );
     const slug = CATALOGUE_EXPERTS[0]!.slug;
     const expectedSkills = CATALOGUE_EXPERTS[0]!.skills;
 
-    const first = await app.request(`/api/marketplace/experts/${slug}/install`, {
-      method: "POST",
-    });
+    const first = await app.request(
+      `/api/marketplace/experts/${slug}/install`,
+      {
+        method: "POST",
+      },
+    );
     expect(first.status).toBe(201);
     const firstBody = (await first.json()) as { agentId: string };
     expect(createdBots).toHaveLength(1);

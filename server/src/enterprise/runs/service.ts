@@ -324,9 +324,7 @@ export function createRunService(deps: RunServiceDependencies): RunService {
         input.runId.length > 200
       )
         throw new Error("INVALID_RUN_ID");
-      if (
-        !["user_requested", "timeout", "superseded"].includes(input.reason)
-      )
+      if (!["user_requested", "timeout", "superseded"].includes(input.reason))
         throw new Error("INVALID_CANCEL_REASON");
       return store.cancel(
         scope,

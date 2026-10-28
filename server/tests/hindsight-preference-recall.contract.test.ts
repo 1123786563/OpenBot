@@ -10,7 +10,6 @@ import {
   type HindsightBankScope,
   mintBankScopeAssertion,
   userBankFor,
-  verifyBankScopeAssertion,
 } from "../src/hindsight/bank-scope";
 import {
   createPreferenceRecallService,
@@ -195,7 +194,10 @@ function memoryStore() {
   return { store, rows };
 }
 
-function grantFor(tenantId: string, principalId: string): {
+function grantFor(
+  tenantId: string,
+  principalId: string,
+): {
   scope: HindsightBankScope;
   bank: string;
   token: string;
@@ -313,7 +315,9 @@ describe.skipIf(!available)(
       // The contract carries no bank and no document id.
       const serialized = JSON.stringify(recalled);
       expect(serialized).not.toContain(userBankFor(PRINCIPAL_A));
-      expect(serialized).not.toContain(preferenceDocumentIdFor(TENANT_A, record.id));
+      expect(serialized).not.toContain(
+        preferenceDocumentIdFor(TENANT_A, record.id),
+      );
 
       // A second asking Bot, same company and person: the same original (the cross-Bot half
       // of AC2, on the real service's own bank scoping).
@@ -322,7 +326,9 @@ describe.skipIf(!available)(
         askingAgentId: "contract-other-bot",
       });
       expect(second.map((item) => item.id)).toContain(record.id);
-      expect(second.find((item) => item.id === record.id)?.content).toBe(original);
+      expect(second.find((item) => item.id === record.id)?.content).toBe(
+        original,
+      );
     });
 
     test("an orphan document retained outside the seam hits and is dropped", async () => {

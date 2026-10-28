@@ -28,9 +28,7 @@ import {
   componentKeys,
   scopedComponentListQueryOptions,
 } from "../../src/lib/components/queries";
-import {
-  setComponentPublishedMutationOptions,
-} from "../../src/lib/components/mutations";
+import { setComponentPublishedMutationOptions } from "../../src/lib/components/mutations";
 import {
   marketplaceKeys,
   scopedMarketplaceQueryOptions,
@@ -210,7 +208,14 @@ async function press(
 function ShelfObserver({
   scope,
 }: {
-  scope: { status: "open"; userId: string; selection: ScopeSelection | null; generation: number; prefix: readonly unknown[]; key: string };
+  scope: {
+    status: "open";
+    userId: string;
+    selection: ScopeSelection | null;
+    generation: number;
+    prefix: readonly unknown[];
+    key: string;
+  };
 }) {
   const queryClient = useQueryClient();
   useQuery(scopedMarketplaceQueryOptions(queryClient, scope));
@@ -239,14 +244,16 @@ describe("MT094 AC1 — catalogue reads and install writes carry the pair", () =
         : undefined,
     );
     const queryClient = freshClient();
-    await queryClient.fetchQuery(scopedMarketplaceQueryOptions(queryClient, {
-      status: "open",
-      userId: USER,
-      selection: ACME,
-      generation: 1,
-      prefix: scopedCachePrefix(USER, ACME),
-      key: "k",
-    }));
+    await queryClient.fetchQuery(
+      scopedMarketplaceQueryOptions(queryClient, {
+        status: "open",
+        userId: USER,
+        selection: ACME,
+        generation: 1,
+        prefix: scopedCachePrefix(USER, ACME),
+        key: "k",
+      }),
+    );
 
     const read = asked.find((ask) => ask.input === "/api/marketplace");
     expect(read).toBeTruthy();
@@ -285,8 +292,7 @@ describe("MT094 AC1 — catalogue reads and install writes carry the pair", () =
     expect(headerOf(post?.init, "x-openbot-tenant")).toBe("acme");
 
     await press(
-      (queryClient) =>
-        uninstallExpertMutationOptions(queryClient, openScope()),
+      (queryClient) => uninstallExpertMutationOptions(queryClient, openScope()),
       "expenses",
     );
     const del = asked.find(
@@ -318,9 +324,17 @@ describe("MT094 AC1 — catalogue reads and install writes carry the pair", () =
         key: "k",
       }) as const;
 
-    const acmeKey = [...scopedCachePrefix(USER, ACME), ...marketplaceKeys.catalogue()];
-    await queryClient.fetchQuery(scopedMarketplaceQueryOptions(queryClient, scope()));
-    expect((queryClient.getQueryData(acmeKey) as MarketplacePayload).skills[0].installed).toBe(false);
+    const acmeKey = [
+      ...scopedCachePrefix(USER, ACME),
+      ...marketplaceKeys.catalogue(),
+    ];
+    await queryClient.fetchQuery(
+      scopedMarketplaceQueryOptions(queryClient, scope()),
+    );
+    expect(
+      (queryClient.getQueryData(acmeKey) as MarketplacePayload).skills[0]
+        .installed,
+    ).toBe(false);
 
     // The switch seam itself, then the new scope's own answer.
     storeSelection(USER, GLOBEX);
@@ -328,7 +342,9 @@ describe("MT094 AC1 — catalogue reads and install writes carry the pair", () =
       selectWorkspaceScope(queryClient, USER, ACME, GLOBEX);
     });
     current = GLOBEX;
-    await queryClient.fetchQuery(scopedMarketplaceQueryOptions(queryClient, scope()));
+    await queryClient.fetchQuery(
+      scopedMarketplaceQueryOptions(queryClient, scope()),
+    );
     expect(
       queryClient.getQueryData([
         ...scopedCachePrefix(USER, GLOBEX),
@@ -449,9 +465,14 @@ describe("MT094 AC4 — writes settle at both cache roots", () => {
       prefix: scopedCachePrefix(USER, ACME),
       key: "k",
     };
-    const shelfKey = [...scopedCachePrefix(USER, ACME), ...marketplaceKeys.catalogue()];
+    const shelfKey = [
+      ...scopedCachePrefix(USER, ACME),
+      ...marketplaceKeys.catalogue(),
+    ];
     const pageKey = [...scopedCachePrefix(USER, ACME), ...pluginKeys.page()];
-    await queryClient.fetchQuery(scopedMarketplaceQueryOptions(queryClient, openScope));
+    await queryClient.fetchQuery(
+      scopedMarketplaceQueryOptions(queryClient, openScope),
+    );
     // A fresh plugins entry the settle must also touch.
     queryClient.setQueryData(pageKey, {
       catalogue: [],

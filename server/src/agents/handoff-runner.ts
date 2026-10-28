@@ -487,9 +487,10 @@ export function createHandoffRunner(options: {
           } catch (error) {
             const reason = (
               error instanceof Error ? error.message : "could not be delivered"
+            )
               // Capped like every other model-supplied or error-supplied text in this family:
               // it reaches the asker's prompt, the row's lastError and the audit payload.
-            ).slice(0, 500);
+              .slice(0, 500);
             /*
              * The last try, so the person is told rather than left waiting.
              *

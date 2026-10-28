@@ -18,7 +18,13 @@
 // skipped 不计为通过），绝不回退开发库。裁决 #1：请求头仅作选择。
 // 裁决 #2：不引入任何策略版本常量。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { createUnavailableWorkspaceScopeRoutes } from "../../src/enterprise/tenancy/workspace-scope-routes";
 import {
   enterpriseRuntimeDatabaseUrlFrom,

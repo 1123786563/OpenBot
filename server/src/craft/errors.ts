@@ -22,7 +22,9 @@ export class SandboxProvisioningError extends Error {
 
 /** A live provisioning attempt already owns the sandbox; the caller should retry shortly. */
 export class SandboxProvisioningInProgressError extends SandboxProvisioningError {
-  constructor(message = "A sandbox provisioning attempt is already in progress.") {
+  constructor(
+    message = "A sandbox provisioning attempt is already in progress.",
+  ) {
     super(message);
     this.name = "SandboxProvisioningInProgressError";
   }

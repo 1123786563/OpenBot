@@ -1,5 +1,9 @@
 import "../../../../tests/preload";
-import { describe, expect, test } from "../../../../../tests/support/e2e-compat";
+import {
+  describe,
+  expect,
+  test,
+} from "../../../../../tests/support/e2e-compat";
 import type { Attachment } from "@copilotkit/react-core/v2";
 import { MAX_ATTACHMENTS_PER_MESSAGE } from "@/lib/channels/attachments";
 import type { ComposerDraft } from "./draft";

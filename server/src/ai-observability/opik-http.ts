@@ -934,8 +934,12 @@ export function createOpikHttpPort(deps: OpikHttpPortDeps): OpikPort {
               `/v1/private/traces/${encodeURIComponent(input.traceId)}?project_id=${encodeURIComponent(project.id)}`,
             ),
         ]);
-        if (observed === null) return { outcome: "ok", value: { traceId: input.traceId } };
-        if (observed.outcome === "unavailable" && observed.code === "OPIK_TIMEOUT") {
+        if (observed === null)
+          return { outcome: "ok", value: { traceId: input.traceId } };
+        if (
+          observed.outcome === "unavailable" &&
+          observed.code === "OPIK_TIMEOUT"
+        ) {
           return statusFailure("createTrace", response.status);
         }
         return observed;

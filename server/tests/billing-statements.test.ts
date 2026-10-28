@@ -84,8 +84,18 @@ const USAGE: BillingUsage = {
   amountCents: 19900,
   totalAmountCents: 19900,
   charges: [
-    { metricCode: "llm_tokens", metricName: "模型 tokens", units: "1500.0", amountCents: 19900 },
-    { metricCode: "computer_minutes", metricName: "云电脑时长", units: "42", amountCents: 0 },
+    {
+      metricCode: "llm_tokens",
+      metricName: "模型 tokens",
+      units: "1500.0",
+      amountCents: 19900,
+    },
+    {
+      metricCode: "computer_minutes",
+      metricName: "云电脑时长",
+      units: "42",
+      amountCents: 0,
+    },
   ],
 };
 
@@ -120,7 +130,7 @@ function order(over: Partial<PaymentOrderRecord> = {}): PaymentOrderRecord {
     paidAt: new Date("2026-10-01T00:05:00.000Z"),
     terminalAt: new Date("2026-10-01T00:05:00.000Z"),
     createdBy: "user-admin",
-        ownerPayerRef: { kind: "personal" as const, id: "user-admin" },
+    ownerPayerRef: { kind: "personal" as const, id: "user-admin" },
     createdAt: new Date("2026-10-01T00:01:00.000Z"),
     version: 1,
     ...over,
@@ -143,7 +153,10 @@ function matchesScope(
 }
 
 /** A payment ledger over a fixed list, recording the window it was asked for. */
-function fakeOrders(rows: PaymentOrderRecord[], anomalies: PaymentOrderEventRecord[] = []) {
+function fakeOrders(
+  rows: PaymentOrderRecord[],
+  anomalies: PaymentOrderEventRecord[] = [],
+) {
   const calls: { from: Date | null; to: Date | null }[] = [];
   const store = {
     insertOrder: async () => order(),
@@ -194,11 +207,10 @@ function fakeOrders(rows: PaymentOrderRecord[], anomalies: PaymentOrderEventReco
     listAnomalyEvents: async (orderIds: readonly string[]) =>
       anomalies
         .filter(
-          (event) => event.kind === "anomaly" && orderIds.includes(event.orderId),
+          (event) =>
+            event.kind === "anomaly" && orderIds.includes(event.orderId),
         )
-        .sort(
-          (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-        ),
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
   } as unknown as PaymentStore;
   return { calls, store };
 }
@@ -281,7 +293,12 @@ describe("plan usage", () => {
       service: fakeService(ACTIVE, {
         ...USAGE,
         charges: [
-          { metricCode: "llm_tokens", metricName: "t", units: "9999", amountCents: 1 },
+          {
+            metricCode: "llm_tokens",
+            metricName: "t",
+            units: "9999",
+            amountCents: 1,
+          },
         ],
       }),
       quotas: new Map([["pro", QUOTAS]]),
@@ -497,13 +514,17 @@ describe("invoices", () => {
     expect(page.invoices.map((invoice) => invoice.invoiceId)).toEqual([
       "po-member",
     ]);
-    expect(await statements.invoice("po-member", { actorPayerRef: { kind: "personal" as const, id: MEMBER.id } })).toMatchObject(
-      {
-        invoiceId: "po-member",
-      },
-    );
     expect(
-      await statements.invoice("po-other", { actorPayerRef: { kind: "personal" as const, id: MEMBER.id } }),
+      await statements.invoice("po-member", {
+        actorPayerRef: { kind: "personal" as const, id: MEMBER.id },
+      }),
+    ).toMatchObject({
+      invoiceId: "po-member",
+    });
+    expect(
+      await statements.invoice("po-other", {
+        actorPayerRef: { kind: "personal" as const, id: MEMBER.id },
+      }),
     ).toBeNull();
   });
 
@@ -614,15 +635,15 @@ describe("invoices", () => {
       quotas: new Map(),
       orders: store,
     });
-    const scope = { actorPayerRef: { kind: "personal" as const, id: MEMBER.id } };
+    const scope = {
+      actorPayerRef: { kind: "personal" as const, id: MEMBER.id },
+    };
     const page = await statements.invoices(
       { from: null, to: null, page: 1 },
       scope,
     );
     expect(page.invoices.map((row) => row.invoiceId)).toEqual(["po-mine"]);
-    expect(
-      await statements.invoice("po-company-same-id", scope),
-    ).toBeNull();
+    expect(await statements.invoice("po-company-same-id", scope)).toBeNull();
   });
 
   /*
@@ -656,9 +677,10 @@ describe("invoices", () => {
     });
     const page = await statements.invoices({ from: null, to: null, page: 1 });
     const byId = new Map(page.invoices.map((row) => [row.invoiceId, row]));
-    expect(
-      byId.get("po-first")?.anomalies.map((event) => event.code),
-    ).toEqual(["over_paid", "duplicate_paid"]);
+    expect(byId.get("po-first")?.anomalies.map((event) => event.code)).toEqual([
+      "over_paid",
+      "duplicate_paid",
+    ]);
     expect(byId.get("po-first")?.anomalies[0]).toMatchObject({
       amountCents: 19900,
       channelTransactionId: "2026100122002",
@@ -685,7 +707,8 @@ describe("statement routes", () => {
       context,
       next,
     ) => {
-      if (!actor) return context.json({ error: "Authentication required." }, 401);
+      if (!actor)
+        return context.json({ error: "Authentication required." }, 401);
       context.set("actor", actor);
       await next();
     };
@@ -721,7 +744,10 @@ describe("statement routes", () => {
       "/api/billing/plan-usage",
     );
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { active: boolean; quotas: unknown[] };
+    const body = (await response.json()) as {
+      active: boolean;
+      quotas: unknown[];
+    };
     expect(body.active).toBe(true);
     expect(body.quotas).toHaveLength(2);
   });
@@ -846,9 +872,9 @@ describe("statement routes", () => {
     const list = await app(statements, MEMBER).request("/api/billing/invoices");
     expect(list.status).toBe(200);
     expect(
-      ((await list.json()) as { invoices: Array<{ invoiceId: string }> }).invoices.map(
-        (invoice) => invoice.invoiceId,
-      ),
+      (
+        (await list.json()) as { invoices: Array<{ invoiceId: string }> }
+      ).invoices.map((invoice) => invoice.invoiceId),
     ).toEqual(["po-member"]);
 
     const own = await app(statements, MEMBER).request(

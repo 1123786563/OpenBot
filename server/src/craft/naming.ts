@@ -86,9 +86,8 @@ export async function generateSessionName(
         await deps.generateName(
           NAMING_SYSTEM_PROMPT,
           // The replacer function keeps `$&`/`$'` in the user's words literal.
-          NAMING_USER_PROMPT.replace(
-            "{user_message}",
-            () => userMessage.slice(0, MAX_PROMPT_INPUT_CHARS),
+          NAMING_USER_PROMPT.replace("{user_message}", () =>
+            userMessage.slice(0, MAX_PROMPT_INPUT_CHARS),
           ),
         )
       )

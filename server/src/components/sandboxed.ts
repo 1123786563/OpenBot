@@ -192,19 +192,7 @@ export function createSandboxedStore(
         await transaction
           .insert(sandboxedComponents)
           .values({
-          name,
-          title: input.title,
-          draftDescription: input.description,
-          draftHtml: input.html,
-          draftCss: input.css,
-          draftJsFunctions: input.jsFunctions,
-          draftArgumentSchema: input.argumentSchema,
-          sampleArguments: input.sampleArguments,
-          authoredBy: input.by,
-        })
-        .onConflictDoUpdate({
-          target: sandboxedComponents.name,
-          set: {
+            name,
             title: input.title,
             draftDescription: input.description,
             draftHtml: input.html,
@@ -213,9 +201,21 @@ export function createSandboxedStore(
             draftArgumentSchema: input.argumentSchema,
             sampleArguments: input.sampleArguments,
             authoredBy: input.by,
-            updatedAt: new Date(),
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: sandboxedComponents.name,
+            set: {
+              title: input.title,
+              draftDescription: input.description,
+              draftHtml: input.html,
+              draftCss: input.css,
+              draftJsFunctions: input.jsFunctions,
+              draftArgumentSchema: input.argumentSchema,
+              sampleArguments: input.sampleArguments,
+              authoredBy: input.by,
+              updatedAt: new Date(),
+            },
+          });
 
         // The governance row. `published` is left alone on conflict: an administrator publishing a
         // description is their decision, and a save must not quietly undo or advance it. The

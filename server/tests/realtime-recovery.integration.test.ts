@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { Hono, type MiddlewareHandler } from "hono";
 import { createRealtimeSessionService } from "../src/billing/realtime-session";
 import { createRealtimeUnitService } from "../src/billing/realtime-unit";
@@ -271,13 +276,18 @@ describe("Bifrost 15.8 (#321): a restart restores without re-dispatching or re-s
     const beforeRestart = freshUnitService();
     const sessionId = await world.establish();
 
-    const opened = await beforeRestart.openUnit(world.openBody(sessionId, "unit-1"));
-    if (opened.status !== "reserved") throw new Error("fixture unit did not reserve");
+    const opened = await beforeRestart.openUnit(
+      world.openBody(sessionId, "unit-1"),
+    );
+    if (opened.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
 
     // The restart: a NEW service instance, the same durable rows. The replay of the same
     // unit key answers the ORIGINAL unit — same attempt, same hold — and mints nothing.
     const afterRestart = freshUnitService();
-    const replay = await afterRestart.openUnit(world.openBody(sessionId, "unit-1"));
+    const replay = await afterRestart.openUnit(
+      world.openBody(sessionId, "unit-1"),
+    );
     expect(replay.status).toBe("reserved");
     if (replay.status !== "reserved") return;
     expect(replay.replay).toBe(true);
@@ -347,7 +357,8 @@ describe("Bifrost 15.8 (#321): a restart restores without re-dispatching or re-s
       // shape (the relay died between the hold and any settle), never an in-flight one.
       expiresAt: new Date(Date.now() + 5_000).toISOString(),
     });
-    if (opened.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (opened.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
     await service.markProcessing(opened.unit.unitId);
 
     const scanner = createRecoveryScanner({
@@ -478,9 +489,10 @@ type ViewSession = {
   pendingCents: number;
 };
 
-async function readSessions(
-  actor: AuthenticatedActor,
-): Promise<{ status: number; body: { sessions?: ViewSession[]; error?: string } }> {
+async function readSessions(actor: AuthenticatedActor): Promise<{
+  status: number;
+  body: { sessions?: ViewSession[]; error?: string };
+}> {
   const response = await viewApp(actor).request(
     "/api/billing/credits/realtime-sessions",
   );
@@ -500,11 +512,13 @@ describe("Bifrost 15.8 (#321): the person sees their realtime sessions' money an
     // authorization refusal closes A and sweeps the still-holding unit to unknown — the
     // 15.6 shutdown, driven the way production drives it.
     const a1 = await service.openUnit(owner.openBody(sessionIdA, "v-a-1"));
-    if (a1.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (a1.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
     await service.markProcessing(a1.unit.unitId);
 
     const a2 = await service.openUnit(owner.openBody(sessionIdA, "v-a-2"));
-    if (a2.status !== "reserved") throw new Error("fixture unit did not reserve");
+    if (a2.status !== "reserved")
+      throw new Error("fixture unit did not reserve");
     await service.markProcessing(a2.unit.unitId);
 
     // B — same account — is stopped by the balance A's holds exhausted.
@@ -532,7 +546,10 @@ describe("Bifrost 15.8 (#321): the person sees their realtime sessions' money an
     // The amounts the view must agree with: read them off the rows the doors wrote, so
     // the assertion is an agreement between two reads, not a restatement of one.
     const [a2Row] = await database
-      .select({ maximum: creditReservations.maximum, charged: creditReservations.charged })
+      .select({
+        maximum: creditReservations.maximum,
+        charged: creditReservations.charged,
+      })
       .from(creditReservations)
       .where(eq(creditReservations.id, a2.reservationId))
       .limit(1);
@@ -559,7 +576,12 @@ describe("Bifrost 15.8 (#321): the person sees their realtime sessions' money an
     expect(viewA.state).toBe("closed");
     expect(viewA.abnormal?.kind).toBe("closed");
     expect(viewA.abnormal?.reason).toBe("grant_invalid");
-    expect(viewA.units).toEqual({ settled: 1, holding: 0, unknown: 1, refused: 1 });
+    expect(viewA.units).toEqual({
+      settled: 1,
+      holding: 0,
+      unknown: 1,
+      refused: 1,
+    });
     expect(viewA.consumedCents).toBe(a1Row?.charged);
     expect(viewA.pendingCents).toBe(a2Row?.maximum);
 
@@ -569,7 +591,12 @@ describe("Bifrost 15.8 (#321): the person sees their realtime sessions' money an
     expect(viewB.stopped).toBe(true);
     expect(viewB.abnormal?.kind).toBe("stopped");
     expect(viewB.abnormal?.reason).toBe("insufficient_credits");
-    expect(viewB.units).toEqual({ settled: 0, holding: 0, unknown: 0, refused: 1 });
+    expect(viewB.units).toEqual({
+      settled: 0,
+      holding: 0,
+      unknown: 0,
+      refused: 1,
+    });
     expect(viewB.consumedCents).toBe(0);
     expect(viewB.pendingCents).toBe(0);
 
@@ -616,7 +643,12 @@ afterAll(async () => {
     .where(like(realtimeSessions.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );

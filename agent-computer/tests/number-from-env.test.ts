@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/e2e-compat";
 import { numberFromEnv } from "../src/env";
 
 const NAME = "OPENBOT_TEST_NUMBER_FROM_ENV";

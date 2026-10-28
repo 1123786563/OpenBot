@@ -11,11 +11,21 @@ import { createTurnEventBus } from "../src/workshop/bus";
  */
 function fakeStore() {
   const turns = new Map<string, WorkshopTurnRow>();
-  const sessions = new Map<string, { id: string; channelId: string; botId: string; ownerUserId: string }>();
-  const artifactsBySession = new Map<string, Array<{ id: string; name: string; type: string }>>();
+  const sessions = new Map<
+    string,
+    { id: string; channelId: string; botId: string; ownerUserId: string }
+  >();
+  const artifactsBySession = new Map<
+    string,
+    Array<{ id: string; name: string; type: string }>
+  >();
   return {
     turns,
-    async getOrCreateSession(input: { channelId: string; botId: string; ownerUserId: string }) {
+    async getOrCreateSession(input: {
+      channelId: string;
+      botId: string;
+      ownerUserId: string;
+    }) {
       const existing = [...sessions.values()].find(
         (session) => session.channelId === input.channelId,
       );
@@ -36,15 +46,28 @@ function fakeStore() {
       return [...sessions.values()].find((s) => s.channelId === channelId);
     },
     async touchSession() {},
-    async insertArtifact(input: { sessionId: string; id?: string; type: string; name: string }) {
+    async insertArtifact(input: {
+      sessionId: string;
+      id?: string;
+      type: string;
+      name: string;
+    }) {
       const list = artifactsBySession.get(input.sessionId) ?? [];
-      list.push({ id: input.id ?? `wa_${list.length}`, name: input.name, type: input.type });
+      list.push({
+        id: input.id ?? `wa_${list.length}`,
+        name: input.name,
+        type: input.type,
+      });
       artifactsBySession.set(input.sessionId, list);
     },
     async listArtifacts(sessionId: string) {
       return artifactsBySession.get(sessionId) ?? [];
     },
-    async enqueueTurn(input: { sessionId: string; prompt: string; initiator?: string }) {
+    async enqueueTurn(input: {
+      sessionId: string;
+      prompt: string;
+      initiator?: string;
+    }) {
       const row = {
         id: `wt_${turns.size}`,
         sessionId: input.sessionId,
@@ -57,7 +80,8 @@ function fakeStore() {
         usage: {},
         startedAt: new Date(),
         finishedAt: null,
-        initiator: (input.initiator ?? "person") as WorkshopTurnRow["initiator"],
+        initiator: (input.initiator ??
+          "person") as WorkshopTurnRow["initiator"],
       };
       turns.set(row.id, row as never as WorkshopTurnRow);
       return row as never as WorkshopTurnRow;
@@ -114,7 +138,11 @@ function fakeStore() {
 
 /** An orchestrator that settles turns on a script the test controls. */
 function scriptedOrchestrator(store: ReturnType<typeof fakeStore>) {
-  const enqueued: Array<{ sessionId: string; prompt: string; initiator?: unknown }> = [];
+  const enqueued: Array<{
+    sessionId: string;
+    prompt: string;
+    initiator?: unknown;
+  }> = [];
   let settleAs: (turnId: string) => Promise<void> = async () => undefined;
   const orchestrator: TurnOrchestrator = {
     async enqueue(input) {
@@ -139,9 +167,13 @@ function scriptedOrchestrator(store: ReturnType<typeof fakeStore>) {
     },
     async heartbeat() {},
   };
-  return { orchestrator, enqueued, onSettle: (fn: (turnId: string) => Promise<void>) => {
-    settleAs = fn;
-  } };
+  return {
+    orchestrator,
+    enqueued,
+    onSettle: (fn: (turnId: string) => Promise<void>) => {
+      settleAs = fn;
+    },
+  };
 }
 
 function realBus() {
@@ -179,9 +211,13 @@ describe("run_workshop_turn (the headless tool)", () => {
     });
     if (typeof result === "string") throw new Error(result);
     expect(result.status).toBe("succeeded");
-    expect(result.artifacts).toEqual([{ id: "wa_0", name: "out.csv", type: "csv" }]);
+    expect(result.artifacts).toEqual([
+      { id: "wa_0", name: "out.csv", type: "csv" },
+    ]);
     // The enqueue carried the headless initiator, and the row says headless.
-    expect((enqueued[0]?.initiator as { kind: string } | undefined)?.kind).toBe("handoff");
+    expect((enqueued[0]?.initiator as { kind: string } | undefined)?.kind).toBe(
+      "handoff",
+    );
     expect(store.turns.get(result.turnId)?.initiator).toBe("headless");
   });
 

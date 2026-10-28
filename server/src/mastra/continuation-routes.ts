@@ -167,10 +167,7 @@ export function createMastraContinuationRoutes(deps: {
       { err: error, route: context.req.path },
       "A continuation route failed unexpectedly.",
     );
-    return context.json(
-      { error: "MASTRA_CONTINUATION_ROUTE_FAILED" },
-      500,
-    );
+    return context.json({ error: "MASTRA_CONTINUATION_ROUTE_FAILED" }, 500);
   });
 
   routes.get("/", async (context) => {

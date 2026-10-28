@@ -11,12 +11,8 @@ import {
 } from "../src/billing/ocr-admission";
 import { summarizeCapabilityAvailability } from "../src/gateway/capability-availability";
 import { summarizeVideoSpecAvailability } from "../src/billing/video-spec-availability";
-import {
-  createVideoSubmitService,
-} from "../src/billing/video-submit";
-import {
-  videoTierPriceTableFromSnapshot,
-} from "../src/billing/video-generation-pricing";
+import { createVideoSubmitService } from "../src/billing/video-submit";
+import { videoTierPriceTableFromSnapshot } from "../src/billing/video-generation-pricing";
 
 /*
  * Ticket 11.6 (#301) — unknown OCR prices are never executed as free, and the free/unknown
@@ -58,7 +54,9 @@ const FULL_AMOUNTS: Record<PriceDimension, string> = {
 
 /** Build 03.2-shaped dims: every dimension known by default, the overrides applied. */
 function dims(
-  overrides: Partial<Record<PriceDimension, PriceSnapshotDims[PriceDimension]>> = {},
+  overrides: Partial<
+    Record<PriceDimension, PriceSnapshotDims[PriceDimension]>
+  > = {},
 ): PriceSnapshotDims {
   const base = {} as Record<PriceDimension, PriceSnapshotDims[PriceDimension]>;
   for (const dimension of PRICE_DIMENSIONS) {
@@ -79,13 +77,18 @@ function unknown(): PriceSnapshotDims[PriceDimension] {
 
 /** The three dimensions an OCR call bills, all known — the priced-base fixture. */
 function ocrPriced(
-  overrides: Partial<Record<PriceDimension, PriceSnapshotDims[PriceDimension]>> = {},
+  overrides: Partial<
+    Record<PriceDimension, PriceSnapshotDims[PriceDimension]>
+  > = {},
 ) {
   return dims(overrides);
 }
 
 /** Spies for the door's two seams — the reserve call count and the provider call count. */
-function spies(reserveAnswer?: { status: "reserved" | "refused"; [k: string]: unknown }) {
+function spies(reserveAnswer?: {
+  status: "reserved" | "refused";
+  [k: string]: unknown;
+}) {
   const calls = { reserve: 0, dispatch: 0, freeDispatches: 0 };
   const lastReserve: { request: unknown } = { request: undefined };
   const dependencies: OcrAdmissionDependencies = {
@@ -342,7 +345,10 @@ describe("Bifrost 11.6 (#301): the three-capability availability summary (AC3, A
     const ocr = summary.find((entry) => entry.capability === "ocr");
     expect(ocr?.state).toBe("enabled");
     expect(ocr?.cells).toEqual([
-      { ref: { provider: "p", model: "ocr-good", capability: "ocr" }, free: false },
+      {
+        ref: { provider: "p", model: "ocr-good", capability: "ocr" },
+        free: false,
+      },
     ]);
   });
 
@@ -353,7 +359,10 @@ describe("Bifrost 11.6 (#301): the three-capability availability summary (AC3, A
       snapshots: [
         {
           ref: { provider: "p", model: "m", capability: "embedding" },
-          dims: dims({ image: { status: "known", amount: "0.01" }, input: unknown() }),
+          dims: dims({
+            image: { status: "known", amount: "0.01" },
+            input: unknown(),
+          }),
         },
       ],
     });
@@ -424,22 +433,22 @@ describe("Bifrost 19.2 (#338): unpriced video specs are unavailable, and say why
       ],
     });
     expect(summary.capability).toBe("video");
-    const priced = summary.cells.find(
-      (cell) => cell.ref.model === "veo-cell",
-    );
-    expect(
-      priced?.methods.find((m) => m.method === "generation"),
-    ).toEqual({ method: "generation", state: "enabled", free: false });
+    const priced = summary.cells.find((cell) => cell.ref.model === "veo-cell");
+    expect(priced?.methods.find((m) => m.method === "generation")).toEqual({
+      method: "generation",
+      state: "enabled",
+      free: false,
+    });
     const unpriced = summary.cells.find(
       (cell) => cell.ref.model === "veo-unpriced",
     );
-    expect(
-      unpriced?.methods.find((m) => m.method === "generation"),
-    ).toEqual({
+    expect(unpriced?.methods.find((m) => m.method === "generation")).toEqual({
       method: "generation",
       state: "price_unknown",
       reasonCode: "video_spec_price_unknown",
-      missingDimensions: [{ dimension: "video", reasonCode: "price_dim_no_source" }],
+      missingDimensions: [
+        { dimension: "video", reasonCode: "price_dim_no_source" },
+      ],
     });
   });
 
@@ -455,8 +464,13 @@ describe("Bifrost 19.2 (#338): unpriced video specs are unavailable, and say why
     });
     // The priced cell stays selectable while its sibling refuses: same provider, same
     // capability, different basis — the verdict is the cell's own, never the family's.
-    expect(summary.cells.find((c) => c.ref.model === "veo-cell")?.methods[0].state).toBe("enabled");
-    expect(summary.cells.find((c) => c.ref.model === "veo-unpriced")?.methods[0].state).toBe("price_unknown");
+    expect(
+      summary.cells.find((c) => c.ref.model === "veo-cell")?.methods[0].state,
+    ).toBe("enabled");
+    expect(
+      summary.cells.find((c) => c.ref.model === "veo-unpriced")?.methods[0]
+        .state,
+    ).toBe("price_unknown");
   });
 
   test("a cell with no snapshot at all is unmapped — a different answer than an unknown basis", () => {
@@ -469,7 +483,12 @@ describe("Bifrost 19.2 (#338): unpriced video specs are unavailable, and say why
 
   test("a free basis answers free — a price of zero, never a missing dimension", () => {
     const summary = summarizeVideoSpecAvailability({
-      snapshots: [{ ref: videoRef, dims: dims({ video: { status: "known", amount: "0" } }) }],
+      snapshots: [
+        {
+          ref: videoRef,
+          dims: dims({ video: { status: "known", amount: "0" } }),
+        },
+      ],
     });
     expect(
       summary.cells[0].methods.find((m) => m.method === "generation"),

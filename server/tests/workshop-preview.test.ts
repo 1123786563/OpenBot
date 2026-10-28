@@ -46,7 +46,8 @@ function makeApp(input: {
     canUseBot: async (_actor, botId) =>
       input.allowBot === false ? false : botId.startsWith("bot_"),
     mode: parsePreviewMode(input.mode),
-    allowedDevOrigins: input.origins ?? parseAllowedDevOrigins("http://localhost:5173"),
+    allowedDevOrigins:
+      input.origins ?? parseAllowedDevOrigins("http://localhost:5173"),
     sandbox,
     readArtifactFile: async (_channelId, path) => files[path] ?? null,
     readWebappFile: async () => null,
@@ -72,10 +73,14 @@ describe("the workshop preview door (B15)", () => {
   test("the static road serves the artifact's bytes under the tight CSP", async () => {
     const app = makeApp({ mode: "static" });
     const response = await app.request(
-      new Request(`http://x${PREVIEW}bot_1`, { headers: { origin: "http://localhost:5173" } }),
+      new Request(`http://x${PREVIEW}bot_1`, {
+        headers: { origin: "http://localhost:5173" },
+      }),
     );
     expect(response.status).toBe(200);
-    expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+    expect(response.headers.get("content-security-policy")).toContain(
+      "frame-ancestors 'self'",
+    );
     expect(await response.text()).toContain("artifact");
   });
 
@@ -86,12 +91,18 @@ describe("the workshop preview door (B15)", () => {
   });
 
   test("the dev road's CSP is its own tier: the dev tools in, everything else out", async () => {
-    const app = makeApp({ mode: "devserver", devPort: 4600, origins: ["http://app.test"] });
+    const app = makeApp({
+      mode: "devserver",
+      devPort: 4600,
+      origins: ["http://app.test"],
+    });
     // No real dev server listens at 4600 in tests, so the proxy answers 502 (the fetch
     // refused) — that refusal IS this batch's contract for an unreachable dev road. The CSP
     // tier itself is pinned against the constants both roads serve.
     const response = await app.request(
-      new Request(`http://x${PREVIEW}bot_dev`, { headers: { origin: "http://app.test" } }),
+      new Request(`http://x${PREVIEW}bot_dev`, {
+        headers: { origin: "http://app.test" },
+      }),
     );
     expect([502, 503]).toContain(response.status);
     expect(DEV_CSP_ALLOW_LISTED).toContain("ws: wss:"); // The dev tools in...
@@ -100,9 +111,15 @@ describe("the workshop preview door (B15)", () => {
   });
 
   test("an origin not on the allow-list is refused the dev road", async () => {
-    const app = makeApp({ mode: "devserver", devPort: 4600, origins: ["http://app.test"] });
+    const app = makeApp({
+      mode: "devserver",
+      devPort: 4600,
+      origins: ["http://app.test"],
+    });
     const response = await app.request(
-      new Request(`http://x${PREVIEW}bot_dev`, { headers: { origin: "http://evil.test" } }),
+      new Request(`http://x${PREVIEW}bot_dev`, {
+        headers: { origin: "http://evil.test" },
+      }),
     );
     expect(response.status).toBe(403);
   });
@@ -114,7 +131,11 @@ describe("the workshop preview door (B15)", () => {
   });
 
   test("a websocket upgrade on the dev road forwards to the sandbox passthrough (B15b)", async () => {
-    const app = makeApp({ mode: "devserver", devPort: 4600, origins: ["http://app.test"] });
+    const app = makeApp({
+      mode: "devserver",
+      devPort: 4600,
+      origins: ["http://app.test"],
+    });
     const response = await app.request(
       new Request(`http://x${PREVIEW}bot_dev`, {
         headers: { origin: "http://app.test", upgrade: "websocket" },
@@ -127,7 +148,9 @@ describe("the workshop preview door (B15)", () => {
   test("auto falls back to the static road when the sandbox has no dev server", async () => {
     const app = makeApp({ mode: "auto", devPort: null });
     const response = await app.request(
-      new Request(`http://x${PREVIEW}bot_1`, { headers: { origin: "http://app.test" } }),
+      new Request(`http://x${PREVIEW}bot_1`, {
+        headers: { origin: "http://app.test" },
+      }),
     );
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("artifact");

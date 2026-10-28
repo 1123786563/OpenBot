@@ -17,7 +17,12 @@
  *     通过与拒绝路径；缺 env 显式 skip（带理由），绝不静默回退。
  */
 
-import { beforeEach, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import type { CoverageInventory } from "../../scripts/multitenancy/inventory";
 import { createDatabase } from "../../src/db/client";
 import {

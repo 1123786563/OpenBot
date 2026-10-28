@@ -30,7 +30,17 @@ const KNOWN_FIXED_PORT_FILES = new Set([
 // `--others` is the point: a violation is written before it is staged, and a check that only reads
 // the index passes the run that introduced it. Ignored paths stay out via `--exclude-standard`.
 const files = Bun.spawnSync(
-  ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.ts", "*.tsx"],
+  [
+    "git",
+    "ls-files",
+    "-z",
+    "--cached",
+    "--others",
+    "--exclude-standard",
+    "--",
+    "*.ts",
+    "*.tsx",
+  ],
   { stdout: "pipe" },
 );
 if (files.exitCode !== 0) {
@@ -41,7 +51,9 @@ if (files.exitCode !== 0) {
 }
 
 /** Every top-level `const x = serve({ … })`, located so the reported line is the port's own. */
-function topLevelServeCalls(source: string): { body: string; bodyAt: number }[] {
+function topLevelServeCalls(
+  source: string,
+): { body: string; bodyAt: number }[] {
   const found: { body: string; bodyAt: number }[] = [];
   for (const match of source.matchAll(
     /^const\s+\w+\s*=\s*(?:await\s+)?serve\(\s*\{/gm,
@@ -51,8 +63,10 @@ function topLevelServeCalls(source: string): { body: string; bodyAt: number }[] 
     let cursor = open + 1;
     while (cursor < source.length && depth > 0) {
       const character = source[cursor];
-      if (character === "{" || character === "(" || character === "[") depth += 1;
-      else if (character === "}" || character === ")" || character === "]") depth -= 1;
+      if (character === "{" || character === "(" || character === "[")
+        depth += 1;
+      else if (character === "}" || character === ")" || character === "]")
+        depth -= 1;
       cursor += 1;
     }
     found.push({ bodyAt: open + 1, body: source.slice(open + 1, cursor - 1) });
@@ -64,13 +78,17 @@ let bad = 0;
 for (const file of new TextDecoder()
   .decode(files.stdout)
   .split("\0")
-  .filter((path) => /(^|\/)tests?\//.test(path) && /\.test\.tsx?$/.test(path))) {
+  .filter(
+    (path) => /(^|\/)tests?\//.test(path) && /\.test\.tsx?$/.test(path),
+  )) {
   if (KNOWN_FIXED_PORT_FILES.has(file)) continue;
   const source = await Bun.file(file).text();
   for (const { body, bodyAt } of topLevelServeCalls(source)) {
     const literal = /port:\s*(\d{2,5})\b/.exec(body);
     if (!literal) continue;
-    const line = source.slice(0, bodyAt + (literal.index ?? 0)).split("\n").length;
+    const line = source
+      .slice(0, bodyAt + (literal.index ?? 0))
+      .split("\n").length;
     console.error(
       `::error::${file}:${line} binds port ${literal[1]} at module scope, so any run that loads this file owns that port.`,
     );

@@ -269,9 +269,13 @@ export async function uploadWorkshopFiles(
 ): Promise<{ uploaded: number }> {
   const body = new FormData();
   for (const file of files) body.append("files", file, file.name);
-  const response = await clientUpload(workshopPath(channelId, "/files/upload"), body, {
-    ...(scope ?? {}),
-  });
+  const response = await clientUpload(
+    workshopPath(channelId, "/files/upload"),
+    body,
+    {
+      ...(scope ?? {}),
+    },
+  );
   if (!response.ok) {
     const reason = (await response.json().catch(() => null)) as {
       error?: string;

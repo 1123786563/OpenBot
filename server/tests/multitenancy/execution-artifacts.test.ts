@@ -20,11 +20,11 @@ import {
   describe,
   expect,
   test,
-} from "../../../tests/support/e2e-compat";
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { createDatabase, type Database } from "../../src/db/client";
+import { createDatabase } from "../../src/db/client";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import {
   assertTrustedExecutionGrant,
@@ -43,7 +43,6 @@ import {
 import { notFoundVerdict } from "../../src/enterprise/tenancy/not-found-semantics";
 import { assertTrustedScope } from "../../src/enterprise/tenancy/store";
 import {
-  buildPlan,
   type RunOutcome,
   resolveTestDatabaseTarget,
   runMigrateTest,
@@ -52,10 +51,7 @@ import {
   verifyDataDatabase,
   type DataDatabase,
 } from "../../src/enterprise/tenancy/connections";
-import {
-  enterpriseRuntimeDatabaseUrlFrom,
-  enterpriseTestDatabaseUrlFrom,
-} from "../support/enterprise-database";
+import { enterpriseRuntimeDatabaseUrlFrom } from "../support/enterprise-database";
 import {
   createBotsOwnershipFixture,
   type BotsOwnershipFixture,

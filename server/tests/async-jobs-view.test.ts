@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import {
@@ -9,12 +14,10 @@ import {
 } from "../src/billing/async-jobs-view";
 import { createAsyncCancelService } from "../src/billing/async-cancel";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
-import {
-  createAsyncTerminalSettleService,
-} from "../src/billing/async-terminal";
+import { createAsyncTerminalSettleService } from "../src/billing/async-terminal";
 import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
-import { createPayerAccount, payerKey } from "../src/billing/payer";
+import { createPayerAccount } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
 import {
   createBillingAdminRoutes,
@@ -104,7 +107,10 @@ function makeAudit() {
   return {
     events,
     store: {
-      insert: async (event: { eventType: string; payload: Record<string, unknown> }) => {
+      insert: async (event: {
+        eventType: string;
+        payload: Record<string, unknown>;
+      }) => {
         events.push({ eventType: event.eventType, payload: event.payload });
       },
     },
@@ -137,7 +143,9 @@ type World = {
 
 let seedCounter = 0;
 
-async function seedJobWorld(options: { dispatch?: "answer" | "lose" } = {}): Promise<World> {
+async function seedJobWorld(
+  options: { dispatch?: "answer" | "lose" } = {},
+): Promise<World> {
   const n = ++seedCounter;
   const userId = `${prefix}-user-${n}`;
   const botId = `${prefix}-bot-${n}`;
@@ -248,7 +256,11 @@ async function settleWorld(world: World) {
   const usage = Object.fromEntries(
     Object.keys(V1_AMOUNTS).map((dimension) => [
       dimension,
-      dimension === "video" ? 25 : dimension === "surcharge_per_request" ? 1 : 0,
+      dimension === "video"
+        ? 25
+        : dimension === "surcharge_per_request"
+          ? 1
+          : 0,
     ]),
   );
   const settled = await terminalService.settleTerminal({
@@ -288,7 +300,10 @@ function requireUserAs(
   };
 }
 
-function actorOf(world: World, role: "user" | "admin" = "user"): AuthenticatedActor {
+function actorOf(
+  world: World,
+  role: "user" | "admin" = "user",
+): AuthenticatedActor {
   return {
     id: world.userId,
     email: `${world.userId}@example.test`,
@@ -363,7 +378,8 @@ describe("17.8 — the code table is derived from the facts 17.1–17.7 hold", (
       }),
     ).toEqual({
       status: "cancelled",
-      statusReason: "released on the provider's unbilled cancellation confirmation",
+      statusReason:
+        "released on the provider's unbilled cancellation confirmation",
     });
   });
 });
@@ -383,9 +399,9 @@ describe("17.8 AC-1/AC-3 — the person's own jobs: state, reason, amounts", () 
     });
 
     const byState = new Map(
-      (await view.asyncJobsForPayer({ kind: "personal", id: running.userId })).map(
-        (row) => [row.jobId, row],
-      ),
+      (
+        await view.asyncJobsForPayer({ kind: "personal", id: running.userId })
+      ).map((row) => [row.jobId, row]),
     );
     // The five states share one payer (distinct worlds per state but one read): read each
     // world's payer separately to keep the ownership story simple, then assert by jobId.
@@ -462,7 +478,10 @@ describe("17.8 AC-2 — a key that died after the submit changes nothing the vie
 });
 
 describe("17.8 AC-4 — the doors keep their own rules", () => {
-  function writeCountingDatabase(target: Database): { database: Database; writes: string[] } {
+  function writeCountingDatabase(target: Database): {
+    database: Database;
+    writes: string[];
+  } {
     const writes: string[] = [];
     const proxy = new Proxy(target, {
       get(object, property) {
@@ -474,7 +493,12 @@ describe("17.8 AC-4 — the doors keep their own rules", () => {
         ) {
           return (...args: unknown[]) => {
             writes.push(String(property));
-            return (object as unknown as Record<string | symbol, (...a: unknown[]) => unknown>)[property](...args);
+            return (
+              object as unknown as Record<
+                string | symbol,
+                (...a: unknown[]) => unknown
+              >
+            )[property](...args);
           };
         }
         const value = Reflect.get(object, property, target);
@@ -498,7 +522,9 @@ describe("17.8 AC-4 — the doors keep their own rules", () => {
       createBillingCreditRoutes({
         credits,
         requireUser: requireUserAs(actorOf(mine)),
-        asyncJobsView: createAsyncJobsViewService({ database: counted.database }),
+        asyncJobsView: createAsyncJobsViewService({
+          database: counted.database,
+        }),
       }),
     );
     const response = await app.request("/api/billing/credits/async-jobs");
@@ -546,12 +572,16 @@ describe("17.8 AC-4 — the doors keep their own rules", () => {
       (
         context: Context<{ Variables: AppVariables }>,
       ): Context<{ Variables: AppVariables }>["res"] | undefined =>
-        allowed ? undefined : context.json({ error: "Administrator access required." }, 403);
+        allowed
+          ? undefined
+          : context.json({ error: "Administrator access required." }, 403);
     const adminApp = (allowed: boolean) =>
       new Hono<{ Variables: AppVariables }>().route(
         "/api/admin/billing",
         createBillingAdminRoutes({
-          service: { entitlements: async () => ({ active: [], codes: [] }) } as never,
+          service: {
+            entitlements: async () => ({ active: [], codes: [] }),
+          } as never,
           requireUser: requireUserAs(adminActor),
           requireAdmin: requireAdmin(allowed),
           externalCustomerKey: deploymentKey,
@@ -562,7 +592,9 @@ describe("17.8 AC-4 — the doors keep their own rules", () => {
       );
 
     // A non-administrator probe: denied, audited, nothing shown.
-    const denied = await adminApp(false).request("/api/admin/billing/async-jobs");
+    const denied = await adminApp(false).request(
+      "/api/admin/billing/async-jobs",
+    );
     expect(denied.status).toBe(403);
     expect(audit.events.map((event) => event.eventType)).toEqual([
       "billing.async_jobs.review_denied",
@@ -583,7 +615,9 @@ describe("17.8 AC-4 — the doors keep their own rules", () => {
     const byStatus = await adminApp(true).request(
       `/api/admin/billing/async-jobs?payerId=${cancelled.userId}&status=cancelled`,
     );
-    const statusBody = (await byStatus.json()) as { jobs: { jobId: string; status: string }[] };
+    const statusBody = (await byStatus.json()) as {
+      jobs: { jobId: string; status: string }[];
+    };
     expect(statusBody.jobs).toHaveLength(1);
     expect(statusBody.jobs[0]).toMatchObject({
       jobId: cancelled.jobId,

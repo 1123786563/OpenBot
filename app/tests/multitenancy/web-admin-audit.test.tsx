@@ -38,7 +38,10 @@ import {
   selectWorkspaceScope,
   storeSelection,
 } from "../../src/lib/enterprise/tenant/selection";
-import { scopedCachePrefix, useScopedCache } from "../../src/lib/enterprise/tenant/scoped-cache";
+import {
+  scopedCachePrefix,
+  useScopedCache,
+} from "../../src/lib/enterprise/tenant/scoped-cache";
 
 /**
  * MT096 / Issue #139: the audit, enterprise-settings and learning surfaces open by capability,
@@ -111,7 +114,8 @@ const LEARNING_ANSWER = {
   ],
 };
 
-const EXPORT_CSV = "id,domain,eventType,actorId,targetId,createdAt\ne-1,business,company_member.promoted,prin-admin,prin-2,2026-10-21T10:00:00.000Z\n";
+const EXPORT_CSV =
+  "id,domain,eventType,actorId,targetId,createdAt\ne-1,business,company_member.promoted,prin-admin,prin-2,2026-10-21T10:00:00.000Z\n";
 
 beforeAll(() => {
   GlobalRegistrator.register();
@@ -139,7 +143,9 @@ function jsonResponse(status: number, body: unknown): Response {
  * The audit/config/learning answers, with per-surface refusal switches. A tenant the reader
  * cannot see (globex) answers the typed 403s the invisible-not-error discipline names.
  */
-function serve(options: { auditStatus?: number; configStatus?: number } = {}): void {
+function serve(
+  options: { auditStatus?: number; configStatus?: number } = {},
+): void {
   asked = [];
   global.fetch = (async (
     input: RequestInfo | URL,
@@ -186,7 +192,10 @@ function serve(options: { auditStatus?: number; configStatus?: number } = {}): v
   }) as unknown as typeof fetch;
 }
 
-function headerOf(init: RequestInit | undefined, name: string): string | undefined {
+function headerOf(
+  init: RequestInit | undefined,
+  name: string,
+): string | undefined {
   const headers = init?.headers;
   if (headers === undefined || headers === null) return undefined;
   if (headers instanceof Headers) return headers.get(name) ?? undefined;
@@ -272,7 +281,8 @@ function LearningProbe() {
 }
 
 /** The identity translation: the section list's labels are the keys themselves here. */
-const tIdentity = ((key: string): string => key) as unknown as TFunction<"company-admin">;
+const tIdentity = ((key: string): string =>
+  key) as unknown as TFunction<"company-admin">;
 
 describe("MT096 company audit / enterprise / learning surfaces (Issue #139)", () => {
   test("AC1: the audit query carries the pair and files under the scope's own prefix", async () => {
@@ -372,10 +382,7 @@ describe("MT096 company audit / enterprise / learning surfaces (Issue #139)", ()
       selectWorkspaceScope(queryClient, USER, ACME, GLOBEX);
     });
     cleanup();
-    const refused = draw(
-      queryClient,
-      <ConfigProbe />,
-    );
+    const refused = draw(queryClient, <ConfigProbe />);
     await waitFor(() => {
       expect(refused.getByTestId("config-state").textContent).toBe("refused");
     });
@@ -389,7 +396,7 @@ describe("MT096 company audit / enterprise / learning surfaces (Issue #139)", ()
     await waitFor(() => {
       expect(view.getByTestId("learning-state").textContent).toBe(
         "mt040-container-acme",
-    );
+      );
     });
     const read = asked.find((entry) => entry.input.endsWith("/admin/learning"));
     expect(headerOf(read?.init, "x-openbot-workspace")).toBe("acme-finance");

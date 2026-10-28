@@ -21,7 +21,13 @@
 // ENABLE/FORCE RLS 再断言 + 会话级上下文清理函数）都经 MT003 工具
 // （migrate-test.ts）真实执行，本文件不自己 DDL。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

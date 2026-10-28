@@ -4,12 +4,11 @@ import {
 } from "../../scripts/enterprise-test-db-guard";
 
 const TEST_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
-export const ROLE_DATABASE_VARIABLES: Record<EnterpriseRuntimeRole, string> =
-  {
-    directory: "ENTERPRISE_TEST_DIRECTORY_DATABASE_URL",
-    data: "ENTERPRISE_TEST_DATA_DATABASE_URL",
-    operator: "ENTERPRISE_TEST_OPERATOR_DATABASE_URL",
-  };
+export const ROLE_DATABASE_VARIABLES: Record<EnterpriseRuntimeRole, string> = {
+  directory: "ENTERPRISE_TEST_DIRECTORY_DATABASE_URL",
+  data: "ENTERPRISE_TEST_DATA_DATABASE_URL",
+  operator: "ENTERPRISE_TEST_OPERATOR_DATABASE_URL",
+};
 export type { EnterpriseRuntimeRole };
 
 // Runtime LOGIN roles are each granted exactly one NOLOGIN capability role. The PostgreSQL

@@ -206,7 +206,11 @@ async function seedRecoveryItem(
       queriedAt: new Date(),
     });
   }
-  return { reservationId: reserved.reservationId, itemId: item.id, evidenceIds };
+  return {
+    reservationId: reserved.reservationId,
+    itemId: item.id,
+    evidenceIds,
+  };
 }
 
 /** The disposal command as the wire carries it (operatorId is the route's own override). */
@@ -225,7 +229,8 @@ function disposalBody(
     evidence: { queryId: overrides.queryId },
     expectedVersion: overrides.expectedVersion ?? 1,
     idempotencyKey:
-      overrides.idempotencyKey ?? `${prefix}-disposal-${randomUUID().slice(0, 8)}`,
+      overrides.idempotencyKey ??
+      `${prefix}-disposal-${randomUUID().slice(0, 8)}`,
     ...(overrides.reason !== undefined ? { reason: overrides.reason } : {}),
   };
 }
@@ -237,7 +242,10 @@ async function auditRowsOf(eventType: string, targetId: string) {
     .select()
     .from(auditEvents)
     .where(
-      and_(eq(auditEvents.eventType, eventType), eq(auditEvents.targetId, targetId)),
+      and_(
+        eq(auditEvents.eventType, eventType),
+        eq(auditEvents.targetId, targetId),
+      ),
     );
 }
 
@@ -261,7 +269,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -286,9 +297,7 @@ afterAll(async () => {
     .where(like(botServices.botId, `${prefix}%`));
   // The audit trail is append-only by database trigger (like every sibling suite, the
   // audit assertions are scoped by per-run target ids, not cleaned up here).
-  await database
-    .delete(users)
-    .where(like(users.id, `${prefix}%`));
+  await database.delete(users).where(like(users.id, `${prefix}%`));
   await database.$client.close();
 });
 
@@ -301,7 +310,10 @@ test("a compensation absorbs the loss under its own audit type, never as a no-ch
     { conclusion: "still_unknown", summary: "provider has no record" },
   ]);
   const relItem = await seedRecoveryItem(released, [
-    { conclusion: "no_charge_evidence", summary: "provider confirms never billed" },
+    {
+      conclusion: "no_charge_evidence",
+      summary: "provider confirms never billed",
+    },
   ]);
 
   // The release first, so its audit row exists to distinguish against.
@@ -353,12 +365,20 @@ test("a compensation absorbs the loss under its own audit type, never as a no-ch
     `platform_compensation:${compItem.evidenceIds[0]}`,
   );
   expect(hold.released).toBe(500);
-  expect(await writer.availableBalance(compensated.customerKey)).toBe(GRANT_TOTAL);
+  expect(await writer.availableBalance(compensated.customerKey)).toBe(
+    GRANT_TOTAL,
+  );
   expect(await ledgerRows(compensated.customerKey)).toHaveLength(0);
 
   // 补偿与释放分别产生不同审计类型：two distinct event types, one row each.
-  const compensatedEvents = await auditRowsOf("billing.recovery.compensated", compItem.itemId);
-  const disposedEvents = await auditRowsOf("billing.recovery.disposed", relItem.itemId);
+  const compensatedEvents = await auditRowsOf(
+    "billing.recovery.compensated",
+    compItem.itemId,
+  );
+  const disposedEvents = await auditRowsOf(
+    "billing.recovery.disposed",
+    relItem.itemId,
+  );
   expect(compensatedEvents).toHaveLength(1);
   expect(disposedEvents).toHaveLength(1);
   const payload = compensatedEvents[0]?.payload as Record<string, unknown>;
@@ -412,7 +432,10 @@ test("a compensation stands on still_unknown only, and only with a recorded reas
     },
   ]);
   const noChargeItem = await seedRecoveryItem(world, [
-    { conclusion: "no_charge_evidence", summary: "provider confirms never billed" },
+    {
+      conclusion: "no_charge_evidence",
+      summary: "provider confirms never billed",
+    },
   ]);
   const unknownItem = await seedRecoveryItem(world, [
     { conclusion: "still_unknown", summary: "provider unreachable" },

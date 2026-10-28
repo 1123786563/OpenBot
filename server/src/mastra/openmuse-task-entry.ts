@@ -73,9 +73,11 @@ export function openMuseTaskSchedulingRecordFor(options: {
       const running = steps.find((step) => {
         if (!step || typeof step !== "object") return false;
         const candidate = step as Partial<OpenMuseTaskStep>;
-        return candidate.status === "running" &&
+        return (
+          candidate.status === "running" &&
           typeof candidate.title === "string" &&
-          candidate.title.trim().length > 0;
+          candidate.title.trim().length > 0
+        );
       }) as OpenMuseTaskStep | undefined;
       if (!running) return null;
       instruction = running.title;

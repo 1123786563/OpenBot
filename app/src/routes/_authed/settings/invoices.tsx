@@ -43,8 +43,6 @@ import {
   type BillingInvoice,
   BillingUnavailableError,
   type InvoiceWindow,
-  invoiceDetailQueryOptions,
-  invoicesQueryOptions,
 } from "@/lib/billing/invoices";
 import {
   scopedInvoiceDetailQueryOptions,

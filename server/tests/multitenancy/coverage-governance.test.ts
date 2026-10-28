@@ -41,7 +41,7 @@ import {
   buildInventory,
   type CoverageInventory,
 } from "../../scripts/multitenancy/inventory";
-import { createDatabase, type Database } from "../../src/db/client";
+import { createDatabase } from "../../src/db/client";
 import { aiObservationBindings } from "../../src/db/schema/ai-observability-bindings";
 import {
   authorizeCompanyManagementAction,
@@ -70,19 +70,12 @@ import {
   type TraceBindingReader,
 } from "../../src/enterprise/tenancy/observability-authz";
 import { enterpriseRuntimeDatabaseUrlFrom } from "../support/enterprise-database";
+import { createAdminSeparationFixture } from "./support/admin-separation";
 import {
-  type AdminSeparationFixture,
-  createAdminSeparationFixture,
-} from "./support/admin-separation";
-import {
-  type AuditDomainsFixture,
   createAuditDomainsFixture,
   probeAuditDomainsEnvironment,
 } from "./support/audit-domains";
-import {
-  createBotsOwnershipFixture,
-  type BotsOwnershipFixture,
-} from "./support/bots-ownership";
+import { createBotsOwnershipFixture } from "./support/bots-ownership";
 import {
   adapterFromScenarios,
   requireEntrance,
@@ -269,7 +262,8 @@ const governanceScenarios: ScenarioMap = {
       entranceOf("GET /api/admin/status"),
     );
     return denyObservation(
-      decision.outcome === "deny" && decision.code === "PLATFORM_ADMIN_REQUIRED",
+      decision.outcome === "deny" &&
+        decision.code === "PLATFORM_ADMIN_REQUIRED",
     );
   },
 
@@ -602,7 +596,11 @@ describeDb("MT138 / Issue #181 — 覆盖证据：治理、审计与观测出口
         expect(created.outcome).toBe("allow");
 
         // 1) 公司查询门：本人公司 Bot allow；跨公司/不存在 = 同形 not-found。
-        const own = await authorizeCompanyObservationSubject(data, scope, agentId);
+        const own = await authorizeCompanyObservationSubject(
+          data,
+          scope,
+          agentId,
+        );
         expect(own.outcome).toBe("allowed");
         const bScope = await fixture.scopeAs(
           "b1-member",
@@ -676,13 +674,20 @@ describeDb("MT138 / Issue #181 — 覆盖证据：治理、审计与观测出口
                 scopeKey: aiObservationBindings.scopeKey,
               })
               .from(aiObservationBindings)
-              .where(sql`${aiObservationBindings.opikTraceId} = ${opikTraceId}`);
+              .where(
+                sql`${aiObservationBindings.opikTraceId} = ${opikTraceId}`,
+              );
             return rows;
           },
         };
-        const opened = await authorizeTraceLinkOpen(data, bindingReader, scope, {
-          opikTraceId: traceId,
-        });
+        const opened = await authorizeTraceLinkOpen(
+          data,
+          bindingReader,
+          scope,
+          {
+            opikTraceId: traceId,
+          },
+        );
         expect(opened.outcome).toBe("allowed");
         const crossOpen = await authorizeTraceLinkOpen(
           data,
@@ -726,12 +731,17 @@ describeDb("MT138 / Issue #181 — 覆盖证据：治理、审计与观测出口
       // 就绪面以真实 MT001 清单的 externalDependencies 对账（闭集对齐：
       // 注册表与清单互相 unmatched 即阻塞项，显式可见）。
       const readiness = integrationEvidenceReadiness(
-        inventory.externalDependencies.map((dep) => ({ dependency: dep.dependency })),
+        inventory.externalDependencies.map((dep) => ({
+          dependency: dep.dependency,
+        })),
       );
       // 闭集分类：每个集成恰好一类；enabled-* 必须给出真实 basisRefs。
       for (const entry of INTEGRATION_EVIDENCE) {
-        expect(["enabled-verified", "enabled-unverified", "not-implemented"])
-          .toContain(entry.classification);
+        expect([
+          "enabled-verified",
+          "enabled-unverified",
+          "not-implemented",
+        ]).toContain(entry.classification);
         if (entry.classification.startsWith("enabled-")) {
           expect(entry.basisRefs.length).toBeGreaterThan(0);
           for (const ref of entry.basisRefs) {

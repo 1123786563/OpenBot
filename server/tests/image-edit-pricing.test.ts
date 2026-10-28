@@ -181,9 +181,9 @@ describe("probeImageSpec", () => {
   test("legal data-URL spellings are not refused: MIME parameters and case", () => {
     const png = pngDataUrl(64, 32);
     const bare = png.slice("data:image/png;base64,".length);
-    expect(probeImageSpec(`data:image/png;charset=utf-8;base64,${bare}`)).toEqual(
-      { format: "png", width: 64, height: 32 },
-    );
+    expect(
+      probeImageSpec(`data:image/png;charset=utf-8;base64,${bare}`),
+    ).toEqual({ format: "png", width: 64, height: 32 });
     expect(probeImageSpec(`data:image/PNG;base64,${bare}`)).toEqual({
       format: "png",
       width: 64,
@@ -244,12 +244,12 @@ describe("imageEditSpecOf", () => {
       issue: { code: "image_spec_indeterminable", field: "mask" },
     });
     // A payload that is not an image this server can read.
-    expect(imageEditSpecOf({ image: "data:image/png;base64,aGVsbG8=" })).toEqual(
-      {
-        ok: false,
-        issue: { code: "image_spec_indeterminable", field: "image" },
-      },
-    );
+    expect(
+      imageEditSpecOf({ image: "data:image/png;base64,aGVsbG8=" }),
+    ).toEqual({
+      ok: false,
+      issue: { code: "image_spec_indeterminable", field: "image" },
+    });
     // An edit with no input images at all is not an edit.
     expect(imageEditSpecOf({ n: 1 })).toEqual({
       ok: false,

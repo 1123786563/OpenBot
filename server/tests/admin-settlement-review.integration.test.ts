@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, count, eq, like } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -10,7 +15,12 @@ import { createBillingAdminRoutes } from "../src/billing/routes";
 import { createRecoveryScanner } from "../src/billing/recovery-scan";
 import type { BillingService } from "../src/billing/types";
 import { createDatabase } from "../src/db/client";
-import { accessGrants, auditEvents, botServices, usageOutbox } from "../src/db/schema";
+import {
+  accessGrants,
+  auditEvents,
+  botServices,
+  usageOutbox,
+} from "../src/db/schema";
 import {
   creditRecoveryAlerts,
   creditRecoveryItems,
@@ -130,7 +140,11 @@ async function seedReviewedItem(
   options?: {
     detectedMsAgo?: number;
     failures?: number;
-    evidence?: { conclusion: "settled_evidence" | "no_charge_evidence" | "still_unknown"; summary: string; usage?: { input: number; output: number } }[];
+    evidence?: {
+      conclusion: "settled_evidence" | "no_charge_evidence" | "still_unknown";
+      summary: string;
+      usage?: { input: number; output: number };
+    }[];
   },
 ) {
   const reserved = await writer.reserveCredits({
@@ -180,8 +194,8 @@ async function seedReviewedItem(
       usageInput: evidence.usage?.input ?? null,
       usageOutput: evidence.usage?.output ?? null,
       queriedAt: new Date(
-          Date.now() - ((options?.evidence?.length ?? 1) - i) * 60_000,
-        ),
+        Date.now() - ((options?.evidence?.length ?? 1) - i) * 60_000,
+      ),
     });
   }
   return { reservationId: reserved.reservationId, itemId: item.id };
@@ -216,7 +230,9 @@ type ReviewResponse = {
 };
 
 async function getReview(actor: AuthenticatedActor | undefined) {
-  const response = await appAs(actor).request("/api/admin/billing/recovery-items");
+  const response = await appAs(actor).request(
+    "/api/admin/billing/recovery-items",
+  );
   const body = (await response.json()) as unknown;
   return { response, body: body as ReviewResponse };
 }
@@ -247,7 +263,8 @@ describe("the administrator's settlement-anomaly review (Bifrost 08.8)", () => {
       evidence: [
         {
           conclusion: "still_unknown",
-          summary: "provider has no record of attempt; query timed out once before",
+          summary:
+            "provider has no record of attempt; query timed out once before",
         },
         {
           conclusion: "settled_evidence",
@@ -264,13 +281,16 @@ describe("the administrator's settlement-anomaly review (Bifrost 08.8)", () => {
     const { response, body } = await getReview(ADMIN);
     expect(response.status).toBe(200);
 
-    const mine = body.items.filter((item) =>
-      item.accountRef === world.customerKey,
+    const mine = body.items.filter(
+      (item) => item.accountRef === world.customerKey,
     );
     expect(mine).toHaveLength(2);
 
     // 按状态与停留时长排序: same state, the OLDER anomaly reads first.
-    expect(mine.map((item) => item.itemId)).toEqual([older.itemId, newer.itemId]);
+    expect(mine.map((item) => item.itemId)).toEqual([
+      older.itemId,
+      newer.itemId,
+    ]);
 
     const subject = mine[0];
     expect(subject.reservationId).toBe(older.reservationId);
@@ -294,7 +314,10 @@ describe("the administrator's settlement-anomaly review (Bifrost 08.8)", () => {
     const { reservationId, itemId } = await seedReviewedItem(world, {
       failures: 1,
       evidence: [
-        { conclusion: "still_unknown", summary: "no record on the provider side" },
+        {
+          conclusion: "still_unknown",
+          summary: "no record on the provider side",
+        },
       ],
     });
 
@@ -391,7 +414,10 @@ describe("the administrator's settlement-anomaly review (Bifrost 08.8)", () => {
     await seedReviewedItem(world, {
       failures: 1,
       evidence: [
-        { conclusion: "still_unknown", summary: "provider log lookup: no rows" },
+        {
+          conclusion: "still_unknown",
+          summary: "provider log lookup: no rows",
+        },
       ],
     });
 

@@ -6,7 +6,13 @@
 // is one short runner pass per file. The result partitions the corpus into suites the runner loads
 // natively and suites that are stuck on the Bun runtime.
 import { spawn } from "node:child_process";
-import { readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -119,6 +125,7 @@ async function worker() {
 await Promise.all(Array.from({ length: concurrency }, worker));
 results.sort((a, b) => a.file.localeCompare(b.file));
 
+mkdirSync(join(root, "archive/verification"), { recursive: true });
 writeFileSync(
   join(root, "archive/verification/e2e-file-audit.json"),
   JSON.stringify(results, null, 1),

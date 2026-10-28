@@ -192,7 +192,9 @@ describe("probeGateway — the five answers, never one blur of failure", () => {
     // Headers arrive at once; the body stream never produces a byte.
     const stallingBody = new ReadableStream<Uint8Array>({ start() {} });
     const fetchImpl: typeof fetch = (() =>
-      Promise.resolve(new Response(stallingBody, { status: 200 }))) as typeof fetch;
+      Promise.resolve(
+        new Response(stallingBody, { status: 200 }),
+      )) as typeof fetch;
     const service = createGatewayProbeService({
       store,
       readGatewayEndpoint: async () => ({ ...CONFIG, requestTimeoutMs: 60 }),

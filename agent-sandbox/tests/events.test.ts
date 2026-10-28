@@ -7,8 +7,7 @@ import {
 
 /** The captured samples, verbatim modulo id/path redaction — docs/sse-samples.md holds them. */
 const SAMPLES = {
-  serverConnected:
-    '{"id":"evt_1","type":"server.connected","properties":{}}',
+  serverConnected: '{"id":"evt_1","type":"server.connected","properties":{}}',
   heartbeat: '{"id":"evt_2","type":"server.heartbeat","properties":{}}',
   partDelta:
     '{"id":"evt_3","type":"message.part.delta","properties":{"sessionID":"ses_S","messageID":"msg_S","partID":"prt_S","field":"text","delta":"2+2 等于 4。"}}',
@@ -26,7 +25,8 @@ const SAMPLES = {
     '{"id":"evt_9","type":"session.idle","properties":{"sessionID":"ses_S"}}',
   fileEdited:
     '{"id":"evt_10","type":"file.edited","properties":{"file":"/workspace/bots/bot/write_csv.py"}}',
-  pluginAdded: '{"id":"evt_11","type":"plugin.added","properties":{"id":"xai"}}',
+  pluginAdded:
+    '{"id":"evt_11","type":"plugin.added","properties":{"id":"xai"}}',
 };
 
 describe("SANDBOX_EVENT_TYPES", () => {
@@ -99,7 +99,9 @@ describe("parseSandboxEvent", () => {
     const event = parseSandboxEvent(future);
     expect(event.type).toBe("unknown");
     // The payload survives, so a later version can add the type without losing the data.
-    expect((event as { raw: { type: string } }).raw.type).toBe("subagent.spawned");
+    expect((event as { raw: { type: string } }).raw.type).toBe(
+      "subagent.spawned",
+    );
   });
 
   test("every captured sample parses without throwing", () => {
@@ -111,7 +113,9 @@ describe("parseSandboxEvent", () => {
 
 describe("familyOf — the five product families from the capture", () => {
   test("text deltas are message_chunk", () => {
-    expect(familyOf(parseSandboxEvent(SAMPLES.partDelta))).toBe("message_chunk");
+    expect(familyOf(parseSandboxEvent(SAMPLES.partDelta))).toBe(
+      "message_chunk",
+    );
   });
 
   test("reasoning parts are thought; tool parts are tool_call", () => {

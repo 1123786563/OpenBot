@@ -1,7 +1,7 @@
 import { IconDots, IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { z } from "zod";
 import { DetailPanel } from "@/components/layout/detail-panel";
@@ -83,7 +83,11 @@ function SkillsPage() {
    */
   const loading = skillsPending || mePending;
   const [error, setError] = useState<string | null>(null);
-  const draftKey = showCreate ? "new" : editingSlug ? `edit:${editingSlug}` : "";
+  const draftKey = showCreate
+    ? "new"
+    : editingSlug
+      ? `edit:${editingSlug}`
+      : "";
   const [skillDraft, setSkillDraft] = useState<{
     key: string;
     values: SkillFormValues;

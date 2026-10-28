@@ -9,7 +9,17 @@
  * EVERY QUERY IS NARROWED TO THE PERSON FIRST. A public Bot works for many people; this screen shows
  * the work done in the caller's name and nothing of anybody else's.
  */
-import { and, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { HANDOFF_KIND } from "../agents/handoff";
 import { WAKE_UP_KIND, type WakeUpPayload } from "../agents/wake-up";
 import type { Database } from "../db/client";
@@ -342,12 +352,11 @@ export function createActivityStore(database: Database) {
           hop.leaseUntil.getTime() > now;
         // The final attempt still holding its lease is executing, not given up on.
         const gaveUp =
-          !hop.finishedAt &&
-          !running &&
-          hop.attempts >= DEFAULT_MAX_ATTEMPTS;
+          !hop.finishedAt && !running && hop.attempts >= DEFAULT_MAX_ATTEMPTS;
         let status: string;
         if (hop.finishedAt)
-          status = hop.lastError === STOPPED_BY_PERSON ? "stopped" : "delivered";
+          status =
+            hop.lastError === STOPPED_BY_PERSON ? "stopped" : "delivered";
         else if (gaveUp) status = "failed";
         else if (running) status = "running";
         else if (hop.attempts > 0) status = "retrying";

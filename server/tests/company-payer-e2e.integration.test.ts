@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -6,13 +11,20 @@ import type { Database } from "../src/db/client";
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
-import { createPayerAccount, payerKey, type PayerRef } from "../src/billing/payer";
+import {
+  createPayerAccount,
+  payerKey,
+  type PayerRef,
+} from "../src/billing/payer";
 import {
   currentPayerBinding,
   resolveConsumptionPayerBinding,
   withPayerBinding,
 } from "../src/billing/payer-binding";
-import { createCreditWriter, type CreditAmount } from "../src/billing/credits-writer";
+import {
+  createCreditWriter,
+  type CreditAmount,
+} from "../src/billing/credits-writer";
 import { createUsageOutbox } from "../src/billing/usage-outbox";
 import {
   createWorkbenchPayerMiddleware,
@@ -215,8 +227,15 @@ describe("the workbench middleware binds the company payer and the scope facts",
     const response = await app.request("/probe");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      binding: { payer: { kind: string; id: string }; externalCustomerId: string } | null;
-      scope: { tenantId: string; workspaceId: string; principalId: string } | null;
+      binding: {
+        payer: { kind: string; id: string };
+        externalCustomerId: string;
+      } | null;
+      scope: {
+        tenantId: string;
+        workspaceId: string;
+        principalId: string;
+      } | null;
     };
     expect(body.binding?.payer.kind).toBe("company");
     expect(body.binding?.payer.id).toBe(tenantId);
@@ -264,7 +283,10 @@ describe("a company workbench call bills the company account through the whole c
       // The gate's first move: ONE resolution, request-bound payer used as-is.
       const resolved = resolveConsumptionPayerBinding({
         requestBinding: currentPayerBinding(),
-        deploymentBinding: { ...binding, externalCustomerId: "deployment-should-not-win" },
+        deploymentBinding: {
+          ...binding,
+          externalCustomerId: "deployment-should-not-win",
+        },
       });
       expect(resolved.externalCustomerId).toBe(companyKey);
 
@@ -288,8 +310,7 @@ describe("a company workbench call bills the company account through the whole c
         model: "test-model",
         client: "web",
         occurredAt: new Date(),
-        reservationId:
-          held.reserved === true ? held.reservationId : null,
+        reservationId: held.reserved === true ? held.reservationId : null,
         actualCostNumerator: "15033",
         actualCostDenominator: "100",
         botId: null,
@@ -358,7 +379,10 @@ describe("a short company balance is refused on the company account", () => {
     const refusal = await withPayerBinding(binding, async () => {
       const resolved = resolveConsumptionPayerBinding({
         requestBinding: currentPayerBinding(),
-        deploymentBinding: { ...binding, externalCustomerId: "deployment-should-not-win" },
+        deploymentBinding: {
+          ...binding,
+          externalCustomerId: "deployment-should-not-win",
+        },
       });
       const held = await writer.reserveCredits({
         externalCustomerId: resolved.externalCustomerId,

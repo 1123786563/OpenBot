@@ -346,7 +346,10 @@ export async function createScopeGateFixture(): Promise<ScopeGateFixture> {
         failures.push(error);
       }
       if (failures.length > 0) {
-        throw new AggregateError(failures, "MT013 scope-gate fixture dispose failed");
+        throw new AggregateError(
+          failures,
+          "MT013 scope-gate fixture dispose failed",
+        );
       }
     },
   };

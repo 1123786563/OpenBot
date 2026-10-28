@@ -82,7 +82,7 @@ export function AsyncJobsView({ scope }: { scope: ScopedCache }) {
  * the build, not the reader), the same discipline the pending-reason vocabulary keeps.
  */
 type AsyncJobStatusKey =
-  | `creditsPage.asyncJobs.status.${"queued" | "running" | "pendingSettlement" | "settled" | "refused" | "cancelled"}`;
+  `creditsPage.asyncJobs.status.${"queued" | "running" | "pendingSettlement" | "settled" | "refused" | "cancelled"}`;
 
 const STATUS_KEYS: Record<AsyncJobStatus, AsyncJobStatusKey> = {
   queued: "creditsPage.asyncJobs.status.queued",
@@ -116,7 +116,9 @@ function AsyncJobRow({ job }: { job: AsyncJobUsage }) {
             ? t("creditsPage.asyncJobs.dispatchUnconfirmed")
             : t("creditsPage.asyncJobs.dispatched")}
           {" · "}
-          {t("creditsPage.asyncJobs.cap", { amount: credits(job.maximumCents / 100) })}
+          {t("creditsPage.asyncJobs.cap", {
+            amount: credits(job.maximumCents / 100),
+          })}
           {job.settledCents > 0
             ? ` · ${t("creditsPage.asyncJobs.settled", {
                 amount: credits(job.settledCents / 100),
@@ -130,7 +132,10 @@ function AsyncJobRow({ job }: { job: AsyncJobUsage }) {
         </ItemDescription>
         {reasonKey !== null ? (
           <ItemFooter>
-            <p className="text-muted-foreground text-xs" data-testid="async-job-reason">
+            <p
+              className="text-muted-foreground text-xs"
+              data-testid="async-job-reason"
+            >
               {t(reasonKey)}
             </p>
           </ItemFooter>

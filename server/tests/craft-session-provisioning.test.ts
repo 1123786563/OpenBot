@@ -268,7 +268,8 @@ describe("light-path config rewrite disposes the running instance (OCR r2)", () 
       skillsHash: "skills-v2",
       mcpConfigHash: "mcp-v2",
       libraryFiles: new Map<string, Uint8Array>(),
-      webTemplateFiles: new Map<string, Uint8Array>(),    };
+      webTemplateFiles: new Map<string, Uint8Array>(),
+    };
     const { files, rows, manager, disposals } = provisioningHarness({
       seed: sessionRow({
         id: "cs-light",
@@ -308,7 +309,8 @@ describe("light-path config rewrite disposes the running instance (OCR r2)", () 
       skillsHash: "skills-v2",
       mcpConfigHash: "mcp-v2",
       libraryFiles: new Map<string, Uint8Array>(),
-      webTemplateFiles: new Map<string, Uint8Array>(),    };
+      webTemplateFiles: new Map<string, Uint8Array>(),
+    };
     const { manager, disposals } = provisioningHarness({
       seed: sessionRow({
         id: "cs-light-fresh",

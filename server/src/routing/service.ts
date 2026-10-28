@@ -94,10 +94,11 @@ function hasTokenBoundaries(text: string, start: number, end: number): boolean {
     beforeCodeUnit === undefined
       ? undefined
       : String.fromCodePoint(beforeCodeUnit);
-  const afterCodeUnit =
-    end < text.length ? text.codePointAt(end) : undefined;
+  const afterCodeUnit = end < text.length ? text.codePointAt(end) : undefined;
   const after =
-    afterCodeUnit === undefined ? undefined : String.fromCodePoint(afterCodeUnit);
+    afterCodeUnit === undefined
+      ? undefined
+      : String.fromCodePoint(afterCodeUnit);
   return !before || !WORD_CHARACTER.test(before)
     ? !after || !WORD_CHARACTER.test(after)
     : false;
@@ -395,18 +396,18 @@ export function createCoworkerRoutingService(
     // turn an answered route into a failed request.
     try {
       await recordAuditEvent(options.auditStore, {
-      eventType: "channel.routed",
-      targetType: "agent",
-      targetId: selected.agentId,
-      ...(actorId(actor) ? { actorUserId: actorId(actor) } : {}),
-      payload: {
-        chosen: selected.agentId,
-        reason: auditReason(selected, undecided),
-        fallback: selected.fallback,
-        viaMention: selected.viaMention,
-        viaNameMatch: selected.viaNameMatch === true,
-        candidates,
-        undecided,
+        eventType: "channel.routed",
+        targetType: "agent",
+        targetId: selected.agentId,
+        ...(actorId(actor) ? { actorUserId: actorId(actor) } : {}),
+        payload: {
+          chosen: selected.agentId,
+          reason: auditReason(selected, undecided),
+          fallback: selected.fallback,
+          viaMention: selected.viaMention,
+          viaNameMatch: selected.viaNameMatch === true,
+          candidates,
+          undecided,
         },
       });
     } catch (error) {

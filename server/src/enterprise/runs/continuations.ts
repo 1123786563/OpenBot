@@ -117,7 +117,9 @@ export interface RunContinuations {
    * already_applied / reused_receipt / pending_unknown 的收敛全部是现状
    * 机制；本成员不重试、不补发、不改写任何一门。
    */
-  resumeContinuation(input: ResumeInput): Promise<MastraContinuationResumeResult>;
+  resumeContinuation(
+    input: ResumeInput,
+  ): Promise<MastraContinuationResumeResult>;
   /**
    * 读一个操作的 receipt 证据（验收④读面）：恒等委托 `store.findReceipt`。
    * executed＝已证明的外部效果；unknown＝已发出但结果未知——超时不证明

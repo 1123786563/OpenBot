@@ -871,7 +871,9 @@ describe("the budget covers the blank tool surface too (R3-01)", () => {
   });
 
   test("an input over the step's enforced ceiling is refused before the dial — never an estimate sent anyway", async () => {
-    const { port, bodies, stop } = scriptedGateway([textRound("never reached")]);
+    const { port, bodies, stop } = scriptedGateway([
+      textRound("never reached"),
+    ]);
     try {
       const verdicts: number[] = [];
       const budget: EvaluationStepBudget = {

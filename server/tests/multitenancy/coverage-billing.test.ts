@@ -66,12 +66,10 @@ import { registerIsolationDomain } from "./support/scenarios";
 import {
   createPayerAccountsFixture,
   probePayerAccountsEnvironment,
-  type PayerAccountsFixture,
 } from "./support/payer-accounts";
 import {
   createVendorBillingFixture,
   probeVendorBillingEnvironment,
-  type VendorBillingFixture,
 } from "./support/vendor-billing";
 
 // ---------------------------------------------------------------------------
@@ -242,7 +240,9 @@ async function reserveAndSettle(
     expiresAt: new Date(Date.now() + 30 * 60 * 1000),
   });
   if (!result.reserved) {
-    throw new Error(`MT137 arrangement reserve failed: ${result.availableCents}`);
+    throw new Error(
+      `MT137 arrangement reserve failed: ${result.availableCents}`,
+    );
   }
   const requestId = `mt137-${suffix}-${randomUUID().slice(0, 8)}`;
   await fixture.writer.settleReservation({
@@ -267,7 +267,10 @@ const billingScenarios: ScenarioMap = {
       `mt137-purchase-${randomUUID().slice(0, 8)}`,
     );
     const read = await fixture.store.readOrder(order.id, {
-      actorPayerRef: { kind: "personal", id: fixture.caller("a1-member").userId },
+      actorPayerRef: {
+        kind: "personal",
+        id: fixture.caller("a1-member").userId,
+      },
     });
     return {
       positiveControlPassed: read?.id === order.id,
@@ -311,7 +314,10 @@ const billingScenarios: ScenarioMap = {
       limit: 100,
       offset: 0,
       scope: {
-        actorPayerRef: { kind: "personal", id: fixture.caller("a1-member").userId },
+        actorPayerRef: {
+          kind: "personal",
+          id: fixture.caller("a1-member").userId,
+        },
       },
     });
     return {
@@ -334,7 +340,10 @@ const billingScenarios: ScenarioMap = {
       limit: 100,
       offset: 0,
       scope: {
-        actorPayerRef: { kind: "personal", id: fixture.caller("b-member").userId },
+        actorPayerRef: {
+          kind: "personal",
+          id: fixture.caller("b-member").userId,
+        },
       },
     });
     const leaked = window.filter((row) => row.id === order.id);
@@ -616,8 +625,7 @@ const billingScenarios: ScenarioMap = {
       .select({ credits: creditLedger.credits })
       .from(creditLedger)
       .where(eq(creditLedger.idempotencyKey, `reservation:${reservationId}`));
-    const noDoubleCharge =
-      after.length === before.length && after.length === 1;
+    const noDoubleCharge = after.length === before.length && after.length === 1;
     return denyObservation(
       noDoubleCharge && replayed.chargedCents === before[0].credits,
       [],
@@ -786,198 +794,212 @@ const coverage = () =>
     runId: "mt137",
   }));
 
-describeDb("MT137 / Issue #180 — 覆盖证据：公司/个人付款账户与账务可见性", () => {
-  itDb(
-    "计划内全部入口在矩阵 runner 输出中 covered（正向与越权两侧都过）",
-    async () => {
-      const report = await coverage();
-      const byId = new Map(report.entrances.map((entry) => [entry.id, entry]));
-      const failures: string[] = [];
-      for (const entranceId of Object.keys(PLAN)) {
-        const entry = byId.get(entranceId);
-        if (!entry) {
-          failures.push(`${entranceId}: not in report`);
-          continue;
-        }
-        if (entry.status !== "covered") {
-          failures.push(
-            `${entranceId}: ${entry.status} (positive=${entry.positive.status}/${entry.positive.reasons.join("|")}; denial=${entry.denial.status}/${entry.denial.reasons.join("|")})`,
-          );
-        }
-      }
-      expect(failures).toEqual([]);
-      expect(report.schemaVersion).toBe(1);
-      expect(() => JSON.parse(JSON.stringify(report))).not.toThrow();
-      const classes = new Map(
-        report.matrix.classes.map((entry) => [entry.id, entry]),
-      );
-      expect(
-        classes.get("company-a-team-a1-only")?.entrancesCovered,
-      ).toBeGreaterThan(0);
-      expect(classes.get("cross-company")?.entrancesCovered).toBeGreaterThan(0);
-      expect(
-        classes.get("same-team-other-person")?.entrancesCovered,
-      ).toBeGreaterThan(0);
-      expect(
-        classes.get("company-a-team-a2-only")?.entrancesCovered,
-      ).toBeGreaterThan(0);
-      expect(report.overall).toBe("coverage-incomplete");
-    },
-    600_000,
-  );
-
-  itDb(
-    "并发预扣：同预算并发 reserve 恰放行预算内数量，余额不穿底、个人账户不动（真实数据库并发）",
-    async () => {
-      // 骑 company-reservation 夹具的全新公司宇宙（余额只由本用例垫底），
-      // MT070 AC1 同款并发语义：250/笔 × 10 笔 vs 1000 余额 → 恰 4 笔。
-      const { createCompanyReservationFixture } = await import(
-        "./support/company-reservation"
-      );
-      const disposed: Array<() => Promise<void>> = [];
-      const fixture = await createCompanyReservationFixture().then((fx) => {
-        disposed.push(() => fx.dispose());
-        return fx;
-      });
-      try {
-        const { ids, caller } = fixture;
-        await fixture.seedGrant("company-c", 1000, `mt137-c-${Date.now()}`);
-        const personalBefore = await fixture.balanceOf("personal");
-        const service = createCompanyReservationService({
-          database: fixture.db,
-          writer: fixture.writer,
-        });
-        const key = `mt137-${randomUUID().slice(0, 8)}`;
-        const results = await Promise.all(
-          Array.from({ length: 10 }, (_, index) =>
-            service.reserveForCompanyCall({
-              tenantId: ids.companyC,
-              workspaceId: index % 2 === 0 ? ids.teamC1 : ids.teamC2,
-              principalId:
-                index % 2 === 0
-                  ? caller("c1-member").principalId
-                  : caller("c2-member").principalId,
-              botRef: "bot:mt137-concurrent",
-              callKey: `call:${key}-${index}`,
-              idempotencyKey: `${key}-${index}`,
-              maximumCents: 250,
-              expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-            }),
-          ),
+describeDb(
+  "MT137 / Issue #180 — 覆盖证据：公司/个人付款账户与账务可见性",
+  () => {
+    itDb(
+      "计划内全部入口在矩阵 runner 输出中 covered（正向与越权两侧都过）",
+      async () => {
+        const report = await coverage();
+        const byId = new Map(
+          report.entrances.map((entry) => [entry.id, entry]),
         );
-        const admitted = results.filter((x) => x.reserved);
-        const refused = results.filter((x) => !x.reserved);
-        const held = admitted.reduce((sum, x) => sum + 250, 0);
-        expect(admitted.length).toBe(4);
-        expect(refused.length).toBe(6);
-        expect(held).toBe(1000);
-        for (const x of refused) expect(x.availableCents).toBe(0);
-        // 余额不穿底（真实行级竞争下余额保持 ≥ 0），且预扣不改付款方：
-        // 个人账户分文不动。
-        expect(await fixture.balanceOf("company-c")).toBeGreaterThanOrEqual(0);
-        expect(await fixture.balanceOf("personal")).toBe(personalBefore);
-      } finally {
-        for (const dispose of disposed) await dispose().catch(() => undefined);
-      }
-    },
-    240_000,
-  );
+        const failures: string[] = [];
+        for (const entranceId of Object.keys(PLAN)) {
+          const entry = byId.get(entranceId);
+          if (!entry) {
+            failures.push(`${entranceId}: not in report`);
+            continue;
+          }
+          if (entry.status !== "covered") {
+            failures.push(
+              `${entranceId}: ${entry.status} (positive=${entry.positive.status}/${entry.positive.reasons.join("|")}; denial=${entry.denial.status}/${entry.denial.reasons.join("|")})`,
+            );
+          }
+        }
+        expect(failures).toEqual([]);
+        expect(report.schemaVersion).toBe(1);
+        expect(() => JSON.parse(JSON.stringify(report))).not.toThrow();
+        const classes = new Map(
+          report.matrix.classes.map((entry) => [entry.id, entry]),
+        );
+        expect(
+          classes.get("company-a-team-a1-only")?.entrancesCovered,
+        ).toBeGreaterThan(0);
+        expect(classes.get("cross-company")?.entrancesCovered).toBeGreaterThan(
+          0,
+        );
+        expect(
+          classes.get("same-team-other-person")?.entrancesCovered,
+        ).toBeGreaterThan(0);
+        expect(
+          classes.get("company-a-team-a2-only")?.entrancesCovered,
+        ).toBeGreaterThan(0);
+        expect(report.overall).toBe("coverage-incomplete");
+      },
+      600_000,
+    );
 
-  itDb(
-    "§7.1 付款路由判定：三来源闭集、payerKey 逐字节对齐、无主单拒绝",
-    async () => {
-      // machine-callback → 订单属主付款方（ownerPayerRef 原样）。
-      const callback = routePayerAccountFor({
-        kind: "machine-callback",
-        order: { ownerPayerRef: { kind: "company", id: "tenant-x" } },
-      } as unknown as MachinePersonalCallSource);
-      expect(callback.ok).toBe(true);
-      if (callback.ok) {
-        expect(callback.ref).toEqual({ kind: "company", id: "tenant-x" });
-        expect(callback.key).toBe(payerKey({ kind: "company", id: "tenant-x" }));
-      }
-      // personal-direct → personal:<userId>。
-      const direct = routePayerAccountFor({
-        kind: "personal-direct",
-        grant: { userId: "user-1" },
-      } as unknown as MachinePersonalCallSource);
-      expect(direct.ok).toBe(true);
-      if (direct.ok) {
-        expect(direct.key).toBe(payerKey({ kind: "personal", id: "user-1" }));
-      }
-      // company-workbench → company:<tenantId>。
-      const workbench = routePayerAccountFor({
-        kind: "company-workbench",
-        scope: { tenantId: "tenant-y" },
-      } as unknown as MachinePersonalCallSource);
-      expect(workbench.ok).toBe(true);
-      // 无主单（machine-callback 无 ownerPayerRef）→ 显式拒绝，不默认。
-      const unowned = routePayerAccountFor({
-        kind: "machine-callback",
-        order: null,
-      } as unknown as MachinePersonalCallSource);
-      expect(unowned.ok).toBe(false);
-    },
-    60_000,
-  );
+    itDb(
+      "并发预扣：同预算并发 reserve 恰放行预算内数量，余额不穿底、个人账户不动（真实数据库并发）",
+      async () => {
+        // 骑 company-reservation 夹具的全新公司宇宙（余额只由本用例垫底），
+        // MT070 AC1 同款并发语义：250/笔 × 10 笔 vs 1000 余额 → 恰 4 笔。
+        const { createCompanyReservationFixture } = await import(
+          "./support/company-reservation"
+        );
+        const disposed: Array<() => Promise<void>> = [];
+        const fixture = await createCompanyReservationFixture().then((fx) => {
+          disposed.push(() => fx.dispose());
+          return fx;
+        });
+        try {
+          const { ids, caller } = fixture;
+          await fixture.seedGrant("company-c", 1000, `mt137-c-${Date.now()}`);
+          const personalBefore = await fixture.balanceOf("personal");
+          const service = createCompanyReservationService({
+            database: fixture.db,
+            writer: fixture.writer,
+          });
+          const key = `mt137-${randomUUID().slice(0, 8)}`;
+          const results = await Promise.all(
+            Array.from({ length: 10 }, (_, index) =>
+              service.reserveForCompanyCall({
+                tenantId: ids.companyC,
+                workspaceId: index % 2 === 0 ? ids.teamC1 : ids.teamC2,
+                principalId:
+                  index % 2 === 0
+                    ? caller("c1-member").principalId
+                    : caller("c2-member").principalId,
+                botRef: "bot:mt137-concurrent",
+                callKey: `call:${key}-${index}`,
+                idempotencyKey: `${key}-${index}`,
+                maximumCents: 250,
+                expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+              }),
+            ),
+          );
+          const admitted = results.filter((x) => x.reserved);
+          const refused = results.filter((x) => !x.reserved);
+          const held = admitted.reduce((sum, _x) => sum + 250, 0);
+          expect(admitted.length).toBe(4);
+          expect(refused.length).toBe(6);
+          expect(held).toBe(1000);
+          for (const x of refused) expect(x.availableCents).toBe(0);
+          // 余额不穿底（真实行级竞争下余额保持 ≥ 0），且预扣不改付款方：
+          // 个人账户分文不动。
+          expect(await fixture.balanceOf("company-c")).toBeGreaterThanOrEqual(
+            0,
+          );
+          expect(await fixture.balanceOf("personal")).toBe(personalBefore);
+        } finally {
+          for (const dispose of disposed)
+            await dispose().catch(() => undefined);
+        }
+      },
+      240_000,
+    );
 
-  itDb(
-    "固定付款账户：公司二次绑定其他 Customer 被显式拒绝（真实数据库）",
-    async () => {
-      const fx = await payerAccounts();
-      const first = await fx.service.bindCompanyCustomer({
-        tenantId: fx.ids.companyA,
-        externalCustomerId: fx.ids.customerA,
-        actor: `${fx.ids.companyA}-admin`,
-      });
-      expect(first.externalCustomerId).toBe(fx.ids.customerA);
-      // 幂等重绑同一 Customer = 稳定返回（不换账户）。
-      const again = await fx.service.bindCompanyCustomer({
-        tenantId: fx.ids.companyA,
-        externalCustomerId: fx.ids.customerA,
-        actor: `${fx.ids.companyA}-admin`,
-      });
-      expect(again.externalCustomerId).toBe(first.externalCustomerId);
-      // 绑定其他 Customer：显式冲突（余额不足也不切换付款账户）。
-      await expect(
-        fx.service.bindCompanyCustomer({
-          tenantId: fx.ids.companyA,
-          externalCustomerId: fx.ids.customerFree1,
-          actor: `${fx.ids.companyA}-admin`,
-        }),
-      ).rejects.toThrow(/CUSTOMER_MAPPING_CONFLICT/);
-    },
-    240_000,
-  );
-
-  itDb(
-    "未映射的 billing 入口保留在缺口清单（漂移可见，不虚报覆盖）",
-    async () => {
-      const report = await coverage();
-      const gapIds = new Set(report.gaps.map((gap) => gap.entranceId));
-      expect(gapIds.has("GET /api/billing/catalog")).toBe(true);
-      expect(gapIds.has("POST /api/billing/credits/rewards/claim")).toBe(true);
-      for (const gap of report.gaps) {
-        if (Object.hasOwn(PLAN, gap.entranceId)) {
-          throw new Error(
-            `planned entrance leaked into gap list: ${gap.entranceId}`,
+    itDb(
+      "§7.1 付款路由判定：三来源闭集、payerKey 逐字节对齐、无主单拒绝",
+      async () => {
+        // machine-callback → 订单属主付款方（ownerPayerRef 原样）。
+        const callback = routePayerAccountFor({
+          kind: "machine-callback",
+          order: { ownerPayerRef: { kind: "company", id: "tenant-x" } },
+        } as unknown as MachinePersonalCallSource);
+        expect(callback.ok).toBe(true);
+        if (callback.ok) {
+          expect(callback.ref).toEqual({ kind: "company", id: "tenant-x" });
+          expect(callback.key).toBe(
+            payerKey({ kind: "company", id: "tenant-x" }),
           );
         }
-      }
-    },
-    240_000,
-  );
+        // personal-direct → personal:<userId>。
+        const direct = routePayerAccountFor({
+          kind: "personal-direct",
+          grant: { userId: "user-1" },
+        } as unknown as MachinePersonalCallSource);
+        expect(direct.ok).toBe(true);
+        if (direct.ok) {
+          expect(direct.key).toBe(payerKey({ kind: "personal", id: "user-1" }));
+        }
+        // company-workbench → company:<tenantId>。
+        const workbench = routePayerAccountFor({
+          kind: "company-workbench",
+          scope: { tenantId: "tenant-y" },
+        } as unknown as MachinePersonalCallSource);
+        expect(workbench.ok).toBe(true);
+        // 无主单（machine-callback 无 ownerPayerRef）→ 显式拒绝，不默认。
+        const unowned = routePayerAccountFor({
+          kind: "machine-callback",
+          order: null,
+        } as unknown as MachinePersonalCallSource);
+        expect(unowned.ok).toBe(false);
+      },
+      60_000,
+    );
 
-  itDb(
-    "覆盖报告产物（可选写出：MT_COVERAGE_REPORT_OUT 指定路径）",
-    async () => {
-      const out = process.env.MT_COVERAGE_REPORT_OUT?.trim();
-      const report = await coverage();
-      if (!out) return;
-      await mkdir(dirname(out), { recursive: true });
-      await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
-      expect(report.summary.coveredEntrances).toBe(Object.keys(PLAN).length);
-    },
-    240_000,
-  );
-});
+    itDb(
+      "固定付款账户：公司二次绑定其他 Customer 被显式拒绝（真实数据库）",
+      async () => {
+        const fx = await payerAccounts();
+        const first = await fx.service.bindCompanyCustomer({
+          tenantId: fx.ids.companyA,
+          externalCustomerId: fx.ids.customerA,
+          actor: `${fx.ids.companyA}-admin`,
+        });
+        expect(first.externalCustomerId).toBe(fx.ids.customerA);
+        // 幂等重绑同一 Customer = 稳定返回（不换账户）。
+        const again = await fx.service.bindCompanyCustomer({
+          tenantId: fx.ids.companyA,
+          externalCustomerId: fx.ids.customerA,
+          actor: `${fx.ids.companyA}-admin`,
+        });
+        expect(again.externalCustomerId).toBe(first.externalCustomerId);
+        // 绑定其他 Customer：显式冲突（余额不足也不切换付款账户）。
+        await expect(
+          fx.service.bindCompanyCustomer({
+            tenantId: fx.ids.companyA,
+            externalCustomerId: fx.ids.customerFree1,
+            actor: `${fx.ids.companyA}-admin`,
+          }),
+        ).rejects.toThrow(/CUSTOMER_MAPPING_CONFLICT/);
+      },
+      240_000,
+    );
+
+    itDb(
+      "未映射的 billing 入口保留在缺口清单（漂移可见，不虚报覆盖）",
+      async () => {
+        const report = await coverage();
+        const gapIds = new Set(report.gaps.map((gap) => gap.entranceId));
+        expect(gapIds.has("GET /api/billing/catalog")).toBe(true);
+        expect(gapIds.has("POST /api/billing/credits/rewards/claim")).toBe(
+          true,
+        );
+        for (const gap of report.gaps) {
+          if (Object.hasOwn(PLAN, gap.entranceId)) {
+            throw new Error(
+              `planned entrance leaked into gap list: ${gap.entranceId}`,
+            );
+          }
+        }
+      },
+      240_000,
+    );
+
+    itDb(
+      "覆盖报告产物（可选写出：MT_COVERAGE_REPORT_OUT 指定路径）",
+      async () => {
+        const out = process.env.MT_COVERAGE_REPORT_OUT?.trim();
+        const report = await coverage();
+        if (!out) return;
+        await mkdir(dirname(out), { recursive: true });
+        await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
+        expect(report.summary.coveredEntrances).toBe(Object.keys(PLAN).length);
+      },
+      240_000,
+    );
+  },
+);

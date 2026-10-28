@@ -1,4 +1,9 @@
-import { afterAll, afterEach, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { createObservationDatasetStore } from "../src/ai-observability/datasets";
@@ -1012,7 +1017,9 @@ test("the case-outcome vocabulary is a database fact, and rows die with the exec
  * must also reach the in-flight dial itself.
  */
 
-test("a cancel that lands while a sample is suspended withholds the judge — zero judge calls when the sample resumes (FREV-05)", { timeout: 30_000 }, async () => {
+test("a cancel that lands while a sample is suspended withholds the judge — zero judge calls when the sample resumes (FREV-05)", {
+  timeout: 30_000,
+}, async () => {
   const { experiment } = await frozenExperiment(scopeA, {}, 2);
   const row = await executions.enqueue(scopeA, experiment.id);
 
@@ -1022,11 +1029,12 @@ test("a cancel that lands while a sample is suspended withholds the judge — ze
     releaseSample = resolve;
   });
   let inFlight = 0;
-  const inner: EvaluationCaseRunner = async (): Promise<EvaluationCaseOutcome> => {
-    inFlight += 1;
-    await suspended;
-    return { status: "completed", output: "the answer" };
-  };
+  const inner: EvaluationCaseRunner =
+    async (): Promise<EvaluationCaseOutcome> => {
+      inFlight += 1;
+      await suspended;
+      return { status: "completed", output: "the answer" };
+    };
   const judge = async () => {
     judgeCalls.push({});
     return null;
@@ -1051,7 +1059,9 @@ test("a cancel that lands while a sample is suspended withholds the judge — ze
   const outcomes = await executions.caseOutcomes(row.id);
   expect(outcomes).toHaveLength(1); // sample 1 never started
   expect(outcomes[0]?.status).toBe("completed");
-  expect((outcomes[0]?.detail as { judge?: unknown } | null)?.judge).toMatchObject({
+  expect(
+    (outcomes[0]?.detail as { judge?: unknown } | null)?.judge,
+  ).toMatchObject({
     state: "projected",
     value: {
       status: { state: "projected", value: "failed" },
@@ -1060,7 +1070,9 @@ test("a cancel that lands while a sample is suspended withholds the judge — ze
   });
 });
 
-test("an authorization withdrawn while the sample is away withholds the judge and cancels at the boundary (FREV-05)", { timeout: 30_000 }, async () => {
+test("an authorization withdrawn while the sample is away withholds the judge and cancels at the boundary (FREV-05)", {
+  timeout: 30_000,
+}, async () => {
   const { experiment } = await frozenExperiment(scopeA, {}, 2);
   const row = await executions.enqueue(scopeA, experiment.id);
 
@@ -1070,11 +1082,12 @@ test("an authorization withdrawn while the sample is away withholds the judge an
     releaseSample = resolve;
   });
   let inFlight = 0;
-  const inner: EvaluationCaseRunner = async (): Promise<EvaluationCaseOutcome> => {
-    inFlight += 1;
-    await suspended;
-    return { status: "completed", output: "the answer" };
-  };
+  const inner: EvaluationCaseRunner =
+    async (): Promise<EvaluationCaseOutcome> => {
+      inFlight += 1;
+      await suspended;
+      return { status: "completed", output: "the answer" };
+    };
   const judge = async () => {
     judgeCalls.push({});
     return null;
@@ -1098,7 +1111,9 @@ test("an authorization withdrawn while the sample is away withholds the judge an
   const outcomes = await executions.caseOutcomes(row.id);
   expect(outcomes).toHaveLength(1);
   expect(outcomes[0]?.status).toBe("completed");
-  expect((outcomes[0]?.detail as { judge?: unknown } | null)?.judge).toMatchObject({
+  expect(
+    (outcomes[0]?.detail as { judge?: unknown } | null)?.judge,
+  ).toMatchObject({
     state: "projected",
     value: {
       status: { state: "projected", value: "failed" },
@@ -1107,7 +1122,9 @@ test("an authorization withdrawn while the sample is away withholds the judge an
   });
 });
 
-test("a cancellation mid-case aborts the in-flight model call — the database fact reaches the dial (FREV-05)", { timeout: 30_000 }, async () => {
+test("a cancellation mid-case aborts the in-flight model call — the database fact reaches the dial (FREV-05)", {
+  timeout: 30_000,
+}, async () => {
   const { experiment } = await frozenExperiment(scopeA, {}, 1);
   const row = await executions.enqueue(scopeA, experiment.id);
 
@@ -1137,7 +1154,10 @@ test("a cancellation mid-case aborts the in-flight model call — the database f
   );
 
   const swept = worker.sweep();
-  await until(() => observedSignals.length === 1, "the sample's dial in flight");
+  await until(
+    () => observedSignals.length === 1,
+    "the sample's dial in flight",
+  );
   await executions.settleCancelled(row.id);
   await swept;
 

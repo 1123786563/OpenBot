@@ -383,7 +383,9 @@ describe("Bifrost 11.5 (#300): the ceiling covers the worst case", () => {
     // 足额 in the odd case too: 3 pages × $0.01 + 1000 × $0.0000002 = $0.0302 → 302 units
     // exactly; a fractional exact cost rounds UP — one page at $0.0000035 each is the pin.
     const oddPriced = ocrCeiling({
-      dims: dims({ surcharge_per_request: { status: "known", amount: "0.0000035" } }),
+      dims: dims({
+        surcharge_per_request: { status: "known", amount: "0.0000035" },
+      }),
       params: documentRequest([1]),
       outputTokenCap: 0,
       rate: RATE_100,
@@ -440,7 +442,7 @@ describe("Bifrost 11.5 (#300): the ceiling covers the worst case", () => {
     expect(priced.maximumCredits).toBe(202);
   });
 
-  test("a free basis (every billed dimension exactly \"0\") is free, and certifies a zero ceiling", () => {
+  test('a free basis (every billed dimension exactly "0") is free, and certifies a zero ceiling', () => {
     const freeDims = dims({
       surcharge_per_request: { status: "known", amount: "0" },
       image: { status: "known", amount: "0" },

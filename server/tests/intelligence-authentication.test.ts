@@ -1,4 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { Hono } from "hono";
 import {
   clearDesktopConnectionFailure,

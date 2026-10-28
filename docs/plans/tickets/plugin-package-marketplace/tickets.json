@@ -8,15 +8,8 @@
       "title": "浏览经过校验的受信插件包目录",
       "depends_on": [],
       "external": [],
-      "acceptance": [
-        "A01",
-        "A12"
-      ],
-      "plan_tasks": [
-        "T1",
-        "T7",
-        "T8"
-      ],
+      "acceptance": ["A01", "A12"],
+      "plan_tasks": ["T1", "T7", "T8"],
       "delivers": "部署者把受信包放入制品目录后，当前团队成员能在市场浏览真实包详情、版本和能力；无效包无法进入可安装目录。",
       "scope": "制品构建与登记、只读目录接口、市场插件包列表与详情。",
       "consumes": "现有认证与团队 Scope、代码内专家/Skill 目录作为首个导出来源；不依赖新安装表。",
@@ -34,25 +27,10 @@
     {
       "id": "PKG02",
       "title": "在当前团队预览并幂等安装 Skill 插件包",
-      "depends_on": [
-        "PKG01"
-      ],
-      "external": [
-        74
-      ],
-      "acceptance": [
-        "A02",
-        "A03",
-        "A04",
-        "A12"
-      ],
-      "plan_tasks": [
-        "T2",
-        "T3",
-        "T4",
-        "T7",
-        "T8"
-      ],
+      "depends_on": ["PKG01"],
+      "external": [74],
+      "acceptance": ["A02", "A03", "A04", "A12"],
+      "plan_tasks": ["T2", "T3", "T4", "T7", "T8"],
       "delivers": "公司管理员在当前团队查看包安装预览并确认后，只生成一份可追踪的安装；成员能看到真实安装状态，安装本身不授予 Bot 执行能力。",
       "scope": "最小安装/修订/计划/资源链接/变更回执存储，安装 API，预览确认和已安装视图；按本票需求扩表，不预建后续全部能力。",
       "consumes": "PKG01 的不可变发布与制品；#74 已有企业连接器目录/安装归属；可信 Scope 与公司管理员写通道。",
@@ -72,23 +50,10 @@
     {
       "id": "PKG03",
       "title": "授权范围内 Bot 使用已安装 Skill 的固定版本",
-      "depends_on": [
-        "PKG02"
-      ],
+      "depends_on": ["PKG02"],
       "external": [],
-      "acceptance": [
-        "A02",
-        "A04",
-        "A06",
-        "A11"
-      ],
-      "plan_tasks": [
-        "T3",
-        "T5",
-        "T6",
-        "T7",
-        "T8"
-      ],
+      "acceptance": ["A02", "A04", "A06", "A11"],
+      "plan_tasks": ["T3", "T5", "T6", "T7", "T8"],
       "delivers": "管理员给有可信团队归属的 Bot 授予包内 Skill 后，用户可在一次真实 Run 中使用固定版本的指令，撤销后后续加载立即被拒绝。",
       "scope": "Skill 包资源解析、范围 grant、Skill 运行 pin、Bot 授权页面及真实对话执行；不包含供应商工具派发。",
       "consumes": "PKG02 的 install/revision；现有 Bot ownership、Run/attempt 与工具策略；包 Skill 只引用不可变资源。",
@@ -107,19 +72,10 @@
     {
       "id": "PKG04",
       "title": "从插件包幂等创建当前范围的专家 Bot",
-      "depends_on": [
-        "PKG03"
-      ],
+      "depends_on": ["PKG03"],
       "external": [],
-      "acceptance": [
-        "A08",
-        "A10"
-      ],
-      "plan_tasks": [
-        "T3",
-        "T7",
-        "T8"
-      ],
+      "acceptance": ["A08", "A10"],
+      "plan_tasks": ["T3", "T7", "T8"],
       "delivers": "管理员从已安装包的专家模板创建自己的范围内专家，重复确认返回同一个 Bot，创建后的专家只持有明确授予的 Skill。",
       "scope": "模板校验、受限 built_in 创建、企业 ownership、模板来源、初始 Skill grant 与创建向导。",
       "consumes": "PKG03 的范围 Skill grant 和运行 pin；现有 AgentProfile/BotOwnership/ExpertVersion 权威接口。",
@@ -138,24 +94,10 @@
     {
       "id": "PKG05",
       "title": "使用本人连接执行插件包声明的受管工具",
-      "depends_on": [
-        "PKG03"
-      ],
-      "external": [
-        75
-      ],
-      "acceptance": [
-        "A02",
-        "A04",
-        "A05",
-        "A07"
-      ],
-      "plan_tasks": [
-        "T5",
-        "T6",
-        "T7",
-        "T8"
-      ],
+      "depends_on": ["PKG03"],
+      "external": [75],
+      "acceptance": ["A02", "A04", "A05", "A07"],
+      "plan_tasks": ["T5", "T6", "T7", "T8"],
       "delivers": "用户为包选择自己在原范围授权的账号，Bot 只调用明确授予的受管工具；连接或权限失效会阻断下一次派发。",
       "scope": "包资源到已有 connector install 的引用、当前 actor 连接解析、工具 grant/pin、同步 Run 的受管派发与就绪 UI。",
       "consumes": "PKG03 的范围授权与 Run pin；#75 的当前用户连接/Bot 授权实时重验；已有 MCP/OpenConnector/Composio、ActionPolicy 和审批。",
@@ -175,21 +117,10 @@
     {
       "id": "PKG06",
       "title": "预览权限差异并升级或回滚插件包版本",
-      "depends_on": [
-        "PKG05"
-      ],
+      "depends_on": ["PKG05"],
       "external": [],
-      "acceptance": [
-        "A03",
-        "A06",
-        "A07"
-      ],
-      "plan_tasks": [
-        "T4",
-        "T6",
-        "T7",
-        "T8"
-      ],
+      "acceptance": ["A03", "A06", "A07"],
+      "plan_tasks": ["T4", "T6", "T7", "T8"],
       "delivers": "管理员能看清版本变化与权限增量，再升级或回滚；正在执行的旧 Run 继续锁定原资源，新权限不会自动生效。",
       "scope": "upgrade/rollback 计划、revision CAS、授权差异、旧 pin 兼容与 Web 版本选择。",
       "consumes": "PKG02 的计划事务、PKG03/05 的 Skill/工具 pins 和当前 grant；不可变多版本发布。",
@@ -208,21 +139,10 @@
     {
       "id": "PKG07",
       "title": "停用、卸载和重装插件包并保留用户资产",
-      "depends_on": [
-        "PKG04",
-        "PKG05"
-      ],
+      "depends_on": ["PKG04", "PKG05"],
       "external": [],
-      "acceptance": [
-        "A05",
-        "A08"
-      ],
-      "plan_tasks": [
-        "T4",
-        "T6",
-        "T7",
-        "T8"
-      ],
+      "acceptance": ["A05", "A08"],
+      "plan_tasks": ["T4", "T6", "T7", "T8"],
       "delivers": "管理员能看到影响范围后停用或卸载包；新执行被阻断，已有 Bot、私人 Skill、账号及历史证据仍按原权限存在。",
       "scope": "enabled/disabled/uninstalled 状态、generation、影响预览、资源保留与重装语义。",
       "consumes": "PKG04 专家创建来源、PKG05 派发与共享底层 connector 引用。",
@@ -241,23 +161,10 @@
     {
       "id": "PKG08",
       "title": "部署侧下架或安全撤回指定插件包版本",
-      "depends_on": [
-        "PKG05"
-      ],
+      "depends_on": ["PKG05"],
       "external": [],
-      "acceptance": [
-        "A01",
-        "A05",
-        "A12"
-      ],
-      "plan_tasks": [
-        "T1",
-        "T4",
-        "T6",
-        "T7",
-        "T8",
-        "T9"
-      ],
+      "acceptance": ["A01", "A05", "A12"],
+      "plan_tasks": ["T1", "T4", "T6", "T7", "T8", "T9"],
       "delivers": "部署管理员可将某版本隐藏或安全撤回；下架只影响发现，撤回会阻断所有范围和旧 Run 的新派发。",
       "scope": "发布/下架/撤回管理命令、release 锁、范围 readiness 与撤回状态展示。",
       "consumes": "PKG01 发布记录和制品、PKG05 dispatch 锁协议；现有平台/公司管理面分离。",
@@ -275,20 +182,10 @@
     {
       "id": "PKG09",
       "title": "在审批恢复和后台入口保持包运行的原范围",
-      "depends_on": [
-        "PKG05"
-      ],
+      "depends_on": ["PKG05"],
       "external": [],
-      "acceptance": [
-        "A02",
-        "A05",
-        "A07",
-        "A12"
-      ],
-      "plan_tasks": [
-        "T6",
-        "T7"
-      ],
+      "acceptance": ["A02", "A05", "A07", "A12"],
+      "plan_tasks": ["T6", "T7"],
       "delivers": "包调用在人工审批、定时执行或责任任务恢复后仍使用原 Run 的范围与版本；缺受管 Run 的入口明确拒绝，不能绕过包检查。",
       "scope": "HTTP/内部回调、审批恢复、schedule/responsibility、memory ingestion 的包上下文传递和支持矩阵。",
       "consumes": "PKG05 受管包工具执行；现有 Run lease/attempt、审批和可信后台身份重建。",
@@ -306,22 +203,10 @@
     {
       "id": "PKG10",
       "title": "核对外部效果未知的包调用并安全恢复",
-      "depends_on": [
-        "PKG09"
-      ],
+      "depends_on": ["PKG09"],
       "external": [],
-      "acceptance": [
-        "A05",
-        "A07",
-        "A08",
-        "A12"
-      ],
-      "plan_tasks": [
-        "T6",
-        "T7",
-        "T8",
-        "T9"
-      ],
+      "acceptance": ["A05", "A07", "A08", "A12"],
+      "plan_tasks": ["T6", "T7", "T8", "T9"],
       "delivers": "用户能看到超时或崩溃后尚未确定效果的包调用，查看已有回执或重新连接；系统只在效果与权限可证时恢复，不重复执行可能已发生的写动作。",
       "scope": "unknown 调用查询、脱敏 Activity/安装详情状态、核对结果回填和受控恢复。",
       "consumes": "PKG05 dispatch 状态、PKG09 原范围 Run 恢复；现有 Activity/审批/工具回执权威。",
@@ -340,23 +225,10 @@
     {
       "id": "PKG11",
       "title": "迁移存量专家和 Skill 并灰度启用包市场",
-      "depends_on": [
-        "PKG04",
-        "PKG06",
-        "PKG07",
-        "PKG08",
-        "PKG10"
-      ],
+      "depends_on": ["PKG04", "PKG06", "PKG07", "PKG08", "PKG10"],
       "external": [],
-      "acceptance": [
-        "A08",
-        "A09",
-        "A11",
-        "A12"
-      ],
-      "plan_tasks": [
-        "T9"
-      ],
+      "acceptance": ["A08", "A09", "A11", "A12"],
+      "plan_tasks": ["T9"],
       "delivers": "部署者能先预演旧目录/安装映射，确认后对指定团队开启包市场；私人改动和无法证明范围的旧记录保留原状，并能安全关闭新入口。",
       "scope": "真实内置包、镜像制品、迁移 dry-run/manifest/apply、影子读取、pilot 与回退演练。",
       "consumes": "已完成的安装/授权/版本/卸载/撤回/核对行为；旧专家安装回执、Skill 内容哈希和企业范围权威。",
@@ -375,9 +247,7 @@
     {
       "id": "PKG12",
       "title": "完成插件包首发闭环验收与交付证据",
-      "depends_on": [
-        "PKG11"
-      ],
+      "depends_on": ["PKG11"],
       "external": [],
       "acceptance": [
         "A01",
@@ -393,9 +263,7 @@
         "A11",
         "A12"
       ],
-      "plan_tasks": [
-        "T10"
-      ],
+      "plan_tasks": ["T10"],
       "delivers": "以同一交付版本完成安装→授权→专家/工具使用→升级→撤权→未知效果核对→回退的完整演示，给出可复核的上线判断。",
       "scope": "端到端缝合、真实角色测试、入口/验收映射、独立审查与 OCR；发现的缺陷回到对应专业实现任务修复。",
       "consumes": "所有 V1 业务切片的已审查集成检查点与有效验证证据。",

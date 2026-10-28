@@ -483,7 +483,14 @@ async function langgraph(a: Args): Promise<void> {
   writeFileSync(
     join(state, "langgraph-run.json"),
     JSON.stringify(
-      { agentId: bot.id, agentName: NAME, endpoint, startedAt, loops, result: RESULT },
+      {
+        agentId: bot.id,
+        agentName: NAME,
+        endpoint,
+        startedAt,
+        loops,
+        result: RESULT,
+      },
       null,
       2,
     ),
@@ -720,7 +727,9 @@ async function collectBuiltin(
         `/api/ai-observability/bots/${encodeURIComponent(record.agentId)}/runs/${encodeURIComponent(runId)}`,
       );
       details.push(detail);
-      const stepResult = await api.get<{ steps: Array<Record<string, unknown>> }>(
+      const stepResult = await api.get<{
+        steps: Array<Record<string, unknown>>;
+      }>(
         `/api/ai-observability/bots/${encodeURIComponent(record.agentId)}/runs/${encodeURIComponent(runId)}/steps`,
       );
       stepsAll.push({ runId, steps: stepResult.steps });
@@ -1097,7 +1106,10 @@ async function collectLanggraph(
     windowStart === null
       ? traces
       : traces.filter((t) => {
-          if (typeof t.start_time !== "string" || Number.isNaN(Date.parse(t.start_time)))
+          if (
+            typeof t.start_time !== "string" ||
+            Number.isNaN(Date.parse(t.start_time))
+          )
             return true;
           return Date.parse(t.start_time) >= windowStart;
         });

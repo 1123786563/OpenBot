@@ -15,17 +15,10 @@
       "source_sha256": "36d257c77b0173bb9e808b9c29e7a7006444b856d39ad559b281238a70d4062f",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "home",
-      "existing_capabilities": [
-        "发送消息",
-        "选择同事"
-      ],
+      "existing_capabilities": ["发送消息", "选择同事"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -80,18 +73,11 @@
         "探索 AI 同事横向列表"
       ],
       "normal": {
-        "actions": [
-          "发送消息",
-          "选择同事"
-        ],
+        "actions": ["发送消息", "选择同事"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无可用 Bot",
-          "发送中",
-          "发送失败保留草稿"
-        ],
+        "cases": ["无可用 Bot", "发送中", "发送失败保留草稿"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -103,12 +89,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "探索区改为可横滑列表，输入区保留触控空间。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -134,17 +115,10 @@
       "source_sha256": "63c28f1d8f1fafc72aa2195ea21b85077df39f53f49298f3e5461a032feaef47",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/channel/new.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "chat",
-      "existing_capabilities": [
-        "选择收件人",
-        "发送首条消息"
-      ],
+      "existing_capabilities": ["选择收件人", "发送首条消息"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -212,19 +186,11 @@
         "底部输入区与附件"
       ],
       "normal": {
-        "actions": [
-          "选择收件人",
-          "发送首条消息"
-        ],
+        "actions": ["选择收件人", "发送首条消息"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "Bot 不可访问",
-          "名册加载失败",
-          "首条发送中",
-          "创建失败"
-        ],
+        "cases": ["Bot 不可访问", "名册加载失败", "首条发送中", "创建失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -236,12 +202,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "收件人换行排列，输入区保持可见；不预先创建空频道。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -267,17 +228,10 @@
       "source_sha256": "53a6ff3ba2d8758dcce6891a59908a9634cf9db00e0f1d457de9aea368be419b",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/channel/$channelId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "chat",
-      "existing_capabilities": [
-        "发送/停止/重试",
-        "打开上下文面板"
-      ],
+      "existing_capabilities": ["发送/停止/重试", "打开上下文面板"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -385,20 +339,11 @@
         "按需右栏：电脑、工作坊、Bot 资料"
       ],
       "normal": {
-        "actions": [
-          "发送/停止/重试",
-          "打开上下文面板"
-        ],
+        "actions": ["发送/停止/重试", "打开上下文面板"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "加载/不存在",
-          "流式响应",
-          "暂停",
-          "等待输入",
-          "附件失败"
-        ],
+        "cases": ["加载/不存在", "流式响应", "暂停", "等待输入", "附件失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -410,12 +355,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "主对话优先，右栏转全宽 Sheet；输入法与软键盘不遮挡发送。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -441,17 +381,10 @@
       "source_sha256": "e533069d763620ce1680c6aa6f468fc9d3aed6914e5d7559eeab50028d622107",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/group/$channelId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "chat",
-      "existing_capabilities": [
-        "查看成员",
-        "发送消息"
-      ],
+      "existing_capabilities": ["查看成员", "发送消息"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -512,19 +445,11 @@
         "输入与附件"
       ],
       "normal": {
-        "actions": [
-          "查看成员",
-          "发送消息"
-        ],
+        "actions": ["查看成员", "发送消息"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "成员不可用",
-          "Bot 暂停",
-          "多成员发言",
-          "发送失败"
-        ],
+        "cases": ["成员不可用", "Bot 暂停", "多成员发言", "发送失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -536,12 +461,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "头像与名称同行，成员详情按需展开；消息不压成多列。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -567,17 +487,10 @@
       "source_sha256": "031a3cd410927b004a92c29bee3d63f4c66d81e46c37ba705b7a1f1d5ce08f82",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bot.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "chat",
-      "existing_capabilities": [
-        "开始新对话",
-        "打开电脑"
-      ],
+      "existing_capabilities": ["开始新对话", "打开电脑"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -628,18 +541,11 @@
         "电脑画面详情面板"
       ],
       "normal": {
-        "actions": [
-          "开始新对话",
-          "打开电脑"
-        ],
+        "actions": ["开始新对话", "打开电脑"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "显式 Bot 不存在",
-          "会话加载失败",
-          "工作中"
-        ],
+        "cases": ["显式 Bot 不存在", "会话加载失败", "工作中"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -651,12 +557,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "复用聊天的单主区与 Sheet 规则。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -682,18 +583,10 @@
       "source_sha256": "9905297120c4347a6cfa2988a9fe2d7a275335df226a6621e330ce3271fabc5e",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "创建 Bot",
-        "打开 Bot 详情",
-        "展开隐藏项"
-      ],
+      "existing_capabilities": ["创建 Bot", "打开 Bot 详情", "展开隐藏项"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -743,11 +636,7 @@
         "已隐藏：折叠列表"
       ],
       "normal": {
-        "actions": [
-          "创建 Bot",
-          "打开 Bot 详情",
-          "展开隐藏项"
-        ],
+        "actions": ["创建 Bot", "打开 Bot 详情", "展开隐藏项"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
@@ -769,12 +658,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "行列表保留，摘要允许两行，状态与操作不挤占名称。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -800,11 +684,7 @@
       "source_sha256": "f09844ba2ee19526764cd50deff588d99758fadf734348436038be3fe70ee82c",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "profile",
       "existing_capabilities": [
@@ -871,22 +751,11 @@
         "个人管理与危险操作"
       ],
       "normal": {
-        "actions": [
-          "打开对话",
-          "处理待办",
-          "启用/暂停",
-          "进入配置"
-        ],
+        "actions": ["打开对话", "处理待办", "启用/暂停", "进入配置"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无待办",
-          "已暂停",
-          "无活动",
-          "不可访问",
-          "部分状态加载失败"
-        ],
+        "cases": ["无待办", "已暂停", "无活动", "不可访问", "部分状态加载失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -898,12 +767,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "纵向排列，待办置前；配置/管理组默认展开，危险操作独立（取代旧稿折叠候选）。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -929,18 +793,10 @@
       "source_sha256": "38e5a5fa50badcf085e0c6f43392c547b34537865e8d621b5c7cff2fc9f8e2c9",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.responsibilities.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "新建职责",
-        "编辑职责",
-        "启停职责"
-      ],
+      "existing_capabilities": ["新建职责", "编辑职责", "启停职责"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -969,11 +825,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.responsibilities.tsx"
         ],
-        "existing_states_to_preserve": [
-          "空列表",
-          "保存中",
-          "保存失败"
-        ]
+        "existing_states_to_preserve": ["空列表", "保存中", "保存失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -988,19 +840,11 @@
         "新建/编辑职责弹窗"
       ],
       "normal": {
-        "actions": [
-          "新建职责",
-          "编辑职责",
-          "启停职责"
-        ],
+        "actions": ["新建职责", "编辑职责", "启停职责"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空列表",
-          "保存中",
-          "保存失败"
-        ],
+        "cases": ["空列表", "保存中", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1012,12 +856,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "弹窗适应整屏并保留底部提交，长目标自动换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1043,17 +882,10 @@
       "source_sha256": "08d9e4cdfbaafc154c69b1f40882643e8ae54bf7f3c3c8697bd642dad3e7ac77",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.reach.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "配置联系渠道",
-        "修改投递目标"
-      ],
+      "existing_capabilities": ["配置联系渠道", "修改投递目标"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1076,11 +908,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.reach.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无绑定",
-          "渠道不可用",
-          "验证失败"
-        ]
+        "existing_states_to_preserve": ["无绑定", "渠道不可用", "验证失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -1096,18 +924,11 @@
         "验证/保存反馈"
       ],
       "normal": {
-        "actions": [
-          "配置联系渠道",
-          "修改投递目标"
-        ],
+        "actions": ["配置联系渠道", "修改投递目标"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无绑定",
-          "渠道不可用",
-          "验证失败"
-        ],
+        "cases": ["无绑定", "渠道不可用", "验证失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1119,12 +940,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "字段单列，目标长地址换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1150,18 +966,10 @@
       "source_sha256": "474b67a758963efdd65b185216b9408447b5362d38cfe0cf998fdafe5d8baf61",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.memory.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "管理来源",
-        "设置主动研究",
-        "打开个人记忆"
-      ],
+      "existing_capabilities": ["管理来源", "设置主动研究", "打开个人记忆"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1186,11 +994,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.memory.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无来源",
-          "停用",
-          "配置保存失败"
-        ]
+        "existing_states_to_preserve": ["无来源", "停用", "配置保存失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -1199,26 +1003,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "返回 Bot",
-        "个人记忆入口",
-        "记忆来源",
-        "主动研究设置"
-      ],
+      "content_order": ["返回 Bot", "个人记忆入口", "记忆来源", "主动研究设置"],
       "normal": {
-        "actions": [
-          "管理来源",
-          "设置主动研究",
-          "打开个人记忆"
-        ],
+        "actions": ["管理来源", "设置主动研究", "打开个人记忆"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无来源",
-          "停用",
-          "配置保存失败"
-        ],
+        "cases": ["无来源", "停用", "配置保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1230,12 +1021,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "来源与范围说明不截断，配置保持单列。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1261,17 +1047,10 @@
       "source_sha256": "60a1b18790403ab53c8d9b7082df415dbbc0acb9e212b498f6c50e1fa295a981",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.approvals.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "添加/编辑规则",
-        "删除规则"
-      ],
+      "existing_capabilities": ["添加/编辑规则", "删除规则"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1295,11 +1074,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.approvals.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无规则",
-          "继承的约束",
-          "保存失败"
-        ]
+        "existing_states_to_preserve": ["无规则", "继承的约束", "保存失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -1314,18 +1089,11 @@
         "规则编辑与操作"
       ],
       "normal": {
-        "actions": [
-          "添加/编辑规则",
-          "删除规则"
-        ],
+        "actions": ["添加/编辑规则", "删除规则"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无规则",
-          "继承的约束",
-          "保存失败"
-        ],
+        "cases": ["无规则", "继承的约束", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1337,12 +1105,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "规则条件分行展示，作用对象保持可见。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1368,17 +1131,10 @@
       "source_sha256": "ca27eb42d6d16e562ec5252cc0012e7fbeb532eef21affa56ffbea80ac3cdf9f",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.routines.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "管理例行任务",
-        "查看运行"
-      ],
+      "existing_capabilities": ["管理例行任务", "查看运行"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1421,20 +1177,11 @@
         "已有编辑操作"
       ],
       "normal": {
-        "actions": [
-          "管理例行任务",
-          "查看运行"
-        ],
+        "actions": ["管理例行任务", "查看运行"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空任务",
-          "运行中",
-          "失败",
-          "跳过",
-          "等待"
-        ],
+        "cases": ["空任务", "运行中", "失败", "跳过", "等待"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1446,12 +1193,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "任务名、调度与状态分层；次要操作放菜单。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1477,18 +1219,10 @@
       "source_sha256": "2aacdde1712399062d928a43253052150b76e1ed98830b0d6dfdcf3387c17d73",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.access.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "管理技能",
-        "管理授权",
-        "配置交接"
-      ],
+      "existing_capabilities": ["管理技能", "管理授权", "配置交接"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1510,11 +1244,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.access.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无能力",
-          "共享应用受限",
-          "授权失效"
-        ]
+        "existing_states_to_preserve": ["无能力", "共享应用受限", "授权失效"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -1530,19 +1260,11 @@
         "交接配置"
       ],
       "normal": {
-        "actions": [
-          "管理技能",
-          "管理授权",
-          "配置交接"
-        ],
+        "actions": ["管理技能", "管理授权", "配置交接"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无能力",
-          "共享应用受限",
-          "授权失效"
-        ],
+        "cases": ["无能力", "共享应用受限", "授权失效"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1554,12 +1276,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "每种能力单独分组，范围说明保持完整。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1585,17 +1302,10 @@
       "source_sha256": "ae9b4d2cd6d3b5555261dc82b271fd95386cd27a0a9250c2f812bbb36b4f2fb1",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.sharing.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "修改共享范围",
-        "管理发布"
-      ],
+      "existing_capabilities": ["修改共享范围", "管理发布"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1639,18 +1349,11 @@
         "影响说明"
       ],
       "normal": {
-        "actions": [
-          "修改共享范围",
-          "管理发布"
-        ],
+        "actions": ["修改共享范围", "管理发布"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "本人/共享成员/管理员视角",
-          "无管理权限",
-          "保存失败"
-        ],
+        "cases": ["本人/共享成员/管理员视角", "无管理权限", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1662,12 +1365,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "共享范围先于操作，长成员信息换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1693,18 +1391,10 @@
       "source_sha256": "c8516ecd193d39b0b42eab4ad6421731d7490134c9eab42194d0e6a173e1eafd",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.setup.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "编辑身份",
-        "修改连接",
-        "管理回调凭据"
-      ],
+      "existing_capabilities": ["编辑身份", "修改连接", "管理回调凭据"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1727,11 +1417,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.setup.tsx"
         ],
-        "existing_states_to_preserve": [
-          "只读权限",
-          "保存中",
-          "连接异常"
-        ]
+        "existing_states_to_preserve": ["只读权限", "保存中", "连接异常"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -1747,19 +1433,11 @@
         "回调凭据与现有维护入口"
       ],
       "normal": {
-        "actions": [
-          "编辑身份",
-          "修改连接",
-          "管理回调凭据"
-        ],
+        "actions": ["编辑身份", "修改连接", "管理回调凭据"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "只读权限",
-          "保存中",
-          "连接异常"
-        ],
+        "cases": ["只读权限", "保存中", "连接异常"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1771,12 +1449,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "单列字段，敏感值保持现有掩码与操作方式。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1802,17 +1475,10 @@
       "source_sha256": "20472cc32537889140d8160ecbe35ea9a7e0dea0ef4e0b98562fc00c4c3b1606",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.runs.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "选择运行",
-        "切换筛选"
-      ],
+      "existing_capabilities": ["选择运行", "切换筛选"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1855,20 +1521,11 @@
         "分页"
       ],
       "normal": {
-        "actions": [
-          "选择运行",
-          "切换筛选"
-        ],
+        "actions": ["选择运行", "切换筛选"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "禁用/未配置",
-          "同步中",
-          "上游故障",
-          "空结果",
-          "加载失败"
-        ],
+        "cases": ["禁用/未配置", "同步中", "上游故障", "空结果", "加载失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1880,12 +1537,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "记录改为摘要行；ID 可复制的能力以实际已有入口为准。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -1911,17 +1563,10 @@
       "source_sha256": "f34fb40436fb763e86d52eef71d0bee1f083e970a08234f1ed5034b1d4c6c4bc",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.runs.$bindingId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "run",
-      "existing_capabilities": [
-        "查看已有引用",
-        "展开步骤"
-      ],
+      "existing_capabilities": ["查看已有引用", "展开步骤"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -1966,19 +1611,11 @@
         "执行步骤"
       ],
       "normal": {
-        "actions": [
-          "查看已有引用",
-          "展开步骤"
-        ],
+        "actions": ["查看已有引用", "展开步骤"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "部分同步",
-          "引用缺失",
-          "上游不可达",
-          "无步骤"
-        ],
+        "cases": ["部分同步", "引用缺失", "上游不可达", "无步骤"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -1990,12 +1627,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "概览单列，步骤长内容折叠；禁止整页横向滚动。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2021,16 +1653,10 @@
       "source_sha256": "78bad32260afb769196839a52d09b2984e2d718ed6c42c245dcae1420b9caf06",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.datasets.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "打开数据集"
-      ],
+      "existing_capabilities": ["打开数据集"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2054,11 +1680,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.datasets.tsx"
         ],
-        "existing_states_to_preserve": [
-          "空列表",
-          "同步中",
-          "不可用"
-        ]
+        "existing_states_to_preserve": ["空列表", "同步中", "不可用"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -2067,23 +1689,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "返回 Bot",
-        "数据集列表与版本信息",
-        "现有数据集入口"
-      ],
+      "content_order": ["返回 Bot", "数据集列表与版本信息", "现有数据集入口"],
       "normal": {
-        "actions": [
-          "打开数据集"
-        ],
+        "actions": ["打开数据集"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空列表",
-          "同步中",
-          "不可用"
-        ],
+        "cases": ["空列表", "同步中", "不可用"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2095,12 +1707,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "名称与版本同组显示，辅助字段后移。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2126,18 +1733,10 @@
       "source_sha256": "dd475a94562dd27eb002591dfbed92de65a01b9b8d3c7c09af690c656dfabaf2",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "打开数据集",
-        "打开实验结果",
-        "比较实验"
-      ],
+      "existing_capabilities": ["打开数据集", "打开实验结果", "比较实验"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2163,11 +1762,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.evaluations.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无数据集",
-          "无实验",
-          "服务不可用"
-        ]
+        "existing_states_to_preserve": ["无数据集", "无实验", "服务不可用"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -2183,19 +1778,11 @@
         "现有结果与比较入口"
       ],
       "normal": {
-        "actions": [
-          "打开数据集",
-          "打开实验结果",
-          "比较实验"
-        ],
+        "actions": ["打开数据集", "打开实验结果", "比较实验"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无数据集",
-          "无实验",
-          "服务不可用"
-        ],
+        "cases": ["无数据集", "无实验", "服务不可用"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2207,12 +1794,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "两区上下排列，筛选按内容换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2238,17 +1820,10 @@
       "source_sha256": "f982b5a41be4a120d5293cc59be9fa575a8b19f0d5b018f10c240268bfc0567d",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.evaluations.$datasetId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "选择版本",
-        "查看数据集内容"
-      ],
+      "existing_capabilities": ["选择版本", "查看数据集内容"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2267,11 +1842,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/_app/bots.$agentId.evaluations.$datasetId.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无版本",
-          "版本不可用",
-          "获取失败"
-        ]
+        "existing_states_to_preserve": ["无版本", "版本不可用", "获取失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -2286,18 +1857,11 @@
         "现有版本内容与可用性反馈"
       ],
       "normal": {
-        "actions": [
-          "选择版本",
-          "查看数据集内容"
-        ],
+        "actions": ["选择版本", "查看数据集内容"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无版本",
-          "版本不可用",
-          "获取失败"
-        ],
+        "cases": ["无版本", "版本不可用", "获取失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2309,12 +1873,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "版本控件占满可用宽度，结构化内容局部滚动。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2340,17 +1899,10 @@
       "source_sha256": "40dacdaf01f7d9a8f2c7600ecf8e8d5f739f1556adfe77feba3cf3fe47b50f29",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.evaluations.experiments.$experimentId.$executionId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "查看样本",
-        "使用现有执行操作"
-      ],
+      "existing_capabilities": ["查看样本", "使用现有执行操作"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2393,19 +1945,11 @@
         "样本结果列表"
       ],
       "normal": {
-        "actions": [
-          "查看样本",
-          "使用现有执行操作"
-        ],
+        "actions": ["查看样本", "使用现有执行操作"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "执行中",
-          "部分样本缺失",
-          "失败",
-          "无样本"
-        ],
+        "cases": ["执行中", "部分样本缺失", "失败", "无样本"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2417,12 +1961,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "样本摘要先行，明细按需展开；指标不强制多列。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2448,18 +1987,10 @@
       "source_sha256": "baf3e15a9fa657d345353c1e491b0a2503d80ff4de5818256fdf743a31ddb060",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.evaluations.experiment-comparisons.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "compare",
-      "existing_capabilities": [
-        "选择比较对象",
-        "执行比较",
-        "查看差异"
-      ],
+      "existing_capabilities": ["选择比较对象", "执行比较", "查看差异"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2502,20 +2033,11 @@
         "退化样本"
       ],
       "normal": {
-        "actions": [
-          "选择比较对象",
-          "执行比较",
-          "查看差异"
-        ],
+        "actions": ["选择比较对象", "执行比较", "查看差异"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未选择",
-          "不兼容",
-          "无可比较结果",
-          "部分缺失"
-        ],
+        "cases": ["未选择", "不兼容", "无可比较结果", "部分缺失"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2527,12 +2049,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "窄屏左右实验改为上下；同一指标的基线与候选相邻。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2558,17 +2075,10 @@
       "source_sha256": "2d43f8426b3016c38e233424f99023030e85d08951b9900daf60f91cd3b56f97",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/bots.$agentId.exports.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "查看任务",
-        "下载可用导出"
-      ],
+      "existing_capabilities": ["查看任务", "下载可用导出"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2610,20 +2120,11 @@
         "已有下载/操作入口"
       ],
       "normal": {
-        "actions": [
-          "查看任务",
-          "下载可用导出"
-        ],
+        "actions": ["查看任务", "下载可用导出"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "排队",
-          "运行",
-          "成功",
-          "失败",
-          "产物不可用"
-        ],
+        "cases": ["排队", "运行", "成功", "失败", "产物不可用"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2635,12 +2136,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "任务状态与操作同组，错误原因可展开。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2666,17 +2162,10 @@
       "source_sha256": "8083efa3197455bd8810bad70203aa1510cff79aed7adf7da1224ab2e574cca2",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/skills.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "editor",
-      "existing_capabilities": [
-        "新建技能",
-        "编辑技能"
-      ],
+      "existing_capabilities": ["新建技能", "编辑技能"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2726,19 +2215,11 @@
         "右侧新建/编辑"
       ],
       "normal": {
-        "actions": [
-          "新建技能",
-          "编辑技能"
-        ],
+        "actions": ["新建技能", "编辑技能"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无个人技能",
-          "无共享技能",
-          "只读",
-          "保存失败"
-        ],
+        "cases": ["无个人技能", "无共享技能", "只读", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2750,12 +2231,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "编辑转 Sheet，长指令有独立滚动，不遮挡提交。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2781,17 +2257,10 @@
       "source_sha256": "4b70934bb0865ceaa283de0d620e7704acdb2ebeb88c2deed72e5bfe4987eaa3",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/routines.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "管理任务",
-        "查看现有运行"
-      ],
+      "existing_capabilities": ["管理任务", "查看现有运行"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2832,20 +2301,11 @@
         "Bot 身份、调度、最近运行状态"
       ],
       "normal": {
-        "actions": [
-          "管理任务",
-          "查看现有运行"
-        ],
+        "actions": ["管理任务", "查看现有运行"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空列表",
-          "运行中",
-          "失败",
-          "跳过",
-          "等待"
-        ],
+        "cases": ["空列表", "运行中", "失败", "跳过", "等待"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2857,12 +2317,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "每项明确所属 Bot，避免与 Craft 任务混淆。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2888,18 +2343,10 @@
       "source_sha256": "5e188cc32a5984297f8127c8cbeb27a4fabb6a1feaee938e996fde8e7247bc4f",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/craft/index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "craft-home",
-      "existing_capabilities": [
-        "创建会话",
-        "选择会话",
-        "打开计划任务"
-      ],
+      "existing_capabilities": ["创建会话", "选择会话", "打开计划任务"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -2909,11 +2356,7 @@
           "app/src/components/ui/router-link.tsx",
           "app/src/routes/_authed/_app/craft/index.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无会话",
-          "会话加载失败",
-          "创建失败"
-        ]
+        "existing_states_to_preserve": ["无会话", "会话加载失败", "创建失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -2928,19 +2371,11 @@
         "选择/创建会话提示"
       ],
       "normal": {
-        "actions": [
-          "创建会话",
-          "选择会话",
-          "打开计划任务"
-        ],
+        "actions": ["创建会话", "选择会话", "打开计划任务"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无会话",
-          "会话加载失败",
-          "创建失败"
-        ],
+        "cases": ["无会话", "会话加载失败", "创建失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -2952,12 +2387,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "默认显示会话列表，选择后进入对话；不自动创建会话。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -2983,18 +2413,10 @@
       "source_sha256": "49edeed3cdd14105c18007ffb1c2b90d2fee835a3e6a90679f1e53eff82a579a",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/craft/$sessionId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "craft",
-      "existing_capabilities": [
-        "发送/停止",
-        "切换输出",
-        "管理会话"
-      ],
+      "existing_capabilities": ["发送/停止", "切换输出", "管理会话"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3049,11 +2471,7 @@
         "输出：预览/文件/产物"
       ],
       "normal": {
-        "actions": [
-          "发送/停止",
-          "切换输出",
-          "管理会话"
-        ],
+        "actions": ["发送/停止", "切换输出", "管理会话"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
@@ -3075,12 +2493,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "小于 768px 使用对话/输出视图切换；会话列表按需打开。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3106,17 +2519,10 @@
       "source_sha256": "282aad7a0f2cfd4b957a4578863a482e1230672593bf60d05035c18e190af141",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/_app/craft/tasks.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "editor",
-      "existing_capabilities": [
-        "新建任务",
-        "编辑任务"
-      ],
+      "existing_capabilities": ["新建任务", "编辑任务"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3163,19 +2569,11 @@
         "新建/编辑面板"
       ],
       "normal": {
-        "actions": [
-          "新建任务",
-          "编辑任务"
-        ],
+        "actions": ["新建任务", "编辑任务"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空列表",
-          "已暂停",
-          "最近失败",
-          "保存失败"
-        ],
+        "cases": ["空列表", "已暂停", "最近失败", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -3187,12 +2585,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "列表优先，编辑 Sheet；时间必须附带时区上下文。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3218,17 +2611,10 @@
       "source_sha256": "f124f311249a8ce31b48436af94c55330e8136e740ac3c8d77f2560b8997f5f4",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "切换偏好",
-        "编辑常驻指令"
-      ],
+      "existing_capabilities": ["切换偏好", "编辑常驻指令"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3253,11 +2639,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/settings/index.tsx"
         ],
-        "existing_states_to_preserve": [
-          "保存中",
-          "保存失败",
-          "长文本"
-        ]
+        "existing_states_to_preserve": ["保存中", "保存失败", "长文本"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -3266,25 +2648,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "主题与语言",
-        "消息列表偏好",
-        "常驻指令",
-        "快捷键"
-      ],
+      "content_order": ["主题与语言", "消息列表偏好", "常驻指令", "快捷键"],
       "normal": {
-        "actions": [
-          "切换偏好",
-          "编辑常驻指令"
-        ],
+        "actions": ["切换偏好", "编辑常驻指令"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "保存中",
-          "保存失败",
-          "长文本"
-        ],
+        "cases": ["保存中", "保存失败", "长文本"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -3296,12 +2666,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "设置标签在上、控件在下；键位标签不挤压说明。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3327,17 +2692,10 @@
       "source_sha256": "8400fe55e3df45325850d9022c3f3528393fa9cf3529b1dd489cf94c2a75ee02",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/notifications.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "管理路由",
-        "管理现有设备入口"
-      ],
+      "existing_capabilities": ["管理路由", "管理现有设备入口"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3371,25 +2729,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "更新投递路由",
-        "原生设备",
-        "最近投递记录"
-      ],
+      "content_order": ["更新投递路由", "原生设备", "最近投递记录"],
       "normal": {
-        "actions": [
-          "管理路由",
-          "管理现有设备入口"
-        ],
+        "actions": ["管理路由", "管理现有设备入口"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无设备",
-          "权限未授予",
-          "投递失败",
-          "无记录"
-        ],
+        "cases": ["无设备", "权限未授予", "投递失败", "无记录"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -3401,12 +2747,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "投递目标和结果保持相邻，日志细节展开。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3432,17 +2773,10 @@
       "source_sha256": "23d9ca7388ad9109865c9aefbc5bda0c218806c7dfdd7d07b3f9bddbfc3c126e",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/approvals.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "修改确认偏好",
-        "维护规则"
-      ],
+      "existing_capabilities": ["修改确认偏好", "维护规则"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3466,11 +2800,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/settings/approvals.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无规则",
-          "保存失败",
-          "只读约束"
-        ]
+        "existing_states_to_preserve": ["无规则", "保存失败", "只读约束"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -3479,24 +2809,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "执行前确认偏好",
-        "所有 Bot 通用规则",
-        "其他 Bot 规则"
-      ],
+      "content_order": ["执行前确认偏好", "所有 Bot 通用规则", "其他 Bot 规则"],
       "normal": {
-        "actions": [
-          "修改确认偏好",
-          "维护规则"
-        ],
+        "actions": ["修改确认偏好", "维护规则"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无规则",
-          "保存失败",
-          "只读约束"
-        ],
+        "cases": ["无规则", "保存失败", "只读约束"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -3508,12 +2827,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "优先显示规则适用范围，复杂条件换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3539,17 +2853,10 @@
       "source_sha256": "73947823f7db9b5143b4d063ce3845cf5ad544cc93ab7cc88a94f74f94877a78",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/memory.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "记住事实",
-        "管理已有记忆"
-      ],
+      "existing_capabilities": ["记住事实", "管理已有记忆"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3572,11 +2879,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/settings/memory.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无记忆",
-          "保存失败",
-          "删除确认"
-        ]
+        "existing_states_to_preserve": ["无记忆", "保存失败", "删除确认"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -3591,18 +2894,11 @@
         "现有来源与维护入口"
       ],
       "normal": {
-        "actions": [
-          "记住事实",
-          "管理已有记忆"
-        ],
+        "actions": ["记住事实", "管理已有记忆"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无记忆",
-          "保存失败",
-          "删除确认"
-        ],
+        "cases": ["无记忆", "保存失败", "删除确认"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -3614,12 +2910,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "记忆正文可读，来源和操作放次行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3645,17 +2936,10 @@
       "source_sha256": "e63c2c97f7970edb1929a57d20e49570268eb084d66281a3869931736d4ff091",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/connected-accounts/index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "连接/管理账号",
-        "查看授权"
-      ],
+      "existing_capabilities": ["连接/管理账号", "查看授权"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3706,19 +2990,11 @@
         "团队 Bot 同意记录"
       ],
       "normal": {
-        "actions": [
-          "连接/管理账号",
-          "查看授权"
-        ],
+        "actions": ["连接/管理账号", "查看授权"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无结果",
-          "连接失效",
-          "团队共享",
-          "不同接入分支"
-        ],
+        "cases": ["无结果", "连接失效", "团队共享", "不同接入分支"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -3730,12 +3006,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "搜索全宽，服务名/身份/状态分层。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3761,17 +3032,10 @@
       "source_sha256": "477cb9b4dd5e28f5f2701b543ca98e13e60f49246021ba3320a851a334a62016",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/connected-accounts/$key.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "连接/重新连接",
-        "撤销连接"
-      ],
+      "existing_capabilities": ["连接/重新连接", "撤销连接"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3813,19 +3077,11 @@
         "已授予访问与连接信息"
       ],
       "normal": {
-        "actions": [
-          "连接/重新连接",
-          "撤销连接"
-        ],
+        "actions": ["连接/重新连接", "撤销连接"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "共享只读",
-          "本人未连接",
-          "权限不足",
-          "服务不存在"
-        ],
+        "cases": ["共享只读", "本人未连接", "权限不足", "服务不存在"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -3837,12 +3093,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "主操作明确作用于哪个账号；长授权说明不截断。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3868,18 +3119,10 @@
       "source_sha256": "9ec7d010db2669ae82ec9efe1a6e52b384d5babc48f342c643b4ca32efeb992d",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/model-access.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "输入绑定码",
-        "预览并确认授权",
-        "管理已有授权"
-      ],
+      "existing_capabilities": ["输入绑定码", "预览并确认授权", "管理已有授权"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -3922,20 +3165,11 @@
         "说明"
       ],
       "normal": {
-        "actions": [
-          "输入绑定码",
-          "预览并确认授权",
-          "管理已有授权"
-        ],
+        "actions": ["输入绑定码", "预览并确认授权", "管理已有授权"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "绑定码无效/过期",
-          "预览中",
-          "确认失败",
-          "已授权"
-        ],
+        "cases": ["绑定码无效/过期", "预览中", "确认失败", "已授权"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -3947,12 +3181,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "输入、预览和确认连续单列，确认对象始终可见。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -3978,16 +3207,10 @@
       "source_sha256": "d4d86d2c82b54196bea1519e40a6b6cb1914cae82659a255082fa0c9e38be50f",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/passwords.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "删除登录信息"
-      ],
+      "existing_capabilities": ["删除登录信息"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4005,11 +3228,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/settings/passwords.tsx"
         ],
-        "existing_states_to_preserve": [
-          "功能禁用",
-          "无登录信息",
-          "删除中/失败"
-        ]
+        "existing_states_to_preserve": ["功能禁用", "无登录信息", "删除中/失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -4018,23 +3237,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "功能状态说明",
-        "站点/账号列表",
-        "删除操作"
-      ],
+      "content_order": ["功能状态说明", "站点/账号列表", "删除操作"],
       "normal": {
-        "actions": [
-          "删除登录信息"
-        ],
+        "actions": ["删除登录信息"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "功能禁用",
-          "无登录信息",
-          "删除中/失败"
-        ],
+        "cases": ["功能禁用", "无登录信息", "删除中/失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4046,12 +3255,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "显示站点和账号，不在列表暴露密码。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4077,16 +3281,10 @@
       "source_sha256": "1a2dcfdc4d808fcb81474396db973e97cdfd36b3d207eb8cdfb993948bb724f9",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/components-gallery/index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "gallery",
-      "existing_capabilities": [
-        "打开组件预览"
-      ],
+      "existing_capabilities": ["打开组件预览"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4106,10 +3304,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/settings/components-gallery/index.tsx"
         ],
-        "existing_states_to_preserve": [
-          "空目录",
-          "加载失败"
-        ]
+        "existing_states_to_preserve": ["空目录", "加载失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -4118,22 +3313,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "标题说明",
-        "组件预览集合",
-        "组件名称与类型"
-      ],
+      "content_order": ["标题说明", "组件预览集合", "组件名称与类型"],
       "normal": {
-        "actions": [
-          "打开组件预览"
-        ],
+        "actions": ["打开组件预览"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空目录",
-          "加载失败"
-        ],
+        "cases": ["空目录", "加载失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4145,12 +3331,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "两列逐步变单列，预览尺寸受限且不抢滚动。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4176,16 +3357,10 @@
       "source_sha256": "4980f35eb2f0e1601ae53b254e6985345e9026806cc66445e5c3f8b178d0e869",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/components-gallery/$name.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "preview",
-      "existing_capabilities": [
-        "查看组件"
-      ],
+      "existing_capabilities": ["查看组件"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4205,10 +3380,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/settings/components-gallery/$name.tsx"
         ],
-        "existing_states_to_preserve": [
-          "组件不存在",
-          "预览加载/失败"
-        ]
+        "existing_states_to_preserve": ["组件不存在", "预览加载/失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -4224,16 +3396,11 @@
         "组件类型与调用信息"
       ],
       "normal": {
-        "actions": [
-          "查看组件"
-        ],
+        "actions": ["查看组件"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "组件不存在",
-          "预览加载/失败"
-        ],
+        "cases": ["组件不存在", "预览加载/失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4245,12 +3412,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "预览横向内容只在内部滚动，元信息在下。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4276,17 +3438,10 @@
       "source_sha256": "6f7b5e87c3c8bb6ac15804bdb63b45a93761f799bd88c1fdee5655b073498a7b",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/usage.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "billing",
-      "existing_capabilities": [
-        "使用已有购买/升级入口",
-        "筛选消费"
-      ],
+      "existing_capabilities": ["使用已有购买/升级入口", "筛选消费"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4336,20 +3491,11 @@
         "消费范围选择与明细"
       ],
       "normal": {
-        "actions": [
-          "使用已有购买/升级入口",
-          "筛选消费"
-        ],
+        "actions": ["使用已有购买/升级入口", "筛选消费"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未启用计费",
-          "无订阅",
-          "无消费",
-          "查询失败",
-          "购买中"
-        ],
+        "cases": ["未启用计费", "无订阅", "无消费", "查询失败", "购买中"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4361,12 +3507,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "账户摘要纵向排列，消费表转摘要行或局部横滚。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4392,16 +3533,10 @@
       "source_sha256": "3af8c69240dea710d25dfddbae27b011742d62368e8ee54041c251fb93c651b5",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/orders.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "翻页/查看现有订单信息"
-      ],
+      "existing_capabilities": ["翻页/查看现有订单信息"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4438,24 +3573,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "订单列表",
-        "订阅状态",
-        "积分发放来源与有效期"
-      ],
+      "content_order": ["订单列表", "订阅状态", "积分发放来源与有效期"],
       "normal": {
-        "actions": [
-          "翻页/查看现有订单信息"
-        ],
+        "actions": ["翻页/查看现有订单信息"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无订单",
-          "无订阅",
-          "无发放",
-          "加载失败"
-        ],
+        "cases": ["无订单", "无订阅", "无发放", "加载失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4467,12 +3591,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "订单金额、状态、时间优先；来源说明可展开。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4498,18 +3617,10 @@
       "source_sha256": "f5c02319368670efd7fd374ce9a1fca7535a4d953f7c1882e08baa9f90748c9c",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/settings/invoices.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "筛选账单",
-        "打开详情",
-        "下载"
-      ],
+      "existing_capabilities": ["筛选账单", "打开详情", "下载"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4544,27 +3655,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "时间范围与刷新",
-        "账单列表",
-        "分页",
-        "详情弹窗与下载"
-      ],
+      "content_order": ["时间范围与刷新", "账单列表", "分页", "详情弹窗与下载"],
       "normal": {
-        "actions": [
-          "筛选账单",
-          "打开详情",
-          "下载"
-        ],
+        "actions": ["筛选账单", "打开详情", "下载"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未启用",
-          "空账单",
-          "刷新中",
-          "下载不可用"
-        ],
+        "cases": ["未启用", "空账单", "刷新中", "下载不可用"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4576,12 +3673,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "详情单列，金额/币种/状态保留，下载入口不隐藏。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4607,16 +3699,10 @@
       "source_sha256": "3c485a88a09030f33764345d233f131f9eda4487687b6a4016c6df26cb22b4cd",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "directory",
-      "existing_capabilities": [
-        "进入配置模块"
-      ],
+      "existing_capabilities": ["进入配置模块"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4634,10 +3720,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/index.tsx"
         ],
-        "existing_states_to_preserve": [
-          "非管理员重定向",
-          "配置状态未知"
-        ]
+        "existing_states_to_preserve": ["非管理员重定向", "配置状态未知"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -4654,16 +3737,11 @@
         "历史入口组"
       ],
       "normal": {
-        "actions": [
-          "进入配置模块"
-        ],
+        "actions": ["进入配置模块"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "非管理员重定向",
-          "配置状态未知"
-        ],
+        "cases": ["非管理员重定向", "配置状态未知"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4675,12 +3753,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "分组目录保持单列或两列；不新增指标占位。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4706,17 +3779,10 @@
       "source_sha256": "6c589745b52154d76cdf0a3f8a24b7615fbe013a6060437f624e5a99c7e0a09d",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/credentials.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "添加凭据",
-        "管理现有凭据"
-      ],
+      "existing_capabilities": ["添加凭据", "管理现有凭据"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4739,11 +3805,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/credentials.tsx"
         ],
-        "existing_states_to_preserve": [
-          "未配置",
-          "保存失败",
-          "凭据无效"
-        ]
+        "existing_states_to_preserve": ["未配置", "保存失败", "凭据无效"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -4752,24 +3814,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "凭据说明与添加表单",
-        "已有凭据列表",
-        "现有维护操作"
-      ],
+      "content_order": ["凭据说明与添加表单", "已有凭据列表", "现有维护操作"],
       "normal": {
-        "actions": [
-          "添加凭据",
-          "管理现有凭据"
-        ],
+        "actions": ["添加凭据", "管理现有凭据"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未配置",
-          "保存失败",
-          "凭据无效"
-        ],
+        "cases": ["未配置", "保存失败", "凭据无效"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4781,12 +3832,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "表单单列，敏感值只按已有安全契约展示。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4812,17 +3858,10 @@
       "source_sha256": "0b316307594b2541fa3e9671e080eedf8f2a2079f3d75977c29f7b697a3f7c49",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/bot-services.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "注册服务",
-        "编辑服务"
-      ],
+      "existing_capabilities": ["注册服务", "编辑服务"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4846,11 +3885,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/bot-services.tsx"
         ],
-        "existing_states_to_preserve": [
-          "空列表",
-          "保存失败",
-          "停用"
-        ]
+        "existing_states_to_preserve": ["空列表", "保存失败", "停用"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -4865,18 +3900,11 @@
         "注册/编辑弹窗"
       ],
       "normal": {
-        "actions": [
-          "注册服务",
-          "编辑服务"
-        ],
+        "actions": ["注册服务", "编辑服务"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空列表",
-          "保存失败",
-          "停用"
-        ],
+        "cases": ["空列表", "保存失败", "停用"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4888,12 +3916,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "地址换行，注册弹窗在小屏单列。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -4919,17 +3942,10 @@
       "source_sha256": "96e52d16c2b84b3cd5948e2e02130aee1b1eef4fdcff0cd74876e093d6315c82",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/gateway.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "保存现有配置",
-        "执行已有检查"
-      ],
+      "existing_capabilities": ["保存现有配置", "执行已有检查"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -4971,20 +3987,11 @@
         "凭据配置"
       ],
       "normal": {
-        "actions": [
-          "保存现有配置",
-          "执行已有检查"
-        ],
+        "actions": ["保存现有配置", "执行已有检查"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未配置",
-          "就绪",
-          "连接失败",
-          "认证失败",
-          "保存中"
-        ],
+        "cases": ["未配置", "就绪", "连接失败", "认证失败", "保存中"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -4996,12 +4003,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "状态解释在表单前，错误贴近对应字段。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5027,17 +4029,10 @@
       "source_sha256": "90c77e3f1bfcd90def1bdf7a1aaeabd971350ba4089e7064439ebcf6acc8f951",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/model-catalog.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "同步模型",
-        "修改已支持配置"
-      ],
+      "existing_capabilities": ["同步模型", "修改已支持配置"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -5078,19 +4073,11 @@
         "模型列表与现有开放配置"
       ],
       "normal": {
-        "actions": [
-          "同步模型",
-          "修改已支持配置"
-        ],
+        "actions": ["同步模型", "修改已支持配置"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未同步",
-          "同步中",
-          "同步失败",
-          "空目录"
-        ],
+        "cases": ["未同步", "同步中", "同步失败", "空目录"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5102,12 +4089,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "模型名称与能力摘要同行，技术 ID 次行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5133,17 +4115,10 @@
       "source_sha256": "e02cba22f9df0a3bed5eb1e536edb115738250b736f37be2be1319a99fcc18d1",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/boundaries.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "配置策略",
-        "执行试运行"
-      ],
+      "existing_capabilities": ["配置策略", "执行试运行"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -5180,19 +4155,11 @@
         "决定与原因"
       ],
       "normal": {
-        "actions": [
-          "配置策略",
-          "执行试运行"
-        ],
+        "actions": ["配置策略", "执行试运行"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "允许",
-          "拒绝",
-          "输入无效",
-          "试运行失败"
-        ],
+        "cases": ["允许", "拒绝", "输入无效", "试运行失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5204,12 +4171,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "输入→结果上下排列，拒绝原因完整可读。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5235,17 +4197,10 @@
       "source_sha256": "702ab3dd2e52bab046d99f4185c3941d1ae0fd8fdecddd0608a6dd9fb0b89d64",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/approvals.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "修改团队策略",
-        "维护规则"
-      ],
+      "existing_capabilities": ["修改团队策略", "维护规则"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -5270,11 +4225,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/approvals.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无规则",
-          "权限不足",
-          "保存失败"
-        ]
+        "existing_states_to_preserve": ["无规则", "权限不足", "保存失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -5283,24 +4234,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "团队作用范围",
-        "审批策略设置",
-        "规则列表"
-      ],
+      "content_order": ["团队作用范围", "审批策略设置", "规则列表"],
       "normal": {
-        "actions": [
-          "修改团队策略",
-          "维护规则"
-        ],
+        "actions": ["修改团队策略", "维护规则"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无规则",
-          "权限不足",
-          "保存失败"
-        ],
+        "cases": ["无规则", "权限不足", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5312,12 +4252,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "团队与个人设置标记清楚，规则条件换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5343,17 +4278,10 @@
       "source_sha256": "20f00892900ddcadb78dd70c7d3430d5164a3e237aac8cba83d3e6d4a5ea44f7",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/computers.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "管理主机目录",
-        "维护目录授权"
-      ],
+      "existing_capabilities": ["管理主机目录", "维护目录授权"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -5372,11 +4300,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/computers.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无电脑",
-          "目录不可用",
-          "授权失败"
-        ]
+        "existing_states_to_preserve": ["无电脑", "目录不可用", "授权失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -5391,18 +4315,11 @@
         "按电脑/用户的目录授权"
       ],
       "normal": {
-        "actions": [
-          "管理主机目录",
-          "维护目录授权"
-        ],
+        "actions": ["管理主机目录", "维护目录授权"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无电脑",
-          "目录不可用",
-          "授权失败"
-        ],
+        "cases": ["无电脑", "目录不可用", "授权失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5414,12 +4331,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "目录长路径局部滚动或换行，状态使用文字。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5445,17 +4357,10 @@
       "source_sha256": "b266aa194c3f6f10580034619a03dfe85c49db15b5f60de35f381b2c4b33b0c0",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/plugins/index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "打开连接器",
-        "打开集成配置"
-      ],
+      "existing_capabilities": ["打开连接器", "打开集成配置"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -5474,12 +4379,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/plugins/index.tsx"
         ],
-        "existing_states_to_preserve": [
-          "未配置",
-          "停用",
-          "读取失败",
-          "空列表"
-        ]
+        "existing_states_to_preserve": ["未配置", "停用", "读取失败", "空列表"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -5495,19 +4395,11 @@
         "现有集成入口"
       ],
       "normal": {
-        "actions": [
-          "打开连接器",
-          "打开集成配置"
-        ],
+        "actions": ["打开连接器", "打开集成配置"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未配置",
-          "停用",
-          "读取失败",
-          "空列表"
-        ],
+        "cases": ["未配置", "停用", "读取失败", "空列表"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5519,12 +4411,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "服务身份和配置状态优先，长描述换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5550,11 +4437,7 @@
       "source_sha256": "4eb88347497d2dd733442967d29ee052156f39a7a24d70d0d704c3522352afb7",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/plugins/$key.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
       "existing_capabilities": [
@@ -5609,20 +4492,11 @@
         "工具配置入口"
       ],
       "normal": {
-        "actions": [
-          "启停服务",
-          "配置账号模式",
-          "管理 Bot/工具授权"
-        ],
+        "actions": ["启停服务", "配置账号模式", "管理 Bot/工具授权"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "个人/共享模式",
-          "共享连接不可读",
-          "未连接",
-          "权限不足"
-        ],
+        "cases": ["个人/共享模式", "共享连接不可读", "未连接", "权限不足"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5634,12 +4508,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "服务状态在前，账号模式说明紧贴控件。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5665,16 +4534,10 @@
       "source_sha256": "d2406cc9a509dc76a3a33c77d51be722b33db237b960c5724f9b581d4e3ce9ca",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/plugins/$key_.bots.$agentId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "修改共享使用授权"
-      ],
+      "existing_capabilities": ["修改共享使用授权"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -5716,18 +4579,11 @@
         "现有授权字段"
       ],
       "normal": {
-        "actions": [
-          "修改共享使用授权"
-        ],
+        "actions": ["修改共享使用授权"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未批准",
-          "已批准",
-          "审批字段无效",
-          "保存失败"
-        ],
+        "cases": ["未批准", "已批准", "审批字段无效", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5739,12 +4595,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "确认操作前保留 Bot 和连接器名称。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5770,17 +4621,10 @@
       "source_sha256": "c782e0f6a765002e9ff115ac6bf355eafd41a4154752cedc080082ec96d169d5",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/plugins/$key_.tools.$tool.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "启停工具",
-        "修改规则"
-      ],
+      "existing_capabilities": ["启停工具", "修改规则"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -5812,25 +4656,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "返回连接器",
-        "工具名称与说明",
-        "启用与授权规则"
-      ],
+      "content_order": ["返回连接器", "工具名称与说明", "启用与授权规则"],
       "normal": {
-        "actions": [
-          "启停工具",
-          "修改规则"
-        ],
+        "actions": ["启停工具", "修改规则"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未知工具",
-          "禁用",
-          "无权限",
-          "保存失败"
-        ],
+        "cases": ["未知工具", "禁用", "无权限", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5842,12 +4674,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "长工具名换行，规则与解释相邻。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5873,17 +4700,10 @@
       "source_sha256": "2bf535249944bebc9a6a082628fccc573dc989ecc228a922bedb2d622443d9d9",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/plugins/composio.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "保存现有接入配置",
-        "管理集成"
-      ],
+      "existing_capabilities": ["保存现有接入配置", "管理集成"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -5915,25 +4735,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "接入说明",
-        "现有配置字段",
-        "可用集成列表"
-      ],
+      "content_order": ["接入说明", "现有配置字段", "可用集成列表"],
       "normal": {
-        "actions": [
-          "保存现有接入配置",
-          "管理集成"
-        ],
+        "actions": ["保存现有接入配置", "管理集成"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未配置",
-          "不可用",
-          "空集成",
-          "保存失败"
-        ],
+        "cases": ["未配置", "不可用", "空集成", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -5945,12 +4753,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "字段单列，回调与密钥说明允许换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -5976,17 +4779,10 @@
       "source_sha256": "046915d40c64b36f3b383af81d044e2b3a1d46a90e98eaa829fe959392dd5e63",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/plugins/open-connector.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "保存现有接入配置",
-        "管理连接器"
-      ],
+      "existing_capabilities": ["保存现有接入配置", "管理连接器"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6004,11 +4800,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/plugins/open-connector.tsx"
         ],
-        "existing_states_to_preserve": [
-          "未配置",
-          "加载失败",
-          "空列表"
-        ]
+        "existing_states_to_preserve": ["未配置", "加载失败", "空列表"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -6017,24 +4809,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "接入说明",
-        "现有配置字段",
-        "连接器列表"
-      ],
+      "content_order": ["接入说明", "现有配置字段", "连接器列表"],
       "normal": {
-        "actions": [
-          "保存现有接入配置",
-          "管理连接器"
-        ],
+        "actions": ["保存现有接入配置", "管理连接器"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未配置",
-          "加载失败",
-          "空列表"
-        ],
+        "cases": ["未配置", "加载失败", "空列表"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6046,12 +4827,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "与 Composio 保持结构一致，保留各自字段差异。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6077,17 +4853,10 @@
       "source_sha256": "b388cecbd6e57f95ccca9307707d8bd58f44f170785c1ed06e87c3ee0dab763a",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/skills.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "editor",
-      "existing_capabilities": [
-        "编写技能",
-        "执行已有技能维护"
-      ],
+      "existing_capabilities": ["编写技能", "执行已有技能维护"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6109,11 +4878,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/skills.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无技能",
-          "标识冲突/非法",
-          "保存失败"
-        ]
+        "existing_states_to_preserve": ["无技能", "标识冲突/非法", "保存失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -6128,18 +4893,11 @@
         "编写技能弹窗：标识、标题、摘要、指令"
       ],
       "normal": {
-        "actions": [
-          "编写技能",
-          "执行已有技能维护"
-        ],
+        "actions": ["编写技能", "执行已有技能维护"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无技能",
-          "标识冲突/非法",
-          "保存失败"
-        ],
+        "cases": ["无技能", "标识冲突/非法", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6151,12 +4909,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "长指令独立滚动，提交按钮可见。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6182,11 +4935,7 @@
       "source_sha256": "076cb177712cbc3d5a190b5a72c869f3accc0427b64327b89f9e05df16ebb49f",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/market.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "gallery",
       "existing_capabilities": [
@@ -6237,20 +4986,11 @@
         "资源详情弹窗"
       ],
       "normal": {
-        "actions": [
-          "切换分类",
-          "查看资源",
-          "执行已有安装/创建入口"
-        ],
+        "actions": ["切换分类", "查看资源", "执行已有安装/创建入口"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "目录加载失败",
-          "空分类",
-          "已拥有",
-          "操作中"
-        ],
+        "cases": ["目录加载失败", "空分类", "已拥有", "操作中"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6262,12 +5002,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "分类栏可横滑，资源网格降为单列；详情可滚动。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6293,18 +5028,10 @@
       "source_sha256": "5b00721be94981665778f1728d7a0da311fcdd75b97432db4bf9801dcc7533ac",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/knowledge.index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "新建知识库",
-        "打开知识库",
-        "删除"
-      ],
+      "existing_capabilities": ["新建知识库", "打开知识库", "删除"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6324,11 +5051,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/knowledge.index.tsx"
         ],
-        "existing_states_to_preserve": [
-          "空知识库",
-          "创建失败",
-          "删除确认"
-        ]
+        "existing_states_to_preserve": ["空知识库", "创建失败", "删除确认"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -6343,19 +5066,11 @@
         "打开详情与删除确认"
       ],
       "normal": {
-        "actions": [
-          "新建知识库",
-          "打开知识库",
-          "删除"
-        ],
+        "actions": ["新建知识库", "打开知识库", "删除"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空知识库",
-          "创建失败",
-          "删除确认"
-        ],
+        "cases": ["空知识库", "创建失败", "删除确认"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6367,12 +5082,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "列表摘要两行，删除置次要动作。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6398,18 +5108,10 @@
       "source_sha256": "6f8060bcbf0050d033798f84234d2065d29e3bc0dc024498b7e31a993f3acb28",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/knowledge.$kbId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "knowledge",
-      "existing_capabilities": [
-        "添加文档",
-        "管理文档",
-        "测试检索"
-      ],
+      "existing_capabilities": ["添加文档", "管理文档", "测试检索"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6455,20 +5157,11 @@
         "检索测试输入与结果"
       ],
       "normal": {
-        "actions": [
-          "添加文档",
-          "管理文档",
-          "测试检索"
-        ],
+        "actions": ["添加文档", "管理文档", "测试检索"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "上传/处理中/失败",
-          "无文档",
-          "无检索结果",
-          "删除确认"
-        ],
+        "cases": ["上传/处理中/失败", "无文档", "无检索结果", "删除确认"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6480,12 +5173,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "上传、文档和测试依次排列；宽屏检索测试可放辅助列。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6511,16 +5199,10 @@
       "source_sha256": "98124fd094d5d99fbd4377558454b9c40396b085c0fe3feff091594b8aef06e6",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/learning.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "保存现有学习参数"
-      ],
+      "existing_capabilities": ["保存现有学习参数"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6552,24 +5234,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "学习设置",
-        "目标字段",
-        "容器配置"
-      ],
+      "content_order": ["学习设置", "目标字段", "容器配置"],
       "normal": {
-        "actions": [
-          "保存现有学习参数"
-        ],
+        "actions": ["保存现有学习参数"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "禁用",
-          "字段无效",
-          "容器未就绪",
-          "保存失败"
-        ],
+        "cases": ["禁用", "字段无效", "容器未就绪", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6581,12 +5252,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "目标与容器字段分组，长配置自动换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6612,16 +5278,10 @@
       "source_sha256": "548195c133e7ac26ebec8446853e94f912dd8f3d32c9146c8a427c59a10bdc7b",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/components/index.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "gallery",
-      "existing_capabilities": [
-        "打开组件"
-      ],
+      "existing_capabilities": ["打开组件"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6641,10 +5301,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/components/index.tsx"
         ],
-        "existing_states_to_preserve": [
-          "空组件",
-          "加载失败"
-        ]
+        "existing_states_to_preserve": ["空组件", "加载失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -6653,22 +5310,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "组件目录",
-        "预览与类型",
-        "详情入口"
-      ],
+      "content_order": ["组件目录", "预览与类型", "详情入口"],
       "normal": {
-        "actions": [
-          "打开组件"
-        ],
+        "actions": ["打开组件"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空组件",
-          "加载失败"
-        ],
+        "cases": ["空组件", "加载失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6680,12 +5328,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "预览网格逐级降列。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6711,17 +5354,10 @@
       "source_sha256": "2a432c5d6d55c5b83ea1620fd064a9817130d09bc1229c99235188909882fcd4",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/components/$name.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "preview",
-      "existing_capabilities": [
-        "打开配置",
-        "修改现有组件配置"
-      ],
+      "existing_capabilities": ["打开配置", "修改现有组件配置"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6758,26 +5394,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "返回目录",
-        "组件预览",
-        "元信息",
-        "启用/配置 Sheet"
-      ],
+      "content_order": ["返回目录", "组件预览", "元信息", "启用/配置 Sheet"],
       "normal": {
-        "actions": [
-          "打开配置",
-          "修改现有组件配置"
-        ],
+        "actions": ["打开配置", "修改现有组件配置"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "组件不存在",
-          "预览失败",
-          "配置错误",
-          "只读"
-        ],
+        "cases": ["组件不存在", "预览失败", "配置错误", "只读"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6789,12 +5412,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "预览在上、信息在下，配置转全宽 Sheet。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6820,17 +5438,10 @@
       "source_sha256": "02895e46a8045ca0fb9521948cab68026de47c5f7d78e40370c0b5ca84aa4439",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/playground.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "playground",
-      "existing_capabilities": [
-        "编辑输入",
-        "运行预览"
-      ],
+      "existing_capabilities": ["编辑输入", "运行预览"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6848,11 +5459,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/playground.tsx"
         ],
-        "existing_states_to_preserve": [
-          "输入非法",
-          "渲染失败",
-          "无预览"
-        ]
+        "existing_states_to_preserve": ["输入非法", "渲染失败", "无预览"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -6868,18 +5475,11 @@
         "生成 UI 预览"
       ],
       "normal": {
-        "actions": [
-          "编辑输入",
-          "运行预览"
-        ],
+        "actions": ["编辑输入", "运行预览"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "输入非法",
-          "渲染失败",
-          "无预览"
-        ],
+        "cases": ["输入非法", "渲染失败", "无预览"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6891,12 +5491,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "编辑/预览切换，保留草稿；代码区域内部横滚。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -6922,16 +5517,10 @@
       "source_sha256": "daea4f83302752d0b8748614b265743e2052ac77e81a3e1713dc32434c7641a5",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/people.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "list",
-      "existing_capabilities": [
-        "执行已有角色与访问操作"
-      ],
+      "existing_capabilities": ["执行已有角色与访问操作"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -6972,18 +5561,11 @@
         "角色/访问开关"
       ],
       "normal": {
-        "actions": [
-          "执行已有角色与访问操作"
-        ],
+        "actions": ["执行已有角色与访问操作"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "空列表",
-          "无权限",
-          "保存中",
-          "保存失败"
-        ],
+        "cases": ["空列表", "无权限", "保存中", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -6995,12 +5577,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "姓名、身份与角色同行，操作放次行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7026,17 +5603,10 @@
       "source_sha256": "08998723f1a9857542e435d7ba5493ec7ad2c2e3f9aca0b505417ae644cd3789",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/billing.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "发放积分",
-        "执行计费清理"
-      ],
+      "existing_capabilities": ["发放积分", "执行计费清理"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7070,24 +5640,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "管理员积分发放表单",
-        "计费清理说明与执行"
-      ],
+      "content_order": ["管理员积分发放表单", "计费清理说明与执行"],
       "normal": {
-        "actions": [
-          "发放积分",
-          "执行计费清理"
-        ],
+        "actions": ["发放积分", "执行计费清理"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "账户/金额无效",
-          "执行中",
-          "执行失败",
-          "执行结果"
-        ],
+        "cases": ["账户/金额无效", "执行中", "执行失败", "执行结果"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7099,12 +5658,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "发放与清理分隔，确认对象/金额/影响保持可见。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7130,16 +5684,10 @@
       "source_sha256": "6af5c179e25625febe967fa8cbb569e75a98d62c5510b241757fe8ba671ce0c2",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/identity-providers.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "维护提供方配置"
-      ],
+      "existing_capabilities": ["维护提供方配置"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7161,11 +5709,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/identity-providers.tsx"
         ],
-        "existing_states_to_preserve": [
-          "未配置",
-          "元数据无效",
-          "保存失败"
-        ]
+        "existing_states_to_preserve": ["未配置", "元数据无效", "保存失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -7174,23 +5718,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "提供方列表",
-        "现有连接配置",
-        "实体/元数据信息"
-      ],
+      "content_order": ["提供方列表", "现有连接配置", "实体/元数据信息"],
       "normal": {
-        "actions": [
-          "维护提供方配置"
-        ],
+        "actions": ["维护提供方配置"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "未配置",
-          "元数据无效",
-          "保存失败"
-        ],
+        "cases": ["未配置", "元数据无效", "保存失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7202,12 +5736,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "元数据在代码容器内滚动，常规字段单列。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7233,17 +5762,10 @@
       "source_sha256": "82d6edfe4b48288e79e6ef9953f582a57ab4cf219ec2e74c661300539829a210",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/audit.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "翻页",
-        "查看已有事件信息"
-      ],
+      "existing_capabilities": ["翻页", "查看已有事件信息"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7259,11 +5781,7 @@
           "app/src/components/ui/tooltip.tsx",
           "app/src/routes/_authed/admin/audit.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无事件",
-          "查询失败",
-          "未知目标"
-        ]
+        "existing_states_to_preserve": ["无事件", "查询失败", "未知目标"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -7278,18 +5796,11 @@
         "可读取的事件细节"
       ],
       "normal": {
-        "actions": [
-          "翻页",
-          "查看已有事件信息"
-        ],
+        "actions": ["翻页", "查看已有事件信息"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无事件",
-          "查询失败",
-          "未知目标"
-        ],
+        "cases": ["无事件", "查询失败", "未知目标"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7301,12 +5812,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "先展示决定、动作、时间；长事件信息按需展开。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7332,17 +5838,10 @@
       "source_sha256": "f8fb69e6e130958093e2b6d66da66ba7c027e98634dd9bd2ea752f480b4e0523",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/enterprise.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "config",
-      "existing_capabilities": [
-        "修改现有策略",
-        "执行现有维护操作"
-      ],
+      "existing_capabilities": ["修改现有策略", "执行现有维护操作"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7387,19 +5886,11 @@
         "清理与覆盖配置"
       ],
       "normal": {
-        "actions": [
-          "修改现有策略",
-          "执行现有维护操作"
-        ],
+        "actions": ["修改现有策略", "执行现有维护操作"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "能力未启用",
-          "只读",
-          "保存失败",
-          "维护失败"
-        ],
+        "cases": ["能力未启用", "只读", "保存失败", "维护失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7411,12 +5902,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "按职责分组；复杂配置弹窗单列。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7442,17 +5928,10 @@
       "source_sha256": "83e551ee571cc43edf964e04f37e036d3f646aae104ba5554b450feeaa25f2da",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/observability.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "切换时间范围",
-        "使用已有明细入口"
-      ],
+      "existing_capabilities": ["切换时间范围", "使用已有明细入口"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7493,20 +5972,11 @@
         "Bot 运行与导出汇总"
       ],
       "normal": {
-        "actions": [
-          "切换时间范围",
-          "使用已有明细入口"
-        ],
+        "actions": ["切换时间范围", "使用已有明细入口"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "禁用/未配置",
-          "能力缺失",
-          "同步中",
-          "上游故障",
-          "空范围"
-        ],
+        "cases": ["禁用/未配置", "能力缺失", "同步中", "上游故障", "空范围"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7518,12 +5988,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "健康与范围说明置前，Bot 汇总逐行展开。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7549,17 +6014,10 @@
       "source_sha256": "be78407f7510896bd30970c7315f0cfdc51ab409d35df7eb3b58a727dcfede4b",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/admin/ai-observability.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "切换时间范围",
-        "使用已有明细入口"
-      ],
+      "existing_capabilities": ["切换时间范围", "使用已有明细入口"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7600,20 +6058,11 @@
         "Bot 运行与导出汇总"
       ],
       "normal": {
-        "actions": [
-          "切换时间范围",
-          "使用已有明细入口"
-        ],
+        "actions": ["切换时间范围", "使用已有明细入口"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "禁用/未配置",
-          "能力缺失",
-          "同步中",
-          "上游故障",
-          "空范围"
-        ],
+        "cases": ["禁用/未配置", "能力缺失", "同步中", "上游故障", "空范围"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7625,12 +6074,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "健康与范围说明置前，Bot 汇总逐行展开。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7656,16 +6100,10 @@
       "source_sha256": "f4b2a3d2bab36af2c462e7e6356c35a1b8867817b5bcf8c12369cf632104437c",
       "source_evidence": "source-evidence.json#app/src/routes/sign.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "flow",
-      "existing_capabilities": [
-        "使用已配置身份方式登录"
-      ],
+      "existing_capabilities": ["使用已配置身份方式登录"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7677,11 +6115,7 @@
           "app/src/components/ui/separator.tsx",
           "app/src/routes/sign.tsx"
         ],
-        "existing_states_to_preserve": [
-          "无提供方",
-          "跳转中",
-          "登录失败"
-        ]
+        "existing_states_to_preserve": ["无提供方", "跳转中", "登录失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -7697,17 +6131,11 @@
         "错误反馈"
       ],
       "normal": {
-        "actions": [
-          "使用已配置身份方式登录"
-        ],
+        "actions": ["使用已配置身份方式登录"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无提供方",
-          "跳转中",
-          "登录失败"
-        ],
+        "cases": ["无提供方", "跳转中", "登录失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7719,12 +6147,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "单列居中，按钮触控区域至少 44px。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7750,18 +6173,10 @@
       "source_sha256": "94f6f70204bfd5c40dc202d638d53a5a89c89caf920584aa840ec9208485a8fe",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/onboarding.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "flow",
-      "existing_capabilities": [
-        "继续",
-        "返回",
-        "完成现有引导"
-      ],
+      "existing_capabilities": ["继续", "返回", "完成现有引导"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7790,11 +6205,7 @@
           "app/src/components/ui/skeleton.tsx",
           "app/src/routes/_authed/onboarding.tsx"
         ],
-        "existing_states_to_preserve": [
-          "提交中",
-          "失败",
-          "已完成转首页"
-        ]
+        "existing_states_to_preserve": ["提交中", "失败", "已完成转首页"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -7810,19 +6221,11 @@
         "步骤与前进/返回"
       ],
       "normal": {
-        "actions": [
-          "继续",
-          "返回",
-          "完成现有引导"
-        ],
+        "actions": ["继续", "返回", "完成现有引导"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "提交中",
-          "失败",
-          "已完成转首页"
-        ],
+        "cases": ["提交中", "失败", "已完成转首页"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7834,12 +6237,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "步骤主体单列，底部操作不被键盘遮挡。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7865,16 +6263,10 @@
       "source_sha256": "e77d92c317dc509775c26e43824f641333cb0a8b4c3392b2f443387cff0bb60c",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/sign-in/$requestId.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "flow",
-      "existing_capabilities": [
-        "提交当前登录请求"
-      ],
+      "existing_capabilities": ["提交当前登录请求"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -7907,24 +6299,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "请求来源与目标说明",
-        "已有私人登录字段",
-        "提交状态"
-      ],
+      "content_order": ["请求来源与目标说明", "已有私人登录字段", "提交状态"],
       "normal": {
-        "actions": [
-          "提交当前登录请求"
-        ],
+        "actions": ["提交当前登录请求"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无效/过期请求",
-          "提交中",
-          "提交失败",
-          "成功"
-        ],
+        "cases": ["无效/过期请求", "提交中", "提交失败", "成功"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -7936,12 +6317,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "短表单聚焦，错误贴近字段。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -7967,18 +6343,10 @@
       "source_sha256": "d70d958dc84c21ca829dddbaac1a29eeaca29f592011b0339ca96c60ec7908a8",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/tenant/selection.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "flow",
-      "existing_capabilities": [
-        "选择公司",
-        "选择团队",
-        "执行已有重试"
-      ],
+      "existing_capabilities": ["选择公司", "选择团队", "执行已有重试"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -8017,20 +6385,11 @@
         "访问状态与现有恢复动作"
       ],
       "normal": {
-        "actions": [
-          "选择公司",
-          "选择团队",
-          "执行已有重试"
-        ],
+        "actions": ["选择公司", "选择团队", "执行已有重试"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无公司",
-          "无团队",
-          "成员资格撤销",
-          "加载失败"
-        ],
+        "cases": ["无公司", "无团队", "成员资格撤销", "加载失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -8042,12 +6401,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "两个选择器上下排列，切换后旧团队状态清晰更新。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -8073,17 +6427,10 @@
       "source_sha256": "cf5e2042bf065e7f124dba4b74df4f4a1b9ddbb082fcaf6e0931361996e5798e",
       "source_evidence": "source-evidence.json#app/src/routes/_authed/tenant/channels.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "records",
-      "existing_capabilities": [
-        "选择范围",
-        "查看频道"
-      ],
+      "existing_capabilities": ["选择范围", "查看频道"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
@@ -8116,25 +6463,13 @@
         "new_behavior": "无新增业务行为",
         "navigation": "I-01/02/03排除"
       },
-      "content_order": [
-        "租户/成员选择",
-        "频道列表",
-        "选中频道详情"
-      ],
+      "content_order": ["租户/成员选择", "频道列表", "选中频道详情"],
       "normal": {
-        "actions": [
-          "选择范围",
-          "查看频道"
-        ],
+        "actions": ["选择范围", "查看频道"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "无范围",
-          "无频道",
-          "无记录",
-          "权限失败"
-        ],
+        "cases": ["无范围", "无频道", "无记录", "权限失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -8146,12 +6481,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "选择器在前，详情下移；技术标识单独换行。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },
@@ -8177,27 +6507,17 @@
       "source_sha256": "304465a9c96e1be42ed1c5342af8fc3b483ce0ca781e541d06c679111fe5f0bb",
       "source_evidence": "source-evidence.json#app/src/routes/share.$token.tsx",
       "implementation_task": "T01",
-      "shared_tasks": [
-        "T01",
-        "T02",
-        "T03"
-      ],
+      "shared_tasks": ["T01", "T02", "T03"],
       "batch": "B1",
       "template": "share",
-      "existing_capabilities": [
-        "浏览分享",
-        "举报"
-      ],
+      "existing_capabilities": ["浏览分享", "举报"],
       "capability_evidence": {
         "basis": "路由及递归组件静态源码；不是运行成功证据",
         "component_sources": [
           "app/src/components/ui/button.tsx",
           "app/src/routes/share.$token.tsx"
         ],
-        "existing_states_to_preserve": [
-          "失效/撤销/不存在",
-          "预览失败"
-        ]
+        "existing_states_to_preserve": ["失效/撤销/不存在", "预览失败"]
       },
       "change_scope": {
         "existing_capability": "不增加数据接口或能力；上述动作按源码合同保留",
@@ -8212,17 +6532,11 @@
         "已有说明与举报入口"
       ],
       "normal": {
-        "actions": [
-          "浏览分享",
-          "举报"
-        ],
+        "actions": ["浏览分享", "举报"],
         "expected": "现有动作可达且事件一次，区域顺序与content_order一致"
       },
       "exception": {
-        "cases": [
-          "失效/撤销/不存在",
-          "预览失败"
-        ],
+        "cases": ["失效/撤销/不存在", "预览失败"],
         "expected": "加载/空/错误/禁用区分；背景失败保留已有内容，保存失败保留输入；恢复仅沿用现有入口"
       },
       "permission": {
@@ -8234,12 +6548,7 @@
         "expected": "390px无整页横滚；200%缩放全部字段与动作可达"
       },
       "narrow_screen": {
-        "widths": [
-          390,
-          768,
-          1280,
-          1440
-        ],
+        "widths": [390, 768, 1280, 1440],
         "rule": "预览容器自适应，长内容内部滚动。",
         "additional": "遵守Spec中的容器空间门槛；自动布局不写用户偏好"
       },

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
   asyncTerminalSettleKey,
@@ -25,7 +30,10 @@ import {
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../src/db/schema";
-import { asyncJobs, creditReservations } from "../src/db/schema/credit-reservations";
+import {
+  asyncJobs,
+  creditReservations,
+} from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -201,7 +209,8 @@ async function seedJobWorld(): Promise<World> {
     rateVersion: 0,
     entries: [{ quantities: { video: 60, surcharge_per_request: 1 } }],
   });
-  if (outcome.status !== "submitted") throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
+  if (outcome.status !== "submitted")
+    throw new Error(`seed submit failed: ${JSON.stringify(outcome)}`);
 
   return {
     userId,
@@ -239,7 +248,10 @@ function terminalOf(jobId: string, overrides: Record<string, number> = {}) {
     terminal: {
       state: "completed" as const,
       usage: { ...TERMINAL_USAGE, ...overrides },
-      evidence: { kind: "provider_usage_report" as const, reference: undefined },
+      evidence: {
+        kind: "provider_usage_report" as const,
+        reference: undefined,
+      },
     },
   };
 }
@@ -257,12 +269,15 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM async_settle_triggers WHERE job_id IN (SELECT job_id FROM async_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );
-  await database
-    .delete(asyncJobs)
-    .where(like(asyncJobs.grantId, `${prefix}%`));
+  await database.delete(asyncJobs).where(like(asyncJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -442,9 +457,14 @@ describe("17.5 AC-4 — the trigger counts are observable", () => {
     expect(asyncTerminalSettleKey(world.jobId, report.terminal)).toBe(key);
     // A different job, or different terminal facts, is a different version.
     const otherWorld = await seedJobWorld();
-    expect(asyncTerminalSettleKey(otherWorld.jobId, report.terminal)).not.toBe(key);
+    expect(asyncTerminalSettleKey(otherWorld.jobId, report.terminal)).not.toBe(
+      key,
+    );
     expect(
-      asyncTerminalSettleKey(world.jobId, terminalOf(world.jobId, { video: 30 }).terminal),
+      asyncTerminalSettleKey(
+        world.jobId,
+        terminalOf(world.jobId, { video: 30 }).terminal,
+      ),
     ).not.toBe(key);
 
     // And the recorded key equals the computed one after a real settle.

@@ -1,4 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomBytes, randomUUID } from "node:crypto";
 import { like } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";

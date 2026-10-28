@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
@@ -75,8 +80,12 @@ describe("05.5 virtual key TTL configuration", () => {
   });
 
   test("a configured value inside the legal range resolves as-is", () => {
-    expect(resolveVirtualKeyTtlMinutes({ [VIRTUAL_KEY_TTL_MINUTES_VARIABLE]: "1" })).toBe(1);
-    expect(resolveVirtualKeyTtlMinutes({ [VIRTUAL_KEY_TTL_MINUTES_VARIABLE]: "30" })).toBe(30);
+    expect(
+      resolveVirtualKeyTtlMinutes({ [VIRTUAL_KEY_TTL_MINUTES_VARIABLE]: "1" }),
+    ).toBe(1);
+    expect(
+      resolveVirtualKeyTtlMinutes({ [VIRTUAL_KEY_TTL_MINUTES_VARIABLE]: "30" }),
+    ).toBe(30);
     expect(
       resolveVirtualKeyTtlMinutes({
         [VIRTUAL_KEY_TTL_MINUTES_VARIABLE]: String(MAX_VIRTUAL_KEY_TTL_MINUTES),
@@ -90,16 +99,30 @@ describe("05.5 virtual key TTL configuration", () => {
     for (const raw of ["0", "-5", "0.5", "abc", "1441", "1e9"]) {
       let message = "";
       try {
-        resolveVirtualKeyTtlMinutes({ [VIRTUAL_KEY_TTL_MINUTES_VARIABLE]: raw });
+        resolveVirtualKeyTtlMinutes({
+          [VIRTUAL_KEY_TTL_MINUTES_VARIABLE]: raw,
+        });
       } catch (error) {
         message = error instanceof Error ? error.message : "";
       }
       expect(message).toContain(VIRTUAL_KEY_TTL_MINUTES_VARIABLE);
-      expect(message.length).toBeGreaterThan(VIRTUAL_KEY_TTL_MINUTES_VARIABLE.length);
+      expect(message.length).toBeGreaterThan(
+        VIRTUAL_KEY_TTL_MINUTES_VARIABLE.length,
+      );
     }
     // The raw validator answers for programmatic callers too.
-    for (const value of [0, -5, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 1441]) {
-      const problem = virtualKeyTtlMinutesProblem(VIRTUAL_KEY_TTL_MINUTES_VARIABLE, value);
+    for (const value of [
+      0,
+      -5,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      1441,
+    ]) {
+      const problem = virtualKeyTtlMinutesProblem(
+        VIRTUAL_KEY_TTL_MINUTES_VARIABLE,
+        value,
+      );
       expect(problem).toBeDefined();
       expect(problem).toContain(VIRTUAL_KEY_TTL_MINUTES_VARIABLE);
     }
@@ -245,7 +268,9 @@ function expiryIssuer(ttlMinutes: number = TTL_MINUTES) {
     provisionCustomer: provisionerFor(),
     client: createGatewayVirtualKeyClient({
       readGatewayEndpoint: async () => endpoint,
-      resolveGatewayAdminCredential: async () => ({ adminKey: "test-admin-key" }),
+      resolveGatewayAdminCredential: async () => ({
+        adminKey: "test-admin-key",
+      }),
     }),
     auditStore,
     keyTtlMinutes: ttlMinutes,
@@ -262,7 +287,11 @@ function claimApp() {
       bundle: {
         readGatewayEndpoint: async () => endpoint,
         listSelectableModels: async () => [
-          { provider: "fake-provider", model: "expiry-chat", capability: "chat" },
+          {
+            provider: "fake-provider",
+            model: "expiry-chat",
+            capability: "chat",
+          },
         ],
       },
     }),
@@ -288,7 +317,10 @@ async function confirmGrant(userId: string, botId: string, identity: string) {
     { botId, status: "active" },
     { externalIdentityHint: identity },
   );
-  const { grant } = await registry.modelAccess.confirm(userId, offer.bindingCode);
+  const { grant } = await registry.modelAccess.confirm(
+    userId,
+    offer.bindingCode,
+  );
   return grant;
 }
 
@@ -336,7 +368,9 @@ function startFakeGateway() {
           return json(400, { error: "Customer name is required" });
         }
         if (customers.has(name)) {
-          return json(409, { error: "A customer with this name already exists" });
+          return json(409, {
+            error: "A customer with this name already exists",
+          });
         }
         const id = crypto.randomUUID();
         customers.set(name, { id });

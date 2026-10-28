@@ -207,8 +207,7 @@ const afterSpans = await getJson(
   `/v1/private/spans?project_id=${projectId}&trace_id=${identity.opikTraceId}&size=10`,
 );
 if (afterTrace.status !== 404) fail("trace-absence", afterTrace.status);
-if (afterSpans.status !== 200)
-  fail("span-absence-status", afterSpans.status);
+if (afterSpans.status !== 200) fail("span-absence-status", afterSpans.status);
 if (afterSpans.body === null)
   fail("span-absence-body", "span list read failed (non-JSON body)");
 const afterSpanTotal = afterSpans.body?.total ?? 0;

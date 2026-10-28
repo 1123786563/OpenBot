@@ -6,7 +6,13 @@ import "./preload";
  * is registered in tests/config/e2e-bun-suites.json as a Bun-executed suite (ADR 0008:
  * the driven layer). The happy-dom registration below is the bun:test shape.
  */
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, render } from "@testing-library/react";
 import i18n from "@/lib/i18n";
@@ -170,14 +176,17 @@ test("原因码到文案的映射覆盖停留原因的全部闭集词汇，未�
         balance={balanceOf({
           available: 10,
           unknown: 10,
-          reservations: [reservation({ id: `cr-${code}`, unknownReason: code })],
+          reservations: [
+            reservation({ id: `cr-${code}`, unknownReason: code }),
+          ],
         })}
       />,
     );
     const row = await view.findByTestId("reservation-row");
-    expect(row.textContent, `the ${code} row carries a mapped sentence`).toContain(
-      "原因：",
-    );
+    expect(
+      row.textContent,
+      `the ${code} row carries a mapped sentence`,
+    ).toContain("原因：");
     expect(row.textContent).not.toContain(code);
     cleanup();
   }
@@ -246,9 +255,7 @@ test("无待结算项时不显示待结算区块（不出现误导性 0 或历�
 
 test("未启用（pre-06.12 服务端）仍显示诚实的未启用标记", async () => {
   const view = render(
-    <PersonalBalanceCard
-      balance={balanceOf({ enabled: false })}
-    />,
+    <PersonalBalanceCard balance={balanceOf({ enabled: false })} />,
   );
 
   await view.findByTestId("personal-balance");

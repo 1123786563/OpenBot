@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createBatchSubmitService } from "../src/billing/batch-submit";
 import {
   createBatchPartialSettleService,
@@ -85,7 +90,10 @@ function dimsOf(amounts: Record<string, string>) {
 
 let dispatchCounter = 0;
 const dispatch = async () =>
-  ({ kind: "answered", providerBatchId: `prov-batch-${++dispatchCounter}` }) as const;
+  ({
+    kind: "answered",
+    providerBatchId: `prov-batch-${++dispatchCounter}`,
+  }) as const;
 
 async function resolveBasis(basis: {
   provider: string;
@@ -224,7 +232,8 @@ async function seedPartialWorld(
     rateVersion: 0,
     items,
   });
-  if (submitted.status !== "submitted") throw new Error("fixture submit failed");
+  if (submitted.status !== "submitted")
+    throw new Error("fixture submit failed");
 
   return {
     userId,
@@ -239,10 +248,30 @@ async function seedPartialWorld(
 
 /** The ticket's own shape: 3 completed, 1 billed failure, 1 not-dispatched with evidence. */
 const partialReport = () => [
-  { kind: "terminal" as const, customId: "req-1", terminalState: "completed" as const, usage: { video: 4 } },
-  { kind: "terminal" as const, customId: "req-2", terminalState: "completed" as const, usage: { video: 4 } },
-  { kind: "terminal" as const, customId: "req-3", terminalState: "completed" as const, usage: { video: 4 } },
-  { kind: "terminal" as const, customId: "req-4", terminalState: "failed" as const, usage: { video: 2 } },
+  {
+    kind: "terminal" as const,
+    customId: "req-1",
+    terminalState: "completed" as const,
+    usage: { video: 4 },
+  },
+  {
+    kind: "terminal" as const,
+    customId: "req-2",
+    terminalState: "completed" as const,
+    usage: { video: 4 },
+  },
+  {
+    kind: "terminal" as const,
+    customId: "req-3",
+    terminalState: "completed" as const,
+    usage: { video: 4 },
+  },
+  {
+    kind: "terminal" as const,
+    customId: "req-4",
+    terminalState: "failed" as const,
+    usage: { video: 2 },
+  },
   {
     kind: "absent" as const,
     customId: "req-5",
@@ -263,12 +292,15 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM batch_items WHERE batch_id IN (SELECT batch_id FROM batch_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );
-  await database
-    .delete(batchJobs)
-    .where(like(batchJobs.grantId, `${prefix}%`));
+  await database.delete(batchJobs).where(like(batchJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -318,7 +350,9 @@ describe("18.3 AC-1/AC-2 — the ticket's own shape settles 4 and releases 1", (
     // evidence: released = cap 5000 − 1400 = 3600.
     expect(outcome.releasedCredits).toBe(world.cap - 1400);
 
-    const balanceAfter = await fixtureWriter.availableBalance(world.customerKey);
+    const balanceAfter = await fixtureWriter.availableBalance(
+      world.customerKey,
+    );
     expect(balanceAfter).toBe(world.balanceBefore - 1400);
 
     // The detail lines carry ONLY the 4 billed items (the released item has no charge).
@@ -364,7 +398,11 @@ describe("18.3 AC-3 — an absent item without evidence is unknown and keeps the
     const reports = partialReport();
     // The not-dispatched item arrives WITHOUT its evidence: the provider's status never
     // named the item, so nothing proves it did not run.
-    reports[4] = { kind: "unknown", customId: "req-5", reason: "no_result_row" };
+    reports[4] = {
+      kind: "unknown",
+      customId: "req-5",
+      reason: "no_result_row",
+    };
     const outcome = await partialService.settlePartialBatch({
       batchId: world.batchId,
       reports,
@@ -397,7 +435,11 @@ describe("18.3 AC-3 — an absent item without evidence is unknown and keeps the
   test("the evidence arriving later settles the batch — the recovery shape", async () => {
     const world = await seedPartialWorld();
     const reports = partialReport();
-    reports[4] = { kind: "unknown", customId: "req-5", reason: "no_result_row" };
+    reports[4] = {
+      kind: "unknown",
+      customId: "req-5",
+      reason: "no_result_row",
+    };
     const pending = await partialService.settlePartialBatch({
       batchId: world.batchId,
       reports,

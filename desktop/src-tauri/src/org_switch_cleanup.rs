@@ -90,8 +90,12 @@ pub fn remember_subscription(
             )
         })?;
     }
-    let encoded =
-        serde_json::to_string(&subscriptions).map_err(|error| Problem::with("OpenBot could not record this organization's subscription.", error.to_string()))?;
+    let encoded = serde_json::to_string(&subscriptions).map_err(|error| {
+        Problem::with(
+            "OpenBot could not record this organization's subscription.",
+            error.to_string(),
+        )
+    })?;
     std::fs::write(&path, encoded).map_err(|error| {
         Problem::with(
             "OpenBot could not record this organization's subscription.",
@@ -177,17 +181,16 @@ pub struct CleanupEvidence {
 }
 
 fn count_entries(path: &Path) -> u64 {
-    std::fs::read_dir(path).map(|entries| entries.count() as u64).unwrap_or(0)
+    std::fs::read_dir(path)
+        .map(|entries| entries.count() as u64)
+        .unwrap_or(0)
 }
 
 /// Wipe exactly `authority`'s organization state and return the receipt. Every step is
 /// idempotent; a failure leaves the receipt saying which area is still populated, and a
 /// retry of the whole call finishes the job. An argument that is not a usable authority is
 /// refused outright — cleanup never guesses its target.
-pub fn forget_organization_state(
-    root: &Path,
-    authority: &str,
-) -> Result<CleanupReceipt, Problem> {
+pub fn forget_organization_state(root: &Path, authority: &str) -> Result<CleanupReceipt, Problem> {
     let normalized = auth::authority(authority)?;
     let mut receipt = CleanupReceipt {
         authority: normalized.clone(),
@@ -325,28 +328,46 @@ fn append_evidence(root: &Path, receipt: &CleanupReceipt) -> Result<(), Problem>
         cache_entries: receipt.cache_entries,
         completed: receipt.completed,
     };
-    let line = serde_json::to_string(&entry)
-        .map_err(|error| Problem::with("OpenBot could not record its cleanup evidence.", error.to_string()))?;
+    let line = serde_json::to_string(&entry).map_err(|error| {
+        Problem::with(
+            "OpenBot could not record its cleanup evidence.",
+            error.to_string(),
+        )
+    })?;
     let path = evidence_path(root);
     let existing: Vec<String> = std::fs::read_to_string(&path)
-        .map(|raw| raw.lines().filter(|line| !line.trim().is_empty()).map(str::to_string).collect())
+        .map(|raw| {
+            raw.lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default();
     let mut lines = existing;
     lines.push(line);
     let keep_from = lines.len().saturating_sub(EVIDENCE_LOG_CAP);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
-            Problem::with("OpenBot could not record its cleanup evidence.", error.to_string())
+            Problem::with(
+                "OpenBot could not record its cleanup evidence.",
+                error.to_string(),
+            )
         })?;
     }
     let mut file = std::fs::File::create(&path).map_err(|error| {
-        Problem::with("OpenBot could not record its cleanup evidence.", error.to_string())
+        Problem::with(
+            "OpenBot could not record its cleanup evidence.",
+            error.to_string(),
+        )
     })?;
     for kept in &lines[keep_from..] {
         file.write_all(kept.as_bytes())
             .and_then(|_| file.write_all(b"\n"))
             .map_err(|error| {
-                Problem::with("OpenBot could not record its cleanup evidence.", error.to_string())
+                Problem::with(
+                    "OpenBot could not record its cleanup evidence.",
+                    error.to_string(),
+                )
             })?;
     }
     Ok(())
@@ -371,9 +392,7 @@ pub fn cleanup_evidence(root: &Path) -> Result<Vec<CleanupEvidence>, Problem> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::credential_namespace::{
-        org_recall, org_remember, SESSION_CREDENTIAL,
-    };
+    use crate::credential_namespace::{org_recall, org_remember, SESSION_CREDENTIAL};
     use crate::test_support::temp_root;
     use crate::vault;
 
@@ -388,10 +407,14 @@ mod tests {
 
     /// Seed one organization's full state: credentials, subscriptions, media, caches.
     fn seed_org(root: &Path, authority: &str, tag: &str) {
-        org_remember(root, authority, SESSION_CREDENTIAL, &format!("cookie-{tag}"))
-            .unwrap();
-        org_remember(root, authority, "BILLING", &format!("billing-secret-{tag}"))
-            .unwrap();
+        org_remember(
+            root,
+            authority,
+            SESSION_CREDENTIAL,
+            &format!("cookie-{tag}"),
+        )
+        .unwrap();
+        org_remember(root, authority, "BILLING", &format!("billing-secret-{tag}")).unwrap();
         remember_subscription(root, authority, &format!("plan-{tag}")).unwrap();
         let media = org_media_dir(root, authority).unwrap();
         std::fs::create_dir_all(media.join("avatars")).unwrap();
@@ -414,7 +437,10 @@ mod tests {
         assert_eq!(receipt.media_entries, 1, "the avatars directory");
         assert_eq!(receipt.cache_entries, 1);
         // Nothing is readable back: no session, no billing secret, no subscriptions, no dirs.
-        assert_eq!(org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap(), None);
+        assert_eq!(
+            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap(),
+            None
+        );
         assert_eq!(org_recall(&root, COMPANY_A, "BILLING").unwrap(), None);
         assert!(subscriptions(&root, COMPANY_A).unwrap().is_empty());
         assert!(!org_media_dir(&root, COMPANY_A).unwrap().exists());
@@ -435,7 +461,9 @@ mod tests {
         assert!(receipt.completed);
         // Company B is untouched, end to end.
         assert_eq!(
-            org_recall(&root, COMPANY_B, SESSION_CREDENTIAL).unwrap().as_deref(),
+            org_recall(&root, COMPANY_B, SESSION_CREDENTIAL)
+                .unwrap()
+                .as_deref(),
             Some("cookie-b")
         );
         assert_eq!(
@@ -475,18 +503,20 @@ mod tests {
         }
         std::fs::set_permissions(&media, permissions).unwrap();
         let first = forget_organization_state(&root, COMPANY_A).unwrap();
-        assert!(!first.completed, "a blocked media directory cannot verify clean");
         assert!(
-            first
-                .steps
-                .iter()
-                .any(|step| !step.finished),
+            !first.completed,
+            "a blocked media directory cannot verify clean"
+        );
+        assert!(
+            first.steps.iter().any(|step| !step.finished),
             "the receipt must name the unfinished step"
         );
         // The credentials step never ran (data first, credentials last), so the session
         // is still whole — the organization was not half-retired.
         assert_eq!(
-            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL).unwrap().as_deref(),
+            org_recall(&root, COMPANY_A, SESSION_CREDENTIAL)
+                .unwrap()
+                .as_deref(),
             Some("cookie-a")
         );
         // Unblock and retry: the whole call again, reaching a complete cleanup.
@@ -533,9 +563,18 @@ mod tests {
         assert_eq!(evidence[0].credentials, 2);
         assert_eq!(evidence[0].subscriptions, 1);
         let raw = std::fs::read_to_string(evidence_path(&root)).unwrap();
-        assert!(!raw.contains("cookie-a"), "session values never enter evidence");
-        assert!(!raw.contains("billing-secret-a"), "secret values never enter evidence");
-        assert!(raw.contains(COMPANY_A), "the authority identifier is the evidence key");
+        assert!(
+            !raw.contains("cookie-a"),
+            "session values never enter evidence"
+        );
+        assert!(
+            !raw.contains("billing-secret-a"),
+            "secret values never enter evidence"
+        );
+        assert!(
+            raw.contains(COMPANY_A),
+            "the authority identifier is the evidence key"
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 

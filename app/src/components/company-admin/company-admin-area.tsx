@@ -3,7 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
-import { PageEmpty, PageSection, PageShell } from "@/components/layout/page-shell";
+import {
+  PageEmpty,
+  PageSection,
+  PageShell,
+} from "@/components/layout/page-shell";
 import { TableSkeleton } from "@/components/layout/page-skeletons";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,10 +52,18 @@ export function companyAdminSections(
 ): readonly CompanyAdminSection[] {
   const sections: CompanyAdminSection[] = [];
   if (capabilities.peopleAdmin) {
-    sections.push({ to: "/tenant/admin/people", label: t("nav.people"), enabled: true });
+    sections.push({
+      to: "/tenant/admin/people",
+      label: t("nav.people"),
+      enabled: true,
+    });
   }
   if (capabilities.auditReader) {
-    sections.push({ to: "/tenant/admin/audit", label: t("nav.audit"), enabled: true });
+    sections.push({
+      to: "/tenant/admin/audit",
+      label: t("nav.audit"),
+      enabled: true,
+    });
   }
   if (capabilities.peopleAdmin) {
     sections.push({
@@ -61,10 +73,18 @@ export function companyAdminSections(
     });
   }
   if (capabilities.peopleAdmin) {
-    sections.push({ to: "/tenant/admin/learning", label: t("nav.learning"), enabled: true });
+    sections.push({
+      to: "/tenant/admin/learning",
+      label: t("nav.learning"),
+      enabled: true,
+    });
   }
   if (capabilities.financeReader || capabilities.billingManager) {
-    sections.push({ to: "/tenant/admin/billing", label: t("nav.billing"), enabled: true });
+    sections.push({
+      to: "/tenant/admin/billing",
+      label: t("nav.billing"),
+      enabled: true,
+    });
   }
   return sections;
 }
@@ -103,11 +123,7 @@ export function CompanyAdminArea({ scope }: { scope: ScopedCache }) {
   }
 
   return (
-    <CompanyAdminAreaWithScope
-      scope={scope}
-      queryClient={queryClient}
-      t={t}
-    />
+    <CompanyAdminAreaWithScope scope={scope} queryClient={queryClient} t={t} />
   );
 }
 
@@ -140,7 +156,9 @@ function CompanyAdminAreaWithScope({
         <Empty className="mt-8 border-border">
           <EmptyHeader>
             <EmptyTitle>{t("gate.unavailable.title")}</EmptyTitle>
-            <EmptyDescription>{t("gate.unavailable.description")}</EmptyDescription>
+            <EmptyDescription>
+              {t("gate.unavailable.description")}
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
         <Button

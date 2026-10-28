@@ -20,9 +20,7 @@ import {
 } from "../src/db/schema/enterprise-tenancy";
 import { genericPersonalPreferences } from "../src/db/schema/hindsight-preferences";
 import { hindsightRevocations } from "../src/db/schema/hindsight-revocations";
-import {
-  hindsightControlledBackups,
-} from "../src/db/schema/hindsight-restore";
+import { hindsightControlledBackups } from "../src/db/schema/hindsight-restore";
 import {
   hindsightMemoryGrants,
   sourceBoundMemories,
@@ -42,9 +40,7 @@ import {
   createDrizzleDegradedPreferenceSearch,
   createDrizzleDegradedSourceBoundSearch,
 } from "../src/hindsight/degraded-recall";
-import {
-  createDrizzleDerivedJudgmentRecords,
-} from "../src/hindsight/derived-judgments";
+import { createDrizzleDerivedJudgmentRecords } from "../src/hindsight/derived-judgments";
 import { createDerivedJudgmentReviewService } from "../src/hindsight/judgment-review";
 import {
   createDrizzlePreferenceRecords,
@@ -173,9 +169,11 @@ async function bootScriptedHindsight() {
           if (status >= 200 && status < 300) {
             // The scripted pipeline: a retained document is held with one extracted unit,
             // and the retain leaves a terminal operation payload behind.
-            const items = (JSON.parse(body || "{}") as {
-              items?: { document_id?: string }[];
-            }).items;
+            const items = (
+              JSON.parse(body || "{}") as {
+                items?: { document_id?: string }[];
+              }
+            ).items;
             for (const item of items ?? []) {
               if (item.document_id) {
                 state.documents.set(item.document_id, "present");
@@ -224,7 +222,10 @@ async function bootScriptedHindsight() {
             status = 404;
             payload = { detail: "Document not found" };
           }
-        } else if (request.method === "GET" && path.includes("/memories/list")) {
+        } else if (
+          request.method === "GET" &&
+          path.includes("/memories/list")
+        ) {
           const documentId = decodeURIComponent(
             /[?&]document_id=([^&]+)/.exec(path)?.[1] ?? "",
           );
@@ -372,9 +373,9 @@ beforeAll(async () => {
     { tenantId: TENANT, principalId: PRINCIPAL_EMP, role: "member" },
     { tenantId: TENANT, principalId: PRINCIPAL_OTHER, role: "member" },
   ]);
-  await database.insert(enterpriseWorkspaces).values([
-    { tenantId: TENANT, id: WORKSPACE_A, name: `Purge A ${run}` },
-  ]);
+  await database
+    .insert(enterpriseWorkspaces)
+    .values([{ tenantId: TENANT, id: WORKSPACE_A, name: `Purge A ${run}` }]);
   await database.insert(enterpriseWorkspaceMemberships).values([
     {
       tenantId: TENANT,
@@ -416,10 +417,14 @@ beforeAll(async () => {
   const judgmentRecords = createDrizzleDerivedJudgmentRecords(database);
   revocations = createRevocationService(database, serviceConfig);
   recovery = createRestoreRecoveryService(database, revocations);
-  preferences = createPreferenceRecallService(preferenceRecords, serviceConfig, {
-    revocations: ledger,
-    recovery: recovery.gate,
-  });
+  preferences = createPreferenceRecallService(
+    preferenceRecords,
+    serviceConfig,
+    {
+      revocations: ledger,
+      recovery: recovery.gate,
+    },
+  );
   scoped = createSourceBoundRecallService(
     sourceBoundRecords,
     authorizations,
@@ -656,7 +661,11 @@ describe("Hindsight 14 (#391) — the backup-restore gate and its replay", () =>
     expect(note.state).toBe("open");
     await database
       .update(genericPersonalPreferences)
-      .set({ enabled: true, deletedAt: null, content: `gate-forgotten-marker-${run}` })
+      .set({
+        enabled: true,
+        deletedAt: null,
+        content: `gate-forgotten-marker-${run}`,
+      })
       .where(
         and(
           eq(genericPersonalPreferences.tenantId, TENANT),
@@ -738,7 +747,9 @@ describe("Hindsight 14 (#391) — the backup-restore gate and its replay", () =>
     scripted.state.stallMs = STALL_MS;
     const replay = await recovery.replayBackupRestore();
     expect(replay.replayed).toBe(true);
-    expect(replay.evidence?.remoteDeletions.stillOutstanding).toBeGreaterThanOrEqual(1);
+    expect(
+      replay.evidence?.remoteDeletions.stillOutstanding,
+    ).toBeGreaterThanOrEqual(1);
     // The markers flipped anyway: the LOCAL block is what makes recall safe to re-open.
     // (Under the ongoing outage the open gate would LAWFULLY degrade to SQL — that is the
     // facade's own contract — so the reopen assertion runs with the service back.)
@@ -760,10 +771,7 @@ describe("Hindsight 14 (#391) — the backup-restore gate and its replay", () =>
     expect(drained.confirmed).toBeGreaterThanOrEqual(1);
     const stillOpen = await recovery.gateStatus();
     expect(stillOpen.recallOpen).toBe(true);
-  },
-    // The outage replay re-issues one timed-out delete per ledger row (~500ms each); the
-    // default per-test budget is not enough once the row count grows mid-suite.
-    60_000);
+  }, 60_000); // default per-test budget is not enough once the row count grows mid-suite. // The outage replay re-issues one timed-out delete per ledger row (~500ms each); the
 
   test("AC2: the replay re-issues deletions for CONFIRMED documents a Hindsight-side restore resurrected", async () => {
     const scope = await makeTrustedScope(PRINCIPAL_EMP, WORKSPACE_A);
@@ -795,9 +803,9 @@ describe("Hindsight 14 (#391) — the backup-restore gate and its replay", () =>
     expect(deletesOfDocument(documentId)).toBeGreaterThanOrEqual(2);
     expect(scripted.state.documents.get(documentId)).toBe("absent");
     expect(scripted.state.memoryUnits.get(documentId)).toBe(0);
-    expect(
-      replay.evidence?.remoteDeletions.considered,
-    ).toBeGreaterThanOrEqual(1);
+    expect(replay.evidence?.remoteDeletions.considered).toBeGreaterThanOrEqual(
+      1,
+    );
 
     // And the verification sweep re-establishes absence after the replay.
     const outcomes = await evidence.verifyActiveDataCleanup({

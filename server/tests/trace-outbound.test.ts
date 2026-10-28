@@ -19,10 +19,7 @@ import { trace } from "@opentelemetry/api";
 import { createAgentFetch } from "../src/agents/endpoint";
 import { createComputerTransport } from "../src/computer/client";
 import { createDockerSupervisorProvider } from "../src/computer/supervisor";
-import {
-  initProcessTracing,
-  shutdownTracing,
-} from "../../shared/trace";
+import { initProcessTracing, shutdownTracing } from "../../shared/trace";
 
 /** The headers one POST carried, and the port it was received on. */
 type RecordingServer = {
@@ -78,9 +75,9 @@ describe("outbound traceparent injection", () => {
     try {
       const guarded = createAgentFetch({ allowPrivateHosts: true });
       let spanTraceId = "";
-      await trace.getTracer("trace-outbound-agent").startActiveSpan(
-        "agent run",
-        async (span) => {
+      await trace
+        .getTracer("trace-outbound-agent")
+        .startActiveSpan("agent run", async (span) => {
           spanTraceId = span.spanContext().traceId;
           const response = await guarded(
             `http://127.0.0.1:${agent.port}/ag-ui`,
@@ -100,8 +97,7 @@ describe("outbound traceparent injection", () => {
           );
           await response.text();
           span.end();
-        },
-      );
+        });
 
       expect(agent.posts()).toBe(1);
       const carried = traceIdOf(agent.headers().traceparent);
@@ -119,9 +115,9 @@ describe("outbound traceparent injection", () => {
     try {
       const transport = createComputerTransport({ allowPrivateHosts: true });
       let spanTraceId = "";
-      await trace.getTracer("trace-outbound-computer").startActiveSpan(
-        "computer call",
-        async (span) => {
+      await trace
+        .getTracer("trace-outbound-computer")
+        .startActiveSpan("computer call", async (span) => {
           spanTraceId = span.spanContext().traceId;
           const answer = await transport.post(
             `http://127.0.0.1:${computer.port}`,
@@ -131,8 +127,7 @@ describe("outbound traceparent injection", () => {
           );
           expect(answer).toEqual({ ok: true });
           span.end();
-        },
-      );
+        });
 
       expect(computer.posts()).toBe(1);
       const carried = traceIdOf(computer.headers().traceparent);
@@ -152,14 +147,13 @@ describe("outbound traceparent injection", () => {
         baseUrl: `http://127.0.0.1:${supervisor.port}`,
       });
       let spanTraceId = "";
-      await trace.getTracer("trace-outbound-supervisor").startActiveSpan(
-        "supervisor call",
-        async (span) => {
+      await trace
+        .getTracer("trace-outbound-supervisor")
+        .startActiveSpan("supervisor call", async (span) => {
           spanTraceId = span.spanContext().traceId;
           await provider.status("bot-1");
           span.end();
-        },
-      );
+        });
 
       expect(supervisor.posts()).toBe(0); // status lists, a GET, not a POST
       const carried = traceIdOf(supervisor.headers().traceparent);
@@ -179,17 +173,14 @@ describe("outbound traceparent injection", () => {
     // rather than gain a self-rooted value.
     try {
       const guarded = createAgentFetch({ allowPrivateHosts: true });
-      const response = await guarded(
-        `http://127.0.0.1:${agent.port}/ag-ui`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            accept: "text/event-stream",
-          },
-          body: JSON.stringify({ forwardedProps: {} }),
+      const response = await guarded(`http://127.0.0.1:${agent.port}/ag-ui`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "text/event-stream",
         },
-      );
+        body: JSON.stringify({ forwardedProps: {} }),
+      });
       await response.text();
 
       expect(agent.posts()).toBe(1);

@@ -46,7 +46,10 @@ const writer = createCreditWriter(database);
 const snapshotStore = createEnterpriseGatewayPriceSnapshotStore(database);
 const settleTranscription = createTranscriptionSettlementService({
   database,
-  environmentRate: { numerator: 100n, denominator: 1n } satisfies ConversionRate,
+  environmentRate: {
+    numerator: 100n,
+    denominator: 1n,
+  } satisfies ConversionRate,
 });
 
 let seedCounter = 0;
@@ -427,7 +430,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,

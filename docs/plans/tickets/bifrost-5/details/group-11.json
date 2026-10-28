@@ -1,186 +1,208 @@
 {
- "group": "11",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q11 无价格或无法强制上限则不启用、Q20 能力范围）",
-  "docs/adr/0001-conservative-input-bound.md（经验估算不作为上限证明）",
-  "CONTEXT.md（价格维度、能力、可用/不可用原因、待结算术语）"
- ],
- "anchors": {
-  "capability-playbook": "能力族通用做法：① 用组 03 的 PriceSnapshot 维度核对上游定价是否覆盖该能力的全部计费维度；② 用组 07 的 boundEvidence 证明输入边界与输出上限可强制；③ 缺任一证据 → 标记不可用并给出 reasonCode，不降级为免费或估算；④ 结算走 06.9 Settle，未知结果走 06.8 unknown",
-  "bifrost-routes": "OpenAI 兼容入口 /v1/embeddings（core/providers/*，如 openrouter.go、parasail.go）；rerank 与 OCR 走各自 provider 路由，执行时先定位实际入口",
-  "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go、pricingscopes 测试、batch.go、video.go、doc.go）",
-  "openbot-price": "组 03 交付的 PriceSnapshot 维度集合与 PriceStatus（known/free/unknown）",
-  "openbot-admission": "组 06/07 交付的 Reserve（boundEvidence）与 Settle 路径",
-  "test-harness": "server/tests/support/database.ts；Bifrost 侧 go test ./plugins/governance/... 与 ./framework/jobaccounting/..."
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "cd bifrost/plugins/governance && go test ./...",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "11.1": {
-   "slug": "embedding-pricing-dimensions",
-   "contracts": {
-    "consumes": ["07.12 的端到端准入路径", "03.3 的 PriceStatus", "上游 embedding 定价字段"],
-    "produces": [
-     "Embedding 计费维度映射：token 数、批量条目数、维度/模型变体等全部上游收费维度进入 PriceSnapshot",
-     "boundEvidence 规则：输入可完整序列化计数，输出为向量不产生额外计费维度时需有上游证据",
-     "能力启用条件：维度齐备且证据可强制才标记为可启用"
-    ]
-   },
-   "steps": [
-    "核对上游 embedding 定价的全部维度，逐一映射到 PriceSnapshot，缺项记 unknown",
-    "实现输入序列化计数（含批量条目与文本全部内容），作为预留上限依据",
-    "为可启用条件写出判定函数，供 03.8 过滤与 06.2 重验使用",
-    "先写失败测试：维度齐备时启用；缺任一维度时 unknown 且不启用"
-   ],
-   "criteria": [
-    "Embedding 的全部上游计费维度都进入价格快照",
-    "输入按完整序列化计数，批量条目不遗漏",
-    "维度齐备且证据可强制时该能力可启用",
-    "缺维度时标记 unknown，不启用且不按 0 成本放行"
-   ],
-   "tests": ["维度映射测试（多维 fixture）", "批量输入计数测试", "启用判定分支测试"],
-   "verification": ["bun test server/tests/embedding-pricing.test.ts"],
-   "owned_scope": ["Embedding 维度映射与启用判定", "对应测试与 fixture"],
-   "resume_hint": "批量 embedding 常漏“条目数”维度；接手先构造多条目的 fixture 断言计数。"
+  "group": "11",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC06/AC07）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q11 无价格或无法强制上限则不启用、Q20 能力范围）",
+    "docs/adr/0001-conservative-input-bound.md（经验估算不作为上限证明）",
+    "CONTEXT.md（价格维度、能力、可用/不可用原因、待结算术语）"
+  ],
+  "anchors": {
+    "capability-playbook": "能力族通用做法：① 用组 03 的 PriceSnapshot 维度核对上游定价是否覆盖该能力的全部计费维度；② 用组 07 的 boundEvidence 证明输入边界与输出上限可强制；③ 缺任一证据 → 标记不可用并给出 reasonCode，不降级为免费或估算；④ 结算走 06.9 Settle，未知结果走 06.8 unknown",
+    "bifrost-routes": "OpenAI 兼容入口 /v1/embeddings（core/providers/*，如 openrouter.go、parasail.go）；rerank 与 OCR 走各自 provider 路由，执行时先定位实际入口",
+    "bifrost-pricing": "bifrost/framework/jobaccounting/（types.go PricingManager、engine.go、pricingscopes 测试、batch.go、video.go、doc.go）",
+    "openbot-price": "组 03 交付的 PriceSnapshot 维度集合与 PriceStatus（known/free/unknown）",
+    "openbot-admission": "组 06/07 交付的 Reserve（boundEvidence）与 Settle 路径",
+    "test-harness": "server/tests/support/database.ts；Bifrost 侧 go test ./plugins/governance/... 与 ./framework/jobaccounting/..."
   },
-  "11.2": {
-   "slug": "embedding-unknown-price-refusal",
-   "contracts": {
-    "consumes": ["11.1 的启用判定", "07.3 的短路拒绝语义"],
-    "produces": [
-     "Embedding 未知价格拒绝路径：请求被短路拒绝，供应商未被调用，返回可展示原因",
-     "拒绝不产生预留、承诺或结算",
-     "原因码与 03.3 的 unknown 原因一致"
-    ]
-   },
-   "steps": [
-    "在 embedding 入口接入启用判定，unknown 时短路拒绝",
-    "确认拒绝发生在供应商调用之前，且不写入任何账务",
-    "把原因映射为用户可理解的文案",
-    "先写失败测试：价格 unknown 的 embedding 请求被拒绝且供应商调用数为 0"
-   ],
-   "criteria": [
-    "价格未知的 embedding 请求被拒绝，供应商调用数为 0",
-    "拒绝不产生预留、dispatch 承诺或结算记录",
-    "拒绝原因与价格状态分类一致且可展示",
-    "价格补齐后同一请求可正常执行"
-   ],
-   "tests": ["unknown 价格拒绝测试", "无账务写入断言", "补齐价格后可用测试"],
-   "verification": ["cd bifrost/plugins/governance && go test -run EmbeddingRefusal ./..."],
-   "owned_scope": ["Embedding 入口的拒绝接线", "对应测试"],
-   "resume_hint": "拒绝必须发生在派发之前；接手用 provider spy 断言调用数为 0。"
-  },
-  "11.3": {
-   "slug": "rerank-pricing-dimensions",
-   "contracts": {
-    "consumes": ["11.1 的维度映射模式", "上游 rerank 定价与路由"],
-    "produces": [
-     "Rerank 计费维度映射：查询与文档条目数、token 或文档长度等上游实际收费维度",
-     "boundEvidence 规则：文档集合可完整计数，输出不产生额外费用需有上游证据",
-     "启用判定与 unknown 标记，语义与 11.1 一致"
-    ]
-   },
-   "steps": [
-    "定位 rerank 实际入口与上游定价维度，逐一映射到 PriceSnapshot",
-    "实现文档集合与查询的完整计数作为上限依据",
-    "接入启用判定，缺维度记 unknown",
-    "先写失败测试：多文档请求计数正确；缺维度时不启用"
-   ],
-   "criteria": [
-    "Rerank 的全部上游计费维度进入价格快照",
-    "文档与查询按完整内容计数，不因截断低估",
-    "缺维度时标记 unknown 且不启用",
-    "启用后的预留上限覆盖最坏情况"
-   ],
-   "tests": ["维度映射测试", "多文档计数测试", "启用判定测试"],
-   "verification": ["bun test server/tests/rerank-pricing.test.ts"],
-   "owned_scope": ["Rerank 维度映射与启用判定", "对应测试"],
-   "resume_hint": "rerank 的计费常按文档数或 token 数，两者都要核对上游文档；只按其一实现会系统性低估上限。"
-  },
-  "11.4": {
-   "slug": "rerank-missing-dimension-refusal",
-   "contracts": {
-    "consumes": ["11.3 的启用判定", "07.3 的短路拒绝"],
-    "produces": [
-     "Rerank 缺维度拒绝路径：短路拒绝、供应商未调用、无账务写入",
-     "拒绝原因指向缺失的具体维度，便于管理员补价",
-     "补价后同一请求可执行"
-    ]
-   },
-   "steps": [
-    "在 rerank 入口接入启用判定并短路拒绝",
-    "拒绝原因包含缺失维度清单",
-    "确认无预留、无承诺、无结算写入",
-    "先写失败测试：缺维度拒绝且供应商调用数为 0；补维度后可用"
-   ],
-   "criteria": [
-    "缺计费维度的 rerank 请求被拒绝，供应商调用数为 0",
-    "拒绝原因列出缺失维度",
-    "拒绝不产生任何账务写入",
-    "维度补齐后请求可正常执行"
-   ],
-   "tests": ["缺维度拒绝测试", "原因内容断言", "补齐后可用测试"],
-   "verification": ["cd bifrost/plugins/governance && go test -run RerankRefusal ./..."],
-   "owned_scope": ["Rerank 入口拒绝接线", "对应测试"],
-   "resume_hint": "原因要具体到维度名，否则管理员无法补价；接手断言原因文本包含缺失维度。"
-  },
-  "11.5": {
-   "slug": "ocr-image-page-pricing",
-   "contracts": {
-    "consumes": ["11.1 的维度映射模式", "上游 OCR 定价（按页/按图像/按 token）"],
-    "produces": [
-     "OCR 计费维度映射：页数、图像数量与规格、输出 token 等全部上游维度",
-     "输入边界规则：页数与图像规格必须在派发前可确定，否则不可启用",
-     "启用判定与 unknown 标记"
-    ]
-   },
-   "steps": [
-    "核对上游 OCR 定价维度（页/图像/输出 token），逐一映射",
-    "实现派发前的页数与图像规格确定逻辑，无法确定即判证据不足",
-    "接入启用判定，缺维度记 unknown",
-    "先写失败测试：多页文档计数正确；页数不可预先确定时不启用"
-   ],
-   "criteria": [
-    "OCR 的页数、图像与输出维度都进入价格快照",
-    "页数与图像规格在派发前可确定，否则不启用",
-    "缺维度时标记 unknown，不按 0 成本执行",
-    "多页请求的上限覆盖全部页"
-   ],
-   "tests": ["多页计数测试", "不可预先确定页数的拒绝测试", "维度映射测试"],
-   "verification": ["bun test server/tests/ocr-pricing.test.ts"],
-   "owned_scope": ["OCR 维度映射与边界判定", "对应测试"],
-   "resume_hint": "页数在派发前不可知时（如流式解析），必须判为证据不足而不是按估算预留。"
-  },
-  "11.6": {
-   "slug": "ocr-unknown-not-free",
-   "contracts": {
-    "consumes": ["11.5 的启用判定", "03.3 的 known/free/unknown 区分"],
-    "produces": [
-     "OCR 未知价格拒绝路径：不得按免费执行，供应商未调用、无账务写入",
-     "明确 free 与 unknown 的展示区分：free 可执行（仍需授权与门禁），unknown 拒绝",
-     "组 11 缝合点：三类能力（Embedding/Rerank/OCR）的启用与拒绝端到端可演示"
-    ]
-   },
-   "steps": [
-    "在 OCR 入口接入启用判定并短路拒绝 unknown",
-    "确认 free 标记来自上游明确定价证据，而不是缺维度时的默认值",
-    "把三类能力的启用状态与原因汇总到 03.11 的发现接口",
-    "先写失败测试：unknown OCR 被拒绝；明确 free 的 OCR 可执行；两者展示不同"
-   ],
-   "criteria": [
-    "价格未知的 OCR 请求被拒绝，供应商调用数为 0",
-    "明确免费的 OCR 可执行，但仍需授权与门禁通过",
-    "界面上 free 与 unknown 展示不同，unknown 不显示为免费",
-    "三类能力的启用状态与原因可在发现接口查询"
-   ],
-   "tests": ["unknown 拒绝测试", "free 可执行测试", "展示区分与发现接口断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run OcrPricing ./...", "bun test server/tests/capability-availability.test.ts"],
-   "owned_scope": ["OCR 拒绝接线与能力状态汇总", "对应测试"],
-   "resume_hint": "本 Ticket 是组 11 的缝合点：除拒绝路径外，还要确认三类能力状态在发现接口一致可见。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "cd bifrost/plugins/governance && go test ./...",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "11.1": {
+      "slug": "embedding-pricing-dimensions",
+      "contracts": {
+        "consumes": [
+          "07.12 的端到端准入路径",
+          "03.3 的 PriceStatus",
+          "上游 embedding 定价字段"
+        ],
+        "produces": [
+          "Embedding 计费维度映射：token 数、批量条目数、维度/模型变体等全部上游收费维度进入 PriceSnapshot",
+          "boundEvidence 规则：输入可完整序列化计数，输出为向量不产生额外计费维度时需有上游证据",
+          "能力启用条件：维度齐备且证据可强制才标记为可启用"
+        ]
+      },
+      "steps": [
+        "核对上游 embedding 定价的全部维度，逐一映射到 PriceSnapshot，缺项记 unknown",
+        "实现输入序列化计数（含批量条目与文本全部内容），作为预留上限依据",
+        "为可启用条件写出判定函数，供 03.8 过滤与 06.2 重验使用",
+        "先写失败测试：维度齐备时启用；缺任一维度时 unknown 且不启用"
+      ],
+      "criteria": [
+        "Embedding 的全部上游计费维度都进入价格快照",
+        "输入按完整序列化计数，批量条目不遗漏",
+        "维度齐备且证据可强制时该能力可启用",
+        "缺维度时标记 unknown，不启用且不按 0 成本放行"
+      ],
+      "tests": [
+        "维度映射测试（多维 fixture）",
+        "批量输入计数测试",
+        "启用判定分支测试"
+      ],
+      "verification": ["bun test server/tests/embedding-pricing.test.ts"],
+      "owned_scope": ["Embedding 维度映射与启用判定", "对应测试与 fixture"],
+      "resume_hint": "批量 embedding 常漏“条目数”维度；接手先构造多条目的 fixture 断言计数。"
+    },
+    "11.2": {
+      "slug": "embedding-unknown-price-refusal",
+      "contracts": {
+        "consumes": ["11.1 的启用判定", "07.3 的短路拒绝语义"],
+        "produces": [
+          "Embedding 未知价格拒绝路径：请求被短路拒绝，供应商未被调用，返回可展示原因",
+          "拒绝不产生预留、承诺或结算",
+          "原因码与 03.3 的 unknown 原因一致"
+        ]
+      },
+      "steps": [
+        "在 embedding 入口接入启用判定，unknown 时短路拒绝",
+        "确认拒绝发生在供应商调用之前，且不写入任何账务",
+        "把原因映射为用户可理解的文案",
+        "先写失败测试：价格 unknown 的 embedding 请求被拒绝且供应商调用数为 0"
+      ],
+      "criteria": [
+        "价格未知的 embedding 请求被拒绝，供应商调用数为 0",
+        "拒绝不产生预留、dispatch 承诺或结算记录",
+        "拒绝原因与价格状态分类一致且可展示",
+        "价格补齐后同一请求可正常执行"
+      ],
+      "tests": ["unknown 价格拒绝测试", "无账务写入断言", "补齐价格后可用测试"],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run EmbeddingRefusal ./..."
+      ],
+      "owned_scope": ["Embedding 入口的拒绝接线", "对应测试"],
+      "resume_hint": "拒绝必须发生在派发之前；接手用 provider spy 断言调用数为 0。"
+    },
+    "11.3": {
+      "slug": "rerank-pricing-dimensions",
+      "contracts": {
+        "consumes": ["11.1 的维度映射模式", "上游 rerank 定价与路由"],
+        "produces": [
+          "Rerank 计费维度映射：查询与文档条目数、token 或文档长度等上游实际收费维度",
+          "boundEvidence 规则：文档集合可完整计数，输出不产生额外费用需有上游证据",
+          "启用判定与 unknown 标记，语义与 11.1 一致"
+        ]
+      },
+      "steps": [
+        "定位 rerank 实际入口与上游定价维度，逐一映射到 PriceSnapshot",
+        "实现文档集合与查询的完整计数作为上限依据",
+        "接入启用判定，缺维度记 unknown",
+        "先写失败测试：多文档请求计数正确；缺维度时不启用"
+      ],
+      "criteria": [
+        "Rerank 的全部上游计费维度进入价格快照",
+        "文档与查询按完整内容计数，不因截断低估",
+        "缺维度时标记 unknown 且不启用",
+        "启用后的预留上限覆盖最坏情况"
+      ],
+      "tests": ["维度映射测试", "多文档计数测试", "启用判定测试"],
+      "verification": ["bun test server/tests/rerank-pricing.test.ts"],
+      "owned_scope": ["Rerank 维度映射与启用判定", "对应测试"],
+      "resume_hint": "rerank 的计费常按文档数或 token 数，两者都要核对上游文档；只按其一实现会系统性低估上限。"
+    },
+    "11.4": {
+      "slug": "rerank-missing-dimension-refusal",
+      "contracts": {
+        "consumes": ["11.3 的启用判定", "07.3 的短路拒绝"],
+        "produces": [
+          "Rerank 缺维度拒绝路径：短路拒绝、供应商未调用、无账务写入",
+          "拒绝原因指向缺失的具体维度，便于管理员补价",
+          "补价后同一请求可执行"
+        ]
+      },
+      "steps": [
+        "在 rerank 入口接入启用判定并短路拒绝",
+        "拒绝原因包含缺失维度清单",
+        "确认无预留、无承诺、无结算写入",
+        "先写失败测试：缺维度拒绝且供应商调用数为 0；补维度后可用"
+      ],
+      "criteria": [
+        "缺计费维度的 rerank 请求被拒绝，供应商调用数为 0",
+        "拒绝原因列出缺失维度",
+        "拒绝不产生任何账务写入",
+        "维度补齐后请求可正常执行"
+      ],
+      "tests": ["缺维度拒绝测试", "原因内容断言", "补齐后可用测试"],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run RerankRefusal ./..."
+      ],
+      "owned_scope": ["Rerank 入口拒绝接线", "对应测试"],
+      "resume_hint": "原因要具体到维度名，否则管理员无法补价；接手断言原因文本包含缺失维度。"
+    },
+    "11.5": {
+      "slug": "ocr-image-page-pricing",
+      "contracts": {
+        "consumes": [
+          "11.1 的维度映射模式",
+          "上游 OCR 定价（按页/按图像/按 token）"
+        ],
+        "produces": [
+          "OCR 计费维度映射：页数、图像数量与规格、输出 token 等全部上游维度",
+          "输入边界规则：页数与图像规格必须在派发前可确定，否则不可启用",
+          "启用判定与 unknown 标记"
+        ]
+      },
+      "steps": [
+        "核对上游 OCR 定价维度（页/图像/输出 token），逐一映射",
+        "实现派发前的页数与图像规格确定逻辑，无法确定即判证据不足",
+        "接入启用判定，缺维度记 unknown",
+        "先写失败测试：多页文档计数正确；页数不可预先确定时不启用"
+      ],
+      "criteria": [
+        "OCR 的页数、图像与输出维度都进入价格快照",
+        "页数与图像规格在派发前可确定，否则不启用",
+        "缺维度时标记 unknown，不按 0 成本执行",
+        "多页请求的上限覆盖全部页"
+      ],
+      "tests": ["多页计数测试", "不可预先确定页数的拒绝测试", "维度映射测试"],
+      "verification": ["bun test server/tests/ocr-pricing.test.ts"],
+      "owned_scope": ["OCR 维度映射与边界判定", "对应测试"],
+      "resume_hint": "页数在派发前不可知时（如流式解析），必须判为证据不足而不是按估算预留。"
+    },
+    "11.6": {
+      "slug": "ocr-unknown-not-free",
+      "contracts": {
+        "consumes": ["11.5 的启用判定", "03.3 的 known/free/unknown 区分"],
+        "produces": [
+          "OCR 未知价格拒绝路径：不得按免费执行，供应商未调用、无账务写入",
+          "明确 free 与 unknown 的展示区分：free 可执行（仍需授权与门禁），unknown 拒绝",
+          "组 11 缝合点：三类能力（Embedding/Rerank/OCR）的启用与拒绝端到端可演示"
+        ]
+      },
+      "steps": [
+        "在 OCR 入口接入启用判定并短路拒绝 unknown",
+        "确认 free 标记来自上游明确定价证据，而不是缺维度时的默认值",
+        "把三类能力的启用状态与原因汇总到 03.11 的发现接口",
+        "先写失败测试：unknown OCR 被拒绝；明确 free 的 OCR 可执行；两者展示不同"
+      ],
+      "criteria": [
+        "价格未知的 OCR 请求被拒绝，供应商调用数为 0",
+        "明确免费的 OCR 可执行，但仍需授权与门禁通过",
+        "界面上 free 与 unknown 展示不同，unknown 不显示为免费",
+        "三类能力的启用状态与原因可在发现接口查询"
+      ],
+      "tests": [
+        "unknown 拒绝测试",
+        "free 可执行测试",
+        "展示区分与发现接口断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run OcrPricing ./...",
+        "bun test server/tests/capability-availability.test.ts"
+      ],
+      "owned_scope": ["OCR 拒绝接线与能力状态汇总", "对应测试"],
+      "resume_hint": "本 Ticket 是组 11 的缝合点：除拒绝路径外，还要确认三类能力状态在发现接口一致可见。"
+    }
   }
- }
 }

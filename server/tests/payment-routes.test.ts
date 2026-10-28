@@ -58,7 +58,12 @@ function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
   return {
     catalog: (canPurchase, activePlanCode) => ({
       plans: [
-        { planCode: "pro", amountCents: 8800, currency: "CNY", periodMonths: 1 },
+        {
+          planCode: "pro",
+          amountCents: 8800,
+          currency: "CNY",
+          periodMonths: 1,
+        },
       ],
       canPurchase,
       activePlanCode,
@@ -68,7 +73,9 @@ function fakeService(overrides: Partial<PaymentService> = {}): PaymentService {
     readOrder: async (id, _scope?: PaymentOrderReadScope) => ({
       order: viewFor(id),
     }),
-    readCurrentOrder: async (_scope?: PaymentOrderReadScope) => ({ order: null }),
+    readCurrentOrder: async (_scope?: PaymentOrderReadScope) => ({
+      order: null,
+    }),
     cancelPurchase: async () => ({ outcome: "unknown" }),
     handleCallback: async () => ({ kind: "unknown-provider" }),
     sweepExpired: async () => {},
@@ -140,7 +147,9 @@ describe("callback routes", () => {
       body: "x=1",
     });
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: "Unknown payment provider." });
+    expect(await response.json()).toEqual({
+      error: "Unknown payment provider.",
+    });
   });
 
   test("refusals grade by the adapter's reason, in the channel's own shape", async () => {
@@ -312,7 +321,9 @@ describe("callback routes", () => {
     const app = new Hono<{ Variables: AppVariables }>().route(
       "/api/payments/callbacks",
       createPaymentCallbackRoutes({
-        service: fakeService({ handleCallback: async () => ({ kind: "success" }) }),
+        service: fakeService({
+          handleCallback: async () => ({ kind: "success" }),
+        }),
       }),
     );
     const alipay = await app.request("/api/payments/callbacks/alipay", {
@@ -382,7 +393,12 @@ describe("user routes: catalog and reads", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       plans: [
-        { planCode: "pro", amountCents: 8800, currency: "CNY", periodMonths: 1 },
+        {
+          planCode: "pro",
+          amountCents: 8800,
+          currency: "CNY",
+          periodMonths: 1,
+        },
       ],
       canPurchase: true,
       activePlanCode: "pro",
@@ -401,11 +417,13 @@ describe("user routes: catalog and reads", () => {
         activePlanCode: async () => null,
       }),
     );
-    expect((await app.request("/api/billing/purchases/catalog")).status).toBe(401);
-    expect((await app.request("/api/billing/purchases/current")).status).toBe(401);
-    expect(
-      (await app.request("/api/billing/purchases/po-1")).status,
-    ).toBe(401);
+    expect((await app.request("/api/billing/purchases/catalog")).status).toBe(
+      401,
+    );
+    expect((await app.request("/api/billing/purchases/current")).status).toBe(
+      401,
+    );
+    expect((await app.request("/api/billing/purchases/po-1")).status).toBe(401);
   });
 
   test("an unknown order id is 404", async () => {
@@ -446,7 +464,9 @@ describe("user routes: catalog and reads", () => {
     expect(current.status).toBe(200);
     expect(await current.json()).toEqual({ order: ownerOrder });
 
-    const ownDetail = await ownerApp.request("/api/billing/purchases/po-member");
+    const ownDetail = await ownerApp.request(
+      "/api/billing/purchases/po-member",
+    );
     expect(ownDetail.status).toBe(200);
     expect(await ownDetail.json()).toEqual({ order: ownerOrder });
 
@@ -496,13 +516,20 @@ describe("user routes: create and cancel", () => {
       (
         await app.request("/api/billing/purchases", {
           method: "POST",
-          body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
+          body: JSON.stringify({
+            planCode: "pro",
+            provider: "alipay",
+            cycle: "monthly",
+          }),
         })
       ).status,
     ).toBe(403);
     expect(
-      (await app.request("/api/billing/purchases/po-1/cancel", { method: "POST" }))
-        .status,
+      (
+        await app.request("/api/billing/purchases/po-1/cancel", {
+          method: "POST",
+        })
+      ).status,
     ).toBe(403);
   });
 
@@ -546,7 +573,12 @@ describe("user routes: create and cancel", () => {
       ),
     );
     for (const forged of [
-      { planCode: "pro", provider: "alipay", cycle: "monthly", userId: "victim-1" },
+      {
+        planCode: "pro",
+        provider: "alipay",
+        cycle: "monthly",
+        userId: "victim-1",
+      },
       {
         planCode: "pro",
         provider: "alipay",
@@ -583,7 +615,11 @@ describe("user routes: create and cancel", () => {
     );
     const response = await app.request("/api/billing/purchases", {
       method: "POST",
-      body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
+      body: JSON.stringify({
+        planCode: "pro",
+        provider: "alipay",
+        cycle: "monthly",
+      }),
     });
     expect(response.status).toBe(200);
     expect(captured).not.toBeNull();
@@ -649,7 +685,11 @@ describe("user routes: create and cancel", () => {
     );
     const response = await app.request("/api/billing/purchases", {
       method: "POST",
-      body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
+      body: JSON.stringify({
+        planCode: "pro",
+        provider: "alipay",
+        cycle: "monthly",
+      }),
     });
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
@@ -704,7 +744,11 @@ describe("user routes: create and cancel", () => {
       (
         await app.request("/api/billing/purchases", {
           method: "POST",
-          body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
+          body: JSON.stringify({
+            planCode: "pro",
+            provider: "alipay",
+            cycle: "monthly",
+          }),
         })
       ).status,
     ).toBe(503);
@@ -719,7 +763,10 @@ describe("user routes: create and cancel", () => {
             if (id === "po-paid" || id === "po-expired") {
               return {
                 outcome: "terminal",
-                order: { ...viewFor(id), status: id === "po-paid" ? "paid" : "expired" },
+                order: {
+                  ...viewFor(id),
+                  status: id === "po-paid" ? "paid" : "expired",
+                },
               } as const;
             }
             if (id === "po-canceled") {
@@ -734,8 +781,11 @@ describe("user routes: create and cancel", () => {
       ),
     );
     expect(
-      (await app.request("/api/billing/purchases/po-paid/cancel", { method: "POST" }))
-        .status,
+      (
+        await app.request("/api/billing/purchases/po-paid/cancel", {
+          method: "POST",
+        })
+      ).status,
     ).toBe(409);
     expect(
       (
@@ -744,16 +794,22 @@ describe("user routes: create and cancel", () => {
         })
       ).status,
     ).toBe(409);
-    const idempotent = await app.request("/api/billing/purchases/po-canceled/cancel", {
-      method: "POST",
-    });
-    expect(idempotent.status).toBe(200);
-    expect(((await idempotent.json()) as { order: { status: string } }).order.status).toBe(
-      "canceled",
+    const idempotent = await app.request(
+      "/api/billing/purchases/po-canceled/cancel",
+      {
+        method: "POST",
+      },
     );
+    expect(idempotent.status).toBe(200);
     expect(
-      (await app.request("/api/billing/purchases/po-missing/cancel", { method: "POST" }))
-        .status,
+      ((await idempotent.json()) as { order: { status: string } }).order.status,
+    ).toBe("canceled");
+    expect(
+      (
+        await app.request("/api/billing/purchases/po-missing/cancel", {
+          method: "POST",
+        })
+      ).status,
     ).toBe(404);
   });
 
@@ -778,7 +834,11 @@ describe("user routes: create and cancel", () => {
     );
     await app.request("/api/billing/purchases", {
       method: "POST",
-      body: JSON.stringify({ planCode: "pro", provider: "alipay", cycle: "monthly" }),
+      body: JSON.stringify({
+        planCode: "pro",
+        provider: "alipay",
+        cycle: "monthly",
+      }),
     });
     await app.request("/api/billing/purchases/po-x/cancel", { method: "POST" });
     expect(events.map((event) => event.eventType)).toEqual([

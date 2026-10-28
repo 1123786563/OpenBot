@@ -186,9 +186,7 @@ export function createBillingStatements(deps: {
           ...ceiling,
           used,
           remaining:
-            ceiling.limit === null
-              ? null
-              : Math.max(ceiling.limit - used, 0),
+            ceiling.limit === null ? null : Math.max(ceiling.limit - used, 0),
           usedCents: charge?.amountCents ?? 0,
         });
       }

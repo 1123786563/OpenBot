@@ -1,102 +1,126 @@
 {
- "group": "16",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC08/AC16）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 实时按受控单元预留；替代入口不得绕过准入）",
-  "CONTEXT.md（实时会话、计费单元、WebRTC 入口术语）"
- ],
- "anchors": {
-  "bifrost-webrtc": "bifrost/core/providers/azure/realtime.go（SupportsRealtimeWebRTC、ExchangeRealtimeWebRTCSDP、RealtimeWebRTCDataChannelLabel、client_secrets 会话签发）、bifrost/core/sessionaffinity_test.go（会话与 Key 绑定）",
-  "realtime-core": "组 15 交付的 RealtimeSession / RealtimeUnit / 门控 / 关停 / 尾部结算",
-  "openbot-credit": "组 06 的 Reserve/Settle 与 06.8 unknown",
-  "test-harness": "go test ./plugins/governance/... 与 ./core/...；WebRTC 以 SDP 交换 + fake 上游验证，不依赖真实媒体设备"
- },
- "verification_common": [
-  "cd bifrost/plugins/governance && go test ./...",
-  "bun run --filter server typecheck"
- ],
- "tickets": {
-  "16.1": {
-   "slug": "webrtc-reuses-unit-admission",
-   "contracts": {
-    "consumes": ["15.2 的单元预留", "15.3 的输入门控", "WebRTC 会话建立入口（SDP 交换 / client_secrets）"],
-    "produces": [
-     "WebRTC 入口复用同一 RealtimeSession 与 RealtimeUnit 模型，账务语义与 WebSocket 完全一致",
-     "会话建立与每个单元开始前同样经过校验与预留",
-     "两类入口共用同一套状态机与恢复路径"
-    ]
-   },
-   "steps": [
-    "在 WebRTC 会话建立路径（SDP 交换或 client_secrets 签发）接入 15.1 的会话身份校验",
-    "确认单元级预留与输入门控在 WebRTC 数据通道上同样生效",
-    "复用组 15 的状态机与恢复，不新建第二套账务模型",
-    "先写失败测试：WebRTC 会话建立被校验；未预留单元的输入不被转发"
-   ],
-   "criteria": [
-    "WebRTC 会话建立经过与 WebSocket 相同的校验，未通过则拒绝建立",
-    "WebRTC 的每个计费单元在处理前完成预留",
-    "未预留输入不向供应商转发",
-    "两类入口共用同一账务模型与恢复路径"
-   ],
-   "tests": ["WebRTC 会话建立校验测试", "单元预留与门控测试（SDP + fake 上游）", "共用状态机断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run WebRTCAdmission ./..."],
-   "owned_scope": ["WebRTC 入口的准入接线", "对应 Go 测试"],
-   "resume_hint": "不要为 WebRTC 复制一套会话/单元模型；接手确认它复用组 15 的存储与状态机。"
+  "group": "16",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC05/AC07/AC08/AC16）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q26 实时按受控单元预留；替代入口不得绕过准入）",
+    "CONTEXT.md（实时会话、计费单元、WebRTC 入口术语）"
+  ],
+  "anchors": {
+    "bifrost-webrtc": "bifrost/core/providers/azure/realtime.go（SupportsRealtimeWebRTC、ExchangeRealtimeWebRTCSDP、RealtimeWebRTCDataChannelLabel、client_secrets 会话签发）、bifrost/core/sessionaffinity_test.go（会话与 Key 绑定）",
+    "realtime-core": "组 15 交付的 RealtimeSession / RealtimeUnit / 门控 / 关停 / 尾部结算",
+    "openbot-credit": "组 06 的 Reserve/Settle 与 06.8 unknown",
+    "test-harness": "go test ./plugins/governance/... 与 ./core/...；WebRTC 以 SDP 交换 + fake 上游验证，不依赖真实媒体设备"
   },
-  "16.2": {
-   "slug": "webrtc-shutdown-and-tail-parity",
-   "contracts": {
-    "consumes": ["16.1 的接入结果", "15.6 的关停语义", "15.7 的尾部结算"],
-    "produces": [
-     "WebRTC 的耗尽/撤销/到期停止与关停行为与 WebSocket 一致",
-     "尾部费用在原预留内只结算一次，无法确认进入 unknown",
-     "行为一致性以同一组测试用例覆盖两类入口"
-    ]
-   },
-   "steps": [
-    "把 15.5–15.7 的停止、关停与尾部结算接到 WebRTC 路径",
-    "用同一组用例分别跑 WebSocket 与 WebRTC，断言行为一致",
-    "确认关停覆盖上游会话与数据通道两侧",
-    "先写失败测试：WebRTC 会话中撤销 → 无新单元、会话关停、尾部结算一次"
-   ],
-   "criteria": [
-    "WebRTC 在耗尽、撤销、到期时停止后续单元并尽力关停",
-    "尾部费用在原预留内结算且只结算一次",
-    "无法确认的尾部进入 unknown 并保持预留",
-    "两类入口的行为由同一组用例验证且结果一致"
-   ],
-   "tests": ["WebRTC 停止与关停集成测试", "尾部结算一次断言", "两入口行为一致性对比测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/realtime-webrtc-parity.integration.test.ts", "cd bifrost/plugins/governance && go test -run WebRTCTail ./..."],
-   "owned_scope": ["WebRTC 关停与尾部接线", "对应测试"],
-   "resume_hint": "一致性最容易在“关停顺序”上出现差异；接手用同一用例跑两入口并对比 provider spy 计数。"
-  },
-  "16.3": {
-   "slug": "no-ephemeral-provider-session-bypass",
-   "contracts": {
-    "consumes": ["16.1/16.2 的准入与关停", "05.4 的 CredentialBundle 边界"],
-    "produces": [
-     "旁路拒绝：不能用临时 provider 会话、直连上游 URL 或替代端点绕开 OpenBot 准入",
-     "上游会话凭据（如 client_secrets / SDP）只在已预留的会话内签发，且不可被复用建立第二个会话",
-     "旁路尝试可审计，供 22.1/22.2 全入口核查引用；组 16 缝合点"
-    ]
-   },
-   "steps": [
-    "枚举实时入口可获得的凭据类型，确认它们都由准入路径签发且绑定 sessionId",
-    "拒绝未绑定有效会话的凭据使用，包括重复使用同一凭据建立第二个会话",
-    "确认客户端拿不到可直连上游的长期凭据或 URL",
-    "把旁路尝试写入审计",
-    "先写失败测试：用已签发凭据尝试建立第二个会话被拒绝；直连上游 URL 不可获得"
-   ],
-   "criteria": [
-    "临时 provider 会话或替代端点无法绕开积分准入",
-    "上游会话凭据绑定单一会话，不能复用建立第二个会话",
-    "客户端无法获得可直连上游的长期凭据或 URL",
-    "旁路尝试被拒绝并记录审计"
-   ],
-   "tests": ["凭据复用拒绝测试", "替代端点拒绝测试", "审计记录断言"],
-   "verification": ["cd bifrost/plugins/governance && go test -run RealtimeBypass ./...", "bun test server/tests/realtime-bypass-audit.test.ts"],
-   "owned_scope": ["实时凭据签发与绑定约束", "旁路拒绝与审计", "对应测试与验收记录"],
-   "resume_hint": "本 Ticket 是组 16 缝合点：重点不是新增功能，而是证明没有第二条路；把入口枚举结果写入验收记录供 22.1 引用。"
+  "verification_common": [
+    "cd bifrost/plugins/governance && go test ./...",
+    "bun run --filter server typecheck"
+  ],
+  "tickets": {
+    "16.1": {
+      "slug": "webrtc-reuses-unit-admission",
+      "contracts": {
+        "consumes": [
+          "15.2 的单元预留",
+          "15.3 的输入门控",
+          "WebRTC 会话建立入口（SDP 交换 / client_secrets）"
+        ],
+        "produces": [
+          "WebRTC 入口复用同一 RealtimeSession 与 RealtimeUnit 模型，账务语义与 WebSocket 完全一致",
+          "会话建立与每个单元开始前同样经过校验与预留",
+          "两类入口共用同一套状态机与恢复路径"
+        ]
+      },
+      "steps": [
+        "在 WebRTC 会话建立路径（SDP 交换或 client_secrets 签发）接入 15.1 的会话身份校验",
+        "确认单元级预留与输入门控在 WebRTC 数据通道上同样生效",
+        "复用组 15 的状态机与恢复，不新建第二套账务模型",
+        "先写失败测试：WebRTC 会话建立被校验；未预留单元的输入不被转发"
+      ],
+      "criteria": [
+        "WebRTC 会话建立经过与 WebSocket 相同的校验，未通过则拒绝建立",
+        "WebRTC 的每个计费单元在处理前完成预留",
+        "未预留输入不向供应商转发",
+        "两类入口共用同一账务模型与恢复路径"
+      ],
+      "tests": [
+        "WebRTC 会话建立校验测试",
+        "单元预留与门控测试（SDP + fake 上游）",
+        "共用状态机断言"
+      ],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run WebRTCAdmission ./..."
+      ],
+      "owned_scope": ["WebRTC 入口的准入接线", "对应 Go 测试"],
+      "resume_hint": "不要为 WebRTC 复制一套会话/单元模型；接手确认它复用组 15 的存储与状态机。"
+    },
+    "16.2": {
+      "slug": "webrtc-shutdown-and-tail-parity",
+      "contracts": {
+        "consumes": ["16.1 的接入结果", "15.6 的关停语义", "15.7 的尾部结算"],
+        "produces": [
+          "WebRTC 的耗尽/撤销/到期停止与关停行为与 WebSocket 一致",
+          "尾部费用在原预留内只结算一次，无法确认进入 unknown",
+          "行为一致性以同一组测试用例覆盖两类入口"
+        ]
+      },
+      "steps": [
+        "把 15.5–15.7 的停止、关停与尾部结算接到 WebRTC 路径",
+        "用同一组用例分别跑 WebSocket 与 WebRTC，断言行为一致",
+        "确认关停覆盖上游会话与数据通道两侧",
+        "先写失败测试：WebRTC 会话中撤销 → 无新单元、会话关停、尾部结算一次"
+      ],
+      "criteria": [
+        "WebRTC 在耗尽、撤销、到期时停止后续单元并尽力关停",
+        "尾部费用在原预留内结算且只结算一次",
+        "无法确认的尾部进入 unknown 并保持预留",
+        "两类入口的行为由同一组用例验证且结果一致"
+      ],
+      "tests": [
+        "WebRTC 停止与关停集成测试",
+        "尾部结算一次断言",
+        "两入口行为一致性对比测试"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/realtime-webrtc-parity.integration.test.ts",
+        "cd bifrost/plugins/governance && go test -run WebRTCTail ./..."
+      ],
+      "owned_scope": ["WebRTC 关停与尾部接线", "对应测试"],
+      "resume_hint": "一致性最容易在“关停顺序”上出现差异；接手用同一用例跑两入口并对比 provider spy 计数。"
+    },
+    "16.3": {
+      "slug": "no-ephemeral-provider-session-bypass",
+      "contracts": {
+        "consumes": ["16.1/16.2 的准入与关停", "05.4 的 CredentialBundle 边界"],
+        "produces": [
+          "旁路拒绝：不能用临时 provider 会话、直连上游 URL 或替代端点绕开 OpenBot 准入",
+          "上游会话凭据（如 client_secrets / SDP）只在已预留的会话内签发，且不可被复用建立第二个会话",
+          "旁路尝试可审计，供 22.1/22.2 全入口核查引用；组 16 缝合点"
+        ]
+      },
+      "steps": [
+        "枚举实时入口可获得的凭据类型，确认它们都由准入路径签发且绑定 sessionId",
+        "拒绝未绑定有效会话的凭据使用，包括重复使用同一凭据建立第二个会话",
+        "确认客户端拿不到可直连上游的长期凭据或 URL",
+        "把旁路尝试写入审计",
+        "先写失败测试：用已签发凭据尝试建立第二个会话被拒绝；直连上游 URL 不可获得"
+      ],
+      "criteria": [
+        "临时 provider 会话或替代端点无法绕开积分准入",
+        "上游会话凭据绑定单一会话，不能复用建立第二个会话",
+        "客户端无法获得可直连上游的长期凭据或 URL",
+        "旁路尝试被拒绝并记录审计"
+      ],
+      "tests": ["凭据复用拒绝测试", "替代端点拒绝测试", "审计记录断言"],
+      "verification": [
+        "cd bifrost/plugins/governance && go test -run RealtimeBypass ./...",
+        "bun test server/tests/realtime-bypass-audit.test.ts"
+      ],
+      "owned_scope": [
+        "实时凭据签发与绑定约束",
+        "旁路拒绝与审计",
+        "对应测试与验收记录"
+      ],
+      "resume_hint": "本 Ticket 是组 16 缝合点：重点不是新增功能，而是证明没有第二条路；把入口枚举结果写入验收记录供 22.1 引用。"
+    }
   }
- }
 }

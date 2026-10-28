@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -282,7 +288,9 @@ describe("PPTX package scripts preserve source data", () => {
 
     try {
       expect(checkResult.error).toBe(undefined);
-      expect(checkResult.status, checkResult.stdout + checkResult.stderr).toBe(0);
+      expect(checkResult.status, checkResult.stdout + checkResult.stderr).toBe(
+        0,
+      );
       expect(existsSync(output)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -321,7 +329,12 @@ describe("PPTX package scripts preserve source data", () => {
     );
 
     try {
-      const result = runPython("office/pack.py", [input, output, "--validate", "yes"]);
+      const result = runPython("office/pack.py", [
+        input,
+        output,
+        "--validate",
+        "yes",
+      ]);
 
       expect(result.error).toBe(undefined);
       expect(result.status === 0).toBe(false);

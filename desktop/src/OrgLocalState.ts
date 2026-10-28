@@ -85,7 +85,14 @@ export function localStateKey(scope: LocalScope, key: string): string {
   const parts =
     scope.kind === "personal"
       ? [PREFIX, ":personal", scope.userId]
-      : [PREFIX, "org", scope.authority, scope.userId, scope.tenantId ?? "-", scope.workspaceId ?? "-"];
+      : [
+          PREFIX,
+          "org",
+          scope.authority,
+          scope.userId,
+          scope.tenantId ?? "-",
+          scope.workspaceId ?? "-",
+        ];
   return [...parts, key].join(":");
 }
 
@@ -98,9 +105,7 @@ export type LocalStateRead =
   /** Damaged, a foreign version, or a scope mismatch: never guessed at, never shown. */
   | { status: "corrupt" };
 
-function scopeOf(
-  scope: LocalScope,
-): LocalStateRecord["scope"] {
+function scopeOf(scope: LocalScope): LocalStateRecord["scope"] {
   return scope.kind === "personal"
     ? {
         kind: "personal",
@@ -137,7 +142,8 @@ export function readLocalState(
   } catch {
     return { status: "corrupt" };
   }
-  if (parsed === null || typeof parsed !== "object") return { status: "corrupt" };
+  if (parsed === null || typeof parsed !== "object")
+    return { status: "corrupt" };
   const record = parsed as Partial<LocalStateRecord>;
   if (record.version !== LOCAL_STATE_VERSION) return { status: "corrupt" };
   if (
@@ -159,10 +165,7 @@ export function readLocalState(
   ) {
     return { status: "corrupt" };
   }
-  if (
-    typeof record.expiresAtMs === "number" &&
-    record.expiresAtMs <= nowMs
-  ) {
+  if (typeof record.expiresAtMs === "number" && record.expiresAtMs <= nowMs) {
     return { status: "expired" };
   }
   if (!("value" in record)) return { status: "corrupt" };
@@ -199,7 +202,9 @@ export function removeLocalState(
 }
 
 /** The keys of the store (localStorage has none of its own in the interface this module needs). */
-function keysOf(storage: LocalStateStorage & { key?: (index: number) => string | null }): string[] {
+function keysOf(
+  storage: LocalStateStorage & { key?: (index: number) => string | null },
+): string[] {
   if (typeof storage.key !== "function") return [];
   const found: string[] = [];
   for (let index = 0; ; index += 1) {

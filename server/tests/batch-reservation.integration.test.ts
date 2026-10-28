@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import {
   computeBatchCap,
   createBatchSubmitService,
@@ -97,7 +102,10 @@ function makeDispatch(behavior: "answer" | "lose") {
     calls += 1;
     void input;
     return behavior === "answer"
-      ? ({ kind: "answered", providerBatchId: `prov-batch-${++dispatchCounter}` } as const)
+      ? ({
+          kind: "answered",
+          providerBatchId: `prov-batch-${++dispatchCounter}`,
+        } as const)
       : ({ kind: "lost", reason: "response_timeout" } as const);
   };
   return { dispatch, calls: () => calls };
@@ -269,12 +277,15 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM batch_items WHERE batch_id IN (SELECT batch_id FROM batch_jobs WHERE grant_id LIKE ${`${prefix}%`})`,
   );
-  await database
-    .delete(batchJobs)
-    .where(like(batchJobs.grantId, `${prefix}%`));
+  await database.delete(batchJobs).where(like(batchJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -324,7 +335,8 @@ describe("18.1 AC-1 — the whole-batch cap conversion", () => {
       snapshotVersion: 1,
       rateVersion: 0,
     });
-    if (!basisA.ok || !basisB.ok) throw new Error("fixture bases did not resolve");
+    if (!basisA.ok || !basisB.ok)
+      throw new Error("fixture bases did not resolve");
     const cap = computeBatchCap({
       items: [
         {
@@ -384,7 +396,11 @@ describe("18.1 AC-1 — the whole-batch cap conversion", () => {
     const cap = computeBatchCap({
       items: [
         { quantities: { video: 1 }, dims: basisA.dims, rate: basisA.rate },
-        { quantities: { not_a_dimension: 1 }, dims: basisA.dims, rate: basisA.rate },
+        {
+          quantities: { not_a_dimension: 1 },
+          dims: basisA.dims,
+          rate: basisA.rate,
+        },
       ],
     });
     expect(cap.ok).toBe(false);
@@ -538,7 +554,11 @@ describe("18.1 AC-4 — one submit key, one batch, no top-up", () => {
           ...(world.submitBody().items as unknown[]),
           {
             customId: "req-4",
-            model: { provider: world.provider, model: world.modelA, capability: "video" },
+            model: {
+              provider: world.provider,
+              model: world.modelA,
+              capability: "video",
+            },
             quantities: { video: 1000 },
           },
         ],
@@ -605,7 +625,10 @@ describe("18.1 — boundary refusals", () => {
             creditReservations.externalCustomerId,
             `openbot-personal-${prefix}%`,
           ),
-          eq(creditReservations.idempotencyKey, world.submitBody().submitIdempotencyKey),
+          eq(
+            creditReservations.idempotencyKey,
+            world.submitBody().submitIdempotencyKey,
+          ),
         ),
       );
     expect(holds.length).toBe(1);

@@ -5,10 +5,7 @@
   "parent_issue": 472,
   "status": "published-and-verified",
   "publication_authorized_after_review": true,
-  "proposed_labels": [
-    "enhancement",
-    "ready-for-agent"
-  ],
+  "proposed_labels": ["enhancement", "ready-for-agent"],
   "spec": "docs/specs/2026-10-19-mastra-agent-execution-migration-design.md",
   "adr": "docs/adr/0010-mastra-execution-openbot-governance.md",
   "source_plan": "docs/plans/mastra/agent-execution/2026-10-19-mastra-agent-execution-migration.md",
@@ -17,16 +14,9 @@
       "id": "ME01",
       "title": "锁定 Mastra 兼容组合并演示可持久恢复的最小执行",
       "depends_on": [],
-      "acceptance": [
-        "A01"
-      ],
-      "plan_tasks": [
-        "T0",
-        "T1"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "acceptance": ["A01"],
+      "plan_tasks": ["T0", "T1"],
+      "roles": ["backend_implementer"],
       "deliver": "维护者可用固定版本的最小 Bot 完成回答、一次受控工具调用和独立进程暂停恢复，证明迁移依赖可用。",
       "criteria": [
         "记录实际解析的 Mastra、AI SDK、AG-UI、Zod 与运行时版本；从现有版本组起步，不以通配或 latest 作为可恢复格式依据。",
@@ -53,25 +43,10 @@
     {
       "id": "ME02",
       "title": "现有聊天入口通过 Mastra 完成受预算约束的文本回答",
-      "depends_on": [
-        "ME01"
-      ],
-      "acceptance": [
-        "A02",
-        "A03",
-        "A17",
-        "A19"
-      ],
-      "plan_tasks": [
-        "T2",
-        "T3",
-        "T5",
-        "T8"
-      ],
-      "roles": [
-        "backend_implementer",
-        "frontend_implementer"
-      ],
+      "depends_on": ["ME01"],
+      "acceptance": ["A02", "A03", "A17", "A19"],
+      "plan_tasks": ["T2", "T3", "T5", "T8"],
+      "roles": ["backend_implementer", "frontend_implementer"],
       "deliver": "用户在受控测试范围的现有聊天界面发送纯文本，获得 Mastra 流式回答、准确费用和可停止/重连的运行状态。",
       "criteria": [
         "保留 Bot 角色、常驻指令和可信内容指引；两个用户同用逻辑 Bot 时不串指令、模型、凭据或消息。",
@@ -94,28 +69,15 @@
       "published_title": "[Mastra ME02] 现有聊天入口通过 Mastra 完成受预算约束的文本回答",
       "published_at": "2026-10-19T14:56:43.177336+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        473
-      ]
+      "native_blocked_by_numbers": [473]
     },
     {
       "id": "ME03",
       "title": "聊天刷新与附件往返保留完整历史和稳定顺序",
-      "depends_on": [
-        "ME02"
-      ],
-      "acceptance": [
-        "A04",
-        "A19"
-      ],
-      "plan_tasks": [
-        "T4",
-        "T12"
-      ],
-      "roles": [
-        "backend_implementer",
-        "frontend_implementer"
-      ],
+      "depends_on": ["ME02"],
+      "acceptance": ["A04", "A19"],
+      "plan_tasks": ["T4", "T12"],
+      "roles": ["backend_implementer", "frontend_implementer"],
       "deliver": "用户上传文件或图片并继续对话，刷新、翻页或重连后仍能看到完整消息及工具关联，Bot 读取同一份有权限的历史。",
       "criteria": [
         "完整保存文本、文件/图片引用、工具调用与结果、必要 activity/state/审批 metadata；展示文本投影不替代模型历史。",
@@ -137,28 +99,15 @@
       "published_title": "[Mastra ME03] 聊天刷新与附件往返保留完整历史和稳定顺序",
       "published_at": "2026-10-19T14:56:46.833767+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        474
-      ]
+      "native_blocked_by_numbers": [474]
     },
     {
       "id": "ME04",
       "title": "Bot 通过本人授权的连接器工具完成多步工作",
-      "depends_on": [
-        "ME03"
-      ],
-      "acceptance": [
-        "A03",
-        "A05",
-        "A17"
-      ],
-      "plan_tasks": [
-        "T2",
-        "T5"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME03"],
+      "acceptance": ["A03", "A05", "A17"],
+      "plan_tasks": ["T2", "T5"],
+      "roles": ["backend_implementer"],
       "deliver": "用户让 Bot 调用已连接应用，Bot 只使用被授权工具，正确处理结果/拒绝，并在多步执行中持续遵守预算。",
       "criteria": [
         "工具发现与授权分离；只提供经过现有 grant 和工具筛选的工具，参数经原 schema 校验，实际调用仍过 policy、credential 和 audit。",
@@ -180,30 +129,15 @@
       "published_title": "[Mastra ME04] Bot 通过本人授权的连接器工具完成多步工作",
       "published_at": "2026-10-19T14:56:48.935746+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        475
-      ]
+      "native_blocked_by_numbers": [475]
     },
     {
       "id": "ME05",
       "title": "危险操作与用户问答可持久挂起并准确恢复",
-      "depends_on": [
-        "ME04"
-      ],
-      "acceptance": [
-        "A06",
-        "A18",
-        "A19"
-      ],
-      "plan_tasks": [
-        "T6",
-        "T8",
-        "T12"
-      ],
-      "roles": [
-        "backend_implementer",
-        "frontend_implementer"
-      ],
+      "depends_on": ["ME04"],
+      "acceptance": ["A06", "A18", "A19"],
+      "plan_tasks": ["T6", "T8", "T12"],
+      "roles": ["backend_implementer", "frontend_implementer"],
       "deliver": "用户看到工具动作和参数，批准、拒绝或补充回答；刷新或服务重启后仍能继续准确的待办，不重复执行外部动作。",
       "criteria": [
         "审批/问答挂起前保存 continuation 与受保护 snapshot 引用，关联当前 scope、Bot、Run/Attempt/generation、稳定 operationId、参数摘要和引擎版本。",
@@ -226,29 +160,15 @@
       "published_title": "[Mastra ME05] 危险操作与用户问答可持久挂起并准确恢复",
       "published_at": "2026-10-19T14:56:51.908804+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        476
-      ]
+      "native_blocked_by_numbers": [476]
     },
     {
       "id": "ME06",
       "title": "Computer 与前端工具在有人和无人值守场景中保持真实执行",
-      "depends_on": [
-        "ME05"
-      ],
-      "acceptance": [
-        "A07",
-        "A19"
-      ],
-      "plan_tasks": [
-        "T6",
-        "T9",
-        "T12"
-      ],
-      "roles": [
-        "backend_implementer",
-        "frontend_implementer"
-      ],
+      "depends_on": ["ME05"],
+      "acceptance": ["A07", "A19"],
+      "plan_tasks": ["T6", "T9", "T12"],
+      "roles": ["backend_implementer", "frontend_implementer"],
       "deliver": "用户或后台 Bot 使用现有 Computer、gallery 和前端工具；需要本人参与时明确等待，并用真实工具结果继续回答。",
       "criteria": [
         "Computer/沙箱工具按公司/团队/本人/逻辑 Bot 解析环境和凭据，禁止以全局 Bot ID 共享有状态环境。",
@@ -270,28 +190,16 @@
       "published_title": "[Mastra ME06] Computer 与前端工具在有人和无人值守场景中保持真实执行",
       "published_at": "2026-10-19T14:56:53.915526+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        477
-      ]
+      "native_blocked_by_numbers": [477]
     },
     {
       "id": "ME07",
       "title": "Mastra 对话与后台只消费已确认且获授权的个人记忆",
-      "depends_on": [
-        "ME04"
-      ],
-      "external_blockers": [
-        395
-      ],
-      "acceptance": [
-        "A08"
-      ],
-      "plan_tasks": [
-        "T7"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME04"],
+      "external_blockers": [395],
+      "acceptance": ["A08"],
+      "plan_tasks": ["T7"],
+      "roles": ["backend_implementer"],
       "deliver": "用户的记忆审核、暂停使用、来源撤权和遗忘在 Mastra 网页及后台上下文中继续有效。",
       "criteria": [
         "消费已有 Hindsight #395 的单一记忆权威交付，不重复实现该 Issue 的旧路径退出/迁移行为；前置代码与验证必须已集成。",
@@ -313,26 +221,15 @@
       "published_title": "[Mastra ME07] Mastra 对话与后台只消费已确认且获授权的个人记忆",
       "published_at": "2026-10-19T14:56:56.099289+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        476,
-        395
-      ]
+      "native_blocked_by_numbers": [476, 395]
     },
     {
       "id": "ME08",
       "title": "保留可选学习技能的快照校验、加载与撤销",
-      "depends_on": [
-        "ME05"
-      ],
-      "acceptance": [
-        "A09"
-      ],
-      "plan_tasks": [
-        "T7"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME05"],
+      "acceptance": ["A09"],
+      "plan_tasks": ["T7"],
+      "roles": ["backend_implementer"],
       "deliver": "已启用学习的 Bot 在 Mastra 中继续使用原发布技能，未启用学习的部署无需连接 Intelligence。",
       "criteria": [
         "保留技能 catalog、按名称加载、支持文件读取、归档校验、刷新和撤销策略，不以空 skills 列表代替服务故障。",
@@ -354,27 +251,15 @@
       "published_title": "[Mastra ME08] 保留可选学习技能的快照校验、加载与撤销",
       "published_at": "2026-10-19T14:56:58.554164+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        477
-      ]
+      "native_blocked_by_numbers": [477]
     },
     {
       "id": "ME09",
       "title": "定时任务通过统一 Mastra 执行并回写原会话",
-      "depends_on": [
-        "ME06",
-        "ME07",
-        "ME08"
-      ],
-      "acceptance": [
-        "A10"
-      ],
-      "plan_tasks": [
-        "T9"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME06", "ME07", "ME08"],
+      "acceptance": ["A10"],
+      "plan_tasks": ["T9"],
+      "roles": ["backend_implementer"],
       "deliver": "用户的定时任务到点后使用与网页相同的 Bot、工具、记忆和预算执行，结果出现在原会话且重复投递不重复推进。",
       "criteria": [
         "从持久调度记录和可信目录重建当前 scope/受限身份；队列中的任意 tenant/owner 字符串不构成授权。",
@@ -396,28 +281,15 @@
       "published_title": "[Mastra ME09] 定时任务通过统一 Mastra 执行并回写原会话",
       "published_at": "2026-10-19T14:57:01.000528+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        478,
-        479,
-        480
-      ]
+      "native_blocked_by_numbers": [478, 479, 480]
     },
     {
       "id": "ME10",
       "title": "职责、投递、唤醒与审批续跑统一执行和回传",
-      "depends_on": [
-        "ME09"
-      ],
-      "acceptance": [
-        "A11"
-      ],
-      "plan_tasks": [
-        "T9",
-        "T10"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME09"],
+      "acceptance": ["A11"],
+      "plan_tasks": ["T9", "T10"],
+      "roles": ["backend_implementer"],
       "deliver": "职责推进、消息投递、唤醒和已批准操作续跑都使用同一受控 Mastra turn，保持各自稳定意图和用户可见状态。",
       "criteria": [
         "逐项登记并迁移上述四种入口，记录业务归属、受限执行身份、预算来源、去重键、目标会话和回调。",
@@ -439,25 +311,15 @@
       "published_title": "[Mastra ME10] 职责、投递、唤醒与审批续跑统一执行和回传",
       "published_at": "2026-10-19T14:57:03.856011+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        481
-      ]
+      "native_blocked_by_numbers": [481]
     },
     {
       "id": "ME11",
       "title": "Bot 交接与回收重试保持授权、分享和深度限制",
-      "depends_on": [
-        "ME10"
-      ],
-      "acceptance": [
-        "A12"
-      ],
-      "plan_tasks": [
-        "T10"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME10"],
+      "acceptance": ["A12"],
+      "plan_tasks": ["T10"],
+      "roles": ["backend_implementer"],
       "deliver": "用户把工作交给另一 Bot 时，目标只得到允许分享的上下文，并准确回传一次结果，后台回收器不重复推进。",
       "criteria": [
         "目标 Bot 通过发起人的授权 roster 解析，删除/失权目标明确拒绝，Mastra 默认子 Agent 规则不替代该授权。",
@@ -479,26 +341,15 @@
       "published_title": "[Mastra ME11] Bot 交接与回收重试保持授权、分享和深度限制",
       "published_at": "2026-10-19T14:57:05.892312+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        482
-      ]
+      "native_blocked_by_numbers": [482]
     },
     {
       "id": "ME12",
       "title": "OpenMuse 与 Workshop 调用保留任务、产物和作用域",
-      "depends_on": [
-        "ME09"
-      ],
-      "acceptance": [
-        "A13"
-      ],
-      "plan_tasks": [
-        "T9",
-        "T10"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME09"],
+      "acceptance": ["A13"],
+      "plan_tasks": ["T9", "T10"],
+      "roles": ["backend_implementer"],
       "deliver": "通过主仓库调用 OpenBot 的 OpenMuse 任务与 Workshop 执行能使用统一 Mastra turn，并返回原业务可读取的结果和产物。",
       "criteria": [
         "核对主仓库实际装配的 OpenMuse/Workshop headless 调用，分别记录调用入口、身份、scope、预算、产物与取消关系。",
@@ -519,26 +370,15 @@
       "published_title": "[Mastra ME12] OpenMuse 与 Workshop 调用保留任务、产物和作用域",
       "published_at": "2026-10-19T14:57:09.166678+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        481
-      ]
+      "native_blocked_by_numbers": [481]
     },
     {
       "id": "ME13",
       "title": "盘点并幂等导入旧会话与完整消息",
-      "depends_on": [
-        "ME03",
-        "ME05"
-      ],
-      "acceptance": [
-        "A14"
-      ],
-      "plan_tasks": [
-        "T11"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME03", "ME05"],
+      "acceptance": ["A14"],
+      "plan_tasks": ["T11"],
+      "roles": ["backend_implementer"],
       "deliver": "运维先看到历史迁移 dry-run 与归属风险，再在隔离环境证明可中断重入导入，用户能完整读取迁入会话。",
       "criteria": [
         "inspect/dry-run 默认不写数据；输出脱敏来源清单、分页游标、数量/摘要、归属证据和无法迁入原因。",
@@ -560,30 +400,15 @@
       "published_title": "[Mastra ME13] 盘点并幂等导入旧会话与完整消息",
       "published_at": "2026-10-19T14:57:12.875311+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        475,
-        477
-      ]
+      "native_blocked_by_numbers": [475, 477]
     },
     {
       "id": "ME14",
       "title": "处置在途运行并完成单写切换与无数据损失回滚演练",
-      "depends_on": [
-        "ME11",
-        "ME12",
-        "ME13"
-      ],
-      "acceptance": [
-        "A15",
-        "A18"
-      ],
-      "plan_tasks": [
-        "T11",
-        "T13"
-      ],
-      "roles": [
-        "backend_implementer"
-      ],
+      "depends_on": ["ME11", "ME12", "ME13"],
+      "acceptance": ["A15", "A18"],
+      "plan_tasks": ["T11", "T13"],
+      "roles": ["backend_implementer"],
       "deliver": "运维能清楚处置每个在途/暂停任务，在维护窗口单写切换，并在故障时保留新消息和结果回退。",
       "criteria": [
         "切换前核对全部运行入口、旁路历史 reader、活跃 writer/lease 与暂停清单；缺项不得 apply。",
@@ -606,30 +431,15 @@
       "published_title": "[Mastra ME14] 处置在途运行并完成单写切换与无数据损失回滚演练",
       "published_at": "2026-10-19T14:57:18.293024+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        483,
-        484,
-        485
-      ]
+      "native_blocked_by_numbers": [483, 484, 485]
     },
     {
       "id": "ME15",
       "title": "无强制 Intelligence 部署可运行并诊断全部基础入口",
-      "depends_on": [
-        "ME14"
-      ],
-      "acceptance": [
-        "A16",
-        "A17",
-        "A18"
-      ],
-      "plan_tasks": [
-        "T13"
-      ],
-      "roles": [
-        "backend_implementer",
-        "frontend_implementer"
-      ],
+      "depends_on": ["ME14"],
+      "acceptance": ["A16", "A17", "A18"],
+      "plan_tasks": ["T13"],
+      "roles": ["backend_implementer", "frontend_implementer"],
       "deliver": "未启用学习的新部署不配置 Intelligence 也能运行聊天及后台；运维沿同一运行链路诊断模型、工具、审批和费用。",
       "criteria": [
         "基础启动不再要求 Intelligence runner/history/socket 配置；禁用学习和导入 reader 时不在 import/boot/run 创建相关客户端。",
@@ -651,28 +461,15 @@
       "published_title": "[Mastra ME15] 无强制 Intelligence 部署可运行并诊断全部基础入口",
       "published_at": "2026-10-19T14:57:21.345113+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        486
-      ]
+      "native_blocked_by_numbers": [486]
     },
     {
       "id": "ME16",
       "title": "退出旧内置执行路径并完成全入口交付验收",
-      "depends_on": [
-        "ME15"
-      ],
-      "acceptance": [
-        "A18",
-        "A19",
-        "A20"
-      ],
-      "plan_tasks": [
-        "T14"
-      ],
-      "roles": [
-        "backend_implementer",
-        "frontend_implementer"
-      ],
+      "depends_on": ["ME15"],
+      "acceptance": ["A18", "A19", "A20"],
+      "plan_tasks": ["T14"],
+      "roles": ["backend_implementer", "frontend_implementer"],
       "deliver": "维护者取得可审查的完整迁移交付，旧内置执行旁路退出，用户原业务在正向、越权和故障场景下保持可用。",
       "criteria": [
         "逐入口对照迁移清单和实际装配，所有本轮内置执行走 Mastra；BuiltInAgent/旧 Runner 活跃消费者归零。",
@@ -694,9 +491,7 @@
       "published_title": "[Mastra ME16] 退出旧内置执行路径并完成全入口交付验收",
       "published_at": "2026-10-19T14:57:23.843057+00:00",
       "parent_link_written": true,
-      "native_blocked_by_numbers": [
-        487
-      ]
+      "native_blocked_by_numbers": [487]
     }
   ],
   "parent_body_sha256": "b0c2fbc47b3a8e898220edbdbc152b7d44a0d739e8191062f60067585e646757",
@@ -723,9 +518,7 @@
     {
       "repo": "1123786563/OpenBot",
       "number": 395,
-      "blocks": [
-        "ME07"
-      ],
+      "blocks": ["ME07"],
       "status": "OPEN at read; implementation not audited"
     }
   ],

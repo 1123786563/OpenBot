@@ -1,253 +1,293 @@
 {
- "group": "04",
- "context": [
-  "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC03/AC08/AC19）",
-  "docs/specs/2026-10-14-bifrost-integration-design.md（Q3 消费归属、Q15 Bot 登记认证、Q22 一次性绑定链接/绑定码）",
-  "docs/adr/0002-per-user-bot-model-access.md（每个「用户 × Bot 授权」独立 Key，所有 Key 共享个人积分）",
-  "CONTEXT.md（Bot 服务身份、外部身份绑定、模型访问授权 AccessGrant 术语）"
- ],
- "anchors": {
-  "external-identity": "server/src/identity/*（github-oauth、slack-redeem、providers、store、routes：现有外部身份绑定与兑换码模式，可复用其一次性凭据与失败语义）",
-  "auth": "server/src/auth/*（登录会话、守卫与角色判定）",
-  "service-secrets": "server/src/credentials.ts（encryptSecret / createCredentialStore / rotateCredential / revokeCredential：服务凭据的加密、轮换与撤销模式）",
-  "admin-ui": "app/src/routes/_authed/admin/*（登记类页面模式，如 credentials.tsx、people.tsx）",
-  "user-ui": "app/src/routes/_authed/settings/*（用户侧授权/连接管理页面模式）",
-  "test-harness": "server/tests/support/database.ts（TEST_DATABASE_URL 必需）"
- },
- "verification_common": [
-  "bun run --filter server typecheck",
-  "bunx biome lint --error-on-warnings <changed files>"
- ],
- "tickets": {
-  "04.1": {
-   "slug": "bot-service-registry",
-   "contracts": {
-    "consumes": ["现有管理员登记页面与审计写入模式（server/src/audit.ts）"],
-    "produces": [
-     "BotServiceRecord { botId, displayName, kind: 'builtin' | 'external', capabilities[], status: 'active' | 'disabled', createdAt }",
-     "botId 全局唯一且不可复用；登记与停用仅管理员可执行",
-     "getBotService(botId) / listBotServices() 查询，供 04.2、03.8、05.3 消费"
-    ]
-   },
-   "steps": [
-    "新增 Bot 服务登记存储与迁移，botId 唯一约束，能力声明为受限枚举（chat/image/audio/embedding/realtime/async）",
-    "提供管理员登记、编辑、停用接口，写入审计记录",
-    "内置 Bot 以 kind='builtin' 登记，与外部 Bot 在同一模型内区分",
-    "登记本身不产生任何凭据、授权或积分权限",
-    "先写失败测试：重复 botId 拒绝、非管理员登记拒绝、停用后查询状态正确"
-   ],
-   "criteria": [
-    "管理员可登记 Bot 并指定能力声明，重复 botId 被拒绝",
-    "非管理员无法登记、编辑或停用 Bot",
-    "停用后 Bot 状态可查询为 disabled，且下游可据此拒绝",
-    "登记动作不产生凭据、授权或任何积分权限"
-   ],
-   "tests": [
-    "登记唯一性与权限测试",
-    "停用状态流转测试",
-    "审计记录断言"
-   ],
-   "verification": [
-    "TEST_DATABASE_URL=... bun test server/tests/bot-service-registry.integration.test.ts"
-   ],
-   "owned_scope": ["Bot 服务登记模块与迁移", "管理员登记路由与页面", "对应测试"],
-   "resume_hint": "若仓库已有 Bot/渠道注册逻辑（e2e 中的 bot registration），复用它作为 builtin 登记入口，不要新建第二套身份体系。"
+  "group": "04",
+  "context": [
+    "docs/specs/2026-10-14-bifrost-github-spec.md（父 Spec #5：AC03/AC08/AC19）",
+    "docs/specs/2026-10-14-bifrost-integration-design.md（Q3 消费归属、Q15 Bot 登记认证、Q22 一次性绑定链接/绑定码）",
+    "docs/adr/0002-per-user-bot-model-access.md（每个「用户 × Bot 授权」独立 Key，所有 Key 共享个人积分）",
+    "CONTEXT.md（Bot 服务身份、外部身份绑定、模型访问授权 AccessGrant 术语）"
+  ],
+  "anchors": {
+    "external-identity": "server/src/identity/*（github-oauth、slack-redeem、providers、store、routes：现有外部身份绑定与兑换码模式，可复用其一次性凭据与失败语义）",
+    "auth": "server/src/auth/*（登录会话、守卫与角色判定）",
+    "service-secrets": "server/src/credentials.ts（encryptSecret / createCredentialStore / rotateCredential / revokeCredential：服务凭据的加密、轮换与撤销模式）",
+    "admin-ui": "app/src/routes/_authed/admin/*（登记类页面模式，如 credentials.tsx、people.tsx）",
+    "user-ui": "app/src/routes/_authed/settings/*（用户侧授权/连接管理页面模式）",
+    "test-harness": "server/tests/support/database.ts（TEST_DATABASE_URL 必需）"
   },
-  "04.2": {
-   "slug": "bot-service-authentication",
-   "contracts": {
-    "consumes": ["04.1 的 BotServiceRecord", "server/src/credentials.ts 的加密与轮换能力"],
-    "produces": [
-     "Bot 服务凭据：加密存储、可轮换、可撤销，明文只在创建/轮换响应中出现一次",
-     "authenticateBotService(presentedSecret) → BotServiceIdentity { botId, status }；停用或撤销后立即失败",
-     "明确语义：服务身份只证明“哪个 Bot”，不携带任何用户授权或积分权限"
-    ]
-   },
-   "steps": [
-    "复用现有凭据加密存储为每个 Bot 生成服务凭据，创建与轮换时一次性返回明文",
-    "实现认证入口：常量时间比较、失败计数与限速，失败响应不泄露 Bot 是否存在",
-    "停用 Bot 或撤销凭据后认证立即失败，不依赖缓存过期",
-    "认证结果只包含 botId 与状态，不包含用户或账户信息",
-    "先写失败测试：错误凭据拒绝、撤销后拒绝、停用后拒绝、失败不泄露存在性"
-   ],
-   "criteria": [
-    "只有持有有效服务凭据的调用方能通过 Bot 认证",
-    "凭据撤销或 Bot 停用后认证立即失败",
-    "认证失败响应不区分“Bot 不存在”与“凭据错误”",
-    "认证结果不包含任何用户身份或积分权限"
-   ],
-   "tests": [
-    "认证成功/失败/撤销/停用四类路径测试",
-    "失败限速与不泄露存在性断言",
-    "明文只出现一次的断言（后续读取为脱敏状态）"
-   ],
-   "verification": [
-    "bun test server/tests/bot-service-auth.test.ts"
-   ],
-   "owned_scope": ["Bot 服务凭据模块", "认证中间件与路由接线", "对应测试"],
-   "resume_hint": "关键拒绝路径是“仅服务认证不足以取凭据”；即使本 Ticket 只做认证，也要留下断言：认证结果中没有用户或账户字段。"
-  },
-  "04.3": {
-   "slug": "binding-code-issuance",
-   "contracts": {
-    "consumes": ["04.2 的 BotServiceIdentity"],
-    "produces": [
-     "BindingOffer { bindingCode, botId, externalIdentityHint, expiresAt, singleUse: true, status }",
-     "签发接口：要求已认证 Bot 服务身份，且必须指明要绑定的外部身份",
-     "绑定码高熵、不可预测、有效期短（默认可配置），签发记录可审计"
-    ]
-   },
-   "steps": [
-    "复用现有兑换/绑定模式（server/src/identity 的 slack-redeem 类流程）实现一次性绑定码签发",
-    "绑定码与 (botId, 外部身份) 绑定，未认证 Bot 服务身份不能签发",
-    "设定默认有效期与单次使用标记，签发写入审计",
-    "先写失败测试：未认证签发拒绝、绑定码不可预测（熵断言）、过期时间正确"
-   ],
-   "criteria": [
-    "只有已认证 Bot 服务身份可以签发绑定码",
-    "绑定码与具体 Bot 与外部身份关联，不能通用",
-    "绑定码有明确有效期且默认单次使用",
-    "签发行为有审计记录"
-   ],
-   "tests": ["签发权限测试", "绑定码熵与唯一性测试", "有效期与单次使用标记断言"],
-   "verification": ["bun test server/tests/binding-code-issuance.test.ts"],
-   "owned_scope": ["绑定码模块（server/src/identity 或新增 gateway 绑定模块）", "签发路由", "对应测试"],
-   "resume_hint": "若已有类似兑换码流程，扩展它而不是新建；注意把 externalIdentityHint 与 botId 一起写入，防止跨 Bot 复用。"
-  },
-  "04.4": {
-   "slug": "binding-code-single-use-hardening",
-   "contracts": {
-    "consumes": ["04.3 的 BindingOffer"],
-    "produces": [
-     "消费绑定码的严格语义：已使用、过期、伪造、跨 Bot 使用一律拒绝",
-     "失败响应统一，不泄露绑定码是否存在或已被谁使用",
-     "失败计数与限速，防止枚举"
-    ]
-   },
-   "steps": [
-    "消费时在同一事务内标记已使用，避免并发双花",
-    "过期、伪造、跨 Bot、重复使用返回同一类拒绝响应",
-    "加入失败计数与限速，超阈值锁定来源",
-    "先写失败测试：并发消费同一码只有一次成功；枚举尝试被限速"
-   ],
-   "criteria": [
-    "并发消费同一绑定码只有一次成功，另一次被拒绝",
-    "过期、伪造、跨 Bot 使用的绑定码全部被拒绝",
-    "拒绝响应不泄露绑定码存在性或归属",
-    "连续失败触发限速或锁定"
-   ],
-   "tests": ["并发双花集成测试", "四类非法消费拒绝测试", "枚举限速测试"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/binding-code-hardening.integration.test.ts"],
-   "owned_scope": ["绑定码消费逻辑与限速", "对应测试"],
-   "resume_hint": "并发双花是最常漏的用例；接手先跑并发测试，若两次都成功说明标记未在同一事务内完成。"
-  },
-  "04.5": {
-   "slug": "login-confirm-create-access-grant",
-   "contracts": {
-    "consumes": ["04.3/04.4 的绑定码消费", "现有登录会话（server/src/auth）", "02.4 的个人账户解析"],
-    "produces": [
-     "AccessGrant { grantId, userId, botId, externalIdentity, scope, status: 'active' | 'revoked', createdAt, revokedAt }",
-     "创建规则：必须由已登录用户在确认页完成，绑定码本身不足以创建授权",
-     "该授权是 05.3 Key 签发与 06.2 预留重验的唯一依据；grantId 稳定可被下游引用"
-    ]
-   },
-   "steps": [
-    "实现确认流程：用户登录后校验绑定码 → 展示将授权的 Bot 与外部身份 → 用户确认 → 创建 AccessGrant",
-    "同一 (userId, botId, externalIdentity) 重复确认幂等，不产生第二条有效授权",
-    "授权创建不产生 Key、不产生余额变化",
-    "先写失败测试：未登录不能创建；未确认不能创建；重复确认幂等"
-   ],
-   "criteria": [
-    "只有已登录用户确认后才能创建模型访问授权",
-    "同一用户与 Bot 的重复确认幂等，只保留一条有效授权",
-    "创建授权不产生 Key、余额或 Grant 积分",
-    "授权记录包含外部身份与范围，可被下游引用"
-   ],
-   "tests": ["未登录/未确认拒绝测试", "幂等创建集成测试", "授权记录字段断言"],
-   "verification": ["TEST_DATABASE_URL=... bun test server/tests/access-grant.integration.test.ts"],
-   "owned_scope": ["授权模块与迁移", "确认页与路由", "对应测试"],
-   "resume_hint": "不要把绑定码消费与授权创建合并成一步：绑定码证明外部身份，授权必须由登录用户确认，这是 AC03 的核心。"
-  },
-  "04.6": {
-   "slug": "impersonation-refusal-paths",
-   "contracts": {
-    "consumes": ["04.5 的 AccessGrant", "04.2 的 BotServiceIdentity"],
-    "produces": [
-     "统一的越权拒绝语义：伪造 userId/email、仅凭 Bot 服务认证、跨 Bot 复用授权、已撤销授权重用，全部拒绝且不泄露他人数据",
-     "拒绝路径清单作为回归测试集合，供 22.1 全入口核查引用"
-    ]
-   },
-   "steps": [
-    "枚举所有可申请授权或凭据的入口，逐条加入身份校验",
-    "请求体中的 userId/email 一律不参与授权判定，只使用已认证身份与已存在的 AccessGrant",
-    "对已撤销授权与跨 Bot 使用返回明确拒绝",
-    "把上述用例固化为一个拒绝路径测试集合",
-    "先写失败测试：四类攻击路径全部拒绝"
-   ],
-   "criteria": [
-    "提交他人 userId 或 email 不能获得其授权或凭据",
-    "仅凭 Bot 服务认证不能取得任何用户凭据",
-    "跨 Bot 复用授权被拒绝",
-    "已撤销授权不能被重用，且拒绝响应不泄露他人数据"
-   ],
-   "tests": ["四类越权拒绝测试", "响应不泄露他人数据断言", "入口清单覆盖测试"],
-   "verification": ["bun test server/tests/authorization-impersonation.test.ts"],
-   "owned_scope": ["授权校验入口与拒绝语义", "拒绝路径测试集合"],
-   "resume_hint": "本 Ticket 只做拒绝路径，不新增成功行为；若发现某入口缺少身份校验，补校验而不是放宽其他入口。"
-  },
-  "04.7": {
-   "slug": "user-authorization-list-and-revoke",
-   "contracts": {
-    "consumes": ["04.5 的 AccessGrant"],
-    "produces": [
-     "用户授权管理页：列出每个 Bot 的授权状态、外部身份、创建时间，并可单独撤销",
-     "撤销语义：立即生效，后续 Key 签发与续期（05.3/05.7）必须拒绝；已发生消费的结算责任不受影响",
-     "撤销写入审计"
-    ]
-   },
-   "steps": [
-    "新增用户侧授权列表与撤销接口，只操作本人授权",
-    "撤销后立即标记状态，下游查询必须看到 revoked",
-    "在界面展示每个 Bot 的授权与撤销结果",
-    "先写失败测试：撤销后查询状态、他人授权不可见、撤销幂等"
-   ],
-   "criteria": [
-    "用户只能看到并撤销自己的授权",
-    "撤销后授权状态立即为 revoked，重复撤销幂等",
-    "撤销不影响已发生消费的结算责任",
-    "每次撤销都有审计记录"
-   ],
-   "tests": ["授权列表与越权可见性测试", "撤销幂等与状态流转测试", "界面撤销流程测试"],
-   "verification": ["bun test server/tests/access-grant-revoke.test.ts", "bun test app/tests/user-authorizations-ui.test.tsx"],
-   "owned_scope": ["授权列表/撤销路由", "用户设置页与组件", "对应测试"],
-   "resume_hint": "撤销后是否立即对下游可见是关键；若下游有缓存，必须让撤销失效缓存或改为直接查询状态。"
-  },
-  "04.8": {
-   "slug": "builtin-workbench-implicit-grant",
-   "contracts": {
-    "consumes": ["04.5 的 AccessGrant 模型", "04.1 的 builtin Bot 登记", "现有登录会话"],
-    "produces": [
-     "工作台隐式授权：当前登录用户即授权主体，无需绑定码",
-     "隐式授权与外部 Bot 授权在同一模型内可区分（scope/kind），且公司工作台路径由 09.x 决定付款账户",
-     "组 04 缝合点：管理员登记 Bot → 外部用户绑定授权 → 用户撤销，端到端可演示"
-    ]
-   },
-   "steps": [
-    "为 builtin 工作台 Bot 生成隐式授权，主体来自当前登录会话",
-    "隐式授权与外部授权共用 AccessGrant 模型，但标记不同来源，便于审计与撤销",
-    "确认隐式授权不绕过 06.2 的准入重验，也不自动获得公司内容访问（由 09.3 保证）",
-    "先写失败测试：未登录无隐式授权；隐式授权可被撤销；来源标记正确"
-   ],
-   "criteria": [
-    "已登录用户在工作台获得隐式授权，无需绑定码",
-    "未登录时不存在任何隐式授权",
-    "隐式授权与外部授权可区分且都可撤销",
-    "隐式授权不授予公司内容访问，也不绕过积分准入"
-   ],
-   "tests": ["隐式授权创建与撤销测试", "来源标记断言", "未登录拒绝测试"],
-   "verification": ["bun test server/tests/workbench-implicit-grant.test.ts"],
-   "owned_scope": ["隐式授权逻辑与接线", "对应测试"],
-   "resume_hint": "不要把隐式授权做成“无授权直接放行”：它必须产生一条可撤销、可审计的 AccessGrant 记录，下游统一按授权校验。"
+  "verification_common": [
+    "bun run --filter server typecheck",
+    "bunx biome lint --error-on-warnings <changed files>"
+  ],
+  "tickets": {
+    "04.1": {
+      "slug": "bot-service-registry",
+      "contracts": {
+        "consumes": ["现有管理员登记页面与审计写入模式（server/src/audit.ts）"],
+        "produces": [
+          "BotServiceRecord { botId, displayName, kind: 'builtin' | 'external', capabilities[], status: 'active' | 'disabled', createdAt }",
+          "botId 全局唯一且不可复用；登记与停用仅管理员可执行",
+          "getBotService(botId) / listBotServices() 查询，供 04.2、03.8、05.3 消费"
+        ]
+      },
+      "steps": [
+        "新增 Bot 服务登记存储与迁移，botId 唯一约束，能力声明为受限枚举（chat/image/audio/embedding/realtime/async）",
+        "提供管理员登记、编辑、停用接口，写入审计记录",
+        "内置 Bot 以 kind='builtin' 登记，与外部 Bot 在同一模型内区分",
+        "登记本身不产生任何凭据、授权或积分权限",
+        "先写失败测试：重复 botId 拒绝、非管理员登记拒绝、停用后查询状态正确"
+      ],
+      "criteria": [
+        "管理员可登记 Bot 并指定能力声明，重复 botId 被拒绝",
+        "非管理员无法登记、编辑或停用 Bot",
+        "停用后 Bot 状态可查询为 disabled，且下游可据此拒绝",
+        "登记动作不产生凭据、授权或任何积分权限"
+      ],
+      "tests": ["登记唯一性与权限测试", "停用状态流转测试", "审计记录断言"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/bot-service-registry.integration.test.ts"
+      ],
+      "owned_scope": [
+        "Bot 服务登记模块与迁移",
+        "管理员登记路由与页面",
+        "对应测试"
+      ],
+      "resume_hint": "若仓库已有 Bot/渠道注册逻辑（e2e 中的 bot registration），复用它作为 builtin 登记入口，不要新建第二套身份体系。"
+    },
+    "04.2": {
+      "slug": "bot-service-authentication",
+      "contracts": {
+        "consumes": [
+          "04.1 的 BotServiceRecord",
+          "server/src/credentials.ts 的加密与轮换能力"
+        ],
+        "produces": [
+          "Bot 服务凭据：加密存储、可轮换、可撤销，明文只在创建/轮换响应中出现一次",
+          "authenticateBotService(presentedSecret) → BotServiceIdentity { botId, status }；停用或撤销后立即失败",
+          "明确语义：服务身份只证明“哪个 Bot”，不携带任何用户授权或积分权限"
+        ]
+      },
+      "steps": [
+        "复用现有凭据加密存储为每个 Bot 生成服务凭据，创建与轮换时一次性返回明文",
+        "实现认证入口：常量时间比较、失败计数与限速，失败响应不泄露 Bot 是否存在",
+        "停用 Bot 或撤销凭据后认证立即失败，不依赖缓存过期",
+        "认证结果只包含 botId 与状态，不包含用户或账户信息",
+        "先写失败测试：错误凭据拒绝、撤销后拒绝、停用后拒绝、失败不泄露存在性"
+      ],
+      "criteria": [
+        "只有持有有效服务凭据的调用方能通过 Bot 认证",
+        "凭据撤销或 Bot 停用后认证立即失败",
+        "认证失败响应不区分“Bot 不存在”与“凭据错误”",
+        "认证结果不包含任何用户身份或积分权限"
+      ],
+      "tests": [
+        "认证成功/失败/撤销/停用四类路径测试",
+        "失败限速与不泄露存在性断言",
+        "明文只出现一次的断言（后续读取为脱敏状态）"
+      ],
+      "verification": ["bun test server/tests/bot-service-auth.test.ts"],
+      "owned_scope": ["Bot 服务凭据模块", "认证中间件与路由接线", "对应测试"],
+      "resume_hint": "关键拒绝路径是“仅服务认证不足以取凭据”；即使本 Ticket 只做认证，也要留下断言：认证结果中没有用户或账户字段。"
+    },
+    "04.3": {
+      "slug": "binding-code-issuance",
+      "contracts": {
+        "consumes": ["04.2 的 BotServiceIdentity"],
+        "produces": [
+          "BindingOffer { bindingCode, botId, externalIdentityHint, expiresAt, singleUse: true, status }",
+          "签发接口：要求已认证 Bot 服务身份，且必须指明要绑定的外部身份",
+          "绑定码高熵、不可预测、有效期短（默认可配置），签发记录可审计"
+        ]
+      },
+      "steps": [
+        "复用现有兑换/绑定模式（server/src/identity 的 slack-redeem 类流程）实现一次性绑定码签发",
+        "绑定码与 (botId, 外部身份) 绑定，未认证 Bot 服务身份不能签发",
+        "设定默认有效期与单次使用标记，签发写入审计",
+        "先写失败测试：未认证签发拒绝、绑定码不可预测（熵断言）、过期时间正确"
+      ],
+      "criteria": [
+        "只有已认证 Bot 服务身份可以签发绑定码",
+        "绑定码与具体 Bot 与外部身份关联，不能通用",
+        "绑定码有明确有效期且默认单次使用",
+        "签发行为有审计记录"
+      ],
+      "tests": [
+        "签发权限测试",
+        "绑定码熵与唯一性测试",
+        "有效期与单次使用标记断言"
+      ],
+      "verification": ["bun test server/tests/binding-code-issuance.test.ts"],
+      "owned_scope": [
+        "绑定码模块（server/src/identity 或新增 gateway 绑定模块）",
+        "签发路由",
+        "对应测试"
+      ],
+      "resume_hint": "若已有类似兑换码流程，扩展它而不是新建；注意把 externalIdentityHint 与 botId 一起写入，防止跨 Bot 复用。"
+    },
+    "04.4": {
+      "slug": "binding-code-single-use-hardening",
+      "contracts": {
+        "consumes": ["04.3 的 BindingOffer"],
+        "produces": [
+          "消费绑定码的严格语义：已使用、过期、伪造、跨 Bot 使用一律拒绝",
+          "失败响应统一，不泄露绑定码是否存在或已被谁使用",
+          "失败计数与限速，防止枚举"
+        ]
+      },
+      "steps": [
+        "消费时在同一事务内标记已使用，避免并发双花",
+        "过期、伪造、跨 Bot、重复使用返回同一类拒绝响应",
+        "加入失败计数与限速，超阈值锁定来源",
+        "先写失败测试：并发消费同一码只有一次成功；枚举尝试被限速"
+      ],
+      "criteria": [
+        "并发消费同一绑定码只有一次成功，另一次被拒绝",
+        "过期、伪造、跨 Bot 使用的绑定码全部被拒绝",
+        "拒绝响应不泄露绑定码存在性或归属",
+        "连续失败触发限速或锁定"
+      ],
+      "tests": ["并发双花集成测试", "四类非法消费拒绝测试", "枚举限速测试"],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/binding-code-hardening.integration.test.ts"
+      ],
+      "owned_scope": ["绑定码消费逻辑与限速", "对应测试"],
+      "resume_hint": "并发双花是最常漏的用例；接手先跑并发测试，若两次都成功说明标记未在同一事务内完成。"
+    },
+    "04.5": {
+      "slug": "login-confirm-create-access-grant",
+      "contracts": {
+        "consumes": [
+          "04.3/04.4 的绑定码消费",
+          "现有登录会话（server/src/auth）",
+          "02.4 的个人账户解析"
+        ],
+        "produces": [
+          "AccessGrant { grantId, userId, botId, externalIdentity, scope, status: 'active' | 'revoked', createdAt, revokedAt }",
+          "创建规则：必须由已登录用户在确认页完成，绑定码本身不足以创建授权",
+          "该授权是 05.3 Key 签发与 06.2 预留重验的唯一依据；grantId 稳定可被下游引用"
+        ]
+      },
+      "steps": [
+        "实现确认流程：用户登录后校验绑定码 → 展示将授权的 Bot 与外部身份 → 用户确认 → 创建 AccessGrant",
+        "同一 (userId, botId, externalIdentity) 重复确认幂等，不产生第二条有效授权",
+        "授权创建不产生 Key、不产生余额变化",
+        "先写失败测试：未登录不能创建；未确认不能创建；重复确认幂等"
+      ],
+      "criteria": [
+        "只有已登录用户确认后才能创建模型访问授权",
+        "同一用户与 Bot 的重复确认幂等，只保留一条有效授权",
+        "创建授权不产生 Key、余额或 Grant 积分",
+        "授权记录包含外部身份与范围，可被下游引用"
+      ],
+      "tests": [
+        "未登录/未确认拒绝测试",
+        "幂等创建集成测试",
+        "授权记录字段断言"
+      ],
+      "verification": [
+        "TEST_DATABASE_URL=... bun test server/tests/access-grant.integration.test.ts"
+      ],
+      "owned_scope": ["授权模块与迁移", "确认页与路由", "对应测试"],
+      "resume_hint": "不要把绑定码消费与授权创建合并成一步：绑定码证明外部身份，授权必须由登录用户确认，这是 AC03 的核心。"
+    },
+    "04.6": {
+      "slug": "impersonation-refusal-paths",
+      "contracts": {
+        "consumes": ["04.5 的 AccessGrant", "04.2 的 BotServiceIdentity"],
+        "produces": [
+          "统一的越权拒绝语义：伪造 userId/email、仅凭 Bot 服务认证、跨 Bot 复用授权、已撤销授权重用，全部拒绝且不泄露他人数据",
+          "拒绝路径清单作为回归测试集合，供 22.1 全入口核查引用"
+        ]
+      },
+      "steps": [
+        "枚举所有可申请授权或凭据的入口，逐条加入身份校验",
+        "请求体中的 userId/email 一律不参与授权判定，只使用已认证身份与已存在的 AccessGrant",
+        "对已撤销授权与跨 Bot 使用返回明确拒绝",
+        "把上述用例固化为一个拒绝路径测试集合",
+        "先写失败测试：四类攻击路径全部拒绝"
+      ],
+      "criteria": [
+        "提交他人 userId 或 email 不能获得其授权或凭据",
+        "仅凭 Bot 服务认证不能取得任何用户凭据",
+        "跨 Bot 复用授权被拒绝",
+        "已撤销授权不能被重用，且拒绝响应不泄露他人数据"
+      ],
+      "tests": [
+        "四类越权拒绝测试",
+        "响应不泄露他人数据断言",
+        "入口清单覆盖测试"
+      ],
+      "verification": [
+        "bun test server/tests/authorization-impersonation.test.ts"
+      ],
+      "owned_scope": ["授权校验入口与拒绝语义", "拒绝路径测试集合"],
+      "resume_hint": "本 Ticket 只做拒绝路径，不新增成功行为；若发现某入口缺少身份校验，补校验而不是放宽其他入口。"
+    },
+    "04.7": {
+      "slug": "user-authorization-list-and-revoke",
+      "contracts": {
+        "consumes": ["04.5 的 AccessGrant"],
+        "produces": [
+          "用户授权管理页：列出每个 Bot 的授权状态、外部身份、创建时间，并可单独撤销",
+          "撤销语义：立即生效，后续 Key 签发与续期（05.3/05.7）必须拒绝；已发生消费的结算责任不受影响",
+          "撤销写入审计"
+        ]
+      },
+      "steps": [
+        "新增用户侧授权列表与撤销接口，只操作本人授权",
+        "撤销后立即标记状态，下游查询必须看到 revoked",
+        "在界面展示每个 Bot 的授权与撤销结果",
+        "先写失败测试：撤销后查询状态、他人授权不可见、撤销幂等"
+      ],
+      "criteria": [
+        "用户只能看到并撤销自己的授权",
+        "撤销后授权状态立即为 revoked，重复撤销幂等",
+        "撤销不影响已发生消费的结算责任",
+        "每次撤销都有审计记录"
+      ],
+      "tests": [
+        "授权列表与越权可见性测试",
+        "撤销幂等与状态流转测试",
+        "界面撤销流程测试"
+      ],
+      "verification": [
+        "bun test server/tests/access-grant-revoke.test.ts",
+        "bun test app/tests/user-authorizations-ui.test.tsx"
+      ],
+      "owned_scope": ["授权列表/撤销路由", "用户设置页与组件", "对应测试"],
+      "resume_hint": "撤销后是否立即对下游可见是关键；若下游有缓存，必须让撤销失效缓存或改为直接查询状态。"
+    },
+    "04.8": {
+      "slug": "builtin-workbench-implicit-grant",
+      "contracts": {
+        "consumes": [
+          "04.5 的 AccessGrant 模型",
+          "04.1 的 builtin Bot 登记",
+          "现有登录会话"
+        ],
+        "produces": [
+          "工作台隐式授权：当前登录用户即授权主体，无需绑定码",
+          "隐式授权与外部 Bot 授权在同一模型内可区分（scope/kind），且公司工作台路径由 09.x 决定付款账户",
+          "组 04 缝合点：管理员登记 Bot → 外部用户绑定授权 → 用户撤销，端到端可演示"
+        ]
+      },
+      "steps": [
+        "为 builtin 工作台 Bot 生成隐式授权，主体来自当前登录会话",
+        "隐式授权与外部授权共用 AccessGrant 模型，但标记不同来源，便于审计与撤销",
+        "确认隐式授权不绕过 06.2 的准入重验，也不自动获得公司内容访问（由 09.3 保证）",
+        "先写失败测试：未登录无隐式授权；隐式授权可被撤销；来源标记正确"
+      ],
+      "criteria": [
+        "已登录用户在工作台获得隐式授权，无需绑定码",
+        "未登录时不存在任何隐式授权",
+        "隐式授权与外部授权可区分且都可撤销",
+        "隐式授权不授予公司内容访问，也不绕过积分准入"
+      ],
+      "tests": ["隐式授权创建与撤销测试", "来源标记断言", "未登录拒绝测试"],
+      "verification": [
+        "bun test server/tests/workbench-implicit-grant.test.ts"
+      ],
+      "owned_scope": ["隐式授权逻辑与接线", "对应测试"],
+      "resume_hint": "不要把隐式授权做成“无授权直接放行”：它必须产生一条可撤销、可审计的 AccessGrant 记录，下游统一按授权校验。"
+    }
   }
- }
 }

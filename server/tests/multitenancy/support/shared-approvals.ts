@@ -197,10 +197,7 @@ export async function createSharedApprovalsFixture(): Promise<SharedApprovalsFix
         "team-a2": "a2-member",
         "team-b1": "b1-member",
       };
-      const fact = channels.teamOf(
-        memberByTeam[teamKey],
-        teamKey,
-      );
+      const fact = channels.teamOf(memberByTeam[teamKey], teamKey);
       const { credentialId } = await credentialAdmin.register({
         tenantId: fact.tenantId,
         kind: "connection",
@@ -278,7 +275,8 @@ export async function createSharedApprovalsFixture(): Promise<SharedApprovalsFix
           const code = (e as Error & { code?: unknown }).code;
           const errno = (e as Error & { errno?: unknown }).errno;
           // SQLSTATE is five [0-9A-Z] characters (42P01, 55P03, …), not only digits.
-          if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return code;
+          if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code))
+            return code;
           if (typeof errno === "string" && /^[0-9A-Z]{5}$/.test(errno)) {
             return errno;
           }

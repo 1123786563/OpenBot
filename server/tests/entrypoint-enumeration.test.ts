@@ -35,7 +35,8 @@ import { TOOL_SURCHARGE_ENTRIES } from "../src/billing/tool-surcharge-pricing";
 const repoRoot = join(import.meta.dirname, "../..");
 
 /** The real repository's file existence — the seam evidence check runs against actual code. */
-const fileExists = (modulePath: string) => existsSync(join(repoRoot, modulePath));
+const fileExists = (modulePath: string) =>
+  existsSync(join(repoRoot, modulePath));
 
 describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
   test("the catalog reconciles against every machine-enumerable family registry, both directions", () => {
@@ -49,7 +50,12 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
   });
 
   test("every admission seam exists as code in this repository", async () => {
-    const seams = new Map(MODEL_ENTRYPOINTS.map((row) => [row.admissionSeam.module, row.admissionSeam.door]));
+    const seams = new Map(
+      MODEL_ENTRYPOINTS.map((row) => [
+        row.admissionSeam.module,
+        row.admissionSeam.door,
+      ]),
+    );
     expect(seams.size).toBeGreaterThan(10);
     for (const [modulePath, door] of seams) {
       expect(fileExists(modulePath), modulePath).toBe(true);
@@ -57,10 +63,9 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
       // named, not narrated. Composition seams (index.ts's runner wiring, copilot's
       // collaborator) carry descriptive doors; their anchor names the symbol instead.
       if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(door)) {
-        const mod = (await import(`../${modulePath.replace(/^server\/src\//, "src/")}`)) as Record<
-          string,
-          unknown
-        >;
+        const mod = (await import(
+          `../${modulePath.replace(/^server\/src\//, "src/")}`
+        )) as Record<string, unknown>;
         expect(typeof mod[door], `${modulePath}#${door}`).toBe("function");
       }
     }
@@ -69,7 +74,11 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
   test("the image rows are exactly 12.4's registry, the audio rows exactly 14.3's, the tool rows exactly 20.x's", () => {
     const ids = new Set(MODEL_ENTRYPOINTS.map((row) => row.id));
     const registries = registryEntrypointIdentities();
-    for (const id of [...registries.image, ...registries.audio, ...registries.tool]) {
+    for (const id of [
+      ...registries.image,
+      ...registries.audio,
+      ...registries.tool,
+    ]) {
       expect(ids.has(id), id).toBe(true);
     }
     // And the counts: no family carries rows the registry does not (the reconcile test
@@ -88,11 +97,16 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
   test("every row states its admission verdict and its payer source", () => {
     for (const row of MODEL_ENTRYPOINTS) {
       expect(["admitted", "blocked", "absent"]).toContain(row.admission.status);
-      expect(["grant-resolution", "workbench-company", "deployment-selection"]).toContain(
-        row.payerSource,
-      );
+      expect([
+        "grant-resolution",
+        "workbench-company",
+        "deployment-selection",
+      ]).toContain(row.payerSource);
       if (row.admission.status === "admitted") {
-        expect(row.admission.stagesBeforeDispatch.length, row.id).toBeGreaterThan(0);
+        expect(
+          row.admission.stagesBeforeDispatch.length,
+          row.id,
+        ).toBeGreaterThan(0);
       }
       if (row.admission.status === "blocked") {
         // A blocked row is a finding: it names its reasons and the ticket that owns the
@@ -104,14 +118,20 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
   });
 
   test("the audio translations entrance is blocked, not silently dropped — and it is the only blocked row", () => {
-    const blocked = MODEL_ENTRYPOINTS.filter((row) => row.admission.status === "blocked");
+    const blocked = MODEL_ENTRYPOINTS.filter(
+      (row) => row.admission.status === "blocked",
+    );
     // Exactly the one live unwired path today: a real wire route the gateway carries as a
     // passthrough billing reference with no meter and no admission wiring (14.3/14.4).
     expect(blocked.map((row) => row.id)).toEqual(["audio.translation"]);
     const row = blocked[0] as ModelEntrypoint;
     if (row.admission.status !== "blocked") return;
-    expect(row.admission.blockingReasons.join(" ")).toContain("no_input_meter_wired");
-    expect(row.admission.blockingReasons.join(" ")).toContain("no_admission_wiring");
+    expect(row.admission.blockingReasons.join(" ")).toContain(
+      "no_input_meter_wired",
+    );
+    expect(row.admission.blockingReasons.join(" ")).toContain(
+      "no_admission_wiring",
+    );
     expect(row.admission.ownerTicket).toContain("#313");
   });
 
@@ -120,7 +140,9 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
     // there (the registry is the machine side), the catalog is missing it. The
     // reconciliation must name it unregistered — this is the AC's own failure sentence,
     // proven on the machinery that the run above pins to the real catalog.
-    const missingOne = MODEL_ENTRYPOINTS.filter((row) => row.id !== "image.generation");
+    const missingOne = MODEL_ENTRYPOINTS.filter(
+      (row) => row.id !== "image.generation",
+    );
     const result = reconcileEntrypointCatalog(fileExists, missingOne);
     expect(result.unregistered).toEqual(["image.generation"]);
     expect(result.stale).toEqual([]);
@@ -132,11 +154,17 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
       family: "image",
       surface: "a hypothetical upscale path",
       sourceAnchor: "hypothetical",
-      admissionSeam: { module: "server/src/billing/image-entrypoints.ts", door: "admitImageEntrypoint" },
+      admissionSeam: {
+        module: "server/src/billing/image-entrypoints.ts",
+        door: "admitImageEntrypoint",
+      },
       payerSource: "grant-resolution",
       admission: { status: "admitted", stagesBeforeDispatch: ["entry"] },
     };
-    const result = reconcileEntrypointCatalog(fileExists, [...MODEL_ENTRYPOINTS, extraRow]);
+    const result = reconcileEntrypointCatalog(fileExists, [
+      ...MODEL_ENTRYPOINTS,
+      extraRow,
+    ]);
     expect(result.unregistered).toEqual([]);
     expect(result.stale).toEqual(["image.upscale"]);
   });
@@ -156,7 +184,12 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
     }
     // The split the closure tickets name: 文本/图像/音频 on one side; Embedding/实时/
     // 异步/工具 (with Rerank/OCR/evaluation/harness) on the other.
-    expect([...CONFORMANCE_GROUP_22_3]).toEqual(["text", "image", "audio", "runtime"]);
+    expect([...CONFORMANCE_GROUP_22_3]).toEqual([
+      "text",
+      "image",
+      "audio",
+      "runtime",
+    ]);
     expect(CONFORMANCE_GROUP_22_4).toContain("realtime");
     expect(CONFORMANCE_GROUP_22_4).toContain("tool");
     expect(CONFORMANCE_GROUP_22_4).toContain("embedding");
@@ -190,7 +223,8 @@ describe("Bifrost 22.1 (#352): the all-entrance enumeration", () => {
         const at = lines[line - 1] ?? "";
         expect(at.trim().length, `${row.id}: ${match[0]}`).toBeGreaterThan(0);
         const namesRegistration =
-          row.sourceAnchor.includes("r.POST") || row.sourceAnchor.includes("r.GET");
+          row.sourceAnchor.includes("r.POST") ||
+          row.sourceAnchor.includes("r.GET");
         const route = row.sourceAnchor.match(/\/v1\/[A-Za-z0-9_/{}.-]+/);
         if (namesRegistration && route) {
           expect(at, `${row.id}: ${match[0]}`).toContain(route[0]);

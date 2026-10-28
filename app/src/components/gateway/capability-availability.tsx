@@ -42,14 +42,14 @@ export function CapabilityAvailability({
                   {t("gateway.capabilities.enabled")}
                 </span>
               ) : capability.state === "free" ? (
-                <span
-                  className="text-sky-600"
-                  data-testid="capability-state"
-                >
+                <span className="text-sky-600" data-testid="capability-state">
                   {t("gateway.capabilities.free")}
                 </span>
               ) : capability.state === "price_unknown" ? (
-                <span className="text-destructive" data-testid="capability-state">
+                <span
+                  className="text-destructive"
+                  data-testid="capability-state"
+                >
                   {t("gateway.capabilities.priceUnknown")}
                 </span>
               ) : (

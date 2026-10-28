@@ -1034,9 +1034,7 @@ export async function evaluateCleanupRelations(
     // catalog, registered explicitly, never guessed.
     const dynamicSpecs = new Map<string, TableSpec>();
     const discoveredTables = [
-      ...new Set(
-        edges.flatMap((edge) => [edge.childTable, edge.parentTable]),
-      ),
+      ...new Set(edges.flatMap((edge) => [edge.childTable, edge.parentTable])),
     ].filter((table) => !TABLE_SPECS[table]);
     if (discoveredTables.length > 0) {
       const primaryKeyRows = await tx.execute<{

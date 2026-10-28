@@ -245,7 +245,11 @@ function knownCapabilityRows(rows: readonly CapabilityRow[]): CapabilityRow[] {
         type: "unknown-capability-rows",
         dropped: rows.length - known.length,
         names: [
-          ...new Set(rows.filter((row) => !isCapability(row.capability)).map((row) => row.capability)),
+          ...new Set(
+            rows
+              .filter((row) => !isCapability(row.capability))
+              .map((row) => row.capability),
+          ),
         ],
       },
       "unknown-capability-rows",

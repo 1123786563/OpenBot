@@ -52,7 +52,10 @@ describe("createInteractiveTurn", () => {
     expect(turn.status).toBe("QUEUED");
     expect(turn.runnerId).toBeNull();
 
-    const active = await store.getActiveTurn({ sessionId: "cs-sess", userId: "u1" });
+    const active = await store.getActiveTurn({
+      sessionId: "cs-sess",
+      userId: "u1",
+    });
     expect(active?.turnId).toBe(turn.turnId);
 
     const byRequest = await store.getTurnForRequest({
@@ -72,12 +75,20 @@ describe("createInteractiveTurn", () => {
       prompt: "Use this image",
       turnIndex: 0,
       attachments: [
-        { name: "reference image.png", path: "attachments/reference image.png", mimeType: "image/png" },
+        {
+          name: "reference image.png",
+          path: "attachments/reference image.png",
+          mimeType: "image/png",
+        },
       ],
     });
     const restored = await store.getTurn(turn.turnId);
     expect(restored?.attachments).toEqual([
-      { name: "reference image.png", path: "attachments/reference image.png", mimeType: "image/png" },
+      {
+        name: "reference image.png",
+        path: "attachments/reference image.png",
+        mimeType: "image/png",
+      },
     ]);
   });
 
@@ -103,10 +114,18 @@ describe("createInteractiveTurn", () => {
     const store = freshStore();
     await createTurn(store, { clientRequestId: "req-1" });
     expect(
-      await store.getTurnForRequest({ sessionId: "cs-other", userId: "u1", clientRequestId: "req-1" }),
+      await store.getTurnForRequest({
+        sessionId: "cs-other",
+        userId: "u1",
+        clientRequestId: "req-1",
+      }),
     ).toBeNull();
     expect(
-      await store.getTurnForRequest({ sessionId: "cs-sess", userId: "u2", clientRequestId: "req-1" }),
+      await store.getTurnForRequest({
+        sessionId: "cs-sess",
+        userId: "u2",
+        clientRequestId: "req-1",
+      }),
     ).toBeNull();
   });
 });
@@ -153,7 +172,10 @@ describe("claimTurnForRunner — the CAS", () => {
       }),
     ).toBeNull();
 
-    const active = await store.getActiveTurn({ sessionId: "cs-sess", userId: "u1" });
+    const active = await store.getActiveTurn({
+      sessionId: "cs-sess",
+      userId: "u1",
+    });
     expect(active?.runnerId).toBe(reclaimed?.runnerId);
   });
 
@@ -195,12 +217,18 @@ describe("touchTurn — the heartbeat", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(
-      await store.touchTurn({ turnId: turn.turnId, runnerId: claimed?.runnerId }),
+      await store.touchTurn({
+        turnId: turn.turnId,
+        runnerId: claimed?.runnerId,
+      }),
     ).toBe(true);
 
     const after = await store.getTurn(turn.turnId);
     expect(new Date(after!.lastHeartbeatAt!).getTime()).toBeGreaterThan(before);
-    const active = await store.getActiveTurn({ sessionId: "cs-sess", userId: "u1" });
+    const active = await store.getActiveTurn({
+      sessionId: "cs-sess",
+      userId: "u1",
+    });
     expect(active?.turnId).toBe(turn.turnId);
   });
 
@@ -215,7 +243,9 @@ describe("touchTurn — the heartbeat", () => {
     const store = freshStore();
     const turn = await createTurn(store);
     const claimed = await store.claimTurnForRunner(turn.turnId);
-    expect(await store.touchTurn({ turnId: turn.turnId, runnerId: "runner-other" })).toBe(false);
+    expect(
+      await store.touchTurn({ turnId: turn.turnId, runnerId: "runner-other" }),
+    ).toBe(false);
     expect(await store.touchTurn({ turnId: "turn-none" })).toBe(false);
 
     await store.finishTurn({
@@ -223,7 +253,12 @@ describe("touchTurn — the heartbeat", () => {
       status: "SUCCEEDED",
       runnerId: claimed?.runnerId,
     });
-    expect(await store.touchTurn({ turnId: turn.turnId, runnerId: claimed?.runnerId })).toBe(false);
+    expect(
+      await store.touchTurn({
+        turnId: turn.turnId,
+        runnerId: claimed?.runnerId,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -242,7 +277,9 @@ describe("finishTurn", () => {
     expect(finished?.errorDetail).toBe("boom");
     expect(finished?.runnerId).toBeNull();
 
-    expect(await store.getActiveTurn({ sessionId: "cs-sess", userId: "u1" })).toBeNull();
+    expect(
+      await store.getActiveTurn({ sessionId: "cs-sess", userId: "u1" }),
+    ).toBeNull();
 
     const byRequest = await store.getTurnForRequest({
       sessionId: "cs-sess",
@@ -258,7 +295,11 @@ describe("finishTurn", () => {
     const turn = await createTurn(store);
     const claimed = await store.claimTurnForRunner(turn.turnId);
     expect(
-      await store.finishTurn({ turnId: turn.turnId, status: "FAILED", runnerId: "runner-other" }),
+      await store.finishTurn({
+        turnId: turn.turnId,
+        status: "FAILED",
+        runnerId: "runner-other",
+      }),
     ).toBeNull();
     const still = await store.getTurn(turn.turnId);
     expect(still?.status).toBe("RUNNING");
@@ -275,9 +316,15 @@ describe("finishTurn", () => {
       runnerId: claimed?.runnerId,
     });
 
-    const second = await createTurn(store, { clientRequestId: "req-2", prompt: "again" });
+    const second = await createTurn(store, {
+      clientRequestId: "req-2",
+      prompt: "again",
+    });
     expect(second.turnId).not.toBe(first.turnId);
-    const active = await store.getActiveTurn({ sessionId: "cs-sess", userId: "u1" });
+    const active = await store.getActiveTurn({
+      sessionId: "cs-sess",
+      userId: "u1",
+    });
     expect(active?.turnId).toBe(second.turnId);
   });
 });

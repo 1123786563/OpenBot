@@ -88,7 +88,8 @@ export function createBillingEntitlementReader(options: {
       // The bucket key IS the read argument's identity: `undefined` (the deployment's own
       // default customer) and an explicit "" are different reads, so they must never share
       // a bucket — the NUL sentinel cannot collide with a real customer id.
-      const key = externalCustomerId === undefined ? "\u0000default" : externalCustomerId;
+      const key =
+        externalCustomerId === undefined ? "\u0000default" : externalCustomerId;
       let bucket = buckets.get(key);
       if (!bucket) {
         bucket = {};

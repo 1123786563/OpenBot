@@ -282,8 +282,8 @@ export function createStallGuard(options: StallGuardOptions): StallGuard {
           void reader.cancel().catch(() => undefined);
         },
         sse:
-        response.headers.get("content-type")?.toLowerCase() !==
-        PROTOBUF_CONTENT_TYPE,
+          response.headers.get("content-type")?.toLowerCase() !==
+          PROTOBUF_CONTENT_TYPE,
         requestBody:
           typeof requestInit.body === "string" ? requestInit.body : null,
         finished: false,

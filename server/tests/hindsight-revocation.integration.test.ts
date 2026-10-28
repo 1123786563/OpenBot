@@ -27,10 +27,7 @@ import {
 import type { PlatformScope } from "../src/enterprise/contracts";
 import { verifyDirectoryDatabase } from "../src/enterprise/tenancy/connections";
 import { createScopeResolver } from "../src/enterprise/tenancy/store";
-import {
-  sourceBankFor,
-  userBankFor,
-} from "../src/hindsight/bank-scope";
+import { sourceBankFor, userBankFor } from "../src/hindsight/bank-scope";
 import {
   createDegradedRecallFacade,
   createDrizzleDegradedPreferenceSearch,
@@ -260,21 +257,21 @@ async function makeTrustedScope(
 }
 
 beforeAll(async () => {
-  await database.insert(users).values([
-    { id: `usr_emp-${run}`, email: `emp-${run}@example.invalid` },
-  ]);
+  await database
+    .insert(users)
+    .values([{ id: `usr_emp-${run}`, email: `emp-${run}@example.invalid` }]);
   await database
     .insert(enterpriseTenants)
     .values([{ id: TENANT, name: `Revoke ${run}` }]);
-  await database.insert(enterprisePrincipals).values([
-    { id: PRINCIPAL_EMP, userId: `usr_emp-${run}` },
-  ]);
-  await database.insert(enterpriseMemberships).values([
-    { tenantId: TENANT, principalId: PRINCIPAL_EMP, role: "member" },
-  ]);
-  await database.insert(enterpriseWorkspaces).values([
-    { tenantId: TENANT, id: WORKSPACE_A, name: `Rev A ${run}` },
-  ]);
+  await database
+    .insert(enterprisePrincipals)
+    .values([{ id: PRINCIPAL_EMP, userId: `usr_emp-${run}` }]);
+  await database
+    .insert(enterpriseMemberships)
+    .values([{ tenantId: TENANT, principalId: PRINCIPAL_EMP, role: "member" }]);
+  await database
+    .insert(enterpriseWorkspaces)
+    .values([{ tenantId: TENANT, id: WORKSPACE_A, name: `Rev A ${run}` }]);
   await database.insert(enterpriseWorkspaceMemberships).values([
     {
       tenantId: TENANT,
@@ -315,9 +312,13 @@ beforeAll(async () => {
   const sourceBoundRecords = createDrizzleSourceBoundRecords(database);
   const authorizations = createDrizzleSourceBoundAuthorizations(database);
   const judgmentRecords = createDrizzleDerivedJudgmentRecords(database);
-  preferences = createPreferenceRecallService(preferenceRecords, serviceConfig, {
-    revocations: ledger,
-  });
+  preferences = createPreferenceRecallService(
+    preferenceRecords,
+    serviceConfig,
+    {
+      revocations: ledger,
+    },
+  );
   scoped = createSourceBoundRecallService(
     sourceBoundRecords,
     authorizations,

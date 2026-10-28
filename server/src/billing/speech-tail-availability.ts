@@ -113,9 +113,9 @@ export function assessSpeechTailConstraint(input: {
   responseFormat?: string;
 }): SpeechTailVerdict {
   const format = normalizeResponseFormat(input.responseFormat);
-  const constrainable = (SPEECH_TAIL_CONSTRAINABLE_FORMATS as readonly string[]).includes(
-    format,
-  );
+  const constrainable = (
+    SPEECH_TAIL_CONSTRAINABLE_FORMATS as readonly string[]
+  ).includes(format);
   if (constrainable) {
     return {
       constrainable: true,
@@ -124,9 +124,9 @@ export function assessSpeechTailConstraint(input: {
       meter: WAV_METER,
     };
   }
-  const inWireVocabulary = (SPEECH_RESPONSE_FORMATS as readonly string[]).includes(
-    format,
-  );
+  const inWireVocabulary = (
+    SPEECH_RESPONSE_FORMATS as readonly string[]
+  ).includes(format);
   const naming = inWireVocabulary
     ? `no server-readable duration meter exists for ${format} audio on this gateway`
     : `${format} is not even in the wire's closed format set, so no meter could exist`;
@@ -172,7 +172,10 @@ export type SpeechTailAvailabilityRow = {
 export function speechTailAvailabilityView(): readonly SpeechTailAvailabilityRow[] {
   return [false, true].flatMap((stream) =>
     SPEECH_RESPONSE_FORMATS.map((format) => {
-      const verdict = assessSpeechTailConstraint({ stream, responseFormat: format });
+      const verdict = assessSpeechTailConstraint({
+        stream,
+        responseFormat: format,
+      });
       return verdict.constrainable
         ? {
             path: "/v1/audio/speech" as const,

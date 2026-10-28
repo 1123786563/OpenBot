@@ -29,9 +29,7 @@ import {
 import { randomUUID } from "node:crypto";
 import type { PlatformScope } from "../../src/enterprise/contracts";
 import { createSandboxClient } from "../../src/codesandbox/client";
-import {
-  assertTrustedScope,
-} from "../../src/enterprise/tenancy/store";
+import { assertTrustedScope } from "../../src/enterprise/tenancy/store";
 import {
   computerExecutionSurface,
   sandboxExecutionSurface,
@@ -109,7 +107,10 @@ afterAll(async () => {
 // 共享件：夹具语汇（与 MT041 套件同款，外加本票的执行面记录器）
 // ---------------------------------------------------------------------------
 
-const WORKER: JobExecutor = { kind: "worker", id: `mt043-worker-${randomUUID().slice(0, 8)}` };
+const WORKER: JobExecutor = {
+  kind: "worker",
+  id: `mt043-worker-${randomUUID().slice(0, 8)}`,
+};
 
 const basisOf = (
   companyRevision: number,
@@ -219,7 +220,12 @@ describeDb(
     itDb(
       "the initiator's cancel clears the live lease and marks it finished",
       async () => {
-        const pinned = await pinTask("a1-member", "company-a", "team-a1", "ac1-own");
+        const pinned = await pinTask(
+          "a1-member",
+          "company-a",
+          "team-a1",
+          "ac1-own",
+        );
         await fixture.service.claimJobLease({
           kind: pinned.kind,
           objectId: pinned.objectId,
@@ -252,7 +258,12 @@ describeDb(
     itDb(
       "same team, another principal: byte-identical canonical deny, zero side effects",
       async () => {
-        const pinned = await pinTask("a1-member", "company-a", "team-a1", "ac1-peer");
+        const pinned = await pinTask(
+          "a1-member",
+          "company-a",
+          "team-a1",
+          "ac1-peer",
+        );
         await fixture.service.claimJobLease({
           kind: pinned.kind,
           objectId: pinned.objectId,
@@ -263,7 +274,11 @@ describeDb(
           executor: WORKER,
           leaseMs: 60_000,
         });
-        const peer = await fixture.jobs.scopeAs("a1-other", "company-a", "team-a1");
+        const peer = await fixture.jobs.scopeAs(
+          "a1-other",
+          "company-a",
+          "team-a1",
+        );
         const deny = await control.cancelJob(peer, {
           kind: pinned.kind,
           objectId: pinned.objectId,
@@ -280,9 +295,22 @@ describeDb(
     itDb(
       "same company other team, and other company: the same canonical bytes",
       async () => {
-        const pinned = await pinTask("a1-member", "company-a", "team-a1", "ac1-cross");
-        const a2 = await fixture.jobs.scopeAs("a2-member", "company-a", "team-a2");
-        const b1 = await fixture.jobs.scopeAs("b1-member", "company-b", "team-b1");
+        const pinned = await pinTask(
+          "a1-member",
+          "company-a",
+          "team-a1",
+          "ac1-cross",
+        );
+        const a2 = await fixture.jobs.scopeAs(
+          "a2-member",
+          "company-a",
+          "team-a2",
+        );
+        const b1 = await fixture.jobs.scopeAs(
+          "b1-member",
+          "company-b",
+          "team-b1",
+        );
         const denyA2 = await control.cancelJob(a2, {
           kind: pinned.kind,
           objectId: pinned.objectId,
@@ -481,10 +509,27 @@ describeDb(
     itDb(
       "a retry from any other scope is invisible and writes nothing",
       async () => {
-        const pinned = await pinTask("a1-member", "company-a", "team-a1", "ac2-cross");
-        const a2 = await fixture.jobs.scopeAs("a2-member", "company-a", "team-a2");
-        const b1 = await fixture.jobs.scopeAs("b1-member", "company-b", "team-b1");
-        const peer = await fixture.jobs.scopeAs("a1-other", "company-a", "team-a1");
+        const pinned = await pinTask(
+          "a1-member",
+          "company-a",
+          "team-a1",
+          "ac2-cross",
+        );
+        const a2 = await fixture.jobs.scopeAs(
+          "a2-member",
+          "company-a",
+          "team-a2",
+        );
+        const b1 = await fixture.jobs.scopeAs(
+          "b1-member",
+          "company-b",
+          "team-b1",
+        );
+        const peer = await fixture.jobs.scopeAs(
+          "a1-other",
+          "company-a",
+          "team-a1",
+        );
         for (const viewer of [a2, b1, peer]) {
           const deny = await control.retryJob(viewer, {
             kind: pinned.kind,
@@ -499,33 +544,35 @@ describeDb(
       },
     );
 
-    itDb(
-      "a live lease refuses the retry and appends no basis",
-      async () => {
-        const pinned = await pinTask("a1-member", "company-a", "team-a1", "ac2-live");
-        await fixture.service.claimJobLease({
+    itDb("a live lease refuses the retry and appends no basis", async () => {
+      const pinned = await pinTask(
+        "a1-member",
+        "company-a",
+        "team-a1",
+        "ac2-live",
+      );
+      await fixture.service.claimJobLease({
+        kind: pinned.kind,
+        objectId: pinned.objectId,
+        scope: {
+          tenantId: pinned.scope.tenantId,
+          workspaceId: pinned.scope.workspaceId,
+        },
+        executor: WORKER,
+        leaseMs: 60_000,
+      });
+      await expectSentinelRejection(
+        control.retryJob(pinned.scope, {
           kind: pinned.kind,
           objectId: pinned.objectId,
-          scope: {
-            tenantId: pinned.scope.tenantId,
-            workspaceId: pinned.scope.workspaceId,
-          },
-          executor: WORKER,
-          leaseMs: 60_000,
-        });
-        await expectSentinelRejection(
-          control.retryJob(pinned.scope, {
-            kind: pinned.kind,
-            objectId: pinned.objectId,
-          }),
-          JOB_LEASE_HELD,
-        );
-        const snapshots = await fixture.readSnapshotsRaw(pinned);
-        expect(snapshots.executions).toHaveLength(0);
-        const lease = await fixture.readLeaseRaw(pinned);
-        expect(lease?.claimedBy).toBe(WORKER.id);
-      },
-    );
+        }),
+        JOB_LEASE_HELD,
+      );
+      const snapshots = await fixture.readSnapshotsRaw(pinned);
+      expect(snapshots.executions).toHaveLength(0);
+      const lease = await fixture.readLeaseRaw(pinned);
+      expect(lease?.claimedBy).toBe(WORKER.id);
+    });
   },
 );
 
@@ -533,173 +580,170 @@ describeDb(
 // AC3 — 取消传播到执行中的敏感动作与外部执行（含沙箱/浏览器）
 // ---------------------------------------------------------------------------
 
-describeDb(
-  "MT043 AC3: a cancel propagates through the real #90 seam",
-  () => {
-    itDb(
-      "an authorized cancel reaches every surface with the exact ownership target",
-      async () => {
-        const recorder = auditRecorder();
-        const { surfaces, cancels } = recordingSurfaces();
-        const execution = createExecutionArtifactsService({
-          data: fixture.jobs.data,
-          audit: recorder,
-          surfaces,
-        });
-        const scopedControl = createJobControlService({
-          operator: fixture.jobs.operator,
-          data: fixture.jobs.data,
-          execution,
-        });
-        const scope = await fixture.jobs.scopeAs(
-          "a1-member",
-          "company-a",
-          "team-a1",
-        );
-        // 真实 MT016 归属行：传播判定的 bot 事实。
-        const botId = `${fixture.jobs.isolation.idPrefix}-mt043-bot-${randomUUID().slice(0, 8)}`;
-        const planted = await fixture.bots.createBot(scope, {
-          agentId: botId,
-          displayName: "MT043 run bot",
-          defaultConfig: {},
-        });
-        expect(planted.outcome).toBe("allow");
-        const runId = `${fixture.jobs.isolation.idPrefix}-mt043-run-${randomUUID().slice(0, 8)}`;
-        const ref = { kind: "run" as const, objectId: runId };
-        const pinResult = await fixture.service.pinJobOwnership({
-          kind: "run",
-          objectId: runId,
-          scope: { tenantId: scope.tenantId, workspaceId: scope.workspaceId },
-          principalId: scope.principalId,
-          basis: basisOf(1, null, "ac3"),
-        });
-        expect(pinResult.status).toBe("pinned");
-        await fixture.service.claimJobLease({
-          kind: "run",
-          objectId: runId,
-          scope: { tenantId: scope.tenantId, workspaceId: scope.workspaceId },
-          executor: WORKER,
-          leaseMs: 60_000,
-        });
+describeDb("MT043 AC3: a cancel propagates through the real #90 seam", () => {
+  itDb(
+    "an authorized cancel reaches every surface with the exact ownership target",
+    async () => {
+      const recorder = auditRecorder();
+      const { surfaces, cancels } = recordingSurfaces();
+      const execution = createExecutionArtifactsService({
+        data: fixture.jobs.data,
+        audit: recorder,
+        surfaces,
+      });
+      const scopedControl = createJobControlService({
+        operator: fixture.jobs.operator,
+        data: fixture.jobs.data,
+        execution,
+      });
+      const scope = await fixture.jobs.scopeAs(
+        "a1-member",
+        "company-a",
+        "team-a1",
+      );
+      // 真实 MT016 归属行：传播判定的 bot 事实。
+      const botId = `${fixture.jobs.isolation.idPrefix}-mt043-bot-${randomUUID().slice(0, 8)}`;
+      const planted = await fixture.bots.createBot(scope, {
+        agentId: botId,
+        displayName: "MT043 run bot",
+        defaultConfig: {},
+      });
+      expect(planted.outcome).toBe("allow");
+      const runId = `${fixture.jobs.isolation.idPrefix}-mt043-run-${randomUUID().slice(0, 8)}`;
+      const ref = { kind: "run" as const, objectId: runId };
+      const pinResult = await fixture.service.pinJobOwnership({
+        kind: "run",
+        objectId: runId,
+        scope: { tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+        principalId: scope.principalId,
+        basis: basisOf(1, null, "ac3"),
+      });
+      expect(pinResult.status).toBe("pinned");
+      await fixture.service.claimJobLease({
+        kind: "run",
+        objectId: runId,
+        scope: { tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+        executor: WORKER,
+        leaseMs: 60_000,
+      });
 
-        const outcome = await scopedControl.cancelJob(scope, {
-          kind: "run",
-          objectId: runId,
-          execution: { botId, runId },
+      const outcome = await scopedControl.cancelJob(scope, {
+        kind: "run",
+        objectId: runId,
+        execution: { botId, runId },
+      });
+      expect(outcome.outcome).toBe("cancelled");
+      if (outcome.outcome !== "cancelled") return;
+      expect(outcome.propagation).toEqual({
+        requested: true,
+        verdict: "allow",
+        attempts: [
+          { surface: "computer", outcome: "cancelled" },
+          { surface: "sandbox", outcome: "not-running" },
+        ],
+      });
+      expect(outcome.lease.status).toBe("cleared");
+      // 逐面收到的 target 就是归属三元组 + runId，不是别的 Bot。
+      expect(cancels).toHaveLength(2);
+      for (const target of cancels) {
+        expect(target).toEqual({
+          tenantId: fixture.jobs.isolation.ids["company-a"],
+          workspaceId: fixture.jobs.isolation.ids["team-a1"],
+          botId,
+          runId,
         });
-        expect(outcome.outcome).toBe("cancelled");
-        if (outcome.outcome !== "cancelled") return;
-        expect(outcome.propagation).toEqual({
-          requested: true,
-          verdict: "allow",
-          attempts: [
-            { surface: "computer", outcome: "cancelled" },
-            { surface: "sandbox", outcome: "not-running" },
-          ],
-        });
-        expect(outcome.lease.status).toBe("cleared");
-        // 逐面收到的 target 就是归属三元组 + runId，不是别的 Bot。
-        expect(cancels).toHaveLength(2);
-        for (const target of cancels) {
-          expect(target).toEqual({
-            tenantId: fixture.jobs.isolation.ids["company-a"],
-            workspaceId: fixture.jobs.isolation.ids["team-a1"],
-            botId,
-            runId,
-          });
-        }
-        // 审计行：allowed，携带归属三元组与主体。
-        const cancelEvents = recorder
-          .events()
-          .filter((event) => event.action === "execution.cancel");
-        expect(cancelEvents).toHaveLength(1);
-        expect(cancelEvents[0].outcome).toBe("allowed");
-        expect(cancelEvents[0].botId).toBe(botId);
-        expect(cancelEvents[0].tenantId).toBe(
-          fixture.jobs.isolation.ids["company-a"],
-        );
-        expect(cancelEvents[0].principalId).toBe(scope.principalId);
-        // 租约也被清掉：传播与清租约同一次取消完成。
-        const lease = await fixture.readLeaseRaw(ref);
-        expect(lease?.claimedBy).toBeNull();
-        expect(lease?.finishedAt).not.toBeNull();
-      },
-    );
+      }
+      // 审计行：allowed，携带归属三元组与主体。
+      const cancelEvents = recorder
+        .events()
+        .filter((event) => event.action === "execution.cancel");
+      expect(cancelEvents).toHaveLength(1);
+      expect(cancelEvents[0].outcome).toBe("allowed");
+      expect(cancelEvents[0].botId).toBe(botId);
+      expect(cancelEvents[0].tenantId).toBe(
+        fixture.jobs.isolation.ids["company-a"],
+      );
+      expect(cancelEvents[0].principalId).toBe(scope.principalId);
+      // 租约也被清掉：传播与清租约同一次取消完成。
+      const lease = await fixture.readLeaseRaw(ref);
+      expect(lease?.claimedBy).toBeNull();
+      expect(lease?.finishedAt).not.toBeNull();
+    },
+  );
 
-    itDb(
-      "a bot outside the caller's workspace propagates nothing (canonical deny)",
-      async () => {
-        const recorder = auditRecorder();
-        const { surfaces, cancels } = recordingSurfaces();
-        const execution = createExecutionArtifactsService({
-          data: fixture.jobs.data,
-          audit: recorder,
-          surfaces,
-        });
-        const scopedControl = createJobControlService({
-          operator: fixture.jobs.operator,
-          data: fixture.jobs.data,
-          execution,
-        });
-        const owner = await fixture.jobs.scopeAs(
-          "a1-member",
-          "company-a",
-          "team-a1",
-        );
-        const otherTeam = await fixture.jobs.scopeAs(
-          "a2-member",
-          "company-a",
-          "team-a2",
-        );
-        // team-a2 的 bot：对 a1 主体不可见（#90 判定 canonical deny）。
-        const foreignBot = `${fixture.jobs.isolation.idPrefix}-mt043-bot2-${randomUUID().slice(0, 8)}`;
-        const planted = await fixture.bots.createBot(otherTeam, {
-          agentId: foreignBot,
-          displayName: "MT043 foreign bot",
-          defaultConfig: {},
-        });
-        expect(planted.outcome).toBe("allow");
-        const runId = `${fixture.jobs.isolation.idPrefix}-mt043-run2-${randomUUID().slice(0, 8)}`;
-        const pinResult = await fixture.service.pinJobOwnership({
-          kind: "run",
-          objectId: runId,
-          scope: { tenantId: owner.tenantId, workspaceId: owner.workspaceId },
-          principalId: owner.principalId,
-          basis: basisOf(1, null, "ac3b"),
-        });
-        expect(pinResult.status).toBe("pinned");
-        await fixture.service.claimJobLease({
-          kind: "run",
-          objectId: runId,
-          scope: { tenantId: owner.tenantId, workspaceId: owner.workspaceId },
-          executor: WORKER,
-          leaseMs: 60_000,
-        });
+  itDb(
+    "a bot outside the caller's workspace propagates nothing (canonical deny)",
+    async () => {
+      const recorder = auditRecorder();
+      const { surfaces, cancels } = recordingSurfaces();
+      const execution = createExecutionArtifactsService({
+        data: fixture.jobs.data,
+        audit: recorder,
+        surfaces,
+      });
+      const scopedControl = createJobControlService({
+        operator: fixture.jobs.operator,
+        data: fixture.jobs.data,
+        execution,
+      });
+      const owner = await fixture.jobs.scopeAs(
+        "a1-member",
+        "company-a",
+        "team-a1",
+      );
+      const otherTeam = await fixture.jobs.scopeAs(
+        "a2-member",
+        "company-a",
+        "team-a2",
+      );
+      // team-a2 的 bot：对 a1 主体不可见（#90 判定 canonical deny）。
+      const foreignBot = `${fixture.jobs.isolation.idPrefix}-mt043-bot2-${randomUUID().slice(0, 8)}`;
+      const planted = await fixture.bots.createBot(otherTeam, {
+        agentId: foreignBot,
+        displayName: "MT043 foreign bot",
+        defaultConfig: {},
+      });
+      expect(planted.outcome).toBe("allow");
+      const runId = `${fixture.jobs.isolation.idPrefix}-mt043-run2-${randomUUID().slice(0, 8)}`;
+      const pinResult = await fixture.service.pinJobOwnership({
+        kind: "run",
+        objectId: runId,
+        scope: { tenantId: owner.tenantId, workspaceId: owner.workspaceId },
+        principalId: owner.principalId,
+        basis: basisOf(1, null, "ac3b"),
+      });
+      expect(pinResult.status).toBe("pinned");
+      await fixture.service.claimJobLease({
+        kind: "run",
+        objectId: runId,
+        scope: { tenantId: owner.tenantId, workspaceId: owner.workspaceId },
+        executor: WORKER,
+        leaseMs: 60_000,
+      });
 
-        const outcome = await scopedControl.cancelJob(owner, {
-          kind: "run",
-          objectId: runId,
-          execution: { botId: foreignBot, runId },
-        });
-        // job 是 owner 的：取消本身成立；bot 判定 deny（canonical 同形）。
-        expect(outcome.outcome).toBe("cancelled");
-        if (outcome.outcome !== "cancelled") return;
-        expect(outcome.propagation.requested).toBe(true);
-        expect(outcome.propagation.verdict).toBe("deny");
-        expect(outcome.lease.status).toBe("cleared");
-        // 一个执行面都没被调用。
-        expect(cancels).toHaveLength(0);
-        const denied = recorder
-          .events()
-          .filter(
-            (event) =>
-              event.action === "execution.cancel" && event.outcome === "denied",
-          );
-        expect(denied).toHaveLength(1);
-      },
-    );
-  },
-);
+      const outcome = await scopedControl.cancelJob(owner, {
+        kind: "run",
+        objectId: runId,
+        execution: { botId: foreignBot, runId },
+      });
+      // job 是 owner 的：取消本身成立；bot 判定 deny（canonical 同形）。
+      expect(outcome.outcome).toBe("cancelled");
+      if (outcome.outcome !== "cancelled") return;
+      expect(outcome.propagation.requested).toBe(true);
+      expect(outcome.propagation.verdict).toBe("deny");
+      expect(outcome.lease.status).toBe("cleared");
+      // 一个执行面都没被调用。
+      expect(cancels).toHaveLength(0);
+      const denied = recorder
+        .events()
+        .filter(
+          (event) =>
+            event.action === "execution.cancel" && event.outcome === "denied",
+        );
+      expect(denied).toHaveLength(1);
+    },
+  );
+});
 
 // ---------------------------------------------------------------------------
 // AC3 适配器翻译面（纯函数：computer / sandbox → 既有入口）
@@ -741,7 +785,8 @@ describe("MT043 AC3 adapters: targets translated to the existing entries", () =>
   });
 
   test("the sandbox adapter aborts the active session under the ownership headers", async () => {
-    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+    const requests: Array<{ url: string; headers: Record<string, string> }> =
+      [];
     const surface = sandboxExecutionSurface({
       createClient: (input) =>
         createSandboxClient({
@@ -752,9 +797,7 @@ describe("MT043 AC3 adapters: targets translated to the existing entries", () =>
           fetchImpl: (async (input2: RequestInfo | URL, init?: RequestInit) => {
             requests.push({
               url: String(input2),
-              headers: Object.fromEntries(
-                new Headers(init?.headers).entries(),
-              ),
+              headers: Object.fromEntries(new Headers(init?.headers).entries()),
             });
             return new Response(null, { status: 200 });
           }) as typeof fetch,
@@ -829,103 +872,106 @@ describe("MT043 AC3 adapters: targets translated to the existing entries", () =>
 // AC4 — 并发认领不会让两个执行者同时持有同一租约
 // ---------------------------------------------------------------------------
 
-describeDb(
-  "MT043 AC4: concurrent claims never double-hold one lease",
-  () => {
-    const RACERS = 8;
+describeDb("MT043 AC4: concurrent claims never double-hold one lease", () => {
+  const RACERS = 8;
 
-    /** Fires one concurrent claim per racer; returns settled results. */
-    async function raceClaim(
-      services: Awaited<ReturnType<typeof fixture.raceServices>>,
-      pinned: Pinned,
-      round: number,
-    ) {
-      const attempts = await Promise.allSettled(
-        services.map((service, index) =>
-          service.claimJobLease({
-            kind: pinned.kind,
-            objectId: pinned.objectId,
-            scope: {
-              tenantId: pinned.scope.tenantId,
-              workspaceId: pinned.scope.workspaceId,
-            },
-            executor: {
-              kind: "worker",
-              id: `mt043-racer-${round}-${index}`,
-            },
-            leaseMs: 60_000,
-          }),
-        ),
-      );
-      return attempts;
-    }
-
-    itDb(
-      "eight executors race a fresh claim: exactly one grant, seven refusals",
-      async () => {
-        const pinned = await pinTask("a1-member", "company-a", "team-a1", "ac4-fresh");
-        const services = await fixture.raceServices(RACERS);
-        const results = await raceClaim(services, pinned, 1);
-        const granted = results.filter(
-          (result) => result.status === "fulfilled",
-        );
-        const refused = results.filter(
-          (result) => result.status === "rejected",
-        );
-        expect(granted).toHaveLength(1);
-        expect(refused).toHaveLength(RACERS - 1);
-        if (granted[0].status !== "fulfilled") return;
-        expect(granted[0].value.status).toBe("granted");
-        expect(granted[0].value.attempts).toBe(1);
-        for (const refusal of refused) {
-          if (refusal.status !== "rejected") continue;
-          const message =
-            refusal.reason instanceof Error
-              ? refusal.reason.message
-              : String(refusal.reason);
-          expect(
-            message === JOB_LEASE_HELD ||
-              message.startsWith(`${JOB_LEASE_HELD}: `),
-          ).toBe(true);
-        }
-        // 权威行只有一个持有人。
-        const lease = await fixture.readLeaseRaw(pinned);
-        expect(lease?.claimedBy).toBe(granted[0].value.claimedBy);
-        expect(lease?.attempts).toBe(1);
-      },
-    );
-
-    itDb(
-      "after expiry the reclaim race also grants exactly once (three rounds)",
-      async () => {
-        const pinned = await pinTask("a1-member", "company-a", "team-a1", "ac4-reclaim");
-        const services = await fixture.raceServices(RACERS);
-        const first = await services[0].claimJobLease({
+  /** Fires one concurrent claim per racer; returns settled results. */
+  async function raceClaim(
+    services: Awaited<ReturnType<typeof fixture.raceServices>>,
+    pinned: Pinned,
+    round: number,
+  ) {
+    const attempts = await Promise.allSettled(
+      services.map((service, index) =>
+        service.claimJobLease({
           kind: pinned.kind,
           objectId: pinned.objectId,
           scope: {
             tenantId: pinned.scope.tenantId,
             workspaceId: pinned.scope.workspaceId,
           },
-          executor: { kind: "worker", id: "mt043-reclaim-first" },
+          executor: {
+            kind: "worker",
+            id: `mt043-racer-${round}-${index}`,
+          },
           leaseMs: 60_000,
-        });
-        expect(first.status).toBe("granted");
-        for (let round = 1; round <= 3; round += 1) {
-          // 确定性过期：把租约回拨（superuser 夹具，只动时钟不动持有人）。
-          await fixture.backdateLease(pinned, 2_000);
-          const results = await raceClaim(services, pinned, round + 1);
-          const granted = results.filter(
-            (result) => result.status === "fulfilled",
-          );
-          expect(granted).toHaveLength(1);
-          if (granted[0].status !== "fulfilled") return;
-          expect(granted[0].value.attempts).toBe(round + 1);
-          const lease = await fixture.readLeaseRaw(pinned);
-          expect(lease?.claimedBy).toBe(granted[0].value.claimedBy);
-          expect(lease?.attempts).toBe(round + 1);
-        }
-      },
+        }),
+      ),
     );
-  },
-);
+    return attempts;
+  }
+
+  itDb(
+    "eight executors race a fresh claim: exactly one grant, seven refusals",
+    async () => {
+      const pinned = await pinTask(
+        "a1-member",
+        "company-a",
+        "team-a1",
+        "ac4-fresh",
+      );
+      const services = await fixture.raceServices(RACERS);
+      const results = await raceClaim(services, pinned, 1);
+      const granted = results.filter((result) => result.status === "fulfilled");
+      const refused = results.filter((result) => result.status === "rejected");
+      expect(granted).toHaveLength(1);
+      expect(refused).toHaveLength(RACERS - 1);
+      if (granted[0].status !== "fulfilled") return;
+      expect(granted[0].value.status).toBe("granted");
+      expect(granted[0].value.attempts).toBe(1);
+      for (const refusal of refused) {
+        if (refusal.status !== "rejected") continue;
+        const message =
+          refusal.reason instanceof Error
+            ? refusal.reason.message
+            : String(refusal.reason);
+        expect(
+          message === JOB_LEASE_HELD ||
+            message.startsWith(`${JOB_LEASE_HELD}: `),
+        ).toBe(true);
+      }
+      // 权威行只有一个持有人。
+      const lease = await fixture.readLeaseRaw(pinned);
+      expect(lease?.claimedBy).toBe(granted[0].value.claimedBy);
+      expect(lease?.attempts).toBe(1);
+    },
+  );
+
+  itDb(
+    "after expiry the reclaim race also grants exactly once (three rounds)",
+    async () => {
+      const pinned = await pinTask(
+        "a1-member",
+        "company-a",
+        "team-a1",
+        "ac4-reclaim",
+      );
+      const services = await fixture.raceServices(RACERS);
+      const first = await services[0].claimJobLease({
+        kind: pinned.kind,
+        objectId: pinned.objectId,
+        scope: {
+          tenantId: pinned.scope.tenantId,
+          workspaceId: pinned.scope.workspaceId,
+        },
+        executor: { kind: "worker", id: "mt043-reclaim-first" },
+        leaseMs: 60_000,
+      });
+      expect(first.status).toBe("granted");
+      for (let round = 1; round <= 3; round += 1) {
+        // 确定性过期：把租约回拨（superuser 夹具，只动时钟不动持有人）。
+        await fixture.backdateLease(pinned, 2_000);
+        const results = await raceClaim(services, pinned, round + 1);
+        const granted = results.filter(
+          (result) => result.status === "fulfilled",
+        );
+        expect(granted).toHaveLength(1);
+        if (granted[0].status !== "fulfilled") return;
+        expect(granted[0].value.attempts).toBe(round + 1);
+        const lease = await fixture.readLeaseRaw(pinned);
+        expect(lease?.claimedBy).toBe(granted[0].value.claimedBy);
+        expect(lease?.attempts).toBe(round + 1);
+      }
+    },
+  );
+});

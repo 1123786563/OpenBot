@@ -31,7 +31,10 @@ import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 export function BotUnavailableNote() {
   const { t } = useTranslation("agents");
   return (
-    <p className="mt-6 text-muted-foreground text-sm" data-testid="bot-unavailable">
+    <p
+      className="mt-6 text-muted-foreground text-sm"
+      data-testid="bot-unavailable"
+    >
       {t("botSubpage.unavailable")}
     </p>
   );

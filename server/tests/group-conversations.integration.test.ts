@@ -1,4 +1,10 @@
-import { afterAll, afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, inArray, like } from "drizzle-orm";
 import { createAgentProfileStore } from "../src/agents/profile-store";

@@ -1,18 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import {
   createAsyncSubmitService,
   computeAsyncSubmitCap,
 } from "../src/billing/async-job-submit";
-import {
-  createCreditReserveService,
-} from "../src/billing/credit-reserve";
+import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount, payerKey } from "../src/billing/payer";
-import {
-  resolveLockedReservationBasis,
-} from "../src/billing/reserve-bound";
+import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
 import {
   GATEWAY_PRICE_SNAPSHOT_SOURCE,
   createEnterpriseGatewayPriceSnapshotStore,
@@ -26,7 +27,10 @@ import {
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../src/db/schema";
-import { asyncJobs, creditReservations } from "../src/db/schema/credit-reservations";
+import {
+  asyncJobs,
+  creditReservations,
+} from "../src/db/schema/credit-reservations";
 import { creditLedger } from "../src/db/schema/credits";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
@@ -92,7 +96,10 @@ function makeDispatch(behavior: "answer" | "lose") {
     calls += 1;
     void input;
     return behavior === "answer"
-      ? ({ kind: "answered", providerJobId: `prov-job-${++dispatchCounter}` } as const)
+      ? ({
+          kind: "answered",
+          providerJobId: `prov-job-${++dispatchCounter}`,
+        } as const)
       : ({ kind: "lost", reason: "response_timeout" } as const);
   };
   return { dispatch, calls: () => calls };
@@ -238,12 +245,15 @@ async function seedWorld(
 }
 
 afterAll(async () => {
-  await database
-    .delete(asyncJobs)
-    .where(like(asyncJobs.grantId, `${prefix}%`));
+  await database.delete(asyncJobs).where(like(asyncJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -363,7 +373,9 @@ describe("17.2 AC-2 — reservation failure refuses the submit", () => {
     expect(outcome.status).toBe("refused");
     if (outcome.status !== "refused") return;
     expect(outcome.reasonCode).toBe("reserve_refused");
-    expect(outcome.detail).toMatchObject({ reasonCode: "insufficient_credits" });
+    expect(outcome.detail).toMatchObject({
+      reasonCode: "insufficient_credits",
+    });
     expect(dispatch.calls()).toBe(0);
     const jobRows = await database
       .select()

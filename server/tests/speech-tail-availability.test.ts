@@ -112,7 +112,11 @@ function speechAdmissionInput(overrides: Record<string, unknown> = {}) {
   return {
     path: "/v1/audio/speech",
     stream: false,
-    model: { provider: "openai", model: "gpt-4o-mini-tts", capability: "speech" },
+    model: {
+      provider: "openai",
+      model: "gpt-4o-mini-tts",
+      capability: "speech",
+    },
     quantities: speechQuantities(),
     grantId: "grant-tail",
     payer: { kind: "personal", id: "user-tail" },
@@ -136,7 +140,10 @@ describe("Bifrost 13.4 (#309): tail-unconstrainable speech paths stay unenabled"
       }
       for (const format of SPEECH_RESPONSE_FORMATS) {
         if (format === "wav") continue;
-        const verdict = assessSpeechTailConstraint({ stream, responseFormat: format });
+        const verdict = assessSpeechTailConstraint({
+          stream,
+          responseFormat: format,
+        });
         expect(verdict.constrainable).toBe(false);
         if (!verdict.constrainable) {
           expect(verdict.format).toBe(format);
@@ -155,11 +162,16 @@ describe("Bifrost 13.4 (#309): tail-unconstrainable speech paths stay unenabled"
         expect(absent.format).toBe(SPEECH_DEFAULT_RESPONSE_FORMAT);
       }
       // A format outside the wire's closed set is refused with itself named — never a pass.
-      const alien = assessSpeechTailConstraint({ stream, responseFormat: "ogg" });
+      const alien = assessSpeechTailConstraint({
+        stream,
+        responseFormat: "ogg",
+      });
       expect(alien.constrainable).toBe(false);
       if (!alien.constrainable) {
         expect(alien.format).toBe("ogg");
-        expect(alien.reasons[0].detail).toContain("not even in the wire's closed format set");
+        expect(alien.reasons[0].detail).toContain(
+          "not even in the wire's closed format set",
+        );
       }
     }
   });
@@ -170,9 +182,9 @@ describe("Bifrost 13.4 (#309): tail-unconstrainable speech paths stay unenabled"
     for (const stream of [false, true]) {
       const entrance = rows.filter((row) => row.stream === stream);
       // 不出现在可选列表: the enabled projection is exactly the constrainable formats.
-      expect(entrance.filter((row) => row.enabled).map((row) => row.format)).toEqual([
-        "wav",
-      ]);
+      expect(
+        entrance.filter((row) => row.enabled).map((row) => row.format),
+      ).toEqual(["wav"]);
       for (const row of entrance) {
         expect(row.path).toBe("/v1/audio/speech");
         if (!row.enabled) {
@@ -233,7 +245,10 @@ describe("Bifrost 13.4 (#309): tail-unconstrainable speech paths stay unenabled"
       {
         selectable: () =>
           ({
-            listSelectableModels: async () => ({ selectable: [], excluded: [] }),
+            listSelectableModels: async () => ({
+              selectable: [],
+              excluded: [],
+            }),
           }) as never,
         priceSnapshots: () =>
           ({ listLatestPriceSnapshots: async () => [] }) as never,

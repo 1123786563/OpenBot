@@ -192,9 +192,7 @@ export function ManageSection({
   const duplicate = useMutation(
     duplicateAgentMutationOptions(queryClient, scope),
   );
-  const remove = useMutation(
-    deleteAgentMutationOptions(queryClient, scope),
-  );
+  const remove = useMutation(deleteAgentMutationOptions(queryClient, scope));
   const [resetOpen, setResetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const error = setPinned.error ?? setHidden.error ?? duplicate.error;

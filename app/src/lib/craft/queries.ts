@@ -354,12 +354,8 @@ export function scopedCraftPreviewTicketMutationOptions(
   id: string,
 ) {
   return {
-    mutationKey: [
-      ...craftKeys.webapp(id),
-      "preview-ticket",
-    ] as const,
-    mutationFn: () =>
-      issuePreviewTicket(id, craftScopePair(scope)),
+    mutationKey: [...craftKeys.webapp(id), "preview-ticket"] as const,
+    mutationFn: () => issuePreviewTicket(id, craftScopePair(scope)),
   };
 }
 

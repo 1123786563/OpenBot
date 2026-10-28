@@ -1860,15 +1860,24 @@ describe("the write budget's refund direction", () => {
    */
   test("a computer-answered pre-write refusal refunds its charge", async () => {
     for (const route of [
-      { path: "/files/write", status: 409, body: { error: "human has the wheel", humanHasControl: true } },
-      { path: "/files/write", status: 403, body: { error: "outside the workspace" } },
+      {
+        path: "/files/write",
+        status: 409,
+        body: { error: "human has the wheel", humanHasControl: true },
+      },
+      {
+        path: "/files/write",
+        status: 403,
+        body: { error: "outside the workspace" },
+      },
       { path: "/files/write", status: 413, body: { error: "over the cap" } },
     ]) {
       const { capacity, refunded } = spyingCapacity();
       const { gateway } = await gatewayWith(PERMISSIVE, {
         capacity,
         routes: {
-          [route.path]: () => Response.json(route.body, { status: route.status }),
+          [route.path]: () =>
+            Response.json(route.body, { status: route.status }),
         },
       });
 

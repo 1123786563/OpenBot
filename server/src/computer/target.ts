@@ -167,8 +167,7 @@ function expandIpv6(hostname: string): number[] | null {
   // Groups must be 1-4 hex digits: parseInt("0g", 16) stops at "0" and parseInt("")
   // is NaN, so an unchecked parse turns a malformed literal into a wrong address the
   // private-range checks then answer confidently.
-  const groups = (part: string) =>
-    part === "" ? [] : part.split(":");
+  const groups = (part: string) => (part === "" ? [] : part.split(":"));
   if (
     [...groups(halves[0] ?? ""), ...groups(halves[1] ?? "")].some(
       (group) => !/^[0-9a-fA-F]{1,4}$/.test(group),
@@ -176,7 +175,9 @@ function expandIpv6(hostname: string): number[] | null {
   )
     return null;
   const parse = (part: string) =>
-    part === "" ? [] : part.split(":").map((group) => Number.parseInt(group, 16));
+    part === ""
+      ? []
+      : part.split(":").map((group) => Number.parseInt(group, 16));
   const head = parse(halves[0] ?? "");
   const tail = halves.length === 2 ? parse(halves[1] ?? "") : [];
   if ([...head, ...tail].some((group) => Number.isNaN(group))) return null;

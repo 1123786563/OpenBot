@@ -499,9 +499,7 @@ function RouteComponent() {
                 <Separator />
                 <Item size="sm">
                   <ItemContent>
-                    <ItemTitle>
-                      {t("connectedAccounts.secretTitle")}
-                    </ItemTitle>
+                    <ItemTitle>{t("connectedAccounts.secretTitle")}</ItemTitle>
                     <ItemDescription className="line-clamp-none">
                       {revealed ??
                         t("connectedAccounts.secretMasked", {

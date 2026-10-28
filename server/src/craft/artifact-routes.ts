@@ -258,7 +258,10 @@ export function createArtifactRoutes(
       // The read above is guarded; the conversion is a second failure surface (a
       // malformed document, a broken converter) and must not become a raw 500.
       assertNotScopeRefusal(error);
-      return context.json({ error: "The document could not be converted." }, 502);
+      return context.json(
+        { error: "The document could not be converted." },
+        502,
+      );
     }
     const docxName = `${name.replace(/\.md$/i, "")}.docx`;
     return new Response(docxBytes as unknown as BodyInit, {

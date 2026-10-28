@@ -208,7 +208,10 @@ export function createInProcessConnectAppSignals(): CraftConnectAppSignals & {
 
   // The in-process SET: one value per key, TTL refreshed — Redis's SET_WITH_TTL.
   const replace = (key: string, value: string, ttlSeconds: number) => {
-    lists.set(key, { values: [value], expiresAt: Date.now() + ttlSeconds * 1000 });
+    lists.set(key, {
+      values: [value],
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    });
   };
 
   return {
@@ -232,7 +235,11 @@ export function createInProcessConnectAppSignals(): CraftConnectAppSignals & {
     async stashPending(requestId, pending) {
       // Replace, like the Redis SET: a re-stash of one requestId must answer one
       // pending record, not a list where the first (stale) entry wins the read.
-      replace(pendingKey(requestId), JSON.stringify(pending), CONNECT_APP_PENDING_TTL_SECONDS);
+      replace(
+        pendingKey(requestId),
+        JSON.stringify(pending),
+        CONNECT_APP_PENDING_TTL_SECONDS,
+      );
     },
     async loadPending(requestId) {
       return parsePending(live(pendingKey(requestId)).values[0] ?? null);

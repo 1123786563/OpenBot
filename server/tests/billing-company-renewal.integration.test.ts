@@ -498,7 +498,11 @@ describe("BP05: company subscription renewal and period correction", () => {
     stub.state.list = stub.state.list.map((row) =>
       row.externalCustomerId === companyCustomerKey &&
       row.externalSubscriptionId === shared
-        ? { ...row, periodStart: companyPeriod.start, periodEnd: companyPeriod.end }
+        ? {
+            ...row,
+            periodStart: companyPeriod.start,
+            periodEnd: companyPeriod.end,
+          }
         : row,
     );
 

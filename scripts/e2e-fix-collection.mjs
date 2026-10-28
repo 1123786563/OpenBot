@@ -28,24 +28,36 @@ const BUN_RUNTIME = [
 ];
 const ARTIFACT = /^deliverables\//;
 const maxPasses = Number(
-  (process.argv.find((a) => a.startsWith("--passes=")) ?? "").split("=")[1] ?? 80,
+  (process.argv.find((a) => a.startsWith("--passes=")) ?? "").split("=")[1] ??
+    80,
 );
 
 function collectOnce() {
-  const run = spawnSync("./node_modules/.bin/e2e", ["list", "--config", "e2e.unit.config.ts"], {
-    cwd: root,
-    encoding: "utf8",
-    timeout: 1_800_000,
-  });
+  const run = spawnSync(
+    "./node_modules/.bin/e2e",
+    ["list", "--config", "e2e.unit.config.ts"],
+    {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 1_800_000,
+    },
+  );
   const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
   if (run.error || run.signal) {
-    return { kind: "error", reason: run.error?.message ?? `killed: ${run.signal}` };
+    return {
+      kind: "error",
+      reason: run.error?.message ?? `killed: ${run.signal}`,
+    };
   }
   const failing =
     output.match(/failed to collect ([^:]+): ([^\n]+)/) ??
     output.match(/COLLECTION_ERROR: ([^:]+): ([^\n]+)/);
   if (!failing) return { kind: "clean", listed: /[node]/.test(output) };
-  return { kind: "failing", file: failing[1].trim(), reason: failing[2].trim() };
+  return {
+    kind: "failing",
+    file: failing[1].trim(),
+    reason: failing[2].trim(),
+  };
 }
 
 const manifest = readManifest();
@@ -64,12 +76,16 @@ for (let pass = 0; pass < maxPasses; pass++) {
   }
   const { file, reason } = result;
   if (manifest.files.has(file) || manifest.artifacts.has(file)) {
-    blocked = { file, reason: `${reason} — already bucketed, the exclusion did not take` };
+    blocked = {
+      file,
+      reason: `${reason} — already bucketed, the exclusion did not take`,
+    };
     break;
   }
   if (ARTIFACT.test(file)) {
     manifest.artifacts.add(file);
-    manifest.causes[file] = `deliverable spec, not executable in this repository (${reason})`;
+    manifest.causes[file] =
+      `deliverable spec, not executable in this repository (${reason})`;
     moves.push({ file, bucket: "artifact", reason });
   } else if (BUN_RUNTIME.some((pattern) => pattern.test(reason))) {
     manifest.files.add(file);
@@ -77,11 +93,16 @@ for (let pass = 0; pass < maxPasses; pass++) {
     moves.push({ file, bucket: "bun-runtime", reason });
   } else {
     blocked = { file, reason };
-    console.log(`stopping — ${file} is a harness gap, not a runtime boundary\n  ${reason}`);
+    console.log(
+      `stopping — ${file} is a harness gap, not a runtime boundary\n  ${reason}`,
+    );
     break;
   }
   writeManifest(manifest, "scripts/e2e-fix-collection.mjs");
-  spawnSync("node", ["scripts/e2e-apply-partition.mjs"], { cwd: root, encoding: "utf8" });
+  spawnSync("node", ["scripts/e2e-apply-partition.mjs"], {
+    cwd: root,
+    encoding: "utf8",
+  });
   console.log(`+ ${file} → ${moves.at(-1).bucket}`);
 }
 

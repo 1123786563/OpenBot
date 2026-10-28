@@ -206,7 +206,10 @@ export async function setupSessionWorkspace(
   // Mark complete only after every managed file has landed. `mkdir(outputs)` is the
   // first setup step (and is a no-op on the live agent-sandbox API), so the directory
   // cannot say "ready": it either appears too early on a real mkdir or never appears at all.
-  await api.writeFile(`${root}/.opencode/craft-workspace-ready`, input.sessionId);
+  await api.writeFile(
+    `${root}/.opencode/craft-workspace-ready`,
+    input.sessionId,
+  );
 }
 
 /**

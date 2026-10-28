@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { createAsyncSubmitService } from "../src/billing/async-job-submit";
 import {
   attachAsyncJobProviderId,
@@ -8,9 +13,7 @@ import {
   readAsyncJob,
   readAsyncJobByProviderJobId,
 } from "../src/billing/async-job-identity";
-import {
-  createCreditReserveService,
-} from "../src/billing/credit-reserve";
+import { createCreditReserveService } from "../src/billing/credit-reserve";
 import { createCreditWriter } from "../src/billing/credits-writer";
 import { createPayerAccount } from "../src/billing/payer";
 import { resolveLockedReservationBasis } from "../src/billing/reserve-bound";
@@ -27,7 +30,10 @@ import {
   gatewayModelOpenScopes,
   payerAccounts,
 } from "../src/db/schema";
-import { asyncJobs, creditReservations } from "../src/db/schema/credit-reservations";
+import {
+  asyncJobs,
+  creditReservations,
+} from "../src/db/schema/credit-reservations";
 import { GATEWAY_CATALOG_SYNC_STATE_ID } from "../src/gateway/catalog-sync";
 import { TEST_POOL, testDatabaseUrl } from "./support/database";
 
@@ -92,7 +98,10 @@ function makeDispatch(behavior: "answer" | "lose") {
   const dispatch = async (_input: { jobId: string }) => {
     calls += 1;
     return behavior === "answer"
-      ? ({ kind: "answered", providerJobId: `prov-job-325-${++dispatchCounter}` } as const)
+      ? ({
+          kind: "answered",
+          providerJobId: `prov-job-325-${++dispatchCounter}`,
+        } as const)
       : ({ kind: "lost", reason: "response_timeout" } as const);
   };
   return { dispatch, calls: () => calls };
@@ -238,7 +247,12 @@ afterAll(async () => {
   await database.delete(asyncJobs).where(like(asyncJobs.grantId, `${prefix}%`));
   await database
     .delete(creditReservations)
-    .where(like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`));
+    .where(
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
+    );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
@@ -254,10 +268,18 @@ afterAll(async () => {
   await database.execute(
     sql`DELETE FROM billing_customers WHERE external_id LIKE ${`openbot-personal-${prefix}%`}`,
   );
-  await database.delete(accessGrants).where(like(accessGrants.grantId, `${prefix}%`));
-  await database.delete(botServices).where(like(botServices.botId, `${prefix}%`));
-  await database.delete(gatewayModelCatalogRefs).where(like(gatewayModelCatalogRefs.provider, `${prefix}%`));
-  await database.delete(gatewayModelOpenScopes).where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
+  await database
+    .delete(accessGrants)
+    .where(like(accessGrants.grantId, `${prefix}%`));
+  await database
+    .delete(botServices)
+    .where(like(botServices.botId, `${prefix}%`));
+  await database
+    .delete(gatewayModelCatalogRefs)
+    .where(like(gatewayModelCatalogRefs.provider, `${prefix}%`));
+  await database
+    .delete(gatewayModelOpenScopes)
+    .where(like(gatewayModelOpenScopes.provider, `${prefix}%`));
 });
 
 describe("B17.1 (#325) async job identity", () => {
@@ -343,7 +365,9 @@ describe("B17.1 (#325) async job identity", () => {
       expect(attached.alreadyKnown).toBe(false);
       expect(attached.job.state).toBe("submitted");
       expect(attached.job.providerJobId).toBe("prov-job-325-late-answer");
-      expect(attached.job.dispatchedAt).toEqual(new Date("2026-10-21T12:00:00Z"));
+      expect(attached.job.dispatchedAt).toEqual(
+        new Date("2026-10-21T12:00:00Z"),
+      );
     }
     expect(
       (await readAsyncJobByProviderJobId(database, "prov-job-325-late-answer"))

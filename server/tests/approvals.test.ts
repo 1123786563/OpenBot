@@ -20,7 +20,6 @@ import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 
 const nodeRequire = createRequire(import.meta.url);
 
-
 const context = {
   runId: "run",
   threadId: "thread",

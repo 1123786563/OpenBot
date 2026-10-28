@@ -168,7 +168,11 @@ function ScheduleRow({
   });
   const remove = useMutation({
     mutationFn: () =>
-      deleteWorkshopSchedule(channelId, schedule.id, workshopScopePair(rowScope)),
+      deleteWorkshopSchedule(
+        channelId,
+        schedule.id,
+        workshopScopePair(rowScope),
+      ),
     onSuccess: onChanged,
   });
   const enabled = schedule.status === "enabled";

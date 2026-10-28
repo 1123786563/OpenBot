@@ -1,5 +1,11 @@
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, spyOn, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from "../../tests/support/e2e-compat";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";

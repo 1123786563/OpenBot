@@ -24,7 +24,13 @@
 // 结构（新文件优先；既有文件只动三处授权点：migrate-test.ts 追加任务 /
 // migration-tool.test.ts 断言行+裁决 / schema barrel 追加 1 行）。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/e2e-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";

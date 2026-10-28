@@ -552,7 +552,9 @@ async function until(
   throw new Error(`condition not reached: ${what}`);
 }
 
-test("a judge call aborted mid-dial by the task's cancellation keeps its hold reserved and records cancelled evidence (FREV-05)", { timeout: 30_000 }, async () => {
+test("a judge call aborted mid-dial by the task's cancellation keeps its hold reserved and records cancelled evidence (FREV-05)", {
+  timeout: 30_000,
+}, async () => {
   const customer = `${prefix}-aborted-judge`;
   await grant(customer, 20_000);
 
@@ -621,7 +623,12 @@ test("a judge call aborted mid-dial by the task's cancellation keeps its hold re
       inputTokens: 10,
       outputTokens: 20,
     }),
-    billing: { creditWriter: writer, outbox, policy, externalCustomerId: customer },
+    billing: {
+      creditWriter: writer,
+      outbox,
+      policy,
+      externalCustomerId: customer,
+    },
   });
   const worker = createObservationExecutionWorker({
     database,

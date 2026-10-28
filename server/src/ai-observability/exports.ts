@@ -40,11 +40,7 @@ import { createWorkQueue, type WorkQueue } from "../work/queue";
 import type { OpikConfig } from "./config";
 import type { ObservationScope } from "./contracts";
 import type { OpikPort, OpikPortResult, OpikTraceRow } from "./opik-port";
-import {
-  adoptLocalState,
-  projectRow,
-  type RunSummary,
-} from "./queries/runs";
+import { adoptLocalState, projectRow, type RunSummary } from "./queries/runs";
 import { notPendingDeletion } from "./retention";
 import { assertObservationScope, resolveStorageLocator } from "./scope";
 

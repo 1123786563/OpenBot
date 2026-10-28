@@ -452,7 +452,7 @@ export function createGroupMembershipService(channels: {
             ),
           )
           .limit(1);
-        if (!invitee || invitee.status !== "active") {
+        if (invitee?.status !== "active") {
           return notFoundVerdict();
         }
         await tx
@@ -540,7 +540,7 @@ export function createGroupMembershipService(channels: {
             ),
           )
           .limit(1);
-        if (!bot || bot.status !== "active") return notFoundVerdict();
+        if (bot?.status !== "active") return notFoundVerdict();
         const seatManager =
           bot.ownerPrincipalId === scope.principalId || facts.companyAdmin;
         if (!seatManager) {
@@ -656,7 +656,7 @@ export function createGroupMembershipService(channels: {
           { key: groupLockKey(scope.tenantId, groupId), exclusive: false },
         ]);
         const facts = await readGroupFacts(tx, scope, groupId);
-        if (!facts || !facts.isMember) return notFoundVerdict();
+        if (!facts?.isMember) return notFoundVerdict();
         // 成员计数与席位清点走 operator 通道：data 通道的 grants
         // self_read restrictive 策略只放行本人行（MT008 设计——grants 是
         // 个人事实），而成员面/席位面是群级事实，operator 读策略无此限制。

@@ -143,7 +143,10 @@ const SERVER_LOG = process.env.CRAFT_ACCEPTANCE_SERVER_LOG ?? "";
  * 「票面 AC 回勾」只认这里归档的产物。CRAFT_ACCEPTANCE_SHOT_DIR 仍可覆盖
  * （本地调试想落到别处时用）。
  */
-const VERIFICATION_STAMP = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
+const VERIFICATION_STAMP = new Date()
+  .toISOString()
+  .replace(/:/g, "-")
+  .replace(/\..+/, "");
 const SHOT_DIR =
   process.env.CRAFT_ACCEPTANCE_SHOT_DIR ??
   `.archive/runs/craft-preview/verification/${VERIFICATION_STAMP}`;
@@ -185,8 +188,7 @@ const PREVIEW_ORIGIN_OVERRIDE =
  * WHATWG 序列化丢弃）；dev profile 下恒为 http://127.0.0.1:<API 端口>，
  * override 非空即拒绝（防把 same-site 的地址拼进跨站断言里）。
  */
-const PREVIEW_BASE =
-  TOPOLOGY === "same-site" ? PREVIEW_ORIGIN_OVERRIDE : "";
+const PREVIEW_BASE = TOPOLOGY === "same-site" ? PREVIEW_ORIGIN_OVERRIDE : "";
 if (TOPOLOGY === "same-site" && PREVIEW_BASE === "") {
   throw new Error(
     "same-site profile 需要 CRAFT_ACCEPTANCE_PREVIEW_ORIGIN（host-form preview 基准地址，如 https://preview.localhost —— label 会拼为子域）",
@@ -281,7 +283,8 @@ function hmrWsUrl(label: string): string {
   // dev 形态挂在 /<label> basePath 下。注意 dev 不能用 expectOrigin(label)（它已含
   // label 路径，再拼 basePath 会双 label —— run10 实测 ws=…/label/label/_next/
   // webpack-hmr，FAIL 归因于此）；base 用裸 PREVIEW_ORIGIN。
-  const origin = TOPOLOGY === "same-site" ? expectOrigin(label) : PREVIEW_ORIGIN;
+  const origin =
+    TOPOLOGY === "same-site" ? expectOrigin(label) : PREVIEW_ORIGIN;
   const basePath = TOPOLOGY === "same-site" ? "" : `/${label}`;
   return `${origin.replace(/^http/, "ws")}${basePath}/_next/webpack-hmr`;
 }
@@ -368,7 +371,11 @@ function writeSummary(verdictNotes: string): void {
           : "pass";
     acResults[ac] = {
       status,
-      steps: steps.map((s) => ({ name: s.name, kind: s.kind, detail: s.detail })),
+      steps: steps.map((s) => ({
+        name: s.name,
+        kind: s.kind,
+        detail: s.detail,
+      })),
     };
   }
   const setupSteps = results
@@ -378,9 +385,8 @@ function writeSummary(verdictNotes: string): void {
   let codeCommit: string | null = null;
   try {
     codeCommit =
-      Bun.spawnSync(["git", "rev-parse", "HEAD"])
-        .stdout.toString()
-        .trim() || null;
+      Bun.spawnSync(["git", "rev-parse", "HEAD"]).stdout.toString().trim() ||
+      null;
   } catch {
     codeCommit = null;
   }
@@ -397,7 +403,10 @@ function writeSummary(verdictNotes: string): void {
     }
   }
 
-  const counts = { pass: 0, fail: 0, skip: 0, finding: 0 } as Record<string, number>;
+  const counts = { pass: 0, fail: 0, skip: 0, finding: 0 } as Record<
+    string,
+    number
+  >;
   for (const r of results) counts[r.kind] += 1;
 
   const screenshots = readdirSync(SHOT_DIR).filter((f) => f.endsWith(".png"));
@@ -413,7 +422,10 @@ function writeSummary(verdictNotes: string): void {
     screenshots,
     server_log_slice: serverLogSlice,
   };
-  writeFileSync(`${SHOT_DIR}/summary.json`, `${JSON.stringify(summary, null, 1)}\n`);
+  writeFileSync(
+    `${SHOT_DIR}/summary.json`,
+    `${JSON.stringify(summary, null, 1)}\n`,
+  );
   log(`summary.json → ${SHOT_DIR}/summary.json`);
 }
 
@@ -425,13 +437,15 @@ function writeSummary(verdictNotes: string): void {
  * （经 step 的 catch → record）。替换幂等：ticket=<redacted> 再过一遍不变。
  */
 function redactTicket(text: string): string {
-  return text
-    .replace(/ticket=[^&\s"']+/g, "ticket=<redacted>")
-    // 红线补丁（fix-ocr18 #16）：JSON 字段形态的票据值。一旦断言把
-    // JSON.stringify 过的响应体带进日志（"ticket":"<活体值>"），上面的
-    // query 形态盖不住它 —— 票据不得进任何日志字段，两种形态都要兜底。
-    // 替换幂等："<redacted>" 再过一遍不变。
-    .replace(/("ticket"\s*:\s*)"[^"]*"/g, '$1"<redacted>"');
+  return (
+    text
+      .replace(/ticket=[^&\s"']+/g, "ticket=<redacted>")
+      // 红线补丁（fix-ocr18 #16）：JSON 字段形态的票据值。一旦断言把
+      // JSON.stringify 过的响应体带进日志（"ticket":"<活体值>"），上面的
+      // query 形态盖不住它 —— 票据不得进任何日志字段，两种形态都要兜底。
+      // 替换幂等："<redacted>" 再过一遍不变。
+      .replace(/("ticket"\s*:\s*)"[^"]*"/g, '$1"<redacted>"')
+  );
 }
 
 function log(line: string) {
@@ -919,7 +933,9 @@ async function killPortOccupant(port: number, tag: string): Promise<void> {
   const code = await proc.exited;
   const killed = await new Response(proc.stdout).text().catch(() => "");
   if (code !== 0) {
-    log(`[${tag}] 清理端口 ${port} 占用者时 docker exec 退出码 ${code}（继续：可能本就无占用）`);
+    log(
+      `[${tag}] 清理端口 ${port} 占用者时 docker exec 退出码 ${code}（继续：可能本就无占用）`,
+    );
   } else if (killed.includes("killed")) {
     log(`[${tag}] 已清理占用预留端口 ${port} 的孤儿 dev server 进程`);
   }
@@ -1371,10 +1387,7 @@ try {
       // 成 //api/probe 双斜杠形态，最终以 5×60s 就绪门慢失败收场且误指
       // nextjs.log 尾部 —— 形状断言前移到安装之前（下方 D7 步骤同款），
       // fail-fast 把真实原因（webapp_url 异常）留在报错里。
-      assert(
-        LABEL_SHAPE.test(label),
-        `label 形状异常（webapp_url=${origin}）`,
-      );
+      assert(LABEL_SHAPE.test(label), `label 形状异常（webapp_url=${origin}）`);
       await installProbeApp({ id: row.id, port: row.nextjs_port, label }, tag);
       const info = await api.craft(`sessions/${row.id}/webapp-info`);
       assert(
@@ -1713,9 +1726,12 @@ try {
             wsStatus = event.response.status;
           },
         );
-        cdp.on("Network.webSocketFrameError", (event: { errorMessage: string }) => {
-          wsFrameError = event.errorMessage;
-        });
+        cdp.on(
+          "Network.webSocketFrameError",
+          (event: { errorMessage: string }) => {
+            wsFrameError = event.errorMessage;
+          },
+        );
         await cdp.send("Network.enable");
         const hmrOutcome = await fpage.evaluate(
           (wsUrl) =>
@@ -2133,7 +2149,9 @@ try {
         pathHits.length > 0,
         "server 日志新增行未观测到该次请求（增量窗口内无该路径记录）——请求未达主站，无从判决",
       );
-      const refused403 = pathHits.filter((line) => line.includes('"status":403'));
+      const refused403 = pathHits.filter((line) =>
+        line.includes('"status":403'),
+      );
       assert(
         refused403.length > 0,
         `同 site 凭证写未被拒绝（增量窗口内无 403）：${sent}——主站 cookie 在 same-site 拓扑下会随行，这是 #410 要扣住的写面`,
@@ -2144,7 +2162,7 @@ try {
         line.includes("cookie-authenticated write refused by origin"),
       );
       assert(
-        guardLine !== undefined && guardLine.includes('"verdict":"preview"'),
+        guardLine?.includes('"verdict":"preview"'),
         `403 但非 #410 origin-guard 判决（无 verdict:preview 的 warn 行）——需归因：${guardLine?.slice(0, 160) ?? "（无 guard warn 行）"}`,
       );
       return `同 site（${previewHost} → ${mainHost}）凭证写 ${sent} → server 日志 403 ×${refused403.length} + guard verdict=preview（主站 cookie 随行但被服务端扣住）`;
@@ -2281,30 +2299,28 @@ try {
       assert(previewPage, "前置失败");
       hmrFrames = await previewPage.evaluate(
         (wsUrl) =>
-          new Promise<{ frames: string[]; wsUrl: string }>(
-            (resolve) => {
-              const frames: string[] = [];
-              // fix-ocr25 #5：完整地址由脚本侧 hmrWsUrl 派生后作为实参传入
-              // —— 页面内不再各自从 location 拼接（fix-ocr21 #1 的修复曾
-              // 被迫在两处 socket 各打一遍，正是该重复的实证风险）。
-              const ws = new WebSocket(wsUrl);
-              const finish = () => resolve({ frames, wsUrl: ws.url });
-              ws.onmessage = (event) => {
-                frames.push(String(event.data).slice(0, 120));
-                if (frames.length >= 3) {
-                  ws.close();
-                  finish();
-                }
-              };
-              ws.onerror = () => resolve({ frames, wsUrl: ws.url });
-              setTimeout(() => {
-                try {
-                  ws.close();
-                } catch {}
+          new Promise<{ frames: string[]; wsUrl: string }>((resolve) => {
+            const frames: string[] = [];
+            // fix-ocr25 #5：完整地址由脚本侧 hmrWsUrl 派生后作为实参传入
+            // —— 页面内不再各自从 location 拼接（fix-ocr21 #1 的修复曾
+            // 被迫在两处 socket 各打一遍，正是该重复的实证风险）。
+            const ws = new WebSocket(wsUrl);
+            const finish = () => resolve({ frames, wsUrl: ws.url });
+            ws.onmessage = (event) => {
+              frames.push(String(event.data).slice(0, 120));
+              if (frames.length >= 3) {
+                ws.close();
                 finish();
-              }, 20_000);
-            },
-          ),
+              }
+            };
+            ws.onerror = () => resolve({ frames, wsUrl: ws.url });
+            setTimeout(() => {
+              try {
+                ws.close();
+              } catch {}
+              finish();
+            }, 20_000);
+          }),
         hmrWsUrl(sessionA.label),
       );
       assert(
@@ -2625,10 +2641,7 @@ try {
         if (r.status === 200) recovered = true;
         else await new Promise((r2) => setTimeout(r2, 2_000));
       }
-      assert(
-        recovered,
-        `重拉后预览未恢复 200（last=${lastUp}）`,
-      );
+      assert(recovered, `重拉后预览未恢复 200（last=${lastUp}）`);
       await shot("10-webapp-restart-attach", previewPage);
       return "停服 503 → 重拉 → 同一预览地址 200（附着不双进程）";
     },
@@ -2678,7 +2691,9 @@ try {
       });
       await api.craft(`sessions/${id}`, { method: "DELETE" }).catch(() => {});
     }
-    log(`已停并删除 ${cleanupIds.length} 个探针会话（CLEANUP=1，pendingIds 与创建范围对齐）`);
+    log(
+      `已停并删除 ${cleanupIds.length} 个探针会话（CLEANUP=1，pendingIds 与创建范围对齐）`,
+    );
   }
   const counts = { pass: 0, fail: 0, skip: 0, finding: 0 } as Record<
     string,

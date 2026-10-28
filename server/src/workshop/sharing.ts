@@ -194,7 +194,9 @@ export function createShareService(options: {
         input.expiresInDays !== undefined &&
         (!Number.isInteger(input.expiresInDays) || input.expiresInDays <= 0)
       )
-        throw new Error("expiresInDays must be a positive whole number of days.");
+        throw new Error(
+          "expiresInDays must be a positive whole number of days.",
+        );
       const expiresAt =
         input.expiresInDays !== undefined
           ? new Date(now().getTime() + input.expiresInDays * 86_400_000)

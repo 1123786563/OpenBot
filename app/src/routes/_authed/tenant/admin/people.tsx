@@ -40,13 +40,20 @@ function PeoplePage() {
   const scope = useScopedCache();
 
   const people = useQuery(companyPeopleQueryOptions(queryClient, scope));
-  const promote = useMutation(companyPromoteMutationOptions(queryClient, scope));
+  const promote = useMutation(
+    companyPromoteMutationOptions(queryClient, scope),
+  );
   const demote = useMutation(companyDemoteMutationOptions(queryClient, scope));
-  const offboard = useMutation(companyOffboardMutationOptions(queryClient, scope));
+  const offboard = useMutation(
+    companyOffboardMutationOptions(queryClient, scope),
+  );
 
   return (
     <>
-      <SectionPage title={t("people.title")} description={t("people.description")}>
+      <SectionPage
+        title={t("people.title")}
+        description={t("people.description")}
+      >
         {people.isPending ? (
           <TableSkeleton />
         ) : people.error instanceof CompanyAdminRefusedError ? (
@@ -147,7 +154,9 @@ function CredentialsSection() {
   const { t } = useTranslation("company-admin");
   const queryClient = useQueryClient();
   const scope = useScopedCache();
-  const credentials = useQuery(companyCredentialsQueryOptions(queryClient, scope));
+  const credentials = useQuery(
+    companyCredentialsQueryOptions(queryClient, scope),
+  );
 
   return (
     <SectionPage
@@ -174,7 +183,10 @@ function CredentialsSection() {
           label={t("credentials.title")}
         >
           {credentials.data.credentials.map((credential) => (
-            <tr className="border-border border-t" key={credential.credentialId}>
+            <tr
+              className="border-border border-t"
+              key={credential.credentialId}
+            >
               <td className="px-4 py-2">{credential.label}</td>
               <td className="px-4 py-2 whitespace-nowrap">
                 {t(`credentials.classification.${credential.classification}`)}

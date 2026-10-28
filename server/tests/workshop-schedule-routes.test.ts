@@ -58,7 +58,9 @@ function fakeStore() {
       [...schedules.values()].filter(
         (row) => row.sessionId === sessionId && row.status !== "deleted",
       ),
-    createSchedule: async (input: Omit<ScheduleRow, "status" | "lastRunAt" | "createdAt">) => {
+    createSchedule: async (
+      input: Omit<ScheduleRow, "status" | "lastRunAt" | "createdAt">,
+    ) => {
       schedules.set(input.id, {
         ...input,
         status: "enabled",
@@ -161,20 +163,26 @@ describe("schedule CRUD routes (B17b)", () => {
     const { id } = (await created.json()) as { id: string };
     expect(schedules.get(id)?.nextRunAt).not.toBeNull();
 
-    const paused = await app.request(`http://x/api/workshop/ch_1/schedules/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled: false }),
-    });
+    const paused = await app.request(
+      `http://x/api/workshop/ch_1/schedules/${id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      },
+    );
     expect(paused.status).toBe(200);
     expect(schedules.get(id)?.status).toBe("paused");
     expect(schedules.get(id)?.nextRunAt).toBeNull();
 
-    const resumed = await app.request(`http://x/api/workshop/ch_1/schedules/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled: true }),
-    });
+    const resumed = await app.request(
+      `http://x/api/workshop/ch_1/schedules/${id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      },
+    );
     expect(resumed.status).toBe(200);
     expect(schedules.get(id)?.status).toBe("enabled");
     expect(schedules.get(id)?.nextRunAt).not.toBeNull();
@@ -184,12 +192,20 @@ describe("schedule CRUD routes (B17b)", () => {
     const { app } = makeApp();
     await app.request(
       "http://x/api/workshop/ch_1/schedules",
-      POST({ prompt: "x", mode: { kind: "interval", every: 30, unit: "minutes" } }),
+      POST({
+        prompt: "x",
+        mode: { kind: "interval", every: 30, unit: "minutes" },
+      }),
     );
     const listed = await app.request("http://x/api/workshop/ch_1/schedules");
     expect(listed.status).toBe(200);
     const body = (await listed.json()) as {
-      schedules: Array<{ id: string; rrule: string; status: string; nextRunAt: string | null }>;
+      schedules: Array<{
+        id: string;
+        rrule: string;
+        status: string;
+        nextRunAt: string | null;
+      }>;
       runs: unknown[];
     };
     expect(body.schedules).toHaveLength(1);
@@ -206,14 +222,19 @@ describe("schedule CRUD routes (B17b)", () => {
       POST({ prompt: "x", mode: { kind: "daily", time: "09:00" } }),
     );
     const { id } = (await created.json()) as { id: string };
-    const removed = await app.request(`http://x/api/workshop/ch_1/schedules/${id}`, {
-      method: "DELETE",
-    });
+    const removed = await app.request(
+      `http://x/api/workshop/ch_1/schedules/${id}`,
+      {
+        method: "DELETE",
+      },
+    );
     expect(removed.status).toBe(200);
     expect(schedules.get(id)?.status).toBe("deleted");
     expect(schedules.get(id)?.nextRunAt).toBeNull();
     // And the list no longer shows it.
     const listed = await app.request("http://x/api/workshop/ch_1/schedules");
-    expect(((await listed.json()) as { schedules: unknown[] }).schedules).toHaveLength(0);
+    expect(
+      ((await listed.json()) as { schedules: unknown[] }).schedules,
+    ).toHaveLength(0);
   });
 });

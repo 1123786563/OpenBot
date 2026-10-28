@@ -68,14 +68,17 @@ export function createStreamAuthorizer(deps: {
     }
     // The session guard, applied by hand because middleware does not run on an upgrade. An
     // unauthenticated socket here would be the whole point of the proxy defeated.
-    const actor = await deps.resolveRequestActor(request).catch(
-      (error: unknown) => {
+    const actor = await deps
+      .resolveRequestActor(request)
+      .catch((error: unknown) => {
         // A session-store outage must be visible as itself: folding it into "not signed
         // in" tells the caller to log in again and hides the incident.
-        log.warn({ err: error }, "Could not resolve the computer stream actor.");
+        log.warn(
+          { err: error },
+          "Could not resolve the computer stream actor.",
+        );
         return null;
-      },
-    );
+      });
     if (!actor) {
       return { kind: "refuse", status: 401, message: "Sign in first." };
     }

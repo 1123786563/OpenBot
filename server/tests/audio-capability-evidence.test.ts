@@ -77,7 +77,9 @@ function audioPricedDims(): PriceSnapshotDims {
 test("the registry enumerates the gateway's actual audio routes with their anchors", () => {
   const entrances = AUDIO_CAPABILITY_EVIDENCE.filter((record) => record.exists);
   expect(
-    entrances.map((record) => `${record.path}${record.stream ? " (stream)" : ""}`),
+    entrances.map(
+      (record) => `${record.path}${record.stream ? " (stream)" : ""}`,
+    ),
   ).toEqual([
     "/v1/audio/transcriptions",
     "/v1/audio/transcriptions (stream)",
@@ -98,7 +100,9 @@ test("the registry enumerates the gateway's actual audio routes with their ancho
   // No (path, stream) identity twice: a duplicate row would be an enumeration bug the
   // same way a missing one would.
   const identities = new Set(
-    AUDIO_CAPABILITY_EVIDENCE.map((record) => `${record.path}:${record.stream}`),
+    AUDIO_CAPABILITY_EVIDENCE.map(
+      (record) => `${record.path}:${record.stream}`,
+    ),
   );
   expect(identities.size).toBe(AUDIO_CAPABILITY_EVIDENCE.length);
 });
@@ -152,7 +156,9 @@ test("every record carries closed-vocabulary dimensions, boundary evidence, and 
       record.verification.environment,
     );
     for (const command of record.verification.commands) {
-      const file = command.split(" ").find((token) => token.includes("/tests/"));
+      const file = command
+        .split(" ")
+        .find((token) => token.includes("/tests/"));
       expect(file).toBeDefined();
       expect(existsSync(resolve(ROOT, file!))).toBe(true);
     }
@@ -191,11 +197,10 @@ test("on the v1 wire no audio path is enableable — and the gaps are visible", 
 test("a basis that prices the recognition dimensions enables exactly that path", () => {
   const enableable = enableableAudioPaths(audioPricedDims());
   expect(
-    enableable.map((record) => `${record.path}${record.stream ? " (stream)" : ""}`),
-  ).toEqual([
-    "/v1/audio/transcriptions",
-    "/v1/audio/transcriptions (stream)",
-  ]);
+    enableable.map(
+      (record) => `${record.path}${record.stream ? " (stream)" : ""}`,
+    ),
+  ).toEqual(["/v1/audio/transcriptions", "/v1/audio/transcriptions (stream)"]);
   // Speech stays unenabled even on this basis: its tier table is what a future wire
   // field would fill, and the honest answer today is the empty table (13.1's own
   // constructor), recorded as the missing item — not a presumed rate.
@@ -203,6 +208,10 @@ test("a basis that prices the recognition dimensions enables exactly that path",
     (gap) => gap.path === "/v1/audio/speech",
   );
   expect(speechGap?.missingItems).toEqual([
-    { code: "no_wire_price_source", detail: "speech tier table is empty by construction (speechTierPriceTableFromSnapshot)" },
+    {
+      code: "no_wire_price_source",
+      detail:
+        "speech tier table is empty by construction (speechTierPriceTableFromSnapshot)",
+    },
   ]);
 });

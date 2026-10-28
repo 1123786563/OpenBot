@@ -41,9 +41,7 @@ export function assertEnterpriseRoleCatalogRows(
   ] as const;
   return value.map((row, index) => {
     if (typeof row !== "object" || row === null) {
-      throw new Error(
-        `Enterprise role catalog row ${index} is not an object.`,
-      );
+      throw new Error(`Enterprise role catalog row ${index} is not an object.`);
     }
     const record = row as Record<string, unknown>;
     if (typeof record.rolname !== "string") {

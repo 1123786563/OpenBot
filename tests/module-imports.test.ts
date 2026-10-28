@@ -28,8 +28,8 @@ const realConfig = (): CheckConfig =>
  */
 function makeFixture(
   files: Record<string, string>,
-  roots: ModuleRoot[],
-  scanRoots: string[],
+  _roots: ModuleRoot[],
+  _scanRoots: string[],
 ): { cwd: string; cleanup: () => void } {
   const cwd = mkdtempSync(join(tmpdir(), "mod01-imports-"));
   for (const [rel, content] of Object.entries(files)) {
@@ -64,7 +64,9 @@ describe("MOD01 import 检查器 — 正例", () => {
   });
 
   test("同模块 import 通过", () => {
-    const roots: ModuleRoot[] = [{ path: "modA", module: "MA", kind: "business" }];
+    const roots: ModuleRoot[] = [
+      { path: "modA", module: "MA", kind: "business" },
+    ];
     const { cwd, cleanup } = makeFixture(
       {
         "modA/a.ts": `import { b } from "./b";\nexport const a = b;\n`,
@@ -74,7 +76,11 @@ describe("MOD01 import 检查器 — 正例", () => {
       ["modA"],
     );
     try {
-      const config: CheckConfig = { version: 1, moduleRoots: roots, exceptions: [] };
+      const config: CheckConfig = {
+        version: 1,
+        moduleRoots: roots,
+        exceptions: [],
+      };
       const result = runCheck(config, { cwd, scanRoots: ["modA"] });
       expect(result.violations).toEqual([]);
       expect(result.ok).toBe(true);
@@ -97,7 +103,11 @@ describe("MOD01 import 检查器 — 正例", () => {
       ["modA", "shared"],
     );
     try {
-      const config: CheckConfig = { version: 1, moduleRoots: roots, exceptions: [] };
+      const config: CheckConfig = {
+        version: 1,
+        moduleRoots: roots,
+        exceptions: [],
+      };
       const result = runCheck(config, { cwd, scanRoots: ["modA", "shared"] });
       expect(result.violations).toEqual([]);
       expect(result.ok).toBe(true);
@@ -122,7 +132,11 @@ describe("MOD01 import 检查器 — 反例", () => {
       ["modA", "modB"],
     );
     try {
-      const config: CheckConfig = { version: 1, moduleRoots: roots, exceptions: [] };
+      const config: CheckConfig = {
+        version: 1,
+        moduleRoots: roots,
+        exceptions: [],
+      };
       const result = runCheck(config, { cwd, scanRoots: ["modA", "modB"] });
       expect(result.ok).toBe(false);
       expect(
@@ -149,12 +163,14 @@ describe("MOD01 import 检查器 — 反例", () => {
       ["modA", "modB"],
     );
     try {
-      const config: CheckConfig = { version: 1, moduleRoots: roots, exceptions: [] };
+      const config: CheckConfig = {
+        version: 1,
+        moduleRoots: roots,
+        exceptions: [],
+      };
       const result = runCheck(config, { cwd, scanRoots: ["modA", "modB"] });
       expect(result.ok).toBe(false);
-      expect(
-        result.violations.some((v) => v.category === "cycle"),
-      ).toBe(true);
+      expect(result.violations.some((v) => v.category === "cycle")).toBe(true);
       expect(result.cycles.length).toBeGreaterThan(0);
     } finally {
       cleanup();
@@ -174,12 +190,17 @@ describe("MOD01 import 检查器 — 反例", () => {
       ["modA", "unmapped"],
     );
     try {
-      const config: CheckConfig = { version: 1, moduleRoots: roots, exceptions: [] };
+      const config: CheckConfig = {
+        version: 1,
+        moduleRoots: roots,
+        exceptions: [],
+      };
       const result = runCheck(config, { cwd, scanRoots: ["modA", "unmapped"] });
       expect(result.ok).toBe(false);
       expect(
         result.violations.some(
-          (v) => v.category === "unknown-mapping" && v.target === "unmapped/x.ts",
+          (v) =>
+            v.category === "unknown-mapping" && v.target === "unmapped/x.ts",
         ),
       ).toBe(true);
     } finally {
@@ -188,7 +209,9 @@ describe("MOD01 import 检查器 — 反例", () => {
   });
 
   test("幻影例外（基线范围扩大）触发违规", () => {
-    const roots: ModuleRoot[] = [{ path: "modA", module: "MA", kind: "business" }];
+    const roots: ModuleRoot[] = [
+      { path: "modA", module: "MA", kind: "business" },
+    ];
     const { cwd, cleanup } = makeFixture(
       { "modA/a.ts": `export const a = 1;\n` },
       roots,

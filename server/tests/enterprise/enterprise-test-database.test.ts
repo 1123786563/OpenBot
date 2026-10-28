@@ -22,7 +22,11 @@ test("accepts every loopback enterprise test database named by the environment",
       }),
     ).toBe(url);
   }
-  for (const name of ["openbot", "another_db", "company_enterprise_prod_copy"]) {
+  for (const name of [
+    "openbot",
+    "another_db",
+    "company_enterprise_prod_copy",
+  ]) {
     expect(() =>
       enterpriseTestDatabaseUrlFrom({
         ENTERPRISE_TEST_SETUP_DATABASE_URL: `postgres://setup:unused@127.0.0.1:5434/${name}`,
@@ -61,7 +65,9 @@ test("falls back to the official TEST_DATABASE_URL when no setup URL is pinned",
     enterpriseTestDatabaseUrlFrom({
       TEST_DATABASE_URL: "postgres://openbot:unused@127.0.0.1:5432/openbot",
     }),
-  ).toThrow("TEST_DATABASE_URL must name an openbot_enterprise_* test database");
+  ).toThrow(
+    "TEST_DATABASE_URL must name an openbot_enterprise_* test database",
+  );
   expect(() =>
     enterpriseTestDatabaseUrlFrom({
       ENTERPRISE_TEST_SETUP_DATABASE_URL: `${officialSetup}#fragment`,
@@ -175,7 +181,8 @@ test("matches portless role and setup URLs through the default port", () => {
 });
 
 test("treats every loopback spelling as the same instance", () => {
-  const ipv6Setup = "postgres://openbot:unused@[::1]:5435/openbot_enterprise_test";
+  const ipv6Setup =
+    "postgres://openbot:unused@[::1]:5435/openbot_enterprise_test";
   expect(
     enterpriseRuntimeDatabaseUrlFrom("data", {
       TEST_DATABASE_URL: officialSetup,
@@ -204,9 +211,7 @@ test("parses CI and developer test logins and rejects unsafe ones", () => {
     parse("postgres://openbot:pw@127.0.0.1:5435/openbot_enterprise_test"),
   ).toThrow("must name an ent*-prefixed test login");
   expect(() =>
-    parse(
-      "postgres://ent_data:p w@127.0.0.1:5435/openbot_enterprise_test",
-    ),
+    parse("postgres://ent_data:p w@127.0.0.1:5435/openbot_enterprise_test"),
   ).toThrow("printable ASCII password");
   const seen = new Set(["ent_shared"]);
   expect(() =>
@@ -215,9 +220,9 @@ test("parses CI and developer test logins and rejects unsafe ones", () => {
       seen,
     ),
   ).toThrow("reuses login");
-  expect(() => parse("postgres://ent_data:@127.0.0.1:5435/openbot_enterprise_test")).toThrow(
-    "must carry the test login's password",
-  );
+  expect(() =>
+    parse("postgres://ent_data:@127.0.0.1:5435/openbot_enterprise_test"),
+  ).toThrow("must carry the test login's password");
 });
 
 test("validates setup identity without assuming the container's internal port", () => {

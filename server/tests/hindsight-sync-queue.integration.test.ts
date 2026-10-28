@@ -189,24 +189,28 @@ let queue: ReturnType<typeof createHindsightSyncQueue>;
 let service: ReturnType<typeof createPreferenceRecallService>;
 
 beforeAll(async () => {
-  await database.insert(users).values([
-    { id: `usr_person-${run}`, email: `person-${run}@example.invalid` },
-  ]);
-  await database.insert(enterpriseTenants).values([
-    { id: TENANT, name: `Acme ${run}` },
-  ]);
-  await database.insert(enterprisePrincipals).values([
-    { id: PRINCIPAL, userId: `usr_person-${run}` },
-  ]);
-  await database.insert(enterpriseMemberships).values([
-    { tenantId: TENANT, principalId: PRINCIPAL, role: "member" },
-  ]);
-  await database.insert(enterpriseWorkspaces).values([
-    { tenantId: TENANT, id: WORKSPACE, name: `Team ${run}` },
-  ]);
-  await database.insert(enterpriseWorkspaceMemberships).values([
-    { tenantId: TENANT, workspaceId: WORKSPACE, principalId: PRINCIPAL },
-  ]);
+  await database
+    .insert(users)
+    .values([
+      { id: `usr_person-${run}`, email: `person-${run}@example.invalid` },
+    ]);
+  await database
+    .insert(enterpriseTenants)
+    .values([{ id: TENANT, name: `Acme ${run}` }]);
+  await database
+    .insert(enterprisePrincipals)
+    .values([{ id: PRINCIPAL, userId: `usr_person-${run}` }]);
+  await database
+    .insert(enterpriseMemberships)
+    .values([{ tenantId: TENANT, principalId: PRINCIPAL, role: "member" }]);
+  await database
+    .insert(enterpriseWorkspaces)
+    .values([{ tenantId: TENANT, id: WORKSPACE, name: `Team ${run}` }]);
+  await database
+    .insert(enterpriseWorkspaceMemberships)
+    .values([
+      { tenantId: TENANT, workspaceId: WORKSPACE, principalId: PRINCIPAL },
+    ]);
 
   scripted = await bootScriptedHindsight();
   const config = {
@@ -260,9 +264,12 @@ async function pendingWorkCount(
 describe("Hindsight 07 (#384): states are durably recorded", () => {
   test("a confirm writes the authority row and a pending work row", async () => {
     const scope = await makeTrustedScope();
-    const { record, remoteSynced } = await service.confirmGenericPreference(scope, {
-      content: `已确认偏好 ${run}`,
-    });
+    const { record, remoteSynced } = await service.confirmGenericPreference(
+      scope,
+      {
+        content: `已确认偏好 ${run}`,
+      },
+    );
     expect(remoteSynced).toBe(true);
     expect(await pendingWorkCount(TENANT, "preference", record.id)).toBe(1);
 
@@ -307,9 +314,12 @@ describe("Hindsight 07 (#384): transient failure recovers, never lies", () => {
   test("a failed retain stays pending, reports failed, and resyncs after recovery", async () => {
     const scope = await makeTrustedScope();
     scripted.state.retainStatus = 500;
-    const { record, remoteSynced } = await service.confirmGenericPreference(scope, {
-      content: `失败后重试的偏好 ${run}`,
-    });
+    const { record, remoteSynced } = await service.confirmGenericPreference(
+      scope,
+      {
+        content: `失败后重试的偏好 ${run}`,
+      },
+    );
     expect(remoteSynced).toBe(false);
 
     // Pending before any attempt; failed — never "indexed" — after one.
@@ -401,7 +411,9 @@ describe("Hindsight 07 (#384): duplicates collapse, stale tasks cannot win", () 
       subjectType: "preference",
       subjectId: id,
       principalId: PRINCIPAL,
-      expectedDigest: createHash("sha256").update(`旧内容 ${run}`).digest("hex"),
+      expectedDigest: createHash("sha256")
+        .update(`旧内容 ${run}`)
+        .digest("hex"),
       state: "pending",
     });
 
@@ -541,9 +553,7 @@ describe("Hindsight 07 (#384): only confirmed, currently-authorized content is s
     await database
       .update(enterpriseWorkspaceMemberships)
       .set({ status: "suspended" })
-      .where(
-        eq(enterpriseWorkspaceMemberships.workspaceId, WORKSPACE),
-      );
+      .where(eq(enterpriseWorkspaceMemberships.workspaceId, WORKSPACE));
     scripted.retains.length = 0;
     const deferred = await queue.drain();
     expect(deferred.deferred).toBe(1);

@@ -1,7 +1,13 @@
 import "./preload";
 import "./home-fallback-routing.fixture";
 
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -53,7 +59,10 @@ function agent(
 // MOD19 / #639: the composer roster reads the scoped key under the personal prefix, and the
 // scope seam opens from the seeded current user — no fetch of /api/me is wanted here.
 const USER = "user-1";
-const rosterKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
+const rosterKey = [
+  ...selectionKeys.personalScope(USER),
+  ...agentKeys.list(false),
+];
 
 function queryClientWithAgents(agents: AgentProfile[]) {
   const queryClient = new QueryClient({

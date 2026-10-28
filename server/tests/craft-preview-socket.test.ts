@@ -23,7 +23,12 @@
 //
 // Steppable fake clock: expiry is tested by advancing it, never by sleeping.
 
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import {
   createPreviewOrigin,
   PREVIEW_PASS_REFUSAL,

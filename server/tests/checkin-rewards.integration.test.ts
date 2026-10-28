@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -70,7 +75,12 @@ const SECOND: AuthenticatedActor = {
 };
 
 /** Every payer id this run created accounts for, for the teardown. */
-const insertedPayerIds = [MEMBER.id, SECOND.id, `user-sang-${run}`, `user-di-${run}`];
+const insertedPayerIds = [
+  MEMBER.id,
+  SECOND.id,
+  `user-sang-${run}`,
+  `user-di-${run}`,
+];
 
 function requireUserAs(
   actor: AuthenticatedActor | undefined,
@@ -161,8 +171,18 @@ describe("a signin reward claim", () => {
     const body = (await response.json()) as {
       inserted: boolean;
       period: string;
-      grant: { id: string; source: string; total: number; externalCustomerId: string };
-      account: { id: string; kind: string; payerId: string; externalCustomerId: string };
+      grant: {
+        id: string;
+        source: string;
+        total: number;
+        externalCustomerId: string;
+      };
+      account: {
+        id: string;
+        kind: string;
+        payerId: string;
+        externalCustomerId: string;
+      };
     };
     // THE attribution property: the grant's account is the payer layer's answer for the session
     // user — derived on the server, never a key the request named (the request couldn't have).
@@ -190,16 +210,24 @@ describe("a signin reward claim", () => {
     const app = appAs(MEMBER);
     const first = await claim(app);
     expect(first.status).toBe(200);
-    const firstBody = (await first.json()) as { inserted: boolean; grant: { id: string } };
+    const firstBody = (await first.json()) as {
+      inserted: boolean;
+      grant: { id: string };
+    };
     // The first claim of this test is the period's replay of the test above: same period key.
     expect(firstBody.inserted).toBe(false);
     const replay = await claim(app);
     expect(replay.status).toBe(200);
-    const replayBody = (await replay.json()) as { inserted: boolean; grant: { id: string } };
+    const replayBody = (await replay.json()) as {
+      inserted: boolean;
+      grant: { id: string };
+    };
     expect(replayBody.inserted).toBe(false);
     expect(replayBody.grant.id).toBe(firstBody.grant.id);
 
-    const rows = await grantRowsOf(payerKey({ kind: "personal", id: MEMBER.id }));
+    const rows = await grantRowsOf(
+      payerKey({ kind: "personal", id: MEMBER.id }),
+    );
     expect(rows.length).toBe(1);
     const balance = await credits.personalBalance({
       kind: "personal",
@@ -212,11 +240,16 @@ describe("a signin reward claim", () => {
     const app = appAs(MEMBER, { now: NEXT_DAY });
     const response = await claim(app);
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { inserted: boolean; period: string };
+    const body = (await response.json()) as {
+      inserted: boolean;
+      period: string;
+    };
     expect(body.inserted).toBe(true);
     expect(body.period).toBe("2026-10-18");
 
-    const rows = await grantRowsOf(payerKey({ kind: "personal", id: MEMBER.id }));
+    const rows = await grantRowsOf(
+      payerKey({ kind: "personal", id: MEMBER.id }),
+    );
     expect(rows.length).toBe(2);
     const balance = await credits.personalBalance({
       kind: "personal",
@@ -237,9 +270,13 @@ describe("a signin reward claim", () => {
     expect(body.account.payerId).toBe(SECOND.id);
 
     // Yi's one grant is on yi's key; jia's books are untouched by it.
-    const yiRows = await grantRowsOf(payerKey({ kind: "personal", id: SECOND.id }));
+    const yiRows = await grantRowsOf(
+      payerKey({ kind: "personal", id: SECOND.id }),
+    );
     expect(yiRows.length).toBe(1);
-    const jiaRows = await grantRowsOf(payerKey({ kind: "personal", id: MEMBER.id }));
+    const jiaRows = await grantRowsOf(
+      payerKey({ kind: "personal", id: MEMBER.id }),
+    );
     expect(jiaRows.length).toBe(2);
     const jiaBalance = await credits.personalBalance({
       kind: "personal",
@@ -250,18 +287,27 @@ describe("a signin reward claim", () => {
 
   test("a body naming an account identity is a shape error, not a redirect", async () => {
     const app = appAs(MEMBER);
-    const before = await grantRowsOf(payerKey({ kind: "personal", id: SECOND.id }));
+    const before = await grantRowsOf(
+      payerKey({ kind: "personal", id: SECOND.id }),
+    );
     const forgeries = [
       { rewardType: "signin", userId: SECOND.id },
-      { rewardType: "signin", externalCustomerId: payerKey({ kind: "personal", id: SECOND.id }) },
+      {
+        rewardType: "signin",
+        externalCustomerId: payerKey({ kind: "personal", id: SECOND.id }),
+      },
     ];
     for (const forged of forgeries) {
       const response = await claim(app, forged);
       expect(response.status).toBe(400);
       // Nothing landed anywhere: the forgery never became a grant.
-      const after = await grantRowsOf(payerKey({ kind: "personal", id: SECOND.id }));
+      const after = await grantRowsOf(
+        payerKey({ kind: "personal", id: SECOND.id }),
+      );
       expect(after.length).toBe(before.length);
-      const mine = await grantRowsOf(payerKey({ kind: "personal", id: MEMBER.id }));
+      const mine = await grantRowsOf(
+        payerKey({ kind: "personal", id: MEMBER.id }),
+      );
       expect(mine.length).toBe(2);
     }
   });
@@ -274,7 +320,9 @@ describe("a signin reward claim", () => {
       `?userId=${encodeURIComponent(SECOND.id)}`,
     );
     expect(response.status).toBe(400);
-    const after = await grantRowsOf(payerKey({ kind: "personal", id: SECOND.id }));
+    const after = await grantRowsOf(
+      payerKey({ kind: "personal", id: SECOND.id }),
+    );
     expect(after.length).toBe(1);
   });
 
@@ -288,7 +336,9 @@ describe("a signin reward claim", () => {
     const body = (await response.json()) as {
       grants: { id: string; source: string; remaining: number }[];
     };
-    const signinGrants = body.grants.filter((grant) => grant.source === "signin");
+    const signinGrants = body.grants.filter(
+      (grant) => grant.source === "signin",
+    );
     expect(signinGrants).toHaveLength(2);
     expect(signinGrants.every((grant) => grant.remaining === 1)).toBe(true);
 
@@ -375,9 +425,15 @@ describe("the reward idempotency key", () => {
     expect(promo.inserted).toBe(true);
     expect(signin.grant.id).not.toBe(promo.grant.id);
     expect(signin.idempotencyKey).toBe(
-      rewardIdempotencyKey({ userId: di.id, rewardType: "signin", period: day }),
+      rewardIdempotencyKey({
+        userId: di.id,
+        rewardType: "signin",
+        period: day,
+      }),
     );
-    expect(signin.idempotencyKey.startsWith(`reward:signin:${day}:`)).toBe(true);
+    expect(signin.idempotencyKey.startsWith(`reward:signin:${day}:`)).toBe(
+      true,
+    );
     expect(promo.idempotencyKey.startsWith(`reward:promo:${day}:`)).toBe(true);
     const rows = await grantRowsOf(signin.account.externalCustomerId);
     expect(rows.length).toBe(2);

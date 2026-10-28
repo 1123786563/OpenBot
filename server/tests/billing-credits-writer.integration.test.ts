@@ -1,4 +1,9 @@
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { createCreditWriter } from "../src/billing/credits-writer";
@@ -481,9 +486,7 @@ describe("reservations", () => {
     await seedGrant(customer, 1_000, "expired-capacity");
     // Hold 700 of the 1000, then let time void it (the writer never writes a past expiry —
     // the row is aged the way a crashed finish would leave it).
-    const stuckId = reservedId(
-      await reserve(customer, "expired-stuck", 700),
-    );
+    const stuckId = reservedId(await reserve(customer, "expired-stuck", 700));
     await database.execute(
       sql`UPDATE credit_reservations SET expires_at = now() - interval '1 minute' WHERE id = ${stuckId}`,
     );

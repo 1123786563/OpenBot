@@ -2,12 +2,19 @@ import { describe, expect, test } from "../../tests/support/e2e-compat";
 import { createTurnOrchestrator } from "../src/workshop/orchestrator";
 import type { WorkshopStore, WorkshopTurnRow } from "../src/workshop/store";
 import type { TurnLease, TurnLock } from "../src/workshop/locks";
-import type { CodeRunGateway, StreamingRun, TranslatedEvent } from "../src/codesandbox/types";
+import type {
+  CodeRunGateway,
+  StreamingRun,
+  TranslatedEvent,
+} from "../src/codesandbox/types";
 
 /** An in-memory store honouring the guarded-transition semantics the orchestrator leans on. */
 function fakeStore() {
   const turns = new Map<string, WorkshopTurnRow>();
-  const events = new Map<string, Array<{ seq: number; type: string; payload: Record<string, unknown> }>>();
+  const events = new Map<
+    string,
+    Array<{ seq: number; type: string; payload: Record<string, unknown> }>
+  >();
   let nextIndex = 0;
   const guard = (id: string, from: string[]) =>
     turns.get(id) !== undefined && from.includes(turns.get(id)!.status);
@@ -35,7 +42,9 @@ function fakeStore() {
       } as never as Awaited<ReturnType<WorkshopStore["getOrCreateSession"]>>;
     },
     async sessionById(id: string) {
-      return id === "ws_ch" ? ({ id, botId: "bot_1", ownerUserId: "user_1" } as never) : undefined;
+      return id === "ws_ch"
+        ? ({ id, botId: "bot_1", ownerUserId: "user_1" } as never)
+        : undefined;
     },
     async touchSession() {},
     async insertArtifact() {
@@ -111,9 +120,17 @@ function fakeStore() {
       }
       return settled;
     },
-    async appendEvent(input: { turnId: string; type: string; payload: Record<string, unknown> }) {
+    async appendEvent(input: {
+      turnId: string;
+      type: string;
+      payload: Record<string, unknown>;
+    }) {
       const list = events.get(input.turnId) ?? [];
-      const row = { seq: list.length + 1, type: input.type, payload: input.payload };
+      const row = {
+        seq: list.length + 1,
+        type: input.type,
+        payload: input.payload,
+      };
       list.push(row);
       events.set(input.turnId, list);
       return row as never;
@@ -121,7 +138,10 @@ function fakeStore() {
     async readEventsSince(turnId: string, seq: number) {
       return (events.get(turnId) ?? []).filter((row) => row.seq > seq) as never;
     },
-  } as unknown as WorkshopStore & { turns: typeof turns; events: typeof events };
+  } as unknown as WorkshopStore & {
+    turns: typeof turns;
+    events: typeof events;
+  };
   return store;
 }
 
@@ -132,7 +152,7 @@ function fakeLock(mode: "memory" | "redis" = "memory") {
     async acquire(turnId) {
       if (held.has(turnId)) return null;
       held.add(turnId);
-      let lost = false;
+      const lost = false;
       return {
         token: `lease-${turnId}`,
         get lost() {
@@ -219,11 +239,15 @@ function fakeGateway(script: {
 }
 
 function fakeAudit() {
-  const events: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  const events: Array<{ eventType: string; payload: Record<string, unknown> }> =
+    [];
   return {
     events,
     store: {
-      async insert(event: { eventType: string; payload: Record<string, unknown> }) {
+      async insert(event: {
+        eventType: string;
+        payload: Record<string, unknown>;
+      }) {
         events.push(event);
       },
     } as never,
@@ -268,7 +292,10 @@ describe("turn orchestrator", () => {
     const types = store.events.get(turnId)?.map((event) => event.type);
     expect(types).toEqual(["progress", "message_chunk", "prompt_response"]);
     const auditTypes = audit.events.map((event) => event.eventType);
-    expect(auditTypes).toEqual(["workshop.turn_started", "workshop.turn_completed"]);
+    expect(auditTypes).toEqual([
+      "workshop.turn_started",
+      "workshop.turn_completed",
+    ]);
   });
 
   test("② cancel settles cancelled, audits, and cancels the in-flight stream", async () => {
@@ -294,7 +321,9 @@ describe("turn orchestrator", () => {
     await settle();
     expect(cancelled).toBe(true);
     expect(store.turns.get(turnId)?.status).toBe("cancelled");
-    expect(audit.events.map((e) => e.eventType)).toContain("workshop.turn_cancelled");
+    expect(audit.events.map((e) => e.eventType)).toContain(
+      "workshop.turn_cancelled",
+    );
     expect(cancels).toHaveLength(1); // the in-flight stream was told to stop
   });
 
@@ -314,13 +343,22 @@ describe("turn orchestrator", () => {
     expect(store.turns.get(turnId)?.status).toBe("running");
 
     // Age the heartbeat past the stale window.
-    store.turns.get(turnId)!.runnerHeartbeatAt = new Date(Date.now() - 10 * 60 * 1000);
-    const recovered = await orchestrator.recoverStale(Date.now(), 5 * 60 * 1000);
+    store.turns.get(turnId)!.runnerHeartbeatAt = new Date(
+      Date.now() - 10 * 60 * 1000,
+    );
+    const recovered = await orchestrator.recoverStale(
+      Date.now(),
+      5 * 60 * 1000,
+    );
     expect(recovered).toEqual([turnId]);
     expect(store.turns.get(turnId)?.status).toBe("failed");
-    expect(audit.events.map((e) => e.eventType)).toContain("workshop.turn_stale_recovered");
+    expect(audit.events.map((e) => e.eventType)).toContain(
+      "workshop.turn_stale_recovered",
+    );
     // Exactly once: a second sweep finds nothing.
-    expect(await orchestrator.recoverStale(Date.now(), 5 * 60 * 1000)).toEqual([]);
+    expect(await orchestrator.recoverStale(Date.now(), 5 * 60 * 1000)).toEqual(
+      [],
+    );
   });
 
   test("④ a held lock blocks the second runner: the turn runs once", async () => {
@@ -354,7 +392,9 @@ describe("turn orchestrator", () => {
     await settle();
     expect(started).toHaveLength(1); // the gateway WAS called: its code_runs row exists
     expect(store.turns.get(turnId)?.status).toBe("failed");
-    expect(audit.events.map((e) => e.eventType)).toContain("workshop.turn_failed");
+    expect(audit.events.map((e) => e.eventType)).toContain(
+      "workshop.turn_failed",
+    );
   });
 
   test("⑥ a broken lock refuses the turn: fail closed, lock_unavailable audited", async () => {
@@ -366,7 +406,10 @@ describe("turn orchestrator", () => {
         throw new Error("redis is down");
       },
     };
-    const { gateway, started } = fakeGateway({ events: [], ending: "complete" });
+    const { gateway, started } = fakeGateway({
+      events: [],
+      ending: "complete",
+    });
     const orchestrator = createTurnOrchestrator({
       store,
       lock: broken,
@@ -378,7 +421,9 @@ describe("turn orchestrator", () => {
     expect(started).toHaveLength(0);
     expect(store.turns.get(turnId)?.status).toBe("failed");
     expect(store.turns.get(turnId)?.error).toContain("lock");
-    expect(audit.events.map((e) => e.eventType)).toContain("workshop.lock_unavailable");
+    expect(audit.events.map((e) => e.eventType)).toContain(
+      "workshop.lock_unavailable",
+    );
   });
 
   test("⑦ a gateway explosion on startStreaming settles failed, not stuck", async () => {
@@ -395,6 +440,8 @@ describe("turn orchestrator", () => {
     const { turnId } = await orchestrator.enqueue(baseInput);
     await settle();
     expect(store.turns.get(turnId)?.status).toBe("failed");
-    expect(audit.events.map((e) => e.eventType)).toContain("workshop.turn_failed");
+    expect(audit.events.map((e) => e.eventType)).toContain(
+      "workshop.turn_failed",
+    );
   });
 });

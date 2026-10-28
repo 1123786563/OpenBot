@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
-import { Hono } from "hono";
+import type { Hono } from "hono";
 import { MAX_IMAGE_BYTES } from "@openbot/shared/attachments";
 import type { RunAssertion } from "./agents/callback-token";
 import type { BotLifecycleServices } from "./agents/lifecycle-routes";
@@ -45,12 +45,9 @@ import type { PageFrameStore } from "./computer/page-frames";
 import type { PolicyStore } from "./computer/policy-store";
 import type { DeploymentConfig } from "./config";
 import type { CraftRoutesFactory } from "./craft/routes";
-import type {
-  CredentialAdminService,
-  CredentialInput,
-} from "./credentials";
+import type { CredentialAdminService, CredentialInput } from "./credentials";
 import type { Database } from "./db/client";
-import {
+import type {
   createDeliveryRoutes,
   createDeliveryWebhookRoutes,
 } from "./delivery/routes";

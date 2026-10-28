@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { eq, like, sql } from "drizzle-orm";
-import { afterAll, describe, expect, test } from "../../tests/support/bun-test-compat";
 import {
-  createRealtimeSessionService,
-} from "../src/billing/realtime-session";
+  afterAll,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
+import { createRealtimeSessionService } from "../src/billing/realtime-session";
 import {
   createRealtimeUnitService,
   REALTIME_UNIT_ID_PREFIX,
@@ -95,17 +98,22 @@ type World = {
   provider: string;
   model: string;
   sessionId: string;
-  openBody: (unitKey: string, overrides?: Record<string, unknown>) => Record<string, unknown>;
+  openBody: (
+    unitKey: string,
+    overrides?: Record<string, unknown>,
+  ) => Record<string, unknown>;
 };
 
 let seedCounter = 0;
 
 /** One established session — the unit door's frozen admission basis. */
-async function seedSession(options: {
-  grantCreditsCents?: number;
-  grantStatus?: "active" | "revoked";
-  scopeState?: "open" | "closed";
-} = {}): Promise<World> {
+async function seedSession(
+  options: {
+    grantCreditsCents?: number;
+    grantStatus?: "active" | "revoked";
+    scopeState?: "open" | "closed";
+  } = {},
+): Promise<World> {
   const n = ++seedCounter;
   const userId = `${prefix}-user-${n}`;
   const botId = `${prefix}-bot-${n}`;
@@ -197,7 +205,9 @@ async function seedSession(options: {
     rateVersion: 0,
   });
   if (establishment.status !== "established") {
-    throw new Error(`fixture session did not establish: ${JSON.stringify(establishment)}`);
+    throw new Error(
+      `fixture session did not establish: ${JSON.stringify(establishment)}`,
+    );
   }
 
   return {
@@ -235,9 +245,7 @@ async function reservationRows(world: World) {
   return database
     .select({ id: creditReservations.id })
     .from(creditReservations)
-    .where(
-      eq(creditReservations.externalCustomerId, accountKey(world)),
-    );
+    .where(eq(creditReservations.externalCustomerId, accountKey(world)));
 }
 
 async function ledgerRows(world: World) {
@@ -247,8 +255,7 @@ async function ledgerRows(world: World) {
     .where(eq(creditLedger.externalCustomerId, accountKey(world)));
 }
 
-const unitService = () =>
-  createRealtimeUnitService({ database });
+const unitService = () => createRealtimeUnitService({ database });
 
 afterAll(async () => {
   // Units go first (their session FK); they are addressed through their sessions' grants.
@@ -261,7 +268,10 @@ afterAll(async () => {
   await database
     .delete(creditReservations)
     .where(
-      like(creditReservations.externalCustomerId, `openbot-personal-${prefix}%`),
+      like(
+        creditReservations.externalCustomerId,
+        `openbot-personal-${prefix}%`,
+      ),
     );
   await database.execute(
     sql`DELETE FROM credit_charge_remainders WHERE external_customer_id LIKE ${`openbot-personal-${prefix}%`}`,
@@ -297,8 +307,12 @@ describe("Bifrost 15.2 (#315): independent unit attempts over one account", () =
     const world = await seedSession();
     const service = unitService();
 
-    const first = await service.openUnit(world.openBody("unit-1", { kind: "input_audio" }));
-    const second = await service.openUnit(world.openBody("unit-2", { kind: "response" }));
+    const first = await service.openUnit(
+      world.openBody("unit-1", { kind: "input_audio" }),
+    );
+    const second = await service.openUnit(
+      world.openBody("unit-2", { kind: "response" }),
+    );
 
     expect(first.status).toBe("reserved");
     expect(second.status).toBe("reserved");
@@ -318,7 +332,7 @@ describe("Bifrost 15.2 (#315): independent unit attempts over one account", () =
 
     const holds = await reservationRows(world);
     expect(holds).toHaveLength(2);
-    expect((await ledgerRows(world))).toHaveLength(0);
+    expect(await ledgerRows(world)).toHaveLength(0);
   });
 
   test("balance for one unit only: the second unit is refused and holds nothing (票面步骤4, AC2, AC3)", async () => {
@@ -343,7 +357,7 @@ describe("Bifrost 15.2 (#315): independent unit attempts over one account", () =
 
     const holds = await reservationRows(world);
     expect(holds).toHaveLength(1);
-    expect((await ledgerRows(world))).toHaveLength(0);
+    expect(await ledgerRows(world)).toHaveLength(0);
     // And the refused unit never reaches processing.
     const move = await service.markProcessing(second.unit!.unitId);
     expect(move?.status).toBe("not_moved");
@@ -364,8 +378,8 @@ describe("Bifrost 15.2 (#315): independent unit attempts over one account", () =
     if (revoked.status !== "refused") return;
     expect(revoked.reasonCode).toBe("grant_invalid");
     expect(revoked.unit?.refusalReason).toBe("grant_invalid");
-    expect((await reservationRows(world))).toHaveLength(0);
-    expect((await ledgerRows(world))).toHaveLength(0);
+    expect(await reservationRows(world)).toHaveLength(0);
+    expect(await ledgerRows(world)).toHaveLength(0);
   });
 
   test("a mid-session scope close stops the next unit (model_not_open), the session row untouched", async () => {
@@ -387,7 +401,7 @@ describe("Bifrost 15.2 (#315): independent unit attempts over one account", () =
       .from(realtimeSessions)
       .where(eq(realtimeSessions.sessionId, world.sessionId));
     expect(sessionRow.state).toBe("open");
-    expect((await reservationRows(world))).toHaveLength(0);
+    expect(await reservationRows(world)).toHaveLength(0);
   });
 });
 
@@ -418,7 +432,9 @@ describe("Bifrost 15.2 (#315): the unit state machine", () => {
     const world = await seedSession();
     const service = unitService();
     await service.openUnit(world.openBody("unit-1"));
-    await service.openUnit(world.openBody("unit-2", { boundCents: 1_000_000_00 }));
+    await service.openUnit(
+      world.openBody("unit-2", { boundCents: 1_000_000_00 }),
+    );
     const rows = await unitRows(world.sessionId);
     for (const row of rows) {
       expect(row.state).not.toBe("pending");
@@ -455,7 +471,7 @@ describe("Bifrost 15.2 (#315): the unit state machine", () => {
     expect(replayRefused.unit?.reservationId).toBeNull();
 
     expect(await reservationRows(world)).toHaveLength(1);
-    expect((await unitRows(world.sessionId))).toHaveLength(2);
+    expect(await unitRows(world.sessionId)).toHaveLength(2);
   });
 });
 
@@ -464,7 +480,9 @@ describe("Bifrost 15.2 (#315): queryable, restorable unit state (AC4)", () => {
     const world = await seedSession();
     const first = unitService();
     const opened = await first.openUnit(world.openBody("unit-1"));
-    const refused = await first.openUnit(world.openBody("unit-2", { boundCents: 1_000_000_00 }));
+    const refused = await first.openUnit(
+      world.openBody("unit-2", { boundCents: 1_000_000_00 }),
+    );
     expect(opened.status).toBe("reserved");
     expect(refused.status).toBe("refused");
 
@@ -514,7 +532,7 @@ describe("Bifrost 15.2 (#315): the door's own refusal shapes", () => {
     expect(outcome.status).toBe("refused");
     if (outcome.status !== "refused") return;
     expect(outcome.reasonCode).toBe("session_not_open");
-    expect((await unitRows(world.sessionId))).toHaveLength(0);
+    expect(await unitRows(world.sessionId)).toHaveLength(0);
   });
 
   test("the request-shape discipline: closed fields, positive bound, mechanism evidence", async () => {
@@ -528,7 +546,9 @@ describe("Bifrost 15.2 (#315): the door's own refusal shapes", () => {
       [world.openBody("bad-5", { boundEvidence: [] }), "boundEvidence"],
       [
         world.openBody("bad-6", {
-          boundEvidence: [{ kind: "conservative_estimate", maximumTokens: 1000 }],
+          boundEvidence: [
+            { kind: "conservative_estimate", maximumTokens: 1000 },
+          ],
         }),
         "boundEvidence",
       ],
@@ -545,7 +565,9 @@ describe("Bifrost 15.2 (#315): the door's own refusal shapes", () => {
     expect(await unitRows(world.sessionId)).toHaveLength(0);
     // The whole kind set is open — every member admits.
     for (const kind of REALTIME_UNIT_KINDS) {
-      const outcome = await service.openUnit(world.openBody(`kind-${kind}`, { kind }));
+      const outcome = await service.openUnit(
+        world.openBody(`kind-${kind}`, { kind }),
+      );
       expect(outcome.status).toBe("reserved");
     }
   });

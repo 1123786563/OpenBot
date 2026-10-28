@@ -862,7 +862,13 @@ describe("GET /api/mobile/openmuse-calendar", () => {
       ],
       // The ring page re-serves only rows at-or-before the outbound cursor:
       // every fetched row sorts out of the keyset, so the page is EMPTY.
-      ["pt-loop", { events: [providerEvent({ id: "e-a", start: at })], nextToken: "pt-loop" }],
+      [
+        "pt-loop",
+        {
+          events: [providerEvent({ id: "e-a", start: at })],
+          nextToken: "pt-loop",
+        },
+      ],
     ]);
     const dial: CalendarWireDial = async (_path, init) => {
       const input =

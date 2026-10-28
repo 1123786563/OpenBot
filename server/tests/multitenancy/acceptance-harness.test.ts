@@ -15,7 +15,12 @@
  * coverage. No identity-matrix business case lives here (that is MT132+).
  */
 
-import { beforeEach, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";

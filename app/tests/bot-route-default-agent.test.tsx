@@ -1,7 +1,13 @@
 import "./preload";
 import "./bot-route-default-agent.fixture";
 
-import { afterAll, afterEach, beforeAll, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -66,7 +72,10 @@ function agent(
 // the scoped detail key, both under the personal-context prefix — and the scope seam needs
 // /api/me answered before any of it opens. Every stub here serves that one read first.
 const USER = "user-1";
-const rosterKey = [...selectionKeys.personalScope(USER), ...agentKeys.list(false)];
+const rosterKey = [
+  ...selectionKeys.personalScope(USER),
+  ...agentKeys.list(false),
+];
 
 function queryClientWithAgents(agents: AgentProfile[]) {
   const queryClient = new QueryClient({
@@ -395,13 +404,13 @@ test("/bot?watch=true restores the live Computer panel on reload", async () => {
       String(input) === "/api/me"
         ? Response.json({ user: { id: USER } })
         : Response.json({
-        holder: "bot",
-        since: "2026-09-26",
-        requested: false,
-        transitioning: false,
-        resumeSnapshotRequired: false,
-        recoveryRequired: false,
-      }),
+            holder: "bot",
+            since: "2026-09-26",
+            requested: false,
+            transitioning: false,
+            resumeSnapshotRequired: false,
+            recoveryRequired: false,
+          }),
     { preconnect: originalFetch.preconnect },
   );
   const view = renderBot(

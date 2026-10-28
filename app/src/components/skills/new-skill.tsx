@@ -45,10 +45,10 @@ export function NewSkill({
 
       <SkillFields
         defaultValues={emptySkillForm}
-      draftValues={draftValues}
-      draftDirty={draftDirty}
+        draftValues={draftValues}
+        draftDirty={draftDirty}
         error={createSkill.error}
-      onDraftChange={onDraftChange}
+        onDraftChange={onDraftChange}
         onSubmit={async (values) => {
           await createSkill.mutateAsync(values);
           // Panel closed rather than swapped for a detail view: there is nothing more to say about a

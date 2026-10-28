@@ -579,7 +579,9 @@ describe("a person's Stop", () => {
 
     await expect(
       transport.post("http://computer", "bot-1", "/files/write", {}),
-    ).rejects.toThrow("The assistant's computer dropped the connection mid-flight.");
+    ).rejects.toThrow(
+      "The assistant's computer dropped the connection mid-flight.",
+    );
   });
 
   test("a refused connection proven by the cause code still says not running", async () => {

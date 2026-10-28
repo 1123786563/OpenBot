@@ -4,7 +4,13 @@
 // Native e2e files need the e2e-backed layer; the files listed in the Bun manifest are executed by
 // `bun test`, where that layer would import Node's `module.registerHooks` and fail. Both directions
 // are rewritten so re-running the partition is idempotent after the audit changes a file's bucket.
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");

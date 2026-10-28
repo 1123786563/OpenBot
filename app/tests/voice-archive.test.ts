@@ -1,4 +1,10 @@
-import { afterEach, expect, mock, spyOn, test } from "../../tests/support/e2e-compat";
+import {
+  afterEach,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "../../tests/support/e2e-compat";
 import type { VoiceSessionRecord } from "@openbot/shared/voice-session";
 import {
   loadVoiceArchive,

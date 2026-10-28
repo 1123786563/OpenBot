@@ -30,9 +30,21 @@ const RATE: ConversionRate = { numerator: 100n, denominator: 1n }; // 100 credit
 
 /** A tier table fixture: two voices priced on both sides, plus a wildcard row. */
 const TIER_TABLE: SpeechTierPriceTable = [
-  { voiceTier: "alloy", perInputCharacterUsd: "0.00001", perOutputSecondUsd: "0.0005" },
-  { voiceTier: "premium-voice", perInputCharacterUsd: "0.00002", perOutputSecondUsd: "0.001" },
-  { voiceTier: null, perInputCharacterUsd: "0.000015", perOutputSecondUsd: "0.00075" },
+  {
+    voiceTier: "alloy",
+    perInputCharacterUsd: "0.00001",
+    perOutputSecondUsd: "0.0005",
+  },
+  {
+    voiceTier: "premium-voice",
+    perInputCharacterUsd: "0.00002",
+    perOutputSecondUsd: "0.001",
+  },
+  {
+    voiceTier: null,
+    perInputCharacterUsd: "0.000015",
+    perOutputSecondUsd: "0.00075",
+  },
 ];
 
 /** Complete dims over the whole vocabulary at a fixed surcharge, for the exact conversion. */
@@ -53,10 +65,10 @@ function completeDims(surchargePerRequest = "0.0001") {
     PRICE_DIMENSIONS.map((dimension) => [
       dimension,
       dimension === "audio_input" ||
-        dimension === "audio_output" ||
-        dimension === "video" ||
-        dimension === "surcharge_tool_call" ||
-        dimension === "surcharge_a2a_call"
+      dimension === "audio_output" ||
+      dimension === "video" ||
+      dimension === "surcharge_tool_call" ||
+      dimension === "surcharge_a2a_call"
         ? { status: "known", amount: "0" }
         : mapped[dimension],
     ]),
@@ -68,8 +80,14 @@ describe("the tier table", () => {
     const v1Dims = mapPriceDims({
       pricing: { prompt: "0", completion: "0", request: "0.0001" },
     });
-    expect(v1Dims.audio_input).toEqual({ status: "unknown", reason: "price_dim_no_source" });
-    expect(v1Dims.audio_output).toEqual({ status: "unknown", reason: "price_dim_no_source" });
+    expect(v1Dims.audio_input).toEqual({
+      status: "unknown",
+      reason: "price_dim_no_source",
+    });
+    expect(v1Dims.audio_output).toEqual({
+      status: "unknown",
+      reason: "price_dim_no_source",
+    });
     expect(speechTierPriceTableFromSnapshot(v1Dims)).toEqual([]);
   });
 
@@ -127,7 +145,9 @@ describe("the enablement verdict", () => {
     const verdict = assessSpeechGeneration({
       dims: completeDims(),
       tierTable: speechTierPriceTableFromSnapshot(
-        mapPriceDims({ pricing: { prompt: "0", completion: "0", request: "0.0001" } }),
+        mapPriceDims({
+          pricing: { prompt: "0", completion: "0", request: "0.0001" },
+        }),
       ),
       request: { model: "tts-1", input: "Hello", voice: "alloy" },
       durationCapSeconds: 30,
@@ -177,7 +197,10 @@ describe("the ceiling conversion", () => {
     });
     expect(ceiling).toMatchObject({ ok: true, maximumCredits: 2001 });
     if (!ceiling.ok) return;
-    expect(ceiling.exactScaledUnits).toEqual({ numerator: 2001n, denominator: 1n });
+    expect(ceiling.exactScaledUnits).toEqual({
+      numerator: 2001n,
+      denominator: 1n,
+    });
   });
 
   test("a fractional exact cost rounds UP — 足额, never below", () => {
@@ -192,7 +215,10 @@ describe("the ceiling conversion", () => {
     });
     expect(ceiling).toMatchObject({ ok: true, maximumCredits: 12 });
     if (!ceiling.ok) return;
-    expect(ceiling.exactScaledUnits).toEqual({ numerator: 58n, denominator: 5n });
+    expect(ceiling.exactScaledUnits).toEqual({
+      numerator: 58n,
+      denominator: 5n,
+    });
   });
 
   test("tiers never mix: the premium voice's BOTH sides price its own ceiling", () => {
@@ -206,7 +232,11 @@ describe("the ceiling conversion", () => {
     const premium = speechGenerationCeiling({
       dims: completeDims("0"),
       tierTable: TIER_TABLE,
-      request: { model: "tts-1", input: "y".repeat(1000), voice: "premium-voice" },
+      request: {
+        model: "tts-1",
+        input: "y".repeat(1000),
+        voice: "premium-voice",
+      },
       durationCapSeconds: 100,
       rate: RATE,
     });
@@ -227,16 +257,28 @@ describe("the ceiling conversion", () => {
     });
     expect(ceiling).toEqual({
       ok: false,
-      issue: { code: "price_unknown", dimension: "surcharge_per_request", reason: "price_dim_no_source" },
+      issue: {
+        code: "price_unknown",
+        dimension: "surcharge_per_request",
+        reason: "price_dim_no_source",
+      },
     });
   });
 
   test("the LOCKED basis prices the same spec at its own version, not the newest", () => {
     const v1Table: SpeechTierPriceTable = [
-      { voiceTier: null, perInputCharacterUsd: "0.00001", perOutputSecondUsd: "0.0005" },
+      {
+        voiceTier: null,
+        perInputCharacterUsd: "0.00001",
+        perOutputSecondUsd: "0.0005",
+      },
     ];
     const v2Table: SpeechTierPriceTable = [
-      { voiceTier: null, perInputCharacterUsd: "0.00002", perOutputSecondUsd: "0.001" },
+      {
+        voiceTier: null,
+        perInputCharacterUsd: "0.00002",
+        perOutputSecondUsd: "0.001",
+      },
     ];
     const atV1 = speechGenerationCeiling({
       dims: completeDims("0"),

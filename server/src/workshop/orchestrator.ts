@@ -224,7 +224,7 @@ export function createTurnOrchestrator(
           // recorded, exactly the shape the gateway guarantees for the run row.
           if (
             event.family === "unknown" &&
-            event.payload["refused"] !== undefined
+            event.payload.refused !== undefined
           ) {
             break;
           }

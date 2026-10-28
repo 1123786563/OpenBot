@@ -138,7 +138,8 @@ async function main(): Promise<void> {
         mode,
         kind: result.kind,
         answer: "answer" in result ? result.answer : undefined,
-        finishReason: "finishReason" in result ? result.finishReason : undefined,
+        finishReason:
+          "finishReason" in result ? result.finishReason : undefined,
         toolCallId: record.payload.toolCallId,
         argsDigest: record.payload.argsDigest,
         receiptStatusAtExecute: probe.rows[0]?.receipt_status_at_execute,

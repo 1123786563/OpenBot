@@ -1,5 +1,10 @@
 import "./preload";
-import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { callComputer } from "../src/lib/copilot/computer-tools";
 
 /**

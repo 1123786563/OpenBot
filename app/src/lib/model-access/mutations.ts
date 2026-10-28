@@ -124,14 +124,20 @@ export function revokeAccessGrantMutationOptions(queryClient: QueryClient) {
  */
 export function revokeAllAccessGrantsMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
-    mutationFn: (botId: string): Promise<{
+    mutationFn: (
+      botId: string,
+    ): Promise<{
       grants: AccessGrant[];
       revokedCount: number;
     }> =>
       client<{ grants: AccessGrant[]; revokedCount: number }>(
         "/api/model-access/grants/revoke-all",
         "grants",
-        { method: "POST", body: { botId }, fallbackKey: "modelAccess.revokeAllFailed" },
+        {
+          method: "POST",
+          body: { botId },
+          fallbackKey: "modelAccess.revokeAllFailed",
+        },
       ),
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: accessGrantsKey }),

@@ -6,10 +6,6 @@ import {
 } from "@copilotkit/react-core/v2";
 import { readConnectPrompt } from "@openbot/shared/connect-prompt";
 import {
-  refusalBody as markerRefusalBody,
-  readConnectPrompt,
-} from "@openbot/shared/connect-prompt";
-import {
   IconAlertTriangle,
   IconBox,
   IconChevronDown,

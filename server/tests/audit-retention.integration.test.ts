@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, test } from "../../tests/support/bun-test-compat";
+import {
+  afterEach,
+  describe,
+  expect,
+  test,
+} from "../../tests/support/bun-test-compat";
 import { eq, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { sweepAuditTrail } from "../src/audit-retention";

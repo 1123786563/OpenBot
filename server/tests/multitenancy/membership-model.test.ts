@@ -16,7 +16,13 @@
 // 失败——绝不回退开发库，绝不把 skipped 记为通过。迁移经 MT003 工具
 // （migrate-test.ts）真实执行，本文件不自己 CREATE TABLE。
 
-import { afterAll, beforeAll, describe, expect, test } from "../../../tests/support/bun-test-compat";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "../../../tests/support/bun-test-compat";
 import { randomUUID } from "node:crypto";
 import { like, sql } from "drizzle-orm";
 import {

@@ -203,16 +203,25 @@ describe("MT109 AC3 redaction covers every named vector, error paths included", 
         "provider failed after Authorization: Bearer ghp_16C7e42F292c6912E7710c838347Ae178B4a",
         "ghp_16C7e42F292c6912E7710c838347Ae178B4a",
       ],
-      ["slack bot xoxb-1234567890abcdefABCD rejected", "xoxb-1234567890abcdefABCD"],
+      [
+        "slack bot xoxb-1234567890abcdefABCD rejected",
+        "xoxb-1234567890abcdefABCD",
+      ],
       // cookie
-      ["upstream said: Cookie: session=s3cr3t-sess-1; theme=dark", "s3cr3t-sess-1"],
+      [
+        "upstream said: Cookie: session=s3cr3t-sess-1; theme=dark",
+        "s3cr3t-sess-1",
+      ],
       ["set-cookie: sid=deadbeef42; Path=/", "deadbeef42"],
       // OAuth
       [
         "callback https://provider.invalid/cb?code=SplxlOBezQQYbYS6WxSbIA&state=xyz",
         "SplxlOBezQQYbYS6WxSbIA",
       ],
-      ["token url ?client_secret=sekret-9182&grant_type=authorization_code", "sekret-9182"],
+      [
+        "token url ?client_secret=sekret-9182&grant_type=authorization_code",
+        "sekret-9182",
+      ],
       // 个人 Key
       [
         "model rejected sk-ant-api03-fixture-key-1234567890abcdef",
