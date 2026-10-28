@@ -1,6 +1,6 @@
-import type { AgentActor } from "../agents/profile-types";
-import type { ApprovalService } from "../approvals/service";
-import type { RoutineStore } from "../routines/store";
+import type { AgentActor } from "../agents/public";
+import type { ApprovalService } from "../approvals/public";
+import type { RoutineStore } from "../routines/public";
 
 /**
  * The Activity screen's one read: what is waiting on me (approvals), and what

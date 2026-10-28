@@ -25,8 +25,8 @@
 import { getLogger } from "@openbot/shared/logger";
 import type { TurnRunner } from "@openbot/toolkit/run-turn";
 import { BOT_PAUSED_REASON, isBotPaused } from "../agents/lifecycle";
-import type { AgentActor } from "../agents/profile-types";
-import type { ChannelStore } from "../channels/routes";
+import type { AgentActor } from "../agents/public";
+import type { ChannelStore } from "../channels/public";
 import { HeadlessToolSuspension } from "@openbot/toolkit/headless-tools";
 import {
   GOVERNED_HEADLESS_REFUSALS,

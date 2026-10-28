@@ -5,8 +5,8 @@ import type {
   VoiceSessionRecord,
   VoiceTranscriptEntry,
 } from "@openbot/shared/voice-session";
-import type { AgentActor } from "../agents/profile-types";
-import type { ChannelStore } from "../channels/routes";
+import type { AgentActor } from "../agents/public";
+import type { ChannelStore } from "../channels/public";
 import type { Database } from "../db/client";
 import {
   agentProfiles,

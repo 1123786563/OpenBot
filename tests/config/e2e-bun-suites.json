@@ -4,7 +4,9 @@
   "groups": [
     {
       "name": "--help",
-      "files": ["--help"]
+      "files": [
+        "--help"
+      ]
     },
     {
       "name": "agent-computer/tests",
@@ -25,7 +27,9 @@
     },
     {
       "name": "agent-mastra/src",
-      "files": ["agent-mastra/src/mastra/index.test.ts"]
+      "files": [
+        "agent-mastra/src/mastra/index.test.ts"
+      ]
     },
     {
       "name": "agent-sandbox/tests",
@@ -37,7 +41,9 @@
     },
     {
       "name": "app/src",
-      "files": ["app/src/lib/i18n/ai-observability.test.ts"]
+      "files": [
+        "app/src/lib/i18n/ai-observability.test.ts"
+      ]
     },
     {
       "name": "app/tests part 1",
@@ -55,6 +61,7 @@
         "app/tests/audit-export-truncated.test.tsx",
         "app/tests/authoring-tool-cards.test.tsx",
         "app/tests/auto-watch-screen.test.tsx",
+        "app/tests/billing-consumption-speech-ui.test.tsx",
         "app/tests/billing-payments.test.ts",
         "app/tests/bot-access-skills.test.tsx",
         "app/tests/bot-app-grants-screen.test.tsx",
@@ -64,13 +71,13 @@
         "app/tests/bot-profile-active.test.tsx",
         "app/tests/bot-profile-notice.test.tsx",
         "app/tests/bot-reaching-you.test.tsx",
-        "app/tests/bot-responsibilities.test.tsx",
-        "app/tests/bot-roster.test.tsx"
+        "app/tests/bot-responsibilities.test.tsx"
       ]
     },
     {
       "name": "app/tests part 2",
       "files": [
+        "app/tests/bot-roster.test.tsx",
         "app/tests/bot-route-default-agent.test.tsx",
         "app/tests/bot-settings-rows.test.tsx",
         "app/tests/bot-setup.test.tsx",
@@ -93,13 +100,13 @@
         "app/tests/composer-drop-guard.test.tsx",
         "app/tests/composer-dropped-attachments.test.tsx",
         "app/tests/composer-inflight-removal.test.tsx",
-        "app/tests/composer-insecure-context.test.tsx",
-        "app/tests/composer-paste.test.tsx"
+        "app/tests/composer-insecure-context.test.tsx"
       ]
     },
     {
       "name": "app/tests part 3",
       "files": [
+        "app/tests/composer-paste.test.tsx",
         "app/tests/composer-queue-attachments.test.tsx",
         "app/tests/composer-send-failure.test.tsx",
         "app/tests/composer-unnamed-mime.test.tsx",
@@ -122,13 +129,13 @@
         "app/tests/home-fallback-routing.test.tsx",
         "app/tests/learning-admin.test.tsx",
         "app/tests/live-screen-app-shortcuts.test.tsx",
-        "app/tests/live-screen-keyboard.test.tsx",
-        "app/tests/mastra-runtime-compat.test.tsx"
+        "app/tests/live-screen-keyboard.test.tsx"
       ]
     },
     {
       "name": "app/tests part 4",
       "files": [
+        "app/tests/mastra-runtime-compat.test.tsx",
         "app/tests/memory-answer-basis.test.tsx",
         "app/tests/memory-hindsight.test.tsx",
         "app/tests/memory-settings.test.tsx",
@@ -151,13 +158,13 @@
         "app/tests/sign-in-code-step.test.tsx",
         "app/tests/skills-read-failure.test.tsx",
         "app/tests/stopped-turn.test.ts",
-        "app/tests/tool-activity.test.tsx",
-        "app/tests/transcript-attachments.test.tsx"
+        "app/tests/tool-activity.test.tsx"
       ]
     },
     {
       "name": "app/tests part 5",
       "files": [
+        "app/tests/transcript-attachments.test.tsx",
         "app/tests/usage-breakdown-ui.test.tsx",
         "app/tests/user-authorizations-ui.test.tsx",
         "app/tests/user-key-status-ui.test.tsx"
@@ -202,23 +209,33 @@
     },
     {
       "name": "desktop/scripts",
-      "files": ["desktop/scripts/desktop-version.test.ts"]
+      "files": [
+        "desktop/scripts/desktop-version.test.ts"
+      ]
     },
     {
       "name": "desktop/src",
-      "files": ["desktop/src/telemetry.test.ts"]
+      "files": [
+        "desktop/src/telemetry.test.ts"
+      ]
     },
     {
       "name": "scripts/processes.test.ts",
-      "files": ["scripts/processes.test.ts"]
+      "files": [
+        "scripts/processes.test.ts"
+      ]
     },
     {
       "name": "scripts/start-restart-guard.test.ts",
-      "files": ["scripts/start-restart-guard.test.ts"]
+      "files": [
+        "scripts/start-restart-guard.test.ts"
+      ]
     },
     {
       "name": "scripts/tls-pipeline.test.ts",
-      "files": ["scripts/tls-pipeline.test.ts"]
+      "files": [
+        "scripts/tls-pipeline.test.ts"
+      ]
     },
     {
       "name": "server/tests part 1",
@@ -735,7 +752,9 @@
     },
     {
       "name": "server/tests/billing-credits-writer",
-      "files": ["server/tests/billing-credits-writer.integration.test.ts"]
+      "files": [
+        "server/tests/billing-credits-writer.integration.test.ts"
+      ]
     },
     {
       "name": "server/tests/gateway-probe",
@@ -879,7 +898,9 @@
     },
     {
       "name": "shared/harnesses.test.ts",
-      "files": ["shared/harnesses.test.ts"]
+      "files": [
+        "shared/harnesses.test.ts"
+      ]
     },
     {
       "name": "server/tests/multitenancy/package chain",
@@ -901,27 +922,39 @@
     },
     {
       "name": "server/tests/multitenancy/package-withdraw-contention",
-      "files": ["server/tests/multitenancy/package-withdraw-contention.test.ts"]
+      "files": [
+        "server/tests/multitenancy/package-withdraw-contention.test.ts"
+      ]
     },
     {
       "name": "server/tests/multitenancy/package-migration",
-      "files": ["server/tests/multitenancy/package-migration.test.ts"]
+      "files": [
+        "server/tests/multitenancy/package-migration.test.ts"
+      ]
     },
     {
       "name": "server/tests/multitenancy/tool-invocation",
-      "files": ["server/tests/multitenancy/tool-invocation.test.ts"]
+      "files": [
+        "server/tests/multitenancy/tool-invocation.test.ts"
+      ]
     },
     {
       "name": "server/tests/package-dispatch-call",
-      "files": ["server/tests/package-dispatch-call.test.ts"]
+      "files": [
+        "server/tests/package-dispatch-call.test.ts"
+      ]
     },
     {
       "name": "server/tests/package-index-ops",
-      "files": ["server/tests/package-index-ops.test.ts"]
+      "files": [
+        "server/tests/package-index-ops.test.ts"
+      ]
     },
     {
       "name": "server/tests/package-entrypoints",
-      "files": ["server/tests/package-entrypoints.test.ts"]
+      "files": [
+        "server/tests/package-entrypoints.test.ts"
+      ]
     }
   ],
   "files": [
@@ -961,6 +994,7 @@
     "app/tests/audit-export-truncated.test.tsx",
     "app/tests/authoring-tool-cards.test.tsx",
     "app/tests/auto-watch-screen.test.tsx",
+    "app/tests/billing-consumption-speech-ui.test.tsx",
     "app/tests/billing-payments.test.ts",
     "app/tests/bot-access-skills.test.tsx",
     "app/tests/bot-app-grants-screen.test.tsx",
@@ -1784,7 +1818,11 @@
     "desktop/src/LocalStateIsolation.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/LocalStateIsolation.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/LocalStateIsolation.test",
     "desktop/src/OrgSwitchCleanup.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/OrgSwitchCleanup.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/OrgSwitchCleanup.test.tsx; ",
     "desktop/src/Problem.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/Problem.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/Problem.test.tsx; @happy-dom/global-",
-    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/ProviderPicker.test.tsx; @hap"
+    "desktop/src/ProviderPicker.test.tsx": "COLLECTION_ERROR: failed to collect desktop/src/ProviderPicker.test.tsx: Cannot find package '@happy-dom/global-registrator' imported from ocrfix-g-testinfra/desktop/src/ProviderPicker.test.tsx; @hap",
+    "app/tests/billing-consumption-speech-ui.test.tsx": "runner named it: b5r-speech-307 consumption UI suite (bun-test-compat layer, sibling of realtime-usage-ui)"
   },
-  "directoryIslands": ["server/tests/multitenancy", "app/tests/multitenancy"]
+  "directoryIslands": [
+    "server/tests/multitenancy",
+    "app/tests/multitenancy"
+  ]
 }

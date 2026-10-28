@@ -10,7 +10,7 @@ import { canonicalJson } from "../ai-observability/datasets";
 import type { ApprovalContinuation } from "../approvals/types";
 import { withApprovalContext } from "../approvals/types";
 import type { AuditInitiator } from "../audit";
-import { LEARNED_SKILL_TOOL_NAMES } from "../learning/runtime";
+import { LEARNED_SKILL_TOOL_NAMES } from "../learning/public";
 import { REFUSAL_MARKER } from "../plugins/tools";
 import type { LearnedSkillInvocationSurface } from "./execution-contracts";
 

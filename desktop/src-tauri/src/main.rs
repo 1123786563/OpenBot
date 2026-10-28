@@ -13,8 +13,8 @@ mod test_support;
 
 use openbot_desktop_lib::{
     acquire, deployment, deployment_release, engine, env as openbot_env, harness, host_access,
-    install, preparation, problem::Problem, provider, pull_metrics, quiet, stack, supervise,
-    telemetry, tray, windows as win,
+    install, preparation, problem::Problem, provider, pull_metrics, quiet, sign_in, stack,
+    supervise, telemetry, tray, windows as win,
 };
 
 const QUIT_CLEANUP_NOTICE_FILE: &str = ".openbot-quit-cleanup-notice";
@@ -2947,12 +2947,7 @@ async fn begin_claude_sign_in(app: tauri::AppHandle, root: String) -> Result<Str
         openbot_desktop_lib::plan::SigningIn::begin(&address, &image).map_err(Problem::from)
     })
     .await
-    .map_err(|error| {
-        Problem::with(
-            "The sign-in did not start. Try again.",
-            format!("the sign-in task did not run: {error}"),
-        )
-    })??;
+    .map_err(|error| sign_in::task_did_not_run(error))??;
     *app.state::<Shell>().signing_in.lock().unwrap() = Some(signing);
 
     /*
@@ -2982,10 +2977,10 @@ async fn finish_claude_sign_in(app: tauri::AppHandle, code: String) -> Result<St
         .lock()
         .unwrap()
         .take()
-        .ok_or_else(|| "That sign-in is no longer running. Start it again.".to_string())?;
+        .ok_or_else(|| sign_in::NO_LONGER_RUNNING.to_string())?;
     tauri::async_runtime::spawn_blocking(move || signing.finish(&code))
         .await
-        .map_err(|error| format!("The sign-in did not finish: {error}"))?
+        .map_err(|error| sign_in::did_not_finish(error).said)?
 }
 
 /// Start a ChatGPT plan sign-in and return the address a browser has to open.
@@ -3010,12 +3005,7 @@ async fn begin_chatgpt_sign_in(
         openbot_desktop_lib::plan::SigningInToChatGpt::begin(&address, &image)
     })
     .await
-    .map_err(|error| {
-        Problem::with(
-            "The sign-in did not start. Try again.",
-            format!("the sign-in task did not run: {error}"),
-        )
-    })??;
+    .map_err(|error| sign_in::task_did_not_run(error))??;
     *app.state::<Shell>().signing_in_to_chatgpt.lock().unwrap() = Some(signing);
     let _ = tauri_plugin_opener::OpenerExt::opener(&app).open_url(&url, None::<&str>);
     Ok(url)
@@ -3035,10 +3025,10 @@ async fn finish_chatgpt_sign_in(app: tauri::AppHandle) -> Result<String, String>
         .lock()
         .unwrap()
         .take()
-        .ok_or_else(|| "That sign-in is no longer running. Start it again.".to_string())?;
+        .ok_or_else(|| sign_in::NO_LONGER_RUNNING.to_string())?;
     tauri::async_runtime::spawn_blocking(move || signing.finish())
         .await
-        .map_err(|error| format!("The sign-in did not finish: {error}"))?
+        .map_err(|error| sign_in::did_not_finish(error).said)?
 }
 
 /// A self-hosted server authenticates in its own browser session. Only the selected project's
@@ -3066,7 +3056,7 @@ async fn begin_self_hosted_intelligence_sign_in(
                     .self_hosted_sign_in_generation
                     .load(std::sync::atomic::Ordering::SeqCst)
             {
-                return Err(Problem::plain("That Intelligence sign-in was cancelled."));
+                return Err(sign_in::self_hosted_cancelled());
             }
             let signing = openbot_desktop_lib::self_hosted_intelligence::SigningIn::begin(
                 &root, &bun, &api_url,
@@ -3089,7 +3079,7 @@ async fn begin_self_hosted_intelligence_sign_in(
         result
     })
     .await
-    .map_err(|_| Problem::plain("Intelligence sign-in could not finish."))?
+    .map_err(|_| sign_in::self_hosted_task_failed())?
 }
 
 #[tauri::command]
@@ -3115,7 +3105,7 @@ async fn finish_self_hosted_intelligence_sign_in(
             .as_ref()
             .is_some_and(|active| std::sync::Arc::ptr_eq(active, &signing))
         {
-            return Err(Problem::plain("That Intelligence sign-in was cancelled."));
+            return Err(sign_in::self_hosted_cancelled());
         }
         slot.take();
         let provisioned = match result {
@@ -3131,14 +3121,14 @@ async fn finish_self_hosted_intelligence_sign_in(
         Ok(key)
     })
     .await
-    .map_err(|_| Problem::plain("Intelligence sign-in could not finish."))?
+    .map_err(|_| sign_in::self_hosted_task_failed())?
 }
 
 #[tauri::command]
 async fn cancel_self_hosted_intelligence_sign_in(app: tauri::AppHandle) -> Result<(), Problem> {
     tauri::async_runtime::spawn_blocking(move || cancel_self_hosted_sign_in(&app.state::<Shell>()))
         .await
-        .map_err(|_| Problem::plain("The Intelligence sign-in could not be closed."))
+        .map_err(|_| sign_in::self_hosted_close_failed())
 }
 
 /// Start signing in to Intelligence and return the address a browser has to open.
@@ -3168,18 +3158,10 @@ async fn finish_intelligence_sign_in(
         .lock()
         .unwrap()
         .take()
-        .ok_or_else(|| {
-            openbot_desktop_lib::problem::Problem::plain(
-                "That sign-in is no longer running. Start it again.",
-            )
-        })?;
+        .ok_or_else(|| openbot_desktop_lib::problem::Problem::plain(sign_in::NO_LONGER_RUNNING))?;
     let (credential, projects) = tauri::async_runtime::spawn_blocking(move || signing.finish())
         .await
-        .map_err(|error| {
-            openbot_desktop_lib::problem::Problem::plain(format!(
-                "The sign-in did not finish: {error}"
-            ))
-        })??;
+        .map_err(|error| sign_in::did_not_finish(error))??;
     *app.state::<Shell>().intelligence_credential.lock().unwrap() = Some(credential);
     Ok(projects)
 }
@@ -3258,23 +3240,12 @@ async fn begin_organization_sign_in(
             ));
         }
         // A verified connection is not to be walked into another organization's sign-in by a
-        // client selector (MT098, spec A7). A context fresh on disk pins this installation to
-        // its authority; nothing established, corrupt, or stale is the ordinary recovery path.
-        let declared = openbot_desktop_lib::organization_auth::authority(&authority_url)?;
-        let gate = openbot_desktop_lib::org_context::Gate::from_persisted(
-            openbot_desktop_lib::org_context::load_persisted(&root)?,
-        );
-        gate.admit_sign_in(&declared, org_context_now_ms())
-            .map_err(|refusal| {
-                Problem::plain(format!(
-                    "This installation already belongs to another organization. ({})",
-                    refusal.code()
-                ))
-            })?;
+        // client selector (MT098, spec A7). The gate decision lives in the sign-in seam.
+        sign_in::admit_organization_sign_in(&root, &authority_url, org_context_now_ms())?;
         openbot_desktop_lib::organization_auth::begin(&root, &authority_url, &provider)
     })
     .await
-    .map_err(|_| Problem::plain("Organization sign-in could not start."))??;
+    .map_err(|_| sign_in::organization_start_failed())??;
     if tauri_plugin_opener::OpenerExt::opener(&app)
         .open_url(&url, None::<&str>)
         .is_err()
@@ -3300,9 +3271,7 @@ async fn finish_organization_sign_in(
         if shell.generation.load(std::sync::atomic::Ordering::SeqCst) != generation
             || shell.root.lock().unwrap().as_deref() != Some(root.as_path())
         {
-            return Err(Problem::plain(
-                "That sign-in belongs to a previous OpenBot run. Open this installation again.",
-            ));
+            return Err(sign_in::previous_run());
         }
         // The verified session freezes this installation's organization context (MT098). No
         // company or team is chosen yet — establishing is the only way a scope comes to exist —
@@ -3312,22 +3281,19 @@ async fn finish_organization_sign_in(
                 Problem::plain("Sign in to your organization again.")
                     .connection(openbot_desktop_lib::problem::Connection::Organization)
             })?;
-        let context = openbot_desktop_lib::org_context::establish(
-            &connection,
-            None,
-            org_context_now_ms(),
-        )
-        .map_err(|refusal| {
-            Problem::plain(format!(
-                "OpenBot could not freeze its organization context. ({})",
-                refusal.code()
-            ))
-        })?;
+        let context =
+            openbot_desktop_lib::org_context::establish(&connection, None, org_context_now_ms())
+                .map_err(|refusal| {
+                    Problem::plain(format!(
+                        "OpenBot could not freeze its organization context. ({})",
+                        refusal.code()
+                    ))
+                })?;
         openbot_desktop_lib::org_context::persist(&root, &context)?;
         Ok(user)
     })
     .await
-    .map_err(|_| Problem::plain("Organization sign-in did not finish."))?
+    .map_err(|_| sign_in::organization_did_not_finish())?
 }
 
 #[tauri::command]
@@ -3375,7 +3341,9 @@ async fn org_context_status(
     })
     .await
     .map_err(|_| {
-        Problem::plain("OpenBot could not read its organization context. Restart OpenBot and try again.")
+        Problem::plain(
+            "OpenBot could not read its organization context. Restart OpenBot and try again.",
+        )
     })?
 }
 
@@ -3398,11 +3366,9 @@ async fn establish_org_context(
                 Problem::plain("Sign in to your organization first.")
                     .connection(openbot_desktop_lib::problem::Connection::Organization)
             })?;
-        let selection = tenant_id.map(|tenant_id| {
-            openbot_desktop_lib::org_context::Selection {
-                tenant_id,
-                workspace_id,
-            }
+        let selection = tenant_id.map(|tenant_id| openbot_desktop_lib::org_context::Selection {
+            tenant_id,
+            workspace_id,
         });
         let context = openbot_desktop_lib::org_context::establish(
             &connection,
@@ -3422,7 +3388,9 @@ async fn establish_org_context(
     })
     .await
     .map_err(|_| {
-        Problem::plain("OpenBot could not set its organization context. Restart OpenBot and try again.")
+        Problem::plain(
+            "OpenBot could not set its organization context. Restart OpenBot and try again.",
+        )
     })?
 }
 
@@ -3460,9 +3428,7 @@ async fn leave_organization(
                     .ok()
                     .flatten()
             })
-            .ok_or_else(|| {
-                Problem::plain("This installation is not in an organization.")
-            })?;
+            .ok_or_else(|| Problem::plain("This installation is not in an organization."))?;
         let mut receipt =
             openbot_desktop_lib::org_switch_cleanup::forget_organization_state(&root, &target)?;
         // The frozen context dies only with its own organization: a context belonging to
@@ -3481,16 +3447,19 @@ async fn leave_organization(
         }
         // The legacy flat session cookie (pre-namespace installs) retires with its
         // organization too; its namespaced successor was already wiped above.
-        openbot_desktop_lib::vault::forget(&root, openbot_desktop_lib::organization_auth::SAVED_COOKIE)?;
+        openbot_desktop_lib::vault::forget(
+            &root,
+            openbot_desktop_lib::organization_auth::SAVED_COOKIE,
+        )?;
         if !receipt.completed {
-            eprintln!(
-                "[organization] cleanup did not finish; the receipt says which area remains"
-            );
+            eprintln!("[organization] cleanup did not finish; the receipt says which area remains");
         }
         Ok(receipt)
     })
     .await
-    .map_err(|_| Problem::plain("OpenBot could not leave its organization. Restart OpenBot and try again."))?
+    .map_err(|_| {
+        Problem::plain("OpenBot could not leave its organization. Restart OpenBot and try again.")
+    })?
 }
 
 /// The model screen's rows. Independent of the picker above, and required to stay that way: no

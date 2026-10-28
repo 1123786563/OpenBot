@@ -1,7 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
 import type { BotAccessCheck } from "../agents/profile-policy";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { ActionActor } from "../computer/gateway";
 import type { SignInService } from "./service";
 import { SignInRefusedError } from "./types";

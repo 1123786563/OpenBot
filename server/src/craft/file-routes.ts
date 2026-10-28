@@ -16,7 +16,7 @@
 
 import { Hono, type MiddlewareHandler } from "hono";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import { appendAttachmentsSectionIfMissing } from "./agent-instructions";
 import { safeJoin } from "./artifact-routes";
 import type { CraftConfig } from "./config";

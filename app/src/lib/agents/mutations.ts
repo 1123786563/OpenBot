@@ -261,12 +261,13 @@ export function setHandoffGrantMutationOptions(
           method: "POST",
           body: { kind: "bot", ref: variables.ref, agentId: variables.agentId },
           fallback: FALLBACK,
+          ...scopeOptions(scope),
         });
         return;
       }
       await client(
         `/api/plugins/grants?kind=bot&ref=${encodeURIComponent(variables.ref)}&agentId=${encodeURIComponent(variables.agentId)}`,
-        { method: "DELETE", fallback: FALLBACK },
+        { method: "DELETE", fallback: FALLBACK, ...scopeOptions(scope) },
       );
     },
     onSuccess: () => invalidateAgents(queryClient, scope),

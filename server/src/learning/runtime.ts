@@ -14,7 +14,7 @@ import type {
 } from "@openbot/shared/learning";
 import type { LearningSettingsStore } from "./settings";
 
-// This published internal export is pinned to runtime 1.73.1. Keep its use here: the SDK owns
+// This published internal export is pinned to runtime 1.77.0. Keep its use here: the SDK owns
 // archive verification, refresh, revocation and stale-cache policy for every OpenBot framework.
 export type LearnedSkillInvocation = {
   readonly catalog: string;

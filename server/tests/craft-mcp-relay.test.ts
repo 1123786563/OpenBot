@@ -6,6 +6,7 @@ import {
   MCP_SESSION_TAG_HEADER,
   type CraftMCPServerConfig,
 } from "../src/craft/opencode-config";
+import { createSandboxGateway } from "../src/craft/sandbox-gateway";
 import type { CraftSessionRow, CraftStore } from "../src/craft/store";
 
 /**
@@ -406,6 +407,9 @@ describe("relay inside the assembled craft tree", () => {
         botIdFor: async () => "craft",
         llmConfigFor: async () => ({}) as never,
         sandboxConnectionFor: () => null,
+        // MOD22 (#642): the gateway arrives bound — the routes tree no longer
+        // builds its own.
+        gateway: createSandboxGateway({ config, connectionFor: () => null }),
         userNameFor: async () => null,
         store: {
           findSessionById: async (id: string) =>

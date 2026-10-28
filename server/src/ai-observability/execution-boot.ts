@@ -29,7 +29,7 @@
  * fail-closed floor — a name the catalogue does not know is still a write.
  */
 import { inArray } from "drizzle-orm";
-import type { AgentActor } from "../agents/profile-types";
+import type { AgentActor } from "../agents/public";
 import type { AuditStore } from "../audit";
 import type { CreditWriter } from "../billing/credits-writer";
 import type { UsageOutbox } from "../billing/usage-outbox";

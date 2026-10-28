@@ -1,5 +1,5 @@
 import { Hono, type MiddlewareHandler } from "hono";
-import type { AppVariables } from "../auth/guards";
+import type { AppVariables } from "../auth/public";
 import type { OpenMuseDeletionManifest } from "./manifest";
 import { sanitizeLastError } from "./retention";
 import type {

@@ -2,7 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { PDFDocument } from "pdf-lib";
 import { getLogger } from "../../../shared/logger";
-import type { AppVariables, AuthenticatedActor } from "../auth/guards";
+import type { AppVariables, AuthenticatedActor } from "../auth/public";
 import { OPENMUSE_MAX_PDF_BYTES } from "../openmuse-files/bytes";
 import {
   type OpenMuseFileStore,

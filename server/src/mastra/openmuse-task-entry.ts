@@ -26,7 +26,7 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { openmuseTasks } from "../db/schema/openmuse";
-import type { OpenMuseTaskStep } from "../openmuse-tasks/store";
+import type { OpenMuseTaskStep } from "../openmuse-tasks/public";
 import type { GovernedSchedulingRecord } from "./headless";
 
 /** The routineId prefix the Task runner names every turn with. */

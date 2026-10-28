@@ -20,7 +20,7 @@ import {
   mergeMap,
 } from "rxjs";
 import type { ActorAgentResolver } from "../../agents/agent-resolver";
-import type { AgentActor } from "../../agents/profile-types";
+import type { AgentActor } from "../../agents/public";
 import type { ModelCredentialSecretReader } from "../../credentials";
 import type {
   ConversationService,

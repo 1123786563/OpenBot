@@ -1,8 +1,8 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { AgentProfileStore } from "../agents/profile-store";
-import type { AppVariables } from "../auth/guards";
-import type { ChannelStore } from "../channels/routes";
+import type { AgentProfileStore } from "../agents/public";
+import type { AppVariables } from "../auth/public";
+import type { ChannelStore } from "../channels/public";
 import {
   isVoiceSdp,
   MAX_VOICE_SDP_BYTES,

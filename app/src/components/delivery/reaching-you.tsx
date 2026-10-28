@@ -41,9 +41,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { conversationLabel } from "@/lib/channels/label";
-import { channelListQueryOptions } from "@/lib/channels/queries";
+import { scopedChannelListQueryOptions } from "@/lib/channels/queries";
+import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   type ChatLink,
   confirmSmsMutationOptions,
@@ -150,7 +151,9 @@ const TRANSPORT = {
 export function ReachingYou({ agentId: fixedBot }: { agentId?: string }) {
   const { t } = useTranslation("agents");
   const reach = useQuery(deliveryQueryOptions());
-  const bots = useQuery(agentListQueryOptions());
+  // The roster reads ride the scope the screen holds (MOD19 / Issue #639, T1b).
+  const scope = useScopedCache();
+  const bots = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   // People read Bots by name; the id is what the list used to show.
   const botName = (id: string) =>
     bots.data?.find((bot) => bot.id === id)?.name ?? id;
@@ -369,7 +372,10 @@ function ConnectDialog({
 }) {
   const { t } = useTranslation("agents");
   const formId = useId();
-  const channels = useInfiniteQuery(channelListQueryOptions());
+  const scope = useScopedCache();
+  const channels = useInfiniteQuery(
+    scopedChannelListQueryOptions(queryClient, scope),
+  );
   // Reopened with a link message still held, the dialog shows the conversation it links.
   const [channelId, setChannelId] = useState(
     linked?.channelId ?? (transport === "sms" ? pendingChannelId : ""),

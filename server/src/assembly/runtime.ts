@@ -296,12 +296,8 @@ import type {
   CraftLLMProviderConfig,
   CraftModelDescriptor,
 } from "../craft/opencode-config";
-import {
-  createPreviewOrigin,
-  samePreviewOrigin,
-  singleReplicaStartupNotice,
-} from "../craft/preview-origin";
-import { createPreviewTickets } from "../craft/preview-ticket";
+import { createCraftPreview } from "../craft/preview";
+import { singleReplicaStartupNotice } from "../craft/preview-origin";
 import {
   type CraftRoutesFactory,
   createCraftRoutes,
@@ -309,16 +305,6 @@ import {
 } from "../craft/routes";
 import { createCraftSandboxPublic } from "../craft/public";
 import { createCraftStore } from "../craft/store";
-import {
-  createPreviewProxy,
-  type PreviewWebappHmrDeps,
-  resolvePreviewWebappHmrUpgrade,
-  resolveWebappHmrUpgrade,
-  type WebappHmrSocketData,
-  webappHmrIsAppPath,
-  webappHmrSessionIdFromPath,
-  webappHmrSocketHandlers,
-} from "../craft/webapp-proxy";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -1353,18 +1339,22 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
           // window seam — one instance answers both the orders and the anomaly-events reads, and
           // the finance gate inside the visibility service stays ahead of every order row it reads.
           const companyBooksPayments = createPaymentStore(database);
+          // OCR r2 M-9：visibility 两实例提顶部构造一次复用——同 database、同 writer、同
+          // payments 源，与 companyBooksPayments「一实例答两消费面」同一先例，杜绝两套口径漂移。
+          const companyFinanceVisibility =
+            createCompanyFinanceVisibilityService({
+              database,
+              writer: createCreditWriter(database),
+              orders: companyBooksPayments,
+              events: companyBooksPayments,
+            });
           const companyAdminRoutes =
             operator && companyAdminAuthorizer !== null
               ? createCompanyAdminRoutes({
                   authorizer: companyAdminAuthorizer,
                   capabilities: createCompanyCapabilitiesService({
                     operator,
-                    finance: createCompanyFinanceVisibilityService({
-                      database,
-                      writer: createCreditWriter(database),
-                      orders: companyBooksPayments,
-                      events: companyBooksPayments,
-                    }),
+                    finance: companyFinanceVisibility,
                     billing: createBillingManagementService({
                       database,
                       operator,
@@ -1404,12 +1394,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
                       });
                     },
                   },
-                  finance: createCompanyFinanceVisibilityService({
-                    database,
-                    writer: createCreditWriter(database),
-                    orders: companyBooksPayments,
-                    events: companyBooksPayments,
-                  }),
+                  finance: companyFinanceVisibility,
                 })
               : createUnavailableCompanyAdminRoutes();
           return createWorkspaceScopeRoutes({
@@ -7626,18 +7611,6 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       },
     });
     /*
-     * The craft preview origin (#361, spec craft-preview-origin D5/D7): hosts in the
-     * preview namespace — dev: 127.0.0.1 on this server's own port beside a localhost
-     * login; production: <hash-label>.<preview base> from the configured template —
-     * are claimed by the dispatcher below, ahead of every main-site branch. One
-     * preview-ticket table for the whole process: the issuing route and the preview
-     * origin's redemption entry share this instance (#360's review constraint).
-     * Undefined when craft is off: with no craft surface there is nothing to claim.
-     */
-    const craftPreviewTickets = craftEffectiveConfig.enabled
-      ? createPreviewTickets({ store: createCraftStore(database) })
-      : undefined;
-    /*
      * The deployment's sandbox identity facts, shared by EVERY craft surface that
      * routes to the sandbox (fix-ocr17): the HTTP webapp proxy, the craft routes
      * and the HMR upgrade dispatcher each used to carry their own verbatim copy
@@ -7687,39 +7660,25 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
     });
 
     /*
-     * The preview origin's serving half (#362): a cookie-authenticated request on
-     * a preview host proxies to the session's sandbox dev server — the same facts
-     * the main-site webapp proxy resolves (the deployment's sandbox Bot, its
-     * gateway connection), so the two surfaces can never route one session to
-     * different upstreams. Attached to the origin below as its servePreview seam.
+     * MOD22 (#642): the deployment's ONE preview face, assembled by the craft
+     * group's own seam (craft/preview.ts) — the ticket table, the serving proxy,
+     * the preview origin, both HMR dep sets and the http-server front door all
+     * come back from this single call; undefined when craft is off (no craft
+     * surface, nothing to claim), and every consumer gate below collapses onto
+     * that one `undefined`. The sandbox facts are the one-const family above, and
+     * the store is the same `createCraftStore(database)` wrapper each of the five
+     * old blocks built for itself — one instance now, byte-equivalent judgment.
      */
-    const craftPreviewProxy = craftEffectiveConfig.enabled
-      ? createPreviewProxy({
-          config: craftEffectiveConfig,
-          store: createCraftStore(database),
-          botIdFor: craftSandboxBotId,
-          sandboxConnectionFor: craftSandboxConnection,
-        })
-      : undefined;
-    const craftPreviewOrigin =
-      craftEffectiveConfig.enabled && craftPreviewTickets && craftPreviewProxy
-        ? createPreviewOrigin({
-            config: craftEffectiveConfig,
-            previewTickets: craftPreviewTickets,
-            secret: config.keyEncryptionKey,
-            servePreview: craftPreviewProxy,
-            /*
-             * #404 (AC6/M-1): the origin judges its own template against the host the
-             * app is really served on. A wildcard base claims that host AND everything
-             * under it, so `https://{session}.example.com` with the app on
-             * `app.example.com` would take the main site down as 404 "Unknown preview
-             * host." — the deployment's own admission answer has to come from the same
-             * config the request router resolves the app's origin from, which is this
-             * `appUrl` (OPENBOT_APP_URL → first TRUSTED_ORIGINS → OPENBOT_PUBLIC_URL).
-             */
-            appUrl: config.appUrl,
-          })
-        : undefined;
+    const craftPreview = createCraftPreview({
+      config: craftEffectiveConfig,
+      store: createCraftStore(database),
+      secret: config.keyEncryptionKey,
+      appUrl: config.appUrl,
+      botIdFor: craftSandboxBotId,
+      sandboxConnectionFor: craftSandboxConnection,
+      hmrGatewayFor: () =>
+        craftSandboxPublic.handlesFor({ scope: craftSandboxExecutionScope() }),
+    });
     /*
      * #418 Option B: the single-replica contract, stated at startup. The preview
      * origin's label registry and the ticket table are in-process state, so the
@@ -7732,29 +7691,24 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
      * silent — a closed origin has no preview hosts to route wrong. Craft off
      * entirely = no notice: nothing is claimed.
      */
-    if (craftPreviewOrigin) {
+    if (craftPreview) {
       singleReplicaStartupNotice({
         previewOriginEnabled: craftEffectiveConfig.previewOriginEnabled,
         template: craftEffectiveConfig.previewOriginTemplate,
         redisUrl: process.env.OPENBOT_REDIS_URL,
-        registryStats: craftPreviewOrigin.registryStats,
+        registryStats: craftPreview.origin.registryStats,
       });
     }
 
     /*
-     * fix-ocr20 #1: the gate is `enabled && craftPreviewOrigin !== undefined`, not
-     * `enabled` alone. The two gates used to be equivalent only by COUPLING —
-     * craftPreviewOrigin exists exactly when enabled && tickets && proxy — and the
-     * deps below carried `craftPreviewOrigin!` assertions to bridge the gap: any
-     * future divergence between the gates (a third conjunct on one side) would
-     * have turned those `!` into a runtime TypeError at the first preview call,
-     * defeating the optional-deps degradation design the boot file's other craft
-     * surfaces follow. The `!== undefined` conjunct narrows the const into the
-     * closure, so the assertions are gone and the deps type-check against the
-     * real shape; tsc is the pin.
+     * The routes tree exists exactly when the preview face does (craft enabled):
+     * fix-ocr20 #1's `enabled && origin !== undefined` conjunction is now ONE
+     * const — the seam (craft/preview.ts) builds tickets/proxy/origin together
+     * under the single `enabled` gate, so the old coupled-gate gap it guarded
+     * cannot reopen.
      */
     const craftRoutes: CraftRoutesFactory | undefined =
-      craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
+      craftPreview !== undefined
         ? ({ requireUser }) =>
             createCraftRoutes({
               requireUser,
@@ -7774,8 +7728,16 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
                 botIdFor: craftSandboxBotId,
                 llmConfigFor: async () => craftLlmConfig(),
                 sandboxConnectionFor: craftSandboxConnection,
-                // #618: same facts as the connection above — one const, every assembly.
-                executionScopeFor: craftSandboxExecutionScope,
+                /*
+                 * MOD22 (#642): the routes tree's sandbox gateway ARRIVES bound —
+                 * the MOD11 door's instance for the deployment's one (scope,
+                 * generation) key, the same binding the preview seam's HMR leg
+                 * takes through `hmrGatewayFor`, so routes and HMR share ONE
+                 * gateway. The routes assembly no longer builds its own.
+                 */
+                gateway: craftSandboxPublic.handlesFor({
+                  scope: craftSandboxExecutionScope(),
+                }),
                 userNameFor: async (userId) =>
                   (await peopleStore.find(userId))?.name ?? null,
                 generateName: craftGenerateName,
@@ -7791,107 +7753,21 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
                   pluginStore.mcpWireConnectionFor(userId, serverId),
                 mcpRelayBaseUrl: craftMcpRelayBaseUrl,
                 /*
-                 * The process's ONE preview-ticket table and the preview origin's
-                 * address derivation (#360/#361): the issuing route mints through these
-                 * very instances and the preview origin's entry (the dispatcher branch
-                 * below) redeems against the same table — never a second instance.
+                 * The preview faces the routes tree reads (#360/#361/#362/#365,
+                 * fix-ocr13, #410): the process's ONE ticket table, the origin's
+                 * address/admission/registry/claim/basePath derivations — all bound
+                 * once inside the preview seam and spread here, so the issuing
+                 * route, the redemption entry and the front door can never hold
+                 * two instances.
                  */
-                previewTickets: craftPreviewTickets,
-                previewOriginFor: (sessionId: string) =>
-                  craftPreviewOrigin.originFor(sessionId),
+                ...craftPreview.routesArm,
                 /*
-                 * The admission the #362 surfaces read: webapp-info's closed reason
-                 * (m-5) and the issuing route's refusal to mint into a closed origin
-                 * — the same gate the preview origin's dispatcher branch enforces.
+                 * #410: the trusted list is CORS's own list, so the write guard and
+                 * the origin's claim rule cannot disagree about who is trusted.
                  */
-                previewOriginAdmission: () => craftPreviewOrigin.admission(),
-                /*
-                 * fix-ocr13: the registry half of the pane's same-origin liveness
-                 * probe — the SAME instance whose originFor registers the label, so
-                 * "has" and "mint" can never disagree about what is registered.
-                 */
-                previewOriginHas: (sessionId: string) =>
-                  craftPreviewOrigin.hasSession(sessionId),
-                /*
-                 * #410: the main site's own cookie-authenticated writes refuse a browser
-                 * Origin outside the trusted list, and the preview namespace is judged by
-                 * the SAME host rule the dispatcher runs on the Host header (claimsOrigin —
-                 * one claim, two surfaces). The trusted list is CORS's own list, so the
-                 * two answers cannot disagree about who is trusted.
-                 */
-                previewOriginClaimsOrigin: (origin: string) =>
-                  craftPreviewOrigin.claimsOrigin(origin),
                 previewWriteTrustedOrigins: trustedBrowserOrigins(config),
-                /*
-                 * F-2 (#365): the dev form's /<label> mount, threaded into the
-                 * session's start script — the same HMAC label derivation the minted
-                 * address rides (one derivation, preview-origin.ts), so the dev
-                 * server's basePath always matches the address the pane iframes.
-                 * Null for the host form and any closed origin — root path, the
-                 * production behavior unchanged.
-                 */
-                webappBasePathFor: (sessionId: string) =>
-                  craftPreviewOrigin.webappBasePathFor(sessionId),
               },
             })
-        : undefined;
-
-    /*
-     * The craft webapp's HMR websocket proxy (onyx webapp_proxy.py:387-398). An upgrade is not a
-     * request/response, so this half terminates in the boot file's upgrade dispatcher beside the
-     * computer-stream proxy — but it resolves through the SAME facts the HTTP webapp proxy uses
-     * (the deployment's sandbox Bot, its gateway connection, the session's reserved port), so the
-     * two surfaces can never route the same session to different upstreams.
-     */
-    const craftWebappHmrDeps =
-      craftEffectiveConfig.enabled && craftEffectiveConfig.webappProxyEnabled
-        ? {
-            config: craftEffectiveConfig,
-            store: createCraftStore(database),
-            botIdFor: craftSandboxBotId,
-            sandboxConnectionFor: craftSandboxConnection,
-            // #425: the legacy-preview switch's HMR leg reads the session's
-            // generation marker through the same sandbox facts the HTTP legs use.
-            // A gateway of its own (the routes assembly builds its own too): the
-            // file API is a stateless HTTP wrapper over craftSandboxConnection —
-            // the same connection lambda, so the surfaces cannot disagree about
-            // the upstream. MOD11 (#631): the gateway is acquired through the
-            // public binding — same connection and scope facts (the #618 const
-            // above resolves them once for every craft surface), plus the
-            // environment generation in the handle cache's addressing key.
-            gateway: craftSandboxPublic.handlesFor({
-              scope: craftSandboxExecutionScope(),
-            }),
-          }
-        : undefined;
-
-    /*
-     * fix-ocr18 #3: the preview origin's upgrade half rides its OWN deps, gated on
-     * `enabled` ONLY — never the main-site conjunction with `webappProxyEnabled`
-     * above. That split is DEFENSIVE, not a load-bearing admission distinction:
-     * when `enabled && !webappProxyEnabled`, admission() is closed too (the same
-     * config field feeds it, preview-origin.ts), so BOTH halves answer the same
-     * 503 — the HTTP entry through handlePreviewRequest's gate, an upgrade through
-     * resolvePreviewRequest's refusal — and no "HTTP served while HMR silently
-     * dead" half-state exists for this gate to prevent. fix-ocr28 #3 corrects the
-     * earlier comment, which built this deps structure on that half-dead scenario:
-     * it never happens, because admission() — not these deps — is the one verdict
-     * that decides whether a preview host serves anything at all. Keeping the
-     * preview branch off the main-site conjunction just means its wiring cannot
-     * inherit a gate the preview origin's own admission story does not use.
-     */
-    const craftPreviewWebappHmrDeps =
-      craftEffectiveConfig.enabled && craftPreviewOrigin !== undefined
-        ? {
-            config: craftEffectiveConfig,
-            store: createCraftStore(database),
-            botIdFor: craftSandboxBotId,
-            sandboxConnectionFor: craftSandboxConnection,
-            // #358 repair: THE pass judgment — the origin's own verifyPass method,
-            // so the HMR upgrade applies exactly the acceptance the HTTP gate ran
-            // (one codec, one cookie iteration) and the two surfaces cannot drift.
-            verifyPass: craftPreviewOrigin.verifyPass,
-          }
         : undefined;
 
     /**
@@ -9258,9 +9134,7 @@ export async function assembleRuntime(): Promise<RuntimeAssembly> {
       resolveRequestActor,
       demonstrationStore,
       demonstrationRecorder,
-      craftPreviewOrigin,
-      craftWebappHmrDeps,
-      craftPreviewWebappHmrDeps,
+      craftPreviewFrontDoor: craftPreview?.frontDoor,
     });
 
     if (config.singleUser) {

@@ -1,5 +1,5 @@
-import type { AgentProfileStore } from "../agents/profile-store";
-import type { ChannelStore } from "../channels/routes";
+import type { AgentProfileStore } from "../agents/public";
+import type { ChannelStore } from "../channels/public";
 import { PROVIDER_BY_CONNECTION_KIND } from "../openmuse-connectors/google-oauth";
 import type { OpenMuseNotificationStore } from "../openmuse-notifications/store";
 import type { OpenMuseGoalStore } from "../openmuse-personal/goals";

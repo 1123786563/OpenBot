@@ -1,5 +1,5 @@
-import type { AgentProfileStore } from "../agents/profile-store";
-import type { ChannelStore } from "../channels/routes";
+import type { AgentProfileStore } from "../agents/public";
+import type { ChannelStore } from "../channels/public";
 import {
   type OpenMuseGoogleOAuth,
   openmuseAlias,

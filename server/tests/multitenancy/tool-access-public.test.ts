@@ -114,6 +114,12 @@ function storeDouble(fixture: {
       if (fixture.callThrows) throw fixture.callThrows;
       return fixture.callAnswer ?? { text: "vendor answered", isError: false };
     },
+    // MOD16（#636）：Pick 扩面后的四个写入/查询成员——本套件不驱动它们，
+    // 恒等委托由 package-lifecycle-boundary.test.ts D2 钉住，此处只满足合同。
+    installSkill: async () => {},
+    uninstallSkill: async () => {},
+    skillOwner: async () => null,
+    grant: async () => {},
   };
   return { store, reads, calls };
 }

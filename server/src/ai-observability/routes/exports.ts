@@ -23,8 +23,8 @@
  */
 import { Hono } from "hono";
 import type { ExportJobsResult } from "../../../../shared/ai-observability-admin";
-import type { AgentActor } from "../../agents/profile-types";
-import type { AppVariables } from "../../auth/guards";
+import type { AgentActor } from "../../agents/public";
+import type { AppVariables } from "../../auth/public";
 import type { Database } from "../../db/client";
 import type { BotManagementCheck } from "../context";
 import {

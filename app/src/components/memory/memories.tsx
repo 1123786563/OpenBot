@@ -30,7 +30,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import { useScopedCache } from "@/lib/enterprise/tenant/scoped-cache";
 import {
   createMemoryMutationOptions,
@@ -151,7 +151,7 @@ export function MemoryList() {
   const syncStatuses = useQuery(
     scopedMemorySyncStatusesQueryOptions(queryClient, scope, subjects),
   );
-  const agents = useQuery(agentListQueryOptions());
+  const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const botName = (id: string | null) =>
     agents.data?.find((agent) => agent.id === id)?.name ?? t("memory.yourBot");
   return (

@@ -32,8 +32,8 @@
  * call, so this classification path stays synchronous, non-blocking and network-free.
  */
 import { Hono } from "hono";
-import type { AgentActor } from "../../agents/profile-types";
-import type { AppVariables } from "../../auth/guards";
+import type { AgentActor } from "../../agents/public";
+import type { AppVariables } from "../../auth/public";
 import { RunBindingError, type RunBindingStore } from "../bindings";
 import {
   type BotManagementCheck,

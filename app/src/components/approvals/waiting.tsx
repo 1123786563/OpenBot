@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { agentListQueryOptions } from "@/lib/agents/queries";
+import { scopedAgentListQueryOptions } from "@/lib/agents/queries";
 import {
   answerPersonQuestionMutationOptions,
   ApprovalsUnavailableError,
@@ -36,7 +36,7 @@ export function WaitingForYou({ agentId }: { agentId?: string }) {
   const queryClient = useQueryClient();
   const scope = useScopedCache();
   const inbox = useQuery(scopedApprovalInboxOptions(queryClient, scope));
-  const agents = useQuery(agentListQueryOptions());
+  const agents = useQuery(scopedAgentListQueryOptions(queryClient, scope));
   const botName = (id: string) =>
     agents.data?.find((agent) => agent.id === id)?.name ?? id;
   const decision = useMutation(
