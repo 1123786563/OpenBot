@@ -1,5 +1,5 @@
 {
-  "generatedBy": "scripts/e2e-bun-manifest.mjs",
+  "generatedBy": "scripts/e2e-add-driven.mjs",
   "groups": [
     {
       "name": "--help",
@@ -60,6 +60,7 @@
         "app/tests/audit-export-truncated.test.tsx",
         "app/tests/authoring-tool-cards.test.tsx",
         "app/tests/auto-watch-screen.test.tsx",
+        "app/tests/billing-consumption-speech-ui.test.tsx",
         "app/tests/billing-payments.test.ts",
         "app/tests/bot-access-skills.test.tsx",
         "app/tests/bot-app-grants-screen.test.tsx",
@@ -69,13 +70,13 @@
         "app/tests/bot-profile-active.test.tsx",
         "app/tests/bot-profile-notice.test.tsx",
         "app/tests/bot-reaching-you.test.tsx",
-        "app/tests/bot-responsibilities.test.tsx",
-        "app/tests/bot-roster.test.tsx"
+        "app/tests/bot-responsibilities.test.tsx"
       ]
     },
     {
       "name": "app/tests part 2",
       "files": [
+        "app/tests/bot-roster.test.tsx",
         "app/tests/bot-route-default-agent.test.tsx",
         "app/tests/bot-settings-rows.test.tsx",
         "app/tests/bot-setup.test.tsx",
@@ -98,13 +99,13 @@
         "app/tests/composer-inflight-removal.test.tsx",
         "app/tests/composer-insecure-context.test.tsx",
         "app/tests/composer-paste.test.tsx",
-        "app/tests/composer-queue-attachments.test.tsx",
-        "app/tests/composer-send-failure.test.tsx"
+        "app/tests/composer-queue-attachments.test.tsx"
       ]
     },
     {
       "name": "app/tests part 3",
       "files": [
+        "app/tests/composer-send-failure.test.tsx",
         "app/tests/composer-unnamed-mime.test.tsx",
         "app/tests/composer-upload-group.test.tsx",
         "app/tests/composing-enter.test.tsx",
@@ -127,13 +128,13 @@
         "app/tests/live-screen-app-shortcuts.test.tsx",
         "app/tests/live-screen-keyboard.test.tsx",
         "app/tests/mastra-runtime-compat.test.tsx",
-        "app/tests/memory-answer-basis.test.tsx",
-        "app/tests/memory-hindsight.test.tsx"
+        "app/tests/memory-answer-basis.test.tsx"
       ]
     },
     {
       "name": "app/tests part 4",
       "files": [
+        "app/tests/memory-hindsight.test.tsx",
         "app/tests/memory-settings.test.tsx",
         "app/tests/model-picker-ui.test.tsx",
         "app/tests/observability-i18n-namespaces.test.ts",
@@ -156,7 +157,12 @@
         "app/tests/tool-activity.test.tsx",
         "app/tests/transcript-attachments.test.tsx",
         "app/tests/usage-breakdown-ui.test.tsx",
-        "app/tests/user-authorizations-ui.test.tsx",
+        "app/tests/user-authorizations-ui.test.tsx"
+      ]
+    },
+    {
+      "name": "app/tests part 5",
+      "files": [
         "app/tests/user-key-status-ui.test.tsx"
       ]
     },
@@ -936,6 +942,7 @@
     "app/tests/audit-export-truncated.test.tsx",
     "app/tests/authoring-tool-cards.test.tsx",
     "app/tests/auto-watch-screen.test.tsx",
+    "app/tests/billing-consumption-speech-ui.test.tsx",
     "app/tests/billing-payments.test.ts",
     "app/tests/bot-access-skills.test.tsx",
     "app/tests/bot-app-grants-screen.test.tsx",
@@ -1727,6 +1734,7 @@
     "app/tests/memory-hindsight.test.tsx": "runner named it: 2026-10-24-hindsight-376 FIX-W15 补执行组（FR3-2：RF4-1 只入 files 未入 group，统一入口漏跑）——bun-test-compat happy-dom Hindsight 设置面 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-hindsight（app/tests part 3 在 BASE 即存量红：web-bot-detail/web-bot-publish 单独重跑仍红，与本套件无关，独立成组保住逐组可观测读数）",
     "app/tests/memory-answer-basis.test.tsx": "runner named it: 2026-10-25-hindsight-376 FR4-1/FR5-1 补执行组（FR4-1 只入 files 未入 group/causes，统一入口漏跑）——bun-test-compat happy-dom 回答依据 UI 套件，e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'；独立成组 app/tests/memory-answer-basis（与 memory-hindsight 同模式）。",
     "server/tests/scrub-command.test.ts": "runner named it: T30 (#489 F16) scrubCommand 对抗钉子套件，与 otel-export-scrubbing.test.ts 同置 Bun 层（bun test 直跑；brief t30-scrubtests）",
-    "server/tests/async-jobs-view.test.ts": "runner named it: b5r-fix1 F-A1 登记（bifrost-5 #5 收口核验修复批）——async-jobs-view 经 bun-test-compat 依赖 Bun 运行时（db client），e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'，test:ci 必红；入 server/tests part 1 组（重生成 e2e-bun-manifest 需全量重扫，代价过高，按 FIX-W15 先例手工登记 files+group+causes）"
+    "server/tests/async-jobs-view.test.ts": "runner named it: b5r-fix1 F-A1 登记（bifrost-5 #5 收口核验修复批）——async-jobs-view 经 bun-test-compat 依赖 Bun 运行时（db client），e2e 原生收集 COLLECTION_ERROR: Received protocol 'bun:'，test:ci 必红；入 server/tests part 1 组（重生成 e2e-bun-manifest 需全量重扫，代价过高，按 FIX-W15 先例手工登记 files+group+causes）",
+    "app/tests/billing-consumption-speech-ui.test.tsx": "runner named it: b5r-speech-307 consumption UI suite (bun-test-compat layer, sibling of realtime-usage-ui)"
   }
 }
